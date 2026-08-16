@@ -116,6 +116,28 @@ monotonic `DocVersion`. Per document, `DocumentService` owns: canonical bytes,
 lazily-created engine handles (invalidated together on any mutation), the
 command log and checkpoints, and the originating `FileHandle`.
 
+**Engine handles are disposable, and their lifetime is not the document's.**
+MuPDF reclaims a page's object graph only when the document is closed, and
+releasing pages as they scroll out of view does not help — measured, a session
+that visits pages grows **linearly** and never falls. So the handle is treated as
+a **cache that can be thrown away and rebuilt**, not as the document.
+
+Rebuilding costs a close plus an open plus re-reading whatever the user is
+looking at, and it returns memory to the open-cost floor. It is safe because the
+truth lives in main: canonical bytes plus the command log. Reopening replays the
+log.
+
+That safety is conditional, and the condition is a requirement on every command
+(invariant 22): **no mutation may exist only on the handle.** Measured directly —
+an unsaved rotation is gone after close and reopen, and comes back only by
+replaying the command. A command that cannot be replayed cannot be issued.
+
+This is the same mechanism as the kill-and-restart response to a host memory
+breach (§9.17) and as the failed-save recovery path (§9.18); one recovery route,
+reached three ways. **No memory limit or recycling schedule is stated here** —
+the containment budget already decides when, and a second number would be a
+second policy for one concern.
+
 **What crosses, and how often.** The renderer receives a **view model** (page
 count, page sizes and transforms, annotations, form fields, outline — structured
 data, bounded size) and **one byte snapshot per `DocVersion`**, transferred as a
@@ -494,6 +516,13 @@ say**.
     only visible pages are loaded. Whole-document walks are explicit operations,
     not a viewing path.
     ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md))
+22. **An engine handle is a cache, never the truth.** Everything on it derives
+    from canonical bytes plus the command log, so it may be dropped and rebuilt
+    at any point *between* commands, and rebuilding returns memory to the
+    open-cost floor. The condition this places on every command: **no mutation
+    may exist only on the handle** — a command that cannot be replayed cannot be
+    issued. Handle lifetime is therefore not document lifetime, and §2 states no
+    recycling schedule because the host containment budget already decides when.
 
 ---
 

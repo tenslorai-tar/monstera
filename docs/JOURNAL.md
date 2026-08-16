@@ -73,6 +73,53 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-17 — Handle lifetime, settled before DocumentService was written
+
+"Released on close" also means *only* on close, and releasing pages as you
+scroll was already proven not to help. So a session grows as the user visits
+pages and never shrinks. `DocumentService` owns handle lifetime, so this had to
+be decided before it existed rather than discovered afterwards.
+
+**Scrolling is linear, not accelerating.** Visiting pages in viewport batches of
+ten, every batch adds exactly 25.2 MB — a constant 2.52 MB per page, matching
+the full-walk figure of 370 MB over 141 pages. The fixture is deliberately
+pathological (900 annotations per page); the point is the *shape*, and the shape
+is a straight line.
+
+**Close and reopen is the only lever, and it works.**
+
+| | 141-page fixture | 2260-page fixture |
+|---|---|---|
+| live before close | 317 MB | 532 MB |
+| after close | 0.5 MB | 0.5 MB |
+| after reopen — the floor | **5.9 MB** | **86 MB** |
+| close | 668 ms | 760 ms |
+| reopen | 28 ms | 304 ms |
+| first page afterwards | 121 ms | 1654 ms |
+
+Memory returns to the open-cost floor. The user-visible cost is not the reopen
+itself but re-reading the page they are looking at, which on a 2 million object
+document is 1.65 s — enough to matter, so this is not something to do at an
+arbitrary moment.
+
+**What a reopen loses, measured rather than assumed.** An unsaved rotation is
+**gone** after close and reopen, and comes back only by replaying the command.
+Nothing else on the handle is authoritative.
+
+So the rule, now in §2 and invariant 22: **an engine handle is a cache, never
+the truth.** It can be dropped and rebuilt between commands because canonical
+bytes and the command log live in main. The condition that places on every
+command: no mutation may exist only on the handle — a command that cannot be
+replayed cannot be issued.
+
+**No memory limit or recycling schedule was added.** The host containment budget
+already decides when to recycle, and the same reopen-and-replay path already
+serves the kill-and-restart response and failed-save recovery. One route,
+reached three ways; a second number would have been a second policy for one
+concern.
+
+---
+
 ## 2026-08-17 — The memory limit was an engine choice, not a constraint
 
 **The whole of the previous day's memory work was answering the wrong question.**
