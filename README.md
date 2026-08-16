@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/brand/logo.png" alt="Monstera" width="132">
+<img src="assets/brand/logo-256.png" alt="Monstera" width="132">
 
 # Monstera PDF Editor
 

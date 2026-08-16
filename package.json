@@ -29,7 +29,9 @@
     "scan:secrets": "node scripts/hooks/scanSecrets.mjs",
     "proof:guards": "node scripts/hooks/guardFiles.proof.mjs && node scripts/hooks/preCommit.proof.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
-    "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs"
+    "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
+    "brand:generate": "node scripts/brand/generateAssets.mjs",
+    "brand:check": "node scripts/brand/generateAssets.mjs --check"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -38,6 +40,8 @@
     "eslint-plugin-import-x": "^4.17.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.3",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
