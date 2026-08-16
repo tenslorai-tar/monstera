@@ -1,1 +1,27 @@
-export {};
+export {
+  type Channel,
+  type ChannelMap,
+  type ClientApi,
+  type Handlers,
+  type ParamsOf,
+  type ResultOf,
+  channel,
+} from './channel.js';
+export {
+  type ChannelId,
+  type ChannelParams,
+  type ChannelResult,
+  type Channels,
+  type ContractClient,
+  type ContractHandlers,
+  channelIds,
+  channels,
+} from './channels.js';
+export { createClient, toError, unwrap, wrapHandler, wrapHandlers } from './boundary.js';
+export {
+  docIdSchema,
+  docVersionSchema,
+  envelopeSchema,
+  fileHandleSchema,
+  structuredErrorSchema,
+} from './schemas.js';

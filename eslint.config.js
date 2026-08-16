@@ -175,7 +175,7 @@ export default tseslint.config(
   {
     // The bootstrap layer: plain .mjs, type-checked through JSDoc rather than
     // compiled, because it runs before dependencies exist (ARCHITECTURE §1.1).
-    files: ['scripts/**/*.mjs', 'eslint.config.js'],
+    files: ['scripts/**/*.mjs', 'eslint.config.js', 'vitest.config.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { ...globals.node },

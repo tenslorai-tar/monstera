@@ -24,8 +24,15 @@ export type Result<T, E = StructuredError> =
 export interface StructuredError {
   readonly name: string;
   readonly message: string;
-  readonly stack?: string;
-  readonly cause?: StructuredError;
+  // `| undefined` is explicit, and required, under exactOptionalPropertyTypes.
+  // This type describes a value that has crossed a process boundary, and the
+  // sender decides whether an absent field arrives absent or present-and-
+  // undefined: structuredClone preserves an explicit undefined where JSON drops
+  // the key entirely. Declaring `?: string` would claim a guarantee the wire
+  // does not make. Producers here still omit the key — see toStructuredError —
+  // so the narrower form is what we emit, not what we can insist on receiving.
+  readonly stack?: string | undefined;
+  readonly cause?: StructuredError | undefined;
 }
 
 export function ok<T>(value: T): Result<T, never> {

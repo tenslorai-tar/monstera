@@ -105,3 +105,4 @@ desktop.ini
 .parcel-cache/
 *.tgz
 install.log
+.probe/

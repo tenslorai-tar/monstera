@@ -92,6 +92,12 @@ jobs:
       - name: Prove the architecture boundaries are enforced
         run: npm run proof:boundaries
 
+      # C5 claims an unhandled contract entry is a compile error. That cannot be
+      # tested at runtime — a missing handler is just a channel that hangs — so
+      # it is proven by compiling code that must not compile.
+      - name: Prove the IPC contract is exhaustive
+        run: npm run proof:contract
+
       # The committed logo derivatives exist only because GitHub renders the
       # README with no build step. This fails if one no longer matches the
       # master it was generated from.

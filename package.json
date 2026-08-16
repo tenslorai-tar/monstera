@@ -31,7 +31,8 @@
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "brand:generate": "node scripts/brand/generateAssets.mjs",
-    "brand:check": "node scripts/brand/generateAssets.mjs --check"
+    "brand:check": "node scripts/brand/generateAssets.mjs --check",
+    "proof:contract": "node scripts/proofs/contract.proof.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
