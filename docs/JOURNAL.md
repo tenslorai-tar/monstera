@@ -95,7 +95,31 @@ rotation, reopens correctly, `countVersions()` 1 → 2 — and RSS still rose
 444 MB during the call. The on-disk delta is small; the in-memory
 materialisation is not. Worth having for signatures, useless as a memory remedy.
 
-**The hard ceiling is a fact, not a policy.** `mupdf-wasm.wasm` declares
+**And then the unit itself turned out to be wrong.** The ratio was not
+monotonic — 3.70× at 200 MB, 4.31× at 400 MB, 3.21× at 657 MB — so two fixtures
+of the same size and opposite content profile were measured before any budget
+was written as a multiple of file size. A 405 MB **image-heavy** document (53
+objects) peaks at 3.71×. A 28 MB **object-dense** document (127K objects) peaks
+at **20.9×**. A 464 MB object-dense document **fails outright**, inside
+`loadPage` during the page walk, never reaching the save — where a 657 MB
+stream-heavy document succeeds.
+
+Content is the driver; file size is the wrong denominator. The model that fits
+every fixture is `(stream bytes × ~3.7) + (object count × ~4 KB)`, and
+`countObjects()` costs nothing (RSS identical either side of the call), so
+admission can read both terms before loading a page.
+
+The non-monotonicity has a separate and duller cause: RSS is the allocator's
+high-water mark, not live bytes. Once the heap grows to absorb the open spike a
+later save reuses that space — in the image-heavy run, RSS after the save
+(1099 MB) sits *below* RSS after the open (1202 MB).
+
+This is also why the recovery path matters more than any threshold. The
+hypothetical raised against the first draft — "a 450 MB object-dense document
+that passes the size gate, the user works for an hour, the save fails" — turns
+out to be measured fact at 464 MB.
+
+**The hard ceiling is a fact, not a policy — and it is profile-specific.** `mupdf-wasm.wasm` declares
 `maximum=2048MB` in its memory section. Escalating trials, each in a fresh
 process: **~657 MB opens, edits and saves; ~679 MB fails** with
 `realloc (551620174 bytes) failed`. It fails at **save**, not at open — opening
@@ -117,7 +141,7 @@ readable by walking the xref chain — a redaction saved that way is recoverable
 which is how real organisations have leaked documents. Always incremental where
 a signature must survive, because a full rewrite changes the byte ranges it
 covers. Full rewrite otherwise, for now.
-[ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md), invariant 18.
+[ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md), invariant 19.
 
 **And an invariant turned out to be assumed rather than measured.** L5 says a
 save never rewrites annotations the app did not author, "byte-identical". The

@@ -38,7 +38,7 @@ un-redacted document. This is how real organisations have leaked documents they
 believed were redacted.
 
 It directly contradicts D7's promise of true content removal, so it is recorded
-as an **invariant** (`ARCHITECTURE` §9.18) rather than as guidance. A redaction
+as an **invariant** (`ARCHITECTURE` §9.19) rather than as guidance. A redaction
 that ships as an incremental save is a security defect, not a performance
 choice.
 

@@ -133,6 +133,12 @@ export default tseslint.config(
       'release/**',
       'coverage/**',
       'DESIGN-DRAFT.html',
+      // Scratch space. Proofs write probe files here and delete them in a
+      // `finally`; a proof that dies before its cleanup would otherwise turn
+      // the next lint run red for a file that is not part of the codebase, and
+      // a red build nobody caused is a red build people learn to ignore. This
+      // entry must stay in step with the `.probe/` line in .gitignore.
+      '.probe/**',
     ],
   },
 

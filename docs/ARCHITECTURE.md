@@ -230,7 +230,7 @@ default, never a setting ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-p
 
 | Purpose | Mode | Why the format forces it |
 |---|---|---|
-| Removal — redaction, sanitize, flatten, encryption change, metadata scrub, password removal | **Full rewrite with object GC, zero prior revisions** | An incremental save appends; earlier revisions stay readable by walking the xref chain, so the un-redacted content is recoverable (invariant 18) |
+| Removal — redaction, sanitize, flatten, encryption change, metadata scrub, password removal | **Full rewrite with object GC, zero prior revisions** | An incremental save appends; earlier revisions stay readable by walking the xref chain, so the un-redacted content is recoverable (invariant 19) |
 | A digital signature must survive | **Incremental** | A full rewrite changes the byte ranges the PKCS#7 signature covers, invalidating it |
 | Everything else | **Full rewrite, for now** | Conservative default; whether incremental should take over is an open question with a stated list of what must be executed to close it (ADR-0008) |
 
@@ -441,13 +441,29 @@ say**.
     absence is itself a defect.
 16. No raw colors or magic pixel values in components — design tokens only. No
     emoji as UI icons, anywhere.
-17. Memory is budgeted **per process**, and each budget is argued from what that
-    process is for: main ≤ 1.5× file size (it holds canonical bytes and never
-    parses, so more means parsing crept back in), the MuPDF host ≤ 6× as a
-    containment limit whose breach means kill-and-restart, the renderer ≤ 2.5×.
-    A budget set only from the measurement it constrains can never fail.
+17. Memory is budgeted **per process**, each budget argued from what that
+    process is for, and **every ratio carries an absolute ceiling** — because
+    file size is not the driver. Measured: a 405 MB image-heavy document peaks
+    at 3.7× while a 28 MB object-dense one peaks at 20.9×, and a 464 MB
+    object-dense document fails outright where a 657 MB stream-heavy one
+    succeeds. Heap use is `(stream bytes × ~3.7) + (object count × ~4 KB)`, and
+    `countObjects()` is free, so admission reads both terms. Budgets: main
+    ≤ 1.5× and ≤ 1.5 GB (it
+    holds canonical bytes and never parses, so more means parsing crept back
+    in); the MuPDF host ≤ 6× and ≤ 3 GB as a containment limit whose breach
+    means kill-and-restart, not a raised number; the renderer **provisional,
+    two-term** — a file-size-proportional term plus an absolute bitmap-cache cap,
+    both unmeasured until the renderer exists. A budget set only from the
+    measurement it constrains can never fail.
     ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md))
-18. A save whose purpose is **removal** — redaction, sanitize, flatten,
+18. **A failed save never loses work.** The command log lives in main and
+    survives a host crash, so a save failure is answered by killing the host,
+    restarting, reopening from the last-saved bytes, replaying the log, and
+    telling the user what failed — never by a dialog whose only option discards
+    their edits. The original file is intact until the atomic rename. Proven
+    with a control case that shows the same scenario losing work without the
+    guard. ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md))
+19. A save whose purpose is **removal** — redaction, sanitize, flatten,
     encryption change, metadata scrub, password removal — is never incremental,
     and its output carries zero prior revisions. An incremental save appends and
     leaves earlier revisions readable by walking the xref chain backwards, so a
@@ -680,5 +696,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
 | 2026-08-16 | Page reorder and form flattening move to MuPDF; field creation and content composition move to @cantoo/pdf-lib; pdf-lib removed; `rearrangePages` banned; §3.1 lifted. | `BUILD-PROMPT.md` Part C3's page-reorder and form-flatten rows and their stated justifications | [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) |
 | 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
-| 2026-08-16 | The memory budget is stated **per process** — main ≤ 1.5×, MuPDF host ≤ 6× as a containment limit, renderer ≤ 2.5× — and the maximum supported document size is the measured ~650 MB (§9.17). Stage 0 exit is gated on the three budgets. | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
-| 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.18). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
+| 2026-08-16 | The memory budget is stated **per process** with an absolute ceiling on each — main ≤ 1.5× and ≤ 1.5 GB, MuPDF host ≤ 6× and ≤ 3 GB as a containment limit, renderer provisional and two-term. File size is not the driver: heap use is `(stream bytes × ~3.7) + (object count × ~4 KB)`, so admission reads both (§9.17). Stage 0 exit is gated on the three budgets. | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
+| 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.19). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
