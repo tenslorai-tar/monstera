@@ -1,0 +1,58 @@
+# Repository guards — the platform-side mirror of the pre-commit hook.
+#
+# The hook protects commits made through it. This workflow protects the
+# repository: it re-runs the same two checks against content that arrived by
+# any route (web editor, merge, a clone whose hooks were never bootstrapped).
+#
+# Runs on ubuntu-latest rather than the windows-latest that Part I mandates for
+# the four test levels. Nothing here touches native behaviour — it is a text
+# scan and a blob inspection — so the faster runner costs no coverage.
+name: Guards
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guards-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    name: Secret scan and file policy
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned by commit SHA, not by tag. A tag is mutable: whoever
+      # controls the action's repository can repoint v7 at different code, and
+      # that code runs with this workflow's token. This is the same pinning
+      # discipline Part J applies to every downloaded binary, applied to the
+      # same class of risk.
+      - name: Check out full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # gitleaks scans the commit log, not the working tree, so a shallow
+          # clone would silently scan almost nothing and still report success.
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # The guards are proven before they are trusted. Rule B2 requires every
+      # check to ship a control case, and these run first so a guard that has
+      # stopped detecting anything fails the build loudly rather than passing
+      # a tree it no longer inspects.
+      - name: Prove the guards still catch what they claim
+        run: npm run proof:guards
+
+      - name: File policy (whole tree)
+        run: node scripts/hooks/guardFiles.mjs --tree
+
+      - name: Secret scan (full history)
+        run: node scripts/hooks/scanSecrets.mjs

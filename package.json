@@ -1,0 +1,25 @@
+{
+  "name": "monstera",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monstera PDF Editor — a free, open-source, professional-grade PDF editor for Windows.",
+  "license": "AGPL-3.0-or-later",
+  "author": "Tenslor Inc.",
+  "homepage": "https://monsterapdf.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tenslorai-tar/monstera.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "prepare": "node scripts/bootstrapHooks.mjs",
+    "provision:gitleaks": "node scripts/provision/gitleaks.mjs",
+    "guard:staged": "node scripts/hooks/guardFiles.mjs --staged",
+    "guard:tree": "node scripts/hooks/guardFiles.mjs --tree",
+    "scan:secrets": "node scripts/hooks/scanSecrets.mjs",
+    "proof:guards": "node scripts/hooks/guardFiles.proof.mjs && node scripts/hooks/preCommit.proof.mjs"
+  }
+}

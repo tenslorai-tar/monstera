@@ -1,0 +1,37 @@
+# Line endings are decided here, once, for every contributor.
+#
+# Without this file each clone's core.autocrlf setting decides independently
+# what lands in a blob, so the same source file churns between checkouts and
+# diffs fill with whole-file rewrites. Declaring normalisation in the
+# repository makes the stored form identical everywhere.
+* text=auto eol=lf
+
+# Git hooks and shell scripts are executed by sh. Git for Windows' sh parses a
+# trailing CR as part of the command word, so a CRLF hook dies with
+# "/bin/sh^M: bad interpreter" — these must stay LF even on Windows checkouts.
+*.sh      text eol=lf
+*.mjs     text eol=lf
+.githooks/* text eol=lf
+
+# cmd.exe requires CRLF: it reads batch files line by line and a bare LF leaves
+# the last token of each line unterminated.
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# Declared binary so Git never attempts line-ending translation or textual
+# diffing on them. Committing any of these is separately gated by the
+# pre-commit guard (scripts/hooks/guardStagedFiles.mjs).
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.webp    binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary
+*.ttf     binary
+*.otf     binary
+*.woff2   binary
+
+# Generated from the lockfile; collapsing it in review diffs keeps attention on
+# hand-written code.
+package-lock.json linguist-generated=true diff=lockfile

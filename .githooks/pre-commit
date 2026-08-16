@@ -1,0 +1,21 @@
+#!/bin/sh
+# Monstera pre-commit gate. See scripts/hooks/preCommit.mjs for what it checks.
+#
+# This shim stays deliberately thin: everything it could do in shell it would
+# have to do twice, once for sh and once for Windows, and the two copies would
+# drift. All logic lives in one Node module instead.
+set -e
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "" >&2
+  echo "Commit blocked — node is not on PATH, so the pre-commit guards could not run." >&2
+  echo "" >&2
+  echo "  Install Node (see .nvmrc / package.json engines) and commit again." >&2
+  echo "" >&2
+  echo "The hook refuses to pass a commit it did not check. Skipping the checks when the" >&2
+  echo "runtime is missing would report success for checks that never ran." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exec node "$(git rev-parse --show-toplevel)/scripts/hooks/preCommit.mjs"
