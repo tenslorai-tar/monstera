@@ -261,7 +261,7 @@ Not user-facing features, but the exit gate for everything above.
 | Pre-commit guards (secret scan, file policy) + CI mirror + proofs | **done** |
 | Pinned-hash binary provisioning primitive | **done** |
 | Governing documents (ARCHITECTURE, CLAUDE, README, CONTRIBUTING, SECURITY, ADRs) | **done** |
-| Monorepo workspaces + enforced import boundaries | wip |
+| Monorepo workspaces + enforced import boundaries | **done** |
 | Contract codegen pipeline | — |
 | DocumentService + CommandBus + FileHandles | — |
 | Both utility hosts on the shared worker contract | — |
@@ -270,7 +270,8 @@ Not user-facing features, but the exit gate for everything above.
 | Design substrate: tokens, lint rules, `docs/UI-GUIDE.md`, 4 primitives | — |
 | i18n scaffold + literal-string lint rule | — |
 | Logging + crash reporter consent | — |
-| CI: typecheck, lint, unit, proofs, Playwright smoke + axe on the browser shim | — |
+| CI: typecheck, lint, unit, proofs (Windows + Linux) | **done** |
+| CI: Playwright smoke + axe on the browser shim | — |
 | Packaging skeleton for both flavors + installer size arithmetic | — |
 | **Gate:** engine-capability spike proving every C3 matrix row, recorded as an ADR | — |
 | **Gate:** performance budget assertion (200 MB fixture, peak RSS < 1.5× file size, IPC bounded) | — |

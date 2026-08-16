@@ -140,6 +140,35 @@ user*. A project with no defined abort condition dies slowly.
   races three provisioners from a cold cache and checks the published binary
   *runs*, not merely that it exists; under a shared-staging mutation two of the
   three racers fail, so the proof is not vacuous.
+- **A lockfile that resolves on one platform is not a lockfile that resolves.**
+  CI failed at `npm ci` on Windows *and* Linux while the identical command
+  succeeded locally, and a fresh clone of the pushed repository reproduced the
+  false pass rather than the failure. Three hypotheses died before the real one
+  — an out-of-sync lockfile, our own `prepare` lifecycle script, and the
+  PowerShell-versus-bash shell difference — each costing a push to disprove.
+
+  Mechanism: sharp ships one prebuilt package per platform as optional
+  dependencies, and two of them (`@img/sharp-wasm32`,
+  `@img/sharp-freebsd-wasm32`) depend on `@emnapi/*`. npm recorded the platform
+  packages but omitted those transitive dependencies, having resolved the tree
+  on win32-x64 where the wasm32 packages are never installed. `npm ci`
+  validates the lockfile as a whole rather than only the parts the current
+  platform needs, so it rejected the tree everywhere. Fixed by deleting
+  `node_modules` and `package-lock.json` and resolving from scratch; the
+  `@emnapi` packages are now top-level entries.
+
+  Two things follow. **`npm ci` in CI is the only thing that tells the truth
+  about a lockfile** — local `npm install`, and even a fresh clone, will
+  happily agree with a broken one. And this recurs with any dependency shipping
+  per-platform binaries, which `pdfium` and `mutool` both will.
+
+- **CI failures were undiagnosable from outside the repository.** GitHub serves
+  Actions logs only to authenticated callers, so publicly available run data
+  stopped at "the Install step failed". The Install step now tees its output
+  and re-emits the error as a workflow annotation, which *is* public. That is
+  what ended the guessing — the annotation named the two missing packages
+  outright. Kept permanently: a contributor who cannot see why a check failed
+  cannot fix it, and this project wants drive-by contributors.
 - The design draft's token seed was audited against M2's contrast law **before**
   being encoded, and failed it in 13 places. Root cause was not the values: the
   token file declared colours but not which foreground may sit on which surface,
