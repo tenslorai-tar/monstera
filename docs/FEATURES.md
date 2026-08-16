@@ -273,6 +273,6 @@ Not user-facing features, but the exit gate for everything above.
 | CI: typecheck, lint, unit, proofs (Windows + Linux) | **done** |
 | CI: Playwright smoke + axe on the browser shim | — |
 | Packaging skeleton for both flavors + installer size arithmetic | — |
-| **Gate:** engine-capability spike proving every C3 matrix row, recorded as an ADR | — |
+| **Gate:** engine-capability spike — MuPDF/@cantoo rows executed, matrix amended (ADR-0006); PDFium, @signpdf and PDF.js rows pending their stages | **partly done** |
 | **Gate:** performance budget assertion (200 MB fixture, peak RSS < 1.5× file size, IPC bounded) | — |
 | **Exit:** open via FileHandle → render → `rotatePages` + undo → save → one registered dialog, setting and shortcut | — |

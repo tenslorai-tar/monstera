@@ -140,6 +140,36 @@ user*. A project with no defined abort condition dies slowly.
   races three provisioners from a cold cache and checks the published binary
   *runs*, not merely that it exists; under a shared-staging mutation two of the
   three racers fail, so the proof is not vacuous.
+- **The engine spike overturned two rows of the writer-of-record matrix, and
+  found a defect no amount of reading would have surfaced.** Run before
+  `DocumentService` rather than after, because that is where the matrix becomes
+  load-bearing — `rotatePages` has to route to a writer of record, and building
+  first would have shaped the kernel around claims that turned out false.
+
+  Two of the founding matrix's three stated justifications were wrong: MuPDF
+  *does* have a page-reorder primitive, and it *can* flatten form fields. But
+  the finding that mattered was behavioural. **`rearrangePages` drops
+  `/AcroForm`** — even when passed the identity permutation, so merely calling
+  it destroys a form. The widget annotations survive on their pages, which is
+  worse than losing them: the fields still render while the field tree is
+  orphaned, and the document silently stops being a valid AcroForm. A plain save
+  preserves it, which isolates the cause to the primitive.
+
+  The remedy was already written down. Invariant L6 says page reordering
+  rewrites the page tree *in place*. Doing exactly that through MuPDF's own
+  `PDFObject` API preserves all four catalog entries. **The founding record
+  predicted the failure class; only its stated reason was wrong.**
+
+  pdf-lib is removed from the repository entirely — it held four matrix rows and
+  has been unmaintained since 2021-11-06. MuPDF now covers two of them, and
+  `@cantoo/pdf-lib` covers the rest. Fewer writers is a simplification, not just
+  a substitution.
+
+  The spike is kept and runs in CI as a regression gate rather than being thrown
+  away: each case records the verdict the matrix depends on, so an engine
+  upgrade that changes any of them turns the build red instead of quietly
+  invalidating the architecture.
+
 - **A lockfile that resolves on one platform is not a lockfile that resolves.**
   CI failed at `npm ci` on Windows *and* Linux while the identical command
   succeeded locally, and a fresh clone of the pushed repository reproduced the

@@ -98,6 +98,13 @@ jobs:
       - name: Prove the IPC contract is exhaustive
         run: npm run proof:contract
 
+      # The writer-of-record matrix rests on measured engine behaviour, not on
+      # type declarations. This re-measures it, so an engine upgrade that
+      # changes any of those behaviours turns the build red instead of quietly
+      # invalidating the architecture built on top of them.
+      - name: Prove engine behaviour still matches the matrix
+        run: npm run proof:engines
+
       # The committed logo derivatives exist only because GitHub renders the
       # README with no build step. This fails if one no longer matches the
       # master it was generated from.

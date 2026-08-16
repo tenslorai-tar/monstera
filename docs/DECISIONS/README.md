@@ -46,3 +46,4 @@ Each contains:
 | [0003](0003-token-role-typing-and-declared-pairings.md) | Token role typing: five categories and declared pairings | Accepted |
 | [0004](0004-toolchain-versions.md) | Toolchain versions, and two deliberate steps back from "latest" | Accepted |
 | [0005](0005-ui-foundation-libraries.md) | UI foundation: Base UI, Zag machines, Lingui, zustand | Accepted |
+| [0006](0006-engine-capability-spike-results.md) | Engine capability spike results, and the matrix amended to match | Accepted |

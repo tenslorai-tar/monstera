@@ -1,17 +1,16 @@
 # Engine capability spike — plan and evidence
 
-`docs/ARCHITECTURE.md` §3.1 holds the writer-of-record matrix **provisional**
-until every row has been executed against a real document. This file is where
-that evidence lands. When it is complete, the matrix is amended to match it and
-the findings are recorded as an ADR.
+**Status: executed 2026-08-16. Results are at the bottom of this file; the
+matrix in ARCHITECTURE §3 has been amended to match
+([ADR-0006](DECISIONS/0006-engine-capability-spike-results.md)).**
 
-**Nothing here is evidence yet.** The hypotheses below come from reading
-`mupdf@1.28.0`'s shipped `dist/mupdf.d.ts`, pdfjs-dist's published types, and
-npm registry metadata on 2026-08-16. Type definitions prove an API is *declared*;
-they do not prove it *works*, that it produces a correct PDF, or that other
-readers accept the output. §3.1 exists because a row nobody has executed is a
-guess, and guesses about engine capability surface four months late with the
-architecture already shaped around them.
+The hypotheses below are kept as written *before* the spike ran, deliberately.
+They came from reading `mupdf@1.28.0`'s shipped `dist/mupdf.d.ts` and npm
+registry metadata — and comparing them against what executing actually found is
+the argument for §3.1 in concrete form. Type definitions prove an API is
+*declared*; they do not prove it works, that it produces a correct PDF, or that
+another reader accepts the output. H1 below reads as a straightforward win for
+MuPDF's `rearrangePages`. Executing it showed the call silently destroys forms.
 
 Each row is exercised by one throwaway script against a real document, and its
 output is re-opened and verified — by a *different* reader where that is the
@@ -175,7 +174,46 @@ not a fact yet.
   C library is at 1.28.2 while npm ships 1.28.0, so the online docs may describe
   APIs the package does not yet have.
 
-## Results
+## Results — 2026-08-16
 
-_Empty. Filled in as rows are executed; the matrix is amended and an ADR written
-once complete._
+Run with `npm run proof:engines`. Against `mupdf@1.28.0` and
+`@cantoo/pdf-lib@2.8.3`, on a self-generated 6-page fixture carrying
+`/AcroForm`, `/Outlines`, `/Names`, `/OCProperties` and a foreign annotation.
+
+| Case | Verdict | Evidence |
+|---|---|---|
+| H1 `rearrangePages`: page order | CONFIRMED | 1 2 3 4 5 6 → 6 5 4 3 2 1 |
+| H1 `rearrangePages`: catalog survives (L6) | **REFUTED** | **loses `/AcroForm`**; keeps the other three |
+| H1b `rearrangePages`: omitted indices delete | CONFIRMED | 3 of 6 indices → a 3-page document |
+| H1c in-place `/Kids` rewrite: order AND catalog | CONFIRMED | correct order, **all four entries preserved** |
+| H2 `bake(false, true)`: flattens widgets | CONFIRMED | widgets 2 → 0, `/AcroForm` removed |
+| H3 no widget creation in MuPDF | CONFIRMED | no create/add method on `PDFDocument` or `PDFPage` |
+| H4 `@cantoo/pdf-lib` creates fields MuPDF reads | CONFIRMED | MuPDF reads back `spike.created:text = "made by @cantoo"` |
+| H5 journal: undo restores a deleted page | CONFIRMED | `canUndo=true`, 6 pages after undo |
+| Annotations: create + persist through save | CONFIRMED | Highlight present after reopen |
+| srcRef: foreign annotation survives a save | CONFIRMED | the Square is intact after a round trip |
+
+### The finding that changed the architecture
+
+`rearrangePages` drops `/AcroForm` **even for the identity permutation**, so
+merely calling it destroys a form. A plain save with no reorder preserves it,
+which isolates the cause to the primitive rather than the save pipeline. The
+widget annotations survive on their pages, which is worse than losing them
+outright: the fields still render while the field tree is orphaned, so the
+document silently stops being a valid AcroForm.
+
+Rewriting the `/Kids` array in place through MuPDF's `PDFObject` API — exactly
+what invariant L6 already prescribed — reorders correctly and preserves all
+four entries. **The founding record predicted this failure class; only its
+stated reason was wrong.**
+
+Recorded as [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md). The
+matrix in ARCHITECTURE §3 is amended and §3.1's provisional status is lifted.
+
+### Still to execute
+
+These rows are unblocked but not yet exercised, and remain provisional:
+PDFium text editing and HD render (needs the koffi FFI host), signatures via
+`@signpdf`, print/export rasterisation at DPI, and the PDF.js render path with
+its four runtime asset directories. Each is executed as its stage arrives, and
+its result appended here.

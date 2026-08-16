@@ -40,7 +40,7 @@ monstera/
 │   ├── contract/    THE IPC contract: every channel, command, query and event
 │   │                defined once with zod schemas. Imports: shared only.
 │   ├── kernel/      the headless document engine: DocumentService, CommandBus,
-│   │                engine adapters (MuPDF, PDFium, pdf-lib), undo log, save
+│   │                engine adapters (MuPDF, PDFium, @cantoo/pdf-lib), undo log, save
 │   │                pipeline, OCR, export, text-edit. Node-only.
 │   │                Imports: shared, contract. NEVER Electron, NEVER React.
 │   ├── ui/          the React app: components, per-document stores, registries,
@@ -155,26 +155,36 @@ model survives a round trip through a reader that cannot express it) and
 |---|---|---|
 | Rendering, text layer, text selection, search display | — (presentation) | **PDF.js** |
 | Page tree ops: delete/insert/extract/merge/split/crop/resize | **MuPDF** | MuPDF |
-| Page reorder | **pdf-lib** — implemented as an in-place `/Kids` rewrite per invariant L6 | MuPDF |
+| Page reorder | **MuPDF** — an in-place `/Kids` rewrite through its `PDFObject` API, per invariant L6. **`rearrangePages` is banned**: it orphans `/AcroForm` even for an identity permutation ([ADR-0006](DECISIONS/0006-engine-capability-spike-results.md)) | MuPDF |
 | Annotations (all types), appearance streams | **MuPDF** | MuPDF |
 | Form fields: fill | **MuPDF** | MuPDF |
-| Form fields: create, flatten | **pdf-lib** | MuPDF |
+| Form fields: flatten | **MuPDF** — `bake(false, true)` | MuPDF |
+| Form fields: create | **@cantoo/pdf-lib** — the one concern MuPDF has no API for | MuPDF |
 | Metadata, outline/bookmarks, encryption, permissions, redaction, optimize | **MuPDF** | MuPDF |
 | Print & export rasterisation | **MuPDF** | — |
 | In-place text editing (line/run rewriting), styled runs, HD render | **PDFium** | PDFium |
-| Content composition: new document generation (markdown/CSV/TOC/image-to-PDF), drawing onto pages (watermark, headers/footers, Bates, OCR text layer) | **pdf-lib** | — |
+| Content composition: new document generation (markdown/CSV/TOC/image-to-PDF), drawing onto pages (watermark, headers/footers, Bates, OCR text layer) | **@cantoo/pdf-lib** — pdf-lib itself is unmaintained since 2021-11-06 | — |
 | Digital signatures (PKCS#7) | **@signpdf** | node-forge (verify) |
 
-### 3.1 The matrix is provisional until the Stage 0 spike stamps it
+### 3.1 The matrix is evidence, and stays that way
 
-**This table is a set of claims, not yet evidence.** Stage 0 does not exit until
-the engine-capability spike has executed one throwaway script per row against a
-real document, recorded the findings as an ADR, and amended this table to match
-what actually ran.
+**This table was provisional and is no longer.** Every row above was executed
+against a real document before the kernel was built on it, and the results are
+in [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) and
+`docs/ENGINE-SPIKE.md`.
 
-A row nobody has executed is a guess, and guesses about engine capability
-otherwise surface four months late with the architecture already shaped around
-them.
+That mattered: **two of the founding matrix's three stated justifications were
+false**, and the most consequential finding was one no type declaration could
+have revealed — MuPDF's `rearrangePages` reorders pages correctly while
+silently dropping `/AcroForm`, even when passed the identity permutation.
+Reading the API surface would have produced confidently wrong architecture.
+
+`scripts/spike/engineSpike.mjs` is kept and runs in CI as a **regression gate**.
+Each case records the verdict this table depends on, and the script fails when
+reality differs — so an engine upgrade that changes any of these behaviours
+turns the build red rather than quietly invalidating the matrix underneath it.
+
+Adding a row still means executing it first.
 
 ### 3.2 Standing rules
 
@@ -592,4 +602,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
+| 2026-08-16 | Page reorder and form flattening move to MuPDF; field creation and content composition move to @cantoo/pdf-lib; pdf-lib removed; `rearrangePages` banned; §3.1 lifted. | `BUILD-PROMPT.md` Part C3's page-reorder and form-flatten rows and their stated justifications | [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) |
 | 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
