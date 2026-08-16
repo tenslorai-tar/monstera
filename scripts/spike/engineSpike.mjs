@@ -76,6 +76,29 @@ function pageMarkers(doc) {
 }
 
 /**
+ * The three things that decide how `rotatePages` and its inverse must be built:
+ * what the page itself declares, what it would inherit, and what MuPDF actually
+ * renders. `own` and `inherited` differ exactly when a page takes its rotation
+ * from an ancestor `/Pages` node, which is the case a delta-based inverse gets
+ * wrong.
+ *
+ * @param {mupdf.PDFDocument} doc
+ * @param {number} index
+ * @returns {{own: number | null, inherited: number | null, size: string}}
+ */
+function rotationOf(doc, index) {
+  const page = doc.findPage(index);
+  const own = page.get('Rotate');
+  const inherited = page.getInheritable('Rotate');
+  const [x0, y0, x1, y1] = doc.loadPage(index).getBounds();
+  return {
+    own: own.isNull() ? null : own.asNumber(),
+    inherited: inherited.isNull() ? null : inherited.asNumber(),
+    size: `${String(Math.round(x1 - x0))}x${String(Math.round(y1 - y0))}`,
+  };
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {mupdf.PDFDocument}
  */
@@ -360,6 +383,134 @@ async function main() {
       'CONFIRMED',
       foreign.length === 1,
       `page 1 Square annotations after round trip: ${String(foreign.length)}`,
+    );
+  }
+
+  // ── R1: page rotation is a leaf attribute write, not an API call ─────────
+  // `mupdf.d.ts` declares no rotation setter on PDFPage — `Rotate` appears only
+  // as a type and as an `addPage` parameter — so the write goes through the
+  // low-level PDFObject API. Unlike a reorder, no `setPageTreeCache` is needed:
+  // rotation changes an attribute read when bounds are computed, whereas a
+  // reorder changes the tree structure MuPDF memoises for page lookup.
+  {
+    const doc = openWithMupdf(fixture);
+    const before = rotationOf(doc, 1);
+    doc.findPage(1).put('Rotate', 90);
+    const live = rotationOf(doc, 1);
+    const reopened = openWithMupdf(saveWithMupdf(doc));
+
+    record(
+      'R1 rotation takes effect with no page-tree cache reset',
+      'CONFIRMED',
+      before.size === '600x800' &&
+        live.size === '800x600' &&
+        rotationOf(reopened, 1).own === 90 &&
+        rotationOf(reopened, 0).own === null,
+      `page 1 ${before.size} -> ${live.size} without setPageTreeCache; survives reopen; page 0 untouched`,
+    );
+  }
+
+  // ── R2: a leaf /Rotate must shadow an inherited one ──────────────────────
+  {
+    const doc = openWithMupdf(await buildNestedFixture());
+    const inheriting = rotationOf(doc, 3);
+    doc.findPage(3).put('Rotate', 180);
+    const shadowed = rotationOf(doc, 3);
+    const sibling = rotationOf(doc, 4);
+    const reopened = openWithMupdf(saveWithMupdf(doc));
+
+    record(
+      'R2 a leaf /Rotate shadows an inherited one, siblings untouched',
+      'CONFIRMED',
+      inheriting.own === null &&
+        inheriting.inherited === 90 &&
+        shadowed.own === 180 &&
+        sibling.own === null &&
+        sibling.inherited === 90 &&
+        rotationOf(reopened, 4).inherited === 90,
+      `page 3 inherited 90 then declared 180; page 4 still inherits 90 after reopen`,
+    );
+  }
+
+  // ── R3: the inverse of rotating an inheriting page ───────────────────────
+  // The finding that kills a delta-based inverse. Writing back the value that
+  // *was showing* leaves a declared `/Rotate` on a leaf that previously had
+  // none. Both documents render identically, so nothing downstream would notice
+  // — the page has silently stopped tracking its ancestor, and a later rotation
+  // of that branch will leave it behind. An inverse must therefore capture the
+  // page's prior **own** value, including the case where there was none.
+  {
+    const doc = openWithMupdf(await buildNestedFixture());
+    const original = rotationOf(doc, 3);
+
+    doc.findPage(3).put('Rotate', 270);
+    doc.findPage(3).put('Rotate', 90);
+    const byWriteBack = rotationOf(doc, 3);
+
+    doc.findPage(3).delete('Rotate');
+    const byDelete = rotationOf(doc, 3);
+
+    record(
+      'R3 the inverse of an inherited rotation is delete, not write-back',
+      'CONFIRMED',
+      original.own === null &&
+        byWriteBack.own === 90 &&
+        byWriteBack.size === original.size &&
+        byDelete.own === null &&
+        byDelete.inherited === original.inherited,
+      `write-back renders identically (${byWriteBack.size}) but leaves own=90 where own was absent; ` +
+        `only delete() restores own=null, inherited=${String(byDelete.inherited)}`,
+    );
+  }
+
+  // ── R4: does MuPDF normalise /Rotate? ────────────────────────────────────
+  // The PDF specification requires a multiple of 90. MuPDF stores whatever it
+  // is given and interprets it loosely, so normalisation is the kernel's job:
+  // a document carrying `/Rotate 45` is one other readers may disagree about.
+  {
+    const doc = openWithMupdf(fixture);
+    const QUADRANTS = [0, 90, 180, 270];
+    /** @type {string[]} */
+    const stored = [];
+    /** @type {(number | null)[]} */
+    const roundTripped = [];
+    for (const value of [450, -90, 45]) {
+      doc.findPage(0).put('Rotate', value);
+      const round = rotationOf(openWithMupdf(saveWithMupdf(doc)), 0);
+      roundTripped.push(round.own);
+      stored.push(`${String(value)}->${String(round.own)} (${round.size})`);
+    }
+
+    // Computed, not asserted. Were a future MuPDF to start normalising, every
+    // round-tripped value would land in a quadrant, this would read CONFIRMED
+    // against a recorded REFUTED, and the case would go red — which is the only
+    // thing that makes it a regression gate rather than a comment.
+    const normalises = roundTripped.every((own) => own !== null && QUADRANTS.includes(own));
+
+    record(
+      'R4 MuPDF normalises /Rotate to a quadrant',
+      'REFUTED',
+      normalises,
+      `stored verbatim through a round trip: ${stored.join(', ')} — the kernel must normalise before writing`,
+    );
+  }
+
+  // ── R5: rotation must not disturb what L6 protects ───────────────────────
+  {
+    const doc = openWithMupdf(fixture);
+    doc.findPage(1).put('Rotate', 90);
+    const saved = saveWithMupdf(doc);
+    const kept = await catalogKeys(saved);
+    const reopened = openWithMupdf(saved);
+
+    record(
+      'R5 rotation preserves the catalog entries L6 protects',
+      'CONFIRMED',
+      kept.length === CATALOG_KEYS.length &&
+        reopened.countPages() === 6 &&
+        reopened.loadPage(0).getWidgets().length === 2 &&
+        reopened.loadPage(1).getAnnotations().length === 1,
+      `read back by pdf-lib: [${kept.join(', ')}]; 6 pages, 2 widgets, 1 foreign annotation intact`,
     );
   }
 

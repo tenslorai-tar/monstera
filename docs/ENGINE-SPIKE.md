@@ -194,6 +194,11 @@ Run with `npm run proof:engines`. Against `mupdf@1.28.0` and
 | H5 journal: undo restores a deleted page | CONFIRMED | `canUndo=true`, 6 pages after undo |
 | Annotations: create + persist through save | CONFIRMED | Highlight present after reopen |
 | srcRef: foreign annotation survives a save | CONFIRMED | the Square is intact after a round trip |
+| R1 rotation needs no page-tree cache reset | CONFIRMED | page 1 600×800 → 800×600 immediately; survives reopen |
+| R2 a leaf `/Rotate` shadows an inherited one | CONFIRMED | page 3 inherited 90, declared 180; sibling still inherits 90 |
+| R3 the inverse is `delete`, not write-back | CONFIRMED | write-back leaves `own=90` where `own` was absent |
+| R4 MuPDF normalises `/Rotate` to a quadrant | **REFUTED** | `450`, `-90`, `45` all stored verbatim through a round trip |
+| R5 rotation preserves the L6 catalog entries | CONFIRMED | all four kept; 6 pages, 2 widgets, 1 foreign annotation |
 
 ### The finding that changed the architecture
 
@@ -228,6 +233,42 @@ The correct algorithm pushes inheritable attributes (`/Resources`, `/MediaBox`,
 
 This is the same lesson as the first finding, one level down: an approach
 verified against the easy shape is not verified.
+
+### The third finding: what a command's inverse has to capture
+
+`rotatePages` is the first real command, so it is the first place §4's rule
+"each command records its inverse" has to mean something concrete. Rotation
+looked like the easiest possible case — the inverse of turning a page 90° is
+turning it back — and it is not.
+
+There is no rotation setter on `PDFPage`; `mupdf.d.ts` declares `Rotate` only as
+a type and as an `addPage` parameter. The write is
+`doc.findPage(i).put('Rotate', n)` through the low-level `PDFObject` API. Two
+things follow from that, and only one of them is obvious.
+
+The obvious one: **MuPDF does not normalise.** `/Rotate 450`, `/Rotate -90` and
+`/Rotate 45` are all stored verbatim and survive a round trip, and 45 rendered
+as a quarter turn. The PDF specification requires a multiple of 90, so a
+document carrying `/Rotate 45` is one other readers may legitimately disagree
+about. Normalisation is the kernel's job, done before the write.
+
+The one that changes the design: **the inverse of a delta is not a delta.** A
+page that takes its rotation from an ancestor `/Pages` node has no `/Rotate` of
+its own. Rotating it writes one. Rotating it back by writing the value that was
+previously *showing* produces a document that renders identically and is
+structurally different — the page now declares what it used to inherit, so it
+has silently stopped tracking its branch, and the next rotation applied to that
+branch will leave it behind. Only deleting the key restores the original.
+
+So an inverse cannot be "rotate by −90". It has to capture, per page, the prior
+**own** value *including the case where there was none* — which means the
+command log stores prior state, not a reversing operation. That constraint is
+not specific to rotation; every attribute-writing command inherits it, because
+inheritable attributes are a general feature of the page tree.
+
+The general lesson, and the reason this is written down rather than fixed
+quietly: **an inverse that restores the rendering is not an inverse.** A test
+that compares rendered output would have passed on the wrong implementation.
 
 ### Still to execute
 
