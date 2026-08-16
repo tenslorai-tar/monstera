@@ -23,31 +23,59 @@ per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
 **Done and green in CI (Windows + Linux):** pre-commit guards with proofs ·
-pinned-hash provisioning · governing documents and ADRs 0001–0006 · monorepo
+pinned-hash provisioning · governing documents and ADRs 0001–0010 · monorepo
 with import boundaries proven by violation · the IPC contract with compile-time
-exhaustiveness · `CapabilityRegistry`.
+exhaustiveness · `CapabilityRegistry` · the **native MuPDF seam** (source in
+`native/mupdf-shim/`, built and measured, not yet wired into a package).
+
+**The engine decision is settled (ADR-0010).** MuPDF is reached natively through
+a koffi-bound flat-C shim, in a utility process, with one held handle per open
+document. WASM is withdrawn and `mutool.exe` is not shipped. Do not re-open
+this; the measurements are in the ADR.
 
 **Next, in order:**
 
-1. **`DocumentService` + `CommandBus`.** Blocking requirement recorded before
-   the code exists: document identity must be established by canonicalising with
-   `fs.realpath`, **not** by comparing `FileHandle`s or raw path strings.
-   `CapabilityRegistry` mints per path *string* — `C:\a\b.pdf` and
-   `c:/A/B.PDF` are one file and three handles — so keying identity off a handle
-   opens one file as two documents with two command logs, and the second save
+1. **`DocumentService` + `CommandBus`.** Design fully settled in
+   [ADR-0009](DECISIONS/0009-document-identity-and-the-command-log.md); build
+   against it rather than re-deriving. Blocking requirement recorded before the
+   code exists: document identity comes from **`fs.realpath.native`** — plain
+   `fs.realpath` does *not* fold Windows case, 8.3 names or the `\\?\` prefix,
+   measured — and never from comparing `FileHandle`s or raw paths.
+   `CapabilityRegistry` mints per path *string*, so keying identity off a handle
+   opens one file as two documents with two command logs and the second save
    discards the first's edits. Needs a proof with a control: the same file opened
-   by two path forms resolves to **one** `DocId`.
+   by two path forms resolves to **one** `DocId`. Note `fs.promises.realpath.native`
+   does not exist; use `promisify(fs.realpath.native)`.
+
+   Two constraints from §2/§4 that shape the API: handles are **disposable**
+   (recycling must be callable at a chosen moment, not only under memory
+   pressure), and every command declares **both** invertibility *and*
+   reproducibility — a command that cannot reproduce itself records its effect,
+   not its intent.
 2. **`rotatePages` as the first real command**, with its inverse, exercising the
-   command log. Page reorder, when it arrives, uses the algorithm in
+   command log. The engine spike proved the exact semantics (R1–R5): the inverse
+   of rotating a page that *inherited* its rotation is `delete('Rotate')`, never
+   writing back the value that was showing, and MuPDF stores `/Rotate 45` and
+   `450` verbatim so the kernel normalises on the way in and restores verbatim
+   on the way out. Page reorder, when it arrives, uses the algorithm in
    `scripts/spike/reorderInPlace.mjs` — never `rearrangePages`, which orphans
    `/AcroForm`.
 3. Per-document stores · command/dialog/settings registries · design substrate
    (tokens per ADR-0003, `docs/UI-GUIDE.md`, four primitives) · i18n scaffold ·
    logging and crash-consent · both utility hosts on the shared worker contract.
-4. **Both remaining Stage 0 gates:** the performance budget assertion (200 MB
-   generated fixture, **per-process** peak RSS per ADR-0007 — main ≤ 1.5×,
-   MuPDF host ≤ 6×, renderer ≤ 2.5× — IPC bytes bounded per L11), and the
-   Stage 0 exit path end to end.
+4. **Both remaining Stage 0 gates:** the performance budget assertion
+   (**per-process**, main ≤ 1.5× as a design constraint, the MuPDF host as a
+   containment limit, the renderer still provisional and unmeasured — note
+   ADR-0007's ratio model and admission gate are **withdrawn**), and the Stage 0
+   exit path end to end.
+
+**Owed because of the engine change (ADR-0010):** a provisioning script that
+fetches MuPDF source, builds the shim and hash-verifies, running in CI —
+`scripts/provision/mutool.mjs` was withdrawn because it fetched the wrong
+artifact. koffi needs Electron ABI prebuilds. The AGPL source offer must now
+cover our build configuration and the shim source, not just an upstream version.
+The packaging test that proved `mutool.exe` spawns becomes a test that the shim
+loads from `app.asar.unpacked`.
 
 **Owed, tracked so it is not forgotten:**
 
