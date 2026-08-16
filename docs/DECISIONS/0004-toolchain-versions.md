@@ -117,3 +117,30 @@ requires changing Vite and electron-vite only, not the React plugin.
   non-permissive licence in the toolchain and belongs in the audit record.
 - **`lucide-react` is ISC, not MIT** — permissive and compatible, but the licence
   manifest must say ISC.
+- **Electron's "MIT" describes only Electron's own source.** The binary that
+  ships inside Monstera is an aggregate: Chromium (BSD-3-Clause plus many),
+  Node.js (MIT), and **FFmpeg (LGPL-2.1-or-later)**. All are AGPL-3.0 compatible
+  — LGPL-2.1-or-later upgrades to LGPL-3.0 and is therefore GPL/AGPL-3.0
+  compatible — but two obligations follow that the npm licence field alone would
+  hide: the bundled `LICENSE` and `LICENSES.chromium.html` must be distributed
+  with the app, and AGPL §6/§13 corresponding-source duties extend to these
+  bundled components. This is the one place in the toolchain where trusting the
+  registry's licence field understates what is owed.
+- **Distribution split matters for the analysis.** Only `electron` and
+  `electron-updater` are conveyed to users and become part of the AGPL combined
+  work. `electron-builder`, `electron-vite`, `@electron/rebuild`, the linters,
+  the test tools and TypeScript itself are build-time only, never shipped, and
+  carry no source-offer obligation. The generated NOTICE must reflect that split
+  rather than listing the whole dependency tree indiscriminately.
+- **`electron-builder`'s `latest` is not its highest version.** `latest` is
+  26.15.3 (2026-06-09) while 26.15.7 (2026-07-18) sits on a `v26` dist-tag, with
+  `next` pointing at 27.0.0-alpha.6. The pin follows `latest`, because a release
+  the maintainers declined to promote is one they declined to recommend. Anyone
+  reading "use the newest" literally here would pin a version npm does not serve
+  by default.
+- **Only direct dependencies have been licence-checked.** The transitive tree is
+  where a GPL-2.0-only package would realistically hide — particularly beneath
+  `electron-builder` (`app-builder-bin`, `7zip-bin`, the NSIS stubs). A
+  full-tree scan generated from the lockfile is required before the first public
+  release, which is what Part J already mandates by insisting the NOTICE be
+  generated rather than hand-maintained.

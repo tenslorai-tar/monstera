@@ -93,6 +93,23 @@ user*. A project with no defined abort condition dies slowly.
   minutes. Recorded in [ADR-0005](DECISIONS/0005-ui-foundation-libraries.md)
   alongside the finding that Radix ships **no combobox and no autocomplete**,
   which is what actually decided the primitive library.
+- **The AGPL obligation is wider than the npm licence fields say.** A licence
+  audit across every direct dependency found no GPL-2.0-only conflict and no
+  misdeclared licence, but it did find that `electron`'s "MIT" covers only
+  Electron's own source: the shipped binary aggregates Chromium, Node.js and
+  **FFmpeg (LGPL-2.1-or-later)**. All compatible, but `LICENSE` and
+  `LICENSES.chromium.html` must ship and corresponding-source duties extend to
+  them. Also recorded: only `electron` and `electron-updater` are actually
+  conveyed to users, so the generated NOTICE must reflect the
+  distributed-versus-build-time split rather than listing the whole tree. And a
+  full transitive scan is still owed — beneath `electron-builder`
+  (`app-builder-bin`, `7zip-bin`, NSIS stubs) is where a GPL-2.0-only package
+  would realistically hide.
+- **"Latest" is not always the highest version.** `electron-builder`'s `latest`
+  tag points at 26.15.3 while 26.15.7 sits on a `v26` tag, four patches ahead
+  and deliberately unpromoted. Two sources disagreed about which was current and
+  a direct dist-tag read settled it. The pin follows `latest`, because a release
+  the maintainers declined to promote is one they declined to recommend.
 - **The writer-of-record matrix looks wrong in two rows, and its pdf-lib
   dependency is five years cold.** MuPDF 1.28.0 declares `rearrangePages` and
   `bake(bakeAnnots, bakeWidgets)` — page reorder and form flattening, both of
