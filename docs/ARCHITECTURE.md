@@ -225,10 +225,29 @@ resident copies of a large file.
 fsync, rename, `.bak`, Windows `EPERM`/`EBUSY` retry ladder) → stamp saved
 version.
 
+**The pipeline has one mode, and the purpose of the save chooses it** — never a
+default, never a setting ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md)):
+
+| Purpose | Mode | Why the format forces it |
+|---|---|---|
+| Removal — redaction, sanitize, flatten, encryption change, metadata scrub, password removal | **Full rewrite with object GC, zero prior revisions** | An incremental save appends; earlier revisions stay readable by walking the xref chain, so the un-redacted content is recoverable (invariant 18) |
+| A digital signature must survive | **Incremental** | A full rewrite changes the byte ranges the PKCS#7 signature covers, invalidating it |
+| Everything else | **Full rewrite, for now** | Conservative default; whether incremental should take over is an open question with a stated list of what must be executed to close it (ADR-0008) |
+
+Every command that reaches the save pipeline declares which row it falls under.
+A command whose purpose is removal cannot be added without classifying it.
+
 Save invariants (hard-won; each has a mechanism):
 
 - **A save never rewrites annotations it did not author.** `srcRef` marking;
   foreign subtypes and form Widgets pass through byte-identical.
+  **Byte-identity is currently assumed, not measured.** The spike proves a
+  foreign annotation *survives* a full save, which is a strictly weaker claim
+  than that its bytes are unchanged — a full rewrite re-serialises every object,
+  so if MuPDF normalises string encoding, filter choice or compression on round
+  trip, this invariant is already violated. Executing that check is item 4 of
+  [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) and it can
+  invert the save-mode default, so it is the first of that list to run.
 - **Page reordering rewrites the page tree in place.** Rebuilding into a new
   document drops `/AcroForm`, `/Outlines`, `/Names` and `/OCProperties`.
 - **Text edits save incrementally.** A full PDFium rewrite corrupts
@@ -422,6 +441,19 @@ say**.
     absence is itself a defect.
 16. No raw colors or magic pixel values in components — design tokens only. No
     emoji as UI icons, anywhere.
+17. Memory is budgeted **per process**, and each budget is argued from what that
+    process is for: main ≤ 1.5× file size (it holds canonical bytes and never
+    parses, so more means parsing crept back in), the MuPDF host ≤ 6× as a
+    containment limit whose breach means kill-and-restart, the renderer ≤ 2.5×.
+    A budget set only from the measurement it constrains can never fail.
+    ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md))
+18. A save whose purpose is **removal** — redaction, sanitize, flatten,
+    encryption change, metadata scrub, password removal — is never incremental,
+    and its output carries zero prior revisions. An incremental save appends and
+    leaves earlier revisions readable by walking the xref chain backwards, so a
+    redaction saved incrementally is recoverable. This is a property of the file
+    format, not of any engine.
+    ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md))
 
 ---
 
@@ -648,3 +680,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
 | 2026-08-16 | Page reorder and form flattening move to MuPDF; field creation and content composition move to @cantoo/pdf-lib; pdf-lib removed; `rearrangePages` banned; §3.1 lifted. | `BUILD-PROMPT.md` Part C3's page-reorder and form-flatten rows and their stated justifications | [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) |
 | 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
+| 2026-08-16 | The memory budget is stated **per process** — main ≤ 1.5×, MuPDF host ≤ 6× as a containment limit, renderer ≤ 2.5× — and the maximum supported document size is the measured ~650 MB (§9.17). Stage 0 exit is gated on the three budgets. | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
+| 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.18). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |

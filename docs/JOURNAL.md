@@ -45,8 +45,9 @@ exhaustiveness · `CapabilityRegistry`.
    (tokens per ADR-0003, `docs/UI-GUIDE.md`, four primitives) · i18n scaffold ·
    logging and crash-consent · both utility hosts on the shared worker contract.
 4. **Both remaining Stage 0 gates:** the performance budget assertion (200 MB
-   generated fixture, peak RSS < 1.5× file size, IPC bytes bounded per L11), and
-   the Stage 0 exit path end to end.
+   generated fixture, **per-process** peak RSS per ADR-0007 — main ≤ 1.5×,
+   MuPDF host ≤ 6×, renderer ≤ 2.5× — IPC bytes bounded per L11), and the
+   Stage 0 exit path end to end.
 
 **Owed, tracked so it is not forgotten:**
 
@@ -69,6 +70,62 @@ exhaustiveness · `CapabilityRegistry`.
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-16 — The Stage 0 memory gate, measured before it was built on
+
+**The gate as written fails, and it is not a main-process problem.**
+
+Part G's "peak RSS < 1.5× file size" was measured against `mupdf@1.28.0` before
+`DocumentService` was written, because it constrains the engine seam and
+discovering it afterwards is the failure this project exists to prevent.
+
+On a 160 MB document, one rotation, full save: peak **5.11× file size**, of
+which 4.64× scales with the document. The mechanism, read out of `mupdf.js` and
+confirmed by the numbers: `openDocument(path)` does `readFileSync` and then
+copies into the WASM heap, so two whole copies exist at once (2.99×); the heap
+copy stays resident because object loading is lazy and reads from it (1.74×
+floor); any save builds a **complete second image** in the heap (4.11×); and
+`asUint8Array()` returns `HEAPU8.subarray(...)`, a view, so the copy-out K.1
+mandates adds another 1×.
+
+**Incremental save does not rescue it.** It works — 201 bytes appended for one
+rotation, reopens correctly, `countVersions()` 1 → 2 — and RSS still rose
+444 MB during the call. The on-disk delta is small; the in-memory
+materialisation is not. Worth having for signatures, useless as a memory remedy.
+
+**The hard ceiling is a fact, not a policy.** `mupdf-wasm.wasm` declares
+`maximum=2048MB` in its memory section. Escalating trials, each in a fresh
+process: **~657 MB opens, edits and saves; ~679 MB fails** with
+`realloc (551620174 bytes) failed`. It fails at **save**, not at open — opening
+alone still succeeded at 700 MB. So a document can open and be read long after
+it has become too large to write back, which is why the ceiling has to be
+stated up front rather than enforced at the moment a user tries to save.
+
+Recorded as [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md).
+Budgets are now **per process** and each is argued from what the process is
+for, because a budget derived only from the measurement it constrains can never
+fail — main ≤ 1.5× as a design constraint, the MuPDF host ≤ 6× as a containment
+limit whose breach means kill-and-restart, the renderer ≤ 2.5×.
+
+**A second rule fell out of the same measurement.** Save mode is decided by the
+*purpose* of the save, never by a default: never incremental for removal
+(redaction, sanitize, flatten, encryption change, metadata scrub, password
+removal), because an incremental save appends and leaves earlier revisions
+readable by walking the xref chain — a redaction saved that way is recoverable,
+which is how real organisations have leaked documents. Always incremental where
+a signature must survive, because a full rewrite changes the byte ranges it
+covers. Full rewrite otherwise, for now.
+[ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md), invariant 18.
+
+**And an invariant turned out to be assumed rather than measured.** L5 says a
+save never rewrites annotations the app did not author, "byte-identical". The
+spike only proves the foreign annotation *survives* a save, which is strictly
+weaker. A full rewrite re-serialises every object, so if MuPDF normalises
+encoding or compression on round trip, L5 is already violated by the mode we
+default to. That check is cheap, it can invert the save-mode decision, and it
+runs first.
 
 ---
 

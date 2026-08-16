@@ -275,5 +275,6 @@ Not user-facing features, but the exit gate for everything above.
 | CI: Playwright smoke + axe on the browser shim | — |
 | Packaging skeleton for both flavors + installer size arithmetic | — |
 | **Gate:** engine-capability spike — MuPDF/@cantoo rows executed, matrix amended (ADR-0006); PDFium, @signpdf and PDF.js rows pending their stages | **partly done** |
-| **Gate:** performance budget assertion (200 MB fixture, peak RSS < 1.5× file size, IPC bounded) | — |
+| **Gate:** performance budget assertion — 200 MB fixture, **per-process** peak RSS (main ≤ 1.5×, MuPDF host ≤ 6×, renderer ≤ 2.5×), IPC bounded per L11 (ADR-0007) | — |
+| **Gate:** maximum supported document size stated and enforced — measured ~650 MB; above it MuPDF cannot save, so the document opens read-only with the limitation stated up front, never refused after the user has done work (ADR-0007) | — |
 | **Exit:** open via FileHandle → render → `rotatePages` + undo → save → one registered dialog, setting and shortcut | — |
