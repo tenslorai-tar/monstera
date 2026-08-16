@@ -170,6 +170,32 @@ user*. A project with no defined abort condition dies slowly.
   upgrade that changes any of them turns the build red instead of quietly
   invalidating the architecture.
 
+- **A defect that changed with the terminal.** Provisioning gitleaks worked from
+  PowerShell and failed from Git Bash, from identical code. Windows has two
+  programs called `tar` and they are not interchangeable: **bsdtar** in System32
+  reads zip and tolerates `C:\…` arguments; **GNU tar** from Git for Windows
+  reads neither — it parses a colon as a remote `host:path` and cannot open a
+  zip at all. `spawnSync('tar')` picks whichever PATH offers first, so which
+  implementation ran depended on the shell that launched the process.
+
+  This is the worst shape of bug for an open-source project: CI never saw it
+  (the guards job runs on Linux, where paths carry no colon and the assets are
+  tar.gz), so it was waiting specifically for a contributor on Windows using
+  Git Bash. Fixed by naming the binary explicitly rather than letting PATH
+  choose, with a legible error if bsdtar is absent. GNU tar's `--force-local`
+  was rejected: it fixes GNU tar and breaks bsdtar, which does not accept the
+  flag.
+
+- **The gitleaks platform map covered five of ten published platforms.** The
+  `MONSTERA_GITLEAKS` override had been introduced to give contributors on the
+  other five a route — which is an override standing in for a missing pin, a
+  workaround with a config flag on it. All ten are now pinned, each digest taken
+  from the release checksums **and** independently recomputed. `linux-arm`
+  additionally resolves armv6 versus armv7 from the ABI Node was compiled
+  against, since `process.arch` reports only `arm` and an armv7 binary does not
+  run on armv6 hardware. The override remains, narrowed to its real purpose: a
+  platform the release does not publish at all.
+
 - **Re-verifying the spike's own conclusion found it half-wrong.** The owner
   pushed back on how confidently the pdf-lib removal had been asserted, and the
   push-back was correct. Separating what had been *executed* from what had been

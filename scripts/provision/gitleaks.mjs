@@ -17,6 +17,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +35,17 @@ const ALLOWED_HOSTS = ['github.com', 'release-assets.githubusercontent.com'];
 const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024;
 
 /**
+ * Every platform the release publishes, pinned.
+ *
+ * All ten digests were taken from the release's checksums file **and
+ * independently recomputed** from the downloaded archives.
+ *
+ * Covering every published platform rather than the handful in use is the
+ * point: an incomplete map does not fail loudly, it fails as "no pinned build
+ * for linux-arm", which reads like an unsupported platform rather than an
+ * omission. A contributor there would reach for the override, and an override
+ * used to paper over a gap is a workaround with a config flag on it.
+ *
  * @typedef {{ asset: string, sha256: string, binary: string }} PlatformBuild
  * @type {Record<string, PlatformBuild>}
  */
@@ -48,9 +60,36 @@ const BUILDS = {
     sha256: 'b95f5e4f5c425cedca7ee203d9afd29597e692c4924a12ed42f970537c72cc0f',
     binary: 'gitleaks.exe',
   },
+  'win32-ia32': {
+    asset: `gitleaks_${GITLEAKS_VERSION}_windows_x32.zip`,
+    sha256: '190ad53db301eec3e90afe3a1a75270768b8ebf89e731345e19421c32c1ae1a1',
+    binary: 'gitleaks.exe',
+  },
   'linux-x64': {
     asset: `gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz`,
     sha256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    binary: 'gitleaks',
+  },
+  'linux-arm64': {
+    asset: `gitleaks_${GITLEAKS_VERSION}_linux_arm64.tar.gz`,
+    sha256: 'e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080',
+    binary: 'gitleaks',
+  },
+  'linux-ia32': {
+    asset: `gitleaks_${GITLEAKS_VERSION}_linux_x32.tar.gz`,
+    sha256: 'a87ba11adab22b4d6c6ea28b2da60f09154d5c2fdb44d4b07015d1e0433daecb',
+    binary: 'gitleaks',
+  },
+  // process.arch reports 'arm' for both v6 and v7, so the two are distinguished
+  // by the ABI Node itself was built against.
+  'linux-armv6': {
+    asset: `gitleaks_${GITLEAKS_VERSION}_linux_armv6.tar.gz`,
+    sha256: '5c2a4ee657a27614e10352bed2b8f1018ef9b05fc6c037cf737776bbe1255766',
+    binary: 'gitleaks',
+  },
+  'linux-armv7': {
+    asset: `gitleaks_${GITLEAKS_VERSION}_linux_armv7.tar.gz`,
+    sha256: '8d39f0d94ba0d774b2282187656fb039a2d82893ec1fd6be7d7121aae759a57d',
     binary: 'gitleaks',
   },
   'darwin-arm64': {
@@ -67,6 +106,12 @@ const BUILDS = {
 
 /** @returns {string} */
 function platformKey() {
+  if (process.platform === 'linux' && process.arch === 'arm') {
+    // gitleaks publishes separate armv6 and armv7 builds; an armv7 binary does
+    // not run on armv6 hardware. Node records which ABI it was compiled for.
+    const armVersion = process.config.variables['arm_version'];
+    return `linux-armv${String(armVersion ?? '7')}`;
+  }
   return `${process.platform}-${process.arch}`;
 }
 
@@ -101,18 +146,58 @@ function reportsPinnedVersion(binary) {
 }
 
 /**
- * @param {string} archive
- * @param {string} intoDirectory
+ * Resolves the extractor explicitly instead of letting PATH decide.
+ *
+ * Windows has two programs called `tar`, and they are not interchangeable:
+ * **bsdtar** in System32 (Windows 10 1803+), which reads zip as well as
+ * tar.gz, and **GNU tar** shipped with Git for Windows, which reads neither
+ * zip nor an argument containing a colon — it treats `C:\…` as a remote
+ * `host:path` and fails with `Cannot connect to C: resolve failed`.
+ *
+ * Which one `spawnSync('tar')` finds depends on PATH order, so it depends on
+ * which shell launched the process: provisioning worked from PowerShell and
+ * failed from Git Bash, from identical code. A defect that changes with the
+ * terminal is one that reaches a contributor and not CI.
+ *
+ * gitleaks publishes zip for Windows and tar.gz elsewhere, so Windows needs
+ * bsdtar specifically. Naming the binary makes the requirement explicit and the
+ * failure legible, rather than leaving it to whatever PATH happens to hold.
+ *
+ * @returns {string}
  */
-function extract(archive, intoDirectory) {
-  // bsdtar ships in System32 on Windows 10 1803+ and reads zip as well as
-  // tar.gz, so one extraction call covers every platform's asset format.
-  const result = spawnSync('tar', ['-xf', archive, '-C', intoDirectory], { encoding: 'utf8' });
+function extractorPath() {
+  if (process.platform !== 'win32') return 'tar';
+
+  const systemRoot = process.env['SystemRoot'] ?? process.env['windir'] ?? 'C:\\Windows';
+  const bsdtar = join(systemRoot, 'System32', 'tar.exe');
+  if (!existsSync(bsdtar)) {
+    throw new Error(
+      `Windows archive extraction needs bsdtar at ${bsdtar}, which ships with Windows 10 ` +
+        `1803 and later. The tar on PATH may be GNU tar (Git for Windows), which cannot ` +
+        `read the zip archives gitleaks publishes for Windows.`,
+    );
+  }
+  return bsdtar;
+}
+
+/**
+ * Extracts an archive, given its **file name** and the directory holding it.
+ *
+ * The archive is named relatively with `cwd` set, never as an absolute path:
+ * see `extractorPath` for why a colon in an argument is not portable across
+ * the two tars.
+ *
+ * @param {string} directory Absolute path to the directory holding the archive.
+ * @param {string} archiveName File name only — never a path.
+ */
+function extract(directory, archiveName) {
+  const tar = extractorPath();
+  const result = spawnSync(tar, ['-xf', archiveName], { cwd: directory, encoding: 'utf8' });
   if (result.error !== undefined) {
-    throw new Error(`Could not run "tar" to extract ${archive}`, { cause: result.error });
+    throw new Error(`Could not run "${tar}" to extract ${archiveName}`, { cause: result.error });
   }
   if (result.status !== 0) {
-    throw new Error(`tar exited ${result.status} extracting ${archive}: ${result.stderr}`);
+    throw new Error(`${tar} exited ${result.status} extracting ${archiveName}: ${result.stderr}`);
   }
 }
 
@@ -133,12 +218,13 @@ function isSpawnable(command) {
  * manages it through their own package manager is not forced into a second
  * copy).
  *
- * MONSTERA_GITLEAKS exists because BUILDS covers five platforms and the
- * project runs on more: linux-armv7 and the 32-bit targets have published
- * releases but no pin here, and a contributor on one of those otherwise has no
- * route to a working hook at all. The override is verified by spawning it,
- * exactly like every other candidate — it selects a binary, it does not excuse
- * one from working.
+ * MONSTERA_GITLEAKS is an escape hatch for a platform the release does not
+ * publish at all — a distribution's own build, or an architecture gitleaks has
+ * not shipped. It is deliberately **not** how a published platform gets
+ * covered: BUILDS pins every one of those, because an override standing in for
+ * a missing pin is a workaround wearing a config flag. The override is verified
+ * by spawning it, exactly like every other candidate — it selects a binary, it
+ * does not excuse one from working.
  *
  * @returns {Promise<string | null>} A spawnable command, or null if none exists.
  */
@@ -200,7 +286,7 @@ export async function provisionGitleaks({ force = false } = {}) {
       destination: archive,
     });
 
-    extract(archive, staging);
+    extract(staging, build.asset);
     await rm(archive, { force: true });
 
     const staged = join(staging, build.binary);
