@@ -138,6 +138,16 @@ reached three ways. **No memory limit or recycling schedule is stated here** —
 the containment budget already decides when, and a second number would be a
 second policy for one concern.
 
+But `DocumentService` must be able to recycle a handle at a **deliberately
+chosen moment**, not only under memory pressure. Memory pressure arrives when
+the user is scrolling, and rebuilding costs re-reading the current page —
+measured at 1.65 s on a two-million-object document, which is precisely the
+freeze recycling exists to avoid. So recycling is an operation the service
+offers, callable when nothing is waiting on it. **Which moments those are is
+left open**, to be chosen against real usage rather than guessed now; the
+requirement is only that the capability exists and is not wired solely to a
+pressure trigger.
+
 **What crosses, and how often.** The renderer receives a **view model** (page
 count, page sizes and transforms, annotations, form fields, outline — structured
 data, bounded size) and **one byte snapshot per `DocVersion`**, transferred as a
@@ -251,6 +261,29 @@ nearest checkpoint and replays forward minus the undone command.
 Memory is "one document plus a few checkpoints". The rejected alternative —
 full-byte snapshots rationed by a memory budget — has a worst case of several
 resident copies of a large file.
+
+**Every command declares two independent things, and conflating them is a
+defect.** Invertibility answers *can this be undone*; reproducibility answers
+*does repeating it produce the same result*. They are orthogonal, and a command
+may be either, both or neither.
+
+| | reproducible | **not** reproducible |
+|---|---|---|
+| **invertible** | records **intent** — replayed by re-execution | records **effect** — replayed by re-applying stored bytes |
+| **not invertible** | records intent, plus a pre-execution checkpoint | records effect, plus a pre-execution checkpoint |
+
+A command is **not reproducible** whenever re-executing it would produce
+different bytes: digital signing stamps a timestamp and signs over an exact byte
+range, OCR output changes with the engine version, AI operations are
+nondeterministic by design, and PDF object identifiers are frequently random.
+Such a command **records its effect rather than its intent**, and replay
+re-applies that stored effect verbatim instead of re-running the operation.
+
+This is stated before the first command exists because Stage 6 OCR and Stage 7
+signatures both depend on it, and a log that assumed re-execution would have to
+be rewritten rather than extended. Invariant 22's "no mutation may exist only on
+the handle" is satisfied either way — by intent that can be re-run, or by an
+effect that can be re-applied.
 
 **Save is one pipeline:** flush each writer of record once → atomic write (temp,
 fsync, rename, `.bak`, Windows `EPERM`/`EBUSY` retry ladder) → stamp saved
@@ -520,9 +553,13 @@ say**.
     from canonical bytes plus the command log, so it may be dropped and rebuilt
     at any point *between* commands, and rebuilding returns memory to the
     open-cost floor. The condition this places on every command: **no mutation
-    may exist only on the handle** — a command that cannot be replayed cannot be
-    issued. Handle lifetime is therefore not document lifetime, and §2 states no
-    recycling schedule because the host containment budget already decides when.
+    may exist only on the handle** — either as intent that can be re-executed or,
+    where re-execution would produce different bytes, as a recorded effect that
+    can be re-applied (§4). Handle lifetime is therefore not document lifetime.
+    §2 states no recycling schedule, because the host containment budget already
+    decides when under pressure; it does require that recycling be callable at a
+    deliberately chosen moment too, since pressure arrives mid-scroll and the
+    rebuild costs re-reading the current page.
 
 ---
 

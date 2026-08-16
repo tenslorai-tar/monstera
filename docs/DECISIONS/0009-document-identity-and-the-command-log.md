@@ -128,6 +128,22 @@ inheritable attributes are a general feature of the page tree.
 The lesson worth keeping: **an inverse that restores the rendering is not an
 inverse.** A test comparing rendered output passes on the wrong implementation.
 
+### 3a. Reproducibility is a second axis, declared per command
+
+Added 2026-08-17, before any command exists, because retrofitting it means
+rewriting the log rather than extending it.
+
+Invertibility ("can this be undone") and reproducibility ("does repeating it
+produce the same bytes") are **independent**. A command that is not reproducible
+— signing, which stamps a timestamp and signs over an exact byte range; OCR,
+whose output moves with the engine version; AI, nondeterministic by design;
+anything minting random PDF object identifiers — **records its effect rather
+than its intent**, and replay re-applies the stored effect instead of re-running
+the operation.
+
+Stage 6 and Stage 7 both depend on this, and invariant 22's "no mutation may
+exist only on the handle" is met by either form.
+
 ### 4. The log is a cursor, and redo exists
 
 Neither the founding record nor `ARCHITECTURE` mentions redo. It is added now
