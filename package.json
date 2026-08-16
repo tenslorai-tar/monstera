@@ -14,13 +14,32 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "prepare": "node scripts/bootstrapHooks.mjs",
+    "typecheck": "tsc --build --pretty",
+    "lint": "eslint .",
+    "test": "vitest run",
     "provision:gitleaks": "node scripts/provision/gitleaks.mjs",
     "guard:staged": "node scripts/hooks/guardFiles.mjs --staged",
     "guard:tree": "node scripts/hooks/guardFiles.mjs --tree",
     "scan:secrets": "node scripts/hooks/scanSecrets.mjs",
     "proof:guards": "node scripts/hooks/guardFiles.proof.mjs && node scripts/hooks/preCommit.proof.mjs",
-    "proof:provision": "node scripts/provision/gitleaks.proof.mjs"
+    "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
+    "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.8.1",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
   }
 }

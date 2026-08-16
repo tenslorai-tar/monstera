@@ -1,0 +1,19 @@
+{
+  "name": "@monstera/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Electron shell. The only package permitted to import Electron.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  }
+}

@@ -26,7 +26,7 @@ import { rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GITLEAKS_VERSION, gitleaksBinaryPath, provisionGitleaks } from './gitleaks.mjs';
+import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
 import { fileExists } from '../lib/fetchVerified.mjs';
 
 const RACERS = 3;

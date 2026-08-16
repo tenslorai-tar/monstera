@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    // B7: strict everywhere, and the flags that `strict` alone does not turn on.
+    // Each of these closes a class of bug the architecture would otherwise have
+    // to catch at runtime.
+    "strict": true,
+    // Indexing an array or record yields `T | undefined`. Without this,
+    // `pages[i]` is typed `Page` even when the index is out of range, which is
+    // how an undefined reaches a writer of record and surfaces as a corrupt
+    // save rather than a type error.
+    "noUncheckedIndexedAccess": true,
+    // Distinguishes "property absent" from "property present and undefined".
+    // The IPC contract carries optional fields across a process boundary where
+    // that difference is observable after serialisation.
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+
+    // Every file is transpiled independently by Vite and esbuild, so anything
+    // that requires whole-program knowledge at emit time is banned outright
+    // rather than left to surface as a bundler-only failure.
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "noEmitOnError": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@monstera/kernel",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The headless document engine. Node-only. Never imports Electron or React.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+  }
+}

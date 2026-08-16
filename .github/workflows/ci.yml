@@ -1,0 +1,58 @@
+# The build and test gate.
+#
+# Runs on windows-latest because Windows is the target platform and Part I
+# requires native-behaviour claims to be proven there. The repository guards
+# (secret scan, file policy) run separately in guards.yml on a faster runner,
+# since those are text checks with no platform dimension.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Typecheck, lint, and proofs
+    runs-on: windows-latest
+    steps:
+      # Pinned by commit SHA, not by tag: a tag is mutable and its target runs
+      # with this workflow's token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it installs exactly the committed
+      # lockfile and fails if package.json and the lockfile disagree. The
+      # installer-size arithmetic and the generated NOTICE both assume a
+      # reproducible tree (Part J).
+      - name: Install
+        run: npm ci
+
+      # Build precedes the proofs that resolve compiled output: the boundary
+      # proof lints imports of `@monstera/*`, which resolve through each
+      # package's exports map to dist.
+      - name: Typecheck and build
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # A boundary that lints clean may simply be matching no files. This
+      # violates every boundary on purpose and fails if any is permitted.
+      - name: Prove the architecture boundaries are enforced
+        run: npm run proof:boundaries
+
+      - name: Unit tests
+        run: npm test -- --passWithNoTests
