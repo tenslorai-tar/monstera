@@ -32,7 +32,8 @@
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "brand:generate": "node scripts/brand/generateAssets.mjs",
     "brand:check": "node scripts/brand/generateAssets.mjs --check",
-    "proof:contract": "node scripts/proofs/contract.proof.mjs"
+    "proof:contract": "node scripts/proofs/contract.proof.mjs",
+    "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -17,6 +17,7 @@ import { spawnSync } from 'node:child_process';
 
 import { GITLEAKS_VERSION, resolveGitleaks } from '../provision/gitleaks.mjs';
 import { formatFailures, guardFiles } from './guardFiles.mjs';
+import { checkLockfile, explain, touchesDependencies } from './lockfileIntegrity.mjs';
 
 /**
  * The repository being committed to, asked of git rather than derived from
@@ -67,6 +68,16 @@ async function main() {
   if (failures.length > 0) {
     process.stderr.write(formatFailures(failures, 'staged'));
     return 1;
+  }
+
+  // Only when the commit touches dependency resolution — it costs a few
+  // seconds, and nothing else can break the lockfile.
+  if (touchesDependencies()) {
+    const lockfile = checkLockfile();
+    if (!lockfile.ok) {
+      process.stderr.write(explain(lockfile.output));
+      return 1;
+    }
   }
 
   const binary = await resolveGitleaks();
