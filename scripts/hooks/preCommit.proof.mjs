@@ -24,6 +24,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { provisionGitleaks } from '../provision/gitleaks.mjs';
+
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), 'preCommit.mjs');
 
 /**
@@ -79,6 +81,13 @@ function stage(root, relativePath, contents) {
   writeFileSync(join(root, relativePath), contents);
   git(root, ['add', '--', relativePath]);
 }
+
+// The pass-path case needs a working scanner, because the gate is designed to
+// block when none is present. That is a precondition of the proof, so the proof
+// satisfies it itself rather than depending on a caller having run provisioning
+// first — an ordering dependency that is invisible until the day someone runs
+// the proofs on a fresh clone, or puts them first in a CI job.
+await provisionGitleaks();
 
 /** @type {string[]} */
 const failures = [];

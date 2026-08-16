@@ -71,6 +71,27 @@ user*. A project with no defined abort condition dies slowly.
 - The guard proofs were run against three deliberate mutations of the guard
   (size limit raised, magic-byte detection disabled, allowlist widened) and each
   turned them red. A proof that cannot fail proves nothing.
+- **CI was red on all three pushes, and only checking said so.** The badge had
+  not been looked at; the assumption was that green locally meant green in CI.
+  Root cause: `preCommit.proof.mjs`'s pass-path case needs a working scanner —
+  the gate is *designed* to block without one — and the workflow ran the proofs
+  before anything provisioned gitleaks. Reproduced locally by parking `.tools`.
+  Fixed at the class rather than the instance: every entry point now provisions
+  what it needs, so the steps are order-independent. A step order that must be
+  remembered is one that will eventually be got wrong.
+- **A second, unrelated defect surfaced during that investigation.** Timestamps
+  showed `.tools` being rebuilt mid-test, leaving a stray archive that the
+  success path deletes. `provisionGitleaks` cleared the destination and
+  extracted into it, so two concurrent provisioners — CI steps, a hook racing a
+  proof, two terminals — could have one delete the directory the other was
+  extracting into. What survives is a half-populated tree that `fileExists`
+  accepts. Now it builds in a per-process staging directory and publishes by
+  atomic rename. This matters well beyond gitleaks: the same primitive
+  provisions `pdfium.dll`, `mutool` and Ghostscript, where a half-written native
+  library is a crash with no useful stack rather than a clean error. Its proof
+  races three provisioners from a cold cache and checks the published binary
+  *runs*, not merely that it exists; under a shared-staging mutation two of the
+  three racers fail, so the proof is not vacuous.
 - The design draft's token seed was audited against M2's contrast law **before**
   being encoded, and failed it in 13 places. Root cause was not the values: the
   token file declared colours but not which foreground may sit on which surface,

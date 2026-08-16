@@ -48,8 +48,17 @@ jobs:
       # check to ship a control case, and these run first so a guard that has
       # stopped detecting anything fails the build loudly rather than passing
       # a tree it no longer inspects.
+      #
+      # These steps are deliberately order-independent: each provisions what it
+      # needs. An earlier revision put the proofs before provisioning and the
+      # job went red, because the gate's pass-path case cannot run without a
+      # scanner. A step order that must be remembered is a step order that will
+      # eventually be got wrong.
       - name: Prove the guards still catch what they claim
         run: npm run proof:guards
+
+      - name: Prove provisioning is safe under concurrency
+        run: npm run proof:provision
 
       - name: File policy (whole tree)
         run: node scripts/hooks/guardFiles.mjs --tree

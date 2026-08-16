@@ -17,7 +17,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -176,30 +176,60 @@ export async function provisionGitleaks({ force = false } = {}) {
   }
 
   const versionDirectory = dirname(binary);
-  await rm(versionDirectory, { recursive: true, force: true });
-  await mkdir(versionDirectory, { recursive: true });
 
-  const archive = join(versionDirectory, build.asset);
-  process.stderr.write(`Provisioning gitleaks ${GITLEAKS_VERSION} for ${key}…\n`);
+  // Build in a private staging directory and publish by rename, rather than
+  // clearing the destination and extracting into it. Two processes can provision
+  // at once — CI steps, a hook and a proof, two terminals — and the
+  // clear-then-extract shape lets one delete the directory the other is
+  // mid-extraction into, leaving a half-populated tree that `fileExists` is
+  // perfectly happy with. Rename is the only step that touches the destination
+  // and it is atomic.
+  const staging = `${versionDirectory}.staging-${process.pid}`;
+  await rm(staging, { recursive: true, force: true });
+  await mkdir(staging, { recursive: true });
 
-  await downloadVerified({
-    url: `https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${build.asset}`,
-    allowedHosts: ALLOWED_HOSTS,
-    sha256: build.sha256,
-    maxBytes: MAX_ARCHIVE_BYTES,
-    destination: archive,
-  });
+  try {
+    const archive = join(staging, build.asset);
+    process.stderr.write(`Provisioning gitleaks ${GITLEAKS_VERSION} for ${key}…\n`);
 
-  extract(archive, versionDirectory);
-  await rm(archive, { force: true });
+    await downloadVerified({
+      url: `https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${build.asset}`,
+      allowedHosts: ALLOWED_HOSTS,
+      sha256: build.sha256,
+      maxBytes: MAX_ARCHIVE_BYTES,
+      destination: archive,
+    });
 
-  if (!(await fileExists(binary))) {
-    throw new Error(`${build.asset} did not contain ${build.binary}`);
-  }
-  if (!reportsPinnedVersion(binary)) {
-    throw new Error(
-      `${binary} was extracted but does not report version ${GITLEAKS_VERSION} when run.`,
-    );
+    extract(archive, staging);
+    await rm(archive, { force: true });
+
+    const staged = join(staging, build.binary);
+    if (!(await fileExists(staged))) {
+      throw new Error(`${build.asset} did not contain ${build.binary}`);
+    }
+    if (!reportsPinnedVersion(staged)) {
+      throw new Error(
+        `${staged} was extracted but does not report version ${GITLEAKS_VERSION} when run.`,
+      );
+    }
+
+    if (force) await rm(versionDirectory, { recursive: true, force: true });
+
+    try {
+      await mkdir(dirname(versionDirectory), { recursive: true });
+      await rename(staging, versionDirectory);
+    } catch (cause) {
+      // rename onto an existing directory fails on Windows rather than
+      // replacing it. That is the expected outcome when another process
+      // published this same version first, so accept its copy — but only after
+      // confirming the copy actually runs, or a genuine failure would be
+      // mistaken for a lost race.
+      if (!(await fileExists(binary)) || !reportsPinnedVersion(binary)) {
+        throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
+      }
+    }
+  } finally {
+    await rm(staging, { recursive: true, force: true });
   }
 
   process.stderr.write(`gitleaks ${GITLEAKS_VERSION} ready at ${binary}\n`);
