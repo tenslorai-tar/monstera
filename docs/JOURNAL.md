@@ -170,6 +170,34 @@ user*. A project with no defined abort condition dies slowly.
   upgrade that changes any of them turns the build red instead of quietly
   invalidating the architecture.
 
+- **Re-verifying the spike's own conclusion found it half-wrong.** The owner
+  pushed back on how confidently the pdf-lib removal had been asserted, and the
+  push-back was correct. Separating what had been *executed* from what had been
+  *asserted* left three claims in the "asserted" column, and one of them was
+  load-bearing.
+
+  The in-place page reorder had been proven against a **flat** page tree only,
+  and written up as "rewrite the `/Kids` array, touching nothing else". On a
+  **nested** tree that is wrong twice over: it permutes subtrees rather than
+  pages (a six-page document in two branches came back `4 5 6 1 2 3`), and it
+  drops attributes leaves inherit from intermediate `/Pages` nodes — a landscape
+  page silently becomes portrait while the page order still looks right.
+
+  The correct algorithm pushes inheritable attributes down before flattening.
+  Both tree shapes are now in the spike, the wrong approach recorded as REFUTED
+  so nobody re-derives it.
+
+  The other two: content composition in `@cantoo/pdf-lib` had never been
+  executed at all — only the package name had been swapped — and its
+  "maintained" status rested on a single publish date. Both now verified (new
+  documents, watermarks, image embedding, each read back by MuPDF; 116 releases
+  with ten in the last six months).
+
+  The lesson generalises past this instance: **an approach verified against the
+  easy shape is not verified.** The flat page tree, the single platform's
+  lockfile, the already-provisioned scanner — three times in one day the same
+  mistake, which is why the guards for each are now mechanical.
+
 - **A lockfile that resolves on one platform is not a lockfile that resolves.**
   CI failed at `npm ci` on Windows *and* Linux while the identical command
   succeeded locally, and a fresh clone of the pushed repository reproduced the

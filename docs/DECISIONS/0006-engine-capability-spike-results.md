@@ -82,6 +82,53 @@ architecture expects, and the script fails when reality differs — so a MuPDF
 upgrade that changes any of these behaviours turns the build red instead of
 silently invalidating the matrix.
 
+## Correction — 2026-08-16, later the same day
+
+**The decision above stands. Its evidence was incomplete, and this section
+records what fuller verification found rather than editing the record above.**
+
+The in-place rewrite was verified only against a **flat** page tree, where the
+root's `/Kids` array holds the page objects directly. Re-tested against a
+**nested** tree — `/Kids` holding intermediate `/Pages` nodes — the approach as
+described ("rewriting the `/Kids` array, touching nothing else") is **wrong in
+two ways**, neither visible on a flat tree:
+
+1. **It permutes subtrees, not pages.** A six-page document in two branches of
+   three, reversed, came back as `4 5 6 1 2 3` instead of `6 5 4 3 2 1`.
+2. **It silently drops inherited attributes.** An intermediate `/Pages` node may
+   carry `/Resources`, `/MediaBox`, `/CropBox` or `/Rotate` that its leaves
+   inherit rather than declare. Flattening without pushing those down turns a
+   landscape page portrait — and the page *order* still looks correct
+   afterwards, so nothing announces the damage.
+
+The correct algorithm, now proven against both tree shapes and kept as
+`scripts/spike/reorderInPlace.mjs`:
+
+1. Resolve every leaf via `findPage`, and for each, copy any **inheritable**
+   attribute it does not declare onto itself — while the tree that carries it is
+   still intact.
+2. Rebuild the root `/Kids` as a flat array in the new order.
+3. Set `/Count`, and reparent every leaf to the root.
+4. `setPageTreeCache(true)` — MuPDF memoises the page tree, and without this
+   `loadPage` still returns the old order.
+5. Mutate the existing `/Pages` object; never assign a new one. Everything the
+   catalog reaches hangs off identity, so replacing it is a rebuild wearing an
+   in-place costume.
+
+Verified end to end on the nested fixture: order `6 5 4 3 2 1`, orientation
+`port port port land land land` → `land land land port port port` (the inherited
+`/Rotate 90` followed its pages), `/AcroForm` preserved, and the form field
+still readable on its new page.
+
+**Two further claims in this ADR were asserted rather than executed when it was
+written, and have since been verified properly:**
+
+- *Content composition works in `@cantoo/pdf-lib`* — now executed: new document
+  creation, a rotated translucent watermark drawn onto an existing page, and PNG
+  embedding, each confirmed by MuPDF reading the result back.
+- *`@cantoo/pdf-lib` is maintained* — now checked beyond a single publish date:
+  116 published versions, ten of them in the last six months.
+
 ## Rejected alternatives
 
 - **Use `rearrangePages` and re-attach `/AcroForm` afterwards.** Reattaching a

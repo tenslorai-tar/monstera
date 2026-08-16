@@ -185,7 +185,9 @@ Run with `npm run proof:engines`. Against `mupdf@1.28.0` and
 | H1 `rearrangePages`: page order | CONFIRMED | 1 2 3 4 5 6 → 6 5 4 3 2 1 |
 | H1 `rearrangePages`: catalog survives (L6) | **REFUTED** | **loses `/AcroForm`**; keeps the other three |
 | H1b `rearrangePages`: omitted indices delete | CONFIRMED | 3 of 6 indices → a 3-page document |
-| H1c in-place `/Kids` rewrite: order AND catalog | CONFIRMED | correct order, **all four entries preserved** |
+| H1c in-place rewrite on a **flat** tree | CONFIRMED | correct order, all four entries preserved |
+| H1d naive `/Kids` reversal on a **nested** tree | **REFUTED** | permutes subtrees: gives `4 5 6 1 2 3`, not `6 5 4 3 2 1` |
+| H1e in-place reorder on a **nested** tree | CONFIRMED | correct order, inherited `/Rotate` follows its pages, `/AcroForm` kept |
 | H2 `bake(false, true)`: flattens widgets | CONFIRMED | widgets 2 → 0, `/AcroForm` removed |
 | H3 no widget creation in MuPDF | CONFIRMED | no create/add method on `PDFDocument` or `PDFPage` |
 | H4 `@cantoo/pdf-lib` creates fields MuPDF reads | CONFIRMED | MuPDF reads back `spike.created:text = "made by @cantoo"` |
@@ -209,6 +211,23 @@ stated reason was wrong.**
 
 Recorded as [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md). The
 matrix in ARCHITECTURE §3 is amended and §3.1's provisional status is lifted.
+
+### The second finding, from re-verifying the first
+
+The in-place rewrite was initially proven only against a **flat** page tree and
+written up as "rewrite `/Kids`, touching nothing else". That is wrong on a
+**nested** tree in two ways, neither visible on a flat one: it permutes
+subtrees rather than pages, and it drops attributes the leaves inherit from
+intermediate `/Pages` nodes — turning a landscape page portrait while the page
+*order* still looks correct.
+
+The correct algorithm pushes inheritable attributes (`/Resources`, `/MediaBox`,
+`/CropBox`, `/Rotate`) down onto each leaf **before** flattening, then rebuilds
+`/Kids`, fixes `/Count`, reparents, and resets MuPDF's page-tree cache. Kept as
+`scripts/spike/reorderInPlace.mjs` and proven against both tree shapes.
+
+This is the same lesson as the first finding, one level down: an approach
+verified against the easy shape is not verified.
 
 ### Still to execute
 

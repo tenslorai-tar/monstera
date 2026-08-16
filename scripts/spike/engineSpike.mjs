@@ -20,7 +20,8 @@
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 
-import { buildFixture } from './makeFixture.mjs';
+import { buildFixture, buildNestedFixture } from './makeFixture.mjs';
+import { reorderPagesInPlace } from './reorderInPlace.mjs';
 
 /** Catalog entries a page-tree rebuild is known to drop (invariant L6). */
 const CATALOG_KEYS = ['AcroForm', 'Outlines', 'Names', 'OCProperties'];
@@ -168,6 +169,62 @@ async function main() {
       orderCorrect && lost.length === 0
         ? `${original.join(' ')} -> ${after.join(' ')}, all of [${survived.join(', ')}] preserved`
         : `order ok: ${String(orderCorrect)}; lost: ${lost.join(', ') || 'none'}`,
+    );
+  }
+
+  // ── H1d: the nested page tree, where the naive rewrite is wrong ─────────
+  {
+    // A flat tree hides this entirely. The first version of the in-place
+    // rewrite reversed the root /Kids array, which on a nested tree permutes
+    // subtrees rather than pages.
+    const nested = await buildNestedFixture();
+    const naive = openWithMupdf(nested);
+    const kids = naive.getTrailer().get('Root').get('Pages').get('Kids');
+    const n = kids.length;
+    const held = [];
+    for (let i = 0; i < n; i += 1) held.push(kids.get(i));
+    for (let i = 0; i < n; i += 1) kids.put(i, held[n - 1 - i]);
+    naive.setPageTreeCache(true);
+
+    record(
+      'H1d naive /Kids reversal on a nested tree',
+      'REFUTED',
+      pageMarkers(naive).join(',') === 'marker-6,marker-5,marker-4,marker-3,marker-2,marker-1',
+      `root /Kids holds ${String(n)} subtrees for 6 pages; reversing it gives ${pageMarkers(naive).join(' ')}`,
+    );
+  }
+
+  // ── H1e: the reorder that is actually correct ───────────────────────────
+  {
+    const nested = await buildNestedFixture();
+    const doc = openWithMupdf(nested);
+
+    // Orientation before: pages 4-6 are landscape only by inheriting /Rotate 90
+    // from their branch. If the flatten drops that, they come back portrait and
+    // the page order still looks right.
+    const orientation = (d) => {
+      const out = [];
+      for (let i = 0; i < d.countPages(); i += 1) {
+        const b = d.loadPage(i).getBounds();
+        out.push(b[2] - b[0] > b[3] - b[1] ? 'land' : 'port');
+      }
+      return out.join(' ');
+    };
+    const before = orientation(doc);
+
+    reorderPagesInPlace(doc, [5, 4, 3, 2, 1, 0]);
+    const saved = saveWithMupdf(doc);
+    const reopened = openWithMupdf(saved);
+
+    const orderOk = pageMarkers(reopened).join(',') === 'marker-6,marker-5,marker-4,marker-3,marker-2,marker-1';
+    const rotationFollowed = orientation(reopened) === before.split(' ').reverse().join(' ');
+    const formKept = (await catalogKeys(saved)).includes('AcroForm');
+
+    record(
+      'H1e in-place reorder on a nested tree',
+      'CONFIRMED',
+      orderOk && rotationFollowed && formKept,
+      `order ${pageMarkers(reopened).join(' ')}; orientation ${before} -> ${orientation(reopened)}; /AcroForm kept: ${String(formKept)}`,
     );
   }
 

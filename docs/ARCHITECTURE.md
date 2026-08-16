@@ -155,7 +155,7 @@ model survives a round trip through a reader that cannot express it) and
 |---|---|---|
 | Rendering, text layer, text selection, search display | — (presentation) | **PDF.js** |
 | Page tree ops: delete/insert/extract/merge/split/crop/resize | **MuPDF** | MuPDF |
-| Page reorder | **MuPDF** — an in-place `/Kids` rewrite through its `PDFObject` API, per invariant L6. **`rearrangePages` is banned**: it orphans `/AcroForm` even for an identity permutation ([ADR-0006](DECISIONS/0006-engine-capability-spike-results.md)) | MuPDF |
+| Page reorder | **MuPDF** — inheritable attributes pushed down, then the root `/Kids` rebuilt in place, per invariant L6. **`rearrangePages` is banned** (it orphans `/AcroForm` even for an identity permutation), and so is permuting `/Kids` directly (on a nested tree that permutes subtrees and drops inherited `/Rotate`). See [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) | MuPDF |
 | Annotations (all types), appearance streams | **MuPDF** | MuPDF |
 | Form fields: fill | **MuPDF** | MuPDF |
 | Form fields: flatten | **MuPDF** — `bake(false, true)` | MuPDF |
@@ -295,6 +295,42 @@ recurring bug class in PDF UI code.
 **CSS.** Design tokens in one global file; light/dark/high-contrast as token
 remaps under `data-*` attributes; component styles in CSS modules; inline
 `style={{}}` only for genuinely dynamic values.
+
+### 6.1 Render quality — who draws the page, and why it stays sharp
+
+**PDF.js draws every page the user sees.** It is presentation only and never a
+source of truth (§3). **PDFium** is an optional higher-fidelity rasteriser
+behind a setting, and **MuPDF** rasterises for print and image export, where
+output goes to a file or a printer rather than to the screen.
+
+Blurry text in a PDF viewer has one dominant cause, and it is not the engine:
+**a canvas rendered at CSS pixels and then scaled up by the display.** On a 2×
+display, a page laid out at 800 CSS px whose canvas backing store is also 800 px
+is stretched to 1600 device pixels by the compositor, and every glyph edge is
+resampled. It looks acceptable at 100% and progressively worse as the user zooms.
+
+The rules that prevent it, all binding:
+
+- **Render at exactly `devicePixelRatio × zoom`.** The canvas backing store is
+  sized in device pixels and the CSS size in layout pixels; PDF.js is handed a
+  viewport at that same scale. 1:1 device pixels, always.
+- **Never supersample and CSS-downscale as a default.** Rendering at 2× and
+  letting CSS shrink it *blurs* text rather than sharpening it — the resample is
+  a low-pass filter. The `renderQuality` multiplier stays an explicit user
+  setting, never an implicit workaround.
+- **A CSS-stretched stale bitmap is permitted only transiently**, during a zoom
+  gesture, and is always replaced by a true re-render (the two-tier zoom: instant
+  stretch, then a debounced real render).
+- **Above a zoom threshold, render tiles rather than whole pages**, so memory
+  stays bounded at 400%+ instead of forcing a lower render scale.
+- **Re-render on `devicePixelRatio` change** — dragging a window between a
+  laptop screen and an external monitor changes it, and a canvas rendered for the
+  old ratio is exactly the blurry case.
+
+This is verified rather than asserted: the acceptance proof is a **perceptual
+diff with a stated tolerance** at 100% and 200%, on 1× and 2× DPR, against
+reference renders. Never an exact hash — a Chromium, font or driver update would
+turn that red, and a flaky gate gets ignored, which is worse than no gate.
 
 ---
 

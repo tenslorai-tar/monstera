@@ -20,7 +20,7 @@
  * and proving that needs annotations the app did not author.
  */
 
-import { PDFDocument, PDFName, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
+import { PDFDocument, PDFName, PDFNumber, PDFString, StandardFonts, rgb } from '@cantoo/pdf-lib';
 
 const PAGE_COUNT = 6;
 
@@ -152,4 +152,72 @@ const invokedDirectly =
 if (invokedDirectly) {
   const bytes = await buildFixture();
   process.stdout.write(`fixture built: ${String(bytes.byteLength)} bytes\n`);
+}
+
+/**
+ * A fixture whose page tree is **nested** rather than flat.
+ *
+ * This exists because the first version of the in-place reorder was verified
+ * only against a flat tree, where the root's `/Kids` array holds the pages
+ * directly. Real documents frequently nest: `/Kids` holds intermediate
+ * `/Pages` nodes, and those nodes can carry **inheritable** attributes
+ * (`/Resources`, `/MediaBox`, `/CropBox`, `/Rotate`) that their leaves inherit
+ * rather than declare.
+ *
+ * Two things break on a nested tree and neither is visible on a flat one:
+ * permuting the root `/Kids` permutes *subtrees* rather than pages, and
+ * flattening the tree without first pushing inherited attributes down silently
+ * drops them. The `/Rotate 90` on the second branch below is what makes the
+ * second failure observable — pages 4–6 are landscape only by inheritance.
+ *
+ * @returns {Promise<Uint8Array>}
+ */
+export async function buildNestedFixture() {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+
+  for (let index = 0; index < PAGE_COUNT; index += 1) {
+    const page = doc.addPage([600, 800]);
+    page.drawText(`marker-${String(index + 1)}`, { x: 60, y: 640, size: 18, font });
+  }
+
+  // The form is built while the tree is still flat: pdf-lib walks the tree to
+  // resolve inherited resources, and it cannot walk raw dictionaries.
+  const form = doc.getForm();
+  const field = form.createTextField('nested.text');
+  field.setText('inherited');
+  const pages = doc.getPages();
+  const firstPage = pages[0];
+  if (firstPage === undefined) throw new Error('fixture has no pages');
+  field.addToPage(firstPage, { x: 60, y: 560, width: 200, height: 24 });
+
+  const context = doc.context;
+  const refs = pages.map((page) => page.ref);
+  const rootRef = doc.catalog.get(PDFName.of('Pages'));
+
+  /**
+   * @param {typeof refs} kidRefs
+   * @param {number} rotate
+   */
+  const branch = (kidRefs, rotate) => {
+    const node = context.obj({
+      Type: 'Pages',
+      Count: kidRefs.length,
+      Parent: rootRef,
+      Rotate: rotate,
+    });
+    node.set(PDFName.of('Kids'), context.obj(kidRefs));
+    const ref = context.register(node);
+    for (const kid of kidRefs) context.lookup(kid).set(PDFName.of('Parent'), ref);
+    return ref;
+  };
+
+  const left = branch(refs.slice(0, 3), 0);
+  const right = branch(refs.slice(3, 6), 90);
+
+  const root = context.lookup(rootRef);
+  root.set(PDFName.of('Kids'), context.obj([left, right]));
+  root.set(PDFName.of('Count'), PDFNumber.of(PAGE_COUNT));
+
+  return doc.save({ useObjectStreams: false });
 }
