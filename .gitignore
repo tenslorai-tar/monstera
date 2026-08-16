@@ -27,6 +27,14 @@ release/
 # binary committed once is a binary shipped forever.
 .tools/
 native/
+# …except our own shim SOURCE, which is code we wrote and the seam ADR-0010
+# mandates. `native/` was written when everything under it was a downloaded
+# binary; that is no longer true. Build output stays ignored below.
+!native/
+!native/**/
+native/**/out/
+native/**/obj/
+*.c.obj
 
 # Belt-and-braces: the pre-commit guard is the real enforcement (it inspects
 # staged blob content, which .gitignore cannot), but ignoring these keeps a
@@ -106,3 +114,4 @@ desktop.ini
 *.tgz
 install.log
 .probe/
+
