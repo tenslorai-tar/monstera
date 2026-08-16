@@ -186,6 +186,65 @@ wearing a green check.
 
 ---
 
+## The stage audit — run it after every substantial unit of work
+
+Not a formality. **Every item below is here because it caught something real**,
+and each was found by auditing rather than by a failing test — which is the
+point: these are the failures that do not announce themselves.
+
+Run this at the end of a stage, before starting the next, and write the findings
+into `docs/JOURNAL.md`. Fixing one of these early costs an hour; finding it after
+features are built on top costs a rewrite.
+
+**1. Classify every fix you made: root cause, or workaround?**
+Go back through the session's corrections one at a time. For each, state the
+mechanism in one sentence. If you cannot, it was a workaround wearing a fix's
+clothes. Specifically look for:
+- A repair that could **regenerate** — if the same action recreates the problem,
+  you fixed a symptom. (The lockfile was "fixed" by regenerating it; adding one
+  dependency two hours later broke it again. The fix was a guard, not a repair.)
+- An **override or escape hatch standing in for missing coverage** — that is a
+  workaround with a config flag on it. (`MONSTERA_GITLEAKS` existed so
+  contributors on unpinned platforms had a route; the fix was to pin all ten.)
+- A **loosened check**. Widening a type, disabling a rule, raising a limit, or
+  exempting a role means the check was right and the code was wrong.
+
+**2. Was it verified against the easy shape only?**
+This has bitten three times in one day and is the most reliable source of
+false confidence. Ask what the *hard* shape is and test that too:
+- flat page tree → **nested** page tree (the reorder was wrong on nested)
+- one platform's lockfile → **every** platform (`npm ci` validates the whole file)
+- an already-provisioned tool → a **cold** machine (the proof needed a scanner)
+- a flat object → one with **inherited** attributes, rotation, or a CropBox origin
+
+**3. Would CI have caught it?**
+If not, say so and close the gap. A defect CI cannot see is waiting for a
+contributor, not for you. (Provisioning worked from PowerShell and failed from
+Git Bash; the guards job runs on Linux, so CI was structurally blind to it.)
+
+**4. Are the proofs non-vacuous?**
+Mutate the thing each proof guards and confirm the proof goes red. A proof that
+cannot fail is a green check that verifies nothing. When a mutation *doesn't*
+turn it red, find out why before concluding the proof is vacuous — the build may
+have failed and left stale output for the proof to test.
+
+**5. Executed, or asserted?**
+Separate the two explicitly. Anything in the "asserted" column is not a finding,
+whatever confidence it was written with. (Content composition was moved to a
+different library by swapping a name in a table; nobody had run it.)
+
+**6. Did architecture change *before* the feature, or underneath it?**
+If a feature revealed the architecture was wrong, the architecture is what
+changes — via B4, in its own commit, with an ADR. Retrofitting structure under
+features already built is the failure mode this project exists to prevent, and
+it never announces itself: it arrives as one reasonable-looking exception.
+
+**7. Do the documents still match the code?**
+`docs/FEATURES.md` rows, `docs/ARCHITECTURE.md`, `CLAUDE.md`, and any ADR whose
+evidence has since changed. An ADR is corrected by a **dated correction
+section**, never by editing it to look right — what was believed at the time is
+part of the record.
+
 ## Commands
 
 ```bash

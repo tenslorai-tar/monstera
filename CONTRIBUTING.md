@@ -155,6 +155,21 @@ the declaration.
 - No premature abstractions inside modules. The architecture provides the
   boundaries; interiors stay concrete and plain.
 
+## After a substantial change, audit it
+
+Before opening a pull request, run the stage audit in
+[`CLAUDE.md`](CLAUDE.md#the-stage-audit--run-it-after-every-substantial-unit-of-work).
+It is seven questions and it takes minutes. Every item on it exists because it
+caught something real that no test had failed on.
+
+The two that catch the most:
+
+- **Could your fix regenerate?** If the same action recreates the problem, you
+  repaired a symptom. The fix is whatever makes it unable to happen again.
+- **Did you verify against the easy shape only?** A flat page tree, one
+  platform, a machine that already had the tool installed. Ask what the hard
+  shape is and test that too.
+
 ## Commits and history
 
 - Commit **after each working, proven unit** — not in large batches.
