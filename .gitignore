@@ -104,3 +104,4 @@ desktop.ini
 .cache/
 .parcel-cache/
 *.tgz
+install.log

@@ -64,8 +64,19 @@ jobs:
       # sharp resolves prebuilt platform packages, and the only local lifecycle
       # script is `prepare`, which bootstraps git hooks that CI has no use for
       # since it never commits.
+      #
+      # The failure text is re-emitted as a workflow annotation. GitHub serves
+      # job logs only to authenticated callers but exposes annotations publicly,
+      # so without this a contributor without repository access can see that
+      # Install failed and nothing about why. Diagnosing it then costs a push
+      # per hypothesis, which is how a one-line error turns into an afternoon.
       - name: Install
-        run: npm ci --ignore-scripts
+        run: |
+          set -o pipefail
+          if ! npm ci --ignore-scripts 2>&1 | tee install.log; then
+            echo "::error title=npm ci failed::$(grep -E '^npm (error|warn)' install.log | grep -viE 'npm error +\[|^npm error +-|Run \"npm help|complete log of this run' | head -12 | tr '\n' '|')"
+            exit 1
+          fi
 
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
