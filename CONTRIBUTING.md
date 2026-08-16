@@ -85,7 +85,8 @@ void.
 
 ## Getting set up
 
-Node.js 22.12 or newer.
+Node.js **22.19 or newer** (the floor is set by `@lingui/*`, which declares
+`engines: node >=22.19.0`; below it npm emits `EBADENGINE`).
 
 ```bash
 git clone https://github.com/tenslorai-tar/monstera.git

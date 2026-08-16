@@ -83,7 +83,7 @@ If that sounds like the kind of codebase you want to work in, see
 
 ## Building from source
 
-Requires Node.js 22.12 or newer and Git.
+Requires Node.js 22.19 or newer and Git.
 
 ```bash
 git clone https://github.com/tenslorai-tar/monstera.git

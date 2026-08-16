@@ -71,6 +71,37 @@ user*. A project with no defined abort condition dies slowly.
 - The guard proofs were run against three deliberate mutations of the guard
   (size limit raised, magic-byte detection disabled, allowlist widened) and each
   turned them red. A proof that cannot fail proves nothing.
+- **Every dependency version was fetched live, and the assumptions lost badly.**
+  Of the versions that would have been written from memory, `actions/checkout`
+  was two majors stale, `actions/setup-node` one, ESLint was at 10 rather than
+  9, TypeScript at 7 rather than 5, and Vite at 8 with Rolldown. None of that is
+  recoverable by recall; all of it is one registry fetch away.
+- **Two "latest of everything" conflicts, found before any code depended on
+  them.** `typescript-eslint@8.67.0` — published six days ago, so plainly
+  current — peers `typescript >=4.8.4 <6.1.0`, which excludes TypeScript 7's
+  native rewrite, and adopting 7 would mean no type-aware linting at all, which
+  is the only thing that actually enforces B7's `any`-is-an-error rule. And
+  `electron-vite@5` stable peers `vite ^5||^6||^7` while its Vite 8 support has
+  sat in a beta since April. Both put to the owner with the tradeoff stated;
+  both decided by them, recorded as
+  [ADR-0004](DECISIONS/0004-toolchain-versions.md).
+- **Package renames produce confidently wrong conclusions.**
+  `@base-ui-components/react` is frozen at `1.0.0-rc.0` and carries an npm
+  `deprecated` field reading "Package was renamed to @base-ui/react". The live
+  package is at **1.7.0**, eight stable minors past 1.0. Querying the old name
+  yields "Base UI is still in RC", which this project believed for about ten
+  minutes. Recorded in [ADR-0005](DECISIONS/0005-ui-foundation-libraries.md)
+  alongside the finding that Radix ships **no combobox and no autocomplete**,
+  which is what actually decided the primitive library.
+- **The writer-of-record matrix looks wrong in two rows, and its pdf-lib
+  dependency is five years cold.** MuPDF 1.28.0 declares `rearrangePages` and
+  `bake(bakeAnnots, bakeWidgets)` — page reorder and form flattening, both of
+  which the founding matrix assigned to pdf-lib on the stated grounds that MuPDF
+  lacks them. pdf-lib's last release was 2021-11-06. **The matrix is not amended
+  on this evidence**, because §3.1 requires each row to be *executed* against a
+  real document and a type declaration proves only that an API is declared.
+  Written up as hypotheses in [`ENGINE-SPIKE.md`](ENGINE-SPIKE.md) for the
+  Stage 0 gate to test, which is precisely the job that gate exists to do.
 - **CI was red on all three pushes, and only checking said so.** The badge had
   not been looked at; the assumption was that green locally meant green in CI.
   Root cause: `preCommit.proof.mjs`'s pass-path case needs a working scanner —
