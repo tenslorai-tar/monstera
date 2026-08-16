@@ -162,6 +162,22 @@ user*. A project with no defined abort condition dies slowly.
   happily agree with a broken one. And this recurs with any dependency shipping
   per-platform binaries, which `pdfium` and `mutool` both will.
 
+  **Correction, two hours later: "fixed by regenerating" was wrong.** Adding
+  `zod` to one workspace dropped the same entries again. The defect is not a
+  one-off stale lockfile; npm re-prunes on *every* incremental install, so a
+  clean regenerate repairs it and the next `npm install <pkg>` breaks it. What
+  was recorded above as a fix was a repair of a symptom.
+
+  The actual fix is mechanical, per B10's rule that safety nets are mechanisms
+  and not disciplines: the pre-commit hook now runs `npm ci --dry-run
+  --ignore-scripts` whenever a commit stages a manifest or the lockfile, and
+  blocks on failure. Six seconds, only on commits that can cause it, and it
+  uses npm's own validation rather than a reimplementation — writing our own
+  lockfile walker would mean owning a second opinion about what "in sync"
+  means, whose failure mode is a guard that passes broken lockfiles and is
+  trusted anyway. Proven against the exact lockfile from the commit that broke
+  CI.
+
 - **CI failures were undiagnosable from outside the repository.** GitHub serves
   Actions logs only to authenticated callers, so publicly available run data
   stopped at "the Install step failed". The Install step now tees its output

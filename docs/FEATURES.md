@@ -258,11 +258,11 @@ Not user-facing features, but the exit gate for everything above.
 
 | Item | Status |
 |---|---|
-| Pre-commit guards (secret scan, file policy) + CI mirror + proofs | **done** |
+| Pre-commit guards (secret scan, file policy, lockfile integrity) + CI mirror + proofs | **done** |
 | Pinned-hash binary provisioning primitive | **done** |
 | Governing documents (ARCHITECTURE, CLAUDE, README, CONTRIBUTING, SECURITY, ADRs) | **done** |
 | Monorepo workspaces + enforced import boundaries | **done** |
-| Contract codegen pipeline | — |
+| Contract: channels defined once, four surfaces derived, exhaustive at compile time | **done** |
 | DocumentService + CommandBus + FileHandles | — |
 | Both utility hosts on the shared worker contract | — |
 | Per-document stores | — |
