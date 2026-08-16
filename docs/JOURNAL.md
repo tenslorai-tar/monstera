@@ -170,6 +170,26 @@ user*. A project with no defined abort condition dies slowly.
   upgrade that changes any of them turns the build red instead of quietly
   invalidating the architecture.
 
+- **The stage audit found a data-loss risk on its first run.** Written into
+  `CLAUDE.md` and applied immediately to `CapabilityRegistry`. The question that
+  caught it was item 2 — *was this verified against the easy shape only?* The
+  easy shape is a well-formed path string; the hard shape is the same file named
+  three different ways.
+
+  `C:.pdf`, `C:/a/b.pdf` and `c:\A\B.PDF` are one file on Windows and mint
+  three handles, because idempotency is keyed on the string. Harmless in the
+  registry — every handle resolves to a path that reaches the file — and a
+  data-loss bug one layer up: if `DocumentService` decides "already open?" by
+  handle or raw path, one file becomes two documents with two command logs, and
+  the second save silently discards the first's edits.
+
+  Canonicalisation was deliberately **not** added to the registry. It is
+  fallible (per-volume case folding, symlinks, UNC, 8.3 names) and needs I/O
+  that a not-yet-existing Save As target cannot supply, so putting it inside a
+  security primitive would make that primitive's correctness depend on a
+  normaliser's. The behaviour is pinned by a test that explains why, and
+  identity becomes `DocumentService`'s job via `fs.realpath`.
+
 - **A defect that changed with the terminal.** Provisioning gitleaks worked from
   PowerShell and failed from Git Bash, from identical code. Windows has two
   programs called `tar` and they are not interchangeable: **bsdtar** in System32

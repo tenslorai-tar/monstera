@@ -263,7 +263,8 @@ Not user-facing features, but the exit gate for everything above.
 | Governing documents (ARCHITECTURE, CLAUDE, README, CONTRIBUTING, SECURITY, ADRs) | **done** |
 | Monorepo workspaces + enforced import boundaries | **done** |
 | Contract: channels defined once, four surfaces derived, exhaustive at compile time | **done** |
-| DocumentService + CommandBus + FileHandles | — |
+| CapabilityRegistry (FileHandles, invariant L2) | **done** |
+| DocumentService + CommandBus | wip |
 | Both utility hosts on the shared worker contract | — |
 | Per-document stores | — |
 | Command / dialog / settings registries | — |
