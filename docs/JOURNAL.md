@@ -71,3 +71,14 @@ user*. A project with no defined abort condition dies slowly.
 - The guard proofs were run against three deliberate mutations of the guard
   (size limit raised, magic-byte detection disabled, allowlist widened) and each
   turned them red. A proof that cannot fail proves nothing.
+- The design draft's token seed was audited against M2's contrast law **before**
+  being encoded, and failed it in 13 places. Root cause was not the values: the
+  token file declared colours but not which foreground may sit on which surface,
+  so the specified check was over-broad in one direction (failing
+  `--muted` on `--accent-soft`, a pairing that never renders) and unable to
+  express the other (a decorative hairline and an input's outline are the same
+  token at 1.13:1, and only one of them owes WCAG 1.4.11 its 3:1). Resolved by
+  [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) before
+  any token code exists. Finding it later would have meant thirteen violations
+  spread across a hundred components, and the cheap escape would have been the
+  blanket exemption M2 bans by name.

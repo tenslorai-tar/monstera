@@ -409,12 +409,42 @@ are token remaps under `data-*` attributes. **Components consume tokens only**;
 a raw hex value or magic pixel number in a component is a lint error unless the
 value is genuinely dynamic (a user-chosen annotation color).
 
-**Contrast is enforced, not audited.** Every color role is declared
-text-bearing or fill-only. CI computes, from the token file itself, 4.5:1 for
-every text-bearing role on every surface it may sit on and 3:1 for UI
-boundaries, ignoring fill-only roles — so the check never needs a wholesale
-exemption, because an exempted check is the green-check-that-verifies-nothing
-Rule 0 bans. A consequence of that typing: **`--accent` is fill-only.**
+**Contrast is enforced, not audited.** CI computes it from the token file
+itself, so the check never needs a wholesale exemption — an exempted check is
+the green-check-that-verifies-nothing Rule 0 bans.
+
+Every role declares a **category** and, for foregrounds and boundaries, the
+**set of surfaces it may sit on** ([ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md)):
+
+| Category | Obligation |
+|---|---|
+| `surface` | none itself; is a background others are checked against |
+| `text` | 4.5:1 against its **declared** surface set |
+| `boundary-control` | 3:1 against every surface it may sit on (WCAG 1.4.11) |
+| `boundary-decorative` | none; **lint forbids its use as a control boundary** |
+| `fill` | none itself; if it carries a foreground it is also a `surface` |
+
+**CI checks exactly the declared pairs — no more, no fewer.** Checking every
+role against every surface is over-broad: it fails pairings that never render,
+and the only escapes are a hand-maintained exception list or a blanket
+exemption, both of which are the banned shape. Invariant L16 is what makes the
+declaration exhaustive — a foreground that is not a token cannot exist, so a
+pair the check does not evaluate cannot render.
+
+Two consequences of the typing:
+
+- **`--accent` is `fill`.** It never carries text or an indicator.
+- **Borders are two roles, not one.** `--border-control` (inputs, the find and
+  page fields, the command search, the layout switcher, secondary buttons,
+  checkboxes, radios, select triggers, the zoom slider track) is held to 3:1.
+  `--border` and `--border-soft` are decorative region dividers and separators
+  and are exempt — holding a hairline panel divider to 3:1 would turn a calm
+  dense tool into a wireframe. The values of `--border-control` are **solved**
+  by `onColor(--border, all chrome surfaces, 3.0)`, not chosen by eye.
+- **`--accent-soft` is a state surface** whose only permitted foreground is the
+  derived chrome accent text. `--muted` and `--faint` do not declare it, so that
+  pair is not checked — because it is not permitted to render, not because it
+  was excused.
 
 **The root rule — one function, not stored companions.** The token file declares
 exactly **one brand accent per theme**, and every color that must clear a
@@ -562,3 +592,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
+| 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
