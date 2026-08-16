@@ -603,6 +603,14 @@ them.
   `ColorSwatch`) are added the first time a feature needs them — **in the
   package, never ad hoc in the feature.** All keyboard-first. A screen composed
   of anything other than primitives and tokens is not done.
+- **Accessibility is enforced at runtime, not by a static lint rule.** The
+  obvious static choice, `eslint-plugin-jsx-a11y`, last shipped 2024-10-26 and
+  declares no ESLint 10 support, so it is not adopted. The mandated gate is
+  axe-core running on every Playwright-rendered screen from Stage 0, with zero
+  serious violations — which is the stronger check anyway: it sees composed
+  screens, focus order and real contrast, where a static rule sees one element's
+  props. Revisit if jsx-a11y resumes releases; it would be a useful second layer,
+  never the primary one.
 - Behavior comes from a headless primitive library skinned with our tokens.
   Accessible focus traps, menus and comboboxes are exactly the class of solved
   problem Rule 0 says not to re-derive by hand. The specific library is chosen

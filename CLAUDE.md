@@ -186,6 +186,37 @@ wearing a green check.
 
 ---
 
+## Standing rules from the project owner
+
+These were given directly and bind every agent on this project.
+
+- **Never edit prose or documentation through a shell heredoc or an inline
+  `node -e` / `python -c`.** Use the file-editing tools. Shell and language
+  escaping silently produced wrong output **three times in one day** here:
+  backticks swallowed a package name, `\a` and `\b` became control characters
+  that render as though the text simply vanished, and `\n` inside a template
+  literal became a real newline. Only one of the three failed loudly. The
+  control-character guard catches one class; the other two look like ordinary
+  text and reach review unnoticed.
+- **Research versions, never recall them.** Fetch the registry or the release
+  API. Assumptions lost badly on the first attempt: two GitHub Actions were
+  majors out of date, ESLint was at 10 rather than 9, TypeScript at 7, Vite at 8.
+  A package rename made a stable library look like an RC. Use the latest
+  available version unless a conflict is recorded in an ADR.
+- **Verify every claim by executing it. Do not assert.** Separate what was run
+  from what was assumed, and treat the second list as unfinished. A type
+  declaration is not behaviour: MuPDF declares `rearrangePages`, and running it
+  showed it destroys forms.
+- **Never build features on top of architecture that a feature has shown to be
+  wrong.** If a feature reveals the architecture is wrong, the architecture
+  changes first, via B4, in its own commit. Retrofitting structure under
+  features already built is the specific failure this project exists to prevent.
+- **Ask rather than assume.** When the build prompt is silent or two readings
+  lead to materially different work, stop and ask the owner. Decisions taken
+  this way are recorded as ADRs.
+- **Do not rush.** Nothing is chasing this build. A wrong foundation costs more
+  than a slow one.
+
 ## The stage audit — run it after every substantial unit of work
 
 Not a formality. **Every item below is here because it caught something real**,

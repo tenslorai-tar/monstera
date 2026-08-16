@@ -16,6 +16,62 @@ user*. A project with no defined abort condition dies slowly.
 
 ---
 
+## Where the build stands
+
+Kept current so any agent can resume without the prior session's context. Status
+per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
+next and what is owed.
+
+**Done and green in CI (Windows + Linux):** pre-commit guards with proofs ·
+pinned-hash provisioning · governing documents and ADRs 0001–0006 · monorepo
+with import boundaries proven by violation · the IPC contract with compile-time
+exhaustiveness · `CapabilityRegistry`.
+
+**Next, in order:**
+
+1. **`DocumentService` + `CommandBus`.** Blocking requirement recorded before
+   the code exists: document identity must be established by canonicalising with
+   `fs.realpath`, **not** by comparing `FileHandle`s or raw path strings.
+   `CapabilityRegistry` mints per path *string* — `C:\a\b.pdf` and
+   `c:/A/B.PDF` are one file and three handles — so keying identity off a handle
+   opens one file as two documents with two command logs, and the second save
+   discards the first's edits. Needs a proof with a control: the same file opened
+   by two path forms resolves to **one** `DocId`.
+2. **`rotatePages` as the first real command**, with its inverse, exercising the
+   command log. Page reorder, when it arrives, uses the algorithm in
+   `scripts/spike/reorderInPlace.mjs` — never `rearrangePages`, which orphans
+   `/AcroForm`.
+3. Per-document stores · command/dialog/settings registries · design substrate
+   (tokens per ADR-0003, `docs/UI-GUIDE.md`, four primitives) · i18n scaffold ·
+   logging and crash-consent · both utility hosts on the shared worker contract.
+4. **Both remaining Stage 0 gates:** the performance budget assertion (200 MB
+   generated fixture, peak RSS < 1.5× file size, IPC bytes bounded per L11), and
+   the Stage 0 exit path end to end.
+
+**Owed, tracked so it is not forgotten:**
+
+- **NOTICE generated from the lockfile**, with a full *transitive* licence scan.
+  Only direct dependencies have been checked. The realistic hiding place for a
+  GPL-2.0-only package is beneath `electron-builder` (`app-builder-bin`,
+  `7zip-bin`, NSIS stubs). Must also carry Electron's bundled licences (Chromium,
+  Node, FFmpeg LGPL-2.1-or-later) and PDFium's thirteen, and reflect the
+  distributed-versus-build-time split — only `electron` and `electron-updater`
+  are conveyed to users.
+- **Engine spike rows still unexecuted:** PDFium (needs the koffi FFI host),
+  `@signpdf`, and the PDF.js render path with its four runtime asset
+  directories. Each runs as its stage arrives and appends to
+  [`ENGINE-SPIKE.md`](ENGINE-SPIKE.md).
+- **Store assets and a multi-size `.ico` for submission** (Part M8) — the `.ico`
+  is generated from the master by `npm run brand:generate`; Store listing imagery
+  is still owed by the owner, well before Stage 10.
+
+**Owner decisions already taken** (do not re-litigate): TypeScript 6.0.3 with
+typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
+(ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
+cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
 ## 2026-08-16 — Stage 0 opens
 
 **First actions (Part G), in order.**
