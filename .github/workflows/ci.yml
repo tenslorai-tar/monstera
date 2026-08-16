@@ -21,8 +21,25 @@ concurrency:
 
 jobs:
   build:
-    name: Typecheck, lint, and proofs
-    runs-on: windows-latest
+    name: Typecheck, lint, and proofs (${{ matrix.os }})
+    strategy:
+      # Windows is the target platform and the one that must pass. Linux runs
+      # the identical job as a differential: when a step fails on one and not
+      # the other, the difference is the platform, which is a far smaller search
+      # space than "CI is broken". It costs one runner and pays for itself the
+      # first time it is needed.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # GitHub defaults `run:` to PowerShell on Windows and bash elsewhere, so
+        # the same workflow executes under two different shells with different
+        # quoting, different exit-code handling, and a different
+        # $ErrorActionPreference. Pinning bash everywhere means a step that
+        # passes locally behaves the same on every runner.
+        shell: bash
     steps:
       # Pinned by commit SHA, not by tag: a tag is mutable and its target runs
       # with this workflow's token.
