@@ -1,6 +1,36 @@
 # ADR-0007 — Per-process memory budgets, and the measured document-size ceiling
 
-- **Status:** Accepted
+> ## Correction — 2026-08-17
+>
+> **Most of this ADR is withdrawn.** It measured a limit and then designed a
+> policy around it, without first asking whether the limit had to exist. It did
+> not: the 2 GB cap and the whole-file copy are properties of MuPDF's **WASM**
+> build, and MuPDF is now reached through a native shared library
+> ([ADR-0010](0010-native-mupdf-through-an-ffi-shim.md)).
+>
+> Specifically withdrawn:
+>
+> - **The two-term model** `(stream bytes × 3.7) + (object count × 4 KB)`. The
+>   4 KB term was WASM eagerly materialising objects because it cannot page from
+>   disk; the same 2-million-object document opens natively at 45 bytes per
+>   object. The model was fitted to four points, three from one engine.
+> - **The admission gate** built on that model, and the size bands that went
+>   with it.
+> - **The ~650 MB document ceiling.** It was a WASM ceiling. Natively that file
+>   opens in 144 MB and saves incrementally in 4.5 seconds.
+> - **The machine-RAM table**, which was derived from the withdrawn ratio.
+>
+> What stands: the **per-process budgets as design constraints** (main holds
+> canonical bytes and never parses), the principle that a budget derived from
+> the measurement it constrains can never fail, the **failed-save recovery
+> requirement** (invariant 18), and the **renderer budget being provisional and
+> two-term**.
+>
+> The measurements below are left as recorded. They are accurate for the WASM
+> build and are the evidence that led to replacing it.
+
+- **Status:** Superseded in part — see the correction above
+- **Original status:** Accepted
 - **Date:** 2026-08-16
 - **Amends:** `docs/ARCHITECTURE.md` §9 (invariants) and the Stage 0 exit gate
   recorded in `docs/FEATURES.md`.

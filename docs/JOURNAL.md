@@ -73,6 +73,64 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-17 — The memory limit was an engine choice, not a constraint
+
+**The whole of the previous day's memory work was answering the wrong question.**
+Two ADRs were written designing policy around MuPDF's 2 GB ceiling — an
+admission gate, a two-term cost model, size bands — and nobody asked whether the
+ceiling had to exist. It did not. It is a property of the **WASM build**, which
+cannot read from disk and so copies whole documents into a capped sandbox.
+
+Native MuPDF, same version 1.28.0, bound through a thin C shim and koffi:
+
+| | WASM | native FFI |
+|---|---|---|
+| open a 405 MB document | 1293 MB | **1 MB live** |
+| open 464 MB / 2.04M objects | — | **144 MB** |
+| save that file | **FAILED** (`realloc`, 2 GB cap) | **304 MB, 4.5 s** incremental |
+| mutation on a held handle | — | **0.004–0.024 ms** |
+| spawn `mutool` per operation | — | 443–3745 ms |
+
+Recorded as [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md).
+ADR-0007's model, gate and ceiling are withdrawn; ADR-0001's stated AGPL
+mechanism is corrected while its conclusion stands.
+
+**Three things had to be executed rather than reasoned about.** A resident
+`mutool` process is impossible — its stdout is block-buffered over a pipe and
+MuJS has no flush, so a request/response protocol deadlocks; proved with a
+minimal case where nothing arrives until the process exits. The prebuilt archive
+ships three statically linked executables and no library, so the shared library
+is built from source. And `fz_try`/`fz_catch` is `setjmp`/`longjmp`, so every
+pair stays inside one exported shim function — a `longjmp` through koffi's
+frames is undefined behaviour. Containment verified by forcing a failure and
+watching the process survive with an error code.
+
+**The object-graph memory question, closed.** MuPDF holds a page's parsed object
+graph for the document's lifetime — 370 MB across 7.1 million allocations for
+127,000 annotations. Ruled out by measurement, not argument: not the resource
+store (0 bytes at every checkpoint), not the glyph cache or store items (the
+full documented purge surface, three passes, freed nothing after the first
+48 MB), not `fz_document.open` (holding 141 pages then releasing them empties
+the list and reclaims 8 MB of 378; in release mode the list never grows and
+memory still reaches the same 370 MB), not a leak (0 live blocks after context
+drop), and not Windows withholding freed memory (working set returns to
+baseline, and tracked private commit within 5% throughout). It is a cache: a
+second pass allocates nothing, purging is counterproductive, close reclaims
+everything, and no engine change avoids it.
+
+**And the number that made it look alarming measures a workload the app never
+runs.** Scroll layout reads geometry from the page dictionary: 10 MB against
+370 MB on the dense fixture, 152 MB against 4.07 GB on the 2,260-page one.
+
+**Two instrument bugs, both of which produced confidently wrong numbers.** A
+`setInterval` peak sampler cannot fire while a synchronous FFI loop holds the
+event loop, so a walk that costs 526 MB reported 63 MB — reproducibly, on every
+run. And a spike case whose verdict was a literal `false` could never go red.
+Peaks are now marked explicitly inside the loop, and live bytes come from an
+allocator hook installed through `fz_new_context` rather than from RSS.
+
+---
+
 ## 2026-08-16 — The Stage 0 memory gate, measured before it was built on
 
 **The gate as written fails, and it is not a main-process problem.**

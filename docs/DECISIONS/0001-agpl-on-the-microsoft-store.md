@@ -1,6 +1,22 @@
 # ADR-0001 — AGPL-3.0 on the Microsoft Store
 
-- **Status:** Accepted
+> ## Correction — 2026-08-17
+>
+> **The stated mechanism is now false; the conclusion is unchanged.** This ADR
+> says the licence is forced by MuPDF "which the app links as WASM and ships as
+> a bundled `mutool.exe`". Neither clause is true any more: MuPDF is built from
+> source and **statically linked into a shared library we produce**, and
+> `mutool.exe` is not shipped
+> ([ADR-0010](0010-native-mupdf-through-an-ffi-shim.md)).
+>
+> AGPL-3.0-or-later still applies, and if anything more plainly: static linkage
+> into our own library is a combined work by any reading. What changes is the
+> **compliance mechanics** rather than the licence. The source offer previously
+> covered an unmodified upstream binary; it must now cover the MuPDF version,
+> our build configuration, and the shim source. Everything this ADR concludes
+> about Store distribution is unaffected.
+
+- **Status:** Accepted; mechanism corrected 2026-08-17
 - **Date:** 2026-08-16
 - **Amends:** nothing; records the founding decision in `BUILD-PROMPT.md` Part J.
 

@@ -93,10 +93,12 @@ substance, only from its build step.
      │ generated typed IPC            │ typed worker contract
      ▼                                ▼
 ┌─ renderer (sandboxed) ──────┐  ┌─ utility: mupdfHost ─────┐
-│  React, per-doc view state  │  │  MuPDF WASM              │
-│  PDF.js — presentation ONLY │  │  in-main fallback via    │
-│  No Node, no fs, no paths   │  │  ONE shared ops module   │
-└─────────────────────────────┘  └──────────────────────────┘
+│  React, per-doc view state  │  │  MuPDF native, via koffi │
+│  PDF.js — presentation ONLY │  │  behind a flat-C shim.   │
+│  No Node, no fs, no paths   │  │  NO in-main fallback —   │
+└─────────────────────────────┘  │  native faults are       │
+                                 │  uncatchable (L20)       │
+                                 └──────────────────────────┘
                                  ┌─ utility: pdfiumHost ────┐
                                  │  PDFium via koffi FFI    │
                                  │  NO in-main fallback —   │
@@ -145,6 +147,13 @@ unrepresentable (B5). A persistence layer re-mints handles for Recent Files.
 Four engines, each covering a gap the others cannot. **The law is who *writes*.**
 MuPDF is the structural writer of record. Nothing is ever written by one engine
 and re-read for truth by another.
+
+**MuPDF is reached natively**, as a shared library built from source and bound
+with koffi behind a thin flat-C shim, running in the `mupdfHost` utility
+process — never as WASM, and never by spawning `mutool`. That is what gives
+`DocumentService` a **held document handle**, which is the difference between a
+mutation costing 0.004 ms and costing seconds
+([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
 
 Violating that breeds two specific pathologies, both banned at the root here:
 **sidecar hacks** (data smuggled through unrelated PDF fields so the writer's
@@ -442,13 +451,13 @@ say**.
 16. No raw colors or magic pixel values in components — design tokens only. No
     emoji as UI icons, anywhere.
 17. Memory is budgeted **per process**, each budget argued from what that
-    process is for, and **every ratio carries an absolute ceiling** — because
-    file size is not the driver. Measured: a 405 MB image-heavy document peaks
-    at 3.7× while a 28 MB object-dense one peaks at 20.9×, and a 464 MB
-    object-dense document fails outright where a 657 MB stream-heavy one
-    succeeds. Heap use is `(stream bytes × ~3.7) + (object count × ~4 KB)`, and
-    `countObjects()` is free, so admission reads both terms. Budgets: main
-    ≤ 1.5× and ≤ 1.5 GB (it
+    process is for — never from the measurement it is meant to constrain. The
+    two-term cost model and the admission gate an earlier revision of this
+    invariant carried are **withdrawn**: they were fitted to WASM, which
+    materialises objects eagerly because it cannot page from disk, and MuPDF is
+    no longer reached that way
+    ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)). Budgets:
+    main ≤ 1.5× and ≤ 1.5 GB (it
     holds canonical bytes and never parses, so more means parsing crept back
     in); the MuPDF host ≤ 6× and ≤ 3 GB as a containment limit whose breach
     means kill-and-restart, not a raised number; the renderer **provisional,
@@ -470,6 +479,21 @@ say**.
     redaction saved incrementally is recoverable. This is a property of the file
     format, not of any engine.
     ([ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md))
+20. **No native engine code runs in the main process** — generalising invariant
+    8 from PDFium to MuPDF, which is now reached through a native shared library
+    rather than WASM. A native fault is uncatchable wherever it happens, so both
+    engines live in utility processes. Every `fz_try`/`fz_catch` pair stays
+    inside one exported shim function and what crosses the ABI is an error code,
+    because a `longjmp` unwinding through koffi's frames is undefined behaviour.
+    ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md))
+21. **MuPDF caches a page's object graph for the document's lifetime.** This is
+    settled and closed: a cache, not a leak — a second pass allocates nothing,
+    purging is counterproductive, every byte returns on close, and no engine
+    change avoids it. The viewer never pays it, because scroll layout reads page
+    geometry from the dictionary (10 MB where a full page walk costs 370 MB) and
+    only visible pages are loaded. Whole-document walks are explicit operations,
+    not a viewing path.
+    ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md))
 
 ---
 
@@ -698,3 +722,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
 | 2026-08-16 | The memory budget is stated **per process** with an absolute ceiling on each — main ≤ 1.5× and ≤ 1.5 GB, MuPDF host ≤ 6× and ≤ 3 GB as a containment limit, renderer provisional and two-term. File size is not the driver: heap use is `(stream bytes × ~3.7) + (object count × ~4 KB)`, so admission reads both (§9.17). Stage 0 exit is gated on the three budgets. | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
 | 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.19). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
+| 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn (§2, §3, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |
