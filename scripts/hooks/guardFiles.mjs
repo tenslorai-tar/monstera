@@ -204,6 +204,29 @@ function violations(path, size) {
     );
   }
 
+  // Control characters in a text file are almost always silent corruption
+  // rather than intent — a shell or a language escape that resolved when it
+  // should not have. `\a` and `\b` inside a non-raw Python string become BEL and
+  // BACKSPACE, and the result renders as though the characters simply vanished:
+  // `C:\a\b.pdf` displays as `C:.pdf` in most viewers, so a review reads past
+  // it. This guard exists because exactly that reached a commit in this
+  // repository.
+  //
+  // Tab, LF and CR are excluded — they are legitimate text. NUL is not checked
+  // here because it is what `looksBinary` keys on, so it is already handled.
+  if (!looksBinary(head)) {
+    const control = [...head].find(
+      (byte) => (byte < 0x09 && byte > 0x00) || byte === 0x0b || byte === 0x0c || (byte >= 0x0e && byte <= 0x1f) || byte === 0x7f,
+    );
+    if (control !== undefined) {
+      reasons.push(
+        `is a text file containing the control character 0x${control.toString(16).padStart(2, '0')}. ` +
+          `These are nearly always a mangled escape sequence rather than intent, and they are ` +
+          `invisible in most viewers — the surrounding text simply appears to lose characters.`,
+      );
+    }
+  }
+
   if (extension === '.pdf') {
     if (!path.startsWith(FIXTURE_ROOT)) {
       reasons.push(

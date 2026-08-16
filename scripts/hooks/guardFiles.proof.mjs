@@ -124,6 +124,23 @@ const CASES = [
       stage(root, 'assets/logo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])),
   },
   {
+    name: 'text file containing a mangled escape sequence',
+    expect: 'reject',
+    because: 'control character 0x07',
+    // The exact corruption that reached a commit here: `\a` and `\b` inside a
+    // non-raw Python string became BEL and BACKSPACE, and `C:\a\b.pdf` rendered
+    // as `C:.pdf` — the characters appear to vanish rather than look wrong, so
+    // a review reads straight past it.
+    setup: (root) => stage(root, 'notes.md', `A Windows path: C:${String.fromCharCode(7, 8)}.pdf\n`),
+  },
+  {
+    name: 'text file with tabs and newlines',
+    expect: 'accept',
+    // Control for the case above: tab, LF and CR are legitimate text, and a
+    // guard that rejected them would reject most of the repository.
+    setup: (root) => stage(root, 'table.md', 'a\tb\r\nc\td\n'),
+  },
+  {
     name: 'PDF outside the fixture corpus',
     expect: 'reject',
     because: 'outside packages/testing/fixtures/',

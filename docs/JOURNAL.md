@@ -170,13 +170,26 @@ user*. A project with no defined abort condition dies slowly.
   upgrade that changes any of them turns the build red instead of quietly
   invalidating the architecture.
 
+- **A doc-editing script silently corrupted a committed file.** A Python
+  heredoc used a non-raw string containing a Windows path; `` and ``
+  resolved to BEL and BACKSPACE, so `C:.pdf` was committed as two control
+  characters. It renders as `C:.pdf` — the characters appear to *vanish* rather
+  than look wrong, which is why it survived review and two further edits.
+
+  The instance was repaired, but the class is what matters: any escaping bug in
+  any tool can write invisible characters into a text file, and a public
+  repository keeps them forever. The pre-commit guard now rejects C0 control
+  characters in text files, excluding tab, LF and CR. Proven with a control
+  case, since a guard that also rejected tabs would reject most of the
+  repository.
+
 - **The stage audit found a data-loss risk on its first run.** Written into
   `CLAUDE.md` and applied immediately to `CapabilityRegistry`. The question that
   caught it was item 2 — *was this verified against the easy shape only?* The
   easy shape is a well-formed path string; the hard shape is the same file named
   three different ways.
 
-  `C:.pdf`, `C:/a/b.pdf` and `c:\A\B.PDF` are one file on Windows and mint
+  `C:\a\b.pdf`, `C:/a/b.pdf` and `c:\A\B.PDF` are one file on Windows and mint
   three handles, because idempotency is keyed on the string. Harmless in the
   registry — every handle resolves to a path that reaches the file — and a
   data-loss bug one layer up: if `DocumentService` decides "already open?" by
