@@ -208,14 +208,21 @@ export async function buildNestedFixture() {
     });
     node.set(PDFName.of('Kids'), context.obj(kidRefs));
     const ref = context.register(node);
-    for (const kid of kidRefs) context.lookup(kid).set(PDFName.of('Parent'), ref);
+    for (const kid of kidRefs) {
+      // `lookup` is declared as returning PDFObject, the base type, which has no
+      // `set`. Every value reached here is a PDFDict by construction — these are
+      // the page objects registered a few lines above — so the cast states what
+      // the lookup cannot express rather than widening anything.
+      const dict = /** @type {import('@cantoo/pdf-lib').PDFDict} */ (context.lookup(kid));
+      dict.set(PDFName.of('Parent'), ref);
+    }
     return ref;
   };
 
   const left = branch(refs.slice(0, 3), 0);
   const right = branch(refs.slice(3, 6), 90);
 
-  const root = context.lookup(rootRef);
+  const root = /** @type {import('@cantoo/pdf-lib').PDFDict} */ (context.lookup(rootRef));
   root.set(PDFName.of('Kids'), context.obj([left, right]));
   root.set(PDFName.of('Count'), PDFNumber.of(PAGE_COUNT));
 

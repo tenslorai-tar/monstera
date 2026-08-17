@@ -113,8 +113,18 @@ function platformKey() {
   if (process.platform === 'linux' && process.arch === 'arm') {
     // gitleaks publishes separate armv6 and armv7 builds; an armv7 binary does
     // not run on armv6 hardware. Node records which ABI it was compiled for.
-    const armVersion = process.config.variables['arm_version'];
-    return `linux-armv${String(armVersion ?? '7')}`;
+    //
+    // `arm_version` is NOT on @types/node's declaration of
+    // `process.config.variables`, and it is genuinely absent on every non-ARM
+    // build — which is why the cast is narrow and the fallback is real rather
+    // than defensive padding. The whole armv6/armv7 split rested on this
+    // undeclared property, on a platform no CI job runs, and nothing
+    // type-checked scripts/ to say so.
+    const variables = /** @type {Record<string, unknown>} */ (
+      /** @type {unknown} */ (process.config.variables)
+    );
+    const armVersion = variables['arm_version'];
+    return `linux-armv${typeof armVersion === 'number' ? String(armVersion) : '7'}`;
   }
   return `${process.platform}-${process.arch}`;
 }

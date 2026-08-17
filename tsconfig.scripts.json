@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // The bootstrap layer: plain .mjs, type-checked through JSDoc rather than
+  // compiled, because it runs before dependencies exist (ARCHITECTURE §1.1).
+  //
+  // §1.1 stated that this layer "is still type-checked in CI via `checkJs`, so
+  // it is not an escape from B7's substance, only from its build step." That was
+  // not true of any configuration in the repository: `checkJs` appeared nowhere,
+  // no project's `include` reached outside `src/**/*`, and ESLint applies
+  // `disableTypeChecked` here. All 16 script files carry `// @ts-check` and were
+  // enforced by editors alone — roughly 3,000 lines covering the hash-verified
+  // downloader, the file policy and the secret scanner.
+  //
+  // This is a separate project rather than a reference of the root one: it emits
+  // nothing, it is not `composite`, and nothing imports it. Adding it to the
+  // solution's `references` would make every package build depend on scripts
+  // that are deliberately never built.
+  "extends": "./tsconfig.base.json",
+
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    // The three options below are the only relaxations, and each is a property
+    // of .mjs-checked-by-JSDoc rather than a lowered standard:
+    //
+    // `composite` and `declaration` require emit, which this project does not do.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // `verbatimModuleSyntax` bans `import type` elision rules that JSDoc-typed
+    // .mjs cannot express — there is no type-only import syntax in plain JS.
+    "verbatimModuleSyntax": false,
+
+    "types": ["node"]
+  },
+
+  "include": ["scripts/**/*.mjs", "eslint.config.js", "vitest.config.mjs"]
+}

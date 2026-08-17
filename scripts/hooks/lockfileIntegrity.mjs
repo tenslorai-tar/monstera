@@ -106,7 +106,10 @@ export function checkLockfile() {
   };
 }
 
-/** @returns {string} */
+/**
+ * @param {string} output
+ * @returns {string}
+ */
 export function explain(output) {
   return (
     `\nCommit blocked — package-lock.json cannot satisfy package.json.\n\n` +

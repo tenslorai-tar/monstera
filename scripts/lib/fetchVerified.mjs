@@ -56,9 +56,15 @@ function assertAllowed(url, allowedHosts) {
  * Follows redirects manually so each hop's host is checked. `fetch` follows
  * them internally by default, which would hide every hop but the first.
  *
+ * Returns the BODY, not the response. The null check lives here, so returning
+ * the response would leave the caller holding a `ReadableStream | null` that
+ * this function has already proven non-null — a guarantee the type could not
+ * express, which is why `pipeline` was being handed a possibly-null source.
+ * Returning the narrowed value carries the proof to the caller.
+ *
  * @param {string} url
  * @param {readonly string[]} allowedHosts
- * @returns {Promise<Response>}
+ * @returns {Promise<ReadableStream<Uint8Array>>}
  */
 async function fetchChecked(url, allowedHosts) {
   let current = assertAllowed(url, allowedHosts).toString();
@@ -83,7 +89,7 @@ async function fetchChecked(url, allowedHosts) {
     if (response.body === null) {
       throw new Error(`Empty response body for ${current}`);
     }
-    return response;
+    return response.body;
   }
 
   throw new Error(`Exceeded ${MAX_REDIRECTS} redirects starting at ${url}`);
@@ -111,7 +117,7 @@ export async function downloadVerified({ url, allowedHosts, sha256, maxBytes, de
   const quarantine = `${destination}.unverified`;
   await rm(quarantine, { force: true });
 
-  const response = await fetchChecked(url, allowedHosts);
+  const body = await fetchChecked(url, allowedHosts);
   const hash = createHash('sha256');
   let received = 0;
 
@@ -133,7 +139,7 @@ export async function downloadVerified({ url, allowedHosts, sha256, maxBytes, de
   });
 
   try {
-    await pipeline(response.body, meter, createWriteStream(quarantine));
+    await pipeline(body, meter, createWriteStream(quarantine));
   } catch (cause) {
     await rm(quarantine, { force: true });
     throw new Error(`Download failed: ${url}`, { cause });

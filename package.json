@@ -20,7 +20,7 @@
   ],
   "scripts": {
     "prepare": "node scripts/bootstrapHooks.mjs",
-    "typecheck": "tsc --build --pretty",
+    "typecheck": "tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty",
     "lint": "eslint .",
     "test": "vitest run",
     "provision:gitleaks": "node scripts/provision/gitleaks.mjs",

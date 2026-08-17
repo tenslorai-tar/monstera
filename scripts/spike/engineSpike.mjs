@@ -225,6 +225,7 @@ async function main() {
     // Orientation before: pages 4-6 are landscape only by inheriting /Rotate 90
     // from their branch. If the flatten drops that, they come back portrait and
     // the page order still looks right.
+    /** @param {any} d A MuPDF document handle; the binding ships no types. */
     const orientation = (d) => {
       const out = [];
       for (let i = 0; i < d.countPages(); i += 1) {

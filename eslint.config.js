@@ -22,6 +22,17 @@ import tseslint from 'typescript-eslint';
  * mode is that same silence. Import restrictions need no resolver and were
  * proven to work before being adopted.
  */
+/**
+ * @typedef {'shared' | 'contract' | 'kernel' | 'ui' | 'testing' | 'desktop'} PackageName
+ *
+ * A union rather than `string`. Every table below is keyed by it, so a lookup is
+ * provably present and `noUncheckedIndexedAccess` has nothing to widen — the
+ * alternative was an index signature, which makes every lookup `| undefined`
+ * and buys a dozen non-null assertions to silence a question the type can
+ * simply answer.
+ */
+
+/** @type {readonly PackageName[]} */
 export const PACKAGES = ['shared', 'contract', 'kernel', 'ui', 'testing', 'desktop'];
 
 /**
@@ -31,6 +42,7 @@ export const PACKAGES = ['shared', 'contract', 'kernel', 'ui', 'testing', 'deskt
  * forbid, and it is why the previous proof covered four of six packages and one
  * of four import routes while reporting "11 boundary cases passed".
  */
+/** @type {Record<PackageName, readonly PackageName[]>} */
 export const ALLOWED_IMPORTS = {
   shared: [],
   contract: ['shared'],
@@ -41,6 +53,7 @@ export const ALLOWED_IMPORTS = {
 };
 
 /** Where each package's directory sits, relative to the repository root. */
+/** @type {Record<PackageName, string>} */
 export const PACKAGE_DIR = {
   shared: 'packages/shared',
   contract: 'packages/contract',
@@ -50,7 +63,11 @@ export const PACKAGE_DIR = {
   desktop: 'apps/desktop',
 };
 
-/** Where each package's sources live. */
+/**
+ * Where each package's sources live.
+ *
+ * @type {Record<PackageName, string>}
+ */
 const PACKAGE_GLOB = {
   shared: 'packages/shared/**/*.{ts,tsx}',
   contract: 'packages/contract/**/*.{ts,tsx}',
@@ -76,7 +93,7 @@ const BOUNDARY_MESSAGE =
  * last two collapse into `**\/${target}/**`, which covers any directory inside
  * the package rather than the two that were remembered.
  *
- * @param {string} target
+ * @param {PackageName} target
  * @returns {string[]}
  */
 function patternsFor(target) {
@@ -121,7 +138,7 @@ const RENDERER_MESSAGE =
   'The renderer is browser-only and never touches the filesystem (invariants L1 and L2). Path-consuming operations take a FileHandle minted by CapabilityRegistry and cross the generated contract boundary.';
 
 /**
- * @param {string} pkg
+ * @param {PackageName} pkg
  * @returns {import('eslint').Linter.Config}
  */
 function boundaryConfigFor(pkg) {

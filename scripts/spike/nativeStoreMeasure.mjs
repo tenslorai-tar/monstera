@@ -59,12 +59,26 @@ const mz_render_page = lib.func(
 );
 const mz_free_pixmap = lib.func('void mz_free_pixmap(void *c, void *pixmap)');
 
+/**
+ * koffi writes `_Out_` parameters into element 0 of an array. Typed as a
+ * one-element TUPLE rather than `number[]`, so `noUncheckedIndexedAccess` knows
+ * the slot is populated — an array type would make every read `number |
+ * undefined` and buy a dozen non-null assertions to answer a question the shape
+ * already settles.
+ *
+ * @returns {[number]}
+ */
+const num = () => [0];
+
+/** @returns {[unknown]} */
+const ptr = () => [null];
+
 /** @param {any} ctx */
 function stats(ctx) {
-  const live = [0];
-  const peak = [0];
-  const blocks = [0];
-  const invalid = [0];
+  const live = num();
+  const peak = num();
+  const blocks = num();
+  const invalid = num();
   const rc = mz_alloc_stats(ctx, live, peak, blocks, invalid);
   if (rc !== 0) throw new Error('mz_alloc_stats failed');
   return { live: live[0], peak: peak[0], blocks: blocks[0], invalid: invalid[0] === 1 };
@@ -74,7 +88,7 @@ function stats(ctx) {
 function storeDebug(ctx) {
   const size = 1 << 20;
   const buf = Buffer.alloc(size);
-  const needed = [0];
+  const needed = num();
   const rc = mz_store_debug(ctx, buf, size, needed);
   if (rc !== 0) throw new Error('mz_store_debug failed');
   return { text: buf.toString('utf8', 0, buf.indexOf(0)), needed: needed[0] };
@@ -135,15 +149,15 @@ async function main() {
   await writeFile(path, useImages ? await buildImageFixture(8, 1024) : await buildFixture());
   process.stdout.write(useImages ? '\nfixture: image-backed\n' : '\nfixture: text-only\n');
 
-  const ctxOut = [null];
+  const ctxOut = ptr();
   if (mz_init(ctxOut) !== 0) throw new Error('mz_init failed');
   const ctx = ctxOut[0];
 
-  const docOut = [null];
+  const docOut = ptr();
   if (mz_open(ctx, path, docOut) !== 0) throw new Error(`mz_open: ${mz_last_error(ctx)}`);
   const doc = docOut[0];
 
-  const pages = [0];
+  const pages = num();
   mz_page_count(ctx, doc, pages);
 
   const opened = stats(ctx);
@@ -155,11 +169,11 @@ async function main() {
   /** @type {any[]} */
   const held = [];
   for (let n = 0; n < pages[0]; n += 1) {
-    const samples = [null];
-    const w = [0];
-    const h = [0];
-    const stride = [0];
-    const pixmap = [null];
+    const samples = ptr();
+    const w = num();
+    const h = num();
+    const stride = num();
+    const pixmap = ptr();
     if (mz_render_page(ctx, doc, n, 150, samples, w, h, stride, pixmap) !== 0) {
       throw new Error(`mz_render_page(${n}): ${mz_last_error(ctx)}`);
     }
@@ -174,8 +188,8 @@ async function main() {
 
   // --- Condition 1: quiescence. Measure while pixmaps are outstanding, which
   // must report NOT quiescent, then again after releasing them.
-  const freedBusy = [0];
-  const quiescentBusy = [0];
+  const freedBusy = num();
+  const quiescentBusy = num();
   mz_store_footprint(ctx, doc, freedBusy, quiescentBusy);
   process.stdout.write(
     `\nfootprint while ${held.length} pixmaps held: freed=${bytes(freedBusy[0])} ` +
@@ -189,11 +203,11 @@ async function main() {
   /** @type {any[]} */
   const held2 = [];
   for (let n = 0; n < pages[0]; n += 1) {
-    const samples = [null];
-    const w = [0];
-    const h = [0];
-    const stride = [0];
-    const pixmap = [null];
+    const samples = ptr();
+    const w = num();
+    const h = num();
+    const stride = num();
+    const pixmap = ptr();
     mz_render_page(ctx, doc, n, 150, samples, w, h, stride, pixmap);
     held2.push(pixmap[0]);
   }
@@ -214,8 +228,8 @@ async function main() {
       `${itemLines} item line(s) present it bound to the first ITEM, not the summary.\n`,
   );
 
-  const freed = [0];
-  const quiescent = [0];
+  const freed = num();
+  const quiescent = num();
   if (mz_store_footprint(ctx, doc, freed, quiescent) !== 0) {
     throw new Error(`mz_store_footprint: ${mz_last_error(ctx)}`);
   }

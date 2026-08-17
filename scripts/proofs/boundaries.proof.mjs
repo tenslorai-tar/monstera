@@ -53,8 +53,8 @@ const PROBE_NAME = '__boundary_probe__.ts';
  * specifier and nothing else is not a boundary — `dist` is where the package
  * actually resolves.
  *
- * @param {string} fromPackage
- * @param {string} target
+ * @param {import('../../eslint.config.js').PackageName} fromPackage
+ * @param {import('../../eslint.config.js').PackageName} target
  * @returns {{ route: string, specifier: string }[]}
  */
 function routesTo(fromPackage, target) {
@@ -74,7 +74,15 @@ function routesTo(fromPackage, target) {
   ];
 }
 
-/** @type {{name: string, package: string, source: string, expect: 'reject'|'allow', rule?: string}[]} */
+/**
+ * @typedef {'reject' | 'allow' | 'allow-boundary'} Expectation
+ * `allow-boundary` asserts only that the boundary rule did not fire, for the
+ * cases where the module itself is not installed — see the exception controls.
+ *
+ * @typedef {import('../../eslint.config.js').PackageName} PackageName
+ *
+ * @type {{name: string, package: PackageName, source: string, expect: Expectation, rule?: string}[]}
+ */
 const CASES = [];
 
 // --- Forbidden package edges, every route.

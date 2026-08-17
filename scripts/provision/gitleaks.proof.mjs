@@ -50,15 +50,28 @@ function gitleaksToolDirectory() {
 }
 
 /**
+ * Runs one provisioner and collects everything it wrote.
+ *
+ * `spawn` has no `encoding` option — that is `spawnSync` — so the option passed
+ * here previously was silently ignored and every chunk arrived as a Buffer,
+ * concatenated onto a string by implicit coercion. It happened to read correctly
+ * for ASCII output and would have split a multi-byte character across a chunk
+ * boundary. Decoding explicitly says what is actually happening.
+ *
  * @returns {Promise<{ status: number, output: string }>}
  */
 function raceOne() {
   return new Promise((resolveRun) => {
-    const child = spawn(process.execPath, [resolve(HERE, 'gitleaks.mjs')], { encoding: 'utf8' });
-    let output = '';
-    child.stdout.on('data', (chunk) => { output += chunk; });
-    child.stderr.on('data', (chunk) => { output += chunk; });
-    child.on('close', (status) => resolveRun({ status: status ?? 1, output }));
+    const child = spawn(process.execPath, [resolve(HERE, 'gitleaks.mjs')], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    /** @type {Buffer[]} */
+    const chunks = [];
+    child.stdout.on('data', (/** @type {Buffer} */ chunk) => chunks.push(chunk));
+    child.stderr.on('data', (/** @type {Buffer} */ chunk) => chunks.push(chunk));
+    child.on('close', (/** @type {number | null} */ status) =>
+      resolveRun({ status: status ?? 1, output: Buffer.concat(chunks).toString('utf8') }),
+    );
   });
 }
 
@@ -84,12 +97,14 @@ async function main() {
   if (!(await fileExists(binary))) {
     failures.push(`no binary at ${binary} after ${RACERS} concurrent provisions.`);
   } else {
+    /** @type {string} */
     const probe = await new Promise((resolveProbe) => {
-      const child = spawn(binary, ['version'], { encoding: 'utf8' });
-      let out = '';
-      child.stdout.on('data', (chunk) => { out += chunk; });
+      const child = spawn(binary, ['version'], { stdio: ['ignore', 'pipe', 'ignore'] });
+      /** @type {Buffer[]} */
+      const chunks = [];
+      child.stdout.on('data', (/** @type {Buffer} */ chunk) => chunks.push(chunk));
       child.on('error', () => resolveProbe(''));
-      child.on('close', () => resolveProbe(out));
+      child.on('close', () => resolveProbe(Buffer.concat(chunks).toString('utf8')));
     });
     if (!`${probe}`.includes(GITLEAKS_VERSION)) {
       failures.push(
