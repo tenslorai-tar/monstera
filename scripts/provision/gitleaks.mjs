@@ -201,7 +201,79 @@ export async function resolveGitleaks() {
 }
 
 /**
- * @param {{ force?: boolean }} [options]
+ * Publishes the staged copy, deciding from the destination's MEASURED state.
+ *
+ * The previous shape deleted the destination whenever `--force` was passed, then
+ * renamed into the hole. Two things were wrong with taking the decision from a
+ * flag:
+ *
+ *   - `--force` says what the CALLER wants, not what is there. A destination
+ *     that already holds a working binary was destroyed and re-downloaded; a
+ *     destination holding a broken one survived untouched whenever the flag was
+ *     absent, which is the case that actually needs replacing. Recovering from
+ *     a truncated binary — exactly what an interrupted download leaves — needed
+ *     an option nothing tells you about.
+ *   - the delete opened a window. Between `rm` and `rename` the tool does not
+ *     exist, so a concurrent hook resolves nothing and blocks a commit — and on
+ *     Windows the `rm` simply fails with EBUSY while another process has the
+ *     .exe mapped, leaving a half-deleted directory behind.
+ *
+ * So the published path is only ever changed by a rename, never by a delete: an
+ * occupied destination is moved aside and the staged copy renamed in, so the
+ * path holds a working tool at every instant. Whether to swap at all is then a
+ * measurement — a destination that runs and reports the pinned version is kept —
+ * except when the caller explicitly asked to replace it, which is the one thing
+ * `--force` still means.
+ *
+ * The quarantined copy is deleted afterwards, and failing to delete it is not
+ * fatal: a locked executable leaves a directory the next run cleans up, which is
+ * strictly better than an interrupted publish.
+ *
+ * @param {{ staging: string, versionDirectory: string, binary: string, force: boolean }} options
+ * @returns {Promise<void>}
+ */
+async function publish({ staging, versionDirectory, binary, force }) {
+  await mkdir(dirname(versionDirectory), { recursive: true });
+
+  if (await fileExists(binary)) {
+    if (!force && reportsPinnedVersion(binary)) {
+      // Another process published a working copy while this one was downloading.
+      // Theirs passes the only test that matters, so it stands.
+      return;
+    }
+
+    const quarantine = `${versionDirectory}.superseded-${process.pid}`;
+    await rm(quarantine, { recursive: true, force: true });
+    await rename(versionDirectory, quarantine);
+    try {
+      await rename(staging, versionDirectory);
+    } catch (cause) {
+      // Put the original back rather than leaving no tool at all.
+      await rename(quarantine, versionDirectory).catch(() => undefined);
+      throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
+    }
+    await rm(quarantine, { recursive: true, force: true }).catch(() => undefined);
+    return;
+  }
+
+  try {
+    await rename(staging, versionDirectory);
+  } catch (cause) {
+    // rename onto an existing directory fails on Windows rather than replacing
+    // it, which is what happens when another process published between the
+    // check above and here. Accept its copy — but only after confirming it runs,
+    // or a genuine failure is mistaken for a lost race.
+    if (!(await fileExists(binary)) || !reportsPinnedVersion(binary)) {
+      throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
+    }
+  }
+}
+
+/**
+ * @param {{ force?: boolean }} [options] `force` re-downloads and re-verifies
+ *   rather than taking the already-provisioned fast path. It does NOT mean
+ *   "delete the destination" — see `publish` for why that decision belongs to
+ *   the destination's measured state instead.
  * @returns {Promise<string>} Absolute path to a binary proven to run.
  */
 export async function provisionGitleaks({ force = false } = {}) {
@@ -257,21 +329,7 @@ export async function provisionGitleaks({ force = false } = {}) {
       );
     }
 
-    if (force) await rm(versionDirectory, { recursive: true, force: true });
-
-    try {
-      await mkdir(dirname(versionDirectory), { recursive: true });
-      await rename(staging, versionDirectory);
-    } catch (cause) {
-      // rename onto an existing directory fails on Windows rather than
-      // replacing it. That is the expected outcome when another process
-      // published this same version first, so accept its copy — but only after
-      // confirming the copy actually runs, or a genuine failure would be
-      // mistaken for a lost race.
-      if (!(await fileExists(binary)) || !reportsPinnedVersion(binary)) {
-        throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
-      }
-    }
+    await publish({ staging, versionDirectory, binary, force });
   } finally {
     await rm(staging, { recursive: true, force: true });
   }

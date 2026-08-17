@@ -21,9 +21,9 @@
  * Usage: node scripts/provision/gitleaks.proof.mjs
  */
 
-import { spawn } from 'node:child_process';
-import { readdir, rm } from 'node:fs/promises';
-import { basename, dirname, resolve } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
@@ -141,6 +141,73 @@ async function main() {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Publishing decides from the destination's measured state, not from a flag.
+  //
+  // The shape this replaces deleted the destination when --force was passed and
+  // left it alone otherwise, which got both cases backwards: a working install
+  // was destroyed on request, and a BROKEN one survived every re-run that did
+  // not happen to pass the flag. Recovering from a truncated binary — the exact
+  // thing an interrupted download leaves behind — required knowing to pass an
+  // option nothing tells you about.
+  // ---------------------------------------------------------------------------
+
+  // Control first: confirm rename-onto-an-occupied-directory really does fail,
+  // because that is what made the old code throw instead of repairing. If this
+  // ever stops being true, the case below passes for the wrong reason.
+  const occupied = `${versionDirectory}.control-occupied`;
+  await rm(occupied, { recursive: true, force: true });
+  await mkdir(occupied, { recursive: true });
+  await writeFile(join(occupied, 'placeholder'), 'x');
+  let renameOntoOccupiedFailed = false;
+  try {
+    const { rename } = await import('node:fs/promises');
+    await rename(occupied, versionDirectory);
+  } catch {
+    renameOntoOccupiedFailed = true;
+  }
+  await rm(occupied, { recursive: true, force: true });
+  if (!renameOntoOccupiedFailed) {
+    failures.push(
+      'CONTROL: renaming a directory onto an occupied path was expected to fail, but it ' +
+        'succeeded. The repair case below then proves nothing about compare-and-swap, because ' +
+        'a plain rename would have worked all along.',
+    );
+  }
+
+  // Corrupt the published binary the way a killed download does: the file is
+  // present, so every existence check is satisfied, and it cannot run.
+  await writeFile(binary, Buffer.from('not an executable'));
+  const repair = await raceOne();
+  const repaired = (await fileExists(binary)) && spawnedVersion(binary).includes(GITLEAKS_VERSION);
+  if (repair.status !== 0 || !repaired) {
+    failures.push(
+      `a corrupted install was NOT repaired by a plain re-run (exit ${repair.status}). This is ` +
+        `the state an interrupted download leaves, and it must not require --force to fix:\n` +
+        repair.output,
+    );
+  }
+
+  // A good install is left alone, so the fast path stays fast and the check
+  // above is not passing merely because everything is always replaced.
+  const before = await readdir(versionDirectory);
+  const second = await raceOne();
+  const after = await readdir(versionDirectory);
+  if (second.status !== 0 || before.join(',') !== after.join(',')) {
+    failures.push(
+      `a healthy install was disturbed by a re-run (exit ${second.status}): ` +
+        `${before.join(',')} became ${after.join(',')}`,
+    );
+  }
+
+  // Quarantine directories are cleaned up, like staging ones.
+  const leftovers = (await readdir(dirname(versionDirectory), { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.name.startsWith(`${basename(versionDirectory)}.superseded`))
+    .map((entry) => entry.name);
+  if (leftovers.length > 0) {
+    failures.push(`quarantine director${leftovers.length === 1 ? 'y' : 'ies'} survived: ${leftovers.join(', ')}`);
+  }
+
   if (failures.length > 0) {
     process.stderr.write(`\n${failures.length} provisioning proof failure(s):\n\n${failures.join('\n\n')}\n`);
     return 1;
@@ -148,8 +215,18 @@ async function main() {
 
   process.stdout.write(`  ok  ${RACERS} concurrent provisioners all succeeded\n`);
   process.stdout.write(`  ok  published binary runs and reports ${GITLEAKS_VERSION}\n`);
-  process.stdout.write('\n2 provisioning cases passed.\n');
+  process.stdout.write('  ok  control renaming onto an occupied directory fails\n');
+  process.stdout.write('  ok  a corrupted install is repaired without --force\n');
+  process.stdout.write('  ok  a healthy install is left untouched by a re-run\n');
+  process.stdout.write('  ok  no quarantine directories survive the swap\n');
+  process.stdout.write('\n6 provisioning cases passed.\n');
   return 0;
+}
+
+/** @param {string} binary @returns {string} */
+function spawnedVersion(binary) {
+  const probe = spawnSync(binary, ['version'], { encoding: 'utf8' });
+  return probe.error !== undefined ? '' : `${probe.stdout ?? ''}`;
 }
 
 main().then(
