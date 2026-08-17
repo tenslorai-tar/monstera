@@ -63,6 +63,14 @@ const MUST_IGNORE = [
   '.probe/scratch.js',
   'packages/ui/src/__boundary_probe__.ts',
   'node_modules/left-pad/index.js',
+  // native/ is C we compile, declared by CLAUDE.md and ARCHITECTURE to sit
+  // outside every tsconfig and every ESLint rule. The derivation does NOT cover
+  // it — .gitignore re-includes native/ so the shim source can be tracked — so
+  // this is held by an explicit entry, and this case is what keeps the two
+  // documents' claim true rather than merely true-for-now. Before it, the first
+  // .ts added under native/ would have been a fatal parse error.
+  'native/mupdf-shim/probe.ts',
+  'native/mupdf-shim/gen.js',
 ];
 
 /**

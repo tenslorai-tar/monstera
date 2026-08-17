@@ -1,7 +1,11 @@
 import { fileURLToPath } from 'node:url';
 
-import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
+// From `eslint/config`, not from `@eslint/compat`. Both export a function of
+// this name and @eslint/compat's is deprecated in its own docstring, which
+// points here; ESLint ships this one, so taking the compat package would have
+// added a dependency to reach an older copy of the code already installed.
+import { globalIgnores, includeIgnoreFile } from 'eslint/config';
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import importX from 'eslint-plugin-import-x';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -207,19 +211,34 @@ export default tseslint.config(
   //
   // Deriving is what removes the class. A divergence check between two lists
   // was the alternative and it keeps both lists, so it can only report the
-  // drift it was going to have anyway. gitignore semantics are converted by
-  // ESLint's own @eslint/compat rather than by hand: anchoring, `**`, trailing
-  // slashes and negation ordering are a specification, and a hand-rolled parser
-  // of it is the kind of code that looks right and is quietly wrong about
-  // `!native/`.
+  // drift it was going to have anyway. The conversion is ESLint's own rather
+  // than hand-written, because anchoring, `**` and trailing slashes are a
+  // specification and a hand parser of it looks right while being quietly
+  // wrong.
+  //
+  // Measured limit, not a claim: this translates gitignore patterns into flat
+  // config `ignores`, and the two do not agree on re-inclusion. `!.env.example`
+  // and `!.vscode/extensions.json` are both still ignored afterwards. Neither
+  // is lintable, so nothing turns on it here — but do not read the derivation
+  // as gitignore semantics, only as gitignore's *paths*.
   includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
-  {
-    // Tracked files deliberately not linted. This is a different category from
-    // the entries above — those are artifacts git does not keep, this is source
-    // that exists in the repository and is not code — so it is not a second
-    // copy of anything, and it stays short for that reason.
-    ignores: ['DESIGN-DRAFT.html'],
-  },
+
+  // Paths git keeps but ESLint must not read. Not a second copy of the list
+  // above: those are artifacts git discards, these are tracked files that are
+  // not lintable source, which is why the list is short and each entry has a
+  // reason.
+  globalIgnores([
+    // Not code.
+    'DESIGN-DRAFT.html',
+    // C we compile. CLAUDE.md and ARCHITECTURE both state that native/ sits
+    // outside every tsconfig and every ESLint rule, with the compiler as its
+    // only check — and the config did not say so, which meant the claim was
+    // true only because native/ happens to hold no .ts or .js today. The first
+    // one added would have been a fatal parse error under projectService, the
+    // same trap as the build directories above, and the derivation does not
+    // cover it: .gitignore re-includes native/ so its source can be tracked.
+    'native/**',
+  ]),
 
   js.configs.recommended,
 
