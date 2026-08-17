@@ -1,0 +1,81 @@
+# The one configuration the secret scanner is ever given.
+#
+# Every scan in this repository passes `--config` pointing here. That is not
+# tidiness: `--config` is the highest-precedence source gitleaks has, and
+# measurement showed the four lower ones each silently disarm the scan.
+#
+#   GITLEAKS_CONFIG_TOML set to an allow-everything config  -> exit 0, 0 findings
+#   GITLEAKS_CONFIG pointing at one                         -> exit 0, 0 findings
+#   an UNTRACKED, gitignored .gitleaks.toml at the root     -> exit 0, 0 findings
+#   this file, passed explicitly with -c, over all of them  -> exit 1, found
+#
+# The third is the one that matters most: a file that never appears in a diff,
+# never reaches review, and turns every future commit's scan into a green check
+# over nothing. Passing -c explicitly makes the configuration a property of the
+# scan rather than of whoever's working copy it ran in.
+#
+# ## useDefault is load-bearing
+#
+# Without `[extend] useDefault = true`, a config file REPLACES the entire default
+# ruleset instead of adding to it. Measured on 8.30.1 against a corpus holding a
+# Slack token and a PEM private key:
+#
+#   no config                     rules fired = slack-bot-token, private-key
+#   one custom rule, no [extend]  rules fired = the custom rule ONLY
+#   one custom rule + useDefault  rules fired = all three
+#
+# The middle row still exits 1 and still prints a finding, so it looks like a
+# working scanner while every built-in rule has been switched off. That is why
+# scripts/lib/scannerCanary.mjs asserts specific built-in rule IDs rather than a
+# non-zero exit code.
+#
+# ## What may be added here
+#
+# Rules. This file exists to make the scan stricter than the default, and its
+# whole content today is three rules the default ruleset misses.
+#
+# An `[allowlist]` entry is the sanctioned route for a genuine false positive,
+# and the only one — inline `gitleaks:allow` comments and `.gitleaksignore`
+# fingerprint files are both closed by scripts/lib/secretScan.mjs. It lands in
+# its own commit, naming the finding and why it is not a secret. Never a blanket
+# pattern: an allowlist wide enough to cover a class is wide enough to cover the
+# credential that class was hiding.
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# AI provider keys.
+#
+# Stage 9 registers AI providers, and their keys are a shape the default ruleset
+# does not recognise at all. Measured on 8.30.1: a well-formed Anthropic key and
+# both OpenAI key formats produced ZERO findings under every built-in rule,
+# including generic-api-key. The families the default catches — private-key,
+# github-pat, aws-access-token, generic-api-key — do not extend to these.
+#
+# Added now rather than at Stage 9 because the gap is in the scanner today, and
+# a key pasted into a scratch file during Stage 9 is permanent the moment it is
+# pushed. The rules cost nothing while no provider exists.
+#
+# L12 remains the real control: provider keys live in the OS keychain and are
+# never written to a file this repository can see. These rules are what catches
+# the mistake when someone does it anyway.
+# ---------------------------------------------------------------------------
+
+[[rules]]
+id = "monstera-anthropic-api-key"
+description = "Anthropic API key — sk-ant-{api,admin}NN-…"
+regex = '''\bsk-ant-(?:admin|api)[0-9]{2}-[A-Za-z0-9_-]{32,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "monstera-openai-scoped-key"
+description = "OpenAI project, service-account or admin key — sk-{proj,svcacct,admin}-…"
+regex = '''\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}'''
+keywords = ["sk-proj-", "sk-svcacct-", "sk-admin-"]
+
+[[rules]]
+id = "monstera-openai-legacy-key"
+description = "OpenAI legacy key — sk- followed by a long unbroken alphanumeric run"
+regex = '''\bsk-[A-Za-z0-9]{32,}\b'''
+keywords = ["sk-"]

@@ -332,11 +332,19 @@ part of the record.
 
 ```bash
 npm run proof:guards      # prove the pre-commit guards still catch what they claim
+npm run proof:secretscan  # prove the secret scan cannot be silently disarmed
 npm run guard:staged      # file policy against the index
 npm run guard:tree        # file policy against every tracked file (CI mirror)
 npm run scan:secrets      # full-history gitleaks scan
 node scripts/provision/gitleaks.mjs   # install the pinned secret scanner
 ```
+
+**There is one way to suppress a secret-scan finding**: an `[allowlist]` entry
+in the tracked `.gitleaks.toml`, in its own commit, naming the finding and why
+it is not a secret. Inline `gitleaks:allow` comments and `.gitleaksignore`
+fingerprint files are both closed mechanically, because neither ever appears in
+a diff. A `.gitleaksignore` anywhere makes the scan **refuse to run** — no
+gitleaks flag can neutralise it, so refusing is the only honest option.
 
 Hooks are enabled automatically by the `prepare` lifecycle script
 (`core.hooksPath` → `.githooks/`). If a commit is rejected because the scanner

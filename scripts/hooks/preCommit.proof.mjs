@@ -19,14 +19,19 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { CONFIG_FILE, configPathFor } from '../lib/secretScan.mjs';
 import { provisionGitleaks } from '../provision/gitleaks.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), 'preCommit.mjs');
+
+// Resolved before any throwaway repository exists, because `repoRoot()` answers
+// about the process's own directory and the cases below run the hook elsewhere.
+const REAL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
  * Shaped to match gitleaks' aws-access-token rule. Not a real credential: the
@@ -52,8 +57,15 @@ function makeRepo() {
   git(root, ['init', '--quiet']);
   git(root, ['config', 'user.email', 'proof@example.invalid']);
   git(root, ['config', 'user.name', 'Hook Proof']);
+
+  // The gate scans with `--config <repo>/.gitleaks.toml` and refuses to run
+  // without it, so the throwaway repository needs one. Copied from this
+  // repository rather than written afresh: a stand-in config would let the two
+  // drift, and the proof would then be exercising a ruleset nothing ships.
+  copyFileSync(configPathFor(REAL_ROOT), join(root, CONFIG_FILE));
+
   writeFileSync(join(root, 'README.md'), '# scratch\n');
-  git(root, ['add', 'README.md']);
+  git(root, ['add', 'README.md', CONFIG_FILE]);
   git(root, ['commit', '--quiet', '--no-verify', '-m', 'base']);
   return root;
 }

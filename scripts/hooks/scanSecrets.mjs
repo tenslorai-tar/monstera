@@ -11,36 +11,37 @@
  * Usage: node scripts/hooks/scanSecrets.mjs
  */
 
-import { spawnSync } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-import { provisionGitleaks } from '../provision/gitleaks.mjs';
-
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+import {
+  divergenceNotice,
+  formatCanaryFailure,
+  verifyScannerCapability,
+} from '../lib/scannerCanary.mjs';
+import { formatSuppressions, runSecretScan } from '../lib/secretScan.mjs';
+import { GITLEAKS_VERSION, provisionGitleaks } from '../provision/gitleaks.mjs';
 
 async function main() {
   const binary = await provisionGitleaks();
 
-  const scan = spawnSync(
-    binary,
-    [
-      'git',
-      // Findings are printed with the secret redacted, so a CI log never
-      // becomes a second copy of the credential it just caught (L12).
-      '--redact',
-      '--no-banner',
-      '--exit-code',
-      '1',
-    ],
-    { cwd: REPO_ROOT, stdio: 'inherit' },
-  );
-
-  if (scan.error !== undefined) {
-    process.stderr.write(`Could not run gitleaks: ${scan.error.message}\n`);
+  // Capability before use, here as well as in the hook. CI provisions the pinned
+  // build, so this normally passes from cache — but "normally" is exactly the
+  // assumption that makes a check worth keeping: this job is the only thing
+  // standing between a credential that arrived by some route the hook never saw
+  // and a permanent public history.
+  const canary = verifyScannerCapability({ binary, pinnedVersion: GITLEAKS_VERSION });
+  if (!canary.ok) {
+    process.stderr.write(formatCanaryFailure(canary, GITLEAKS_VERSION));
     return 1;
   }
-  return scan.status ?? 1;
+  process.stderr.write(divergenceNotice(canary, GITLEAKS_VERSION));
+
+  // The whole history, not the working tree: a blob committed and later deleted
+  // is retained by GitHub forever, which is the case B10 exists for.
+  const scan = runSecretScan({ binary, staged: false });
+  if (scan.blocked.length > 0) {
+    process.stderr.write(formatSuppressions(scan.blocked));
+    return 1;
+  }
+  return scan.status;
 }
 
 main().then(

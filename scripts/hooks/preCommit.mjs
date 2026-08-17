@@ -13,55 +13,15 @@
  * repository's permanent history cannot be undone at any price.
  */
 
-import { spawnSync } from 'node:child_process';
-
+import {
+  divergenceNotice,
+  formatCanaryFailure,
+  verifyScannerCapability,
+} from '../lib/scannerCanary.mjs';
+import { formatSuppressions, runSecretScan } from '../lib/secretScan.mjs';
 import { GITLEAKS_VERSION, resolveGitleaks } from '../provision/gitleaks.mjs';
 import { formatFailures, guardFiles } from './guardFiles.mjs';
 import { checkLockfile, explain, touchesDependencies } from './lockfileIntegrity.mjs';
-
-/**
- * The repository being committed to, asked of git rather than derived from
- * this file's own location. A git worktree keeps its checkout outside the
- * main clone, so a path computed from __dirname would point the scan at the
- * wrong tree — it would report success for a tree nobody committed to.
- *
- * @returns {string}
- */
-function repoRoot() {
-  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  if (result.status !== 0) {
-    throw new Error(`Not inside a git work tree: ${`${result.stderr ?? ''}`.trim()}`);
-  }
-  return `${result.stdout}`.trim();
-}
-
-/**
- * @param {string} binary
- * @returns {number} Process exit code.
- */
-function scanStaged(binary) {
-  const scan = spawnSync(
-    binary,
-    [
-      'git',
-      '--staged',
-      // Findings are printed with the secret redacted. An unredacted finding
-      // would copy the credential into terminal scrollback and CI logs — the
-      // very exposure the scan exists to prevent (invariant L12).
-      '--redact',
-      '--no-banner',
-      '--exit-code',
-      '1',
-    ],
-    { cwd: repoRoot(), stdio: 'inherit' },
-  );
-
-  if (scan.error !== undefined) {
-    process.stderr.write(`\nCould not run gitleaks (${binary}): ${scan.error.message}\n`);
-    return 1;
-  }
-  return scan.status ?? 1;
-}
 
 async function main() {
   const failures = guardFiles('staged');
@@ -93,15 +53,34 @@ async function main() {
     return 1;
   }
 
-  const status = scanStaged(binary);
+  // The binary exists and runs. That is not the same as it being able to find a
+  // secret — see scripts/lib/scannerCanary.mjs. Cached against the binary's own
+  // hash, so this is a file read on all but the first commit after a scanner
+  // changes.
+  const canary = verifyScannerCapability({ binary, pinnedVersion: GITLEAKS_VERSION });
+  if (!canary.ok) {
+    process.stderr.write(formatCanaryFailure(canary, GITLEAKS_VERSION));
+    return 1;
+  }
+  process.stderr.write(divergenceNotice(canary, GITLEAKS_VERSION));
+
+  const scan = runSecretScan({ binary, staged: true });
+  if (scan.blocked.length > 0) {
+    process.stderr.write(formatSuppressions(scan.blocked));
+    return 1;
+  }
+
+  const status = scan.status;
   if (status !== 0) {
     process.stderr.write(
       `\nCommit blocked — gitleaks found a secret in the staged changes (shown redacted above).\n\n` +
         `Remove it from the staged content. If it is a real credential, treat it as ` +
         `compromised and rotate it: assume anything that reaches a public repository is ` +
         `public the moment it is pushed.\n\n` +
-        `If it is a genuine false positive, add a narrow rule to .gitleaks.toml in its own ` +
-        `commit explaining why — never a blanket allowlist.\n\n`,
+        `If it is a genuine false positive, add a narrow [allowlist] entry to .gitleaks.toml ` +
+        `in its own commit, naming the finding and why it is not a secret. That is the only ` +
+        `suppression route left open: inline gitleaks:allow comments and .gitleaksignore files ` +
+        `are both closed, because neither ever appears in a diff.\n\n`,
     );
   }
   return status;

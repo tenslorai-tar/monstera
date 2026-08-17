@@ -21,6 +21,7 @@ import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { commandPath } from '../lib/commandPath.mjs';
 import { downloadVerified, fileExists } from '../lib/fetchVerified.mjs';
 // One extractor for every provisioned artefact. The copy that used to live in
 // this file resolved an absolute bsdtar on Windows and returned the bare string
@@ -160,15 +161,6 @@ function reportsPinnedVersion(binary) {
 }
 
 /**
- * @param {string} command
- * @returns {boolean} True when the command exists and runs.
- */
-function isSpawnable(command) {
-  const probe = spawnSync(command, ['version'], { encoding: 'utf8' });
-  return probe.error === undefined && probe.status === 0;
-}
-
-/**
  * Locates a usable gitleaks without downloading one.
  *
  * Order: an explicit override, then the pinned hash-verified binary this
@@ -180,24 +172,37 @@ function isSpawnable(command) {
  * publish at all — a distribution's own build, or an architecture gitleaks has
  * not shipped. It is deliberately **not** how a published platform gets
  * covered: BUILDS pins every one of those, because an override standing in for
- * a missing pin is a workaround wearing a config flag. The override is verified
- * by spawning it, exactly like every other candidate — it selects a binary, it
- * does not excuse one from working.
+ * a missing pin is a workaround wearing a config flag.
  *
- * @returns {Promise<string | null>} A spawnable command, or null if none exists.
+ * ## Selection, not verification
+ *
+ * This used to spawn each candidate and treat exit 0 from `version` as evidence
+ * it was usable. That check was doing two jobs badly. It cost about 600 ms on
+ * the most frequent action in the project, and it established only that a
+ * process starts — which says nothing about the ruleset, the thing a secret
+ * scanner actually is. A distribution build years out of date passes it.
+ *
+ * Verification now belongs to scripts/lib/scannerCanary.mjs, which makes the
+ * binary find real secret shapes and caches the verdict against the binary's own
+ * hash. So this function only has to answer "which file would run", and answers
+ * it by resolving the path rather than by executing it. Every caller runs the
+ * canary immediately afterwards; a candidate that resolves but cannot scan is
+ * reported as a broken scanner rather than silently skipped in favour of
+ * another, because "your provisioned copy is broken" is the message that leads
+ * somewhere.
+ *
+ * @returns {Promise<string | null>} A command to run, or null if none resolves.
  */
 export async function resolveGitleaks() {
   const override = process.env['MONSTERA_GITLEAKS'];
   if (override !== undefined && override !== '') {
-    return isSpawnable(override) ? override : null;
+    return commandPath(override) === null ? null : override;
   }
 
   const provisioned = gitleaksBinaryPath();
-  if (provisioned !== '' && (await fileExists(provisioned)) && isSpawnable(provisioned)) {
-    return provisioned;
-  }
+  if (provisioned !== '' && (await fileExists(provisioned))) return provisioned;
 
-  return isSpawnable('gitleaks') ? 'gitleaks' : null;
+  return commandPath('gitleaks') === null ? null : 'gitleaks';
 }
 
 /**

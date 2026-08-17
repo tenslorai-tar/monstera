@@ -80,6 +80,13 @@ jobs:
       - name: Prove provisioning is safe under concurrency
         run: npm run proof:provision
 
+      # The scan below is only worth its runtime if it cannot be silently
+      # disarmed. This proves each suppression channel is closed AND, by running
+      # the corpus without each closure, that the closure is what shuts it —
+      # neither half is evidence alone.
+      - name: Prove the secret scan cannot be disarmed
+        run: npm run proof:secretscan
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.
