@@ -100,6 +100,16 @@ jobs:
       # configured none of them. Checks the claim against the resolved config
       # AND that a violation is actually reported — a rule that is listed and
       # never fires prints identical --print-config output to one that works.
+      # ESLint's ignore list is derived from .gitignore rather than duplicated.
+      # The duplicate had drifted to five artifact paths against sixteen, and
+      # with projectService an unignored build directory is a fatal parse error
+      # rather than a warning — so the first Electron build would have failed
+      # `eslint .` on a developer machine, which CI cannot reproduce because it
+      # builds from a clean checkout. The control plants a violation in real
+      # source, so a config that ignored the whole tree cannot pass.
+      - name: Prove the lint ignores track .gitignore and still lint source
+        run: npm run proof:lintignores
+
       - name: Prove the React lint rules are registered and fire
         run: npm run proof:lintrules
 

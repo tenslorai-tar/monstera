@@ -40,6 +40,7 @@
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "proof:testresolution": "node scripts/proofs/testResolution.proof.mjs",
+    "proof:lintignores": "node scripts/proofs/lintIgnores.proof.mjs",
     "brand:generate": "node scripts/brand/generateAssets.mjs",
     "brand:check": "node scripts/brand/generateAssets.mjs --check",
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
@@ -54,6 +55,7 @@
   },
   "devDependencies": {
     "@cantoo/pdf-lib": "^2.8.3",
+    "@eslint/compat": "2.1.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.1",
     "eslint": "^10.8.1",

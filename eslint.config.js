@@ -1,3 +1,6 @@
+import { fileURLToPath } from 'node:url';
+
+import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import importX from 'eslint-plugin-import-x';
@@ -189,27 +192,33 @@ function boundaryConfigFor(pkg) {
 }
 
 export default tseslint.config(
+  // Build output and scratch space are ignored by DERIVING the list from
+  // .gitignore, not by maintaining a second copy of it.
+  //
+  // The second copy had drifted to five artifact paths against .gitignore's
+  // sixteen, and the gap is not a style problem: `projectService: true` makes
+  // any .js or .ts outside every tsconfig a FATAL PARSE ERROR, so an unignored
+  // build directory does not produce a lint warning, it fails `eslint .`
+  // outright. Reproduced on a one-line `out/index.js`, which is gitignored and
+  // was not in the list. None of `dist-electron/`, `out/`, `build/` or `.vite/`
+  // exists yet, so the trap springs on whoever runs the first Electron build —
+  // on a developer machine, since CI builds from a clean checkout and would not
+  // reproduce it.
+  //
+  // Deriving is what removes the class. A divergence check between two lists
+  // was the alternative and it keeps both lists, so it can only report the
+  // drift it was going to have anyway. gitignore semantics are converted by
+  // ESLint's own @eslint/compat rather than by hand: anchoring, `**`, trailing
+  // slashes and negation ordering are a specification, and a hand-rolled parser
+  // of it is the kind of code that looks right and is quietly wrong about
+  // `!native/`.
+  includeIgnoreFile(fileURLToPath(new URL('.gitignore', import.meta.url))),
   {
-    ignores: [
-      '**/dist/**',
-      '**/node_modules/**',
-      '.tools/**',
-      'release/**',
-      'coverage/**',
-      'DESIGN-DRAFT.html',
-      // Scratch space. Proofs write probe files here and delete them in a
-      // `finally`; a proof that dies before its cleanup would otherwise turn
-      // the next lint run red for a file that is not part of the codebase, and
-      // a red build nobody caused is a red build people learn to ignore. This
-      // entry must stay in step with the `.probe/` line in .gitignore.
-      '.probe/**',
-      // Boundary probes must live inside a package to be matched by that
-      // package's rules, so they cannot go in `.probe/`. Ignored here for the
-      // same reason: a proof killed mid-run must not leave a file that turns
-      // `npm run lint` and `npm run typecheck` red for code nobody wrote.
-      // boundaries.proof.mjs passes `ignore: false` so it still sees them.
-      '**/__boundary_probe__.ts',
-    ],
+    // Tracked files deliberately not linted. This is a different category from
+    // the entries above — those are artifacts git does not keep, this is source
+    // that exists in the repository and is not code — so it is not a second
+    // copy of anything, and it stays short for that reason.
+    ignores: ['DESIGN-DRAFT.html'],
   },
 
   js.configs.recommended,

@@ -1,3 +1,15 @@
+# This file is also ESLint's ignore list. `eslint.config.js` derives it here via
+# @eslint/compat's includeIgnoreFile, so an artifact path added below stops being
+# linted with no second edit. That matters more than tidiness: `projectService`
+# makes any .js or .ts outside every tsconfig a FATAL PARSE ERROR, so a build
+# directory nobody ignored does not warn — it fails `eslint .` outright.
+# `npm run proof:lintignores` holds the two in step, with a control that plants a
+# violation in real source so "ignore everything" cannot pass.
+#
+# Tracked files that are deliberately not linted stay in eslint.config.js. They
+# are a different category — source git keeps, that is not code — not a second
+# copy of this list.
+
 # ─── Dependencies ────────────────────────────────────────────────────────────
 node_modules/
 .npm
