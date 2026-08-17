@@ -133,6 +133,20 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # `npm test` used to resolve every @monstera/* specifier through the
+      # package's dist build, so the suite could read the last build while a
+      # mutation sat in the source it covered — 27/27 green over a deleted line.
+      # CI never showed it, because this job happens to run typecheck first; that
+      # is step ordering in one file, not a property of the command, and the
+      # pre-commit hook runs no tests at all. This proves resolution reaches
+      # source, with a control that pins the aliases back at dist so the pass
+      # cannot come from a poison that never took effect.
+      #
+      # Runs after the suite: it poisons build output and restores it, so a
+      # failure here should not be able to explain away a failure above.
+      - name: Prove the tests read source, not a stale build
+        run: npm run proof:testresolution
+
   # The native seam, on the only platform that can build it today.
   #
   # This job exists because ADR-0010's measurements were produced in a scratch
