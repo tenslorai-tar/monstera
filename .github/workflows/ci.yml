@@ -96,6 +96,13 @@ jobs:
 
       # A boundary that lints clean may simply be matching no files. This
       # violates every boundary on purpose and fails if any is permitted.
+      # Two documents asserted the React rules were errors while ESLint
+      # configured none of them. Checks the claim against the resolved config
+      # AND that a violation is actually reported — a rule that is listed and
+      # never fires prints identical --print-config output to one that works.
+      - name: Prove the React lint rules are registered and fire
+        run: npm run proof:lintrules
+
       - name: Prove the architecture boundaries are enforced
         run: npm run proof:boundaries
 

@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import importX from 'eslint-plugin-import-x';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -275,6 +276,43 @@ export default tseslint.config(
   },
 
   ...PACKAGES.map(boundaryConfigFor),
+
+  {
+    // React rules, scoped to the one package that may import React.
+    //
+    // These were asserted as enforced in two documents while ESLint configured
+    // no React rule at all: `eslint --print-config packages/ui/src/index.ts`
+    // returned an empty list, and the plugin was installed but never imported.
+    // Harmless on the day it was found — react is not yet a dependency and this
+    // package holds one `export {}` file — and unfixable in practice the moment
+    // it stops being harmless, which is B9's whole argument: a rule that governs
+    // how components are WRITTEN cannot be retrofitted across a codebase that
+    // was written without it.
+    //
+    // Turning them on against an empty package costs nothing, which is exactly
+    // why it must happen now rather than at the first .tsx.
+    //
+    // `recommended-latest` rather than a hand-listed set: the rules that make up
+    // the React Compiler's requirements change between plugin versions — v7.1.1
+    // ships 17 where the documents claimed "four" — and a hand-maintained list
+    // is a second place to update that will drift the way every other one has.
+    //
+    // `configs.flat['recommended-latest']`, not `configs['recommended-latest']`:
+    // the plugin ships both, and the top-level one is eslintrc-shaped with
+    // `plugins` as an array of strings. ESLint 10 rejects it outright, which is
+    // the good failure — the alternative shape would have loaded and silently
+    // enforced nothing.
+    files: ['packages/ui/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat['recommended-latest']],
+    rules: {
+      // The plugin ships four of its rules as warnings. This project has no
+      // warning tier — a warning is a finding nobody is required to act on — so
+      // they are raised here, deliberately and in one place.
+      'react-hooks/exhaustive-deps': 'error',
+      'react-hooks/incompatible-library': 'error',
+      'react-hooks/unsupported-syntax': 'error',
+    },
+  },
 
   {
     // The bootstrap layer: plain .mjs, type-checked through JSDoc rather than

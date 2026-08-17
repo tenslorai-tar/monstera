@@ -142,8 +142,12 @@ the declaration.
   sanctioned exception is a single typed adapter module per native boundary,
   where the koffi edge and the WASM heap are genuinely untypeable; that file
   carries the lint disable and everything outside it is fully typed.
-- **React function components only.** All four React Compiler lint rules are
-  errors.
+- **React function components only.** `eslint-plugin-react-hooks`' recommended
+  set — 17 rules in the pinned version, covering the React Compiler's
+  requirements — is registered against `packages/ui` and every one of them is an
+  **error**, including the four the plugin ships as warnings. They were turned on
+  while the package was still empty, deliberately: a rule about how components
+  are written cannot be applied to components already written.
 - **Comment only where the *why* is non-obvious**, and state the **mechanism** —
   not the history of who fixed what. In a public codebase this is what makes
   every non-obvious decision auditable by a stranger.

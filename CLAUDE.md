@@ -70,7 +70,11 @@ patching around. Add to it; do not re-pay for it.
 - **B6 Comment culture.** Comment only where the *why* is non-obvious, and state
   the **mechanism**, never the history of who fixed what.
 - **B7 TypeScript strict everywhere; `any` is an error, not a warning.** React
-  function components only. All four React Compiler ESLint rules are errors. The
+  function components only. `eslint-plugin-react-hooks`' full recommended set is
+  registered against `packages/ui` and every rule in it is an **error**,
+  including the four the plugin ships as warnings — verified by
+  `npm run proof:lintrules`, which reads the set from the plugin so a version
+  that adds a rule widens the check on its own. The
   single sanctioned exception: `any` is confined to one typed adapter module per
   native boundary (`mupdfRaw.ts`, `pdfiumFfi.ts`), which alone may carry a
   file-level lint disable. No premature abstractions inside modules.

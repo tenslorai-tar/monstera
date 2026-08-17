@@ -45,6 +45,7 @@
     "proof:cff": "node scripts/security/cffOobProof.mjs",
     "proof:geometry": "node scripts/proofs/pageGeometry.proof.mjs",
     "proof:purge": "node scripts/proofs/purgeCensus.proof.mjs",
+    "proof:lintrules": "node scripts/proofs/lintRules.proof.mjs",
     "proof:engines": "node scripts/spike/engineSpike.mjs"
   },
   "devDependencies": {
