@@ -219,12 +219,42 @@ These were given directly and bind every agent on this project.
   Note that 5 was a **batch file** — neither prose nor documentation — which is
   exactly why the old scoping failed. Only two of the five failed loudly.
 
-  **Mechanism, not intention:** `guardFiles.mjs` scans every staged text blob
-  *in full* for C0 control characters. That mechanically catches the class in
-  item 2, which is the one that reaches review unnoticed. It does not catch
-  items 1, 3 or 5, because a swallowed word and a real newline are ordinary
-  text — for those the rule is the only defence, so it is written as an absolute
-  rather than a preference.
+  There has since been a sixth: `node -e` used to rewrite a check's call site,
+  which ate the backslashes out of a regex and turned a `\n` in a template
+  literal into a real newline.
+
+  **Mechanism, not intention.** Two mechanisms now, and the second exists
+  because the first sentence of this paragraph used to end differently.
+
+  1. `guardFiles.mjs` scans every staged text blob *in full* for C0 control
+     characters. That catches the class in item 2 — the one that reaches review
+     unnoticed. It cannot catch items 1, 3, 5 or 6, because a swallowed word and
+     a real newline are ordinary text.
+  2. **A PreToolUse hook makes the banned path unavailable rather than
+     forbidden.** `.claude/settings.json` registers
+     `scripts/hooks/blockEscapeResolvingWrites.mjs` against `Bash` and
+     `PowerShell`; it rejects `node -e`/`--eval`, `python -c`, inline
+     perl/ruby/php, `sed -i`, `echo`/`printf`/`awk` writing to a file or `tee`,
+     unquoted heredocs, heredocs redirected into a file, and the PowerShell
+     equivalents (`Set-Content`, `Out-File`, `@"` here-strings). It fails closed
+     on an unreadable payload, and there is no override — an escape hatch here
+     would be a workaround with a config flag on it. `npm run proof:escapeguard`
+     covers 51 cases, including the exact command that caused occurrence 6 and
+     the ordinary commands this project runs constantly, because a guard that
+     blocks `echo` or `sed -n` is a guard someone turns off.
+
+  This paragraph used to say that for the classes the control-character scan
+  cannot see, "the rule is the only defence, so it is written as an absolute
+  rather than a preference." **Five of the six occurrences happened while it
+  said that.** A rule an agent must recall at the moment of composing a command
+  is not a defence; the hook is. The rule stays as written — it is still what
+  tells you *why* — but it is no longer what stops you.
+
+  Two limits worth knowing. Hooks are read at session start, so a change to
+  `.claude/settings.json` does not take effect until the next session. And the
+  hook governs shell tools only: `Edit` and `Write` are deliberately untouched,
+  which is what makes failing closed safe, since a bug in the guard can always
+  be repaired through the very tools the rule prefers.
 
   The one safe exception is a script that manipulates bytes **numerically**
   (`0x07`, byte arrays), because nothing in that path resolves an escape. That
@@ -342,6 +372,7 @@ part of the record.
 ```bash
 npm run proof:guards      # prove the pre-commit guards still catch what they claim
 npm run proof:secretscan  # prove the secret scan cannot be silently disarmed
+npm run proof:escapeguard # prove the escape-resolving-write hook blocks and permits correctly
 npm run guard:staged      # file policy against the index
 npm run guard:tree        # file policy against every tracked file (CI mirror)
 npm run scan:secrets      # full-history gitleaks scan

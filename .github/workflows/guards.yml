@@ -107,6 +107,15 @@ jobs:
       - name: Prove the withdrawn-phrase check catches what it claims
         run: npm run proof:withdrawn
 
+      # The standing rule against writing files through escape-resolving shell
+      # paths was broken six times while claiming to be the only defence. It is
+      # now a PreToolUse hook. This checks both halves: that the guard blocks
+      # what it claims and permits what this project actually runs, and that
+      # .claude/settings.json still wires it to both shells — a correct script
+      # nothing invokes would leave every case above passing over an open door.
+      - name: Prove the escape-resolving-write hook is wired and discriminates
+        run: npm run proof:escapeguard
+
       # Downloads a deliberately older gitleaks — one that runs the shipped
       # invocation, exits like a healthy scan, and quietly finds one family
       # fewer. Every other case for the canary runs against the pinned build,
