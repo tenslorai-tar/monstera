@@ -46,40 +46,76 @@
  * ---------------------------------------------------------------------------
  */
 
-static size_t g_live_bytes = 0;
-static size_t g_peak_bytes = 0;
-static size_t g_live_blocks = 0;
+/*
+ * Accounting is PER CONTEXT, carried in fz_alloc_context.user.
+ *
+ * It used to be three file-scope statics with a NULL user pointer, which made
+ * two states representable that must not be. mz_init reset them before creating
+ * a context, so opening a second context zeroed the first one's totals; and
+ * every context added into the same counters, so closing one clamped the shared
+ * byte total to 0 while another still held memory, and the block counter
+ * decremented past zero and wrapped to 2^64. ADR-0010's "0 live blocks and 0
+ * live bytes after the context is dropped" is a number this instrument
+ * produced.
+ *
+ * Hanging the counters off `user` removes both by shape rather than by care: an
+ * allocation can only be counted against the context whose allocator performed
+ * it, and there is no shared total left to reset.
+ */
+typedef struct {
+    size_t live_bytes;
+    size_t peak_bytes;
+    size_t live_blocks;
+    /* Sticky. Set when a subtraction would have gone negative, which means the
+     * counters no longer describe reality. Clamping alone made the error state
+     * indistinguishable from the success value: 0 live bytes reads as "all
+     * freed", which is precisely the conclusion this instrument exists to
+     * support, so a fault would have confirmed the hypothesis. */
+    int invalid;
+} mz_accounting;
 
-static void mz_account_add(size_t n)
+static void mz_account_add(mz_accounting *a, size_t n)
 {
-    g_live_bytes += n;
-    if (g_live_bytes > g_peak_bytes)
-        g_peak_bytes = g_live_bytes;
+    a->live_bytes += n;
+    if (a->live_bytes > a->peak_bytes)
+        a->peak_bytes = a->live_bytes;
 }
 
-static void mz_account_sub(size_t n)
+static void mz_account_sub(mz_accounting *a, size_t n)
 {
-    /* Defensive: an underflow here would silently produce a huge number and
-     * make the instrument lie in the direction of "nothing was freed". */
-    g_live_bytes = (g_live_bytes >= n) ? g_live_bytes - n : 0;
+    if (a->live_bytes < n) {
+        a->invalid = 1;
+        a->live_bytes = 0;
+        return;
+    }
+    a->live_bytes -= n;
+}
+
+static void mz_account_block_release(mz_accounting *a)
+{
+    if (a->live_blocks == 0) {
+        a->invalid = 1;
+        return;
+    }
+    a->live_blocks--;
 }
 
 static void *mz_alloc_malloc(void *user, size_t size)
 {
+    mz_accounting *a = (mz_accounting *)user;
     void *p = malloc(size);
-    (void)user;
     if (p != NULL) {
-        mz_account_add(_msize(p));
-        g_live_blocks++;
+        mz_account_add(a, _msize(p));
+        a->live_blocks++;
     }
     return p;
 }
 
 static void *mz_alloc_realloc(void *user, void *old, size_t size)
 {
+    mz_accounting *a = (mz_accounting *)user;
     size_t before = (old != NULL) ? _msize(old) : 0;
     void *p;
-    (void)user;
 
     p = realloc(old, size);
     if (p == NULL) {
@@ -87,35 +123,28 @@ static void *mz_alloc_realloc(void *user, void *old, size_t size)
          * (size == 0 with a NULL return is a free on some CRTs, but MSVC's
          * realloc(ptr, 0) frees and returns NULL, so account for it.) */
         if (size == 0 && old != NULL) {
-            mz_account_sub(before);
-            g_live_blocks--;
+            mz_account_sub(a, before);
+            mz_account_block_release(a);
         }
         return NULL;
     }
 
     if (old == NULL)
-        g_live_blocks++;
-    mz_account_sub(before);
-    mz_account_add(_msize(p));
+        a->live_blocks++;
+    mz_account_sub(a, before);
+    mz_account_add(a, _msize(p));
     return p;
 }
 
 static void mz_alloc_free(void *user, void *p)
 {
-    (void)user;
+    mz_accounting *a = (mz_accounting *)user;
     if (p == NULL)
         return;
-    mz_account_sub(_msize(p));
-    g_live_blocks--;
+    mz_account_sub(a, _msize(p));
+    mz_account_block_release(a);
     free(p);
 }
-
-static fz_alloc_context mz_allocator = {
-    NULL,
-    mz_alloc_malloc,
-    mz_alloc_realloc,
-    mz_alloc_free,
-};
 
 #ifdef _WIN32
 #define MZ_EXPORT __declspec(dllexport)
@@ -128,6 +157,14 @@ static fz_alloc_context mz_allocator = {
 
 struct mz_ctx {
     fz_context *fz;
+    /* Owned here so the allocator's `user` pointer can reach it. Must outlive
+     * fz_drop_context, which frees through the same allocator. */
+    mz_accounting acct;
+    fz_alloc_context alloc;
+    /* Pixmaps handed to the caller and not yet returned. Part of the quiescence
+     * test in mz_store_footprint: a live pixmap keeps store items referenced,
+     * so the store cannot be fully evicted while one is outstanding. */
+    size_t live_pixmaps;
     char error[512];
 };
 
@@ -156,12 +193,16 @@ MZ_EXPORT int mz_init(mz_ctx **out)
     if (c == NULL)
         return MZ_ERR;
 
+    /* calloc already zeroed acct and live_pixmaps. Nothing global is reset,
+     * because nothing is global: see mz_accounting. */
+    c->alloc.user = &c->acct;
+    c->alloc.malloc = mz_alloc_malloc;
+    c->alloc.realloc = mz_alloc_realloc;
+    c->alloc.free = mz_alloc_free;
+
     /* No fz_try here: fz_new_context returns NULL on failure rather than
      * throwing, because there is no context to throw through yet. */
-    g_live_bytes = 0;
-    g_peak_bytes = 0;
-    g_live_blocks = 0;
-    c->fz = fz_new_context(&mz_allocator, NULL, FZ_STORE_DEFAULT);
+    c->fz = fz_new_context(&c->alloc, NULL, FZ_STORE_DEFAULT);
     if (c->fz == NULL) {
         free(c);
         return MZ_ERR;
@@ -193,36 +234,130 @@ MZ_EXPORT const char *mz_last_error(mz_ctx *c)
     return (c == NULL) ? "no context" : c->error;
 }
 
-/* Live bytes and blocks currently held inside MuPDF, independent of the OS. */
-MZ_EXPORT void mz_alloc_stats(double *live, double *peak, double *blocks)
+/*
+ * Live bytes and blocks currently held inside THIS context, independent of the
+ * OS.
+ *
+ * Takes a context. The previous signature took none, which was not an oversight
+ * in the parameter list but the shape of the defect: a function with no context
+ * argument structurally cannot answer a per-context question, so it answered a
+ * process-wide one and was read as though it were per-context.
+ *
+ * `invalid` is sticky and must be checked before the numbers are used. It is
+ * set when a subtraction would have gone negative, i.e. when the counters have
+ * stopped describing reality.
+ */
+MZ_EXPORT int mz_alloc_stats(mz_ctx *c, double *live, double *peak, double *blocks, int *invalid)
 {
+    if (c == NULL)
+        return MZ_ERR;
     /* double, not size_t: koffi marshals it cleanly and these never approach
      * the range where a double loses integer precision. */
-    *live = (double)g_live_bytes;
-    *peak = (double)g_peak_bytes;
-    *blocks = (double)g_live_blocks;
+    *live = (double)c->acct.live_bytes;
+    *peak = (double)c->acct.peak_bytes;
+    *blocks = (double)c->acct.live_blocks;
+    *invalid = c->acct.invalid;
+    return MZ_OK;
 }
 
 /*
- * Bytes currently held by the RESOURCE STORE specifically — decoded images,
- * fonts, display lists — as opposed to parsed PDF objects in the xref.
+ * Bytes held by the RESOURCE STORE — decoded images, fonts, display lists — as
+ * opposed to parsed PDF objects in the xref.
  *
- * There is no public accessor, but fz_debug_store prints
- * "STORE\tmax=%zu, size=%zu, actual size=%zu", so the documented route is to
- * render it to a buffer and read the field. Parsing our own debug output is
- * ugly; inventing a private struct layout for fz_store would be worse, because
- * it would break silently on any upstream change.
+ * *** DESTRUCTIVE. This empties the cache in order to weigh it. ***
+ *
+ * Correct in a proof, a defect as a live metric: called during rendering it
+ * throws away work the next page would have reused, so a "memory pressure"
+ * dashboard wired to this would cause the slowness it was added to diagnose.
+ * There is no non-destructive route, and that is an external constraint rather
+ * than a choice:
+ *
+ *   MuPDF exposes no accessor for the store's current size. `struct fz_store`
+ *   does carry `size_t size`, but it is defined in source/fitz/store.c (v1.28.0
+ *   line 42) and appears in NO header, public or internal — context.h only
+ *   forward-declares the type. The entire public surface is fz_empty_store,
+ *   fz_shrink_store, fz_debug_store and fz_log_dump_store.
+ *
+ * The previous implementation scraped fz_debug_store's output for "size=", and
+ * could never have been truthful. fz_debug_store prints one
+ * "[refs=%d][size=%d]" line PER ITEM (store.c:745 and :769) before its summary
+ * line "STORE\tmax=%zu, size=%zu, actual size=%zu" (store.c:783), so a search
+ * from the start of the buffer binds to the first cached item and reaches the
+ * summary only when the store is empty. It read correctly throughout ADR-0010
+ * for exactly that reason: every checkpoint there had an empty store. With
+ * three pages rendered it reported 98,065 bytes while emptying the store
+ * released 75,296,838.
+ *
+ * Measuring the delta across fz_empty_store also answers a better question than
+ * the accounted number could. MuPDF's own debug line prints `size` and
+ * `actual size` separately because an item's declared itemsize is not what it
+ * cost to allocate; the delta is bytes genuinely returned to the allocator.
+ *
+ * *** FLOOR, NOT TOTAL, WHEN NOT QUIESCENT ***
+ *
+ * Store items are refcounted and fz_empty_store evicts only those the store
+ * alone holds. Anything still in use survives and its bytes are not in the
+ * delta — the same shape as pdf_clear_xref skipping entries with refs above
+ * one. `quiescent_out` reports whether anything was held at the moment of
+ * measurement: it is 1 only when the document has no open pages and no pixmap
+ * is outstanding. When it is 0 the caller must report the figure as a lower
+ * bound, not a total.
+ *
+ * `d` may be NULL, in which case only the pixmap half of quiescence is checked.
  */
-MZ_EXPORT int mz_store_size(mz_ctx *c, double *size_out, double *max_out)
+MZ_EXPORT int mz_store_footprint(mz_ctx *c, mz_doc *d, double *freed_out, int *quiescent_out)
+{
+    size_t before, after;
+    int live_pages = 0;
+    fz_page *p;
+
+    if (c == NULL)
+        return MZ_ERR;
+
+    if (d != NULL && d->doc != NULL) {
+        for (p = d->doc->open; p != NULL; p = p->next)
+            if (p->doc != NULL)
+                live_pages++;
+    }
+    *quiescent_out = (live_pages == 0 && c->live_pixmaps == 0) ? 1 : 0;
+
+    before = c->acct.live_bytes;
+    fz_try(c->fz)
+        fz_empty_store(c->fz);
+    fz_catch(c->fz) {
+        mz_record(c);
+        return MZ_ERR;
+    }
+    after = c->acct.live_bytes;
+
+    *freed_out = (before >= after) ? (double)(before - after) : 0.0;
+    return MZ_OK;
+}
+
+/*
+ * The raw text of fz_debug_store, copied out for a human to read.
+ *
+ * Deliberately NOT parsed, and no decision is taken from it. It exists so the
+ * footprint measurement above can be validated once by eye against MuPDF's own
+ * summary at a checkpoint where the store is genuinely full — three instruments
+ * in this investigation produced confidently wrong numbers, and a fourth that
+ * nothing was ever checked against would be the fifth.
+ *
+ * Returns the byte length written. If the buffer is too small the text is
+ * truncated and `needed_out` reports the full length.
+ */
+MZ_EXPORT int mz_store_debug(mz_ctx *c, char *out_buf, int buf_len, double *needed_out)
 {
     fz_buffer *buf = NULL;
     fz_output *out = NULL;
     unsigned char *data = NULL;
     size_t len = 0;
-    double size = -1, max = -1;
+
+    if (c == NULL || out_buf == NULL || buf_len <= 0)
+        return MZ_ERR;
 
     fz_try(c->fz) {
-        buf = fz_new_buffer(c->fz, 256);
+        buf = fz_new_buffer(c->fz, 4096);
         out = fz_new_output_with_buffer(c->fz, buf);
         fz_debug_store(c->fz, out);
         fz_close_output(c->fz, out);
@@ -237,18 +372,18 @@ MZ_EXPORT int mz_store_size(mz_ctx *c, double *size_out, double *max_out)
         return MZ_ERR;
     }
 
-    if (data != NULL && len > 0) {
-        const char *p = strstr((const char *)data, "max=");
-        if (p != NULL)
-            max = (double)strtoull(p + 4, NULL, 10);
-        p = strstr((const char *)data, "size=");
-        if (p != NULL)
-            size = (double)strtoull(p + 5, NULL, 10);
+    *needed_out = (double)len;
+    {
+        /* fz_buffer_storage does not NUL-terminate, so every copy is bounded by
+         * the length it returned rather than by a terminator. */
+        size_t room = (size_t)buf_len - 1;
+        size_t take = (len < room) ? len : room;
+        if (data != NULL && take > 0)
+            memcpy(out_buf, data, take);
+        out_buf[take] = '\0';
     }
 
     fz_drop_buffer(c->fz, buf);
-    *size_out = size;
-    *max_out = max;
     return MZ_OK;
 }
 
@@ -594,7 +729,10 @@ MZ_EXPORT int mz_render_page(mz_ctx *c, mz_doc *d, int number, float dpi,
                              unsigned char **samples, int *width, int *height,
                              int *stride, void **pixmap_out)
 {
-    fz_pixmap *pix = NULL;
+    /* volatile: assigned inside the try and read after it. fz_try is setjmp, and
+     * longjmp leaves a non-volatile local indeterminate — the /O2 this project
+     * builds with is exactly when the compiler keeps it in a register. */
+    fz_pixmap * volatile pix = NULL;
     fz_matrix ctm = fz_scale(dpi / 72.0f, dpi / 72.0f);
 
     fz_try(c->fz)
@@ -610,6 +748,10 @@ MZ_EXPORT int mz_render_page(mz_ctx *c, mz_doc *d, int number, float dpi,
     *height = pix->h;
     *stride = pix->stride;
     *pixmap_out = pix;
+    /* Counted for the quiescence test in mz_store_footprint: a live pixmap holds
+     * store items referenced, so the store cannot be fully evicted while one is
+     * outstanding, and the measured delta would silently be a floor. */
+    c->live_pixmaps++;
     return MZ_OK;
 }
 
@@ -618,4 +760,11 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
     if (c == NULL || pixmap == NULL)
         return;
     fz_drop_pixmap(c->fz, (fz_pixmap *)pixmap);
+    if (c->live_pixmaps > 0)
+        c->live_pixmaps--;
+    else
+        /* Freeing a pixmap that was never handed out means the quiescence test
+         * is reading a count that no longer tracks reality, so mark the whole
+         * accounting untrustworthy rather than clamping to a plausible zero. */
+        c->acct.invalid = 1;
 }

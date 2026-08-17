@@ -46,6 +46,7 @@
     "eslint-plugin-import-x": "^4.17.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
+    "koffi": "3.1.5",
     "png-to-ico": "^3.0.2",
     "sharp": "^0.35.3",
     "typescript": "~6.0.3",
