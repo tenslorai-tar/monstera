@@ -248,13 +248,39 @@ These were given directly and bind every agent on this project.
   rather than a preference." **Five of the six occurrences happened while it
   said that.** A rule an agent must recall at the moment of composing a command
   is not a defence; the hook is. The rule stays as written — it is still what
-  tells you *why* — but it is no longer what stops you.
+  tells you *why* — and in any session where the hook is live it is no longer
+  what stops you.
 
-  Two limits worth knowing. Hooks are read at session start, so a change to
-  `.claude/settings.json` does not take effect until the next session. And the
-  hook governs shell tools only: `Edit` and `Write` are deliberately untouched,
-  which is what makes failing closed safe, since a bug in the guard can always
-  be repaired through the very tools the rule prefers.
+  **That qualifier is load-bearing, and as of 2026-08-18 the hook has never been
+  observed to fire.** Its parts are proven — the script denies, the tracked
+  settings register it for both shells, and the configured command string run
+  verbatim denies (`npm run proof:escapeguard`, 51 cases). What no proof can
+  reach is the agent's own hook table, so *loaded and live* remains asserted
+  rather than executed. Until a session records the probe below as denied, treat
+  the rule as still the only thing standing between you and a seventh occurrence.
+
+  Three limits worth knowing.
+
+  1. Hooks are read **when the process starts**. A change to
+     `.claude/settings.json` does not take effect until a new process — and
+     **`/compact` is not a new process.** It clears context inside the same
+     session: same session id, same transcript, same hook table as at startup.
+     This has already cost one attempt at the probe, which read as a guard
+     failure when it was a stale session.
+  2. A command that runs when you expected a denial is ambiguous on its own —
+     broken guard and stale session look identical. Disambiguate with
+     `npm run proof:escapeguard`: if it passes and the probe still executes, the
+     guard is sound and the session predates it.
+  3. The hook governs shell tools only: `Edit` and `Write` are deliberately
+     untouched, which is what makes failing closed safe, since a bug in the
+     guard can always be repaired through the very tools the rule prefers.
+
+  The probe, to be run in the first genuinely new session that follows a change
+  to the hook, and recorded in `docs/JOURNAL.md` either way:
+
+  ```
+  node -e "console.log('hook test')"
+  ```
 
   The one safe exception is a script that manipulates bytes **numerically**
   (`0x07`, byte arrays), because nothing in that path resolves an escape. That

@@ -265,3 +265,26 @@ if (failures.length > 0) {
 
 for (const label of passed) process.stdout.write(`  ok  ${label}\n`);
 process.stdout.write(`\n${passed.length} escape-guard cases passed.\n`);
+
+// ---------------------------------------------------------------------------
+// What this proof CANNOT reach, said out loud.
+//
+// Everything above runs in a subprocess. The thing that decides whether a
+// command is actually blocked is the agent's hook table, which is read when its
+// process starts and is not observable from here. So a fully green run above is
+// consistent with a session in which the guard is not loaded at all — which is
+// exactly what happened on 2026-08-18, when the settings file postdated the
+// session by forty hours and the probe ran unimpeded.
+//
+// The failure this prints against is specific: a command executing when a
+// denial was expected looks IDENTICAL whether the guard is broken or merely not
+// loaded. Naming the discriminator here is what stops the next reader drawing
+// the wrong conclusion from the right observation.
+process.stdout.write(
+  `\nNOT established by this proof: that the guard is loaded in any given agent\n` +
+    `session. Hooks are read at process start, and /compact does not restart the\n` +
+    `process. Probe a session with:  node -e "console.log('hook test')"\n` +
+    `  denied            -> the guard is live in that session.\n` +
+    `  runs, proof green -> the guard is sound; the session predates it. Not a defect.\n` +
+    `  runs, proof red   -> the guard itself is broken. Fix it before trusting the rule.\n`,
+);

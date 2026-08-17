@@ -22,7 +22,7 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
-> ### FIRST ACTION NEXT SESSION — before anything else
+> ### FIRST ACTION IN THE NEXT *NEW* SESSION — before anything else
 >
 > **Run this, verbatim, and record what happens here:**
 >
@@ -30,22 +30,40 @@ next and what is owed.
 > node -e "console.log('hook test')"
 > ```
 >
-> It must be **DENIED** by the PreToolUse guard registered in
-> `.claude/settings.json`. Hooks are read at session start, so the guard was
-> installed but not live in the session that wrote it — running that command
-> there still executed, which is expected for a mid-session settings change and
-> not a failure of the configuration.
+> **Attempt 1 — 2026-08-18 — the command RAN. Not denied.** Recorded as required,
+> and it is not the result the block was written expecting. The mechanism, in one
+> sentence: **hooks are read when the process starts, and `/compact` does not
+> start a process.** The evidence separating that from a broken guard:
 >
-> Everything verified so far is **configuration reading**: the settings parse,
-> the matcher covers `Bash` and `PowerShell`, and the resolved command string
-> denies when run by hand. This project treats that as *asserted*, not
-> *executed*. The whole claim of the mechanism is that it fires without anyone
-> remembering it should — so the one thing that would prove it is the one thing
-> that could not be done on the day.
+> | Observation | Value |
+> |---|---|
+> | Session transcript created | 2026-08-16 08:29:43 |
+> | `.claude/settings.json` first committed (`fc8ae8b`) | 2026-08-18 00:18:39 |
+> | `.claude/settings.local.json` | absent |
+> | User-scope `~/.claude/settings.json` | no `hooks` key, no `disableAllHooks` |
+> | `npm run proof:escapeguard` | 51/51 green, including the wiring cases |
 >
-> Record the outcome in this file either way. If it is NOT denied, the mechanism
-> does not exist yet and CLAUDE.md's amended standing rule overstates what is in
-> place; say so there in the same commit.
+> The session predated its own settings file by roughly forty hours. The guard
+> was never loaded here, so the probe measured a session, not a guard. The
+> local-disarm hypothesis is separately excluded by rows three and four.
+>
+> **So the claim is still unverified, and the block stays open.** The correction
+> that matters is to the block itself, which said "next session" and treated a
+> compaction as one. A compaction keeps the session id, the transcript and the
+> hook table; only a genuinely new process reloads settings.
+>
+> **Read the outcome with this rule, because a command that runs is ambiguous on
+> its own** — a broken guard and a stale session are indistinguishable from the
+> command alone:
+>
+> - **denied** → the guard is live. Record it and close this block.
+> - **runs, and `proof:escapeguard` is green** → the guard is sound, the session
+>   predates it. Not a defect; try again in a new process.
+> - **runs, and `proof:escapeguard` is red** → the guard itself is broken. Fix it
+>   before trusting the standing rule, which is currently carrying the class alone.
+>
+> That rule is printed by `proof:escapeguard` itself and stated in `CLAUDE.md`,
+> so it does not depend on anyone reaching this paragraph.
 >
 > **Second, still unverified:** whether a `hooks` block in a higher-precedence
 > settings scope REPLACES the project's or MERGES with it. The published
@@ -54,7 +72,9 @@ next and what is owed.
 > claims the project file wins. `scripts/lib/hookIntegrity.mjs` currently
 > assumes the table is right and treats any competing `hooks` block as
 > disarming. Settle it by writing a local settings file with an empty
-> `PreToolUse` array, restarting, and re-running the command above.
+> `PreToolUse` array, restarting, and re-running the command above. Attempt 1
+> could not touch this either: with no competing block anywhere on the machine,
+> there was nothing for precedence to decide between.
 
 **Done and green in CI (Windows + Linux):** pre-commit guards with proofs ·
 pinned-hash provisioning · governing documents and ADRs 0001–0011 · monorepo
