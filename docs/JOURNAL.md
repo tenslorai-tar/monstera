@@ -672,7 +672,15 @@ Recorded as [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceili
 Budgets are now **per process** and each is argued from what the process is
 for, because a budget derived only from the measurement it constrains can never
 fail — main ≤ 1.5× as a design constraint, the MuPDF host ≤ 6× as a containment
-limit whose breach means kill-and-restart, the renderer ≤ 2.5×.
+limit whose breach means kill-and-restart, the renderer ≤ 2.5× — that last
+figure **withdrawn the next day** by ADR-0007's own correction, because it had
+no derivation; invariant 17 now makes the renderer budget provisional and
+two-term.
+
+> The sentence above is left standing rather than edited, because what was
+> believed on the day is the record. Only the forward pointer is added — and it
+> was added because the withdrawn-phrase check flagged this line, not because
+> anyone re-read the entry. The audit itself listed only the FEATURES.md row.
 
 **A second rule fell out of the same measurement.** Save mode is decided by the
 *purpose* of the save, never by a default: never incremental for removal

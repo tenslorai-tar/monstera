@@ -21,7 +21,7 @@
 > - **The machine-RAM table**, which was derived from the withdrawn ratio.
 >
 > **Withdrawn phrases:** `~650 MB` · `admission gate` · `stream bytes × 3.7` ·
-> `machine-RAM table`
+> `machine-RAM table` · `renderer ≤ 2.5×`
 >
 > That line is machine-read. `scripts/hooks/documentConsistency.mjs` extracts the
 > backticked phrases and fails the build if any tracked document states one as a
