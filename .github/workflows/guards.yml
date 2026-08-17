@@ -89,5 +89,23 @@ jobs:
       - name: File policy (whole tree)
         run: node scripts/hooks/guardFiles.mjs --tree
 
+      # The tree scope sees only what survives to the tip. A blob committed and
+      # then deleted is gone from `git ls-files` and retained by GitHub forever,
+      # which is precisely what B10 is about — so the binary/size/fixture half of
+      # L15 needs the same history reach the secret scan below already has.
+      #
+      # Scoped to what the change introduces rather than to all of history: the
+      # eight blobs that predate 45eb4fb cannot be removed, so gating on them
+      # every run would be a red build people learn to ignore.
+      - name: File policy (history introduced by this change)
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            node scripts/hooks/guardFiles.mjs --history \
+              --range "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
+          else
+            node scripts/hooks/guardFiles.mjs --history \
+              --range "${{ github.event.before }}..${{ github.sha }}"
+          fi
+
       - name: Secret scan (full history)
         run: node scripts/hooks/scanSecrets.mjs
