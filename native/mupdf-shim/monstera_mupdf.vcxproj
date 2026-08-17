@@ -67,9 +67,42 @@
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
       <WarningLevel>Level3</WarningLevel>
+
+      <!-- Exploit mitigations, stated rather than inherited.
+           This library parses hostile input: a PDF is the single largest thing
+           an attacker controls in this application, and every byte of it reaches
+           MuPDF's C parsers through here. Several of these are on by default,
+           and they are written out anyway — a default is a thing that changes
+           when a toolchain is upgraded, and nobody notices a mitigation that was
+           never named.
+
+           /GS      stack buffer overrun detection (canaries).
+           /sdl     additional security checks, and promotes several
+                    security-relevant warnings to errors.
+           /guard:cf Control Flow Guard: indirect calls are checked against a
+                    table of valid targets, which is what turns many corrupted
+                    function pointers from exploitable into a crash. -->
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <SDLCheck>true</SDLCheck>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
+
+      <!-- /DYNAMICBASE + /HIGHENTROPYVA: ASLR with the full 64-bit entropy,
+           rather than the 8 bits a 32-bit-compatible layout would give.
+           /NXCOMPAT: data pages non-executable.
+           /CETCOMPAT: opts in to hardware shadow stacks on CPUs that have them,
+           which defeats return-address overwrite outright rather than making it
+           harder. It is inert on older CPUs, so there is no floor to raise. -->
+      <!-- No /SAFESEH here: it is x86-only and the linker rejects it outright on
+           x64 (LNK1246). x64 uses table-based exception handling, where the
+           unwind data lives in a read-only section rather than on the stack, so
+           the class of attack /SAFESEH exists to stop is not representable. -->
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <HighEntropyVA>true</HighEntropyVA>
+      <CETCompat>true</CETCompat>
       <AdditionalLibraryDirectories>$(MupdfRoot)\platform\win32\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>libmupdf.lib;libthirdparty.lib;libresources.lib;libharfbuzz.lib;libextract.lib;libpkcs7.lib;libleptonica.lib;libtesseract.lib;libzxing.lib;libmubarcode.lib;advapi32.lib;user32.lib;gdi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>false</GenerateDebugInformation>

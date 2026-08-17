@@ -58,6 +58,16 @@ const mz_render_page = lib.func(
   'int mz_render_page(void *c, void *d, int number, float dpi, _Out_ void **samples, _Out_ int *w, _Out_ int *h, _Out_ int *stride, _Out_ void **pixmap)',
 );
 const mz_free_pixmap = lib.func('void mz_free_pixmap(void *c, void *pixmap)');
+// Four out-parameters, not two: the rectangle is x0,y0,x1,y1. Declaring two
+// made koffi write past the arrays it was given and the process segfaulted —
+// which is the honest failure mode for a mismatched FFI declaration, and the
+// reason every signature here is copied from the C rather than remembered.
+const mz_page_bounds = lib.func(
+  'int mz_page_bounds(void *c, void *d, int number, _Out_ float *x0, _Out_ float *y0, _Out_ float *x1, _Out_ float *y1)',
+);
+const mz_process_alloc_stats = lib.func(
+  'void mz_process_alloc_stats(_Out_ double *allocated, _Out_ double *freed, _Out_ double *ba, _Out_ double *bf, _Out_ double *peak, _Out_ int *imbalance)',
+);
 
 /**
  * koffi writes `_Out_` parameters into element 0 of an array. Typed as a
@@ -245,8 +255,108 @@ async function main() {
   process.stdout.write(`\nafter close       live=${bytes(closed.live)} blocks=${closed.blocks}\n`);
 
   mz_drop(ctx);
+
+  // --- The leak check, which per-context accounting structurally cannot answer.
+  // These totals are monotonic and process-wide, so they outlive the context
+  // that was just dropped. ADR-0010's "0 live blocks after the context is
+  // dropped" came from counters that mz_init reset on the next call, so it
+  // measured a reset rather than a release.
+  {
+    const a = num();
+    const f = num();
+    const ba = num();
+    const bf = num();
+    const pk = num();
+    const im = num();
+    mz_process_alloc_stats(a, f, ba, bf, pk, im);
+    process.stdout.write(`\n--- process totals, after every context was dropped ---\n`);
+    process.stdout.write(`bytes  allocated ${bytes(a[0])}\n`);
+    process.stdout.write(`bytes  freed     ${bytes(f[0])}\n`);
+    process.stdout.write(`blocks allocated ${ba[0].toLocaleString('en-US')}\n`);
+    process.stdout.write(`blocks freed     ${bf[0].toLocaleString('en-US')}\n`);
+    process.stdout.write(`peak live        ${bytes(pk[0])}\n`);
+    process.stdout.write(
+      `LEAK: ${a[0] === f[0] && ba[0] === bf[0] ? 'none — allocated equals freed' : `${bytes(a[0] - f[0])} in ${ba[0] - bf[0]} block(s) never returned`}` +
+        `   imbalance=${im[0]}\n`,
+    );
+  }
+
   await rm(scratch, { recursive: true, force: true });
 }
+
+/**
+ * Re-runs ADR-0010's own checkpoints, with the prediction stated BEFORE the
+ * numbers.
+ *
+ * PREDICTION. The old reader searched fz_debug_store's buffer for "size=" from
+ * the start, so it bound to the first CACHED ITEM line and reached the summary
+ * only when there were no item lines at all. It could therefore return a
+ * plausible small number only when the store was genuinely empty. ADR-0010
+ * recorded a store of 0 at every checkpoint — so the store really was empty
+ * there, and its conclusion "not the resource store" is confirmed by deduction
+ * rather than merely probable.
+ *
+ * The corrected instrument must therefore ALSO report ~0 at those checkpoints.
+ * If it reports anything substantial, the deduction is wrong, there is a third
+ * defect, and that is the finding.
+ *
+ * ADR-0010's checkpoints never rendered: they opened, walked page geometry, and
+ * held pages. That is reproduced here exactly — no mz_render_page.
+ */
+async function replayAdrCheckpoints() {
+  const scratch = await mkdtemp(join(tmpdir(), 'monstera-adr-'));
+  const path = join(scratch, 'fixture.pdf');
+  await writeFile(path, await buildFixture());
+
+  const ctxOut = ptr();
+  mz_init(ctxOut);
+  const ctx = ctxOut[0];
+  const docOut = ptr();
+  mz_open(ctx, path, docOut);
+  const doc = docOut[0];
+
+  const pages = num();
+  mz_page_count(ctx, doc, pages);
+
+  process.stdout.write(`\n=== ADR-0010 checkpoints replayed (open + walk, never render) ===\n`);
+  process.stdout.write(`PREDICTION: the store footprint is ~0 at every checkpoint below.\n\n`);
+
+  /** @param {string} label */
+  const checkpoint = (label) => {
+    const freed = num();
+    const quiescent = num();
+    mz_store_footprint(ctx, doc, freed, quiescent);
+    const s = stats(ctx);
+    process.stdout.write(
+      `  ${label.padEnd(22)} store=${bytes(freed[0]).padEnd(24)} ` +
+        `live=${bytes(s.live)} quiescent=${quiescent[0]}\n`,
+    );
+    return freed[0];
+  };
+
+  const observed = [checkpoint('after open')];
+
+  for (let n = 0; n < pages[0]; n += 1) {
+    const x0 = num();
+    const y0 = num();
+    const x1 = num();
+    const y1 = num();
+    mz_page_bounds(ctx, doc, n, x0, y0, x1, y1);
+  }
+  observed.push(checkpoint('after page walk'));
+
+  mz_close(ctx, doc);
+  mz_drop(ctx);
+  await rm(scratch, { recursive: true, force: true });
+
+  const worst = Math.max(...observed);
+  process.stdout.write(
+    `\n  VERDICT: largest store footprint at any checkpoint = ${bytes(worst)}\n` +
+      `  ${worst < 100_000 ? 'Prediction HELD. ADR-0010’s "not the resource store" is confirmed.' : 'Prediction FAILED — a third defect, and this is the finding.'}\n`,
+  );
+}
+
+await replayAdrCheckpoints();
 
 main().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);

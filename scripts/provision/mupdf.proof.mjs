@@ -24,6 +24,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { fileExists } from '../lib/fetchVerified.mjs';
+import { readPeHardening } from '../lib/peHardening.mjs';
 import { shimLibraryPath, verifyExports } from './mupdf.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -115,6 +116,52 @@ async function main() {
     await rm(scratch, { recursive: true, force: true });
   }
 
+  // Case 3 — the exploit mitigations are in the IMAGE, not merely in the
+  // project file. This library parses the most attacker-controlled input the
+  // application has, and a requested flag can be silently dropped: by a
+  // toolchain upgrade, by a later option overriding an earlier one, or by the
+  // linker refusing it for the target architecture. /SAFESEH was refused exactly
+  // that way here (LNK1246, x86-only), which is the whole argument for reading
+  // the artefact rather than trusting the request.
+  const required = ['HIGH_ENTROPY_VA', 'DYNAMIC_BASE', 'NX_COMPAT', 'GUARD_CF'];
+  try {
+    const { mitigations, dllCharacteristics } = readPeHardening(dll);
+    const missing = required.filter((name) => mitigations[name] !== true);
+    if (missing.length > 0) {
+      failures.push(
+        `the shim is missing ${missing.join(', ')} (DllCharacteristics ` +
+          `0x${dllCharacteristics.toString(16)}). These are configured in monstera_mupdf.vcxproj, ` +
+          `so a mismatch means the request did not reach the binary.`,
+      );
+    }
+
+    // Case 4 — the control. Clearing the bits in a copy must be detected;
+    // otherwise case 3 proves only that the reader returns something.
+    const scratch = await mkdtemp(join(tmpdir(), 'monstera-pe-'));
+    try {
+      const stripped = join(scratch, 'stripped.dll');
+      await copyFile(dll, stripped);
+      const image = await readFile(stripped);
+      const peOffset = image.readUInt32LE(0x3c);
+      const at = peOffset + 24 + 0x46;
+      image.writeUInt16LE(image.readUInt16LE(at) & ~0x4160, at);
+      await writeFile(stripped, image);
+
+      const after = readPeHardening(stripped).mitigations;
+      const stillReported = required.filter((name) => after[name] === true);
+      if (stillReported.length > 0) {
+        failures.push(
+          `after clearing every mitigation bit, the reader still reports ` +
+            `${stillReported.join(', ')} as present. THE HARDENING CHECK IS VACUOUS.`,
+        );
+      }
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  } catch (error) {
+    failures.push(`could not read the shim's PE header: ${String(error)}`);
+  }
+
   if (failures.length > 0) {
     process.stderr.write(`\n${failures.length} shim proof failure(s):\n\n${failures.join('\n\n')}\n\n`);
     return 1;
@@ -122,7 +169,9 @@ async function main() {
 
   process.stdout.write('  ok  the built shim exports every MZ_EXPORT symbol its source declares\n');
   process.stdout.write('  ok  a DLL missing a declared export is rejected\n');
-  process.stdout.write('\n2 shim cases passed.\n');
+  process.stdout.write(`  ok  the image carries ${required.join(', ')}\n`);
+  process.stdout.write('  ok  clearing those bits is detected\n');
+  process.stdout.write('\n4 shim cases passed.\n');
   return 0;
 }
 

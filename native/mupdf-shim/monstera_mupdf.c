@@ -62,52 +62,93 @@
  * allocation can only be counted against the context whose allocator performed
  * it, and there is no shared total left to reset.
  */
+/*
+ * MONOTONIC totals. Nothing here ever decreases.
+ *
+ * Live bytes is a DERIVED quantity — allocated minus freed — rather than a
+ * counter that goes up and down. That single change removes three problems at
+ * once instead of trading them off:
+ *
+ *   - It cannot underflow, because subtraction never happens. The previous
+ *     design decremented a live counter and clamped at zero on underflow, which
+ *     made the error state indistinguishable from the success value: 0 live
+ *     bytes reads as "everything was freed", which is exactly the conclusion the
+ *     instrument existed to support. A fault confirmed the hypothesis.
+ *   - The GLOBAL pair outlives every context, so the leak question survives the
+ *     drop. Per-context accounting alone cannot answer it — the accounting lives
+ *     inside the thing being destroyed — and ADR-0010's "0 live blocks after the
+ *     context is dropped" was produced by counters that were reset on the next
+ *     mz_init rather than by a measurement that outlasted anything.
+ *   - The per-context pair still isolates one document from another, which is
+ *     what the file-scope statics could not do.
+ *
+ * `imbalance` is the only error signal left, and it is a real one: freeing more
+ * than was allocated through this allocator means the counters have stopped
+ * describing reality, and it is detectable precisely because both terms are
+ * monotonic.
+ */
 typedef struct {
-    size_t live_bytes;
-    size_t peak_bytes;
-    size_t live_blocks;
-    /* Sticky. Set when a subtraction would have gone negative, which means the
-     * counters no longer describe reality. Clamping alone made the error state
-     * indistinguishable from the success value: 0 live bytes reads as "all
-     * freed", which is precisely the conclusion this instrument exists to
-     * support, so a fault would have confirmed the hypothesis. */
-    int invalid;
+    size_t bytes_allocated;
+    size_t bytes_freed;
+    size_t blocks_allocated;
+    size_t blocks_freed;
+    size_t peak_live_bytes;
+    int imbalance;
 } mz_accounting;
 
-static void mz_account_add(mz_accounting *a, size_t n)
+/*
+ * Process-wide, and DELIBERATELY never reset — not in mz_init, not anywhere.
+ * Resetting is what made the old counters lie across two contexts. Monotonic
+ * totals need no reset to stay correct, so the reset can simply be absent
+ * rather than carefully placed.
+ */
+static mz_accounting g_process = { 0, 0, 0, 0, 0, 0 };
+
+static size_t mz_live_bytes(const mz_accounting *a)
 {
-    a->live_bytes += n;
-    if (a->live_bytes > a->peak_bytes)
-        a->peak_bytes = a->live_bytes;
+    return (a->bytes_allocated >= a->bytes_freed) ? a->bytes_allocated - a->bytes_freed : 0;
 }
 
-static void mz_account_sub(mz_accounting *a, size_t n)
+static size_t mz_live_blocks(const mz_accounting *a)
 {
-    if (a->live_bytes < n) {
-        a->invalid = 1;
-        a->live_bytes = 0;
-        return;
-    }
-    a->live_bytes -= n;
+    return (a->blocks_allocated >= a->blocks_freed) ? a->blocks_allocated - a->blocks_freed : 0;
 }
 
-static void mz_account_block_release(mz_accounting *a)
+static void mz_account_alloc(mz_accounting *a, size_t n)
 {
-    if (a->live_blocks == 0) {
-        a->invalid = 1;
-        return;
-    }
-    a->live_blocks--;
+    size_t live;
+    a->bytes_allocated += n;
+    a->blocks_allocated++;
+    live = mz_live_bytes(a);
+    if (live > a->peak_live_bytes)
+        a->peak_live_bytes = live;
+
+    g_process.bytes_allocated += n;
+    g_process.blocks_allocated++;
+    live = mz_live_bytes(&g_process);
+    if (live > g_process.peak_live_bytes)
+        g_process.peak_live_bytes = live;
+}
+
+static void mz_account_release(mz_accounting *a, size_t n)
+{
+    a->bytes_freed += n;
+    a->blocks_freed++;
+    if (a->bytes_freed > a->bytes_allocated || a->blocks_freed > a->blocks_allocated)
+        a->imbalance = 1;
+
+    g_process.bytes_freed += n;
+    g_process.blocks_freed++;
+    if (g_process.bytes_freed > g_process.bytes_allocated)
+        g_process.imbalance = 1;
 }
 
 static void *mz_alloc_malloc(void *user, size_t size)
 {
     mz_accounting *a = (mz_accounting *)user;
     void *p = malloc(size);
-    if (p != NULL) {
-        mz_account_add(a, _msize(p));
-        a->live_blocks++;
-    }
+    if (p != NULL)
+        mz_account_alloc(a, _msize(p));
     return p;
 }
 
@@ -122,17 +163,18 @@ static void *mz_alloc_realloc(void *user, void *old, size_t size)
         /* realloc failed: `old` is still live and still counted. Nothing to do.
          * (size == 0 with a NULL return is a free on some CRTs, but MSVC's
          * realloc(ptr, 0) frees and returns NULL, so account for it.) */
-        if (size == 0 && old != NULL) {
-            mz_account_sub(a, before);
-            mz_account_block_release(a);
-        }
+        if (size == 0 && old != NULL)
+            mz_account_release(a, before);
         return NULL;
     }
 
-    if (old == NULL)
-        a->live_blocks++;
-    mz_account_sub(a, before);
-    mz_account_add(a, _msize(p));
+    /* A realloc is one release and one allocation, even when the block moved in
+     * place. Counting it that way keeps allocated and freed monotonic and their
+     * difference exact; the alternative — adjusting a live counter by a delta —
+     * is the shape that could underflow. */
+    if (old != NULL)
+        mz_account_release(a, before);
+    mz_account_alloc(a, _msize(p));
     return p;
 }
 
@@ -141,8 +183,7 @@ static void mz_alloc_free(void *user, void *p)
     mz_accounting *a = (mz_accounting *)user;
     if (p == NULL)
         return;
-    mz_account_sub(a, _msize(p));
-    mz_account_block_release(a);
+    mz_account_release(a, _msize(p));
     free(p);
 }
 
@@ -243,9 +284,9 @@ MZ_EXPORT const char *mz_last_error(mz_ctx *c)
  * argument structurally cannot answer a per-context question, so it answered a
  * process-wide one and was read as though it were per-context.
  *
- * `invalid` is sticky and must be checked before the numbers are used. It is
- * set when a subtraction would have gone negative, i.e. when the counters have
- * stopped describing reality.
+ * `invalid` is sticky, and now means only one thing: more was freed than was
+ * allocated. It can no longer be set by an underflow, because there is no
+ * subtraction to underflow.
  */
 MZ_EXPORT int mz_alloc_stats(mz_ctx *c, double *live, double *peak, double *blocks, int *invalid)
 {
@@ -253,11 +294,40 @@ MZ_EXPORT int mz_alloc_stats(mz_ctx *c, double *live, double *peak, double *bloc
         return MZ_ERR;
     /* double, not size_t: koffi marshals it cleanly and these never approach
      * the range where a double loses integer precision. */
-    *live = (double)c->acct.live_bytes;
-    *peak = (double)c->acct.peak_bytes;
-    *blocks = (double)c->acct.live_blocks;
-    *invalid = c->acct.invalid;
+    *live = (double)mz_live_bytes(&c->acct);
+    *peak = (double)c->acct.peak_live_bytes;
+    *blocks = (double)mz_live_blocks(&c->acct);
+    *invalid = c->acct.imbalance;
     return MZ_OK;
+}
+
+/*
+ * Process-wide totals, which OUTLIVE every context.
+ *
+ * This is the leak check, and it takes no context on purpose — the opposite of
+ * mz_alloc_stats, whose contextless signature was the defect. A leak is a
+ * property of the process after everything has been destroyed, so it cannot be
+ * asked of a live object: per-context accounting is freed along with the context
+ * it describes.
+ *
+ * ADR-0010 recorded "0 live blocks and 0 live bytes after the context is
+ * dropped". That was produced by counters mz_init reset on the next call, so it
+ * measured a reset rather than a release. Answering it honestly needs totals
+ * that no reset touches and no subtraction can corrupt, which is what these are.
+ *
+ * The leak test is `allocated == freed` after every context is dropped. Both
+ * terms only ever rise, so the equality is meaningful even if a context leaked
+ * and was never dropped at all.
+ */
+MZ_EXPORT void mz_process_alloc_stats(double *allocated, double *freed, double *blocks_allocated,
+                                      double *blocks_freed, double *peak, int *imbalance)
+{
+    *allocated = (double)g_process.bytes_allocated;
+    *freed = (double)g_process.bytes_freed;
+    *blocks_allocated = (double)g_process.blocks_allocated;
+    *blocks_freed = (double)g_process.blocks_freed;
+    *peak = (double)g_process.peak_live_bytes;
+    *imbalance = g_process.imbalance;
 }
 
 /*
@@ -321,14 +391,14 @@ MZ_EXPORT int mz_store_footprint(mz_ctx *c, mz_doc *d, double *freed_out, int *q
     }
     *quiescent_out = (live_pages == 0 && c->live_pixmaps == 0) ? 1 : 0;
 
-    before = c->acct.live_bytes;
+    before = mz_live_bytes(&c->acct);
     fz_try(c->fz)
         fz_empty_store(c->fz);
     fz_catch(c->fz) {
         mz_record(c);
         return MZ_ERR;
     }
-    after = c->acct.live_bytes;
+    after = mz_live_bytes(&c->acct);
 
     *freed_out = (before >= after) ? (double)(before - after) : 0.0;
     return MZ_OK;
@@ -766,5 +836,5 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
         /* Freeing a pixmap that was never handed out means the quiescence test
          * is reading a count that no longer tracks reality, so mark the whole
          * accounting untrustworthy rather than clamping to a plausible zero. */
-        c->acct.invalid = 1;
+        c->acct.imbalance = 1;
 }
