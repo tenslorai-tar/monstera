@@ -72,6 +72,38 @@ output that different readers disagree about. **Adobe Acrobat and PDF-XChange
 must both be checked against any such output**, since "renders in our own
 viewer" is not evidence.
 
+#### Correction — 2026-08-18: the escape hatch was evaluated, and the original evidence was the wrong kind
+
+The paragraph above ends "to evaluate", and for two days nothing evaluated it.
+The spike case that stood in for it grepped `PDFDocument.prototype` and
+`PDFPage.prototype` for `createWidget|addWidget|newWidget|createField|addField`,
+found none, and concluded *"this gap is real"* — the method this document's own
+spike header disclaims, in a table where every other row is a round trip. A
+rename upstream would have flipped the verdict with nothing having changed.
+
+It was also wrong about the mechanism. `createAnnotation("Widget")` **succeeds**,
+and the widget **survives save and reopen**. Measured on the standard fixture:
+
+| | before | after save + reopen |
+|---|---|---|
+| widgets on page 0 | 2 | **3** |
+| `/AcroForm /Fields` entries | 1 | **1** — the new widget is never registered |
+| the new widget's field name | — | **absent** |
+| its `/FT` field type | — | **absent** |
+| its `/AP` appearance stream | — | **absent**; MuPDF logs `cannot create appearance stream for widgets` |
+
+The fixture's own two fields still read back as `spike.text` and `spike.check`
+in the same pass, which is what makes the three absences above evidence rather
+than a broken reader — the first version of this measurement reported "no name"
+for the named fields too, and could not have told the two apart.
+
+**The conclusion is unchanged: MuPDF cannot create a form field, and H4's row is
+load-bearing.** What changed is that it now rests on what a widget lacks after a
+round trip rather than on a list of method names. The result is a widget-shaped
+annotation with no field identity — closer to a rectangle than to a form
+control, and exactly the "output different readers disagree about" this section
+warned against.
+
 ### H4 — pdf-lib is unmaintained, and the matrix depends on it
 
 Last release **1.17.1 on 2021-11-06**; last commit 2021-11-12; 317 open issues;
@@ -188,8 +220,8 @@ Run with `npm run proof:engines`. Against `mupdf@1.28.0` and
 | H1c in-place rewrite on a **flat** tree | CONFIRMED | correct order, all four entries preserved |
 | H1d naive `/Kids` reversal on a **nested** tree | **REFUTED** | permutes subtrees: gives `4 5 6 1 2 3`, not `6 5 4 3 2 1` |
 | H1e in-place reorder on a **nested** tree | CONFIRMED | correct order, inherited `/Rotate` follows its pages, `/AcroForm` kept |
-| H2 `bake(false, true)`: flattens widgets | CONFIRMED | widgets 2 → 0, `/AcroForm` removed |
-| H3 no widget creation in MuPDF | CONFIRMED | no create/add method on `PDFDocument` or `PDFPage` |
+| H2 `bake(false, true)`: flattens widgets **and drops `/AcroForm`** | CONFIRMED | widgets 2 → 0, `/AcroForm` removed |
+| H3 MuPDF creates a widget annotation, **but not a form field** | CONFIRMED | widgets 2 → 3 across a save; the new one has no name, no `/FT`, no appearance stream; `/AcroForm /Fields` stays 1 |
 | H4 `@cantoo/pdf-lib` creates fields MuPDF reads | CONFIRMED | MuPDF reads back `spike.created:text = "made by @cantoo"` |
 | H5 journal: undo restores a deleted page | CONFIRMED | `canUndo=true`, 6 pages after undo |
 | Annotations: create + persist through save | CONFIRMED | Highlight present after reopen |

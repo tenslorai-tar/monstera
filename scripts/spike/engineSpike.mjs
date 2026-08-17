@@ -99,6 +99,58 @@ function rotationOf(doc, index) {
 }
 
 /**
+ * Assembles a field's fully qualified name by walking the /Parent chain.
+ *
+ * Reading `/T` off the widget alone is not enough and looks like it works: PDF
+ * lets a field object and its widget annotation be separate objects, so a named
+ * field whose widget is a child reports no name. A first version of this probe
+ * did exactly that and reported "no name" for the fixture's own named fields —
+ * it could not have distinguished a nameless widget from a broken reader.
+ *
+ * @param {mupdf.PDFObject} obj
+ * @returns {string | null}
+ */
+function fieldNameOf(obj) {
+  /** @type {string[]} */
+  const parts = [];
+  let node = obj;
+  for (let depth = 0; depth < 16 && !node.isNull(); depth += 1) {
+    const t = node.get('T');
+    if (!t.isNull()) parts.unshift(t.asString());
+    node = node.get('Parent');
+  }
+  return parts.length === 0 ? null : parts.join('.');
+}
+
+/**
+ * @param {mupdf.PDFObject} obj
+ * @returns {string | null}
+ */
+function fieldTypeOf(obj) {
+  let node = obj;
+  for (let depth = 0; depth < 16 && !node.isNull(); depth += 1) {
+    const ft = node.get('FT');
+    if (!ft.isNull()) return ft.asName();
+    node = node.get('Parent');
+  }
+  return null;
+}
+
+/**
+ * Number of entries in /AcroForm /Fields — the register that makes a widget a
+ * form field rather than a lone annotation that merely looks like one.
+ *
+ * @param {mupdf.PDFDocument} doc
+ * @returns {number | null}
+ */
+function acroFieldCount(doc) {
+  const acro = doc.getTrailer().get('Root').get('AcroForm');
+  if (acro.isNull()) return null;
+  const fields = acro.get('Fields');
+  return fields.isNull() ? null : fields.length;
+}
+
+/**
  * @param {Uint8Array} bytes
  * @returns {mupdf.PDFDocument}
  */
@@ -275,26 +327,72 @@ async function main() {
     const acroFormGone = !(await catalogKeys(saved)).includes('AcroForm');
 
     record(
-      'H2 bake: flattens form widgets',
+      'H2 bake: flattens form widgets AND drops /AcroForm',
       'CONFIRMED',
-      widgetsBefore > 0 && widgetsAfter === 0,
+      // `acroFormGone` used to be computed here and then used only in the detail
+      // string, so a bake that stripped the widgets while leaving /AcroForm
+      // behind still reported CONFIRMED. That is a half-flattened document —
+      // no widgets to fill, an empty form dictionary telling every reader the
+      // document is still a form — and the case existed to notice it.
+      widgetsBefore > 0 && widgetsAfter === 0 && acroFormGone,
       `widgets ${String(widgetsBefore)} -> ${String(widgetsAfter)}; /AcroForm removed: ${String(acroFormGone)}`,
     );
   }
 
   // ── H3: widget creation ─────────────────────────────────────────────────
+  //
+  // This case used to grep the prototypes for /createWidget|addWidget|…/ and
+  // conclude "this gap is real" from finding none — the exact method the file
+  // header disclaims two paragraphs in, in a table where every other row is a
+  // round trip. It also happened to be wrong about the mechanism: MuPDF *does*
+  // create a widget annotation, via the generic createAnnotation('Widget'), and
+  // it survives save and reopen. A name list cannot see that, and a rename of
+  // the API would have flipped the verdict without anything changing.
+  //
+  // The architectural conclusion is unchanged and now rests on what was
+  // measured: what MuPDF produces is an annotation shaped like a widget, not a
+  // form field. No field name, no field type, no appearance stream — MuPDF
+  // itself logs "cannot create appearance stream for widgets" — and no entry in
+  // /AcroForm /Fields, which is what makes a widget a field rather than a
+  // rectangle that resembles one. That is why H4's row is load-bearing.
   {
-    const names = Object.getOwnPropertyNames(mupdf.PDFDocument.prototype).concat(
-      Object.getOwnPropertyNames(mupdf.PDFPage.prototype),
-    );
-    const creators = names.filter((n) => /createWidget|addWidget|newWidget|createField|addField/i.test(n));
+    const doc = openWithMupdf(fixture);
+    const widgetsBefore = doc.loadPage(0).getWidgets().length;
+    const fieldsBefore = acroFieldCount(doc);
+
+    const annot = doc.loadPage(0).createAnnotation('Widget');
+    annot.setRect([100, 100, 300, 140]);
+
+    const reopened = openWithMupdf(saveWithMupdf(doc));
+    const widgets = reopened.loadPage(0).getWidgets();
+    const fieldsAfter = acroFieldCount(reopened);
+
+    // Identify the created one positionally: it is the widget the fixture did
+    // not have. Reading the last entry would assume an append order nothing
+    // guarantees, so this takes the one with no field name only after checking
+    // that exactly one such widget exists.
+    const nameless = widgets.filter((widget) => fieldNameOf(widget.getObject()) === null);
+    const created = nameless[0];
+    const createdType = created === undefined ? 'n/a' : fieldTypeOf(created.getObject());
+    const createdHasAppearance = created !== undefined && !created.getObject().get('AP').isNull();
+
+    // The fixture's own fields are the control: if this reader cannot see THEIR
+    // names, a null on the created widget would mean nothing.
+    const namedBefore = widgets.length - nameless.length;
+
     record(
-      'H3 no widget creation in MuPDF',
+      'H3 MuPDF creates a widget annotation, but not a form field',
       'CONFIRMED',
-      creators.length === 0,
-      creators.length === 0
-        ? 'no widget/field creation method on PDFDocument or PDFPage — this gap is real'
-        : `found: ${creators.join(', ')}`,
+      widgets.length === widgetsBefore + 1 &&
+        namedBefore === widgetsBefore &&
+        nameless.length === 1 &&
+        createdType === null &&
+        !createdHasAppearance &&
+        fieldsAfter === fieldsBefore,
+      `widgets ${String(widgetsBefore)} -> ${String(widgets.length)} across a save; the new one has ` +
+        `name=null type=${JSON.stringify(createdType)} appearance=${createdHasAppearance ? 'present' : 'ABSENT'}; ` +
+        `/AcroForm /Fields ${String(fieldsBefore)} -> ${String(fieldsAfter)}; the fixture's ` +
+        `${String(namedBefore)} existing fields still read back by name`,
     );
   }
 
