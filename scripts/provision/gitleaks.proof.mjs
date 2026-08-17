@@ -22,8 +22,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { rm } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { readdir, rm } from 'node:fs/promises';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
@@ -31,7 +31,23 @@ import { fileExists } from '../lib/fetchVerified.mjs';
 
 const RACERS = 3;
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TOOLS = resolve(HERE, '..', '..', '.tools');
+
+/**
+ * The gitleaks subtree — `.tools/gitleaks` — derived from the path the
+ * implementation itself publishes to, never from a hand-written string.
+ *
+ * This proof used to cold-start by deleting the whole `.tools` root. `.tools` is
+ * the shared provisioning root for every native artefact the project downloads,
+ * so the proof destroyed tools it does not own. That is not hypothetical: it
+ * deleted a 69 MB MuPDF source download mid-flight the first time a second
+ * artefact existed, and the failure surfaced as an unrelated ENOENT on rename
+ * inside the *other* provisioner.
+ *
+ * @returns {string}
+ */
+function gitleaksToolDirectory() {
+  return dirname(dirname(gitleaksBinaryPath()));
+}
 
 /**
  * @returns {Promise<{ status: number, output: string }>}
@@ -48,8 +64,10 @@ function raceOne() {
 
 async function main() {
   // Cold start: without this every racer takes the already-provisioned fast
-  // path and the race the proof exists to test never happens.
-  await rm(TOOLS, { recursive: true, force: true });
+  // path and the race the proof exists to test never happens. Scoped to the
+  // gitleaks subtree — see gitleaksToolDirectory for what deleting the whole
+  // root cost.
+  await rm(gitleaksToolDirectory(), { recursive: true, force: true });
 
   const results = await Promise.all(Array.from({ length: RACERS }, raceOne));
 
@@ -84,8 +102,29 @@ async function main() {
 
   // Leaves nothing behind: a staging directory that survives means the publish
   // path exited without cleaning up.
-  const leftovers = `${dirname(binary)}.staging`;
-  if (await fileExists(leftovers)) failures.push(`staging directory survived: ${leftovers}`);
+  //
+  // This assertion used to be false by construction, twice over. It tested
+  // `${dirname(binary)}.staging`, but the implementation only ever creates
+  // `${versionDirectory}.staging-${pid}` — a name that never matches — and it
+  // tested with `fileExists`, which is `stat().isFile()` and so returns false
+  // for a directory even when the name did match. Deleting the cleanup entirely
+  // left two staging directories on disk and this proof still reported success.
+  //
+  // Enumerating the parent removes both mistakes: the pid suffix cannot be
+  // guessed, so it must not be predicted.
+  const versionDirectory = dirname(binary);
+  const stagingPrefix = `${basename(versionDirectory)}.staging`;
+  const siblings = await readdir(dirname(versionDirectory), { withFileTypes: true }).catch(() => []);
+  const survivors = siblings
+    .filter((entry) => entry.name.startsWith(stagingPrefix))
+    .map((entry) => entry.name);
+
+  if (survivors.length > 0) {
+    failures.push(
+      `${survivors.length} staging director${survivors.length === 1 ? 'y' : 'ies'} survived in ` +
+        `${dirname(versionDirectory)}: ${survivors.join(', ')}`,
+    );
+  }
 
   if (failures.length > 0) {
     process.stderr.write(`\n${failures.length} provisioning proof failure(s):\n\n${failures.join('\n\n')}\n`);
