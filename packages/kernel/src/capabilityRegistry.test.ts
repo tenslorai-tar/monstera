@@ -52,7 +52,7 @@ describe('CapabilityRegistry', () => {
     expect(registry.resolve(b)).toBe('/b.pdf');
   });
 
-  it('mints handles with at least 256 bits of entropy and no collisions', () => {
+  it('mints handles with no collisions and the documented shape', () => {
     const registry = new CapabilityRegistry();
     const handles = new Set<string>();
     for (let index = 0; index < 2000; index += 1) handles.add(registry.mint(`/f${String(index)}.pdf`));
@@ -64,6 +64,62 @@ describe('CapabilityRegistry', () => {
     for (const handle of handles) {
       expect(handle).toMatch(/^[A-Za-z0-9_-]{43}$/);
     }
+  });
+
+  // The four cases below replace one that was named for entropy and could not
+  // fail: it asserted uniqueness and a 43-character shape, and a padded counter
+  // substituted for randomBytes satisfies both — the whole suite stayed green
+  // under exactly that mutation. Uniqueness is not unpredictability, and shape
+  // is not width.
+
+  it('draws exactly 256 bits from its byte source for each handle', () => {
+    const requested: number[] = [];
+    const registry = new CapabilityRegistry((size) => {
+      requested.push(size);
+      return new Uint8Array(size).fill(requested.length);
+    });
+
+    registry.mint('/a.pdf');
+    registry.mint('/b.pdf');
+    // Idempotent per path, so this must NOT draw again — a registry that
+    // re-drew would be minting a second handle for a path it already knows.
+    registry.mint('/a.pdf');
+
+    expect(requested).toStrictEqual([32, 32]);
+  });
+
+  it('encodes the source bytes verbatim rather than deriving from them', () => {
+    const bytes = Uint8Array.from({ length: 32 }, (_unused, index) => index * 7);
+    const registry = new CapabilityRegistry(() => bytes);
+    // Any hashing or truncation between the draw and the token would break this,
+    // which is what keeps the 256-bit claim true of the handle and not merely of
+    // some value upstream of it.
+    expect(registry.mint('/a.pdf')).toBe(Buffer.from(bytes).toString('base64url'));
+  });
+
+  it('refuses a byte source that returns a short draw', () => {
+    // The failure this prevents is silent: a 4-byte draw still yields an opaque,
+    // unique, base64url-shaped token, so nothing downstream could notice.
+    const registry = new CapabilityRegistry((size) => new Uint8Array(Math.min(size, 4)));
+    expect(() => registry.mint('/a.pdf')).toThrow(/4 bytes, expected 32/);
+  });
+
+  it('varies every byte position by default, which a counter or a stub cannot', () => {
+    // The real assertion about the DEFAULT source, and the one that fails under
+    // the audit's mutation. A padded counter varies only its last byte or two,
+    // so the leading positions are constant across every draw. With 512 samples
+    // the chance a genuinely random position is constant is 256^-511.
+    const registry = new CapabilityRegistry();
+    const samples = Array.from({ length: 512 }, (_unused, index) =>
+      Buffer.from(registry.mint(`/f${String(index)}.pdf`), 'base64url'),
+    );
+
+    expect(samples.every((sample) => sample.length === 32)).toBe(true);
+
+    const constantPositions = Array.from({ length: 32 }, (_unused, position) => position).filter(
+      (position) => new Set(samples.map((sample) => sample[position])).size === 1,
+    );
+    expect(constantPositions).toStrictEqual([]);
   });
 
   it('revokes a handle so it resolves as though never minted', () => {

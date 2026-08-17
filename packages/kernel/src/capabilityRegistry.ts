@@ -48,9 +48,33 @@ import { type FileHandle, asFileHandle } from '@monstera/shared';
  * security primitive makes the primitive's correctness depend on the
  * normaliser's, and this primitive has one job.
  */
+/**
+ * Where a handle's bytes come from.
+ *
+ * Injectable for one reason: the entropy claim above was previously untestable,
+ * so it was untested. The test named for it asserted uniqueness and a
+ * 43-character shape, both of which a padded counter satisfies — and a padded
+ * counter substituted for the CSPRNG left the whole suite green. A property no
+ * test can reach is a property the code is free to lose.
+ */
+export type HandleBytesSource = (size: number) => Uint8Array;
+
+/** 32 bytes = 256 bits. Named so the width is one constant, not a literal in prose and code. */
+const HANDLE_BYTES = 32;
+
 export class CapabilityRegistry {
   readonly #pathsByHandle = new Map<string, string>();
   readonly #handlesByPath = new Map<string, FileHandle>();
+  readonly #randomBytes: HandleBytesSource;
+
+  /**
+   * The default source is the CSPRNG. The parameter exists so a test can observe
+   * the width actually drawn; it is not a configuration seam, and production
+   * code has no reason to pass one.
+   */
+  constructor(randomBytesSource: HandleBytesSource = randomBytes) {
+    this.#randomBytes = randomBytesSource;
+  }
 
   /**
    * Returns a handle standing for `path`, minting one if this path has not been
@@ -73,9 +97,21 @@ export class CapabilityRegistry {
     const existing = this.#handlesByPath.get(path);
     if (existing !== undefined) return existing;
 
-    // 32 bytes = 256 bits, base64url so the token is safe in a JSON payload and
-    // in any log line that manages to include one.
-    const handle = asFileHandle(randomBytes(32).toString('base64url'));
+    // base64url so the token is safe in a JSON payload and in any log line that
+    // manages to include one.
+    const bytes = this.#randomBytes(HANDLE_BYTES);
+    if (bytes.length !== HANDLE_BYTES) {
+      // Checked rather than trusted. A source returning a short buffer would
+      // mint a handle that still looks right — opaque, unique, base64url — while
+      // carrying a fraction of the entropy the design claims, and nothing
+      // downstream could tell. Refusing makes the weak handle unmintable rather
+      // than merely unlikely.
+      throw new Error(
+        `Handle byte source returned ${String(bytes.length)} bytes, expected ${String(HANDLE_BYTES)}. ` +
+          'A handle carries 256 bits of entropy by construction; a shorter draw is not a handle.',
+      );
+    }
+    const handle = asFileHandle(Buffer.from(bytes).toString('base64url'));
     this.#pathsByHandle.set(handle, path);
     this.#handlesByPath.set(path, handle);
     return handle;
