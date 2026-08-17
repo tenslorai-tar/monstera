@@ -32,6 +32,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { filesInCommit } from '../lib/gitScope.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** @returns {string} */
@@ -50,31 +52,15 @@ function read(relativePath) {
 
 /** @returns {string[]} Every tracked file, repo-relative, forward-slashed. */
 function trackedFiles() {
-  // Tracked files, PLUS anything staged for the next commit. `git ls-files`
-  // alone shows only what is already committed, so a brand-new ADR staged
-  // alongside a missing index row would be invisible to this check until the
-  // commit that should have caught it had already landed. Merging the staged
-  // adds closes that: the check sees the commit as it will be, not as it was.
-  const committed = spawnSync('git', ['ls-files', '-z'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (committed.status !== 0) throw new Error('git ls-files failed');
-
-  const staged = spawnSync('git', ['diff', '--cached', '--name-only', '--diff-filter=d', '-z'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (staged.status !== 0) throw new Error('git diff --cached failed');
-
-  const all = new Set(
-    [...`${committed.stdout}`.split('\0'), ...`${staged.stdout}`.split('\0')].filter(
-      (path) => path.length > 0,
-    ),
-  );
-  return [...all];
+  // The COMMIT scope: tracked plus staged, i.e. the tree as this commit will
+  // leave it. `git ls-files` alone answers about the PREVIOUS commit, so a
+  // brand-new ADR staged beside a missing index row stayed invisible until after
+  // the commit that should have caught it.
+  //
+  // Shared with guardFiles.mjs rather than fixed twice — both had the same
+  // defect, a guard asking git a question whose answer is not the thing it
+  // guards. scripts/lib/gitScope.mjs names the four scopes and their semantics.
+  return filesInCommit({ cwd: ROOT });
 }
 
 /** @type {string[]} */

@@ -34,10 +34,14 @@
  * Usage: node scripts/hooks/guardFiles.mjs [--staged | --tree]
  */
 
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// The git scope this guard reads is a decision, not an implementation detail —
+// see scripts/lib/gitScope.mjs for the four scopes and why reaching for the
+// filesystem instead is almost always the wrong question.
+import { git, readStagedBlob } from '../lib/gitScope.mjs';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -80,26 +84,6 @@ const EXECUTABLE_SIGNATURES = [
   { name: 'Static library archive', bytes: [0x21, 0x3c, 0x61, 0x72, 0x63, 0x68, 0x3e] },
 ];
 
-/**
- * @param {readonly string[]} args
- * @param {{ input?: string, binary?: boolean }} [options]
- * @returns {{ stdout: string | Buffer }}
- */
-function git(args, options = {}) {
-  const result = spawnSync('git', [...args], {
-    input: options.input,
-    encoding: options.binary === true ? undefined : 'utf8',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error !== undefined) {
-    throw new Error(`Could not run git ${args.join(' ')}`, { cause: result.error });
-  }
-  if (result.status !== 0) {
-    const stderr = result.stderr instanceof Buffer ? result.stderr.toString('utf8') : result.stderr;
-    throw new Error(`git ${args.join(' ')} exited ${result.status}: ${stderr}`);
-  }
-  return { stdout: result.stdout ?? '' };
-}
 
 /**
  * Blobs that are already in this repository's permanent history, cannot be
@@ -130,6 +114,38 @@ const KNOWN_HISTORICAL_BLOBS = new Set([
   '0bb674e513c0c5cecd38018f28d18dedc54aa71f',
   '339a4d62ea8bf2a1000a8ec35545e9503439f8bc',
 ]);
+
+/**
+ * The fixture names a PROVENANCE.md actually declares.
+ *
+ * ANCHORED, and a set rather than a substring search. The previous form asked
+ * whether the whole document `includes()` the filename, so declaring
+ * `form-rotated.pdf` silently declared an entirely different, undeclared
+ * `rotated.pdf` — every name is a substring of every name that ends with it.
+ * That held at both the staged and tree scopes, so nothing caught it.
+ *
+ * A declaration is a markdown list item or table cell naming the file, so the
+ * name is matched between a boundary and its extension rather than anywhere in
+ * the text.
+ *
+ * @param {Buffer} document
+ * @returns {Set<string>} Fixture paths relative to FIXTURE_ROOT.
+ */
+function declaredFixtures(document) {
+  /** @type {Set<string>} */
+  const declared = new Set();
+  for (const match of document.toString('utf8').matchAll(/(?:^|[\s`|(/])([\w./-]+\.pdf)\b/gim)) {
+    const name = match[1];
+    if (name === undefined) continue;
+    declared.add(name.startsWith(FIXTURE_ROOT) ? name.slice(FIXTURE_ROOT.length) : name);
+  }
+  return declared;
+}
+
+/** @returns {Buffer | null} PROVENANCE.md from disk, for the tree scope only. */
+function readDiskProvenance() {
+  return existsSync(PROVENANCE_FILE) ? readFileSync(PROVENANCE_FILE) : null;
+}
 
 /**
  * @typedef {{ path: string, sha: string }} Blob
@@ -310,9 +326,10 @@ function executableSignature(head) {
  * @param {string} path
  * @param {string} sha
  * @param {number} size Size of the blob in bytes; -1 means "not a blob".
+ * @param {'staged' | 'tree' | 'history'} scope Which git scope the caller is checking.
  * @returns {string[]} Human-readable reasons this path may not be committed.
  */
-function violations(path, sha, size) {
+function violations(path, sha, size, scope) {
   /** @type {string[]} */
   const reasons = [];
   const extension = extname(path).toLowerCase();
@@ -387,14 +404,32 @@ function violations(path, sha, size) {
         `is a PDF outside ${FIXTURE_ROOT}. Documents belong in the fixture corpus so their ` +
           `provenance is auditable.`,
       );
-    } else if (!existsSync(PROVENANCE_FILE)) {
-      reasons.push(`is a fixture but ${PROVENANCE_FILE} does not exist to record its origin.`);
-    } else if (!readFileSync(PROVENANCE_FILE, 'utf8').includes(path.slice(FIXTURE_ROOT.length))) {
-      reasons.push(
-        `is not declared in ${PROVENANCE_FILE}. Every fixture states whether it is ` +
-          `self-generated or verifiably public domain; real-world documents are banned ` +
-          `outright because a public push is permanent (Part J).`,
-      );
+    } else {
+      // Read the DECLARATION from the same scope as the thing being declared.
+      //
+      // This used to read PROVENANCE.md off the working tree while every other
+      // rule inspected staged blobs, so the verdict followed the disk in both
+      // directions: a PDF staged with an unstaged declaration passed, and a
+      // staged declaration whose disk copy was emptied failed. For a rule about
+      // what a commit will contain, the file on disk is not the question.
+      //
+      // The tree scope has no index entry to read, so it falls back to disk
+      // deliberately — there, the working tree IS the subject.
+      const declarations =
+        scope === 'staged' ? readStagedBlob(PROVENANCE_FILE) : readDiskProvenance();
+
+      if (declarations === null) {
+        reasons.push(
+          `is a fixture but ${PROVENANCE_FILE} is not ${scope === 'staged' ? 'staged' : 'present'} ` +
+            `to record its origin. Stage the declaration in the same commit as the fixture.`,
+        );
+      } else if (!declaredFixtures(declarations).has(path.slice(FIXTURE_ROOT.length))) {
+        reasons.push(
+          `is not declared in ${PROVENANCE_FILE}. Every fixture states whether it is ` +
+            `self-generated or verifiably public domain; real-world documents are banned ` +
+            `outright because a public push is permanent (Part J).`,
+        );
+      }
     }
   }
 
@@ -437,7 +472,7 @@ export function guardFiles(scope, range) {
       continue;
     }
 
-    for (const reason of violations(blob.path, blob.sha, sizes.get(blob.sha) ?? 0)) {
+    for (const reason of violations(blob.path, blob.sha, sizes.get(blob.sha) ?? 0, scope)) {
       failures.push(`  ${blob.path}\n      ${reason}`);
     }
   }

@@ -62,5 +62,19 @@
   },
   "watch": {
     "ARTIFEX-BUG-709567": "UNRESOLVED (no CVE, no release) — \"potential memory overwrite in CFF2 subsetting\", fixed upstream in commit a3caa67262bd on 2026-08-07. In NO released version: it postdates 1.28.2 (2026-08-03) and exists only on master. A memory OVERWRITE, so more serious than the over-read of CVE-2026-7233. NOT REACHABLE here: CFF2 subsetting requires font subsetting, which no shipped code path performs. Take at the first release that contains it, per ADR-0011; until then the register is the record that it is known and waiting."
+  },
+  "reachability": {
+    "pdf_subset_fonts": {
+      "guards": [
+        "DEBIAN-CVE-2026-7233",
+        "ARTIFEX-BUG-709567"
+      ],
+      "why": "Font subsetting is opt-in in MuPDF. fz_subset_cff_for_gids is reached only through pdf_subset_fonts, which pdf_save_document does not call and no shipped path invokes. This is what makes both verdicts NOT REACHABLE — and it is a claim about THIS codebase, not about the engine. Optimise and export are exactly the features that will call it, and 709567 is a memory OVERWRITE that no release fixes, so enabling subsetting inherits a live one.",
+      "shippedPaths": [
+        "native/**",
+        "packages/*/src/**",
+        "apps/*/src/**"
+      ]
+    }
   }
 }

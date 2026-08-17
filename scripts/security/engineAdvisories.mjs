@@ -63,6 +63,7 @@
  *   node scripts/security/engineAdvisories.mjs --refresh rewrite the baseline
  */
 
+import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,15 +104,77 @@ async function fetchAdvisories() {
 }
 
 /**
- * @returns {{version: string, reviewed: Record<string, string>, watch: Record<string, string>}}
+ * @typedef {{
+ *   version: string,
+ *   reviewed: Record<string, string>,
+ *   watch: Record<string, string>,
+ *   reachability: Record<string, { guards: string[], why: string, shippedPaths: string[] }>,
+ * }} Baseline
+ * @returns {Baseline}
  */
 function readBaseline() {
   try {
     const parsed = JSON.parse(readFileSync(BASELINE, 'utf8'));
-    return { watch: {}, ...parsed };
+    return { watch: {}, reachability: {}, ...parsed };
   } catch {
-    return { version: MUPDF_VERSION, reviewed: {}, watch: {} };
+    return { version: MUPDF_VERSION, reviewed: {}, watch: {}, reachability: {} };
   }
+}
+
+/**
+ * Fails when a verdict that rests on "we never call that function" stops being
+ * true.
+ *
+ * A NOT-REACHABLE verdict is a claim about THIS codebase at THIS moment, not
+ * about the engine, and it expires silently the moment a feature calls the
+ * function. Two verdicts here rest on `pdf_subset_fonts` being uncalled —
+ * including Artifex bug 709567, a memory OVERWRITE that no release fixes — and
+ * `pdf_subset_fonts` is exactly what an optimise or export feature will call.
+ * Enabling subsetting would inherit a live memory-safety bug with no signal.
+ *
+ * This is finding 32's lesson: "the blast radius is empty today" is not a
+ * verdict, because ordinary progress fills it and nobody re-reads the finding
+ * when it does. So each such verdict names the symbol its truth depends on, and
+ * the symbol is checked against the paths that actually ship.
+ *
+ * @param {Baseline} baseline
+ * @returns {string[]} One entry per expired verdict.
+ */
+function expiredReachabilityVerdicts(baseline) {
+  /** @type {string[]} */
+  const expired = [];
+
+  for (const [symbol, claim] of Object.entries(baseline.reachability)) {
+    /** @type {string[]} */
+    const found = [];
+
+    for (const globPath of claim.shippedPaths) {
+      // `git grep` over tracked files only: a build artefact or a vendored
+      // upstream tree under .tools/ is not something we ship, and matching it
+      // would make this fire constantly and be turned off.
+      const result = spawnSync(
+        'git',
+        ['grep', '-l', '--fixed-strings', '-e', symbol, '--', globPath],
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+      // Exit 1 means "no match", which is the expected, healthy case.
+      if (result.status === 0) {
+        found.push(...`${result.stdout}`.split('\n').filter((line) => line.length > 0));
+      }
+    }
+
+    if (found.length > 0) {
+      expired.push(
+        `${symbol} is now referenced from shipped code:\n` +
+          found.map((file) => `        ${file}`).join('\n') +
+          `\n      This INVALIDATES the NOT-REACHABLE half of: ${claim.guards.join(', ')}\n` +
+          `      The verdict said: ${claim.why}\n` +
+          `      Re-triage those entries against ${MUPDF_VERSION} before shipping the feature ` +
+          `that calls it.`,
+      );
+    }
+  }
+  return expired;
 }
 
 async function main() {
@@ -211,6 +274,20 @@ async function main() {
       `\n${watchUntriaged.length} watched upstream item(s) have no verdict:\n\n` +
         watchUntriaged.map(([id]) => `  ${id}`).join('\n') +
         `\n\nThese are memory-safety fixes with no CVE. Triage from upstream history.\n\n`,
+    );
+    return 1;
+  }
+
+  // Verdicts that rest on unreachability expire when the code changes under
+  // them. Checked LAST so its message is the final thing printed.
+  const expired = expiredReachabilityVerdicts(baseline);
+  if (expired.length > 0) {
+    process.stderr.write(
+      `\n${expired.length} reachability claim(s) have EXPIRED:\n\n` +
+        expired.map((entry) => `  - ${entry}`).join('\n\n') +
+        `\n\nA NOT-REACHABLE verdict is a statement about this codebase, not about the engine. ` +
+        `It stops being true the moment a feature calls the function, and nothing re-reads the ` +
+        `verdict when that happens — which is why it is checked rather than remembered.\n\n`,
     );
     return 1;
   }
