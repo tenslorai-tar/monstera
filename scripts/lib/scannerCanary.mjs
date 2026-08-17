@@ -180,15 +180,28 @@ function isPinned(reported, pinnedVersion) {
 }
 
 /**
- * A digest of the corpus definition, so editing a family invalidates every
- * cached verdict without anyone remembering to.
+ * A digest of everything the verdict depends on besides the binary itself.
+ *
+ * The cache is keyed on the binary's hash, which covers "is this the same
+ * scanner". It does not cover the two other inputs, and the stage audit caught
+ * that after the first version shipped:
+ *
+ *   - the CORPUS. Adding a family or changing a rule ID must re-measure.
+ *   - the CONFIGURATION. The canary scans with .gitleaks.toml, so deleting
+ *     `[extend] useDefault = true` from it changes what the scanner finds while
+ *     the binary is byte-identical. Without the config in the key, that edit
+ *     would keep reusing an "ok" recorded before it — a stale verdict for a
+ *     ruleset that had just been switched off, which is exactly the class of
+ *     claim this project requires a firing mechanism for.
  *
  * @returns {string}
  */
-function corpusDigest() {
+function inputsDigest() {
   const shape = FAMILIES.map((family) => `${family.key}:${family.rule}:${family.build()}`).join('\0');
+  const configuration = existsSync(configPathFor()) ? readFileSync(configPathFor()) : Buffer.alloc(0);
   return createHash('sha256')
-    .update(`${CORPUS_VERSION}\0${ALLOW_COMMENT_FAMILY}\0${shape}`)
+    .update(`${CORPUS_VERSION}\0${ALLOW_COMMENT_FAMILY}\0${shape}\0`)
+    .update(configuration)
     .digest('hex');
 }
 
@@ -374,7 +387,7 @@ export function verifyScannerCapability({ binary, pinnedVersion, force = false }
     };
   }
 
-  const digest = corpusDigest();
+  const digest = inputsDigest();
   const cacheFile = cachePath(sha256File(binaryPath));
 
   // The warm path spawns nothing. Reading the version back from the cache rather
@@ -389,7 +402,7 @@ export function verifyScannerCapability({ binary, pinnedVersion, force = false }
   if (!force && existsSync(cacheFile)) {
     try {
       const cached = JSON.parse(readFileSync(cacheFile, 'utf8'));
-      if (cached.corpus === digest && cached.ok === true && typeof cached.version === 'string') {
+      if (cached.inputs === digest && cached.ok === true && typeof cached.version === 'string') {
         return {
           ok: true,
           problems: [],
@@ -414,7 +427,7 @@ export function verifyScannerCapability({ binary, pinnedVersion, force = false }
     mkdirSync(dirname(cacheFile), { recursive: true });
     writeFileSync(
       cacheFile,
-      `${JSON.stringify({ ok, corpus: digest, version, binaryPath }, null, 2)}\n`,
+      `${JSON.stringify({ ok, inputs: digest, version, binaryPath }, null, 2)}\n`,
       'utf8',
     );
   }

@@ -308,6 +308,33 @@ async function main() {
       'version from another, silent divergence stays silent.',
   );
 
+  // The cached verdict must not outlive the inputs it was measured against.
+  // Found by the stage audit rather than by anything failing: the cache is keyed
+  // on the binary's hash, and the configuration is a second input that can
+  // change while the binary is byte-identical.
+  const warm = verifyScannerCapability({ binary, pinnedVersion: GITLEAKS_VERSION });
+  check(
+    'a second call is served from cache, so the canary costs one scan per scanner',
+    warm.cached,
+    'if every call re-measures, the check runs on every commit and becomes the latency people ' +
+      'route around.',
+  );
+
+  const original = readFileSync(realConfig);
+  try {
+    writeFileSync(realConfig, `${original.toString('utf8')}\n# cache-key probe\n`, 'utf8');
+    const afterEdit = verifyScannerCapability({ binary, pinnedVersion: GITLEAKS_VERSION });
+    check(
+      'editing .gitleaks.toml invalidates the cached verdict',
+      !afterEdit.cached,
+      'the verdict was measured against a configuration that has since changed. Keyed on the ' +
+        'binary alone, removing [extend] useDefault = true would keep reusing an "ok" recorded ' +
+        'before the default ruleset was switched off.',
+    );
+  } finally {
+    writeFileSync(realConfig, original);
+  }
+
   if (failures.length > 0) {
     process.stderr.write(
       `\nSecret-scan proof — ${failures.length} failure(s):\n\n` +
