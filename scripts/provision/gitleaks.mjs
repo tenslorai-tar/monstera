@@ -133,18 +133,21 @@ function platformKey() {
 /**
  * Absolute path where the provisioned binary lives, whether or not it exists.
  * The version is part of the path so a version bump provisions afresh instead
- * of silently reusing an older binary.
+ * of silently reusing an older binary — and so a deliberately older build can
+ * sit beside the pinned one without either overwriting the other.
  *
+ * @param {{ version?: string, builds?: Record<string, PlatformBuild> }} [options]
  * @returns {string}
  */
-export function gitleaksBinaryPath() {
-  const build = BUILDS[platformKey()];
+export function gitleaksBinaryPath(options = {}) {
+  const version = options.version ?? GITLEAKS_VERSION;
+  const build = (options.builds ?? BUILDS)[platformKey()];
   if (build === undefined) return '';
-  return join(REPO_ROOT, '.tools', 'gitleaks', GITLEAKS_VERSION, build.binary);
+  return join(REPO_ROOT, '.tools', 'gitleaks', version, build.binary);
 }
 
 /**
- * Spawns the binary and confirms it reports the pinned version.
+ * Spawns the binary and confirms it reports the expected version.
  *
  * Existence on disk is not evidence a binary works: a truncated download or a
  * wrong-architecture build both leave a file that stat() is happy with and
@@ -152,12 +155,13 @@ export function gitleaksBinaryPath() {
  * green-check-that-verifies-nothing this project bans outright.
  *
  * @param {string} binary
+ * @param {string} [version]
  * @returns {boolean}
  */
-function reportsPinnedVersion(binary) {
+function reportsPinnedVersion(binary, version = GITLEAKS_VERSION) {
   const probe = spawnSync(binary, ['version'], { encoding: 'utf8' });
   if (probe.error !== undefined || probe.status !== 0) return false;
-  return `${probe.stdout}`.includes(GITLEAKS_VERSION);
+  return `${probe.stdout}`.includes(version);
 }
 
 /**
@@ -234,14 +238,20 @@ export async function resolveGitleaks() {
  * fatal: a locked executable leaves a directory the next run cleans up, which is
  * strictly better than an interrupted publish.
  *
- * @param {{ staging: string, versionDirectory: string, binary: string, force: boolean }} options
+ * @param {{
+ *   staging: string,
+ *   versionDirectory: string,
+ *   binary: string,
+ *   force: boolean,
+ *   version: string,
+ * }} options
  * @returns {Promise<void>}
  */
-async function publish({ staging, versionDirectory, binary, force }) {
+async function publish({ staging, versionDirectory, binary, force, version }) {
   await mkdir(dirname(versionDirectory), { recursive: true });
 
   if (await fileExists(binary)) {
-    if (!force && reportsPinnedVersion(binary)) {
+    if (!force && reportsPinnedVersion(binary, version)) {
       // Another process published a working copy while this one was downloading.
       // Theirs passes the only test that matters, so it stands.
       return;
@@ -268,31 +278,47 @@ async function publish({ staging, versionDirectory, binary, force }) {
     // it, which is what happens when another process published between the
     // check above and here. Accept its copy — but only after confirming it runs,
     // or a genuine failure is mistaken for a lost race.
-    if (!(await fileExists(binary)) || !reportsPinnedVersion(binary)) {
+    if (!(await fileExists(binary)) || !reportsPinnedVersion(binary, version)) {
       throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
     }
   }
 }
 
 /**
- * @param {{ force?: boolean }} [options] `force` re-downloads and re-verifies
- *   rather than taking the already-provisioned fast path. It does NOT mean
- *   "delete the destination" — see `publish` for why that decision belongs to
- *   the destination's measured state instead.
+ * @param {{
+ *   force?: boolean,
+ *   version?: string,
+ *   builds?: Record<string, PlatformBuild>,
+ * }} [options]
+ *   `force` re-downloads and re-verifies rather than taking the
+ *   already-provisioned fast path. It does NOT mean "delete the destination" —
+ *   see `publish` for why that decision belongs to the destination's measured
+ *   state instead.
+ *
+ *   `version`/`builds` exist for ONE caller: the canary's proof, which
+ *   provisions a deliberately older gitleaks whose job is to be wrong. They are
+ *   parameters rather than a second downloader so that fixture goes through
+ *   exactly this hash-verified, atomically-published path — a test binary
+ *   fetched by a weaker route would be the one download in the project nobody
+ *   verified.
  * @returns {Promise<string>} Absolute path to a binary proven to run.
  */
-export async function provisionGitleaks({ force = false } = {}) {
+export async function provisionGitleaks({
+  force = false,
+  version = GITLEAKS_VERSION,
+  builds = BUILDS,
+} = {}) {
   const key = platformKey();
-  const build = BUILDS[key];
+  const build = builds[key];
   if (build === undefined) {
     throw new Error(
-      `No pinned gitleaks build for ${key}. Add one to scripts/provision/gitleaks.mjs ` +
+      `No pinned gitleaks ${version} build for ${key}. Add one to scripts/provision/gitleaks.mjs ` +
         `with the digest from the release checksums file.`,
     );
   }
 
-  const binary = gitleaksBinaryPath();
-  if (!force && (await fileExists(binary)) && reportsPinnedVersion(binary)) {
+  const binary = gitleaksBinaryPath({ version, builds });
+  if (!force && (await fileExists(binary)) && reportsPinnedVersion(binary, version)) {
     return binary;
   }
 
@@ -311,10 +337,10 @@ export async function provisionGitleaks({ force = false } = {}) {
 
   try {
     const archive = join(staging, build.asset);
-    process.stderr.write(`Provisioning gitleaks ${GITLEAKS_VERSION} for ${key}…\n`);
+    process.stderr.write(`Provisioning gitleaks ${version} for ${key}…\n`);
 
     await downloadVerified({
-      url: `https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${build.asset}`,
+      url: `https://github.com/gitleaks/gitleaks/releases/download/v${version}/${build.asset}`,
       allowedHosts: ALLOWED_HOSTS,
       sha256: build.sha256,
       maxBytes: MAX_ARCHIVE_BYTES,
@@ -328,18 +354,18 @@ export async function provisionGitleaks({ force = false } = {}) {
     if (!(await fileExists(staged))) {
       throw new Error(`${build.asset} did not contain ${build.binary}`);
     }
-    if (!reportsPinnedVersion(staged)) {
+    if (!reportsPinnedVersion(staged, version)) {
       throw new Error(
-        `${staged} was extracted but does not report version ${GITLEAKS_VERSION} when run.`,
+        `${staged} was extracted but does not report version ${version} when run.`,
       );
     }
 
-    await publish({ staging, versionDirectory, binary, force });
+    await publish({ staging, versionDirectory, binary, force, version });
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
 
-  process.stderr.write(`gitleaks ${GITLEAKS_VERSION} ready at ${binary}\n`);
+  process.stderr.write(`gitleaks ${version} ready at ${binary}\n`);
   return binary;
 }
 

@@ -32,6 +32,7 @@
     "proof:guards": "node scripts/hooks/guardFiles.proof.mjs && node scripts/hooks/preCommit.proof.mjs && node scripts/bootstrapHooks.proof.mjs",
     "proof:secretscan": "node scripts/lib/secretScan.proof.mjs",
     "proof:verdict": "node scripts/lib/verdict.proof.mjs",
+    "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "brand:generate": "node scripts/brand/generateAssets.mjs",

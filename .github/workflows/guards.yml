@@ -94,6 +94,13 @@ jobs:
       - name: Prove a verdict's inputs detect a change
         run: npm run proof:verdict
 
+      # Downloads a deliberately older gitleaks — one that runs the shipped
+      # invocation, exits like a healthy scan, and quietly finds one family
+      # fewer. Every other case for the canary runs against the pinned build,
+      # which is the one binary it is not meant to be for.
+      - name: Prove the canary rejects an older scanner
+        run: npm run proof:canary
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.

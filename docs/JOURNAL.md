@@ -66,14 +66,15 @@ re-rating and the deferrals. Batches, in the owner's priority order:
   with **28 first because it is the Stage 0 blocker** (29/27/31/39/41/42) · test
   infrastructure (15/33/34/36) · Stage 0 exit.
 
-**One thing Batch 3 leaves open, deliberately.** The canary has only ever been
-run against the pinned 8.30.1 build. Its whole purpose is to catch a scanner
-that is *not* that build — an old distribution package with a narrower ruleset —
-and that path is exercised only synthetically, by passing a version string the
-result cannot match. Testing it properly means provisioning a genuinely older
-gitleaks and watching families disappear. Worth doing; not done. Also
-unexercised: `commandPath`'s PATH-lookup branch, since every current caller
-resolves an absolute path.
+**Batch 3's open item is now closed.** The canary had only run against the
+pinned build — the one binary it is not meant to be for. It now runs against a
+pinned **8.23.0**, chosen by measurement after 8.19.0 and 8.21.0 were rejected
+as fixtures (they lack `--report-path -`, so they "missed" everything, which is
+an instrument artefact rather than a ruleset difference) and 8.24.0 was rejected
+for finding all six families. 8.23.0 runs the shipped invocation exactly, exits
+1 like a healthy scan, and silently drops one family. Still unexercised:
+`commandPath`'s PATH-lookup branch, since every current caller resolves an
+absolute path.
 
 ### Security substrate, and the sequence for it
 
