@@ -174,3 +174,17 @@ jobs:
       # bump silently dropping the bounds check.
       - name: Prove the CFF over-read is fixed and the check is load-bearing
         run: npm run proof:cff
+
+      # The cheap page-geometry path is the viewer's scroll-layout source (L21).
+      # It must agree with fz_bound_page exactly, on documents with inherited
+      # /Rotate and with a /CropBox — the two shapes a flat fixture cannot show,
+      # and the two the old hand-rolled reads got wrong.
+      - name: Prove cheap page geometry agrees with the expensive path
+        run: npm run proof:geometry
+
+      # Holds the purge census to an equation rather than to a comment:
+      # cached_after == cached_before - droppable. The load-bearing fixture is
+      # the one edited in memory after rendering, where a per-object-number walk
+      # and a per-section walk genuinely see different populations.
+      - name: Prove the purge census mirrors pdf_clear_xref
+        run: npm run proof:purge

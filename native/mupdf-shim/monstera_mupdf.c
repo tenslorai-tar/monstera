@@ -858,31 +858,83 @@ MZ_EXPORT void mz_page_release(mz_ctx *c, void *page)
  * fz_empty_store is called too, because the two caches are separate and a
  * viewer that has scrolled through a document has filled both.
  */
-MZ_EXPORT int mz_purge_objects(mz_ctx *c, mz_doc *d,
-                               int *cached_before, int *droppable, int *pinned)
+/*
+ * One entry of the census below, classified exactly as pdf_clear_xref does.
+ *
+ * pdf_clear_xref drops an object when `obj != NULL && stm_buf == NULL &&
+ * pdf_obj_refs(obj) == 1`. This mirrors that test — and unlike the comment that
+ * used to make the same claim, the mirroring is now CHECKED rather than
+ * asserted: mz_purge_objects reports the census before and after, so
+ * `cached_after == cached_before - droppable` is an equation a proof can hold it
+ * to. A classification that stops matching upstream stops balancing.
+ */
+static void mz_census_entry(fz_context *ctx, pdf_xref_entry *entry, int number,
+                            pdf_document *doc, void *arg)
 {
-    int before = 0, free_now = 0, held = 0;
+    int *census = (int *)arg; /* [0] cached, [1] droppable, [2] pinned */
+    (void)number;
+    (void)doc;
 
-    /* Counted before the call, mirroring pdf_clear_xref's own test, so that
-     * "purging reclaimed nothing" can be told apart from "purging was never
-     * going to reclaim anything because everything is still referenced". The
-     * two have opposite consequences: one is our bug, the other is a genuine
-     * upstream constraint. */
+    if (entry == NULL || entry->obj == NULL)
+        return;
+
+    census[0]++;
+    if (entry->stm_buf != NULL)
+        census[2]++;
+    else if (pdf_obj_refs(ctx, entry->obj) == 1)
+        census[1]++;
+    else
+        census[2]++;
+}
+
+MZ_EXPORT int mz_purge_objects(mz_ctx *c, mz_doc *d,
+                               int *cached_before, int *droppable, int *pinned,
+                               int *cached_after)
+{
+    int census[3] = { 0, 0, 0 };
+    int after[3] = { 0, 0, 0 };
+
+    if (c == NULL || d == NULL || cached_before == NULL || droppable == NULL ||
+        pinned == NULL || cached_after == NULL)
+        return MZ_ERR;
+
+    /* Counted so that "purging reclaimed nothing" can be told apart from
+     * "purging was never going to reclaim anything because everything is still
+     * referenced". The two have opposite consequences: one is our bug, the other
+     * is a genuine upstream constraint.
+     *
+     * THE WALK, and why it is pdf_xref_entry_map rather than a loop over
+     * pdf_xref_len. The previous version was wrong in three ways, all confirmed
+     * against the 1.28.0 source rather than argued from naming:
+     *
+     *   - POPULATION. pdf_clear_xref walks every entry of every subsection of
+     *     every xref section. The loop walked 0..pdf_xref_len taking ONE resolved
+     *     entry per object number, and started at doc->xref_base rather than
+     *     section 0. On a document with incremental updates — the shape ADR-0010
+     *     §4 makes routine — object N has an entry in more than one section, and
+     *     the count saw at most one of them. So the comment claiming it mirrored
+     *     pdf_clear_xref's test was false on exactly the documents that matter.
+     *   - MUTATION. pdf_get_xref_entry_no_null resolves through
+     *     pdf_get_xref_entry, which passes solidify_if_needed=1 and can call
+     *     ensure_solid_xref. A counting function was therefore able to rewrite
+     *     the xref's in-memory shape — and MuPDF's own comment there notes that
+     *     doing so renders fingerprinting for snapshotting invalid.
+     *   - A DEAD BRANCH. That accessor throws rather than returning NULL, as its
+     *     name says, so `e == NULL` was unreachable and the `continue` meant for
+     *     a missing entry could never run; a missing entry aborted the whole
+     *     purge into MZ_ERR instead.
+     *
+     * pdf_xref_entry_map hands the entry pointer straight to a callback, so
+     * there is no accessor to solidify anything and nothing to throw on a sparse
+     * table. Its population differs from pdf_clear_xref's in two stated ways: it
+     * also visits the local xref while one is active (never, here — that
+     * requires an in-progress local-xref operation), and it skips entries whose
+     * `type` is zero, which pdf_clear_xref would visit but which carry no cached
+     * object to drop. Both are named rather than glossed, because the last
+     * comment in this position claimed an identity it did not have. */
     fz_try(c->fz) {
-        int len = pdf_xref_len(c->fz, d->pdf);
-        int i;
-        for (i = 0; i < len; i++) {
-            pdf_xref_entry *e = pdf_get_xref_entry_no_null(c->fz, d->pdf, i);
-            if (e == NULL || e->obj == NULL)
-                continue;
-            before++;
-            if (e->stm_buf != NULL)
-                held++;
-            else if (pdf_obj_refs(c->fz, e->obj) == 1)
-                free_now++;
-            else
-                held++;
-        }
+        pdf_xref_entry_map(c->fz, d->pdf, mz_census_entry, census);
+
         /* The full documented purge surface, not just part of it.
          *
          * An earlier version called only pdf_clear_xref and fz_empty_store and
@@ -899,15 +951,23 @@ MZ_EXPORT int mz_purge_objects(mz_ctx *c, mz_doc *d,
         pdf_purge_locals_from_store(c->fz, d->pdf);
         pdf_empty_store(c->fz, d->pdf);
         fz_empty_store(c->fz);
+
+        /* The same census again. This is what makes the classification above a
+         * measurement rather than a claim: if `droppable` really is what
+         * pdf_clear_xref will drop, then cached_after is cached_before minus it,
+         * and any drift between this file and upstream shows up as an equation
+         * that stops balancing. */
+        pdf_xref_entry_map(c->fz, d->pdf, mz_census_entry, after);
     }
     fz_catch(c->fz) {
         mz_record(c);
         return MZ_ERR;
     }
 
-    *cached_before = before;
-    *droppable = free_now;
-    *pinned = held;
+    *cached_before = census[0];
+    *droppable = census[1];
+    *pinned = census[2];
+    *cached_after = after[0];
     return MZ_OK;
 }
 
