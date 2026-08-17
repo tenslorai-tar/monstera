@@ -100,6 +100,13 @@ jobs:
       - name: Prove a stale shim is refused rather than measured
         run: npm run proof:shimstate
 
+      # The withdrawn-phrase check unblocked Stage 0 and shipped with no proof.
+      # Three false negatives had already got through it — a tilde, a table row,
+      # and a phrase wrapped across a line break — each found by grepping the
+      # real tree by hand, which only ever finds what someone thinks to look for.
+      - name: Prove the withdrawn-phrase check catches what it claims
+        run: npm run proof:withdrawn
+
       # Downloads a deliberately older gitleaks — one that runs the shipped
       # invocation, exits like a healthy scan, and quietly finds one family
       # fewer. Every other case for the canary runs against the pinned build,

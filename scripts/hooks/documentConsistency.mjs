@@ -31,6 +31,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
+import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
 
 // The root is asked of git, in one place, for the same reason the scope is:
 // this file used to fall back to `resolve(__dirname, '..', '..')` when
@@ -213,37 +214,13 @@ const failures = [];
   // its Evidence section deliberately leaves the original measurements standing.
   const declaring = trackedFiles().filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path));
 
-  /** A line holding only backticked phrases separated by middots. */
-  const PHRASE_LINE = /^>\s*`[^`]+`(?:\s*·\s*`[^`]+`)*\s*$/;
-
   /** @type {Array<{ adr: string, phrase: string }>} */
-  const withdrawn = [];
+  const declarations = [];
   for (const path of declaring) {
-    const lines = read(path).split('\n');
-    for (let index = 0; index < lines.length; index += 1) {
-      const marker = /^>\s*\*\*Withdrawn phrases:\*\*(.*)$/.exec(lines[index] ?? '');
-      if (marker === null) continue;
-
-      // The declaration is the marker line's remainder plus any following lines
-      // that contain ONLY phrases. Bounded deliberately: an earlier version
-      // captured until the end of the block and swallowed the paragraph
-      // explaining the mechanism, so every path and filename backticked in that
-      // prose became a "withdrawn phrase" and the check reported five documents
-      // for stating their own names.
-      let block = `${marker[1] ?? ''}`;
-      for (let next = index + 1; next < lines.length; next += 1) {
-        if (!PHRASE_LINE.test(lines[next] ?? '')) break;
-        block += ` ${lines[next]}`;
-      }
-
-      for (const match of block.matchAll(/`([^`]+)`/g)) {
-        const phrase = match[1];
-        if (phrase !== undefined) withdrawn.push({ adr: path, phrase });
-      }
-    }
+    for (const phrase of declaredPhrases(read(path))) declarations.push({ adr: path, phrase });
   }
 
-  if (withdrawn.length === 0) {
+  if (declarations.length === 0) {
     failures.push(
       'No ADR declares any withdrawn phrases. If every correction has genuinely been absorbed ' +
         'everywhere, delete this check in the same commit rather than leaving one that inspects ' +
@@ -251,79 +228,17 @@ const failures = [];
     );
   }
 
-  /**
-   * Matching is done on a normalised form, not on the literal bytes.
-   *
-   * The same withdrawn claim is written more than one way. `(stream bytes ×
-   * 3.7)` appears in ADR-0007's correction and as `(stream bytes × ~3.7)` in the
-   * amendment log — the approximation tilde is exactly the sort of difference
-   * prose acquires, and literal matching let two live instances through until a
-   * grep found them by hand. Stripping tildes and collapsing whitespace closes
-   * that without inventing a pattern language inside a markdown table.
-   *
-   * @param {string} text
-   * @returns {string}
-   */
-  const normalise = (text) => text.replace(/~/g, '').replace(/\s+/g, ' ').toLowerCase();
+  /** @type {Map<string, string>} */
+  const documents = new Map();
+  for (const path of trackedFiles().filter((p) => p.endsWith('.md'))) documents.set(path, read(path));
 
-  const documents = trackedFiles().filter((path) => path.endsWith('.md'));
-  for (const document of documents) {
-    const lines = read(document).split('\n');
-
-    for (const { adr, phrase } of withdrawn) {
-      // The ADR that withdrew it is the one place it must still appear.
-      if (document === adr) continue;
-      const needle = normalise(phrase);
-
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index] ?? '';
-        if (!normalise(line).includes(needle)) continue;
-
-        // Prose that names it as withdrawn is the record, not a claim — and the
-        // scope of that qualifier is the PARAGRAPH, not the line.
-        //
-        // A one-line window was tried first and reported two false positives,
-        // both historical narrative: the journal's "an admission gate, a
-        // two-term cost model, size bands — and nobody asked whether the ceiling
-        // had to exist. It did not.", and ADR-0010's "That was the wrong
-        // response... built an admission gate". Both retract, both across a line
-        // break. Widening the vocabulary to appease them would have weakened the
-        // one thing standing between a live claim and a green check; widening
-        // the window to the unit prose is actually written in does not.
-        //
-        // A TABLE ROW is its own unit, though. A markdown table has no blank
-        // lines, so paragraph-scoping makes every row share the context of every
-        // other — and the amendment log's 2026-08-17 row saying "are withdrawn"
-        // silently exempted the 2026-08-16 row still asserting the model. That
-        // is a false negative, found by grepping by hand after the check said
-        // clean, which is the failure mode this file exists to remove.
-        let paragraph;
-        if (line.trim().startsWith('|')) {
-          paragraph = line;
-        } else {
-          let start = index;
-          while (start > 0 && `${lines[start - 1] ?? ''}`.trim() !== '') start -= 1;
-          let end = index;
-          while (end < lines.length - 1 && `${lines[end + 1] ?? ''}`.trim() !== '') end += 1;
-          paragraph = lines.slice(start, end + 1).join(' ');
-        }
-
-        if (
-          /withdrawn|withdrew|retracted|superseded|no longer|used to|wrong response|did not|rejected/i.test(
-            paragraph,
-          )
-        ) {
-          continue;
-        }
-
-        failures.push(
-          `${document}:${index + 1} states "${phrase}" as a live claim, but ${adr}'s correction ` +
-            `withdrew it:\n      ${line.trim()}\n    Either remove the claim, or say in the same ` +
-            `sentence that it is withdrawn. A retracted number that survives in a second ` +
-            `document is the one people find.`,
-        );
-      }
-    }
+  for (const claim of liveClaims({ declarations, documents })) {
+    failures.push(
+      `${claim.document}:${claim.line} states "${claim.phrase}" as a live claim, but ` +
+        `${claim.adr}'s correction withdrew it:\n      ${claim.quote}\n    Either remove the ` +
+        `claim, or say in the same sentence that it is withdrawn. A retracted number that ` +
+        `survives in a second document is the one people find.`,
+    );
   }
 }
 
