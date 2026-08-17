@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Builds cff_poc.exe, the regression fixture for CVE-2026-7233.
+
+  A console EXE, not a DLL: it links MuPDF's static libraries and calls
+  fz_subset_cff_for_gids directly, so the result is a statement about the
+  compiled engine. Linkage mirrors the shim's exactly, because it is the same
+  set of static archives.
+
+  MupdfRoot is a property, set by the runner. The scratch control rebuilds
+  libmupdf from a patched copy of the source and points this at it.
+-->
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{B2E5F1A8-3C7D-4E92-A6F1-8D0C4B2E9A31}</ProjectGuid>
+    <RootNamespace>cff_poc</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <OutDir>$(MSBuildProjectDirectory)\out\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\obj\</IntDir>
+    <TargetName>cff_poc</TargetName>
+    <MupdfRoot Condition="'$(MupdfRoot)' == ''">$(MSBuildProjectDirectory)\..\..\.tools\mupdf\1.28.0\mupdf-1.28.0-source</MupdfRoot>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <CompileAs>CompileAsC</CompileAs>
+      <AdditionalIncludeDirectories>$(MupdfRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <Optimization>Disabled</Optimization>
+      <WarningLevel>Level3</WarningLevel>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalLibraryDirectories>$(MupdfRoot)\platform\win32\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libmupdf.lib;libthirdparty.lib;libresources.lib;libharfbuzz.lib;libextract.lib;libpkcs7.lib;libleptonica.lib;libtesseract.lib;libzxing.lib;libmubarcode.lib;advapi32.lib;user32.lib;gdi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="cff_poc.c" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

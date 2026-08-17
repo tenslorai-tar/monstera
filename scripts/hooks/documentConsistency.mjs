@@ -50,13 +50,31 @@ function read(relativePath) {
 
 /** @returns {string[]} Every tracked file, repo-relative, forward-slashed. */
 function trackedFiles() {
-  const result = spawnSync('git', ['ls-files', '-z'], {
+  // Tracked files, PLUS anything staged for the next commit. `git ls-files`
+  // alone shows only what is already committed, so a brand-new ADR staged
+  // alongside a missing index row would be invisible to this check until the
+  // commit that should have caught it had already landed. Merging the staged
+  // adds closes that: the check sees the commit as it will be, not as it was.
+  const committed = spawnSync('git', ['ls-files', '-z'], {
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
-  if (result.status !== 0) throw new Error('git ls-files failed');
-  return `${result.stdout}`.split('\0').filter((path) => path.length > 0);
+  if (committed.status !== 0) throw new Error('git ls-files failed');
+
+  const staged = spawnSync('git', ['diff', '--cached', '--name-only', '--diff-filter=d', '-z'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (staged.status !== 0) throw new Error('git diff --cached failed');
+
+  const all = new Set(
+    [...`${committed.stdout}`.split('\0'), ...`${staged.stdout}`.split('\0')].filter(
+      (path) => path.length > 0,
+    ),
+  );
+  return [...all];
 }
 
 /** @type {string[]} */

@@ -19,6 +19,38 @@
  * That is the same discipline the signature work will need later — validate the
  * chain or return no verdict, never a green tick that means "did not check".
  *
+ * ## HOW TO TRIAGE — read this before recording any verdict
+ *
+ * A verdict is established from UPSTREAM COMMIT HISTORY, never from the CVE text.
+ * The first triage on this project got CVE-2026-7233 wrong by reading the CVE,
+ * which says "up to 1.28.0" — and reading that as "1.28.0 is affected". It is
+ * not: the fixing commits (Artifex bugs 709364, 709365) landed 2026-05-13,
+ * before 1.28.0 shipped on 2026-06-26, and are in the source we build. "Up to X"
+ * is the upper bound KNOWN AT REPORT TIME, not a statement that release X ships
+ * the bug.
+ *
+ * The procedure, per advisory:
+ *   1. Find the fixing commit(s) upstream — the actual diff, in the file the
+ *      advisory names.
+ *   2. Check whether that commit is in the pinned source tree
+ *      (.tools/mupdf/<version>): grep the fix into the file, do not infer it
+ *      from a version number.
+ *   3. If fixed in our tree -> NOT-AFFECTED, citing the commit.
+ *      If not -> AFFECTED or UNRESOLVED, and whether it is REACHABLE here (does
+ *      any code path we ship call the vulnerable function?).
+ * A Debian version range is a distribution mapping and is NOT upstream history;
+ * it does not establish a verdict for our source build.
+ *
+ * ## COVERAGE HOLE this closes
+ *
+ * Advisory feeds only see published CVEs. For this upstream, a memory-safety fix
+ * often lands as a bug-tracker commit with no CVE and no release for weeks —
+ * Artifex bug 709567 (a CFF2 memory OVERWRITE, more serious than the over-read
+ * above) is fixed only on master and appears in no advisory feed at all. So the
+ * baseline also tracks upstream commits/bugs under a `watch` key, checked the
+ * same way: is the fix in our pinned tree, and does it reach us. These are the
+ * normal case for this project, not the exception.
+ *
  * ## Why this exists at all
  *
  * MuPDF is compiled into the shim and parses the single largest thing an
@@ -70,12 +102,15 @@ async function fetchAdvisories() {
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
-/** @returns {{version: string, reviewed: Record<string, string>}} */
+/**
+ * @returns {{version: string, reviewed: Record<string, string>, watch: Record<string, string>}}
+ */
 function readBaseline() {
   try {
-    return JSON.parse(readFileSync(BASELINE, 'utf8'));
+    const parsed = JSON.parse(readFileSync(BASELINE, 'utf8'));
+    return { watch: {}, ...parsed };
   } catch {
-    return { version: MUPDF_VERSION, reviewed: {} };
+    return { version: MUPDF_VERSION, reviewed: {}, watch: {} };
   }
 }
 
@@ -106,7 +141,7 @@ async function main() {
     }
     writeFileSync(
       BASELINE,
-      `${JSON.stringify({ version: MUPDF_VERSION, generated: advisories.length, reviewed }, null, 2)}\n`,
+      `${JSON.stringify({ version: MUPDF_VERSION, generated: advisories.length, reviewed, watch: baseline.watch }, null, 2)}\n`,
       'utf8',
     );
     process.stderr.write(`Wrote ${Object.keys(reviewed).length} advisories to ${BASELINE}\n`);
@@ -165,13 +200,47 @@ async function main() {
         `\n`,
     );
   }
+
+  // Upstream fixes with no CVE and no release. These are curated by hand — no
+  // feed carries them — and every entry must have a verdict, exactly like an
+  // advisory. An UNTRIAGED watch item fails the build; an open one is printed.
+  const watchEntries = Object.entries(baseline.watch);
+  const watchUntriaged = watchEntries.filter(([, verdict]) => /^UNTRIAGED/.test(verdict));
+  if (watchUntriaged.length > 0) {
+    process.stderr.write(
+      `\n${watchUntriaged.length} watched upstream item(s) have no verdict:\n\n` +
+        watchUntriaged.map(([id]) => `  ${id}`).join('\n') +
+        `\n\nThese are memory-safety fixes with no CVE. Triage from upstream history.\n\n`,
+    );
+    return 1;
+  }
+
+  const watchOpen = watchEntries.filter(([, verdict]) => /^(AFFECTED|UNRESOLVED)/.test(verdict));
+  if (watchOpen.length > 0) {
+    process.stdout.write(
+      `\n  ${watchOpen.length} watched upstream item(s), not in any release:\n\n` +
+        watchOpen.map(([id, verdict]) => `    ${id}\n      ${verdict}`).join('\n\n') +
+        `\n`,
+    );
+  } else if (watchEntries.length > 0) {
+    process.stdout.write(`  ok  ${watchEntries.length} watched upstream item(s), all resolved\n`);
+  }
+
   return 0;
 }
 
+// Set exitCode and let the event loop drain, rather than process.exit(). Node's
+// fetch keeps its socket in a pool with a live teardown timer, and forcing exit
+// mid-teardown trips a libuv assertion (`UV_HANDLE_CLOSING`, async.c:76) that
+// surfaces as a spurious exit 127 AFTER the real output — a green check reported
+// as a crash. Draining naturally avoids it; the pool's timer is unref'd, so the
+// process still exits promptly.
 main().then(
-  (status) => process.exit(status),
+  (status) => {
+    process.exitCode = status;
+  },
   (error) => {
     process.stderr.write(`\n${error instanceof Error ? error.stack : String(error)}\n`);
-    process.exit(1);
+    process.exitCode = 1;
   },
 );

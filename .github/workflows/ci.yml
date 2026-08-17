@@ -167,3 +167,10 @@ jobs:
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous
         run: npm run proof:shim
+
+      # Executes CVE-2026-7233's disclosed trigger against the built engine and
+      # proves the fix is load-bearing by rebuilding libmupdf without it and
+      # confirming the same input then crashes. Guards against a future MuPDF
+      # bump silently dropping the bounds check.
+      - name: Prove the CFF over-read is fixed and the check is load-bearing
+        run: npm run proof:cff
