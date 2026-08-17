@@ -4,9 +4,24 @@
 
   MSBuild rather than a hand-rolled cl.exe invocation: setting INCLUDE and LIB by
   hand means hard-coding a Windows SDK version, and MSBuild already resolves the
-  toolchain from the project. Driving it directly also avoids vcvars64.bat, which
-  fails in this environment because %ProgramFiles(x86)% cannot survive a parent
-  shell that can't represent a variable name containing parentheses.
+  toolchain from the project.
+
+  Driving MSBuild directly also avoids vcvars64.bat, which fails when invoked
+  programmatically. The mechanism recorded here previously — that a bash or
+  PowerShell parent cannot represent %ProgramFiles(x86)%, so it arrives unset —
+  is wrong, and was corrected after being measured. The variable IS set and
+  readable, including from a cmd launched by bash. What actually breaks is cmd's
+  own block parser: expanded inside a parenthesised block, %ProgramFiles(x86)%
+  is terminated at the ")" inside its own name, so vcvars' vswhere lookup
+  collapses and the path degrades to "\Microsoft Visual Studio\...". It fails
+  identically with cmd as the parent, so the shell plays no part. See
+  scripts/lib/msvc.mjs for the four measurements.
+
+  MupdfRoot is a property, not a fixed sibling directory. MuPDF is a provisioned
+  artefact and lives under .tools/ with everything else provisioning downloads;
+  the previous default put a 68 MB third-party source tree inside native/, which
+  .gitignore does not cover, so following the build recipe left ~15,000 untracked
+  files in git status. scripts/provision/mupdf.mjs passes the real path.
 -->
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
@@ -37,13 +52,17 @@
     <OutDir>$(MSBuildProjectDirectory)\out\</OutDir>
     <IntDir>$(MSBuildProjectDirectory)\obj\</IntDir>
     <TargetName>monstera_mupdf</TargetName>
+    <!-- Overridden by scripts/provision/mupdf.mjs with the provisioned tree.
+         The default keeps a manual MSBuild invocation working for someone who
+         extracted the source by hand, and is deliberately outside native/. -->
+    <MupdfRoot Condition="'$(MupdfRoot)' == ''">$(MSBuildProjectDirectory)\..\..\.tools\mupdf\1.28.0\mupdf-1.28.0-source</MupdfRoot>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
     <ClCompile>
       <!-- Compile as C, not C++: koffi binds a flat ABI and C++ would mangle it. -->
       <CompileAs>CompileAsC</CompileAs>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\src\mupdf-1.28.0-source\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MupdfRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <Optimization>MaxSpeed</Optimization>
@@ -51,7 +70,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\src\mupdf-1.28.0-source\platform\win32\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(MupdfRoot)\platform\win32\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>libmupdf.lib;libthirdparty.lib;libresources.lib;libharfbuzz.lib;libextract.lib;libpkcs7.lib;libleptonica.lib;libtesseract.lib;libzxing.lib;libmubarcode.lib;advapi32.lib;user32.lib;gdi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;comdlg32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>false</GenerateDebugInformation>
     </Link>

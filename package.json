@@ -24,6 +24,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "provision:gitleaks": "node scripts/provision/gitleaks.mjs",
+    "provision:mupdf": "node scripts/provision/mupdf.mjs",
+    "proof:shim": "node scripts/provision/mupdf.proof.mjs",
     "guard:staged": "node scripts/hooks/guardFiles.mjs --staged",
     "guard:tree": "node scripts/hooks/guardFiles.mjs --tree",
     "scan:secrets": "node scripts/hooks/scanSecrets.mjs",

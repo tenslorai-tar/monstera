@@ -17,12 +17,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists } from '../lib/fetchVerified.mjs';
+// One extractor for every provisioned artefact. The copy that used to live in
+// this file resolved an absolute bsdtar on Windows and returned the bare string
+// 'tar' everywhere else, so PATH still decided the outcome on the platform CI
+// actually runs — the Windows instance was fixed and the class left open.
+import { extract } from '../lib/extract.mjs';
 
 export const GITLEAKS_VERSION = '8.30.1';
 
@@ -143,62 +147,6 @@ function reportsPinnedVersion(binary) {
   const probe = spawnSync(binary, ['version'], { encoding: 'utf8' });
   if (probe.error !== undefined || probe.status !== 0) return false;
   return `${probe.stdout}`.includes(GITLEAKS_VERSION);
-}
-
-/**
- * Resolves the extractor explicitly instead of letting PATH decide.
- *
- * Windows has two programs called `tar`, and they are not interchangeable:
- * **bsdtar** in System32 (Windows 10 1803+), which reads zip as well as
- * tar.gz, and **GNU tar** shipped with Git for Windows, which reads neither
- * zip nor an argument containing a colon — it treats `C:\…` as a remote
- * `host:path` and fails with `Cannot connect to C: resolve failed`.
- *
- * Which one `spawnSync('tar')` finds depends on PATH order, so it depends on
- * which shell launched the process: provisioning worked from PowerShell and
- * failed from Git Bash, from identical code. A defect that changes with the
- * terminal is one that reaches a contributor and not CI.
- *
- * gitleaks publishes zip for Windows and tar.gz elsewhere, so Windows needs
- * bsdtar specifically. Naming the binary makes the requirement explicit and the
- * failure legible, rather than leaving it to whatever PATH happens to hold.
- *
- * @returns {string}
- */
-function extractorPath() {
-  if (process.platform !== 'win32') return 'tar';
-
-  const systemRoot = process.env['SystemRoot'] ?? process.env['windir'] ?? 'C:\\Windows';
-  const bsdtar = join(systemRoot, 'System32', 'tar.exe');
-  if (!existsSync(bsdtar)) {
-    throw new Error(
-      `Windows archive extraction needs bsdtar at ${bsdtar}, which ships with Windows 10 ` +
-        `1803 and later. The tar on PATH may be GNU tar (Git for Windows), which cannot ` +
-        `read the zip archives gitleaks publishes for Windows.`,
-    );
-  }
-  return bsdtar;
-}
-
-/**
- * Extracts an archive, given its **file name** and the directory holding it.
- *
- * The archive is named relatively with `cwd` set, never as an absolute path:
- * see `extractorPath` for why a colon in an argument is not portable across
- * the two tars.
- *
- * @param {string} directory Absolute path to the directory holding the archive.
- * @param {string} archiveName File name only — never a path.
- */
-function extract(directory, archiveName) {
-  const tar = extractorPath();
-  const result = spawnSync(tar, ['-xf', archiveName], { cwd: directory, encoding: 'utf8' });
-  if (result.error !== undefined) {
-    throw new Error(`Could not run "${tar}" to extract ${archiveName}`, { cause: result.error });
-  }
-  if (result.status !== 0) {
-    throw new Error(`${tar} exited ${result.status} extracting ${archiveName}: ${result.stderr}`);
-  }
 }
 
 /**

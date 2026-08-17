@@ -23,39 +23,68 @@ Two further rules the source keeps:
 
 ## Building
 
-MuPDF is **not** vendored. The build fetches the source tarball
-(`mupdf-1.28.0-source.tar.gz`, SHA-256
-`21c7f064903154f1c3a7458bee81f130fc36f9b5147ea13328f9980e02d2dea2`, published by
-GitHub as the release asset's own digest), builds the static libraries with
-MuPDF's own MSVC solution, then compiles and links this shim against them.
+```bash
+npm run provision:mupdf
+```
+
+That is the whole recipe. It fetches the source tarball against a pinned
+SHA-256, builds MuPDF's static libraries, compiles and links this shim, and
+verifies the DLL exports every `MZ_EXPORT` symbol the source declares. Roughly
+ten minutes cold, seconds when only the shim changed (`--skip-mupdf`).
+
+`npm run proof:shim` checks that the export verification can actually fail, by
+pointing it at a DLL missing a declared symbol — the state a build that silently
+did not run leaves behind.
+
+MuPDF is **not** vendored. The source lands in `.tools/mupdf/<version>/`, with
+every other provisioned artefact, and `.gitignore` covers it. It previously
+defaulted to `native/src/`, which `.gitignore` does **not** cover: following the
+recipe left roughly 15,000 untracked third-party files in `git status`.
 
 Static, not shared, on purpose: MuPDF's headers carry no `dllexport`
 annotations, so exporting `fz_*` from a DLL would mean patching thousands of
 declarations. The shim owns the export surface instead.
 
-### Two mechanisms that will otherwise waste an afternoon
+### Three mechanisms that will otherwise waste an afternoon
 
-**Do not use `vcvars64.bat` or `VsDevCmd.bat` from a non-`cmd` parent.** They
-resolve `vswhere.exe` through `%ProgramFiles(x86)%`, and that variable's *name*
-contains parentheses, which a bash or PowerShell parent process cannot represent
-— so it arrives unset, the path collapses to `\Microsoft Visual Studio\...`, and
-cmd reports `\Microsoft was unexpected at this time`, an error naming neither
-the variable nor the cause. Invoke `MSBuild.exe` directly instead; it resolves
-the toolchain from the project.
+**`vcvars64.bat` cannot be used programmatically, and the reason usually given
+is wrong.** This file previously recorded that `%ProgramFiles(x86)%` "cannot
+survive a parent shell that can't represent a variable name containing
+parentheses — so it arrives unset". That is false, and measured to be false:
+the variable reads correctly from Node, and from a `cmd` launched by bash.
 
-**The solution pins Platform Toolset `v142` (VS2019).** With VS2022 installed,
-pass `/p:PlatformToolset=v143` or every project fails with `MSB8020`.
+What actually breaks is cmd's own block parser. Expanded inside a parenthesised
+block, `%ProgramFiles(x86)%` is terminated at the `)` inside its own name:
 
 ```
-MSBuild.exe <mupdf-src>\platform\win32\mupdf.sln ^
-  /t:libmupdf /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143
-
-MSBuild.exe native\mupdf-shim\monstera_mupdf.vcxproj ^
-  /p:Configuration=Release /p:Platform=x64
+if 1==1 ( echo [%ProgramFiles(x86)%] )    →  ] was unexpected at this time.
 ```
 
-Roughly ten minutes for the first, seconds for the second. Output is a 40.1 MB
-`monstera_mupdf.dll`.
+so vcvars' `vswhere` lookup collapses, the path degrades to
+`\Microsoft Visual Studio\...`, and it reports `\Microsoft was unexpected at
+this time` — an error naming neither the variable nor the cause. It fails
+identically with `cmd` as the parent, so **the shell plays no part and changing
+shells does not help.** `scripts/lib/msvc.mjs` records the four measurements and
+resolves the toolchain through `vswhere` directly; MSBuild needs no vcvars at
+all.
+
+**The install layout is not fixed.** A machine may carry `BuildTools` under
+`Program Files (x86)` or `Community`/`Professional`/`Enterprise` under
+`Program Files`. A hardcoded path is a single-machine build dressed as a recipe,
+so `vswhere` is asked, and asked specifically for an install carrying the C++
+toolset — otherwise a .NET-only install matches.
+
+**MuPDF's solution pins Platform Toolset `v142` (VS2019).** With VS2022, every
+project fails with `MSB8020` unless `/p:PlatformToolset=v143` is passed.
+
+One more, smaller: the source tarball contains four symlinks, in freeglut's demo
+programs and zxing-cpp's Python and Rust bindings. Windows cannot create a
+symlink without elevation or Developer Mode, so bsdtar writes every other file,
+fails on those four, and exits 1 — leaving a tree that looks extracted while the
+command reports failure. They are excluded, from a list read out of the archive
+rather than hardcoded, so a version bump cannot quietly reintroduce it. That
+they are not build inputs is not taken on trust: the link step resolves every
+symbol or provisioning fails.
 
 ## Surface
 
