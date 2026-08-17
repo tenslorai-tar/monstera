@@ -35,6 +35,7 @@
     "proof:shimstate": "node scripts/lib/shimBinary.proof.mjs",
     "proof:withdrawn": "node scripts/lib/withdrawnPhrases.proof.mjs",
     "proof:escapeguard": "node scripts/hooks/blockEscapeResolvingWrites.proof.mjs",
+    "proof:hookintegrity": "node scripts/lib/hookIntegrity.proof.mjs",
     "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",

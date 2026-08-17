@@ -19,7 +19,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +63,13 @@ function makeRepo() {
   // repository rather than written afresh: a stand-in config would let the two
   // drift, and the proof would then be exercising a ruleset nothing ships.
   copyFileSync(configPathFor(REAL_ROOT), join(root, CONFIG_FILE));
+
+  // The gate also refuses when the PreToolUse guard is not registered, for the
+  // same reason: a hook cannot detect its own absence, so the git hook says so.
+  // Copied for the same reason as the config — a stand-in would let the fixture
+  // pass against settings this project does not ship.
+  mkdirSync(join(root, '.claude'), { recursive: true });
+  copyFileSync(join(REAL_ROOT, '.claude', 'settings.json'), join(root, '.claude', 'settings.json'));
 
   writeFileSync(join(root, 'README.md'), '# scratch\n');
   git(root, ['add', 'README.md', CONFIG_FILE]);

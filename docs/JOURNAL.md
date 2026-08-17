@@ -22,6 +22,40 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
+> ### FIRST ACTION NEXT SESSION — before anything else
+>
+> **Run this, verbatim, and record what happens here:**
+>
+> ```
+> node -e "console.log('hook test')"
+> ```
+>
+> It must be **DENIED** by the PreToolUse guard registered in
+> `.claude/settings.json`. Hooks are read at session start, so the guard was
+> installed but not live in the session that wrote it — running that command
+> there still executed, which is expected for a mid-session settings change and
+> not a failure of the configuration.
+>
+> Everything verified so far is **configuration reading**: the settings parse,
+> the matcher covers `Bash` and `PowerShell`, and the resolved command string
+> denies when run by hand. This project treats that as *asserted*, not
+> *executed*. The whole claim of the mechanism is that it fires without anyone
+> remembering it should — so the one thing that would prove it is the one thing
+> that could not be done on the day.
+>
+> Record the outcome in this file either way. If it is NOT denied, the mechanism
+> does not exist yet and CLAUDE.md's amended standing rule overstates what is in
+> place; say so there in the same commit.
+>
+> **Second, still unverified:** whether a `hooks` block in a higher-precedence
+> settings scope REPLACES the project's or MERGES with it. The published
+> documentation contradicts itself — its precedence table puts
+> `.claude/settings.local.json` ABOVE `.claude/settings.json`, while its prose
+> claims the project file wins. `scripts/lib/hookIntegrity.mjs` currently
+> assumes the table is right and treats any competing `hooks` block as
+> disarming. Settle it by writing a local settings file with an empty
+> `PreToolUse` array, restarting, and re-running the command above.
+
 **Done and green in CI (Windows + Linux):** pre-commit guards with proofs ·
 pinned-hash provisioning · governing documents and ADRs 0001–0011 · monorepo
 with import boundaries proven by violation · the IPC contract with compile-time

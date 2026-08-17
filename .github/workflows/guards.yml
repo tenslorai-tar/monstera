@@ -116,6 +116,14 @@ jobs:
       - name: Prove the escape-resolving-write hook is wired and discriminates
         run: npm run proof:escapeguard
 
+      # A hook cannot detect its own absence. A settings file at a scope above
+      # the project's — personal, gitignored, in nobody's diff — can carry
+      # disableAllHooks or a competing hooks block, which is the .gitleaksignore
+      # shape again. The git pre-commit hook refuses; this proves it refuses for
+      # the right reasons and stays quiet for a contributor's ordinary settings.
+      - name: Prove a locally disarmed tool-use guard is detected
+        run: npm run proof:hookintegrity
+
       # Downloads a deliberately older gitleaks — one that runs the shipped
       # invocation, exits like a healthy scan, and quietly finds one family
       # fewer. Every other case for the canary runs against the pinned build,

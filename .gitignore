@@ -121,3 +121,16 @@ install.log
 # proof killed before its cleanup cannot reach a commit or redden a later lint.
 __boundary_probe__.ts
 
+# ─── Agent settings ──────────────────────────────────────────────────────────
+# `.claude/settings.json` IS tracked: it registers the PreToolUse guard that
+# makes escape-resolving file writes unavailable, and a guard that lives on one
+# machine protects one machine.
+#
+# The personal override beside it is not tracked, and that is precisely why
+# scripts/lib/hookIntegrity.mjs inspects it: a settings file at a scope above
+# the project's can carry `disableAllHooks` or a competing `hooks` block, and
+# neither would ever appear in a diff. Ignoring it here stops a contributor's
+# local paths reaching the repository; the pre-commit check is what stops it
+# quietly disarming the guards.
+.claude/settings.local.json
+

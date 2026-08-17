@@ -13,6 +13,7 @@
  * repository's permanent history cannot be undone at any price.
  */
 
+import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import {
   divergenceNotice,
   formatCanaryFailure,
@@ -24,6 +25,16 @@ import { formatFailures, guardFiles } from './guardFiles.mjs';
 import { checkLockfile, explain, touchesDependencies } from './lockfileIntegrity.mjs';
 
 async function main() {
+  // Before anything else: is the tool-use guard actually in force? A settings
+  // file at a higher-precedence scope can carry `disableAllHooks` or a competing
+  // `hooks` block, and neither appears in any diff. Checked HERE rather than in
+  // the Claude Code hook because a hook cannot detect its own absence.
+  const disarmed = hookDisarmament();
+  if (disarmed.length > 0) {
+    process.stderr.write(formatDisarmament(disarmed));
+    return 1;
+  }
+
   const failures = guardFiles('staged');
   if (failures.length > 0) {
     process.stderr.write(formatFailures(failures, 'staged'));
