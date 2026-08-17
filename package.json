@@ -37,6 +37,7 @@
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
+    "check:advisories": "node scripts/security/engineAdvisories.mjs",
     "proof:engines": "node scripts/spike/engineSpike.mjs"
   },
   "devDependencies": {

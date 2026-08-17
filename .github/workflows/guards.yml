@@ -86,6 +86,15 @@ jobs:
       - name: Document consistency
         run: npm run check:docs
 
+      # MuPDF is compiled into the shim and parses the most attacker-controlled
+      # input this application has. Pinning it is correct — it makes builds
+      # reproducible — but a pin with nothing watching it is how a project ships
+      # a known-vulnerable parser for a year. This fails when an advisory has no
+      # recorded verdict; it does not invent one, because the available data is
+      # keyed to distribution packages whose versions do not map onto upstream.
+      - name: Native engine advisories
+        run: npm run check:advisories
+
       - name: File policy (whole tree)
         run: node scripts/hooks/guardFiles.mjs --tree
 

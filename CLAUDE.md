@@ -281,6 +281,35 @@ cannot fail is a green check that verifies nothing. When a mutation *doesn't*
 turn it red, find out why before concluding the proof is vacuous — the build may
 have failed and left stale output for the proof to test.
 
+**4a. Has every instrument passed a resolution test — BEFORE it measured
+anything real?**
+Not after, and not "it looked plausible". Feed it two values you know differ by
+the smallest amount that would change a decision, and confirm it reports them as
+different. This is mandatory and it takes under a minute.
+
+A blind instrument and a vacuous proof are the same failure wearing different
+clothes: both report a number nobody can distinguish from the answer they hoped
+for. Four instruments in this project failed exactly that way, and all four would
+have died at this step:
+
+- a `setInterval` peak sampler that cannot fire while a synchronous FFI loop
+  holds the event loop, reporting 63 MB for a walk that cost 526 MB —
+  *reproducibly*, which is what made it convincing;
+- a cache reader that searched a debug dump from the start and bound to the first
+  cached item instead of the summary, reporting 98,065 bytes for a 75 MB store —
+  and reading correctly only when the store was empty, which every early
+  checkpoint happened to be;
+- allocator counters that clamped an underflow to zero, so the failure state was
+  identical to "everything was freed" and a fault confirmed the hypothesis;
+- a harness printing MB to two decimal places, which rendered a 21,500-byte store
+  and a 10,000-byte delta as the same `0.01 MB` — it could not distinguish the
+  two numbers it existed to compare.
+
+Prefer designs where the failure is unrepresentable over designs that check for
+it: monotonic totals cannot underflow, so no guard is needed. And prefer counting
+inside the component over an OS-level proxy — RSS cannot tell "the engine retains
+this" from "the allocator is sitting on it".
+
 **5. Executed, or asserted?**
 Separate the two explicitly. Anything in the "asserted" column is not a finding,
 whatever confidence it was written with. (Content composition was moved to a

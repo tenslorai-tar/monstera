@@ -1,6 +1,52 @@
 # ADR-0010 — Native MuPDF through an FFI shim; WASM withdrawn
 
-- **Status:** Accepted
+> ## Correction — 2026-08-17
+>
+> **The conclusions stand. Two of the instruments that produced them did not,
+> and one number was already stale when written.**
+>
+> An audit found that two of the three instruments this ADR relied on could not
+> measure what they reported. Both are rebuilt, validated against MuPDF's own
+> figures, and the measurements re-run. What follows is what changed and what
+> did not.
+>
+> **Re-confirmed, with the prediction stated before the numbers.** The old cache
+> reader searched `fz_debug_store`'s output for `size=` from the start of the
+> buffer, so it bound to the first *cached item* line and reached the summary
+> only when there were no items at all. It could therefore return zero only when
+> the store was genuinely empty. This ADR recorded zero at every checkpoint —
+> so the store really was empty, and "not the resource store" should be
+> confirmed by deduction rather than merely probable. Predicted before running:
+> the corrected instrument must also report ~0 there. It does — 0 bytes after
+> open and 0 after a full page walk. **No third defect.**
+>
+> **The leak claim is now answerable, and holds.** "0 live blocks and 0 live
+> bytes after the context is dropped" was produced by counters that `mz_init`
+> reset on the next call, so it measured a reset rather than a release — and
+> per-context accounting structurally cannot answer it, because the accounting
+> is freed with the context. Process-wide monotonic totals now outlive every
+> context: 155,548,924 bytes allocated against 155,548,924 freed, 1,547 blocks
+> against 1,547, imbalance 0.
+>
+> **`mz_store_size` is withdrawn entirely**, not repaired. With 32 items cached
+> it reported 100,368 bytes where the store held 25,472,232. Its replacement,
+> `mz_store_footprint`, measures the delta across `fz_empty_store` — validated
+> against MuPDF's own summary to within 1,984 bytes, 0.008%. It is destructive
+> and reports whether the measurement was taken at a quiescent point, because
+> refcounted items still in use are not evicted and the figure is otherwise a
+> floor rather than a total.
+>
+> **The exported symbol count below is wrong.** It reads 14; the shim exports 25.
+> That number was accurate when measured and the source landed in a later commit
+> (`d075cbe`), so it is corrected here rather than edited in place — what was
+> believed at the time is part of the record.
+>
+> Also since: the seam is rebuildable from a clean checkout by one command
+> (`npm run provision:mupdf`) and runs in CI, which is the actual repair for the
+> underlying problem — this ADR's evidence lived in a scratch directory and was
+> deleted, which is why any of it needed re-measuring.
+
+- **Status:** Accepted; instruments corrected 2026-08-17
 - **Date:** 2026-08-17
 - **Amends:** `docs/ARCHITECTURE.md` §2 (process topology), §3 (writer-of-record
   matrix), §9 (invariants 17 and 18).

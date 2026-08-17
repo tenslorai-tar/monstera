@@ -88,24 +88,47 @@ symbol or provisioning fails.
 
 ## Surface
 
-Lifecycle (`mz_init`, `mz_drop`, `mz_open`, `mz_close`, `mz_last_error`),
-queries (`mz_page_count`, `mz_object_count`, `mz_page_bounds`,
-`mz_page_geometry`), rotation with the exact prior-state semantics the engine
-spike proved (`mz_page_rotation`, `mz_set_page_rotation`,
-`mz_clear_page_rotation`), save (`mz_save`, with an incremental flag), render
-(`mz_render_page`, `mz_free_pixmap`), and instrumentation (`mz_alloc_stats`,
-`mz_store_size`, `mz_open_page_count`, `mz_purge_objects`, `mz_shrink_store`).
+25 exported symbols. The list below is complete; `npm run proof:shim` fails if
+the DLL does not export every `MZ_EXPORT` the source declares, so it cannot drift
+without the build going red.
+
+**Lifecycle** — `mz_init`, `mz_drop`, `mz_open`, `mz_close`, `mz_last_error`.
+
+**Queries** — `mz_page_count`, `mz_object_count`, `mz_page_bounds`,
+`mz_page_geometry`.
+
+**Rotation**, with the exact prior-state semantics the engine spike proved —
+`mz_page_rotation`, `mz_set_page_rotation`, `mz_clear_page_rotation`.
+
+**Save** — `mz_save`, with an incremental flag.
+
+**Render** — `mz_render_page`, `mz_free_pixmap`.
+
+**Page handles**, whose lifetime the caller owns — `mz_page_hold`,
+`mz_page_release`, `mz_open_page_count`. Previously omitted from this list,
+which made the one pair most worth documenting the one pair undocumented.
+
+**Instrumentation** — `mz_alloc_stats`, `mz_process_alloc_stats`,
+`mz_store_footprint`, `mz_store_debug`, `mz_purge_objects`, `mz_shrink_store`.
 
 `mz_page_geometry` reads page size and rotation from the dictionary **without**
 loading the page. That distinction is not cosmetic: a full page load costs
 370 MB on a 141-page fixture where geometry costs 10 MB, and scroll layout needs
 only geometry.
 
-The instrumentation entries exist because RSS cannot distinguish "MuPDF retains
-this" from "the C runtime is sitting on it" from "we leak it".
-`mz_alloc_stats` counts live bytes inside MuPDF through a `fz_alloc_context`
-hook, which is how the memory question in ADR-0010 was settled. They are not
-debug leftovers — keep them.
+The instrumentation exists because RSS cannot distinguish "MuPDF retains this"
+from "the C runtime is sitting on it" from "we leak it". Not debug leftovers —
+keep them. Three properties they must not lose:
+
+- **Totals are monotonic.** Live bytes is allocated minus freed, never a counter
+  that moves both ways, so underflow is unrepresentable rather than guarded.
+- **`mz_process_alloc_stats` takes no context on purpose.** A leak is a property
+  of the process after everything is destroyed, so it cannot be asked of a live
+  object — per-context accounting is freed along with what it describes.
+- **`mz_store_footprint` is DESTRUCTIVE**, and says so at its definition. It
+  empties the cache to weigh it, which is correct in a proof and a defect as a
+  live metric. There is no non-destructive route: MuPDF exposes no accessor, and
+  `struct fz_store` is defined in `source/fitz/store.c` and appears in no header.
 
 ## Not yet done
 
