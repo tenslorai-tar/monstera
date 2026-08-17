@@ -27,22 +27,16 @@
  * Usage: node scripts/hooks/documentConsistency.mjs
  */
 
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-import { filesInCommit } from '../lib/gitScope.mjs';
+import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-
-/** @returns {string} */
-function repoRoot() {
-  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  if (result.status !== 0) return resolve(HERE, '..', '..');
-  return `${result.stdout}`.trim();
-}
-
+// The root is asked of git, in one place, for the same reason the scope is:
+// this file used to fall back to `resolve(__dirname, '..', '..')` when
+// `rev-parse` failed, which is a second answer to a question that must have one.
+// A fallback that silently substitutes a different repository is worse than an
+// error, because the checks then pass against a tree nobody is committing to.
 const ROOT = repoRoot();
 
 /** @param {string} relativePath @returns {string} */
@@ -60,7 +54,7 @@ function trackedFiles() {
   // Shared with guardFiles.mjs rather than fixed twice — both had the same
   // defect, a guard asking git a question whose answer is not the thing it
   // guards. scripts/lib/gitScope.mjs names the four scopes and their semantics.
-  return filesInCommit({ cwd: ROOT });
+  return filesInCommit();
 }
 
 /** @type {string[]} */

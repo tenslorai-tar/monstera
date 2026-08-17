@@ -33,19 +33,59 @@
  *
  * A guard that reads the filesystem directly is choosing a fifth scope —
  * "whatever is on disk right now" — and that is almost never the question.
+ *
+ * ## Where the scope is rooted
+ *
+ * Every scope above is a question about THE REPOSITORY. Most git commands answer
+ * about the current directory instead: `git ls-files` run from `packages/ui`
+ * lists 3 files where the repository has 100. A guard inheriting an arbitrary
+ * cwd therefore inspects a subtree and reports "ok" for the 97 files it never
+ * looked at — a green check that verifies almost nothing, and one that gets
+ * quieter the deeper the caller happens to be.
+ *
+ * So `git()` roots itself at the repository by default, and a caller wanting a
+ * path-limited query has to say so. That ordering is deliberate: the safe
+ * question is the one you get for free, and the narrow one costs a keystroke.
  */
 
 import { spawnSync } from 'node:child_process';
 
+/** @type {string | null} */
+let cachedRoot = null;
+
+/**
+ * The repository, asked of git rather than derived from a script's own location.
+ *
+ * `resolve(__dirname, '..', '..')` is the tempting alternative and it is a
+ * second answer to a question that must have one. It disagrees with git for a
+ * linked worktree, for a submodule, and for any invocation where the scripts
+ * directory is not two levels below the root — and it disagrees silently,
+ * because both forms return a plausible absolute path.
+ *
+ * @returns {string}
+ */
+export function repoRoot() {
+  if (cachedRoot !== null) return cachedRoot;
+  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(`Not inside a git work tree: ${`${result.stderr ?? ''}`.trim()}`);
+  }
+  cachedRoot = `${result.stdout}`.trim();
+  return cachedRoot;
+}
+
 /**
  * @param {readonly string[]} args
  * @param {{ input?: string, binary?: boolean, cwd?: string }} [options]
+ *   `cwd` defaults to the repository root. Pass it only to ask a deliberately
+ *   path-limited question — see the note above on what inheriting the caller's
+ *   directory costs.
  * @returns {{ stdout: string | Buffer }}
  */
 export function git(args, options = {}) {
   const result = spawnSync('git', [...args], {
     input: options.input,
-    cwd: options.cwd,
+    cwd: options.cwd ?? repoRoot(),
     encoding: options.binary === true ? undefined : 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -91,7 +131,9 @@ export function filesInCommit(options = {}) {
  * @returns {Buffer | null}
  */
 export function readStagedBlob(path, options = {}) {
-  const probe = spawnSync('git', ['cat-file', '-e', `:${path}`], { cwd: options.cwd });
+  const probe = spawnSync('git', ['cat-file', '-e', `:${path}`], {
+    cwd: options.cwd ?? repoRoot(),
+  });
   if (probe.status !== 0) return null;
 
   const { stdout } = git(['cat-file', 'blob', `:${path}`], { ...options, binary: true });

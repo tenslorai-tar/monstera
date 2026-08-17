@@ -78,10 +78,15 @@ function writeUnstaged(root, relativePath, contents) {
 
 /**
  * @param {string} root
+ * @param {string} [from] Directory to invoke from; defaults to the root.
+ * @param {'--staged' | '--tree'} [scope]
  * @returns {{ ok: boolean, output: string }}
  */
-function runGuard(root) {
-  const result = spawnSync(process.execPath, [GUARD, '--staged'], { cwd: root, encoding: 'utf8' });
+function runGuard(root, from, scope = '--staged') {
+  const result = spawnSync(process.execPath, [GUARD, scope], {
+    cwd: from === undefined ? root : join(root, from),
+    encoding: 'utf8',
+  });
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
 
@@ -90,6 +95,8 @@ function runGuard(root) {
  *   name: string,
  *   expect: 'reject' | 'accept',
  *   because?: string,
+ *   runFrom?: string,
+ *   scope?: '--staged' | '--tree',
  *   setup: (root: string) => void,
  * }} Case
  * @type {readonly Case[]}
@@ -271,17 +278,107 @@ const CASES = [
       stage(root, 'packages/testing/fixtures/rotated.pdf', '%PDF-1.7\n\x00trailer\n');
     },
   },
+
+  // ---------------------------------------------------------------------------
+  // Where the guard is rooted.
+  //
+  // The two commands this guard uses do NOT behave alike, and the difference is
+  // the whole finding. `git diff --cached` reports the entire index whatever the
+  // working directory is, so the staged scope was never exposed. `git ls-files`
+  // defaults its pathspec to `.`, so the TREE scope — the CI mirror, the one
+  // check that inspects everything already committed — inspected only what
+  // happened to sit below the caller's directory and reported "ok" for the rest.
+  //
+  // Measured in this repository: 3 files listed from packages/ui, 100 from the
+  // root. A guard that examines 3% of the tree and prints a clean bill is worse
+  // than no guard, because someone is relying on it.
+  //
+  // The scopeControl() below exists because the first version of these two cases
+  // used --staged and passed with or without the fix. The control is what said so.
+  // ---------------------------------------------------------------------------
+  {
+    name: 'tracked violation at the root, tree scope invoked from a subdirectory',
+    expect: 'reject',
+    because: 'is an executable',
+    runFrom: 'packages/ui/src',
+    scope: '--tree',
+    setup: (root) => {
+      mkdirSync(join(root, 'packages/ui/src'), { recursive: true });
+      stage(root, 'packages/ui/src/index.ts', 'export const ui = true;\n');
+      stage(root, 'tool.dat', Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]));
+      git(root, ['commit', '--quiet', '--no-verify', '-m', 'introduce a tracked violation']);
+    },
+  },
+  {
+    name: 'clean tracked tree, tree scope invoked from a subdirectory',
+    expect: 'accept',
+    runFrom: 'packages/ui/src',
+    scope: '--tree',
+    setup: (root) => {
+      mkdirSync(join(root, 'packages/ui/src'), { recursive: true });
+      stage(root, 'packages/ui/src/index.ts', 'export const ui = true;\n');
+      stage(root, 'notes.md', '# notes\n');
+      git(root, ['commit', '--quiet', '--no-verify', '-m', 'clean tree']);
+    },
+  },
 ];
+
+/**
+ * The control for the two cases above: confirm `git ls-files` really is
+ * path-limited by the working directory.
+ *
+ * Without this, both cases would still pass if `repoRoot()` were deleted and git
+ * turned out to be scope-agnostic — which is exactly what happened on the first
+ * attempt. Those cases were written against `git diff --cached`, which reports
+ * the whole index from anywhere, so they were green before the fix and green
+ * after it. This control is the only reason that was noticed.
+ *
+ * @returns {string[]}
+ */
+function scopeControl() {
+  const root = makeRepo();
+  try {
+    mkdirSync(join(root, 'packages/ui/src'), { recursive: true });
+    stage(root, 'packages/ui/src/index.ts', 'export const ui = true;\n');
+    stage(root, 'tool.dat', Buffer.from([0x4d, 0x5a, 0x90, 0x00]));
+    git(root, ['commit', '--quiet', '--no-verify', '-m', 'tracked']);
+
+    const listFrom = (/** @type {string} */ cwd) =>
+      `${spawnSync('git', ['ls-files'], { cwd, encoding: 'utf8' }).stdout ?? ''}`
+        .trim()
+        .split('\n')
+        .filter(Boolean);
+
+    const rootPaths = listFrom(root);
+    const subPaths = listFrom(join(root, 'packages/ui/src'));
+
+    if (rootPaths.length <= subPaths.length || subPaths.includes('tool.dat')) {
+      return [
+        'CONTROL: `git ls-files` was expected to be path-limited by the working directory, ' +
+          `but it returned ${rootPaths.length} path(s) from the root and ${subPaths.length} ` +
+          `from a subdirectory. If it is not path-limited, the two tree-scope cases above pass ` +
+          'whether or not the guard resolves the repository root, and they prove nothing.',
+      ];
+    }
+    process.stdout.write(
+      `  ok  control git ls-files is path-limited: ${rootPaths.length} tracked path(s) from ` +
+        `the root, ${subPaths.length} from packages/ui/src\n`,
+    );
+    return [];
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 function main() {
   /** @type {string[]} */
-  const failures = [];
+  const failures = [...scopeControl()];
 
   for (const testCase of CASES) {
     const root = makeRepo();
     try {
       testCase.setup(root);
-      const { ok, output } = runGuard(root);
+      const { ok, output } = runGuard(root, testCase.runFrom, testCase.scope);
 
       if (testCase.expect === 'accept' && !ok) {
         failures.push(`${testCase.name}: expected acceptance, guard rejected:\n${output}`);

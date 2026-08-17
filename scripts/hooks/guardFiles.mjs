@@ -35,13 +35,13 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
+import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The git scope this guard reads is a decision, not an implementation detail —
-// see scripts/lib/gitScope.mjs for the four scopes and why reaching for the
-// filesystem instead is almost always the wrong question.
-import { git, readStagedBlob } from '../lib/gitScope.mjs';
+// see scripts/lib/gitScope.mjs for the four scopes, where they are rooted, and
+// why reaching for the filesystem instead is almost always the wrong question.
+import { git, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -142,9 +142,18 @@ function declaredFixtures(document) {
   return declared;
 }
 
-/** @returns {Buffer | null} PROVENANCE.md from disk, for the tree scope only. */
+/**
+ * PROVENANCE.md from disk, for the tree scope only.
+ *
+ * Resolved against the repository, not the caller's directory: a relative read
+ * makes the answer depend on where the guard was invoked from, so running it
+ * one directory down would report every fixture as undeclared.
+ *
+ * @returns {Buffer | null}
+ */
 function readDiskProvenance() {
-  return existsSync(PROVENANCE_FILE) ? readFileSync(PROVENANCE_FILE) : null;
+  const absolute = join(repoRoot(), PROVENANCE_FILE);
+  return existsSync(absolute) ? readFileSync(absolute) : null;
 }
 
 /**
