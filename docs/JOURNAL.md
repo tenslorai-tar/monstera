@@ -101,6 +101,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-17 — A full audit, and what "harmless today" turned out to be worth
+
+A multi-agent audit of the whole repository found **43 defects behind an
+all-green board** — lint clean, typecheck clean, 27 tests passing. 67 candidates
+were raised, 5 refuted, and two checks were proven unable to fail. The full
+report is published as an artifact; this records what it changed and what is
+owed.
+
+### Severity re-rated: reachability is not a severity argument
+
+Several findings were rated low or medium because the code they affect does not
+exist yet. One of them cost a build within a day of being written.
+
+**Finding 32** — `proof:provision` deleted the whole `.tools` root rather than
+the gitleaks subtree it owns — was rated **low**, on the reasoning that `.tools`
+held only gitleaks so the blast radius was empty. It stopped being empty the
+moment a second provisioned artefact existed. Running that proof while MuPDF was
+downloading deleted a 69 MB in-flight archive, and the failure surfaced as an
+unrelated `ENOENT` on rename **inside the other provisioner** — an error naming
+neither the proof nor the cause.
+
+The mechanism is general: *an empty blast radius is filled by ordinary progress,
+and the finding is not re-examined when it fills.* So every severity that rested
+on reachability rather than on a test is re-rated on the same principle — the
+question is not "is this reachable today" but "what makes it reachable, and is
+that thing on the plan":
+
+| Finding | Was | Now | What fills the radius |
+|---|---|---|---|
+| 32 `.tools` root deleted | low | **high** | already happened; fixed in b615779 |
+| 12 guards CI on ubuntu only | medium | **high** | already true; Windows is the target platform |
+| 09 / 21 runtime bans by subpath | high / medium | **high** | installing electron or react — Stage 0 exit |
+| 36 ESLint ignores vs `.gitignore` | low | **medium** | the first Electron build |
+| 31 React lint rules asserted, absent | medium | **medium**, but do it now | the first `.tsx`; B9 says these cannot be retrofitted |
+| 22 kernel declares WASM mupdf | medium | **medium** | unchanged; it is a manifest lie today, not later |
+| 23 allocator counters | medium | **medium** | a second `mz_init`, which the utility process will do |
+| 24 missing `fz_var` | medium | **medium** | any MuPDF throw; error paths are not hypothetical |
+| 18 corrupt binary wedges provisioning | medium | **low** | genuinely external — AV quarantine, shared checkout |
+| 42 `.nvmrc` referenced, absent | low | **low** | unchanged, but it fires on a cold machine |
+
+Two ratings went *down*, which matters: this is a re-rating, not an inflation.
+
+### Deferred, with the stage each is owed to
+
+Each carries a case that fires when it becomes reachable, so none can be
+forgotten the way `guardStagedFiles.mjs` was — wrong on the day it was written
+and carried in two documents for the project's whole life.
+
+- **`import-x/no-cycle` does not fire** (finding 08, second half). The missing
+  resolver was one cause and is fixed — `no-unresolved` and `no-self-import` both
+  work now, verified. Something else keeps `no-cycle` inert; `maxDepth` default,
+  `Infinity` and `10` all behave identically. `boundaries.proof.mjs` asserts the
+  BROKEN behaviour, so the day it starts working the proof goes red and whoever
+  sees it inverts the case. **Owed: Stage 1**, or sooner if a cycle bites.
+- **The ADR-0010 leak claim cannot be re-measured as written.** "0 live blocks
+  and 0 live bytes after the context is dropped" came from the global counters;
+  with correct per-context accounting the question is not representable, because
+  the accounting lives inside the context being dropped. Monotonic
+  allocated/freed totals, per context and globally, are the design that keeps it
+  — **owed with the next instrument commit**, not deferred to a stage.
+- **`mz_page_geometry`, `mz_store_size` and the allocator counters were measured
+  once against a DLL that no longer exists** (findings 10, 11, 23). Two are now
+  rebuilt and validated; the geometry one is not. **Owed: Batch 4.**
+- **Eight historical `docs/JOURNAL.md` blobs carry the resolved escape
+  sequences** and cannot be removed — B10 forbids the rewrite and git retains
+  them by hash regardless. Listed by SHA in `KNOWN_HISTORICAL_BLOBS`, exempt in
+  the history scope only, and the count is printed on every run. The sanctioned
+  repair is `45eb4fb`.
+
+### The pattern the audit named
+
+Two shapes account for most of the 43. Guards built against the easy shape and
+never re-tested against the hard one: a control character at byte 16 but not at
+byte 26,635; a bare specifier but not a relative path into `dist`; a flat repo
+but not a type change; an exact filename but not a suffix. And fixes that closed
+one instance and left the class open: the extractor fixed on Windows only,
+`.probe/` ignored for one proof and not its sibling.
+
+Both ship green, which is why the class fixes went in first — generating the
+boundary cases from `ALLOWED_IMPORTS` turned 11 hand-written cases into 148 and
+immediately caught 40 route failures that no hand-written list had covered.
+
+---
+
 ## 2026-08-17 — Handle lifetime, settled before DocumentService was written
 
 "Released on close" also means *only* on close, and releasing pages as you
