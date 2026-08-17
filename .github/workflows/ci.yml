@@ -39,7 +39,15 @@ jobs:
         # quoting, different exit-code handling, and a different
         # $ErrorActionPreference. Pinning bash everywhere means a step that
         # passes locally behaves the same on every runner.
-        shell: bash
+        #
+        # `-o pipefail` is the load-bearing flag, not decoration. Without it a
+        # pipeline reports the status of its LAST command, so `node build.mjs |
+        # tail` exits 0 when the build failed — a green check for work that did
+        # not happen. That has already produced a false pass twice in this
+        # project's history, both times reported as success to a human.
+        # `-e` and `-u` close the neighbouring cases: an unchecked failure
+        # mid-script, and a typo'd variable expanding to empty.
+        shell: bash -euo pipefail {0}
     steps:
       # Pinned by commit SHA, not by tag: a tag is mutable and its target runs
       # with this workflow's token.
@@ -72,7 +80,6 @@ jobs:
       # per hypothesis, which is how a one-line error turns into an afternoon.
       - name: Install
         run: |
-          set -o pipefail
           if ! npm ci --ignore-scripts 2>&1 | tee install.log; then
             echo "::error title=npm ci failed::$(grep -E '^npm (error|warn)' install.log | grep -viE 'npm error +\[|^npm error +-|Run \"npm help|complete log of this run' | head -12 | tr '\n' '|')"
             exit 1
@@ -111,5 +118,52 @@ jobs:
       - name: Check generated brand assets match the master
         run: npm run brand:check
 
+      # No --passWithNoTests. The flag's only effect is to turn "no test files
+      # found" from exit 1 into exit 0, which is the single signal that would
+      # reveal a broken include glob, a renamed src layout, or a vitest config
+      # that stopped matching. It was correct in b55fffa, a commit with zero test
+      # files, and became a stale escape hatch the moment tests landed.
       - name: Unit tests
-        run: npm test -- --passWithNoTests
+        run: npm test
+
+  # The native seam, on the only platform that can build it today.
+  #
+  # This job exists because ADR-0010's measurements were produced in a scratch
+  # directory that no longer exists, so the decision the whole document pipeline
+  # rests on could not be re-checked. Evidence that lives outside the repository
+  # is evidence that will be deleted.
+  shim:
+    name: Build the native MuPDF shim
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # MuPDF's static libraries take ~10 minutes to build and change only when
+      # the pinned version does, so the key is the version itself. A miss costs
+      # the build; a stale hit is impossible because the version is in the key.
+      - name: Cache the MuPDF build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/mupdf
+          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      # Builds MuPDF from source against a pinned SHA-256, links the shim, and
+      # fails if the DLL does not export every MZ_EXPORT symbol the source
+      # declares.
+      - name: Provision MuPDF and build the shim
+        run: npm run provision:mupdf
+
+      # And proves that export check can fail, by pointing it at a DLL missing a
+      # declared symbol — the state a build that silently did not run leaves.
+      - name: Prove the shim's export check is not vacuous
+        run: npm run proof:shim

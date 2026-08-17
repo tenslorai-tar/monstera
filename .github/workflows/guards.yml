@@ -4,9 +4,18 @@
 # repository: it re-runs the same two checks against content that arrived by
 # any route (web editor, merge, a clone whose hooks were never bootstrapped).
 #
-# Runs on ubuntu-latest rather than the windows-latest that Part I mandates for
-# the four test levels. Nothing here touches native behaviour — it is a text
-# scan and a blob inspection — so the faster runner costs no coverage.
+# Runs on both platforms. The comment here used to say "nothing here touches
+# native behaviour — it is a text scan and a blob inspection — so the faster
+# runner costs no coverage." That stopped being true when `proof:provision` was
+# added, which downloads, hash-verifies, extracts and spawns a binary.
+#
+# The cost of it staying wrong: this workflow is the ONLY one that runs
+# proof:guards, proof:provision, guardFiles --tree and scanSecrets, and it ran
+# on ubuntu alone. So the win32 bsdtar branch, zip extraction, the rename-EPERM
+# path and three win32 pinned digests were executed by no CI job at all — on the
+# platform this application targets and is developed on daily. This project has
+# already shipped a defect that changed depending on which terminal was used,
+# and CI was structurally blind to it for exactly this reason.
 name: Guards
 
 on:
@@ -24,8 +33,19 @@ concurrency:
 
 jobs:
   guards:
-    name: Secret scan and file policy
-    runs-on: ubuntu-latest
+    name: Secret scan and file policy (${{ matrix.os }})
+    strategy:
+      # Windows is the target and the daily development platform, so it must
+      # pass. Linux stays as the differential: when a step fails on one and not
+      # the other, the difference is the platform.
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # See ci.yml for why pipefail is load-bearing rather than decoration.
+        shell: bash -euo pipefail {0}
     steps:
       # Actions are pinned by commit SHA, not by tag. A tag is mutable: whoever
       # controls the action's repository can repoint v7 at different code, and
