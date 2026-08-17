@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript';
 import importX from 'eslint-plugin-import-x';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
@@ -21,15 +22,32 @@ import tseslint from 'typescript-eslint';
  * mode is that same silence. Import restrictions need no resolver and were
  * proven to work before being adopted.
  */
-const PACKAGES = ['shared', 'contract', 'kernel', 'ui', 'testing', 'desktop'];
+export const PACKAGES = ['shared', 'contract', 'kernel', 'ui', 'testing', 'desktop'];
 
-const ALLOWED_IMPORTS = {
+/**
+ * Exported so `scripts/proofs/boundaries.proof.mjs` GENERATES its cases from
+ * this table rather than restating it. A hand-maintained case list beside a
+ * generated rule set is the second wiring place the registry pattern exists to
+ * forbid, and it is why the previous proof covered four of six packages and one
+ * of four import routes while reporting "11 boundary cases passed".
+ */
+export const ALLOWED_IMPORTS = {
   shared: [],
   contract: ['shared'],
   kernel: ['shared', 'contract'],
   ui: ['shared', 'contract'],
   testing: ['shared', 'contract'],
   desktop: ['shared', 'contract', 'kernel'],
+};
+
+/** Where each package's directory sits, relative to the repository root. */
+export const PACKAGE_DIR = {
+  shared: 'packages/shared',
+  contract: 'packages/contract',
+  kernel: 'packages/kernel',
+  ui: 'packages/ui',
+  testing: 'packages/testing',
+  desktop: 'apps/desktop',
 };
 
 /** Where each package's sources live. */
@@ -46,17 +64,42 @@ const BOUNDARY_MESSAGE =
   'This import crosses a boundary the architecture forbids (ARCHITECTURE §1). The kernel stays headless so the document pipeline is unit-testable in plain Node; the renderer stays browser-only so it cannot hold a filesystem path. If a feature genuinely needs this, rule B4 applies: amend the architecture first, in its own commit, with the rejected alternatives.';
 
 /**
- * Patterns that catch a forbidden package by package specifier *and* by a
- * relative path that reaches around it. Blocking only `@monstera/kernel` would
- * leave `../../kernel/src/thing.js` wide open, and a boundary with a documented
- * bypass is not a boundary.
+ * Every route to a forbidden package, not a list of the routes someone thought
+ * of. The previous version named `**\/${target}/src/**` specifically, which left
+ * `../../kernel/dist/index.js` — the package's actual entry point — resolving
+ * cleanly through lint, tsc and the boundary proof alike. A boundary with a
+ * documented bypass is not a boundary, and enumerating members of a class is how
+ * the bypass got there.
+ *
+ * The four routes the generated proof cases exercise, one per forbidden edge:
+ * bare specifier, subpath export, relative into src, relative into dist. The
+ * last two collapse into `**\/${target}/**`, which covers any directory inside
+ * the package rather than the two that were remembered.
  *
  * @param {string} target
  * @returns {string[]}
  */
 function patternsFor(target) {
-  return [`@monstera/${target}`, `@monstera/${target}/**`, `**/${target}/src/**`];
+  return [
+    `@monstera/${target}`,
+    `@monstera/${target}/**`,
+    // The package directory itself, e.g. `../../kernel`.
+    `**/${target}`,
+    // Anything inside it: src, dist, a subpath, a file added next year.
+    `**/${target}/**`,
+  ];
 }
+
+/**
+ * Packages permitted to import a host-specific runtime. Written as exceptions
+ * rather than as an allowlist of the packages that are banned: the previous form
+ * enumerated `kernel|ui|shared|contract`, so `testing` — where the browser shim
+ * lives, which by definition must run without Electron — inherited no ban at
+ * all, and any package added later would inherit none either. An exception list
+ * fails safe; a membership list fails open.
+ */
+const MAY_IMPORT_ELECTRON = 'desktop';
+const MAY_IMPORT_REACT = 'ui';
 
 /** Node built-ins the renderer must never import, with and without the prefix. */
 const NODE_BUILTINS = [
@@ -92,12 +135,14 @@ function boundaryConfigFor(pkg) {
     message: BOUNDARY_MESSAGE,
   }));
 
-  /** @type {{name: string, message: string}[]} */
-  const paths = [];
-
-  if (pkg === 'kernel' || pkg === 'ui' || pkg === 'shared' || pkg === 'contract') {
-    paths.push({
-      name: 'electron',
+  // Subpaths, not just bare specifiers. `no-restricted-imports` `paths` matches
+  // the import string exactly, so the previous form blocked `electron` while
+  // `electron/main`, `electron/renderer`, `react/jsx-runtime` and
+  // `react-dom/client` all passed — every one of which is how those packages are
+  // actually imported.
+  if (pkg !== MAY_IMPORT_ELECTRON) {
+    patterns.push({
+      group: ['electron', 'electron/**'],
       message:
         pkg === 'ui'
           ? 'The renderer is sandboxed and reaches main only through the generated contract bridge (invariant L1).'
@@ -105,11 +150,12 @@ function boundaryConfigFor(pkg) {
     });
   }
 
-  if (pkg === 'kernel' || pkg === 'shared' || pkg === 'contract') {
-    paths.push(
-      { name: 'react', message: 'This package is headless. UI state belongs in packages/ui.' },
-      { name: 'react-dom', message: 'This package is headless.' },
-    );
+  if (pkg !== MAY_IMPORT_REACT) {
+    patterns.push({
+      group: ['react', 'react/**', 'react-dom', 'react-dom/**'],
+      message:
+        'This package is headless. UI state and components belong in packages/ui (ARCHITECTURE §1).',
+    });
   }
 
   if (pkg === 'ui') {
@@ -119,7 +165,7 @@ function boundaryConfigFor(pkg) {
   return {
     files: [PACKAGE_GLOB[pkg]],
     rules: {
-      'no-restricted-imports': ['error', { paths, patterns }],
+      'no-restricted-imports': ['error', { patterns }],
     },
   };
 }
@@ -139,6 +185,12 @@ export default tseslint.config(
       // a red build nobody caused is a red build people learn to ignore. This
       // entry must stay in step with the `.probe/` line in .gitignore.
       '.probe/**',
+      // Boundary probes must live inside a package to be matched by that
+      // package's rules, so they cannot go in `.probe/`. Ignored here for the
+      // same reason: a proof killed mid-run must not leave a file that turns
+      // `npm run lint` and `npm run typecheck` red for code nobody wrote.
+      // boundaries.proof.mjs passes `ignore: false` so it still sees them.
+      '**/__boundary_probe__.ts',
     ],
   },
 
@@ -161,6 +213,31 @@ export default tseslint.config(
   {
     files: ['**/*.{ts,tsx}'],
     plugins: { 'import-x': importX },
+    settings: {
+      // Without a resolver, import-x falls back to Node resolution — and
+      // NodeNext plus verbatimModuleSyntax force every intra-package specifier
+      // to be written `./foo.js`, a file that does not exist on disk. The graph
+      // walk stopped at the first edge, so `no-cycle` and `no-self-import` below
+      // were configured as errors and could never fire: all 13 relative
+      // specifiers in packages/**/src were unresolvable, and both rules returned
+      // silently rather than reporting that they had failed to look.
+      //
+      // The header of this file rejected eslint-plugin-boundaries because a
+      // TypeScript-aware resolver's "own failure mode is that same silence" —
+      // then adopted two rules that need one, and got that silence. The answer
+      // is not to avoid the resolver but to make its silence audible, which is
+      // what `no-unresolved` below does.
+      'import-x/resolver-next': [
+        createTypeScriptImportResolver({
+          // The root project, which carries `references` to every package.
+          // Listing the package tsconfigs individually also works but makes the
+          // resolver warn about multiple projects on every run, and a warning
+          // printed on every run is one nobody reads.
+          project: 'tsconfig.json',
+          alwaysTryTypes: true,
+        }),
+      ],
+    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
 
@@ -171,6 +248,10 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
 
+      // Permanent, and load-bearing for the two rules beneath it. If the
+      // resolver ever goes blind again, this turns the build red instead of
+      // quietly muting cycle detection. It is the alarm on the silence.
+      'import-x/no-unresolved': 'error',
       'import-x/no-cycle': ['error', { maxDepth: Infinity }],
       'import-x/no-self-import': 'error',
     },

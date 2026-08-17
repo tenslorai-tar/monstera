@@ -115,3 +115,9 @@ desktop.ini
 install.log
 .probe/
 
+# Proof scratch that must live INSIDE a package to be linted at all — a boundary
+# rule scoped to `packages/ui/**` cannot see a file in `.probe/`. The proof
+# passes `--no-ignore` so it still inspects them; ignoring them here means a
+# proof killed before its cleanup cannot reach a commit or redden a later lint.
+__boundary_probe__.ts
+

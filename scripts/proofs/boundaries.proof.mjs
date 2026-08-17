@@ -3,180 +3,228 @@
  * Proof that the C1 module-graph boundaries are actually enforced (rule B2).
  *
  * `eslint .` passing proves nothing about these rules: a boundary config that
- * matches no files, or whose element patterns are wrong, lints perfectly clean
- * while permitting every import it claims to forbid. The only way to know a
- * boundary holds is to violate it on purpose and watch the build go red.
+ * matches no files, or whose patterns are wrong, lints perfectly clean while
+ * permitting every import it claims to forbid. The only way to know a boundary
+ * holds is to violate it on purpose and watch the build go red.
  *
- * Every forbidden case is paired with a permitted control. Without the
- * controls, a rule that rejected all imports — including legal ones — would
- * pass every violation case here and break the build on the first real feature.
+ * ## Generated, not listed
  *
- * Each case writes one temporary file into the offending package, lints it, and
- * removes it. Nothing is left behind on success or failure.
+ * Every case is derived from `ALLOWED_IMPORTS` in eslint.config.js — the same
+ * table the rules are built from. The previous version restated the graph as a
+ * hand-written list, which is the second wiring place the registry pattern
+ * exists to forbid, and it failed exactly as that always does: it covered four
+ * of six packages and one of four import routes, and reported "11 boundary cases
+ * passed" while `packages/ui` could import the kernel through `../../kernel/
+ * dist/index.js` — the package's real entry point — with lint, tsc and this
+ * proof all green.
+ *
+ * So the cases are the cross product of every forbidden edge and every ROUTE to
+ * it. A package added to the graph, or a route someone thinks of later, gains
+ * coverage by construction rather than by someone remembering to add a case.
  *
  * Usage: node scripts/proofs/boundaries.proof.mjs
  */
 
-import { spawnSync } from 'node:child_process';
-import { rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ESLint } from 'eslint';
+
+import { ALLOWED_IMPORTS, PACKAGES, PACKAGE_DIR } from '../../eslint.config.js';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const ESLINT_BIN = join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js');
 
 /**
- * @typedef {{
- *   name: string,
- *   package: string,
- *   source: string,
- *   expect: 'reject' | 'allow',
- *   rule?: string,
- * }} Case
- * @type {readonly Case[]}
- */
-const CASES = [
-  {
-    name: 'ui may not import the kernel',
-    package: 'packages/ui',
-    source: `import type { Result } from '@monstera/kernel';\nexport type Probe = Result;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'contract may not import the kernel',
-    package: 'packages/contract',
-    source: `import type { Result } from '@monstera/kernel';\nexport type Probe = Result;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'shared may not import the contract',
-    package: 'packages/shared',
-    source: `import type { Result } from '@monstera/contract';\nexport type Probe = Result;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'kernel may not import electron',
-    package: 'packages/kernel',
-    source: `import { app } from 'electron';\nexport const probe = app;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'kernel may not import react',
-    package: 'packages/kernel',
-    source: `import { useState } from 'react';\nexport const probe = useState;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'ui may not import electron',
-    package: 'packages/ui',
-    source: `import { ipcRenderer } from 'electron';\nexport const probe = ipcRenderer;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'ui may not import node:fs',
-    package: 'packages/ui',
-    source: `import { readFileSync } from 'node:fs';\nexport const probe = readFileSync;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-  {
-    name: 'ui may not import node:child_process',
-    package: 'packages/ui',
-    source: `import { spawn } from 'node:child_process';\nexport const probe = spawn;\n`,
-    expect: 'reject',
-    rule: 'no-restricted-imports',
-  },
-
-  // Controls. A rule that rejected everything would pass every case above.
-  {
-    name: 'kernel MAY import shared',
-    package: 'packages/kernel',
-    source: `import { ok } from '@monstera/shared';\nexport const probe = ok;\n`,
-    expect: 'allow',
-  },
-  {
-    name: 'ui MAY import shared',
-    package: 'packages/ui',
-    source: `import { ok } from '@monstera/shared';\nexport const probe = ok;\n`,
-    expect: 'allow',
-  },
-  {
-    name: 'kernel MAY import node:fs',
-    package: 'packages/kernel',
-    source: `import { readFileSync } from 'node:fs';\nexport const probe = readFileSync;\n`,
-    expect: 'allow',
-  },
-];
-
-/**
- * ESLint's JS entry point is invoked with the current node binary rather than
- * through `npx`. On Windows `npx` is `npx.cmd`, and Node refuses to spawn
- * `.cmd` files without `shell: true` (the fix for CVE-2024-27980, where
- * arguments to a batch file could be interpreted as commands). Reaching for
- * `shell: true` would restore that hazard to work around it; calling the JS
- * entry directly avoids the shell altogether and behaves identically on every
- * platform.
+ * The probe filename is gitignored AND eslint-ignored, so a proof killed before
+ * its cleanup cannot turn a later `eslint .` red or reach a commit. The lint
+ * below passes `--no-ignore` so the proof itself still sees the file.
  *
- * @param {string} file
- * @returns {{ output: string, clean: boolean }}
+ * The previous version wrote `__boundary_probe__.ts` into `packages/*\/src`
+ * where nothing ignored it: killing the proof mid-run left a file that made both
+ * `npm run lint` and `npm run typecheck` exit 1 for code nobody wrote. Its
+ * sibling contract.proof.mjs had already closed that class by writing to
+ * `.probe/`, with a comment naming the hazard.
  */
-function lint(file) {
-  const result = spawnSync(
-    process.execPath,
-    [ESLINT_BIN, '--no-warn-ignored', '--format', 'json', file],
-    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 },
-  );
+const PROBE_NAME = '__boundary_probe__.ts';
 
-  // A process that never started is not a clean lint and not a dirty one. Left
-  // unreported it looks exactly like "eslint found problems", which is how a
-  // broken harness reads as a passing boundary.
-  if (result.error !== undefined) {
-    throw new Error(`Could not run eslint for ${file}`, { cause: result.error });
-  }
+/**
+ * Every way one package can name another. A boundary that blocks the bare
+ * specifier and nothing else is not a boundary — `dist` is where the package
+ * actually resolves.
+ *
+ * @param {string} fromPackage
+ * @param {string} target
+ * @returns {{ route: string, specifier: string }[]}
+ */
+function routesTo(fromPackage, target) {
+  // From `<pkg>/src/` up to the target's directory. Computed rather than
+  // assumed: packages/* and apps/* sit at different depths, and hardcoding
+  // `../../` is how apps/desktop would have been silently skipped.
+  const fromDir = join(REPO_ROOT, PACKAGE_DIR[fromPackage], 'src');
+  const toDir = join(REPO_ROOT, PACKAGE_DIR[target]);
+  const rel = relative(fromDir, toDir).split('\\').join('/');
 
-  return { output: `${result.stdout ?? ''}${result.stderr ?? ''}`, clean: result.status === 0 };
+  return [
+    { route: 'bare specifier', specifier: `@monstera/${target}` },
+    { route: 'subpath export', specifier: `@monstera/${target}/index.js` },
+    { route: 'relative into src', specifier: `${rel}/src/index.js` },
+    { route: 'relative into dist', specifier: `${rel}/dist/index.js` },
+    { route: 'relative to package dir', specifier: rel },
+  ];
 }
 
-/**
- * @param {string} output
- * @returns {string[]} Rule ids reported for the linted file.
- */
-function reportedRules(output) {
-  const start = output.indexOf('[');
-  if (start === -1) return [];
-  try {
-    /** @type {{messages: {ruleId: string | null}[]}[]} */
-    const parsed = JSON.parse(output.slice(start, output.lastIndexOf(']') + 1));
-    return parsed.flatMap((file) => file.messages.map((m) => m.ruleId ?? '(fatal)'));
-  } catch {
-    // A parse failure means eslint did not produce JSON — a crash or a config
-    // error. Surfacing the raw output is more useful than an empty rule list.
-    return [`(unparseable output: ${output.slice(0, 400)})`];
+/** @type {{name: string, package: string, source: string, expect: 'reject'|'allow', rule?: string}[]} */
+const CASES = [];
+
+// --- Forbidden package edges, every route.
+for (const pkg of PACKAGES) {
+  const forbidden = PACKAGES.filter(
+    (other) => other !== pkg && !ALLOWED_IMPORTS[pkg].includes(other),
+  );
+  for (const target of forbidden) {
+    for (const { route, specifier } of routesTo(pkg, target)) {
+      CASES.push({
+        name: `${pkg} may not reach ${target} by ${route}`,
+        package: pkg,
+        source: `import * as probe from '${specifier}';\nexport default probe;\n`,
+        expect: 'reject',
+        rule: 'no-restricted-imports',
+      });
+    }
   }
+}
+
+// --- Host runtimes, as exceptions rather than a membership list. Subpaths are
+// included because that is how these packages are actually imported, and the
+// bare-specifier-only form let `electron/main` and `react-dom/client` straight
+// through.
+for (const pkg of PACKAGES) {
+  if (pkg !== 'desktop') {
+    for (const specifier of ['electron', 'electron/main', 'electron/renderer']) {
+      CASES.push({
+        name: `${pkg} may not import ${specifier}`,
+        package: pkg,
+        source: `import * as probe from '${specifier}';\nexport default probe;\n`,
+        expect: 'reject',
+        rule: 'no-restricted-imports',
+      });
+    }
+  }
+  if (pkg !== 'ui') {
+    for (const specifier of ['react', 'react/jsx-runtime', 'react-dom/client']) {
+      CASES.push({
+        name: `${pkg} may not import ${specifier}`,
+        package: pkg,
+        source: `import * as probe from '${specifier}';\nexport default probe;\n`,
+        expect: 'reject',
+        rule: 'no-restricted-imports',
+      });
+    }
+  }
+}
+
+// --- The renderer and Node.
+for (const specifier of ['node:fs', 'fs', 'node:child_process', 'node:path']) {
+  CASES.push({
+    name: `ui may not import ${specifier}`,
+    package: 'ui',
+    source: `import * as probe from '${specifier}';\nexport default probe;\n`,
+    expect: 'reject',
+    rule: 'no-restricted-imports',
+  });
+}
+
+// --- Controls. Without these, a rule that rejected EVERY import would pass
+// every case above and break the build on the first real feature.
+for (const pkg of PACKAGES) {
+  for (const target of ALLOWED_IMPORTS[pkg]) {
+    CASES.push({
+      name: `${pkg} MAY import ${target}`,
+      package: pkg,
+      source: `import * as probe from '@monstera/${target}';\nexport default probe;\n`,
+      expect: 'allow',
+    });
+  }
+}
+CASES.push({
+  name: 'kernel MAY import node:fs',
+  package: 'kernel',
+  source: `import * as probe from 'node:fs';\nexport default probe;\n`,
+  expect: 'allow',
+});
+// The two exception controls. electron and react are in no package.json yet, so
+// `import-x/no-unresolved` fires for a reason that has nothing to do with the
+// boundary — the module genuinely is not there. Requiring a fully clean lint
+// would make these cases fail for the wrong reason, and deleting them would
+// leave the exception list itself untested.
+//
+// So they assert the precise claim instead: the boundary rule does not fire for
+// the package the exception names. That is what "desktop may import electron"
+// actually means here, and it stays true when the dependency lands.
+CASES.push({
+  name: 'desktop MAY import electron (boundary rule must not fire)',
+  package: 'desktop',
+  source: `import * as probe from 'electron';\nexport default probe;\n`,
+  expect: 'allow-boundary',
+});
+CASES.push({
+  name: 'ui MAY import react (boundary rule must not fire)',
+  package: 'ui',
+  source: `import * as probe from 'react';\nexport default probe;\n`,
+  expect: 'allow-boundary',
+});
+
+/**
+ * One ESLint instance for every case, through the Node API.
+ *
+ * The previous version spawned `eslint` per case. With the case list generated
+ * rather than hand-written it went from 11 cases to well over a hundred, and
+ * each spawn re-reads the flat config and rebuilds the TypeScript program: the
+ * run took longer than ten minutes, which in CI is a check people start
+ * skipping. One instance amortises both across every case.
+ *
+ * `warnIgnored: false` plus the probe name being ignore-listed is deliberate —
+ * see PROBE_NAME. The `ignore: false` flag is what lets the proof see a file
+ * that `eslint .` is configured to skip.
+ */
+const eslint = new ESLint({ cwd: REPO_ROOT, ignore: false, warnIgnored: false });
+
+/**
+ * @param {string} file
+ * @returns {Promise<{ rules: string[], clean: boolean }>}
+ */
+async function lint(file) {
+  const results = await eslint.lintFiles([file]);
+  const rules = results.flatMap((result) =>
+    result.messages.map((message) => message.ruleId ?? '(fatal)'),
+  );
+  const errors = results.reduce((total, result) => total + result.errorCount, 0);
+  return { rules, clean: errors === 0 };
 }
 
 /** @type {string[]} */
 const failures = [];
+let passed = 0;
 
 for (const testCase of CASES) {
-  const file = join(REPO_ROOT, testCase.package, 'src', '__boundary_probe__.ts');
+  const probeDir = join(REPO_ROOT, PACKAGE_DIR[testCase.package], 'src');
+  const file = join(probeDir, PROBE_NAME);
   try {
+    mkdirSync(probeDir, { recursive: true });
     writeFileSync(file, testCase.source);
-    const { output, clean } = lint(file);
-    const rules = reportedRules(output);
+    const { rules, clean } = await lint(file);
 
     if (testCase.expect === 'allow') {
-      if (clean) {
-        process.stdout.write(`  ok  allow   ${testCase.name}\n`);
-      } else {
-        failures.push(`${testCase.name}: expected this import to be permitted, got: ${rules.join(', ')}`);
-      }
+      if (clean) passed += 1;
+      else failures.push(`${testCase.name}: expected permitted, got: ${rules.join(', ')}`);
+    } else if (testCase.expect === 'allow-boundary') {
+      if (!rules.includes('no-restricted-imports')) passed += 1;
+      else
+        failures.push(
+          `${testCase.name}: the boundary rule fired for a package the exception list permits. ` +
+            `The exception is not being applied.`,
+        );
     } else if (clean) {
       failures.push(
         `${testCase.name}: THE BOUNDARY IS NOT ENFORCED — eslint accepted a forbidden import.`,
@@ -187,15 +235,70 @@ for (const testCase of CASES) {
           `A violation caught by the wrong rule means the boundary rule itself may still be inert.`,
       );
     } else {
-      process.stdout.write(`  ok  reject  ${testCase.name}\n`);
+      passed += 1;
     }
   } finally {
     rmSync(file, { force: true });
   }
 }
 
+// --- The cycle rules, which needed a resolver to work at all.
+//
+// `import-x/no-cycle` and `no-self-import` were configured as errors and could
+// never fire: with no resolver, NodeNext's mandatory `./foo.js` specifiers were
+// all unresolvable, the graph walk stopped at the first edge, and both rules
+// returned silently. A rule that cannot look is indistinguishable from a rule
+// that looked and found nothing, which is why this case exists rather than
+// trusting the configuration.
+//
+// Two files that import each other, which no single-file case can express.
+{
+  const dir = join(REPO_ROOT, PACKAGE_DIR['shared'], 'src');
+  const a = join(dir, '__cycle_probe_a__.ts');
+  const b = join(dir, '__cycle_probe_b__.ts');
+  try {
+    writeFileSync(a, `import { b } from './__cycle_probe_b__.js';\nexport const a = b;\n`);
+    writeFileSync(b, `import { a } from './__cycle_probe_a__.js';\nexport const b = a;\n`);
+    const { rules } = await lint(a);
+
+    // EXPECTED FAILURE, recorded deliberately rather than hidden.
+    //
+    // Measured state, all in a fresh process with the resolver configured:
+    //   - `no-self-import` DOES fire ("Module imports itself"), so import-x's
+    //     resolution machinery works.
+    //   - `no-unresolved` DOES fire for a genuinely missing file, so the
+    //     resolver distinguishes present from absent.
+    //   - `no-cycle` does NOT fire for this two-file cycle, with maxDepth left
+    //     default, set to Infinity, or set to 10.
+    //
+    // So the missing resolver was one cause and is fixed; something else keeps
+    // no-cycle inert, and it is not yet established. Asserting the broken
+    // behaviour means this case CANNOT quietly pass: the day no-cycle starts
+    // working, this goes red and whoever sees it inverts the assertion and
+    // deletes this comment. A case that asserted the fixed behaviour would just
+    // be a permanently red build, and one that skipped would be forgotten.
+    if (rules.includes('import-x/no-cycle')) {
+      failures.push(
+        `import-x/no-cycle now REPORTS a two-file cycle. That is good news and this case is ` +
+          `stale: invert it to expect the report, and close the deferral recorded in ` +
+          `docs/JOURNAL.md.`,
+      );
+    } else {
+      passed += 1;
+    }
+  } finally {
+    rmSync(a, { force: true });
+    rmSync(b, { force: true });
+  }
+}
+
 if (failures.length > 0) {
-  process.stderr.write(`\n${failures.length} boundary proof failure(s):\n\n${failures.join('\n\n')}\n`);
+  process.stderr.write(
+    `\n${failures.length} of ${CASES.length + 1} boundary proof failure(s):\n\n${failures.join('\n\n')}\n`,
+  );
   process.exit(1);
 }
-process.stdout.write(`\n${CASES.length} boundary cases passed.\n`);
+process.stdout.write(
+  `\n${passed} boundary cases passed ` +
+    `(${PACKAGES.length} packages x every forbidden edge x every route, generated from ALLOWED_IMPORTS).\n`,
+);
