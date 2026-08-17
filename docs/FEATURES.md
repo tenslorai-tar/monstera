@@ -262,7 +262,8 @@ Not user-facing features, but the exit gate for everything above.
 | Pinned-hash binary provisioning primitive | **done** |
 | Governing documents (ARCHITECTURE, CLAUDE, README, CONTRIBUTING, SECURITY, ADRs) | **done** |
 | Monorepo workspaces + enforced import boundaries | **done** |
-| Contract: channels defined once, four surfaces derived, exhaustive at compile time | **done** |
+| Contract: channels defined once; the four surface **types** are derived from it and exhaustive at compile time (proven — narrowing a handler map to `Partial<>` turns `proof:contract` red) | **done** |
+| Contract: the four surfaces **implemented** — main handlers, preload bridge, renderer client, browser shim. Today `apps/desktop`, `packages/ui` and `packages/testing` are each a bare `export {}`, and nothing outside `contract.proof.mjs` is annotated `ContractHandlers` or `ContractClient` | — |
 | CapabilityRegistry (FileHandles, invariant L2) | **done** |
 | DocumentService + CommandBus | wip |
 | Both utility hosts on the shared worker contract | — |

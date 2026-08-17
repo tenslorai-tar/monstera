@@ -107,11 +107,16 @@ packages/ui/        React app, per-document stores, registries, PDF.js
 packages/testing/   fixture corpus, proof harness, browser shim
 apps/desktop/       Electron shell — the ONLY package that imports Electron
 scripts/            provisioning, release tooling, git hooks
+native/             C source we compile: the MuPDF shim, a security PoC harness
+                    outside every tsconfig and ESLint rule — the compiler is the
+                    only check, so its rules live in the file headers
+assets/             brand source artwork; the icon set is generated from it
 docs/               ARCHITECTURE.md (law), FEATURES.md, DECISIONS/ (ADRs)
 ```
 
 Boundary violations are **red builds**, not review comments — enforced by ESLint
-import restrictions and per-package tsconfigs.
+import restrictions and per-package tsconfigs. `native/` is the exception and it
+is a real one: no tsconfig and no lint rule reaches it.
 
 The kernel having zero Electron imports is not aesthetic: it makes the whole
 document pipeline unit-testable in milliseconds. **A test that must fake

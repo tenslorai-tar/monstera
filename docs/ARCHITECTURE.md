@@ -54,6 +54,19 @@ monstera/
 │                    The ONLY package that imports Electron.
 ├── scripts/         provisioning (binary downloads, fixtures), git hooks,
 │                    release tooling. Plain .mjs — see §1.1.
+├── native/          C SOURCE we compile ourselves. `mupdf-shim/` is the flat C
+│                    ABI over MuPDF (ADR-0010); `cff-poc/` is a security
+│                    reproduction harness. No TypeScript and no npm package, so
+│                    it sits outside every tsconfig and every ESLint boundary
+│                    rule — the compiler is the only thing checking it, which is
+│                    why the fz_var rule is written into the file header rather
+│                    than left to a linter that does not run here. Build output
+│                    goes to `native/*/out/` and is gitignored. Only the kernel,
+│                    through its one typed adapter module, may load what this
+│                    produces.
+├── assets/          brand source artwork. `assets/brand/` holds the master the
+│                    icons are generated from; `npm run brand:check` fails if
+│                    the generated set has drifted from it.
 └── docs/            ARCHITECTURE.md (this file), FEATURES.md, UI-GUIDE.md,
                      JOURNAL.md, DECISIONS/
 ```

@@ -2,7 +2,7 @@
   "name": "@monstera/testing",
   "version": "0.0.0",
   "private": true,
-  "description": "Fixture corpus, proof harness, and the browser shim that implements the full contract.",
+  "description": "Fixture corpus and proof harness. Will hold the browser shim; that is not built yet.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {

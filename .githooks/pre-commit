@@ -10,7 +10,7 @@ if ! command -v node >/dev/null 2>&1; then
   echo "" >&2
   echo "Commit blocked — node is not on PATH, so the pre-commit guards could not run." >&2
   echo "" >&2
-  echo "  Install Node (see .nvmrc / package.json engines) and commit again." >&2
+  echo "  Install Node (package.json \"engines\" states the minimum) and commit again." >&2
   echo "" >&2
   echo "The hook refuses to pass a commit it did not check. Skipping the checks when the" >&2
   echo "runtime is missing would report success for checks that never ran." >&2

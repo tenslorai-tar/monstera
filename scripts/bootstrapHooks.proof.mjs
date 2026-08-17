@@ -195,6 +195,22 @@ try {
         `time on someone else's machine, and the name was wrong in two documents for this ` +
         `project's whole life before a check looked.`,
     );
+
+    // The hook's failure MESSAGE is read at the worst possible moment — a cold
+    // machine with a broken toolchain — so a pointer to a file that does not
+    // exist costs exactly the person least able to absorb it. It pointed at
+    // `.nvmrc` for this project's whole life; there has never been one.
+    const namedFiles = [...shim.matchAll(/(?<![\w./-])\.[a-z][\w-]*(?:rc|\.json|\.yml|-versions)\b/g)]
+      .map((match) => match[0])
+      .filter((name) => name !== '.git');
+    const absent = [...new Set(namedFiles)].filter((name) => !existsSync(join(REPO, name)));
+    check(
+      'every dotfile the shim names in its guidance exists',
+      absent.length === 0,
+      `named but absent: ${absent.join(', ')}\n      This message is printed when the toolchain ` +
+        `is already broken. Sending that reader to a file that is not there is the one moment ` +
+        `the guidance had to be right.`,
+    );
   }
 } finally {
   for (const repo of repos) rmSync(repo, { recursive: true, force: true });
