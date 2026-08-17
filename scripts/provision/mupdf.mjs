@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { archiveSymlinks, extract } from '../lib/extract.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
+import { recordShimBuild } from '../lib/shimBinary.mjs';
 
 /**
  * Pinned deliberately, and NOT bumped to the newest release.
@@ -321,6 +322,12 @@ async function main() {
   if (!process.argv.includes('--skip-mupdf')) await buildMupdf(root, force);
   const dll = await buildShim(root);
   await verifyExports(root, dll);
+
+  // Record what this DLL was built from, AFTER it linked and passed its export
+  // check. Every script that loads it then asserts the source has not moved
+  // since — see scripts/lib/shimBinary.mjs for why a measurement through a
+  // stale DLL is worse than no measurement.
+  recordShimBuild({ root, version: MUPDF_VERSION });
 
   process.stderr.write(`\nDone.\n`);
   return 0;

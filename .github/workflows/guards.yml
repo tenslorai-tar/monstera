@@ -94,6 +94,12 @@ jobs:
       - name: Prove a verdict's inputs detect a change
         run: npm run proof:verdict
 
+      # A native measurement taken through a DLL built from older source still
+      # runs and still prints plausible numbers. Runs here rather than in the
+      # native job because it needs only the tracked shim source, not a build.
+      - name: Prove a stale shim is refused rather than measured
+        run: npm run proof:shimstate
+
       # Downloads a deliberately older gitleaks — one that runs the shipped
       # invocation, exits like a healthy scan, and quietly finds one family
       # fewer. Every other case for the canary runs against the pinned build,

@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 import koffi from 'koffi';
 import { PDFDocument, PDFName, PDFNumber, StandardFonts } from '@cantoo/pdf-lib';
 
+import { requireCurrentShim } from '../lib/shimBinary.mjs';
 import { buildFixture, buildNestedFixture } from '../spike/makeFixture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +50,9 @@ function repoRoot() {
 }
 
 const ROOT = repoRoot();
-const lib = koffi.load(join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll'));
+// Refuses if the DLL was not built from the source on disk. A geometry proof
+// that passes through a stale DLL is measuring the previous implementation.
+const lib = koffi.load(requireCurrentShim({ root: ROOT }));
 
 // Every signature copied from the C, never remembered: a mismatched declaration
 // makes koffi write past the arrays it was given, and the process segfaults.

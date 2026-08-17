@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url';
 
 import koffi from 'koffi';
 
+import { requireCurrentShim } from '../lib/shimBinary.mjs';
 import { buildFixture, buildNestedFixture } from '../spike/makeFixture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -49,7 +50,10 @@ function repoRoot() {
 }
 
 const ROOT = repoRoot();
-const lib = koffi.load(join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll'));
+// Refuses if the DLL was not built from the source on disk. The census equation
+// balances at 0 == 0 - 0 against a stale binary, so this proof is one of the
+// ones that would pass while measuring the previous implementation.
+const lib = koffi.load(requireCurrentShim({ root: ROOT }));
 
 const mz_init = lib.func('int mz_init(_Out_ void **out)');
 const mz_drop = lib.func('void mz_drop(void *c)');

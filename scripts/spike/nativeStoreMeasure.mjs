@@ -24,6 +24,7 @@ import { spawnSync } from 'node:child_process';
 
 import koffi from 'koffi';
 
+import { requireCurrentShim } from '../lib/shimBinary.mjs';
 import { buildFixture } from './makeFixture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +36,13 @@ function repoRoot() {
 }
 
 const ROOT = repoRoot();
-const DLL = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
+
+// This is the ADR-0010 instrument, and the one where a stale DLL is hardest to
+// notice: the workload does not touch most of the shim, so a rebuild that never
+// happened produces byte-identical totals to one that did. Batch 4 reproduced
+// 155,548,924 bytes and 1,547 blocks across four rebuilds, and the run itself
+// could not distinguish "recomputed and unchanged" from "never recomputed".
+const DLL = requireCurrentShim({ root: ROOT });
 
 const lib = koffi.load(DLL);
 
