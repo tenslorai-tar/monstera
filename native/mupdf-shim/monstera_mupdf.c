@@ -18,6 +18,27 @@
  *   - Handles are opaque pointers. The caller never sees a fitz struct, so the
  *     ABI does not change when MuPDF's internals do.
  *
+ * THE fz_var RULE, since fz_try is setjmp:
+ *
+ *   A local that is assigned INSIDE fz_try and read from fz_always or fz_catch
+ *   must be declared with fz_var(). On longjmp the C standard leaves such a
+ *   local indeterminate unless it is volatile or its address has been taken,
+ *   and this project builds with /O2, which is exactly when the compiler keeps
+ *   it in a register instead.
+ *
+ *   A local read only AFTER the whole block does not need it, because the throw
+ *   path returns from fz_catch without reading it. That distinction is why the
+ *   rule is stated rather than applied blanket: three locals here qualify and
+ *   the rest genuinely do not, and a reader who cannot tell the two apart will
+ *   either add noise or omit the one that matters.
+ *
+ *   The failure is quiet. On MSVC x64 the usual outcome is that the pointer
+ *   reverts to its pre-try value — NULL — so the drop in fz_always becomes a
+ *   no-op and the object leaks, with its whole materialised graph. Nothing
+ *   crashes and nothing is reported. Error paths are not hypothetical: every
+ *   fz_catch in this file exists because MuPDF throws on damaged documents,
+ *   which is the input this application is built to open.
+ *
  * The surface is deliberately only the operation matrix already enumerated:
  * lifecycle, the queries the view model needs, the first command with its exact
  * inverse, save, and render. It is a proof that the shape works, not the
@@ -426,6 +447,12 @@ MZ_EXPORT int mz_store_debug(mz_ctx *c, char *out_buf, int buf_len, double *need
     if (c == NULL || out_buf == NULL || buf_len <= 0)
         return MZ_ERR;
 
+    /* Both are assigned inside the try and read from fz_always (out) and
+     * fz_catch (buf). `data` and `len` are read only after the whole block, so
+     * the throw path never touches them — see the fz_var rule in the header. */
+    fz_var(buf);
+    fz_var(out);
+
     fz_try(c->fz) {
         buf = fz_new_buffer(c->fz, 4096);
         out = fz_new_output_with_buffer(c->fz, buf);
@@ -574,6 +601,11 @@ MZ_EXPORT int mz_page_bounds(mz_ctx *c, mz_doc *d, int number,
 {
     fz_rect r = fz_empty_rect;
     fz_page *page = NULL;
+
+    /* Assigned inside the try and read from fz_always, which runs on the throw
+     * path too. See the fz_var rule in the file header. Upstream's writer.c
+     * carries fz_var(page) on this identical shape. */
+    fz_var(page);
 
     fz_try(c->fz) {
         page = fz_load_page(c->fz, d->doc, number);
