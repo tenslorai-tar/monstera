@@ -548,9 +548,38 @@ MZ_EXPORT int mz_shrink_store(mz_ctx *c, int percent, int *reached)
  * Page geometry WITHOUT loading the page.
  *
  * fz_load_page materialises resources, annotations and content streams. Scroll
- * layout needs only the page's size and rotation, which are dictionary reads.
- * If this is cheap, then a full page walk measures a workload the viewer never
- * performs.
+ * layout (invariant L21) needs only the displayed size, which is a handful of
+ * dictionary reads. If this is cheap, then a full page walk measures a workload
+ * the viewer never performs.
+ *
+ * WHAT THIS USED TO GET WRONG, and why it is now MuPDF's own call:
+ *
+ * It hand-rolled the reads. MediaBox went through pdf_dict_get_inheritable;
+ * three lines later /Rotate went through pdf_dict_get_int, which sees only the
+ * leaf page's own key. /Rotate is an inheritable page attribute, so every page
+ * that inherits rotation from an ancestor Pages node reported 0. /CropBox was
+ * not read at all, so a page displayed at its crop reported its media size.
+ *
+ * Against this repository's own nested fixture, pages 3-5 inherit /Rotate 90:
+ * the shim reported 600x800 rot=0 while fz_bound_page returned 800x600. Since
+ * L21 makes this the viewer's scroll-layout source, every scroll offset below
+ * page 3 would have been wrong — and wrong in a way no flat fixture can show.
+ *
+ * pdf_page_obj_transform_box already does all of it: inheritance on both boxes,
+ * CropBox intersected with MediaBox, the degenerate-box fallbacks, and rotation
+ * snapped to a quadrant. It returns the box in PDF space plus the transform into
+ * fitz space, and pdf_bound_page — which is what fz_bound_page reaches for a PDF
+ * — is literally fz_transform_rect of those two. Applying the transform here is
+ * therefore not an approximation of the expensive path; it is the same
+ * arithmetic on the same two values, which is what lets the proof assert the two
+ * agree exactly rather than approximately.
+ *
+ * `rotate` is the EFFECTIVE, inherited value as the document stores it, and is
+ * deliberately NOT snapped: width and height already have MuPDF's snapping
+ * applied, so a caller must not rotate again. mz_page_rotation answers a
+ * different question — the page's OWN key, verbatim, with present/absent — and
+ * that one exists for the exact inverse of a rotate command, where normalising
+ * would destroy the round trip.
  */
 MZ_EXPORT int mz_page_geometry(mz_ctx *c, mz_doc *d, int number,
                                float *width, float *height, int *rotate)
@@ -558,13 +587,21 @@ MZ_EXPORT int mz_page_geometry(mz_ctx *c, mz_doc *d, int number,
     float w = 0, h = 0;
     int r = 0;
 
+    if (c == NULL || d == NULL || width == NULL || height == NULL || rotate == NULL)
+        return MZ_ERR;
+
     fz_try(c->fz) {
         pdf_obj *page = pdf_lookup_page_obj(c->fz, d->pdf, number);
-        pdf_obj *box = pdf_dict_get_inheritable(c->fz, page, PDF_NAME(MediaBox));
-        fz_rect rect = pdf_to_rect(c->fz, box);
-        w = rect.x1 - rect.x0;
-        h = rect.y1 - rect.y0;
-        r = pdf_dict_get_int(c->fz, page, PDF_NAME(Rotate));
+        fz_rect box;
+        fz_matrix ctm;
+        fz_rect bounds;
+
+        pdf_page_obj_transform_box(c->fz, page, &box, &ctm, FZ_CROP_BOX);
+        bounds = fz_transform_rect(box, ctm);
+
+        w = bounds.x1 - bounds.x0;
+        h = bounds.y1 - bounds.y0;
+        r = pdf_dict_get_inheritable_int(c->fz, page, PDF_NAME(Rotate));
     }
     fz_catch(c->fz) {
         mz_record(c);
