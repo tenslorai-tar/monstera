@@ -160,7 +160,12 @@ static void mz_account_release(mz_accounting *a, size_t n)
 
     g_process.bytes_freed += n;
     g_process.blocks_freed++;
-    if (g_process.bytes_freed > g_process.bytes_allocated)
+    /* Both terms, matching the per-context check above. Testing only bytes here
+     * left the process-wide counter able to report a healthy total while its
+     * block count had already gone inconsistent — the same signal, trusted in
+     * one place and not the other. */
+    if (g_process.bytes_freed > g_process.bytes_allocated ||
+        g_process.blocks_freed > g_process.blocks_allocated)
         g_process.imbalance = 1;
 }
 
@@ -245,6 +250,23 @@ static void mz_record(mz_ctx *c)
     const char *msg = fz_caught_message(c->fz);
     if (msg == NULL)
         msg = "unknown MuPDF error";
+    strncpy(c->error, msg, sizeof(c->error) - 1);
+    c->error[sizeof(c->error) - 1] = '\0';
+}
+
+/*
+ * Records a message for a failure that did NOT come from MuPDF.
+ *
+ * Every MZ_ERR must leave a message behind. Returning MZ_ERR without one leaves
+ * whatever the previous failure wrote still sitting in c->error, so
+ * mz_last_error hands the caller a confident, detailed, and completely unrelated
+ * sentence — which is worse than an empty string, because it will be believed
+ * and it will be pasted into a bug report.
+ */
+static void mz_fail(mz_ctx *c, const char *msg)
+{
+    if (c == NULL)
+        return;
     strncpy(c->error, msg, sizeof(c->error) - 1);
     c->error[sizeof(c->error) - 1] = '\0';
 }
@@ -484,14 +506,41 @@ MZ_EXPORT int mz_store_debug(mz_ctx *c, char *out_buf, int buf_len, double *need
     return MZ_OK;
 }
 
-MZ_EXPORT int mz_shrink_store(mz_ctx *c, int percent)
+/*
+ * Shrinks the store to `percent` of its current size.
+ *
+ * Two things this used to get wrong, both of which reported success:
+ *
+ *   - the argument was cast straight to unsigned. fz_shrink_store takes an
+ *     unsigned percent, so -1 arrived as 4294967295, which is above 100 and
+ *     therefore a no-op — a caller asking for something impossible was told it
+ *     had happened. The cast is now guarded by a range check, and the range is
+ *     rejected rather than clamped: clamping invents an intention the caller
+ *     did not express.
+ *   - fz_shrink_store's return value was discarded. It returns non-zero when
+ *     the store reached the target and zero when it could not, which is the
+ *     entire question being asked.
+ */
+MZ_EXPORT int mz_shrink_store(mz_ctx *c, int percent, int *reached)
 {
+    int ok = 0;
+
+    if (c == NULL || reached == NULL)
+        return MZ_ERR;
+
+    if (percent < 0 || percent > 100) {
+        mz_fail(c, "shrink percent must be between 0 and 100");
+        return MZ_ERR;
+    }
+
     fz_try(c->fz)
-        fz_shrink_store(c->fz, (unsigned int)percent);
+        ok = fz_shrink_store(c->fz, (unsigned int)percent);
     fz_catch(c->fz) {
         mz_record(c);
         return MZ_ERR;
     }
+
+    *reached = ok;
     return MZ_OK;
 }
 
@@ -530,9 +579,20 @@ MZ_EXPORT int mz_page_geometry(mz_ctx *c, mz_doc *d, int number,
 
 MZ_EXPORT int mz_open(mz_ctx *c, const char *path, mz_doc **out)
 {
-    mz_doc *d = (mz_doc *)calloc(1, sizeof(mz_doc));
-    if (d == NULL)
+    mz_doc *d;
+
+    if (c == NULL || path == NULL || out == NULL)
         return MZ_ERR;
+
+    d = (mz_doc *)calloc(1, sizeof(mz_doc));
+    if (d == NULL) {
+        /* Not a MuPDF failure, so mz_record has nothing to read. Without a
+         * message of its own this returned MZ_ERR leaving the PREVIOUS error
+         * still in the buffer, and mz_last_error then handed back a confident,
+         * detailed sentence about a different failure entirely. */
+        mz_fail(c, "out of memory allocating the document handle");
+        return MZ_ERR;
+    }
 
     fz_try(c->fz) {
         d->doc = fz_open_document(c->fz, path);
@@ -545,7 +605,7 @@ MZ_EXPORT int mz_open(mz_ctx *c, const char *path, mz_doc **out)
     }
 
     if (d->pdf == NULL) {
-        strncpy(c->error, "not a PDF", sizeof(c->error) - 1);
+        mz_fail(c, "not a PDF");
         fz_drop_document(c->fz, d->doc);
         free(d);
         return MZ_ERR;
@@ -555,17 +615,26 @@ MZ_EXPORT int mz_open(mz_ctx *c, const char *path, mz_doc **out)
     return MZ_OK;
 }
 
+/*
+ * No fz_try, deliberately, and this is the one place in the file where its
+ * ABSENCE is the load-bearing decision.
+ *
+ * This used to wrap fz_drop_document in fz_try/fz_catch while mz_open's error
+ * path called the identical function bare. Both cannot be right. MuPDF settles
+ * it: fitz/context.h says "Do not call anything in the fz_always() section that
+ * can throw", and MuPDF calls fz_drop_* from fz_always throughout its own
+ * source — including this file's own mz_page_bounds. The drop family therefore
+ * does not throw, the catch was dead code, and the bare call was correct.
+ *
+ * Removing it also removes what the catch did: it freed `d` and returned
+ * MZ_ERR, so a caller told the close had failed was holding a dangling handle
+ * with no safe move — retry it and the second free is a double free.
+ */
 MZ_EXPORT int mz_close(mz_ctx *c, mz_doc *d)
 {
-    if (d == NULL)
+    if (c == NULL || d == NULL)
         return MZ_OK;
-    fz_try(c->fz)
-        fz_drop_document(c->fz, d->doc);
-    fz_catch(c->fz) {
-        mz_record(c);
-        free(d);
-        return MZ_ERR;
-    }
+    fz_drop_document(c->fz, d->doc);
     free(d);
     return MZ_OK;
 }
