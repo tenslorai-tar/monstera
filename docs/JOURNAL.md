@@ -124,18 +124,42 @@ re-rating and the deferrals. Batches, in the owner's priority order:
 - **Batch 5 — documents: DONE.** 28 (the Stage 0 blocker) · 29 · 27 with
   ARCHITECTURE §8 · 31 · 39 · 41 · 42. **Stage 0 is no longer gated on a
   retracted ceiling.**
-- **The escaping class: CLOSED BY MECHANISM, pending one live test.** The
-  standing rule was broken six times while claiming to be the only defence. It
-  is now a PreToolUse hook in the tracked `.claude/settings.json`
-  (`scripts/hooks/blockEscapeResolvingWrites.mjs`, 51 cases), plus a git-side
-  check that a local settings file has not disarmed it
-  (`scripts/lib/hookIntegrity.mjs`, 10 cases). See the FIRST ACTION block above:
-  the one test that proves it fires could not run in the session that wrote it.
-- **Batches 6–7: NEXT.** Test infrastructure (15/33/34/36, plus `proof:engines`
-  H2) · Stage 0 exit. Finding 33 carries the same instruction finding 25 did:
-  **inject the byte source so entropy is genuinely asserted**, rather than
-  renaming the test to match what it already checks. The cheaper branch leaves
-  the real property unverified.
+- **The escaping class: BUILT, NOT YET PROVEN — and it has now failed once more
+  while unproven.** The standing rule was broken six times while claiming to be
+  the only defence. The mechanism is a PreToolUse hook in the tracked
+  `.claude/settings.json` (`scripts/hooks/blockEscapeResolvingWrites.mjs`, 51
+  cases), plus a git-side check that a local settings file has not disarmed it
+  (`scripts/lib/hookIntegrity.mjs`, 10 cases). Its parts are proven; that it is
+  ever *loaded* is not. See the FIRST ACTION block above.
+
+  **Occurrence 7 — 2026-08-18.** `printf 'export const built = 1;\n' >
+  out/index.js`, to build a one-line fixture while reproducing finding 36.
+  `printf` resolved the `\n`, which is occurrence 3's mechanism exactly. It was
+  harmless — a throwaway file, deleted minutes later, and the newline was
+  wanted — and that is not the point: the rule is about the mechanism, not the
+  outcome, because the outcome is what varies.
+
+  What makes it worth recording is the timing. It happened roughly one hour
+  after `c27faae` amended `CLAUDE.md` to say the rule was *"still the only thing
+  standing between you and a seventh occurrence"* — written by the same agent
+  that then produced one. This is the strongest evidence yet for the claim the
+  hook exists to make: **an agent that has just written the rule down, in the
+  same session, still does not recall it at the moment of composing a command.**
+  Seven for seven. The hook would have blocked it (`proof:escapeguard` covers
+  `printf` with a redirect); it was not loaded, for the reason in the FIRST
+  ACTION block.
+- **Batch 6 — test infrastructure: DONE.** 15 (the suite read `dist`, so a
+  mutation to the source it covered left 27/27 green; aliases derived from the
+  workspace globs now put `dist` on no resolution path a test can take) · 33
+  (byte source injected, so the entropy the class claims is asserted rather than
+  named; a short draw is now refused at mint) · 34 and the `proof:engines` H2
+  narrowness (both cases measured something other than what they reported; H3
+  was a method-name regex, H2 computed `acroFormGone` and used it only in the
+  printed string) · 36 (ESLint's ignore list derived from `.gitignore` instead
+  of duplicated, plus `native/**`, whose exclusion two documents asserted and no
+  code enforced).
+- **Batch 7: NEXT.** Stage 0 exit — koffi Electron ABI prebuilds · AGPL source
+  offer · packaging test · NOTICE · the Ghostscript decision.
 
 **The audit's own text lives in a published artifact**, and the batch lists
 above are summaries of it rather than a substitute:
@@ -268,6 +292,95 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-18 — Batch 6: four checks that were measuring something else
+
+Every finding in this batch is the same shape. A check existed, ran, and went
+green, while the thing it was named for went unmeasured. None of the four would
+have been found by running the suite, because in each case the suite was the
+thing that was wrong.
+
+### The probe that failed before it measured anything
+
+Worth putting first, because it is the only reason the H3 rewrite is trustworthy.
+
+Finding 34 needed a measurement of what MuPDF's `createAnnotation('Widget')`
+actually produces. The first version read `/T` off the widget object and
+reported *no field name* — which was the answer I expected, on a document where
+I had good reason to expect it.
+
+It also reported no field name for the fixture's **own two named fields**, which
+definitely have them: `spike.text` and `spike.check`, read back by name in the
+same run by case H4. A PDF field name can live on the `/Parent` field object
+rather than on the widget annotation, so reading the widget alone cannot see it.
+The probe could not distinguish a nameless widget from a broken reader, and both
+answers looked like the hypothesis.
+
+Checklist item 4a is the reason this was caught: feed the instrument two values
+you know differ before you let it settle anything. The fixture's own fields were
+the two values. The spike case now asserts they still read back by name, so the
+created widget's `null` means something.
+
+### What the four findings were
+
+| Finding | The check said | It was measuring |
+|---|---|---|
+| 15 | `**/dist/**` excluded, "class closed" | *collection*, never *resolution* — tests read the last build |
+| 33 | "at least 256 bits of entropy" | uniqueness and a 43-character shape, both of which a counter satisfies |
+| 34 | "no widget creation in MuPDF — this gap is real" | whether five method names existed on two prototypes |
+| H2 | `bake` flattens widgets | widgets only; `/AcroForm` was computed and printed, never asserted |
+| 36 | five artifact paths | five of `.gitignore`'s sixteen |
+
+Finding 15 is the one with the widest blast radius, because it silently weakened
+every other test in the repository. Deleting `cause` propagation from
+`packages/shared/src/result.ts` left 27/27 green; the identical mutation after a
+build turned 2 tests red. The assertions were never missing — they were pointed
+at a different copy of the code. CI happened to be safe only because `ci.yml`
+runs typecheck before test, which is step ordering in one file rather than a
+property of the command, and the pre-commit hook runs no tests at all.
+
+Aliasing beat building-first for the reason B5 gives: building first leaves the
+stale state representable and one forgotten step from returning. It also made
+the suite faster — 9.9s to 1.4s — because it no longer transforms both copies.
+
+### Findings the stage audit produced that the batch did not
+
+Two, both in the finding-36 commit, and neither announced by anything going red.
+
+**I added a dependency to reach older code that was already installed.**
+`@eslint/compat`'s `includeIgnoreFile` is deprecated in its own docstring, which
+points at `@eslint/config-helpers` — shipped by ESLint as `eslint/config` and
+already in `node_modules`. The standing rule is to research versions rather than
+recall them. I researched the version and not whether the API was the current
+one, which is the same failure one level down.
+
+**A comment claimed a guarantee I had not measured.** It said the official
+converter handles negation ordering, offering `!native/` as the case a hand
+parser gets wrong. Measured: gitignore re-inclusion does not survive translation
+into flat-config `ignores` at all — `!.env.example` and `!.vscode/extensions.json`
+are both still ignored afterwards.
+
+That second one had teeth in exactly one place. `CLAUDE.md` and `ARCHITECTURE`
+both state that `native/` sits outside every tsconfig and every ESLint rule. No
+code enforced it, and the derivation could not: `.gitignore` re-includes
+`native/` precisely so the shim source can be tracked. `native/mupdf-shim/probe.ts`
+came back **linted**. Both documents were true only because `native/` happens to
+hold no `.ts` or `.js` today, and the first one added would have been a fatal
+parse error — finding 36's own trap, relocated one directory over.
+
+### Executed, and asserted
+
+Executed: every reproduction above, both control cases, and four mutations —
+the `cause` deletion unbuilt, a non-wrapping counter as the byte source,
+inverting either conjunct in H2 and H3, and restoring the old ESLint list.
+
+Asserted, and named as such: the subpath alias branch (`@monstera/x/sub`) is
+emitted but unexercised, because no package publishes a subpath export yet; the
+H3 measurement ran against the flat spike fixture only, not one whose fields sit
+under an inherited or deeply nested `/Parent`; and `proof:lintignores` has run
+on Windows only — its paths are joined, but CI is the differential.
 
 ---
 

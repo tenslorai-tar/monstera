@@ -205,7 +205,7 @@ These were given directly and bind every agent on this project.
   `python -c`. Use the file-editing tools. This rule used to say "prose or
   documentation", and that scoping was wrong: the mechanism is that *the tool
   rewrites the bytes on the way past*, which has nothing to do with what the
-  file contains. It has now happened **five times**:
+  file contains. It has now happened **seven times**. The first five:
 
   1. backticks swallowed a package name;
   2. `\a` and `\b` became BEL and BACKSPACE, and the text rendered as though the
@@ -222,6 +222,14 @@ These were given directly and bind every agent on this project.
   There has since been a sixth: `node -e` used to rewrite a check's call site,
   which ate the backslashes out of a regex and turned a `\n` in a template
   literal into a real newline.
+
+  And a seventh, on 2026-08-18: `printf` with a redirect, to write a one-line
+  fixture while reproducing a lint defect. It resolved the `\n` — occurrence 3's
+  mechanism exactly. The file was a throwaway and the newline was wanted, so
+  nothing was damaged; that is precisely why it belongs in this list. Six of the
+  seven caused real harm and one did not, which tells you the mechanism fires
+  whether or not the outcome happens to matter, and that judging by outcome is
+  how you conclude a habit is safe.
 
   **Mechanism, not intention.** Two mechanisms now, and the second exists
   because the first sentence of this paragraph used to end differently.
@@ -256,8 +264,17 @@ These were given directly and bind every agent on this project.
   settings register it for both shells, and the configured command string run
   verbatim denies (`npm run proof:escapeguard`, 51 cases). What no proof can
   reach is the agent's own hook table, so *loaded and live* remains asserted
-  rather than executed. Until a session records the probe below as denied, treat
-  the rule as still the only thing standing between you and a seventh occurrence.
+  rather than executed.
+
+  **There has now been a seventh: `printf` with a redirect, 2026-08-18.** This
+  paragraph previously ended by telling you to treat the rule as the only thing
+  standing between you and a seventh occurrence. It was written at 00:18 and the
+  seventh happened at about 01:20, in the same session, by the agent that wrote
+  it. That is the whole argument for the hook, demonstrated rather than argued:
+  **writing the rule down, and having just written it down, does not put it in
+  reach at the moment a command is composed.** Seven for seven. The guard covers
+  `printf` with a redirect and would have blocked it; it was not loaded, for the
+  reason in limit 1 below.
 
   Three limits worth knowing.
 
