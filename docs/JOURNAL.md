@@ -648,7 +648,11 @@ stream-heavy document succeeds.
 Content is the driver; file size is the wrong denominator. The model that fits
 every fixture is `(stream bytes × ~3.7) + (object count × ~4 KB)`, and
 `countObjects()` costs nothing (RSS identical either side of the call), so
-admission can read both terms before loading a page.
+admission can read both terms before loading a page. **Both the model and the
+admission gate built on it were withdrawn the next day** — the 4 KB term was
+WASM materialising objects eagerly, and the same document opens natively at 45
+bytes per object. Left standing as what was believed on the day; the entry below
+records the retraction.
 
 The non-monotonicity has a separate and duller cause: RSS is the allocator's
 high-water mark, not live bytes. Once the heap grows to absorb the open spike a

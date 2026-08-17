@@ -468,12 +468,23 @@ shortcut.
   tab.
 - **Recovery.** Crash-recovery sidecars for dirty documents, change-detected
   rather than timer-spammed, offered on next launch.
-- **Native binaries** (mutool, Ghostscript, LibreOffice, `pdfium.dll`) are
-  provisioned by a pinned, SHA-256-verified script: pinned version, host-locked
-  download, size bounded independently of `Content-Length`, hash verified
-  **before** any parser or unzipper touches the bytes. Spawned without a shell;
-  `-dSAFER` for Ghostscript; isolated LibreOffice profile; kill-all-children on
-  quit; resolved from `app.asar.unpacked` when packaged.
+- **Native code arrives two ways, and they have different rules.**
+
+  **Built from source by us.** MuPDF is fetched as source against a pinned
+  SHA-256, compiled, and statically linked into `monstera_mupdf.dll` — a library
+  this project produces. `mutool.exe` is **not** provisioned and **not** shipped;
+  ADR-0010 withdrew it. The build records what it was built from and every
+  script that loads the library refuses a stale one
+  (`scripts/lib/shimBinary.mjs`). Because the linkage is static rather than a
+  bundled upstream binary, the AGPL source offer covers the MuPDF version, our
+  build configuration and the shim source — see ADR-0001's correction.
+
+  **Downloaded as prebuilt binaries** (Ghostscript, LibreOffice, `pdfium.dll`)
+  are provisioned by a pinned, SHA-256-verified script: pinned version,
+  host-locked download, size bounded independently of `Content-Length`, hash
+  verified **before** any parser or unzipper touches the bytes. Spawned without
+  a shell; `-dSAFER` for Ghostscript; isolated LibreOffice profile;
+  kill-all-children on quit; resolved from `app.asar.unpacked` when packaged.
   The single implementation is `scripts/lib/fetchVerified.mjs`.
 - **Network.** HTTPS only, host-locked per purpose, with an SSRF guard carrying
   a private-range blocklist and a DNS-rebinding pin — re-validated on **every**
@@ -786,6 +797,6 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
 | 2026-08-16 | Page reorder and form flattening move to MuPDF; field creation and content composition move to @cantoo/pdf-lib; pdf-lib removed; `rearrangePages` banned; §3.1 lifted. | `BUILD-PROMPT.md` Part C3's page-reorder and form-flatten rows and their stated justifications | [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) |
 | 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |
-| 2026-08-16 | The memory budget is stated **per process** with an absolute ceiling on each — main ≤ 1.5× and ≤ 1.5 GB, MuPDF host ≤ 6× and ≤ 3 GB as a containment limit, renderer provisional and two-term. File size is not the driver: heap use is `(stream bytes × ~3.7) + (object count × ~4 KB)`, so admission reads both (§9.17). Stage 0 exit is gated on the three budgets. | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
+| 2026-08-16 | The memory budget is stated **per process** with an absolute ceiling on each — main ≤ 1.5× and ≤ 1.5 GB, MuPDF host ≤ 6× and ≤ 3 GB as a containment limit, renderer provisional and two-term. Stage 0 exit is gated on the three budgets. *(This row originally also recorded a two-term heap model and an admission gate reading both terms; ADR-0007's own correction withdrew them the next day as WASM artefacts — see the 2026-08-17 row below.)* | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
 | 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.19). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
-| 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn (§2, §3, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |
+| 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn; §8 now separates native code we build and statically link from prebuilt binaries we download, and the AGPL source offer covers the MuPDF version, our build configuration and the shim source (§2, §3, §8, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |

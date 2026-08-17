@@ -102,10 +102,17 @@ More build and run instructions land as Stage 0 completes.
 
 **[AGPL-3.0-or-later](LICENSE).**
 
-Monstera links MuPDF and ships `mutool`, both AGPL, so the combined work is
-AGPL. In plain terms: you may use, study, modify and redistribute this software,
-and if you distribute it — or run a modified version as a network service — you
-must offer the corresponding source under the same licence.
+Monstera builds **MuPDF from source and statically links it** into a shared
+library we produce and ship. That is a combined work by any reading, and MuPDF
+is AGPL, so Monstera is AGPL. In plain terms: you may use, study, modify and
+redistribute this software, and if you distribute it — or run a modified version
+as a network service — you must offer the corresponding source under the same
+licence.
+
+Because the linkage is static rather than a bundled upstream binary, the source
+offer covers more than this repository: it covers **the MuPDF version, the build
+configuration used to produce the library, and the source of the C shim** that
+wraps it. Those are what you would need to rebuild what actually ships.
 
 Third-party notices are generated from the lockfile at package time rather than
 hand-maintained, so they cannot drift from what actually ships.

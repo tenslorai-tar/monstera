@@ -251,6 +251,21 @@ const failures = [];
     );
   }
 
+  /**
+   * Matching is done on a normalised form, not on the literal bytes.
+   *
+   * The same withdrawn claim is written more than one way. `(stream bytes ×
+   * 3.7)` appears in ADR-0007's correction and as `(stream bytes × ~3.7)` in the
+   * amendment log — the approximation tilde is exactly the sort of difference
+   * prose acquires, and literal matching let two live instances through until a
+   * grep found them by hand. Stripping tildes and collapsing whitespace closes
+   * that without inventing a pattern language inside a markdown table.
+   *
+   * @param {string} text
+   * @returns {string}
+   */
+  const normalise = (text) => text.replace(/~/g, '').replace(/\s+/g, ' ').toLowerCase();
+
   const documents = trackedFiles().filter((path) => path.endsWith('.md'));
   for (const document of documents) {
     const lines = read(document).split('\n');
@@ -258,10 +273,11 @@ const failures = [];
     for (const { adr, phrase } of withdrawn) {
       // The ADR that withdrew it is the one place it must still appear.
       if (document === adr) continue;
+      const needle = normalise(phrase);
 
       for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index] ?? '';
-        if (!line.includes(phrase)) continue;
+        if (!normalise(line).includes(needle)) continue;
 
         // Prose that names it as withdrawn is the record, not a claim — and the
         // scope of that qualifier is the PARAGRAPH, not the line.
@@ -274,11 +290,23 @@ const failures = [];
         // break. Widening the vocabulary to appease them would have weakened the
         // one thing standing between a live claim and a green check; widening
         // the window to the unit prose is actually written in does not.
-        let start = index;
-        while (start > 0 && `${lines[start - 1] ?? ''}`.trim() !== '') start -= 1;
-        let end = index;
-        while (end < lines.length - 1 && `${lines[end + 1] ?? ''}`.trim() !== '') end += 1;
-        const paragraph = lines.slice(start, end + 1).join(' ');
+        //
+        // A TABLE ROW is its own unit, though. A markdown table has no blank
+        // lines, so paragraph-scoping makes every row share the context of every
+        // other — and the amendment log's 2026-08-17 row saying "are withdrawn"
+        // silently exempted the 2026-08-16 row still asserting the model. That
+        // is a false negative, found by grepping by hand after the check said
+        // clean, which is the failure mode this file exists to remove.
+        let paragraph;
+        if (line.trim().startsWith('|')) {
+          paragraph = line;
+        } else {
+          let start = index;
+          while (start > 0 && `${lines[start - 1] ?? ''}`.trim() !== '') start -= 1;
+          let end = index;
+          while (end < lines.length - 1 && `${lines[end + 1] ?? ''}`.trim() !== '') end += 1;
+          paragraph = lines.slice(start, end + 1).join(' ');
+        }
 
         if (
           /withdrawn|withdrew|retracted|superseded|no longer|used to|wrong response|did not|rejected/i.test(

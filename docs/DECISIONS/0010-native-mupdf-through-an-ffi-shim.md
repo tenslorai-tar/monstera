@@ -49,7 +49,16 @@
 - **Status:** Accepted; instruments corrected 2026-08-17
 - **Date:** 2026-08-17
 - **Amends:** `docs/ARCHITECTURE.md` §2 (process topology), §3 (writer-of-record
-  matrix), §9 (invariants 17 and 18).
+  matrix), §8 (cross-cutting services — how native code arrives), §9 (invariants
+  17 and 18).
+
+  > §8 was added to this list on 2026-08-17, after an audit found it still
+  > listing `mutool` among binaries "provisioned by a pinned, SHA-256-verified
+  > script" — a script this ADR withdrew. It was absent from the amendment-log
+  > row too, so the section had never been **scoped**, not merely missed. The
+  > lesson is the one ADR-0001's correction also carries: withdrawing a component
+  > means finding every place its mechanism was described, and the `Amends` field
+  > is where that search is recorded.
 - **Supersedes:** `BUILD-PROMPT.md` Part C3's assumption that MuPDF is reached
   through its WASM build, and Part J's listing of `mutool.exe` as a bundled
   native binary.
