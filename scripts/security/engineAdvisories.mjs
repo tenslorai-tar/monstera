@@ -58,8 +58,9 @@ async function fetchAdvisories() {
   if (!response.ok) {
     throw new Error(`OSV returned HTTP ${response.status} ${response.statusText}`);
   }
-  /** @type {{vulns?: {id: string, summary?: string, published?: string, aliases?: string[]}[]}} */
-  const body = await response.json();
+  const body = /** @type {{vulns?: {id: string, summary?: string, published?: string, aliases?: string[]}[]}} */ (
+    await response.json()
+  );
   return (body.vulns ?? [])
     .map((vuln) => ({
       id: vuln.id,

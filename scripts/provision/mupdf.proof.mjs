@@ -125,7 +125,8 @@ async function main() {
   // the artefact rather than trusting the request.
   const required = ['HIGH_ENTROPY_VA', 'DYNAMIC_BASE', 'NX_COMPAT', 'GUARD_CF'];
   try {
-    const { mitigations, dllCharacteristics } = readPeHardening(dll);
+    const shim = readPeHardening(dll);
+    const { mitigations, dllCharacteristics } = shim;
     const missing = required.filter((name) => mitigations[name] !== true);
     if (missing.length > 0) {
       failures.push(
@@ -133,6 +134,40 @@ async function main() {
           `0x${dllCharacteristics.toString(16)}). These are configured in monstera_mupdf.vcxproj, ` +
           `so a mismatch means the request did not reach the binary.`,
       );
+    }
+
+    // /GS and /CETCOMPAT are NOT in DllCharacteristics. The stack cookie lives in
+    // the Load Config Directory and CET in a Debug Directory record of type 20,
+    // so a proof reading only the header word would claim six mitigations while
+    // checking four.
+    if (!shim.stackCookie) {
+      failures.push(`the shim has no stack cookie: /GS did not reach the binary.`);
+    }
+    if (!shim.cetCompat) {
+      failures.push(`the shim is not CET-compatible: /CETCOMPAT did not reach the binary.`);
+    }
+
+    // RESOLUTION TEST, and it is not decoration. The first version of this reader
+    // computed the data directory 8 bytes too far into the optional header and
+    // reported /GS ABSENT FROM ntdll.dll. Had it only ever been pointed at our
+    // own DLL, it would have "found" a mitigation gap that did not exist.
+    // Windows system libraries are known to carry all three, so they are the
+    // known-different input this instrument is measured against before it is
+    // believed. Per CLAUDE.md stage-audit item 4a.
+    for (const reference of ['C:/Windows/System32/ntdll.dll', 'C:/Windows/System32/kernel32.dll']) {
+      try {
+        const known = readPeHardening(reference);
+        if (!known.stackCookie || !known.cetCompat || !known.mitigations['GUARD_CF']) {
+          failures.push(
+            `the PE reader reports ${reference} as lacking ` +
+              `${[!known.stackCookie && '/GS', !known.cetCompat && 'CET', !known.mitigations['GUARD_CF'] && 'CFG'].filter(Boolean).join(', ')}. ` +
+              `A Windows system library carries all three, so THE READER IS WRONG and every ` +
+              `verdict it gives about our own binary is worthless.`,
+          );
+        }
+      } catch {
+        // Absent on a non-Windows runner; the shim cases above already skipped.
+      }
     }
 
     // Case 4 — the control. Clearing the bits in a copy must be detected;
@@ -170,8 +205,10 @@ async function main() {
   process.stdout.write('  ok  the built shim exports every MZ_EXPORT symbol its source declares\n');
   process.stdout.write('  ok  a DLL missing a declared export is rejected\n');
   process.stdout.write(`  ok  the image carries ${required.join(', ')}\n`);
-  process.stdout.write('  ok  clearing those bits is detected\n');
-  process.stdout.write('\n4 shim cases passed.\n');
+  process.stdout.write('  ok  the image carries /GS (stack cookie) and CET compatibility\n');
+  process.stdout.write('  ok  the PE reader reports those same three present in ntdll.dll\n');
+  process.stdout.write('  ok  clearing the DllCharacteristics bits is detected\n');
+  process.stdout.write('\n6 shim cases passed.\n');
   return 0;
 }
 
