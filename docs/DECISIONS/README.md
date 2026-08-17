@@ -41,9 +41,13 @@ Each contains:
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-agpl-on-the-microsoft-store.md) | AGPL-3.0 on the Microsoft Store | Accepted |
+| [0001](0001-agpl-on-the-microsoft-store.md) | AGPL-3.0 on the Microsoft Store | Accepted; mechanism corrected 2026-08-17 |
 | [0002](0002-brand-mark-treatment.md) | Brand mark treatment — composite logo used as supplied | Accepted |
 | [0003](0003-token-role-typing-and-declared-pairings.md) | Token role typing: five categories and declared pairings | Accepted |
 | [0004](0004-toolchain-versions.md) | Toolchain versions, and two deliberate steps back from "latest" | Accepted |
 | [0005](0005-ui-foundation-libraries.md) | UI foundation: Base UI, Zag machines, Lingui, zustand | Accepted |
 | [0006](0006-engine-capability-spike-results.md) | Engine capability spike results, and the matrix amended to match | Accepted |
+| [0007](0007-memory-budgets-and-the-document-size-ceiling.md) | Per-process memory budgets, and the measured document-size ceiling | Accepted; largely withdrawn by correction 2026-08-17 |
+| [0008](0008-save-mode-is-determined-by-purpose.md) | Save mode is determined by the purpose of the save, not by a default | Accepted |
+| [0009](0009-document-identity-and-the-command-log.md) | Document identity, the command log, and the engine seam | Accepted |
+| [0010](0010-native-mupdf-through-an-ffi-shim.md) | Native MuPDF through an FFI shim; WASM withdrawn | Accepted |

@@ -1,0 +1,213 @@
+// @ts-check
+/**
+ * Machine-checks the claims documents make about each other.
+ *
+ * Three separate drifts were found by audit, all of the same kind: a fact stated
+ * in one document and maintained by hand in another. None of them could have
+ * been caught by review, because reviewing the changed file never shows the
+ * stale one.
+ *
+ *   - CLAUDE.md cited "L1–L16" while ARCHITECTURE §9 had grown to 22. Five
+ *     amendments had landed without the digest being updated, and CLAUDE.md's
+ *     own header table requires the same-commit update. The five missing
+ *     included two data-loss invariants.
+ *   - The ADR index stopped at 0006 while ten ADRs existed, and listed ADR-0001
+ *     as plain "Accepted" although that file carries a dated correction — the
+ *     index positively asserted an uncorrected status for the one ADR whose
+ *     correction exists to stop exactly that.
+ *   - `.gitattributes` and `preCommit.mjs` both pointed at
+ *     `scripts/hooks/guardStagedFiles.mjs`, which has never existed: git log
+ *     --follow shows the file was ADDED as guardFiles.mjs. The name was wrong
+ *     the day it was written and two documents carried it for the project's
+ *     whole life.
+ *
+ * Each check derives one side from the source of truth rather than comparing two
+ * hand-maintained lists.
+ *
+ * Usage: node scripts/hooks/documentConsistency.mjs
+ */
+
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** @returns {string} */
+function repoRoot() {
+  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  if (result.status !== 0) return resolve(HERE, '..', '..');
+  return `${result.stdout}`.trim();
+}
+
+const ROOT = repoRoot();
+
+/** @param {string} relativePath @returns {string} */
+function read(relativePath) {
+  return readFileSync(join(ROOT, relativePath), 'utf8');
+}
+
+/** @returns {string[]} Every tracked file, repo-relative, forward-slashed. */
+function trackedFiles() {
+  const result = spawnSync('git', ['ls-files', '-z'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.status !== 0) throw new Error('git ls-files failed');
+  return `${result.stdout}`.split('\0').filter((path) => path.length > 0);
+}
+
+/** @type {string[]} */
+const failures = [];
+
+// ---------------------------------------------------------------------------
+// 1. The invariant count in the digest matches the law.
+// ---------------------------------------------------------------------------
+{
+  const architecture = read('docs/ARCHITECTURE.md');
+  const start = architecture.indexOf('\n## 9. Invariants');
+  const end = architecture.indexOf('\n## 10.', start + 1);
+  if (start === -1 || end === -1) {
+    failures.push(
+      'Could not locate section 9 in docs/ARCHITECTURE.md. This check reads the section ' +
+        'by heading, so a renamed heading must be reflected here rather than silently ' +
+        'skipping the check.',
+    );
+  } else {
+    const section = architecture.slice(start, end);
+    const numbered = [...section.matchAll(/^(\d+)\.\s/gm)].map((match) => Number(match[1]));
+    const highest = numbered.length === 0 ? 0 : Math.max(...numbered);
+
+    const claude = read('CLAUDE.md');
+    const cited = [...claude.matchAll(/L1\s*[–-]\s*L(\d+)/g)].map((match) => Number(match[1]));
+
+    if (cited.length === 0) {
+      failures.push(
+        'CLAUDE.md no longer cites an invariant range (expected something like "L1–L22"). ' +
+          'If the citation was deliberately removed, remove this check in the same commit.',
+      );
+    }
+    for (const citation of cited) {
+      if (citation !== highest) {
+        failures.push(
+          `CLAUDE.md cites invariants L1–L${citation}, but docs/ARCHITECTURE.md §9 defines ` +
+            `${highest}. CLAUDE.md is the derived digest and its own header table requires it ` +
+            `to be corrected in the same commit as any amendment.`,
+        );
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 2. The ADR index lists every ADR, and does not assert a status the file
+//    contradicts.
+// ---------------------------------------------------------------------------
+{
+  const index = read('docs/DECISIONS/README.md');
+  const adrFiles = trackedFiles()
+    .filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path))
+    .sort();
+
+  for (const path of adrFiles) {
+    const id = /(\d{4})/.exec(path)?.[1] ?? '';
+    const fileName = path.slice('docs/DECISIONS/'.length);
+
+    const row = index
+      .split('\n')
+      .find((line) => line.startsWith('|') && line.includes(`(${fileName})`));
+
+    if (row === undefined) {
+      failures.push(
+        `ADR-${id} (${fileName}) has no row in docs/DECISIONS/README.md, whose opening line ` +
+          `claims every amendment is recorded there.`,
+      );
+      continue;
+    }
+
+    // A correction is a dated block the ADR carries. Its status must not read as
+    // though nothing happened.
+    const body = read(path);
+    // The dash class covers em, en and hyphen. The first version of this check
+    // omitted the EM dash, which is the one the ADRs actually use — so it found
+    // no corrections at all and reported that half as passing. A check that
+    // cannot match its subject is indistinguishable from a subject that is
+    // clean, which is the failure this whole file exists to prevent.
+    const corrected = /^>\s*##\s*Correction\s*[—–-]\s*\d{4}-\d{2}-\d{2}/m.test(body);
+    const rowMentionsCorrection = /correct/i.test(row);
+
+    if (corrected && !rowMentionsCorrection) {
+      failures.push(
+        `ADR-${id} carries a dated Correction block, but its index row does not mention it:\n` +
+          `      ${row.trim()}\n` +
+          `    The index asserts an uncorrected status for an ADR that was corrected, which is ` +
+          `the failure the correction exists to prevent.`,
+      );
+    }
+    if (!corrected && rowMentionsCorrection) {
+      failures.push(
+        `ADR-${id}'s index row mentions a correction, but the file carries no dated Correction ` +
+          `block. An ADR is corrected by adding that block, never by editing it to look right.`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3. Every scripts/ path named in a tracked text document actually resolves.
+// ---------------------------------------------------------------------------
+{
+  const documents = trackedFiles().filter((path) =>
+    /\.(md|ya?ml|json|gitattributes)$|^\.gitattributes$/.test(path),
+  );
+
+  for (const document of documents) {
+    // package-lock is machine-written and enormous; nothing in it names a script.
+    if (document === 'package-lock.json') continue;
+
+    const text = readFileSync(join(ROOT, document), 'utf8');
+    const lines = text.split('\n');
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index] ?? '';
+      for (const match of line.matchAll(/\bscripts\/[\w./-]*\.(?:mjs|js|ts)\b/g)) {
+        const path = match[0];
+        if (existsSync(join(ROOT, path))) continue;
+
+        // A path can be named as HISTORY rather than as a pointer. ADR
+        // discipline requires a withdrawn decision to keep saying what it
+        // withdrew, so "scripts/provision/mutool.mjs is withdrawn" must stay
+        // exactly as written — demanding that file exist would force the record
+        // to be falsified. The sentence, not just the line, decides: the phrase
+        // often lands on the line after the path.
+        const context = `${lines[index - 1] ?? ''} ${line} ${lines[index + 1] ?? ''}`;
+        if (/withdrawn|removed|deleted|no longer|never existed|replaced by/i.test(context)) {
+          continue;
+        }
+
+        failures.push(
+          `${document}:${index + 1} names ${path}, which does not exist and is not described as ` +
+            `withdrawn. A documented entry point that resolves to nothing costs exactly the ` +
+            `person trying to audit it.`,
+        );
+      }
+    }
+  }
+}
+
+if (failures.length > 0) {
+  process.stderr.write(
+    `\nDocument consistency — ${failures.length} problem(s):\n\n` +
+      failures.map((failure) => `  - ${failure}`).join('\n\n') +
+      `\n\nThese are facts one document states about another. They drifted because they were ` +
+      `maintained by hand, and reviewing the changed file never shows the stale one.\n\n`,
+  );
+  process.exit(1);
+}
+
+process.stdout.write('  ok  CLAUDE.md cites the invariant count ARCHITECTURE §9 defines\n');
+process.stdout.write('  ok  every ADR is indexed, and no index row contradicts its file\n');
+process.stdout.write('  ok  every scripts/ path named in a tracked document resolves\n');
+process.stdout.write('\n3 document consistency checks passed.\n');

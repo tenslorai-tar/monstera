@@ -109,8 +109,13 @@ debug leftovers — keep them.
 
 ## Not yet done
 
-- No provisioning script. `scripts/provision/mutool.mjs` was withdrawn because
-  it fetched the wrong artifact; a replacement must fetch source, build, and
-  hash-verify, and run in CI.
 - Windows only. Other platforms need MuPDF built through its Makefile.
 - The surface covers the operations measured so far, not the whole C3 matrix.
+- `koffi` is a root devDependency because the only consumer today is the
+  measurement script. It moves to `packages/kernel` when the kernel's FFI
+  adapter exists, which is where ADR-0010 puts it.
+
+Provisioning is done: `scripts/provision/mupdf.mjs` fetches source against a
+pinned SHA-256, builds, links and verifies the export surface, and runs in CI on
+`windows-latest`. The earlier `scripts/provision/mutool.mjs` was withdrawn
+because it fetched a command-line tool rather than the library this needs.

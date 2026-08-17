@@ -139,7 +139,7 @@ is wrong** — fix the boundary, not the test.
   `onColor(brand, background, minRatio)`; **storing a derived color is a
   defect**.
 
-The full invariant list (L1–L16) is in `docs/ARCHITECTURE.md`. A regression
+The full invariant list (L1–L22) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.
 
 ---

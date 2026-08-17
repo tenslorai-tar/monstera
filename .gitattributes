@@ -20,7 +20,7 @@
 
 # Declared binary so Git never attempts line-ending translation or textual
 # diffing on them. Committing any of these is separately gated by the
-# pre-commit guard (scripts/hooks/guardStagedFiles.mjs).
+# pre-commit guard (scripts/hooks/guardFiles.mjs).
 *.png     binary
 *.jpg     binary
 *.jpeg    binary

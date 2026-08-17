@@ -36,6 +36,7 @@
     "brand:check": "node scripts/brand/generateAssets.mjs --check",
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
+    "check:docs": "node scripts/hooks/documentConsistency.mjs",
     "proof:engines": "node scripts/spike/engineSpike.mjs"
   },
   "devDependencies": {

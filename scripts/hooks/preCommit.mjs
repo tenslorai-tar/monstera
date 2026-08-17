@@ -2,7 +2,7 @@
 /**
  * The pre-commit gate. Two checks, both blocking:
  *
- *   1. Staged content policy (guardStagedFiles.mjs).
+ *   1. Staged content policy (guardFiles.mjs).
  *   2. Secret scan of the staged diff (gitleaks).
  *
  * Both fail *closed*. If gitleaks cannot be found, the commit is rejected with

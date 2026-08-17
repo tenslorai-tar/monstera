@@ -80,6 +80,12 @@ jobs:
       - name: Prove provisioning is safe under concurrency
         run: npm run proof:provision
 
+      # Facts one document states about another, checked mechanically. Three
+      # separate drifts reached main because each was maintained by hand, and
+      # reviewing the changed file never shows the stale one.
+      - name: Document consistency
+        run: npm run check:docs
+
       - name: File policy (whole tree)
         run: node scripts/hooks/guardFiles.mjs --tree
 
