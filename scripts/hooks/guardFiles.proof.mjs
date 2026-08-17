@@ -124,7 +124,7 @@ const CASES = [
       stage(root, 'assets/logo.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])),
   },
   {
-    name: 'text file containing a mangled escape sequence',
+    name: 'text file containing a mangled escape sequence near the start',
     expect: 'reject',
     because: 'control character 0x07',
     // The exact corruption that reached a commit here: `\a` and `\b` inside a
@@ -132,6 +132,41 @@ const CASES = [
     // as `C:.pdf` — the characters appear to vanish rather than look wrong, so
     // a review reads straight past it.
     setup: (root) => stage(root, 'notes.md', `A Windows path: C:${String.fromCharCode(7, 8)}.pdf\n`),
+  },
+  {
+    name: 'text file whose only mangled escape is past the 8000-byte sniff window',
+    expect: 'reject',
+    because: 'control character 0x07',
+    // THIS is the case that was missing, and its absence is why the guard shipped
+    // blind. The scan shared the 8000-byte window the binary sniff uses, while
+    // the case above puts its control character at byte 16 — so the case could
+    // never reach past the window, and the guard passed docs/JOURNAL.md, which
+    // carried this exact corruption at byte 26635, from the commit that
+    // introduced the rule until it was found by audit.
+    //
+    // The padding is deliberately larger than the window rather than just over
+    // it, so a later change that merely widens the window does not turn this
+    // case green again by accident.
+    setup: (root) =>
+      stage(
+        root,
+        'long-notes.md',
+        `${'Filler line that is unremarkable prose.\n'.repeat(600)}` +
+          `A Windows path: C:${String.fromCharCode(7, 8)}.pdf\n`,
+      ),
+  },
+  {
+    name: 'long clean text file past the sniff window',
+    expect: 'accept',
+    // Control for the case above: a file of the same shape and size with no
+    // control characters must still pass, or the rejection above would prove
+    // only that the guard dislikes long files.
+    setup: (root) =>
+      stage(
+        root,
+        'long-clean.md',
+        `${'Filler line that is unremarkable prose.\n'.repeat(600)}A Windows path: C:\\a\\b.pdf\n`,
+      ),
   },
   {
     name: 'text file with tabs and newlines',

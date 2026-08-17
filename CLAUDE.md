@@ -190,14 +190,36 @@ wearing a green check.
 
 These were given directly and bind every agent on this project.
 
-- **Never edit prose or documentation through a shell heredoc or an inline
-  `node -e` / `python -c`.** Use the file-editing tools. Shell and language
-  escaping silently produced wrong output **three times in one day** here:
-  backticks swallowed a package name, `\a` and `\b` became control characters
-  that render as though the text simply vanished, and `\n` inside a template
-  literal became a real newline. Only one of the three failed loudly. The
-  control-character guard catches one class; the other two look like ordinary
-  text and reach review unnoticed.
+- **Never write *any* file through a tool that resolves escape sequences.** Not
+  a shell heredoc, not `printf`, not `sed`, not an inline `node -e` or
+  `python -c`. Use the file-editing tools. This rule used to say "prose or
+  documentation", and that scoping was wrong: the mechanism is that *the tool
+  rewrites the bytes on the way past*, which has nothing to do with what the
+  file contains. It has now happened **five times**:
+
+  1. backticks swallowed a package name;
+  2. `\a` and `\b` became BEL and BACKSPACE, and the text rendered as though the
+     characters had simply vanished;
+  3. `\n` inside a template literal became a real newline;
+  4. `sed` was used to edit a markdown file — it survived, but only by luck;
+  5. `printf` turned `\v` in `Build\vcvars64.bat` into a vertical tab and `\2`
+     into an octal escape, so a build path became `Visual Studio␂2\Buildcvars64.bat`
+     and a toolchain was wrongly diagnosed as broken.
+
+  Note that 5 was a **batch file** — neither prose nor documentation — which is
+  exactly why the old scoping failed. Only two of the five failed loudly.
+
+  **Mechanism, not intention:** `guardFiles.mjs` scans every staged text blob
+  *in full* for C0 control characters. That mechanically catches the class in
+  item 2, which is the one that reaches review unnoticed. It does not catch
+  items 1, 3 or 5, because a swallowed word and a real newline are ordinary
+  text — for those the rule is the only defence, so it is written as an absolute
+  rather than a preference.
+
+  The one safe exception is a script that manipulates bytes **numerically**
+  (`0x07`, byte arrays), because nothing in that path resolves an escape. That
+  is how `docs/JOURNAL.md` was repaired: the corrupt bytes are invisible to
+  every editor, so there was no string to match on.
 - **Research versions, never recall them.** Fetch the registry or the release
   API. Assumptions lost badly on the first attempt: two GitHub Actions were
   majors out of date, ESLint was at 10 rather than 9, TypeScript at 7, Vite at 8.

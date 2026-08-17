@@ -441,8 +441,8 @@ runs first.
   invalidating the architecture.
 
 - **A doc-editing script silently corrupted a committed file.** A Python
-  heredoc used a non-raw string containing a Windows path; `` and ``
-  resolved to BEL and BACKSPACE, so `C:.pdf` was committed as two control
+  heredoc used a non-raw string containing a Windows path; `\a` and `\b`
+  resolved to BEL and BACKSPACE, so `C:\a\b.pdf` was committed as two control
   characters. It renders as `C:.pdf` — the characters appear to *vanish* rather
   than look wrong, which is why it survived review and two further edits.
 

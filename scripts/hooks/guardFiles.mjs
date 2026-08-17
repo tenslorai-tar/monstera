@@ -138,13 +138,38 @@ function blobSizes(paths) {
 }
 
 /**
+ * The whole staged blob.
+ *
+ * Reading all of it is affordable because the size rule above has already
+ * rejected anything over 5 MB, so this is bounded by that limit rather than by
+ * a sniff window.
+ *
  * @param {string} path
  * @returns {Buffer}
  */
-function blobHead(path) {
+function blobBytes(path) {
   const { stdout } = git(['cat-file', 'blob', `:${path}`], { binary: true });
-  const buffer = stdout instanceof Buffer ? stdout : Buffer.from(stdout);
-  return buffer.subarray(0, SNIFF_BYTES);
+  return stdout instanceof Buffer ? stdout : Buffer.from(stdout);
+}
+
+/**
+ * The first byte in `bytes` that is a C0 control character, or -1.
+ *
+ * Tab, LF and CR are legitimate text. NUL is excluded because `looksBinary`
+ * keys on it, so it is already handled as a type question rather than a
+ * corruption one.
+ *
+ * @param {Buffer} bytes
+ * @returns {number} Index of the first offending byte, or -1.
+ */
+function findControlCharacter(bytes) {
+  for (let index = 0; index < bytes.length; index += 1) {
+    const byte = bytes[index];
+    if (byte === undefined) continue;
+    if ((byte < 0x09 && byte > 0x00) || byte === 0x0b || byte === 0x0c) return index;
+    if ((byte >= 0x0e && byte <= 0x1f) || byte === 0x7f) return index;
+  }
+  return -1;
 }
 
 /**
@@ -187,7 +212,11 @@ function violations(path, size) {
     return reasons;
   }
 
-  const head = blobHead(path);
+  const blob = blobBytes(path);
+  // The 8000-byte slice is git's own binary-detection heuristic and applies only
+  // to the *type* questions below. The content scan reads the whole blob: see
+  // the comment on the control-character check for what sharing one window cost.
+  const head = blob.subarray(0, SNIFF_BYTES);
   const signature = executableSignature(head);
 
   if (signature !== null) {
@@ -205,24 +234,30 @@ function violations(path, size) {
   }
 
   // Control characters in a text file are almost always silent corruption
-  // rather than intent — a shell or a language escape that resolved when it
-  // should not have. `\a` and `\b` inside a non-raw Python string become BEL and
-  // BACKSPACE, and the result renders as though the characters simply vanished:
-  // `C:\a\b.pdf` displays as `C:.pdf` in most viewers, so a review reads past
-  // it. This guard exists because exactly that reached a commit in this
-  // repository.
+  // rather than intent — any tool that resolves escape sequences can write one.
+  // `\a` and `\b` inside a non-raw Python string become BEL and BACKSPACE, and
+  // the result renders as though the characters simply vanished: `C:\a\b.pdf`
+  // displays as `C:.pdf` in most viewers, so a review reads past it.
+  //
+  // This scans the WHOLE blob, not the 8000-byte sniff window the type checks
+  // use. It shared that window when it was written, which made it blind past
+  // byte 8000 — and the corruption it was added to stop was already in
+  // docs/JOURNAL.md at byte 26635, so the guard passed the very file that
+  // motivated it, from the commit that introduced it, for its whole life. The
+  // two questions need different amounts of the file: "is this binary" is a
+  // property of the start, "is this corrupt" is a property of all of it.
   //
   // Tab, LF and CR are excluded — they are legitimate text. NUL is not checked
   // here because it is what `looksBinary` keys on, so it is already handled.
   if (!looksBinary(head)) {
-    const control = [...head].find(
-      (byte) => (byte < 0x09 && byte > 0x00) || byte === 0x0b || byte === 0x0c || (byte >= 0x0e && byte <= 0x1f) || byte === 0x7f,
-    );
-    if (control !== undefined) {
+    const at = findControlCharacter(blob);
+    if (at !== -1) {
+      const byte = blob[at] ?? 0;
       reasons.push(
-        `is a text file containing the control character 0x${control.toString(16).padStart(2, '0')}. ` +
-          `These are nearly always a mangled escape sequence rather than intent, and they are ` +
-          `invisible in most viewers — the surrounding text simply appears to lose characters.`,
+        `is a text file containing the control character 0x${byte.toString(16).padStart(2, '0')} ` +
+          `at byte ${at}. These are nearly always a mangled escape sequence rather than intent, ` +
+          `and they are invisible in most viewers — the surrounding text simply appears to lose ` +
+          `characters.`,
       );
     }
   }
