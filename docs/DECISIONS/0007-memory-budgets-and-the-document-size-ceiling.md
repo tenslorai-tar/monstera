@@ -20,6 +20,19 @@
 >   opens in 144 MB and saves incrementally in 4.5 seconds.
 > - **The machine-RAM table**, which was derived from the withdrawn ratio.
 >
+> **Withdrawn phrases:** `~650 MB` · `admission gate` · `stream bytes × 3.7` ·
+> `machine-RAM table`
+>
+> That line is machine-read. `scripts/hooks/documentConsistency.mjs` extracts the
+> backticked phrases and fails the build if any tracked document states one as a
+> live claim — anywhere except this ADR, and except a sentence that names it as
+> withdrawn. It exists because this correction landed in only one of the two
+> files the **Amends** field below names: `docs/ARCHITECTURE.md` §9 was updated
+> and the Stage 0 exit gate in `docs/FEATURES.md` was not, so Stage 0 could not
+> exit without satisfying a gate the architecture had already retracted. A
+> correction that has to be applied to every downstream document by hand is a
+> correction that will be applied to some of them.
+>
 > What stands: the **per-process budgets as design constraints** (main holds
 > canonical bytes and never parses), the principle that a budget derived from
 > the measurement it constrains can never fail, the **failed-save recovery

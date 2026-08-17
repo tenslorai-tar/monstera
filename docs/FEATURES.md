@@ -276,5 +276,5 @@ Not user-facing features, but the exit gate for everything above.
 | Packaging skeleton for both flavors + installer size arithmetic | — |
 | **Gate:** engine-capability spike — MuPDF/@cantoo rows executed, matrix amended (ADR-0006); PDFium, @signpdf and PDF.js rows pending their stages | **partly done** |
 | **Gate:** performance budget assertion — 200 MB fixture, **per-process** peak RSS (main ≤ 1.5×, MuPDF host ≤ 6×, renderer ≤ 2.5×), IPC bounded per L11 (ADR-0007) | — |
-| **Gate:** maximum supported document size stated and enforced — measured ~650 MB; above it MuPDF cannot save, so the document opens read-only with the limitation stated up front, never refused after the user has done work (ADR-0007) | — |
+| **Gate:** no document-size ceiling is enforced, and the reason is recorded — the ~650 MB ceiling this row used to gate on was a **WASM** ceiling, withdrawn by ADR-0007's correction; natively that file opens in 144 MB and saves incrementally in 4.5 s (ADR-0010, invariant 17). What replaces it is the per-process budget row above, plus invariant 18: a save that fails never loses work. Reinstating a ceiling requires a native measurement showing one exists. | **done** |
 | **Exit:** open via FileHandle → render → `rotatePages` + undo → save → one registered dialog, setting and shortcut | — |

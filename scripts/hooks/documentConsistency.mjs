@@ -195,6 +195,110 @@ const failures = [];
   }
 }
 
+// ---------------------------------------------------------------------------
+// 4. No document states, as a live claim, something an ADR's correction
+//    withdrew.
+// ---------------------------------------------------------------------------
+{
+  // An ADR's `Amends:` field names the documents it changes, and a correction to
+  // that ADR has to reach all of them. ADR-0007's correction reached
+  // docs/ARCHITECTURE.md §9 and did not reach the Stage 0 exit gate in
+  // docs/FEATURES.md, so the gate went on citing ADR-0007 as authority for a
+  // ~650 MB ceiling that same ADR had retracted — and Stage 0 could not exit
+  // without satisfying it. Nothing could have caught that by reading the changed
+  // file, which is the property this whole module exists for.
+  //
+  // So a correction declares its withdrawn phrases and they are enforced. The
+  // ADR that declares them is exempt: it must keep saying what it withdrew, and
+  // its Evidence section deliberately leaves the original measurements standing.
+  const declaring = trackedFiles().filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path));
+
+  /** A line holding only backticked phrases separated by middots. */
+  const PHRASE_LINE = /^>\s*`[^`]+`(?:\s*·\s*`[^`]+`)*\s*$/;
+
+  /** @type {Array<{ adr: string, phrase: string }>} */
+  const withdrawn = [];
+  for (const path of declaring) {
+    const lines = read(path).split('\n');
+    for (let index = 0; index < lines.length; index += 1) {
+      const marker = /^>\s*\*\*Withdrawn phrases:\*\*(.*)$/.exec(lines[index] ?? '');
+      if (marker === null) continue;
+
+      // The declaration is the marker line's remainder plus any following lines
+      // that contain ONLY phrases. Bounded deliberately: an earlier version
+      // captured until the end of the block and swallowed the paragraph
+      // explaining the mechanism, so every path and filename backticked in that
+      // prose became a "withdrawn phrase" and the check reported five documents
+      // for stating their own names.
+      let block = `${marker[1] ?? ''}`;
+      for (let next = index + 1; next < lines.length; next += 1) {
+        if (!PHRASE_LINE.test(lines[next] ?? '')) break;
+        block += ` ${lines[next]}`;
+      }
+
+      for (const match of block.matchAll(/`([^`]+)`/g)) {
+        const phrase = match[1];
+        if (phrase !== undefined) withdrawn.push({ adr: path, phrase });
+      }
+    }
+  }
+
+  if (withdrawn.length === 0) {
+    failures.push(
+      'No ADR declares any withdrawn phrases. If every correction has genuinely been absorbed ' +
+        'everywhere, delete this check in the same commit rather than leaving one that inspects ' +
+        'nothing.',
+    );
+  }
+
+  const documents = trackedFiles().filter((path) => path.endsWith('.md'));
+  for (const document of documents) {
+    const lines = read(document).split('\n');
+
+    for (const { adr, phrase } of withdrawn) {
+      // The ADR that withdrew it is the one place it must still appear.
+      if (document === adr) continue;
+
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] ?? '';
+        if (!line.includes(phrase)) continue;
+
+        // Prose that names it as withdrawn is the record, not a claim — and the
+        // scope of that qualifier is the PARAGRAPH, not the line.
+        //
+        // A one-line window was tried first and reported two false positives,
+        // both historical narrative: the journal's "an admission gate, a
+        // two-term cost model, size bands — and nobody asked whether the ceiling
+        // had to exist. It did not.", and ADR-0010's "That was the wrong
+        // response... built an admission gate". Both retract, both across a line
+        // break. Widening the vocabulary to appease them would have weakened the
+        // one thing standing between a live claim and a green check; widening
+        // the window to the unit prose is actually written in does not.
+        let start = index;
+        while (start > 0 && `${lines[start - 1] ?? ''}`.trim() !== '') start -= 1;
+        let end = index;
+        while (end < lines.length - 1 && `${lines[end + 1] ?? ''}`.trim() !== '') end += 1;
+        const paragraph = lines.slice(start, end + 1).join(' ');
+
+        if (
+          /withdrawn|withdrew|retracted|superseded|no longer|used to|wrong response|did not|rejected/i.test(
+            paragraph,
+          )
+        ) {
+          continue;
+        }
+
+        failures.push(
+          `${document}:${index + 1} states "${phrase}" as a live claim, but ${adr}'s correction ` +
+            `withdrew it:\n      ${line.trim()}\n    Either remove the claim, or say in the same ` +
+            `sentence that it is withdrawn. A retracted number that survives in a second ` +
+            `document is the one people find.`,
+        );
+      }
+    }
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `\nDocument consistency — ${failures.length} problem(s):\n\n` +
@@ -208,4 +312,5 @@ if (failures.length > 0) {
 process.stdout.write('  ok  CLAUDE.md cites the invariant count ARCHITECTURE §9 defines\n');
 process.stdout.write('  ok  every ADR is indexed, and no index row contradicts its file\n');
 process.stdout.write('  ok  every scripts/ path named in a tracked document resolves\n');
-process.stdout.write('\n3 document consistency checks passed.\n');
+process.stdout.write('  ok  no document states a claim an ADR correction withdrew\n');
+process.stdout.write('\n4 document consistency checks passed.\n');
