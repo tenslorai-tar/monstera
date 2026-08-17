@@ -87,6 +87,13 @@ jobs:
       - name: Prove the secret scan cannot be disarmed
         run: npm run proof:secretscan
 
+      # Three claims in a row were true only because of state nothing was
+      # watching. The mechanism that fixes that class has to be able to detect a
+      # change itself, or it is the fourth instance wearing the uniform of the
+      # fix — so every input kind is resolution-tested here.
+      - name: Prove a verdict's inputs detect a change
+        run: npm run proof:verdict
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.

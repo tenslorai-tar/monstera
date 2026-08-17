@@ -63,11 +63,11 @@
  *   node scripts/security/engineAdvisories.mjs --refresh rewrite the baseline
  */
 
-import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { digestInputs } from '../lib/verdict.mjs';
 import { MUPDF_VERSION } from '../provision/mupdf.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -145,29 +145,21 @@ function expiredReachabilityVerdicts(baseline) {
   const expired = [];
 
   for (const [symbol, claim] of Object.entries(baseline.reachability)) {
-    /** @type {string[]} */
-    const found = [];
+    // The input this verdict rests on, declared rather than re-implemented.
+    // scripts/lib/verdict.mjs owns how an "absent symbol" input is resolved and
+    // digested, so this call site cannot quietly disagree with the scanner
+    // canary about what "the inputs changed" means — they were two hand-rolled
+    // copies of one idea before the third instance made it a class.
+    /** @type {import('../lib/verdict.mjs').Input[]} */
+    const inputs = [{ absent: symbol, from: claim.shippedPaths, why: claim.why }];
+    const resolved = digestInputs(inputs, { root: ROOT });
+    const detail = resolved.inputs[0]?.detail ?? '';
 
-    for (const globPath of claim.shippedPaths) {
-      // `git grep` over tracked files only: a build artefact or a vendored
-      // upstream tree under .tools/ is not something we ship, and matching it
-      // would make this fire constantly and be turned off.
-      const result = spawnSync(
-        'git',
-        ['grep', '-l', '--fixed-strings', '-e', symbol, '--', globPath],
-        { cwd: ROOT, encoding: 'utf8' },
-      );
-      // Exit 1 means "no match", which is the expected, healthy case.
-      if (result.status === 0) {
-        found.push(...`${result.stdout}`.split('\n').filter((line) => line.length > 0));
-      }
-    }
-
-    if (found.length > 0) {
+    if (detail !== 'no references') {
       expired.push(
         `${symbol} is now referenced from shipped code:\n` +
-          found.map((file) => `        ${file}`).join('\n') +
-          `\n      This INVALIDATES the NOT-REACHABLE half of: ${claim.guards.join(', ')}\n` +
+          `        ${detail.replace(/^referenced by /, '').split(', ').join('\n        ')}\n` +
+          `      This INVALIDATES the NOT-REACHABLE half of: ${claim.guards.join(', ')}\n` +
           `      The verdict said: ${claim.why}\n` +
           `      Re-triage those entries against ${MUPDF_VERSION} before shipping the feature ` +
           `that calls it.`,

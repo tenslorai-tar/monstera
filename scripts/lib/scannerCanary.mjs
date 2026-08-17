@@ -50,6 +50,7 @@ import { tmpdir } from 'node:os';
 
 import { commandPath } from './commandPath.mjs';
 import { repoRoot } from './gitScope.mjs';
+import { digestInputs } from './verdict.mjs';
 import { configPathFor, runSecretScan } from './secretScan.mjs';
 
 /** Bump when the corpus changes, so every cached verdict is recomputed. */
@@ -180,29 +181,29 @@ function isPinned(reported, pinnedVersion) {
 }
 
 /**
- * A digest of everything the verdict depends on besides the binary itself.
+ * Everything this verdict's truth rests on, besides the scanner binary itself.
  *
- * The cache is keyed on the binary's hash, which covers "is this the same
- * scanner". It does not cover the two other inputs, and the stage audit caught
- * that after the first version shipped:
+ * Declared rather than hand-hashed, through scripts/lib/verdict.mjs. The first
+ * version of this cache key covered the binary alone and the stage audit caught
+ * it: the canary scans with .gitleaks.toml, so deleting `[extend] useDefault =
+ * true` changes what the scanner finds while the binary stays byte-identical,
+ * and the stale "ok" would have been reused on every commit.
  *
- *   - the CORPUS. Adding a family or changing a rule ID must re-measure.
- *   - the CONFIGURATION. The canary scans with .gitleaks.toml, so deleting
- *     `[extend] useDefault = true` from it changes what the scanner finds while
- *     the binary is byte-identical. Without the config in the key, that edit
- *     would keep reusing an "ok" recorded before it — a stale verdict for a
- *     ruleset that had just been switched off, which is exactly the class of
- *     claim this project requires a firing mechanism for.
- *
- * @returns {string}
+ * @param {string} binaryPath
+ * @returns {import('./verdict.mjs').Input[]}
  */
-function inputsDigest() {
-  const shape = FAMILIES.map((family) => `${family.key}:${family.rule}:${family.build()}`).join('\0');
-  const configuration = existsSync(configPathFor()) ? readFileSync(configPathFor()) : Buffer.alloc(0);
-  return createHash('sha256')
-    .update(`${CORPUS_VERSION}\0${ALLOW_COMMENT_FAMILY}\0${shape}\0`)
-    .update(configuration)
-    .digest('hex');
+function verdictInputs(binaryPath) {
+  return [
+    { file: binaryPath, why: 'a different scanner is a different ruleset' },
+    { file: configPathFor(), why: 'the configuration decides which rules run at all' },
+    {
+      literal: 'corpus',
+      value: `${CORPUS_VERSION}\0${ALLOW_COMMENT_FAMILY}\0${FAMILIES.map(
+        (family) => `${family.key}:${family.rule}:${family.build()}`,
+      ).join('\0')}`,
+      why: 'adding a family or changing an expected rule ID must re-measure',
+    },
+  ];
 }
 
 /** @param {string} binaryHash @returns {string} */
@@ -387,7 +388,8 @@ export function verifyScannerCapability({ binary, pinnedVersion, force = false }
     };
   }
 
-  const digest = inputsDigest();
+  const inputs = verdictInputs(binaryPath);
+  const digest = digestInputs(inputs).digest;
   const cacheFile = cachePath(sha256File(binaryPath));
 
   // The warm path spawns nothing. Reading the version back from the cache rather
