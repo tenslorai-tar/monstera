@@ -62,9 +62,16 @@ re-rating and the deferrals. Batches, in the owner's priority order:
   the blind one) · 18 (compare-and-swap publish) · 35 (verified already closed:
   absolute paths on every platform, PATH deliberately not consulted) · 43 (nine
   `bootstrapHooks` cases in `guards.yml`). 06 and 13 were already closed.
-- **Batches 4–7: NEXT.** The native shim (10/24/25/37) · documents, one commit,
-  with **28 first because it is the Stage 0 blocker** (29/27/31/39/41/42) · test
-  infrastructure (15/33/34/36) · Stage 0 exit.
+- **Batch 4 — the native shim: DONE.** 10 (page geometry taken from MuPDF
+  instead of hand-rolled reads) · 24 (the three missing `fz_var`s, and the rule
+  that finds them) · 25 (per-section census, with the mirroring claim turned
+  into an equation) · 37 (three surviving items; two were already closed by the
+  instrument rebuild).
+- **Batches 5–7: NEXT.** Documents, one commit, with **28 first because it is
+  the Stage 0 blocker** (29/27/31/39/41/42) · test infrastructure
+  (15/33/34/36) · Stage 0 exit. Finding 33 carries the same instruction finding
+  25 did: inject the byte source so entropy is genuinely asserted, rather than
+  renaming the test to match what it already checks.
 
 **Batch 3's open item is now closed.** The canary had only run against the
 pinned build — the one binary it is not meant to be for. It now runs against a
@@ -189,6 +196,104 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-17 — Batch 4, and a class that had earned a mechanism
+
+Four shim findings, plus two items the owner attached to the batch: a mechanism
+for the verdict class, and closing the canary's open case with a real older
+scanner.
+
+### The class fix: a verdict names its inputs
+
+Three claims in a row were true only because of state nothing was watching —
+finding 32's "the blast radius is empty today", the `pdf_subset_fonts`
+reachability verdict, and the canary cache keyed on the binary alone. Each was
+found separately and fixed separately, by remembering. The third was found by
+the stage audit rather than by anything failing, which is the tell: **vigilance
+caught it, and vigilance is not a control.**
+
+`scripts/lib/verdict.mjs` is the mechanism. A verdict declares its inputs; the
+digest covers them; `changedInputs` names which one moved. An empty input list
+throws, because a verdict that depends on nothing cannot be invalidated — the
+state all three instances were in. A missing file resolves to a distinct digest
+rather than throwing, because a verdict measured against a since-deleted file is
+the case this catches and an exception would turn a caught change into a broken
+checker.
+
+Thirteen cases, all resolution tests — a mechanism for this class that could not
+itself detect a change would be the fourth instance wearing the uniform of the
+fix. Each kind is also fed an *unrelated* change and required not to move,
+because a digest that fires constantly is a check people switch off.
+
+### The canary now runs against a scanner that is actually wrong
+
+Chosen by measurement, not assumption. 8.19.0 and 8.21.0 "missed" everything —
+they lack `--report-path -`, so that was my instrument, not their ruleset.
+8.24.0 finds all six families. **8.23.0** runs the shipped invocation exactly,
+exits 1 like a healthy scan, and silently drops `cloud-connection-string`. One
+family, no error, same exit code: the failure a version check cannot see and an
+exit-status check calls success. It is downloaded through `provisionGitleaks`
+with its own pinned digests, so the fixture is hash-verified by the same path as
+the real scanner rather than by a second, weaker one.
+
+### Finding 10: the cheap path was a second, wrong implementation
+
+`mz_page_geometry` is the viewer's scroll-layout source under L21. MediaBox went
+through `pdf_dict_get_inheritable`; three lines later /Rotate went through
+`pdf_dict_get_int`, which sees only the leaf's own key. /Rotate is inheritable.
+/CropBox was never read at all.
+
+It now calls `pdf_page_obj_transform_box` and applies the transform, which is
+literally what `pdf_bound_page` does — so the cheap path is the same arithmetic
+on the same two values as the expensive one, not an approximation of it. That is
+what lets the proof assert they agree *exactly*.
+
+Mutation-tested by restoring the old reads. The proof goes red with the audit's
+own numbers — nested pages 3–5 report `600x800 rot=0` against bounds `800x600`,
+cropped pages report `600x800` against `300x400` and `500x200` — and **the flat
+fixture still passes**, which is exactly how this survived being "executed once".
+
+### Finding 25: the comment was a claim, and it was false
+
+With the 1.28.0 source back, all three of the audit's "unverified, stated as
+such" suspicions are confirmed: `pdf_clear_xref` walks every entry of every
+subsection of every section while the loop walked one resolved entry per object
+number from `xref_base`; `pdf_get_xref_entry_no_null` can solidify the xref, so
+a *counting* function could rewrite what it measured; and that accessor throws
+rather than returning NULL, making the NULL branch dead.
+
+The cheap branch was to delete the sentence. That leaves the property
+unverified, so the claim became an equation instead:
+`cached_after == cached_before − droppable`, taken by censusing twice around the
+purge. A classification that drifts from upstream now stops balancing.
+
+**The fixture took two attempts, and the first was wrong in a useful way.** I
+built the differential by saving incrementally *to disk* and measured 25 cached
+objects — identical to the flat original. A shadowed entry has no cached object
+until something loads it, so a second on-disk section changes nothing. The
+difference needs an **in-memory** edit, which opens a fresh incremental section
+while the originals stay cached in the older one. That fixture reports 26
+against 25 from identical bytes.
+
+Worth stating because it nearly slipped: the equation alone cannot prove the
+population is right — a walk that undercounts *consistently* still balances — so
+the bound is asserted separately.
+
+### Findings 24 and 37
+
+`grep -c fz_var` returned 0. Exactly three locals qualify and the rest genuinely
+do not, so the rule is now in the file header rather than left to be re-derived.
+Of finding 37's five items, two were already closed by the instrument rebuild;
+the three that survived were an MZ_ERR path that left the *previous* failure's
+message in the buffer, a shrink that reported success for a no-op after casting
+−1 to unsigned, and an `fz_try` around `fz_drop_document` that MuPDF's own
+header settles — "Do not call anything in the fz_always() section that can
+throw", and MuPDF calls `fz_drop_*` from `fz_always` throughout.
+
+The rebuilt shim reproduces ADR-0010 exactly: 155,548,924 bytes allocated and
+freed, 1,547 blocks each way, imbalance 0.
 
 ---
 
