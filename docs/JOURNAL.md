@@ -104,10 +104,26 @@ re-rating and the deferrals. Batches, in the owner's priority order:
 - **Batch 5 — documents: DONE.** 28 (the Stage 0 blocker) · 29 · 27 with
   ARCHITECTURE §8 · 31 · 39 · 41 · 42. **Stage 0 is no longer gated on a
   retracted ceiling.**
+- **The escaping class: CLOSED BY MECHANISM, pending one live test.** The
+  standing rule was broken six times while claiming to be the only defence. It
+  is now a PreToolUse hook in the tracked `.claude/settings.json`
+  (`scripts/hooks/blockEscapeResolvingWrites.mjs`, 51 cases), plus a git-side
+  check that a local settings file has not disarmed it
+  (`scripts/lib/hookIntegrity.mjs`, 10 cases). See the FIRST ACTION block above:
+  the one test that proves it fires could not run in the session that wrote it.
 - **Batches 6–7: NEXT.** Test infrastructure (15/33/34/36, plus `proof:engines`
   H2) · Stage 0 exit. Finding 33 carries the same instruction finding 25 did:
-  inject the byte source so entropy is genuinely asserted, rather than renaming
-  the test to match what it already checks.
+  **inject the byte source so entropy is genuinely asserted**, rather than
+  renaming the test to match what it already checks. The cheaper branch leaves
+  the real property unverified.
+
+**The audit's own text lives in a published artifact**, and the batch lists
+above are summaries of it rather than a substitute:
+<https://claude.ai/code/artifact/68909540-e2fc-446e-8511-0a5f9285ec13>. Fetch it
+before working a finding — every batch so far has found the summary lossy in at
+least one place. Batch 4 alone: finding 37 turned out to have five items of
+which two were already closed, and finding 25's "unverified, stated as such"
+suspicions all proved true once the MuPDF source was back in the tree.
 
 **Batch 3's open item is now closed.** The canary had only run against the
 pinned build — the one binary it is not meant to be for. It now runs against a
