@@ -55,15 +55,25 @@ re-rating and the deferrals. Batches, in the owner's priority order:
   per-context and process-wide · the store scrape deleted for a measured
   footprint · ADR-0010 re-measured with the prediction stated first (held) ·
   compiler mitigations verified in the PE image · engine advisory tracking.
-- **Batch 3 — security-bearing guards: NEXT.** 03 (close all three gitleaks
-  suppression channels) · 04 (canary-based scanner verification, not exit
-  status) · 17 (pass the git-resolved root; write the missing proof pair) · 18
-  (compare-and-swap publish on measured state) · 35 (absolute extractor on every
-  platform) · 43 (a `bootstrapHooks` proof, run in `guards.yml`). Findings 06 and
-  13 are already closed.
-- **Batches 4–7:** the native shim (10/24/25/37) · documents, one commit, with
-  **28 first because it is the Stage 0 blocker** (29/27/31/39/41/42) · test
+- **Batch 3 — security-bearing guards: DONE.** 03 (there were **four**
+  suppression channels, not three; one cannot be closed by any flag and is now
+  refused) · 04 (a six-shape capability canary keyed on the binary's hash, and
+  the exit-status check deleted) · 17 (one git-resolved root; the tree scope was
+  the blind one) · 18 (compare-and-swap publish) · 35 (verified already closed:
+  absolute paths on every platform, PATH deliberately not consulted) · 43 (nine
+  `bootstrapHooks` cases in `guards.yml`). 06 and 13 were already closed.
+- **Batches 4–7: NEXT.** The native shim (10/24/25/37) · documents, one commit,
+  with **28 first because it is the Stage 0 blocker** (29/27/31/39/41/42) · test
   infrastructure (15/33/34/36) · Stage 0 exit.
+
+**One thing Batch 3 leaves open, deliberately.** The canary has only ever been
+run against the pinned 8.30.1 build. Its whole purpose is to catch a scanner
+that is *not* that build — an old distribution package with a narrower ruleset —
+and that path is exercised only synthetically, by passing a version string the
+result cannot match. Testing it properly means provisioning a genuinely older
+gitleaks and watching families disappear. Worth doing; not done. Also
+unexercised: `commandPath`'s PATH-lookup branch, since every current caller
+resolves an absolute path.
 
 ### Security substrate, and the sequence for it
 
@@ -178,6 +188,134 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-17 — Batch 3: what the guards were actually guarding
+
+Five audit findings, five commits, and a stage audit that found a sixth defect
+nothing had failed on. Every mechanism below was measured against the pinned
+gitleaks 8.30.1 in throwaway repositories under the OS temp directory — never in
+this tree, because a credential-shaped string here is one `git add -A` from a
+permanent public commit whether or not it is synthetic.
+
+### The suppression channels: there were four, and one has no flag
+
+The finding said three. Measurement found four, and the shape of the fourth is
+what mattered:
+
+| Channel | Effect | What closes it |
+|---|---|---|
+| inline `gitleaks:allow` comment | exit 1 → 0 | `--ignore-gitleaks-allow` |
+| `.gitleaksignore` fingerprints | exit 1 → 0 | **nothing** |
+| `GITLEAKS_CONFIG`, `GITLEAKS_CONFIG_TOML`, untracked `.gitleaks.toml` | exit 1 → 0 each | `--config`, measured to outrank all three |
+| `--baseline-path` | exit 1 → 0 | never passed; a baseline file present is not picked up implicitly |
+
+`--gitleaks-ignore-path` looked like the answer for the second row and is not:
+it **adds** a location rather than replacing one, so a repository with its own
+`.gitleaksignore` still exits 0 with `-i` pointed at an empty directory. The
+file is also read from the scan target's root as well as the working directory,
+and — the part that settles it — **it works while untracked and gitignored**, so
+no check on staged or tracked content can ever see it. A purely local file, in
+nobody's diff, silently disarms the hook for whoever has it.
+
+With no flag available, the only honest closure is to refuse: the scan does not
+run while a `.gitleaksignore` exists. That is not a workaround standing in for a
+missing check. It is the fail-closed direction for a scan that has been told
+what to overlook, and the alternative is a green check over the credential it
+was told to ignore.
+
+### `[extend]` is load-bearing, and its absence still exits 1
+
+A `.gitleaks.toml` without `[extend] useDefault = true` **replaces the entire
+default ruleset**. Measured on a corpus holding a Slack token and a PEM key:
+
+```
+no config                     slack-bot-token, private-key
+one custom rule, no [extend]  the custom rule ONLY
+one custom rule + useDefault  all three
+```
+
+The middle row still exits 1 and still prints a finding. It looks exactly like a
+working scanner while every built-in rule has been switched off. This is why the
+canary asserts specific rule IDs and not a non-zero exit — an exit code cannot
+tell those two rows apart, and neither can a human reading CI output.
+
+### The canary, and the value it caught first
+
+The check being replaced ran `gitleaks version` and treated exit 0 as evidence.
+That establishes that a process starts. It says nothing about the ruleset, which
+is the entire product, and is precisely what differs between the pin and
+whatever a package manager put on PATH.
+
+Six shapes across five families this project actually holds — signing key, CI
+token, cloud object store, cloud connection string, both AI providers — each
+asserted by the rule ID **measured** from 8.30.1. No complete shape is stored:
+each is assembled at runtime from a prefix and a deterministic SHA-256 body.
+
+That discipline immediately corrected a canary rather than the scanner. An AWS
+body containing `0` never matched at any filename, even with the rule
+force-enabled — because a real access key ID is base32 and `0` is not in that
+alphabet. Bisecting one character at a time found it. Asserting that value
+unchecked would have produced a permanently red canary, blamed on the binary.
+
+**The default ruleset catches no AI provider key at all** — zero findings for
+both Anthropic and OpenAI shapes under every built-in rule, `generic-api-key`
+included. Stage 9 registers AI providers. Three rules were added now, because
+the gap is in the scanner today and a key pasted into a scratch file is
+permanent the moment it is pushed.
+
+### Latency, because a slow check is a skipped check
+
+| | before | after |
+|---|---|---|
+| pre-commit hook, warm | 2603 ms | **2053 ms** |
+| canary contribution | — | 106 ms (cached) |
+
+The canary costs one scan per *scanner*, not per commit: the verdict is keyed on
+the binary's SHA-256. Deleting the now-redundant `gitleaks version` spawn from
+resolution — the exit-status check finding 04 is about — more than paid for it.
+Verification is strictly stronger and the most frequent action in the project
+got faster.
+
+### What the stage audit found
+
+**The cache key was incomplete.** Keyed on the binary alone, it ignored the
+configuration — so removing `[extend] useDefault = true` would have kept reusing
+an "ok" recorded before the ruleset was switched off, on every commit, until the
+binary itself changed. CI would have caught it (the proof forces a re-measure);
+the hook would not, and the hook runs before the mistake is permanent. Same
+shape as finding 32 and the `pdf_subset_fonts` verdict: a claim resting on the
+current state of something else with nothing that fires when it changes. The
+configuration's bytes are now part of the key.
+
+**A proof pair was vacuous, and its own control said so.** Finding 17's first
+attempt used the staged scope and passed identically with and without the fix,
+because `git diff --cached` reports the whole index from anywhere. Only
+`git ls-files` defaults its pathspec to the working directory — so the exposed
+scope was `--tree`, the CI mirror, the one check that inspects everything
+already committed. In this repository: **3 tracked paths listed from
+`packages/ui`, 100 from the root.** A guard examining 3% of the tree and
+printing a clean bill is worse than no guard, because someone is relying on it.
+
+**A parameter was decorative.** `divergenceNotice` took `pinnedVersion` and
+decided from a precomputed boolean, so two different versions produced the same
+answer. The resolution test caught it — feed an instrument two values that must
+differ and confirm it says so, before trusting it.
+
+Every fix was mutation-tested. Removing the root resolution turns the tree case
+red with the guard accepting a tracked Windows executable. Reverting the publish
+decision to the flag turns the repair case red, and prints
+`gitleaks 8.30.1 ready at …` over a file that cannot run. Removing
+`--ignore-gitleaks-allow` turns four cases red including the canary.
+
+### Not verified, and worth naming
+
+The canary has only run against the pinned build. Catching a scanner that is
+*not* pinned is its entire reason to exist, and that path is exercised only by
+passing a version string the result cannot match. `commandPath`'s PATH-lookup
+branch is likewise unexercised, since every current caller resolves an absolute
+path.
 
 ---
 
