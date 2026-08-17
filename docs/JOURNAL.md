@@ -23,15 +23,97 @@ per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
 **Done and green in CI (Windows + Linux):** pre-commit guards with proofs ·
-pinned-hash provisioning · governing documents and ADRs 0001–0010 · monorepo
+pinned-hash provisioning · governing documents and ADRs 0001–0011 · monorepo
 with import boundaries proven by violation · the IPC contract with compile-time
-exhaustiveness · `CapabilityRegistry` · the **native MuPDF seam** (source in
-`native/mupdf-shim/`, built and measured, not yet wired into a package).
+exhaustiveness · `CapabilityRegistry` · the **native MuPDF seam**, now rebuildable
+from a clean checkout by `npm run provision:mupdf` and built in CI.
 
 **The engine decision is settled (ADR-0010).** MuPDF is reached natively through
 a koffi-bound flat-C shim, in a utility process, with one held handle per open
 document. WASM is withdrawn and `mutool.exe` is not shipped. Do not re-open
-this; the measurements are in the ADR.
+this; the measurements are in the ADR, and its instruments were rebuilt and
+re-validated on 2026-08-17 (see the correction block at the top of ADR-0010).
+
+**Stage 0 now carries more than its original scope**, and the trajectory gate
+must measure against that rather than against the estimate: a full repository
+audit (43 findings), the security substrate below, and a threat model still to
+be written. Recorded so the 3× abort condition is judged on reality.
+
+### The audit, and where it stands
+
+A multi-agent audit found **43 defects behind an all-green board**. The full
+report is an artifact; `docs/JOURNAL.md`'s 2026-08-17 entry records the severity
+re-rating and the deferrals. Batches, in the owner's priority order:
+
+- **Batch 1 — class fixes: DONE.** Boundary cases generated from
+  `ALLOWED_IMPORTS` (11 hand-written → 148 generated, closing 02/09/19/21 by
+  construction) · `tsconfig.scripts.json` type-checking the bootstrap layer and
+  the four real defects it hid (07) · document consistency machine-checked
+  (26/30/38) · the file policy given every staged change and history reach
+  (16/05) · severity re-rated where it rested on reachability.
+- **Batch 2 — instruments and ADR-0010: DONE.** Monotonic allocator counters,
+  per-context and process-wide · the store scrape deleted for a measured
+  footprint · ADR-0010 re-measured with the prediction stated first (held) ·
+  compiler mitigations verified in the PE image · engine advisory tracking.
+- **Batch 3 — security-bearing guards: NEXT.** 03 (close all three gitleaks
+  suppression channels) · 04 (canary-based scanner verification, not exit
+  status) · 17 (pass the git-resolved root; write the missing proof pair) · 18
+  (compare-and-swap publish on measured state) · 35 (absolute extractor on every
+  platform) · 43 (a `bootstrapHooks` proof, run in `guards.yml`). Findings 06 and
+  13 are already closed.
+- **Batches 4–7:** the native shim (10/24/25/37) · documents, one commit, with
+  **28 first because it is the Stage 0 blocker** (29/27/31/39/41/42) · test
+  infrastructure (15/33/34/36) · Stage 0 exit.
+
+### Security substrate, and the sequence for it
+
+**Distribution is Microsoft Store only.** No direct download; the website links
+to the Store listing. This changes the packaging section and needs a **B4
+amendment, not yet written**. Do NOT delete the two-flavour design when writing
+it: keep the flavour switch, register the web update provider with no
+implementation behind it, and keep the signing certificate as an empty build
+config value — a signed direct download may be added later and must be a config
+change rather than an architecture change. Record that as the reason so nobody
+removes the seam as dead code. Also check early, not at submission, that MSIX
+apps cannot write to their install directory and use different data paths.
+
+**A threat model is owed before the remaining security work**, and every security
+item must derive from it with a stated reason rather than arriving as a list.
+One document, produced once: what an attacker controls (the opened document above
+all, plus update feeds, cloud responses, AI responses, clipboard, file
+associations, command line, provisioning downloads) · what each process can reach
+· the worst outcome if each boundary fails · ordered by consequence. Items
+already identified, to be folded in rather than treated as the whole set: engine
+vulnerability tracking (done) · compiler mitigations (done) · restricted engine
+processes · active-content policy on open · fuzzing the document input path ·
+signature chain validation or no verdict · egress disclosure before content
+leaves · redaction and sanitize completeness across structure tree, XMP,
+thumbnails and OCR layers · crash-recovery sidecar and temp file location,
+permissions and lifetime · bounded work per operation against hostile documents ·
+the browser shim never reaching a distributed build, proven by a packaging test ·
+the exact CSP pinned as an invariant · archive and embedded-file extraction path
+traversal.
+
+Then attach each remaining item to the stage that builds the thing it protects:
+**process restriction and CSP at Stage 0**, **fuzzing starting now as a small
+nightly job that grows** (its first corpus seed already exists —
+`scripts/security/makeCffFixture.mjs`), **redaction completeness at Stage 7**,
+**egress disclosure at Stage 9**.
+
+**Engine version policy is settled (ADR-0011).** Stay on MuPDF 1.28.0. Take the
+current patch release at each stage boundary, where revalidation already happens.
+Never upgrade mid-stage without a security reason **verified from upstream commit
+history** — a CVE's version range is a report-time upper bound, not a statement
+about a release. That mistake was made and corrected here: CVE-2026-7233 was
+triaged AFFECTED from the CVE text, then shown NOT-AFFECTED from upstream history
+and by executing the disclosed trigger against the built engine.
+
+**One live item to watch:** Artifex bug 709567, a CFF2 memory **overwrite** fixed
+only on master, in no release. Tracked in `docs/security/engine-advisories.json`
+under `watch`. It is NOT reachable today only because no shipped path calls
+`pdf_subset_fonts` — and the register now *enforces* that: adding a shipped
+reference to that symbol fails the build and names the verdicts it invalidates.
+Optimise and export are the features that will trip it.
 
 **Next, in order:**
 
@@ -69,13 +151,11 @@ this; the measurements are in the ADR.
    ADR-0007's ratio model and admission gate are **withdrawn**), and the Stage 0
    exit path end to end.
 
-**Owed because of the engine change (ADR-0010):** a provisioning script that
-fetches MuPDF source, builds the shim and hash-verifies, running in CI —
-`scripts/provision/mutool.mjs` was withdrawn because it fetched the wrong
-artifact. koffi needs Electron ABI prebuilds. The AGPL source offer must now
-cover our build configuration and the shim source, not just an upstream version.
-The packaging test that proved `mutool.exe` spawns becomes a test that the shim
-loads from `app.asar.unpacked`.
+**Owed because of the engine change (ADR-0010):** koffi needs Electron ABI
+prebuilds. The AGPL source offer must now cover our build configuration and the
+shim source, not just an upstream version. The packaging test that proved
+`mutool.exe` spawns becomes a test that the shim loads from `app.asar.unpacked`.
+*(The provisioning script is done: `npm run provision:mupdf`, in CI.)*
 
 **Owed, tracked so it is not forgotten:**
 
