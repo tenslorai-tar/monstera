@@ -67,11 +67,13 @@ re-rating and the deferrals. Batches, in the owner's priority order:
   that finds them) · 25 (per-section census, with the mirroring claim turned
   into an equation) · 37 (three surviving items; two were already closed by the
   instrument rebuild).
-- **Batches 5–7: NEXT.** Documents, one commit, with **28 first because it is
-  the Stage 0 blocker** (29/27/31/39/41/42) · test infrastructure
-  (15/33/34/36) · Stage 0 exit. Finding 33 carries the same instruction finding
-  25 did: inject the byte source so entropy is genuinely asserted, rather than
-  renaming the test to match what it already checks.
+- **Batch 5 — documents: DONE.** 28 (the Stage 0 blocker) · 29 · 27 with
+  ARCHITECTURE §8 · 31 · 39 · 41 · 42. **Stage 0 is no longer gated on a
+  retracted ceiling.**
+- **Batches 6–7: NEXT.** Test infrastructure (15/33/34/36, plus `proof:engines`
+  H2) · Stage 0 exit. Finding 33 carries the same instruction finding 25 did:
+  inject the byte source so entropy is genuinely asserted, rather than renaming
+  the test to match what it already checks.
 
 **Batch 3's open item is now closed.** The canary had only run against the
 pinned build — the one binary it is not meant to be for. It now runs against a
@@ -196,6 +198,90 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-17 — Batch 5: the documents, and a check that kept finding more
+
+Seven findings, all "a document claims something the tree does not contain".
+Stage 0 is unblocked.
+
+### The withdrawn-phrase register found more than the audit did
+
+Finding 28 got a mechanism rather than an edit: ADR-0007's `Amends` field names
+two targets, its correction reached one of them, and nothing could catch that by
+reading the changed file. A correction now declares its withdrawn phrases and a
+check fails the build if any document states one as a live claim.
+
+It then found **three instances the audit had not listed** — `docs/JOURNAL.md`
+twice and the `ARCHITECTURE.md` amendment log once — against the audit's two.
+Every one of them a retracted number still stated as fact.
+
+It also had two defects of its own, both surfaced by using it rather than
+reading it, and both worth recording because they are the same shape as the bugs
+it hunts:
+
+| Defect | Why it mattered |
+|---|---|
+| Literal matching | The two-term model is written `× 3.7` in one place and `× ~3.7` in another. An approximation tilde is exactly the difference prose acquires. Matching now normalises both sides. |
+| Paragraph scoping over a table | Markdown tables have no blank lines, so the whole table was one "paragraph" — and the 2026-08-17 log row saying "are withdrawn" silently exempted the 2026-08-16 row still asserting the model. A table row is its own unit. |
+
+A third near-miss is worth stating as a design decision rather than a bug: two
+historical narratives retract *across a line break*, outside a one-line window.
+Widening the escape VOCABULARY to accommodate them would have weakened the only
+thing standing between a live claim and a green check. Widening the WINDOW to
+the paragraph — the unit prose is actually written in — does not.
+
+Dated records get a forward pointer, never a rewrite. What was believed on the
+day is the record.
+
+### Finding 31: the rules were asserted in two documents and configured nowhere
+
+`eslint --print-config packages/ui/src/index.ts` returned an empty list of React
+rules. The plugin was installed and never imported. Harmless the day it was
+found — react is not a dependency, `packages/ui` holds one `export {}` file —
+and that is precisely why it had to be fixed then: a rule about how components
+are *written* cannot be applied to components already written.
+
+The documents were wrong about the count too. "All four React Compiler rules"
+dates from when there were four; the pinned plugin ships **17**. The config
+extends the plugin's own recommended set rather than hand-listing, so a version
+that adds a rule widens the check on its own.
+
+Two things measurement corrected. The plugin exports both an eslintrc-shaped
+`configs['recommended-latest']` and a flat `configs.flat['recommended-latest']`;
+the first has `plugins` as an array of strings and ESLint 10 rejects it outright
+— the good failure, since the other shape would have loaded and enforced
+nothing. And the proof's probe file first went into a dot-directory, which
+ESLint ignores by default, so a working rule reported "none".
+
+The fifth proof case is the one that matters: it lints a conditional hook call
+and requires it to be **reported**. A rule that is configured and never fires
+prints identical `--print-config` output to one that works.
+
+### The rest
+
+**27** corrected the licence mechanism in the one document a downstream
+redistributor reads — MuPDF is statically linked, `mutool` is not shipped — and
+found that it *understated* what is owed: the source offer covers the MuPDF
+version, the build configuration and the shim source. ARCHITECTURE §8 had never
+been scoped by ADR-0010 at all, so it now appears in both the `Amends` field and
+the amendment-log row.
+
+**39** put `native/` and `assets/` on both repository maps. A grep found exactly
+one mention of `native/` anywhere outside a session journal — the location of
+the project's only native source tree, and the one directory no tsconfig and no
+lint rule reaches.
+
+**41** split a row claiming four surfaces derived while three packages are a
+bare `export {}`. The type-level half is genuinely done and genuinely proven, so
+the row splits rather than demotes.
+
+**42** dropped a hook pointer to a `.nvmrc` that has never existed — printed on a
+cold machine with a broken toolchain, the one moment the guidance had to be
+right. Dropped rather than created: a `.nvmrc` would be a third place declaring
+the Node version, and a third copy of a fact is what this batch spent its time
+removing.
 
 ---
 
