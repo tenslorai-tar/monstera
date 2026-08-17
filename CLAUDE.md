@@ -42,6 +42,7 @@ This governs every other rule here. In practice:
   verify what it claims is worse than a red one — an `available: true` for a
   binary that cannot be spawned, a timestamp request whose response is
   discarded, a UI test that proves a button dispatches into the void.
+- **When you present me options,** first state whether the question itself is the right one. All the options can share a false premise.
 
 Every entry in `BUILD-PROMPT.md` Part K is a mechanism someone found instead of
 patching around. Add to it; do not re-pay for it.
