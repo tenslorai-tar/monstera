@@ -36,6 +36,8 @@
     "proof:withdrawn": "node scripts/lib/withdrawnPhrases.proof.mjs",
     "proof:escapeguard": "node scripts/hooks/blockEscapeResolvingWrites.proof.mjs",
     "proof:hookintegrity": "node scripts/lib/hookIntegrity.proof.mjs",
+    "proof:hookprobe": "node scripts/proofs/hookProbe.proof.mjs",
+    "probe:hook": "node scripts/hooks/recordHookProbe.mjs",
     "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",

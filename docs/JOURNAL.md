@@ -22,13 +22,32 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
-> ### FIRST ACTION IN THE NEXT *NEW* SESSION — before anything else
+> ### The tool-use guard probe is a STAGE 0 EXIT GATE, not a handoff note
 >
-> **Run this, verbatim, and record what happens here:**
+> It was a handoff note, and the handoff is what failed: the one session that
+> could have run it read `/compact` as a new session. A mechanism `CLAUDE.md`
+> asserts, that has never been observed to work, must not sit inside a stage
+> that closes — so it is now a row in `docs/FEATURES.md`'s Stage 0 table, and
+> marking that row done without the evidence turns `check:docs` red
+> (`npm run proof:hookprobe`, 13 cases).
+>
+> **In a session whose process started after `.claude/settings.json` last
+> changed**, run this verbatim:
 >
 > ```
 > node -e "console.log('hook test')"
 > ```
+>
+> then record it either way — `executed` is the finding, not a reason to wait:
+>
+> ```
+> npm run probe:hook -- denied
+> ```
+>
+> The recorder refuses what it cannot stand behind: it reads the session's start
+> from its own transcript rather than taking your word, and rejects a session
+> that predates the configuration outright. If the outcome is `executed`,
+> `CLAUDE.md` overstates what is in place and is corrected in the same commit.
 >
 > **Attempt 1 — 2026-08-18 — the command RAN. Not denied.** Recorded as required,
 > and it is not the result the block was written expecting. The mechanism, in one
@@ -47,10 +66,13 @@ next and what is owed.
 > was never loaded here, so the probe measured a session, not a guard. The
 > local-disarm hypothesis is separately excluded by rows three and four.
 >
-> **So the claim is still unverified, and the block stays open.** The correction
+> **So the claim is still unverified, and the gate stays open.** The correction
 > that matters is to the block itself, which said "next session" and treated a
 > compaction as one. A compaction keeps the session id, the transcript and the
-> hook table; only a genuinely new process reloads settings.
+> hook table; only a genuinely new process reloads settings. That reading is now
+> enforced rather than remembered — the recorder compares the session's start
+> against the moment the guard's inputs last changed, and refuses when the
+> session is older.
 >
 > **Read the outcome with this rule, because a command that runs is ambiguous on
 > its own** — a broken guard and a stale session are indistinguishable from the

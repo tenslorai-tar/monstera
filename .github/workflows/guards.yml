@@ -124,6 +124,17 @@ jobs:
       - name: Prove a locally disarmed tool-use guard is detected
         run: npm run proof:hookintegrity
 
+      # Everything above proves the guard's PARTS. None of it can reach the one
+      # thing CLAUDE.md actually asserts — that the hook is loaded in the agent
+      # session doing the writing — because that lives in the agent's own hook
+      # table. So it is a Stage 0 exit gate, and this proves the gate cannot be
+      # satisfied by a record that only looks like evidence: one about a
+      # different guard, one taken in a session whose process predates the
+      # configuration (which is what produced the first attempt's result), or
+      # one that honestly says the guard did not fire.
+      - name: Prove the tool-use guard gate cannot be claimed unproven
+        run: npm run proof:hookprobe
+
       # Downloads a deliberately older gitleaks — one that runs the shipped
       # invocation, exits like a healthy scan, and quietly finds one family
       # fewer. Every other case for the canary runs against the pinned build,

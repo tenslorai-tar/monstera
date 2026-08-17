@@ -31,6 +31,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
+import { probeState } from '../lib/hookProbe.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
 
 // The root is asked of git, in one place, for the same reason the scope is:
@@ -242,6 +243,42 @@ const failures = [];
   }
 }
 
+// ---------------------------------------------------------------------------
+// 5. The Stage 0 gate on the tool-use guard is marked done only when the guard
+//    has actually been observed to fire.
+// ---------------------------------------------------------------------------
+{
+  // Deliberately quiet until someone claims the gate. Failing from the moment
+  // the row exists would put the build permanently red for work that is
+  // correctly outstanding, and a red build nobody caused is a red build people
+  // learn to read past — which is how this gate would come to mean nothing.
+  //
+  // What it does close is the route that actually worries: marking the row done
+  // because the mechanism is BUILT. Every part of it is built and proven. The
+  // one thing no proof can reach is whether it is ever loaded, and that is the
+  // part CLAUDE.md asserts. See scripts/lib/hookProbe.mjs.
+  const features = read('docs/FEATURES.md');
+  const row = features
+    .split('\n')
+    .find((line) => line.includes('the PreToolUse write guard has been'));
+
+  if (row === undefined) {
+    failures.push(
+      'docs/FEATURES.md no longer carries the Stage 0 gate row for the PreToolUse write guard. ' +
+        'If the gate was genuinely satisfied and retired, delete this check in the same commit ' +
+        'rather than leaving one that inspects nothing.',
+    );
+  } else if (/\|\s*\*\*done\*\*\s*\|?\s*$/.test(row)) {
+    const { state, detail } = probeState(ROOT);
+    if (state !== 'denied') {
+      failures.push(
+        `docs/FEATURES.md marks the tool-use guard gate done, but the guard has not been ` +
+          `observed to fire (${state}).\n      ${detail}`,
+      );
+    }
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `\nDocument consistency — ${failures.length} problem(s):\n\n` +
@@ -256,4 +293,5 @@ process.stdout.write('  ok  CLAUDE.md cites the invariant count ARCHITECTURE §9
 process.stdout.write('  ok  every ADR is indexed, and no index row contradicts its file\n');
 process.stdout.write('  ok  every scripts/ path named in a tracked document resolves\n');
 process.stdout.write('  ok  no document states a claim an ADR correction withdrew\n');
-process.stdout.write('\n4 document consistency checks passed.\n');
+process.stdout.write('  ok  the tool-use guard gate is not claimed before the guard was seen to fire\n');
+process.stdout.write('\n5 document consistency checks passed.\n');

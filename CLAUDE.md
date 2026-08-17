@@ -292,12 +292,24 @@ These were given directly and bind every agent on this project.
      untouched, which is what makes failing closed safe, since a bug in the
      guard can always be repaired through the very tools the rule prefers.
 
-  The probe, to be run in the first genuinely new session that follows a change
-  to the hook, and recorded in `docs/JOURNAL.md` either way:
+  **This is a Stage 0 exit gate**, not a note someone carries forward — it was
+  the latter, and the handoff is exactly what failed. In a session whose process
+  started after `.claude/settings.json` last changed, run the probe verbatim and
+  record it either way; `executed` is the finding, and it means this section
+  overstates what is in place and is corrected in the same commit.
 
   ```
   node -e "console.log('hook test')"
   ```
+
+  ```
+  npm run probe:hook -- denied
+  ```
+
+  The recorder reads the session's start time from its own transcript rather
+  than taking your word for it, and refuses a session older than the
+  configuration. `docs/FEATURES.md` carries the gate; claiming it done without
+  the evidence turns `check:docs` red.
 
   The one safe exception is a script that manipulates bytes **numerically**
   (`0x07`, byte arrays), because nothing in that path resolves an escape. That
