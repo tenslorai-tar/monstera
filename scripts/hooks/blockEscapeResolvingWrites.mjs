@@ -89,6 +89,32 @@
  * There is no override. An escape hatch here would be a workaround with a config
  * flag on it, which the stage audit names explicitly.
  *
+ * ## Known denials that are CORRECT — do not file these as defects
+ *
+ * Both of these have happened, both are intended, and both have a sanctioned
+ * route. They are written down because each looks like a false positive at the
+ * moment it fires, and a guard people believe is buggy is a guard people argue
+ * down.
+ *
+ * **1. A commit message or journal entry that QUOTES a banned invocation.**
+ * Describing `node -e` in prose puts the string in the command line, and the
+ * guard reads command lines, not intentions. It cannot distinguish quoting from
+ * doing, and should not try: a matcher that exempted "text that looks like
+ * discussion" is one an agent talks its way past.
+ * *Route:* write the message to a file with Write, then `git commit -F <path>`.
+ * That is the route in use throughout this repository, and it also survives the
+ * control-character scan.
+ *
+ * **2. A search whose PATTERN contains a banned form** — `grep -rn "node -e"`,
+ * or a `sed -i` inside a `rg` pattern. Same mechanism: the form appears in the
+ * command line.
+ * *Route:* use the Grep tool rather than a shell search. Note that `sed -n` and a
+ * bare `grep` are deliberately permitted, so only patterns containing a banned
+ * form are affected.
+ *
+ * Neither is a narrowing candidate. The cost is one retry through a tool the
+ * rule already mandates; the alternative is a matcher that reasons about intent.
+ *
  * ## Failure behaviour
  *
  * Fails CLOSED. An unreadable payload means the guard cannot tell whether the

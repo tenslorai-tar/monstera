@@ -372,6 +372,95 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-18 — The `.ocr` door, answered forward and then closed by shape
+
+### The decisive measurement
+
+The door check answers a question about our **source text**: does any shipped
+file name a door. Sound, and not the question the verdict needs — it would still
+read clean if an export reached a door through an intermediate that named it for
+us, which is exactly what `fz_new_document_writer` does for anyone who hands it a
+path.
+
+So the graph is now walked in both directions. Forward from the exports: **5583
+functions reached, none of them a door.** `mz_save` routes through
+`pdf_save_document`, never through the writer dispatch. The dispatch is
+unreachable, Tesseract is not reachable today, and the verdict stands with its
+Stage 6 expiry.
+
+Two corrections fell out of doing it properly. The export count is **24**, not
+25 — the source's `MZ_EXPORT` markers and `dumpbin /EXPORTS` on the built DLL
+agree on both the number and the names, and the count matters because it is the
+root set of the walk. And "live in the DLL" was never evidence of reachability;
+it establishes only that the code is present, which is the conflation that kept
+this question producing confident wrong answers.
+
+### Why the measurement was not the end of it
+
+A measured "nothing reaches it today" has to be re-established at every engine
+release and re-checked by whoever next writes an export. It expires on somebody
+remembering. This project already knows what that is worth: `pdf_subset_fonts`
+was "not called today", the note said so, and invariant expiry had to be made a
+mechanism before the note meant anything.
+
+**Invariant 23** ([ADR-0015](DECISIONS/0015-a-filename-may-not-select-a-native-library.md))
+removes the class instead. The shim names the entry point it wants; it never
+hands a path to a format dispatcher. It is not a new principle — invariant 2
+already keeps paths out of any position where they drive behaviour, and that rule
+had simply never been stated across the native boundary, which is why the gap
+existed.
+
+The banned set is **derived**: `is_extension` is `static` to `writer.c`, so every
+filename-driven selection in the engine passes through one function and the
+dispatchers are the public functions that reach it. Four today, and a writer
+added upstream joins with nothing to edit.
+
+The resolution cases are what make it survivable. `fz_open_document`,
+`pdf_save_document` and `fz_new_pdf_writer` all take a path and none is a
+dispatcher, because none lets the path choose an implementation. A rule that
+banned every path-taking function would ban the shim's own save, and would be
+switched off within a week.
+
+### The `node -e` channel, closed as a class
+
+All **six** workspace manifests carried
+`node -e "require('node:fs').rmSync('dist',…)"` — the exact form the PreToolUse
+guard denies, in the one channel it structurally cannot see. The hook judges the
+command a tool is asked to run, and that is `npm run clean`; the invocation
+inside the script is invisible to it.
+
+Those six deleted rather than wrote, so nothing was ever corrupted. The reason to
+remove them anyway is precedent: **a rule with six sanctioned-looking
+counter-examples inside the repository is one the next person cites instead of
+follows.** They are now `node ../../scripts/clean.mjs dist`, and
+`guardFiles.mjs` rejects the form in any tracked `package.json` script, which is
+what actually closes the channel. Six new guard cases, three rejecting and three
+accepting — the accepting ones matter more, since a check that rejects `eslint .`
+or `sed -n` is a check somebody disables.
+
+### Two guard denials that are correct
+
+Recorded in the guard's own header so they are not filed as defects: a **commit
+message quoting a banned invocation**, and a **search whose pattern contains
+one**. Both put the string on the command line, and the guard reads command
+lines, not intentions — a matcher that exempted "text that looks like discussion"
+is one an agent talks its way past. The routes are `git commit -F <file>` and the
+Grep tool.
+
+Both fired during this session's work, unprompted. So did a `sed -i` typed by
+reflex, which is the third denial observed to date and the plainest evidence that
+the rule alone was never going to be enough.
+
+### One consequence worth knowing
+
+Editing `blockEscapeResolvingWrites.mjs` **invalidated the Stage 0 hook-probe
+gate**, because the recorded observation is digested against the guard's bytes.
+That is the verdict-input mechanism working: an observation of a guard is not an
+observation of a *different* guard. The probe was re-run and re-recorded, and it
+denied again.
+
+---
+
 ## 2026-08-18 — Four instruments, four reassuring answers
 
 Measuring whether the shim can reach Tesseract took five attempts. Every one of

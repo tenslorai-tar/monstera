@@ -107,6 +107,89 @@ const CASES = [
     expect: 'accept',
     setup: (root) => stage(root, 'src/index.ts', 'export const answer = 42;\n'),
   },
+  // ---------------------------------------------------------------------------
+  // package.json scripts: the channel the PreToolUse guard structurally cannot
+  // see. It judges the command a tool is asked to run — `npm run clean` — and
+  // never the invocation inside the script. All six workspaces carried
+  // `node -e` there, so the repository shipped six working copies of the banned
+  // form in the one place the guard could not reach.
+  // ---------------------------------------------------------------------------
+  {
+    name: 'package.json script using node -e',
+    expect: 'reject',
+    because: 'node -e / --eval',
+    setup: (root) =>
+      stage(
+        root,
+        'package.json',
+        `${JSON.stringify({ name: 'x', scripts: { clean: 'node -e "require(\'node:fs\').rmSync(\'dist\')"' } }, null, 2)}\n`,
+      ),
+  },
+  {
+    name: 'package.json script redirecting printf to a file',
+    expect: 'reject',
+    because: 'echo/printf/awk redirected to a file',
+    setup: (root) =>
+      stage(
+        root,
+        'package.json',
+        `${JSON.stringify({ name: 'x', scripts: { gen: 'printf "a\\nb" > out.txt' } }, null, 2)}\n`,
+      ),
+  },
+  {
+    name: 'package.json script using sed -i',
+    expect: 'reject',
+    because: 'sed -i',
+    setup: (root) =>
+      stage(root, 'package.json', `${JSON.stringify({ name: 'x', scripts: { fix: "sed -i 's/a/b/' f" } }, null, 2)}\n`),
+  },
+  {
+    // CONTROL. The replacement this rule pushes people towards must pass, and so
+    // must the ordinary commands this repository runs constantly. A guard that
+    // rejects `node <path>`, `eslint .` or `sed -n` is one somebody switches off,
+    // and then the three cases above protect nothing.
+    name: 'package.json scripts that are ordinary commands',
+    expect: 'accept',
+    setup: (root) =>
+      stage(
+        root,
+        'package.json',
+        `${JSON.stringify(
+          {
+            name: 'x',
+            scripts: {
+              clean: 'node ../../scripts/clean.mjs dist',
+              lint: 'eslint .',
+              build: 'tsc --build && vite build',
+              show: 'sed -n 1,20p CHANGELOG.md',
+              test: 'vitest run 2>&1',
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      ),
+  },
+  {
+    // A dependency NAME containing a banned substring is not an invocation. The
+    // rule reads `scripts` values only, and this is what says so.
+    name: 'package.json with a banned form outside scripts',
+    expect: 'accept',
+    setup: (root) =>
+      stage(
+        root,
+        'package.json',
+        `${JSON.stringify({ name: 'x', description: 'wraps node -e for tests', dependencies: { 'sed -i': '1.0.0' } }, null, 2)}\n`,
+      ),
+  },
+  {
+    // Scoped to manifests. The same string in ordinary source — this proof file
+    // itself contains several — must not be rejected, or the guard would refuse
+    // to commit its own test cases.
+    name: 'a source file mentioning node -e',
+    expect: 'accept',
+    setup: (root) => stage(root, 'src/doc.ts', '// never use node -e here\nexport const a = 1;\n'),
+  },
   {
     name: 'file over the 5 MB ceiling',
     expect: 'reject',

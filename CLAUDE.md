@@ -427,6 +427,42 @@ it: monotonic totals cannot underflow, so no guard is needed. And prefer countin
 inside the component over an OS-level proxy — RSS cannot tell "the engine retains
 this" from "the allocator is sitting on it".
 
+**4b. Is the instrument a SEARCH? Then it needs a positive control that finds
+something known-present, on every run.**
+
+A search — a grep, a symbol scan, a reachability walk, a call-graph query — has
+one output for every way it can be broken: **"found nothing"**. A wrong pattern,
+an empty input set, a parse that silently ate the file, the wrong root, the wrong
+scope: all of them report the same clean result as a genuine absence. And in
+security and compliance work, "found nothing" is nearly always the answer you
+were hoping for, so nothing about it prompts a second look.
+
+So a search-shaped instrument is not finished until it must **locate something it
+is known to be able to find**, every time it runs, or its silence is worthless.
+Put the control in the instrument, not only in its proof: the proof runs in CI,
+and the instrument gets run by hand on the day someone needs an answer.
+
+This is 4a's sibling and it is not covered by it. 4a asks whether two values that
+differ are reported as different; 4b asks whether the instrument can see anything
+at all. An empty result passes 4a vacuously.
+
+Four instruments in this project failed exactly this way, and every one of them
+returned the reassuring answer:
+
+- the OCR reachability walk, **four times in a row** — direct-call edges only, a
+  parser that read prose as C, a pattern that could not match a definition at
+  column 0, and a scan that swallowed the declarations it was searching. Each
+  reported "nothing reaches Tesseract". Two of the four were live at once and
+  each concealed the other;
+- the H3 widget probe, which read `/T` off the widget alone and reported "no
+  field name" for a fixture whose fields were named — the same shape, and its fix
+  was the same: make the fixture's own known-present data the control.
+
+Corollary, and it is where three of the four hid: **an empty intermediate result
+is a broken parse, not a clean input.** Throw. A seed set, a symbol table, a file
+list or a root set that comes back empty must never be allowed to look like an
+answer.
+
 **5. Executed, or asserted?**
 Separate the two explicitly. Anything in the "asserted" column is not a finding,
 whatever confidence it was written with. (Content composition was moved to a

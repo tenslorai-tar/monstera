@@ -332,6 +332,62 @@ function executableSignature(head) {
 }
 
 /**
+ * Escape-resolving invocations, matched against a manifest's `scripts` values.
+ *
+ * Deliberately narrower than the PreToolUse hook's patterns. That hook judges a
+ * command someone is about to run and can afford breadth, because a false
+ * positive costs one retry. This judges a file that must be committed, so a
+ * false positive blocks a commit — and the forms below are the ones with no
+ * legitimate use in a package script.
+ *
+ * `sed -n` and a bare `grep` are not here, for the same reason the hook permits
+ * them: a guard that blocks the commands a project runs constantly is a guard
+ * somebody turns off.
+ *
+ * @param {Buffer} blob
+ * @returns {string[]}
+ */
+function bannedScriptForms(blob) {
+  /** @type {{ scripts?: Record<string, unknown> }} */
+  let manifest;
+  try {
+    manifest = JSON.parse(blob.toString('utf8'));
+  } catch {
+    // Not this rule's business. A malformed manifest fails the build elsewhere,
+    // and reporting it here would blame the wrong check.
+    return [];
+  }
+
+  /** @type {Array<{ pattern: RegExp, form: string }>} */
+  const banned = [
+    { pattern: /\bnode\s+(?:-e|--eval|-p|--print)\b/u, form: 'node -e / --eval / -p' },
+    { pattern: /\bpython3?\s+-c\b/u, form: 'python -c' },
+    { pattern: /\b(?:perl|ruby|php)\s+-e\b/u, form: 'perl/ruby/php -e' },
+    { pattern: /\bsed\s+(?:-[a-zA-Z]*i|--in-place)\b/u, form: 'sed -i' },
+    { pattern: /\b(?:echo|printf|awk)\b[^|;&]*(?<![02-9>])>{1,2}\s*(?!&[0-9-])\S/u, form: 'echo/printf/awk redirected to a file' },
+    { pattern: /\|\s*tee\b/u, form: 'piped to tee' },
+    { pattern: /<<\s*[A-Za-z_"']/u, form: 'heredoc' },
+    { pattern: /\b(?:Set-Content|Out-File|Add-Content)\b/u, form: 'PowerShell Set-Content / Out-File' },
+  ];
+
+  /** @type {string[]} */
+  const reasons = [];
+  for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+    if (typeof command !== 'string') continue;
+    for (const { pattern, form } of banned) {
+      if (!pattern.test(command)) continue;
+      reasons.push(
+        `declares script "${name}" using ${form}, which resolves escape sequences. npm hides this ` +
+          `from the PreToolUse guard — it sees "npm run ${name}", never the invocation inside — so ` +
+          `a package script is a channel the guard cannot reach and this check is what closes it. ` +
+          `Put the program in a file and run it by path, as scripts/clean.mjs does.`,
+      );
+    }
+  }
+  return reasons;
+}
+
+/**
  * @param {string} path
  * @param {string} sha
  * @param {number} size Size of the blob in bytes; -1 means "not a blob".
@@ -405,6 +461,23 @@ function violations(path, sha, size, scope) {
           `characters.`,
       );
     }
+  }
+
+  // A package.json script is a channel the PreToolUse hook structurally cannot
+  // see. It inspects the command a tool is asked to run, and `npm run clean` is
+  // what it sees — never the `node -e` inside the script. All six workspaces
+  // carried exactly that, so the repository shipped six working copies of the
+  // banned form in the one place the guard could not reach.
+  //
+  // Those six deleted rather than wrote, so nothing was corrupted. The reason to
+  // close the channel is precedent: a rule with six sanctioned-looking
+  // counter-examples inside the repository is one the next person cites instead
+  // of follows.
+  //
+  // Scoped to `scripts` values rather than the whole file, because a dependency
+  // NAME containing one of these substrings is not an invocation.
+  if (path === 'package.json' || path.endsWith('/package.json')) {
+    for (const reason of bannedScriptForms(blob)) reasons.push(reason);
   }
 
   if (extension === '.pdf') {
