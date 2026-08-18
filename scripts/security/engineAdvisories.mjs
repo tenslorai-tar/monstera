@@ -92,6 +92,18 @@ const BASELINE = join(ROOT, 'docs', 'security', 'engine-advisories.json');
  * advisories published 2026-08-11 and fixed in 5.5.3, and MuPDF 1.28.0 vendors
  * 5.5.2.
  */
+/**
+ * Verdicts that are not closed, and must be printed on every run.
+ *
+ * `UNDER REVIEW` is here because of the case that added it: a NOT-AFFECTED
+ * verdict whose stated premise was later measured to be false. Marking it that
+ * way put it in a state matching neither `UNTRIAGED` (so the build stayed green,
+ * correctly — it HAS been triaged) nor this pattern (so it printed nowhere at
+ * all). An entry visible in no output is one that has been closed by accident,
+ * which is the failure this whole register exists to prevent.
+ */
+const OPEN_VERDICT = /^(AFFECTED|UNRESOLVED|UNDER REVIEW)/u;
+
 const ADVISORY_SOURCES = [
   { component: 'MuPDF', package: 'mupdf' },
   { component: 'Tesseract', package: 'tesseract' },
@@ -368,7 +380,7 @@ async function main() {
   // on every run rather than filed away. An open security item that stops being
   // visible has been closed by accident.
   const open = advisories.filter((advisory) =>
-    /^(AFFECTED|UNRESOLVED)/.test(baseline.reviewed[advisory.id] ?? ''),
+    OPEN_VERDICT.test(baseline.reviewed[advisory.id] ?? ''),
   );
 
   const perComponent = ADVISORY_SOURCES.map(
@@ -446,7 +458,7 @@ async function main() {
     return 1;
   }
 
-  const watchOpen = watchEntries.filter(([, verdict]) => /^(AFFECTED|UNRESOLVED)/.test(verdict));
+  const watchOpen = watchEntries.filter(([, verdict]) => OPEN_VERDICT.test(verdict));
   if (watchOpen.length > 0) {
     process.stdout.write(
       `\n  ${watchOpen.length} watched upstream item(s), not in any release:\n\n` +

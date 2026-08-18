@@ -54,6 +54,7 @@
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
+    "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",
     "check:advisories": "node scripts/security/engineAdvisories.mjs",
     "notice:generate": "node scripts/release/generateNotice.mjs",
     "notice:check": "node scripts/release/generateNotice.mjs --check",

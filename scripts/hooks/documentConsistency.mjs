@@ -33,6 +33,7 @@ import { join } from 'node:path';
 import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
+import { THREAT_MODEL_TOPICS, unraisedTopics } from '../lib/threatModelTopics.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
 
 // The root is asked of git, in one place, for the same reason the scope is:
@@ -359,49 +360,21 @@ const failures = [];
 }
 
 // ---------------------------------------------------------------------------
-// 7. The threat model, when it is written, names Leptonica as the image-format
-//    parser on the untrusted-document path.
+// 7. The threat model, when it is written, covers the questions that were
+//    established before it existed.
 // ---------------------------------------------------------------------------
 //
-// A requirement handed forward in prose is a requirement that gets dropped. This
-// one was established while triaging the bundled parsers and applies to a
-// document that does not exist yet, which is the worst possible place to keep a
-// note: by the time the threat model is written, the reasoning behind the note
-// is somewhere in a journal entry nobody re-reads.
+// The table and the reasoning behind each entry live in
+// scripts/lib/threatModelTopics.mjs — separated so a proof can exercise the
+// patterns without running this whole pass, and because "does this document
+// raise the question" is a different concern from "do these documents agree".
 //
-// The finding it protects: Leptonica is the security-relevant half of the OCR
-// pair, and it does not read like it. Tesseract has the CVEs with the recent
-// dates and the memory-safety language, so a threat model written from the
-// advisory register alone gives Tesseract a section and Leptonica a footnote.
-// But Tesseract's two live advisories are reached through a crafted
-// .traineddata MODEL, which this application ships and an attacker does not
-// supply. Leptonica parses IMAGE FORMATS, so the moment OCR becomes reachable it
-// processes attacker-controlled bytes lifted straight out of the document — the
-// untrusted-document path, which is the path the whole threat model is about.
-//
-// Checked as "when it exists" rather than "it must exist": the threat model is
-// its own scheduled work, and a check that fails until then is one somebody
-// disables. Once it exists, it cannot be written without this.
+// Applied only when a threat model EXISTS. It is its own scheduled work, and a
+// check that fails until then is one somebody disables.
 {
   const threatModel = trackedFiles().find((path) => /docs\/security\/.*THREAT.*\.md$/iu.test(path));
   if (threatModel !== undefined) {
-    const text = read(threatModel);
-    if (!/leptonica/iu.test(text)) {
-      failures.push(
-        `${threatModel} does not mention Leptonica. It is statically linked into the shim and it ` +
-          `is the component that parses image formats, so when Stage 6 makes OCR reachable it ` +
-          `handles attacker-controlled bytes from the document itself. Tesseract's live advisories ` +
-          `are reached through a .traineddata model this application ships; Leptonica's exposure is ` +
-          `the untrusted-document path.`,
-      );
-    } else if (!/leptonica[\s\S]{0,400}?(image format|image decod|untrusted)/iu.test(text)) {
-      failures.push(
-        `${threatModel} names Leptonica but not what makes it security-relevant. State that it ` +
-          `parses image formats on the untrusted-document path — a name in a component list is ` +
-          `not a threat model entry, and Leptonica's whole point is that it reads attacker bytes ` +
-          `while Tesseract reads a model we ship.`,
-      );
-    }
+    for (const problem of unraisedTopics(read(threatModel), threatModel)) failures.push(problem);
   }
 }
 
@@ -421,5 +394,7 @@ process.stdout.write('  ok  every scripts/ path named in a tracked document reso
 process.stdout.write('  ok  no document states a claim an ADR correction withdrew\n');
 process.stdout.write('  ok  the tool-use guard gate is not claimed before the guard was seen to fire\n');
 process.stdout.write('  ok  §9.17 states each budget value once, in the machine-read line\n');
-process.stdout.write('  ok  the threat model, if written, names Leptonica as an image-format parser\n');
+process.stdout.write(
+  `  ok  the threat model, if written, raises all ${THREAT_MODEL_TOPICS.length} carried questions\n`,
+);
 process.stdout.write('\n7 document consistency checks passed.\n');

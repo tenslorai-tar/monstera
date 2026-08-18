@@ -451,6 +451,76 @@ Both fired during this session's work, unprompted. So did a `sed -i` typed by
 reflex, which is the third denial observed to date and the plainest evidence that
 the rule alone was never going to be enough.
 
+### The question ADR-0015 names and does not decide — carried, not closed
+
+Invariant 23 is scoped to the **output** side, and correctly: the application
+knows what it means to produce and has no reason to ask a filename. Opening is
+different, because the content genuinely decides — and that is the part worth
+carrying rather than filing as settled.
+
+`fz_open_document` does **not** simply trust the extension. Handler selection
+scores each registered handler twice — once by `recognize_content`, reading the
+stream, and once by `recognize`, on the magic/extension — and takes the best. So
+a file a user believed was a PDF can select the EPUB, XPS, CBZ, MOBI or Office
+handler. That is a **different parser on the application's primary
+untrusted-input path**.
+
+Measured rather than assumed:
+
+- `fz_register_document_handlers` registers **fourteen** handlers — PDF, XPS,
+  SVG, CBZ, IMG, FB2, HTML, XHTML, MD, MOBI, TXT, Office, EPUB, GZ.
+- Every `FZ_ENABLE_*` gate in `config.h` defaults to **1**, and
+  `libmupdf.vcxproj` defines no override for any of them.
+- `gz_document_handler` is registered with **no gate at all**, so gzip
+  decompression is unconditional and its output is re-recognised.
+
+So the permitted set is **inherited from MuPDF's build defaults, not named by
+us**. That is the answer, and it is an answer that needs a decision rather than a
+correction — which is why the handler set was not changed here.
+
+**One existing verdict did have to change, though, and this is the part that was
+not expected.** `DEBIAN-CVE-2025-55780` was NOT-AFFECTED on the stated premise
+"this application opens PDF; no EPUB path is reachable — revisit if EPUB import
+is added (Stage 8)". Reading `mz_open` to check that premise showed it is wrong
+**today**:
+
+```c
+d->doc = fz_open_document(c->fz, path);
+d->pdf = pdf_specifics(c->fz, d->doc);
+...
+if (d->pdf == NULL) { mz_fail(c, "not a PDF"); ... }
+```
+
+The `"not a PDF"` rejection is `pdf_specifics` **after** `fz_open_document` has
+already returned. A file that content-scores as EPUB has been opened by the EPUB
+handler before it is refused. The filter is post-hoc, and the premise described a
+guard that does not exist.
+
+The verdict may well survive on a narrower claim — opening is not rendering, and
+the document is dropped before any render call — but that is a **different
+claim**, it is unmeasured, and it is not what was written. The entry is now
+`UNDER REVIEW` with the mechanism recorded, not silently re-argued.
+
+Marking it that way exposed a second gap immediately. `UNDER REVIEW` matched
+neither `UNTRIAGED` (so the build stayed green, correctly — it *has* been
+triaged) nor the open-verdict pattern `AFFECTED|UNRESOLVED`, so it printed in no
+output at all. An item visible nowhere has been closed by accident, which is the
+failure the register exists to prevent, so `UNDER REVIEW` is now an open verdict
+and prints on every run.
+
+This is why the question was worth carrying rather than filing: it was reached
+for as a Stage 8 concern and turned out to have a live verdict resting on it.
+
+It is recorded where it will be acted on: `check:docs` check 7 now carries **two**
+required topics rather than one, as a table, and the threat model cannot be
+written without raising which handlers are permitted and whether that set is ours
+or inherited. The check distinguishes raising the question from mentioning the
+word, because the failure mode is a component list. "We only open PDFs" is a
+statement about intent, and handler selection is decided by content scoring.
+
+The exclusion in ADR-0015 must not be read as settling this. It is what makes the
+question precise enough to act on.
+
 ### One consequence worth knowing
 
 Editing `blockEscapeResolvingWrites.mjs` **invalidated the Stage 0 hook-probe

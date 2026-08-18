@@ -165,6 +165,15 @@ jobs:
       - name: Document consistency
         run: npm run check:docs
 
+      # Check 7 guards a document that does not exist yet, so nothing exercises
+      # it in the ordinary course of work: check:docs finds no threat model,
+      # skips the block and prints ok. A requirement never observed to fail is
+      # indistinguishable from one that cannot. The case that matters is the
+      # shallow one — a component list naming Leptonica, and "we only open PDFs"
+      # — because that is what a threat model written in a hurry looks like.
+      - name: Prove the carried threat-model questions can fail
+        run: npm run proof:threattopics
+
       # MuPDF is compiled into the shim and parses the most attacker-controlled
       # input this application has. Pinning it is correct — it makes builds
       # reproducible — but a pin with nothing watching it is how a project ships
