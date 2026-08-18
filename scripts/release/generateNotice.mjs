@@ -39,6 +39,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { bundledLibrariesIn, compiledSources } from '../lib/mupdfBuildGraph.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -188,15 +189,23 @@ function nativeComponents() {
 }
 
 /**
- * Compares the declared bundled libraries against what `libmupdf` actually
+ * Compares the declared bundled libraries against what the shim actually
  * compiles, when the source is present.
  *
- * The build file, not the `thirdparty` directory. That distinction was found
+ * The build graph, not the `thirdparty` directory. That distinction was found
  * the hard way and in both directions: the directory carries sources for
- * targets this project does not build — mutool, the GL viewer, OCR, barcodes —
- * so listing it declares curl, tesseract, zint and six others that never reach
- * the binary; while a list written by hand from the spike's prose omitted five
- * that do, openssl among them. Neither error is visible by reading a NOTICE.
+ * targets this project does not build, so listing it declares curl, freeglut
+ * and others that never reach the binary; while a list written by hand from the
+ * spike's prose omitted five that do. Neither error is visible by reading a
+ * NOTICE. The walk itself lives in scripts/lib/mupdfBuildGraph.mjs, because the
+ * OCR door derivation needs the same file set and two answers to "what do we
+ * compile" would eventually disagree.
+ *
+ * The result is deliberately a SUPERSET of what survives linking: the linker
+ * discards objects nothing references, and no barcode symbol appears in the
+ * built DLL even though libzxing is on the link line. For attribution a superset
+ * is the safe direction — naming a library that did not survive costs a reader
+ * nothing, and omitting one that did is the compliance failure this prevents.
  *
  * Skipped rather than failed when the source is absent, because most machines
  * have not provisioned a 69 MB source tree — but skipping is reported, so
@@ -207,9 +216,6 @@ function nativeComponents() {
  */
 export function checkNativeComponents() {
   const source = mupdfSourcePath(ROOT);
-  const projectDir = join(source, 'platform', 'win32');
-  const entry = join(projectDir, 'libmupdf.vcxproj');
-  if (!existsSync(entry)) return { checked: false, missing: [], extra: [] };
 
   // The root is OUR link line, not MuPDF's project graph.
   //
@@ -233,54 +239,9 @@ export function checkNativeComponents() {
   // superset is the safe direction — naming a library that did not survive
   // linking costs a reader nothing, and omitting one that did is the compliance
   // failure this file exists to prevent.
-  const shimProject = join(ROOT, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');
-  if (!existsSync(shimProject)) return { checked: false, missing: [], extra: [] };
-
-  /** @type {Set<string>} */
-  const visited = new Set();
-  /** @type {Set<string>} */
-  const found = new Set();
-
-  /** @param {string} projectPath */
-  const walk = (projectPath) => {
-    const name = projectPath.toLowerCase();
-    if (visited.has(name) || !existsSync(projectPath)) return;
-    visited.add(name);
-    const text = readFileSync(projectPath, 'utf8');
-
-    for (const match of text.matchAll(/Include="([^"]*\.(?:c|cc|cpp|cxx))"/gu)) {
-      const parts = `${match[1]}`.replaceAll('\\', '/').split('/');
-      const index = parts.indexOf('thirdparty');
-      if (index >= 0 && parts[index + 1] !== undefined) found.add(`${parts[index + 1]}`.toLowerCase());
-    }
-
-    for (const reference of text.matchAll(/ProjectReference Include="([^"]+)"/gu)) {
-      walk(join(projectDir, `${reference[1]}`.replaceAll('\\', '/')));
-    }
-  };
-
-  const linked = [
-    ...new Set(
-      [...readFileSync(shimProject, 'utf8').matchAll(/\b(lib[a-z0-9]+)\.lib\b/gu)].map((match) => `${match[1]}`),
-    ),
-  ];
-  if (linked.length === 0) {
-    throw new Error(
-      `${shimProject} names no MuPDF static libraries. Either the shim's link line changed shape, ` +
-        `or this parse is reading the wrong thing — and a comparison that finds nothing would ` +
-        `silently agree with any declaration.`,
-    );
-  }
-
-  for (const library of linked) walk(join(projectDir, `${library}.vcxproj`));
-  const actual = [...found].sort();
-
-  if (actual.length === 0) {
-    throw new Error(
-      `The link line ${linked.join(', ')} reaches no thirdparty source files. Either MuPDF ` +
-        `restructured its build, or this parse is reading the wrong thing.`,
-    );
-  }
+  const build = compiledSources(source, join(ROOT, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj'));
+  if (build === null) return { checked: false, missing: [], extra: [] };
+  const actual = bundledLibrariesIn(build.files);
 
   const mupdf = nativeComponents().find((component) => component.name === 'MuPDF');
   const declared = (mupdf?.bundled ?? []).map((name) => name.toLowerCase());

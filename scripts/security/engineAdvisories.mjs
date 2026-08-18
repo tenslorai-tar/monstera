@@ -63,52 +63,103 @@
  *   node scripts/security/engineAdvisories.mjs --refresh rewrite the baseline
  */
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { digestInputs } from '../lib/verdict.mjs';
-import { MUPDF_VERSION } from '../provision/mupdf.mjs';
+import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
+import { declaredNativeComponents } from '../release/generateNotice.mjs';
+import { deriveOcrDoors } from './ocrDoors.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
 const BASELINE = join(ROOT, 'docs', 'security', 'engine-advisories.json');
 
 /**
- * OSV's Debian ecosystem is the only source that carries MuPDF advisories in a
- * queryable form. The ecosystem is an addressing detail, not a claim that this
- * project ships Debian's build.
+ * The components this watches, and the name each is addressable by.
+ *
+ * OSV's Debian ecosystem is the only source carrying these in a queryable form.
+ * The ecosystem is an addressing detail, not a claim that this project ships
+ * Debian's builds — the module header explains why that is precisely why no
+ * verdict may be derived from a Debian version range.
+ *
+ * MuPDF is not the only parser compiled into the shim. `libtesseract` and
+ * `libleptonica` are on the shim's link line, both are statically linked into
+ * the shipped DLL, and both have real advisory histories — 4 and 13 entries.
+ * Watching only MuPDF left two parsers with no baseline at all, which is not the
+ * same as their having nothing outstanding: Tesseract has two heap memory-safety
+ * advisories published 2026-08-11 and fixed in 5.5.3, and MuPDF 1.28.0 vendors
+ * 5.5.2.
  */
-const QUERY = { package: { name: 'mupdf', ecosystem: 'Debian:12' } };
+const ADVISORY_SOURCES = [
+  { component: 'MuPDF', package: 'mupdf' },
+  { component: 'Tesseract', package: 'tesseract' },
+  // Debian packages Leptonica as `leptonlib`. Querying `leptonica` returns zero
+  // results and would have read as "no advisories" rather than "wrong name".
+  { component: 'Leptonica', package: 'leptonlib' },
+];
 
-/** @returns {Promise<{id: string, summary: string, published: string}[]>} */
-async function fetchAdvisories() {
+/**
+ * @typedef {{ id: string, component: string, summary: string, published: string }} Advisory
+ */
+
+/** @param {string} name @returns {Promise<{id: string, summary?: string, published?: string, aliases?: string[]}[]>} */
+async function queryOsv(name) {
   const response = await fetch('https://api.osv.dev/v1/query', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(QUERY),
+    body: JSON.stringify({ package: { name, ecosystem: 'Debian:12' } }),
   });
   if (!response.ok) {
-    throw new Error(`OSV returned HTTP ${response.status} ${response.statusText}`);
+    throw new Error(`OSV returned HTTP ${response.status} ${response.statusText} for ${name}`);
   }
   const body = /** @type {{vulns?: {id: string, summary?: string, published?: string, aliases?: string[]}[]}} */ (
     await response.json()
   );
-  return (body.vulns ?? [])
-    .map((vuln) => ({
-      id: vuln.id,
-      summary: (vuln.summary ?? vuln.aliases?.join(', ') ?? '').slice(0, 200),
-      published: vuln.published ?? '',
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  return body.vulns ?? [];
+}
+
+/** @returns {Promise<Advisory[]>} */
+async function fetchAdvisories() {
+  /** @type {Advisory[]} */
+  const all = [];
+  for (const source of ADVISORY_SOURCES) {
+    const vulns = await queryOsv(source.package);
+    if (vulns.length === 0) {
+      // Every one of these packages is known to carry advisories. An empty
+      // result means the name stopped resolving, and "no advisories" is the
+      // most dangerous thing this check could print without noticing.
+      throw new Error(
+        `OSV returned no advisories for ${source.package} (${source.component}). Every watched ` +
+          `component has a published history, so an empty result is a broken query, not a clean ` +
+          `bill of health.`,
+      );
+    }
+    for (const vuln of vulns) {
+      all.push({
+        id: vuln.id,
+        component: source.component,
+        summary: (vuln.summary ?? vuln.aliases?.join(', ') ?? '').slice(0, 200),
+        published: vuln.published ?? '',
+      });
+    }
+  }
+  return all.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /**
  * @typedef {{
  *   version: string,
+ *   bundledVersions?: Record<string, string>,
  *   reviewed: Record<string, string>,
  *   watch: Record<string, string>,
- *   reachability: Record<string, { guards: string[], why: string, shippedPaths: string[] }>,
+ *   reachability: Record<string, {
+ *     guards: string[],
+ *     why: string,
+ *     shippedPaths: string[],
+ *     symbols?: string[],
+ *   }>,
  * }} Baseline
  * @returns {Baseline}
  */
@@ -144,36 +195,76 @@ function expiredReachabilityVerdicts(baseline) {
   /** @type {string[]} */
   const expired = [];
 
-  for (const [symbol, claim] of Object.entries(baseline.reachability)) {
-    // The input this verdict rests on, declared rather than re-implemented.
+  for (const [name, claim] of Object.entries(baseline.reachability)) {
+    // A claim may rest on one symbol or on a whole door set. OCR is the second
+    // kind: eleven public functions reach Tesseract, and a verdict resting on
+    // only the obvious one would survive a feature calling any of the other ten.
+    const symbols = claim.symbols ?? [name];
+
+    // The inputs this verdict rests on, declared rather than re-implemented.
     // scripts/lib/verdict.mjs owns how an "absent symbol" input is resolved and
     // digested, so this call site cannot quietly disagree with the scanner
     // canary about what "the inputs changed" means — they were two hand-rolled
     // copies of one idea before the third instance made it a class.
-    /** @type {import('../lib/verdict.mjs').Input[]} */
-    const inputs = [{ absent: symbol, from: claim.shippedPaths, why: claim.why }];
-    const resolved = digestInputs(inputs, { root: ROOT });
-    const detail = resolved.inputs[0]?.detail ?? '';
+    for (const symbol of symbols) {
+      /** @type {import('../lib/verdict.mjs').Input[]} */
+      const inputs = [{ absent: symbol, from: claim.shippedPaths, why: claim.why }];
+      const resolved = digestInputs(inputs, { root: ROOT });
+      const detail = resolved.inputs[0]?.detail ?? '';
+      if (detail === 'no references') continue;
 
-    if (detail !== 'no references') {
       expired.push(
         `${symbol} is now referenced from shipped code:\n` +
           `        ${detail.replace(/^referenced by /, '').split(', ').join('\n        ')}\n` +
           `      This INVALIDATES the NOT-REACHABLE half of: ${claim.guards.join(', ')}\n` +
           `      The verdict said: ${claim.why}\n` +
-          `      Re-triage those entries against ${MUPDF_VERSION} before shipping the feature ` +
-          `that calls it.`,
+          `      Re-triage those entries before shipping the feature that calls it.`,
       );
     }
   }
   return expired;
 }
 
+/**
+ * Fails when the OCR door set the register names is not the set the engine
+ * source actually has.
+ *
+ * The `reachability` mechanism above is only as sound as the symbol list it is
+ * given, and a hand-written list of doors is a claim of exactly the kind the
+ * verdict it supports is: correct when written, unreviewed when MuPDF adds an
+ * entry point. So the list is derived from the compiled source and compared.
+ *
+ * Under-declaring is the failure that matters — a door nobody watches — but
+ * over-declaring is reported too, because a symbol that is not a door makes the
+ * check fire on innocent code, and a check that fires on innocent code is the
+ * one someone eventually switches off.
+ *
+ * Skipped, and reported as skipped, without the provisioned source.
+ *
+ * @param {Baseline} baseline
+ * @returns {{ checked: boolean, missing: string[], extra: string[] }}
+ */
+function ocrDoorDrift(baseline) {
+  const source = mupdfSourcePath(ROOT);
+  const shimProject = join(ROOT, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');
+  if (!existsSync(join(source, 'source', 'fitz', 'tessocr.h')) || !existsSync(shimProject)) {
+    return { checked: false, missing: [], extra: [] };
+  }
+
+  const derived = deriveOcrDoors(source, shimProject);
+  const declared = baseline.reachability['ocr']?.symbols ?? [];
+  return {
+    checked: true,
+    missing: derived.doors.filter((door) => !declared.includes(door)),
+    extra: declared.filter((symbol) => !derived.doors.includes(symbol)),
+  };
+}
+
 async function main() {
   const refresh = process.argv.includes('--refresh');
   const baseline = readBaseline();
 
-  /** @type {{id: string, summary: string, published: string}[]} */
+  /** @type {Advisory[]} */
   let advisories;
   try {
     advisories = await fetchAdvisories();
@@ -196,11 +287,46 @@ async function main() {
     }
     writeFileSync(
       BASELINE,
-      `${JSON.stringify({ version: MUPDF_VERSION, generated: advisories.length, reviewed, watch: baseline.watch }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          version: MUPDF_VERSION,
+          bundledVersions: baseline.bundledVersions,
+          generated: advisories.length,
+          reviewed,
+          watch: baseline.watch,
+          reachability: baseline.reachability,
+        },
+        null,
+        2,
+      )}\n`,
       'utf8',
     );
     process.stderr.write(`Wrote ${Object.keys(reviewed).length} advisories to ${BASELINE}\n`);
     return 0;
+  }
+
+  // The bundled parsers have their own versions, and a triage verdict is about
+  // a version. They are read from nativeComponents.json rather than restated
+  // here: that file records where each was read from in the source tree, so the
+  // pin has one home and a MuPDF bump that changes a vendored library turns this
+  // red instead of leaving verdicts attached to a parser nobody ships any more.
+  const bundled = declaredNativeComponents().find((component) => component.name === 'MuPDF')?.licences ?? {};
+  /** @type {string[]} */
+  const movedVersions = [];
+  for (const [name, recorded] of Object.entries(baseline.bundledVersions ?? {})) {
+    const current = bundled[name]?.version;
+    if (current !== recorded) {
+      movedVersions.push(`${name}: triaged against ${recorded}, now ${current ?? '(not recorded)'}`);
+    }
+  }
+  if (movedVersions.length > 0) {
+    process.stderr.write(
+      `\nA bundled parser's version has moved since its advisories were triaged:\n\n` +
+        movedVersions.map((entry) => `  ${entry}\n`).join('') +
+        `\nEvery verdict for that component was reached about different code. Re-triage from ` +
+        `upstream history and update docs/security/engine-advisories.json.\n\n`,
+    );
+    return 1;
   }
 
   if (baseline.version !== MUPDF_VERSION) {
@@ -220,12 +346,15 @@ async function main() {
 
   if (untriaged.length > 0) {
     process.stderr.write(
-      `\n${untriaged.length} MuPDF advisory/advisories have no recorded verdict for ` +
-        `${MUPDF_VERSION}:\n\n` +
+      `\n${untriaged.length} advisory/advisories have no recorded verdict:\n\n` +
         untriaged
-          .map((a) => `  ${a.id}${a.published ? ` (${a.published.slice(0, 10)})` : ''}\n      ${a.summary || '(no summary)'}`)
+          .map(
+            (a) =>
+              `  ${a.id} [${a.component}]${a.published ? ` (${a.published.slice(0, 10)})` : ''}\n` +
+              `      ${a.summary || '(no summary)'}`,
+          )
           .join('\n\n') +
-        `\n\nTriage each in ${BASELINE}: state whether ${MUPDF_VERSION} is affected and why.\n` +
+        `\n\nTriage each in ${BASELINE}: state whether the vendored version is affected and why.\n` +
         `This check does not decide that for you — the data is keyed to distribution\n` +
         `packages whose versions do not map onto upstream releases, so any automatic\n` +
         `verdict would be manufactured.\n\n`,
@@ -242,15 +371,20 @@ async function main() {
     /^(AFFECTED|UNRESOLVED)/.test(baseline.reviewed[advisory.id] ?? ''),
   );
 
-  process.stdout.write(
-    `  ok  ${advisories.length} MuPDF advisories, all triaged against ${MUPDF_VERSION}\n`,
-  );
+  const perComponent = ADVISORY_SOURCES.map(
+    (source) =>
+      `${advisories.filter((a) => a.component === source.component).length} ${source.component}`,
+  ).join(', ');
+  process.stdout.write(`  ok  ${advisories.length} advisories (${perComponent}), all triaged\n`);
 
   if (open.length > 0) {
     process.stdout.write(
-      `\n  ${open.length} advisory/advisories are NOT closed for ${MUPDF_VERSION}:\n\n` +
+      `\n  ${open.length} advisory/advisories are NOT closed:\n\n` +
         open
-          .map((advisory) => `    ${advisory.id}\n      ${baseline.reviewed[advisory.id] ?? ''}`)
+          .map(
+            (advisory) =>
+              `    ${advisory.id} [${advisory.component}]\n      ${baseline.reviewed[advisory.id] ?? ''}`,
+          )
           .join('\n\n') +
         `\n`,
     );
@@ -269,6 +403,34 @@ async function main() {
     );
     return 1;
   }
+
+  // The door set a reachability verdict rests on, checked against the engine
+  // rather than trusted. Runs before the expiry check so that "your list is
+  // wrong" is reported before "nothing on your list was called" — the second
+  // statement is worthless while the first is outstanding.
+  const drift = ocrDoorDrift(baseline);
+  if (drift.missing.length > 0 || drift.extra.length > 0) {
+    process.stderr.write(
+      `\nThe OCR door set in ${BASELINE} does not match the engine source:\n\n` +
+        (drift.missing.length > 0
+          ? `  reaches OCR, not declared: ${drift.missing.join(', ')}\n` +
+            `    Each of these is a public function that can reach Tesseract, and the ` +
+            `NOT-REACHABLE verdict does not watch it.\n`
+          : '') +
+        (drift.extra.length > 0
+          ? `  declared, reaches nothing: ${drift.extra.join(', ')}\n` +
+            `    A symbol that is not a door makes this check fire on innocent code.\n`
+          : '') +
+        `\nRun: node scripts/security/ocrDoors.mjs — it prints each door with its call chain.\n\n`,
+    );
+    return 1;
+  }
+
+  process.stdout.write(
+    drift.checked
+      ? `  ok  ${(baseline.reachability['ocr']?.symbols ?? []).length} OCR doors match the engine source\n`
+      : `  --  OCR door set NOT verified here — MuPDF source not provisioned\n`,
+  );
 
   // Verdicts that rest on unreachability expire when the code changes under
   // them. Checked LAST so its message is the final thing printed.

@@ -1,7 +1,28 @@
 {
   "version": "1.28.0",
-  "generated": 57,
+  "bundledVersions": {
+    "tesseract": "5.5.2",
+    "leptonica": "1.87.0"
+  },
+  "generated": 74,
   "reviewed": {
+    "DEBIAN-CVE-2011-1136": "NOT-AFFECTED (class verdict) — Tesseract. Predates the vendored 5.5.2 by well over a decade and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2021-36081": "NOT-AFFECTED (class verdict) — Tesseract. Predates the vendored 5.5.2 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2026-73066": "AFFECTED, NOT REACHABLE — Tesseract. Heap out-of-bounds WRITE. A crafted .traineddata LSTM component wraps a signed multiplication in Convolve::DeSerialize, undersizing the forward-pass output buffer. Verified present in the vendored 5.5.2 rather than inferred from the CVE's version string: thirdparty/tesseract/src/lstm/convolve.cpp:49 computes `no_ = ni_ * (2 * half_x_ + 1) * (2 * half_y_ + 1)` with no overflow check. Fixed upstream in 5.5.3, which MuPDF 1.28.0 does not vendor. NOT REACHABLE: no shipped code references any OCR door (see reachability.ocr). SECOND boundary when Stage 6 lands: the attacker input here is the MODEL, not the document. It stays unreachable only while .traineddata is shipped by us and neither the language nor the datadir passed to ocr_init is influenced by a document or by user input.",
+    "DEBIAN-CVE-2026-73067": "AFFECTED, NOT REACHABLE — Tesseract. Heap out-of-bounds READ, crash before image processing. A crafted .traineddata dawg with an unterminated forward-edge run is accepted, after which last_edge walks past edges_. Verified present in the vendored 5.5.2: thirdparty/tesseract/src/dict/dawg.cpp:313-350 checks the magic number and asserts num_edges_ > 0, then reads num_edges_ records and returns true with NO check that the final edge carries the terminator marker; dawg.h:542 then indexes edges_ unchecked. Fixed upstream in 5.5.3. Same reachability and the same model-versus-document boundary as DEBIAN-CVE-2026-73066.",
+    "DEBIAN-CVE-2017-18196": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2018-3836": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2018-7186": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2018-7247": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2018-7440": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2018-7441": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2018-7442": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2020-36277": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2020-36278": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2020-36279": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2020-36280": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2020-36281": "NOT-AFFECTED (class verdict) — Leptonica. Predates the vendored 1.87.0 by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
+    "DEBIAN-CVE-2022-38266": "NOT-AFFECTED (class verdict) — Leptonica. Arithmetic exception on a crafted JPEG, reported against 1.79.0 and fixed by Debian at 1.82.0; the vendored tree is 1.87.0. Newest advisory in this component's history and still four years older than the code we build. Class-level confidence; not individually diffed against upstream. This is the component whose exposure changes most when Stage 6 lands — see reachability.ocr.",
     "DEBIAN-CVE-2012-5340": "NOT-AFFECTED (class verdict) — predates 1.28.0 (2026-06-26) by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
     "DEBIAN-CVE-2014-2013": "NOT-AFFECTED (class verdict) — predates 1.28.0 (2026-06-26) by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
     "DEBIAN-CVE-2016-10246": "NOT-AFFECTED (class verdict) — predates 1.28.0 (2026-06-26) by years and is fixed in the source we build. Class-level confidence; not individually diffed against upstream.",
@@ -64,6 +85,31 @@
     "ARTIFEX-BUG-709567": "UNRESOLVED (no CVE, no release) — \"potential memory overwrite in CFF2 subsetting\", fixed upstream in commit a3caa67262bd on 2026-08-07. In NO released version: it postdates 1.28.2 (2026-08-03) and exists only on master. A memory OVERWRITE, so more serious than the over-read of CVE-2026-7233. NOT REACHABLE here: CFF2 subsetting requires font subsetting, which no shipped code path performs. Take at the first release that contains it, per ADR-0011; until then the register is the record that it is known and waiting."
   },
   "reachability": {
+    "ocr": {
+      "guards": [
+        "DEBIAN-CVE-2026-73066",
+        "DEBIAN-CVE-2026-73067"
+      ],
+      "why": "Tesseract and Leptonica are statically linked into the shipped DLL, and neither is reachable from any of the shim's 24 exported functions. Presence in the binary is NOT the question and does not settle it: ?AVTessErrStream@tesseract@@ is in the 42 MB DLL because MuPDF's own OCR translation units reference it, which says nothing about whether our code can get there. What settles it is that no shipped file references any of the symbols below, and those symbols are every public MuPDF function with a call path into ocr_init/ocr_recognise/ocr_fin — derived from the compiled source by scripts/security/ocrDoors.mjs, not written by hand, and re-derived on every run. Leptonica sits behind the same doors because in this build it is armed from exactly one call site, fz_set_leptonica_mem inside ocr_init. Note fz_new_document_writer: it needs no caller to name an OCR symbol at all, because the writer is chosen from a FILE EXTENSION, so a path ending .ocr reaches Tesseract. FZ_ENABLE_OCR_OUTPUT defaults to 1 and libmupdf.vcxproj's Release|x64 configuration defines HAVE_TESSERACT and HAVE_LEPTONICA, so that dispatch is live in the binary we ship. This expires when Stage 6 lands OCR, which is the point: the verdict is about this codebase today, not about the engine.",
+      "shippedPaths": [
+        "native/**",
+        "packages/*/src/**",
+        "apps/*/src/**"
+      ],
+      "symbols": [
+        "fz_new_buffer_from_page_with_format",
+        "fz_new_document_writer",
+        "fz_new_document_writer_with_buffer",
+        "fz_new_document_writer_with_output",
+        "fz_new_ocr_device",
+        "fz_new_ocr_device_with_options",
+        "fz_new_pdfocr_band_writer",
+        "fz_new_pdfocr_writer",
+        "fz_new_pdfocr_writer_with_output",
+        "fz_save_pixmap_as_pdfocr",
+        "fz_write_pixmap_as_pdfocr"
+      ]
+    },
     "pdf_subset_fonts": {
       "guards": [
         "DEBIAN-CVE-2026-7233",

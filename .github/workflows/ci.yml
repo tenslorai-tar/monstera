@@ -260,6 +260,18 @@ jobs:
       - name: Prove every bundled licence matches the file it cites
         run: npm run proof:licences
 
+      # The advisory register holds a NOT-REACHABLE verdict for Tesseract and
+      # Leptonica, and it rests on a list of the public MuPDF functions that can
+      # reach them. That list is derived from the compiled source rather than
+      # written down, because a hand-written door list is a claim of the same
+      # kind as the verdict it supports. The derivation was wrong four times and
+      # every failure produced the reassuring answer — "nothing reaches
+      # Tesseract" — so it is resolution-tested before anything rests on it. The
+      # case that matters is fz_clone_text_span: same file as a real door, no
+      # path to OCR, and only a correct analysis tells them apart.
+      - name: Prove the OCR door derivation can tell a call path from none
+        run: npm run proof:ocrdoors
+
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring
       # it without one would measure nothing.
