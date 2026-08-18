@@ -500,3 +500,56 @@ named directly.
 | `toUpperCase()` | **red** | **red** |
 
 Verified by substituting both, not by reasoning about it.
+
+---
+
+## Correction, 2026-08-19 — the instrument that produced the table above could report the opposite, silently
+
+Same audit, finding R-1. **No row in the measured table changes.** What changes
+is that re-measuring now refuses rather than lies, and the invitation this
+document extends — *"what would invalidate these rows"* — stops being a trap.
+
+`scripts/spike/pathIdentity.mjs` produced the path-form table. It carried a
+positive control, added after its very first run reported `UNIFIES` having
+resolved nothing at all: fewer than two resolvable forms printed
+`MEASURED NOTHING` and exited 1.
+
+**That control is a count, and a count is satisfied by the two easiest forms.**
+
+`\\localhost\C$` is an **admin share**, disabled or elevation-gated on a great
+many Windows machines. On such a machine every redirector form errors, `C:\…`
+and `\\?\C:\…` resolve, and those two were never going to disagree. Measured, by
+running a copy with the redirector host changed to an unreachable name:
+
+```
+2 form(s) resolved.
+  realpath.native: 1 distinct
+UNIFIES. Every form folds to one identity.        exit 0
+```
+
+That is **the opposite of the row recorded here**, printed cleanly, by an
+instrument that never reached the redirector. A future reader following this
+document's own instruction to re-measure would get it.
+
+### The fix is the distinction `checkWriteTarget` already carries
+
+"How many answers did I get" is not "which forms answered", and *could not look*
+must never render as a measurement — `target-absent` versus `sole-writer`, in a
+different file.
+
+Each form now declares the **route** it exercises, `local` or `redirector`. The
+run refuses unless at least one form of **each** route answered, and it refuses
+**before printing any rows**: a table of local forms under a heading about
+network paths is precisely what makes an unreachable redirector look like a
+result. Forms that did not answer are reported as absences with their errno,
+never as rows, because "this machine has no mapped drive" is a fact about the
+measurement's coverage and belongs beside it.
+
+Verified in both directions: the real invocation still reports
+`realpath.native: 2 distinct` against `dev:ino: 1 distinct` — the row above — and
+the unreachable-redirector invocation now exits 1 naming the route that did not
+answer.
+
+**The unmeasured row is unchanged.** A genuine mapped network drive still cannot
+be produced on this machine, and it is still recorded as unmeasured rather than
+inferred. What is fixed is that a machine which *cannot* answer now says so.
