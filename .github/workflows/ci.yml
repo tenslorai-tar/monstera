@@ -122,6 +122,15 @@ jobs:
       - name: Prove the peak-RSS instrument can tell two numbers apart
         run: npm run proof:peakrss
 
+      # ADR-0010 recorded that koffi "needs Electron ABI prebuilds". It does
+      # not: it is a Node-API addon, and its prebuilts are per platform-arch.
+      # The real risk is that those prebuilts are OPTIONAL dependencies, so an
+      # install omitting them leaves koffi resolving nothing and failing at the
+      # first FFI call inside a shipped application. Runs on both platforms
+      # because the lockfile pins a binary for each and either could go missing.
+      - name: Prove the FFI binding is installed and callable
+        run: npm run proof:nativeaddon
+
       - name: Prove the architecture boundaries are enforced
         run: npm run proof:boundaries
 

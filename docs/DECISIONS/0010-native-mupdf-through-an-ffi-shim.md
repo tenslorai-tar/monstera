@@ -270,6 +270,8 @@ document teardown, so using it mid-life is unproven.
   produce a release artefact; `scripts/provision/mutool.mjs` is withdrawn
   because it provisions the wrong thing.
 - **koffi is a native module** and needs Electron ABI prebuilds.
+  *(Corrected 2026-08-18 — see below. It needs no ABI prebuild; the real
+  obligation is narrower and different.)*
 - The **AGPL position is unchanged** — MuPDF forced it before and forces it now —
   but the *mechanism* changed from WASM linkage plus a bundled upstream binary
   to static linkage into a library we build. The source offer must cover the
@@ -295,3 +297,40 @@ fires because an FFI loop blocks the event loop, and a spike case whose verdict
 was a literal `false` and so could never go red. Any future memory measurement
 here marks its peak explicitly inside the loop, and reports live bytes from the
 allocator hook rather than RSS.
+
+## Correction — 2026-08-18: koffi needs no Electron ABI prebuild
+
+The consequence above says koffi "needs Electron ABI prebuilds". That was
+written from the general fact that native addons are ABI-bound, and it is not
+true of this one. Measured against the installed koffi 3.1.5:
+
+- It declares a **Node-API** floor of 8 and refuses to load on a runtime
+  reporting less, checking `process.versions.napi` at load. Node-API is
+  ABI-stable across runtimes by construction — that is what it is for — so
+  there is no V8 ABI to rebuild against.
+- Its prebuilt binaries are published per **platform and architecture**
+  (`@koromix/koffi-win32-x64`), with no runtime or ABI in the name. Fifteen are
+  declared as optional dependencies and the lockfile pins all of them.
+- Its loader probes **`process.resourcesPath`** for the binary — an
+  Electron-only global. Electron is a case it was written for, not one it needs
+  rebuilding for.
+- Electron 43.4.0, current stable on this date, bundles Node 24.18.1, which is
+  Node-API 10. The floor is 8.
+
+**The real obligation is narrower and was not what the ADR named.** The platform
+binary is an *optional* dependency, so an install that omits optional packages —
+`npm ci --omit=optional`, a sandbox that blocks the extra download, a
+cross-platform build host — leaves koffi resolving nothing and failing at the
+first FFI call, at runtime, inside a shipped application. And because a `.node`
+is a native library, it cannot be loaded from inside an asar archive: the
+packaging config must unpack it, which is the same requirement the shim and
+`pdfium.dll` already have.
+
+`npm run proof:nativeaddon` holds all of it, including a real FFI call whose
+return value is compared against a process id known independently — a loaded
+file is not a working binding.
+
+What remains genuinely owed is the packaging half, and it needs Electron to
+exist before it can be asserted: that the unpacked binary is found via
+`resourcesPath` from a built application. That is the packaging test, and it is
+recorded as such rather than as an ABI problem to solve.
