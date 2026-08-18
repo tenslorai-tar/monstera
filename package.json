@@ -37,6 +37,7 @@
     "proof:escapeguard": "node scripts/hooks/blockEscapeResolvingWrites.proof.mjs",
     "proof:hookintegrity": "node scripts/lib/hookIntegrity.proof.mjs",
     "proof:hookprobe": "node scripts/proofs/hookProbe.proof.mjs",
+    "proof:budgets": "node scripts/proofs/memoryBudgets.proof.mjs",
     "probe:hook": "node scripts/hooks/recordHookProbe.mjs",
     "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",

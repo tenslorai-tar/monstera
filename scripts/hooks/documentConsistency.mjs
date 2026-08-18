@@ -32,6 +32,7 @@ import { join } from 'node:path';
 
 import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
+import { memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
 
 // The root is asked of git, in one place, for the same reason the scope is:
@@ -279,6 +280,49 @@ const failures = [];
   }
 }
 
+// ---------------------------------------------------------------------------
+// 6. §9.17 states each budget's numbers exactly once — in the declared line.
+// ---------------------------------------------------------------------------
+{
+  // ADR-0012's first condition, enforced rather than trusted. The whole value of
+  // machine-reading the budgets is that a reader of the invariant sees the
+  // number the build enforces; a second copy in the surrounding prose destroys
+  // that quietly, because the two only have to disagree once and the prose is
+  // what a human reads.
+  //
+  // Parsed from the declared line rather than listed here, so this cannot
+  // become the third statement of the same numbers.
+  const architecture = read('docs/ARCHITECTURE.md');
+  const budgets = memoryBudgets({ text: architecture });
+
+  // §9.17 runs from its own list marker to the next one. Bounded rather than
+  // whole-file: ADR-0007's own prose and the amendment log both state these
+  // numbers legitimately, and they are not this section.
+  const section = /^\s*17\.\s[\s\S]*?(?=^\s*18\.\s)/mu.exec(architecture)?.[0] ?? '';
+  if (section === '') {
+    failures.push('Could not locate §9.17 in docs/ARCHITECTURE.md to check it for restated budgets.');
+  } else {
+    const prose = section
+      .split('\n')
+      .filter((line) => !/^\s*>/u.test(line))
+      .join('\n');
+
+    for (const budget of budgets.values()) {
+      if (budget.kind !== 'assertable') continue;
+      for (const value of [`${budget.multiplier}x`, `${budget.multiplier}×`, budget.absoluteText]) {
+        if (prose.includes(value)) {
+          failures.push(
+            `docs/ARCHITECTURE.md §9.17 restates the ${budget.name} budget's "${value}" in prose. ` +
+              `The declared line is the only place that section states a value (ADR-0012); the ` +
+              `prose names each budget and argues it. Two statements of one number is the drift ` +
+              `the machine-read line exists to remove.`,
+          );
+        }
+      }
+    }
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `\nDocument consistency — ${failures.length} problem(s):\n\n` +
@@ -294,4 +338,5 @@ process.stdout.write('  ok  every ADR is indexed, and no index row contradicts i
 process.stdout.write('  ok  every scripts/ path named in a tracked document resolves\n');
 process.stdout.write('  ok  no document states a claim an ADR correction withdrew\n');
 process.stdout.write('  ok  the tool-use guard gate is not claimed before the guard was seen to fire\n');
-process.stdout.write('\n5 document consistency checks passed.\n');
+process.stdout.write('  ok  §9.17 states each budget value once, in the machine-read line\n');
+process.stdout.write('\n6 document consistency checks passed.\n');

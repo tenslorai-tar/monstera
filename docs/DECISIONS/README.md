@@ -52,3 +52,4 @@ Each contains:
 | [0009](0009-document-identity-and-the-command-log.md) | Document identity, the command log, and the engine seam | Accepted |
 | [0010](0010-native-mupdf-through-an-ffi-shim.md) | Native MuPDF through an FFI shim; WASM withdrawn | Accepted; instruments corrected 2026-08-17 |
 | [0011](0011-engine-upgrade-cadence.md) | When the native engine is upgraded, and when it is not | Accepted |
+| [0012](0012-memory-budgets-are-machine-read-from-the-invariant.md) | The memory budgets are machine-read from invariant §9.17 | Accepted |

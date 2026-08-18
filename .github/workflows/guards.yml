@@ -142,6 +142,15 @@ jobs:
       - name: Prove the canary rejects an older scanner
         run: npm run proof:canary
 
+      # The memory budgets are read from invariant §9.17 rather than defined as
+      # constants (ADR-0012), so the number a human reads is the number the
+      # build enforces. Almost every case here asserts a REFUSAL: a parser for a
+      # limit has one dangerous failure, yielding a plausible number when it
+      # should have stopped, and a fallback is how a withdrawn budget returns
+      # silently.
+      - name: Prove the budgets are read, never substituted
+        run: npm run proof:budgets
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.

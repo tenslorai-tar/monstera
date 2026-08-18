@@ -530,20 +530,39 @@ say**.
 16. No raw colors or magic pixel values in components — design tokens only. No
     emoji as UI icons, anywhere.
 17. Memory is budgeted **per process**, each budget argued from what that
-    process is for — never from the measurement it is meant to constrain. The
+    process is for — never from the measurement it is meant to constrain. A
+    budget set only from the measurement it constrains can never fail. The
     two-term cost model and the admission gate an earlier revision of this
     invariant carried are **withdrawn**: they were fitted to WASM, which
     materialises objects eagerly because it cannot page from disk, and MuPDF is
     no longer reached that way
-    ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)). Budgets:
-    main ≤ 1.5× and ≤ 1.5 GB (it
-    holds canonical bytes and never parses, so more means parsing crept back
-    in); the MuPDF host ≤ 6× and ≤ 3 GB as a containment limit whose breach
-    means kill-and-restart, not a raised number; the renderer **provisional,
-    two-term** — a file-size-proportional term plus an absolute bitmap-cache cap,
-    both unmeasured until the renderer exists. A budget set only from the
-    measurement it constrains can never fail.
-    ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md))
+    ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
+
+    Three budgets, by name and by argument. **`main`** holds canonical bytes and
+    never parses, so exceeding its budget means parsing crept back in. The
+    **`mupdf-host`** budget is a *containment* limit: a breach means
+    kill-and-restart, never a raised number. The **`renderer`** budget is
+    **provisional and two-term** — a file-size-proportional term plus an
+    absolute bitmap-cache cap — and is not assertable until a renderer exists to
+    measure; a number invented for it now would be the mistake ADR-0007 records.
+
+    > **Memory budgets:** `main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB` ·
+    > `renderer = provisional`
+    >
+    > That line is machine-read, and it is the **only** place this section
+    > states these numbers — the prose above names each budget and argues it,
+    > and deliberately does not repeat a value.
+    > `scripts/lib/memoryBudgets.mjs` parses it, and the performance assertion
+    > takes its limits from there rather than from a constant. A constant is how
+    > a withdrawn number returns: prose repeating one is caught by the
+    > withdrawn-phrase check, and code enforcing one is not, because a constant
+    > reads `650 * 1024 * 1024` rather than `~650 MB`.
+    >
+    > The parse has no default and no fallback. A missing or malformed line
+    > fails the build; it never yields a value, because a fallback limit is
+    > indistinguishable from a measured one at the moment it matters.
+    ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md),
+    [ADR-0012](DECISIONS/0012-memory-budgets-are-machine-read-from-the-invariant.md))
 18. **A failed save never loses work.** The command log lives in main and
     survives a host crash, so a save failure is answered by killing the host,
     restarting, reopening from the last-saved bytes, replaying the log, and
