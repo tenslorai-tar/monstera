@@ -109,13 +109,46 @@ redistribute this software, and if you distribute it — or run a modified versi
 as a network service — you must offer the corresponding source under the same
 licence.
 
-Because the linkage is static rather than a bundled upstream binary, the source
-offer covers more than this repository: it covers **the MuPDF version, the build
-configuration used to produce the library, and the source of the C shim** that
-wraps it. Those are what you would need to rebuild what actually ships.
+### The source offer
 
-Third-party notices are generated from the lockfile at package time rather than
-hand-maintained, so they cannot drift from what actually ships.
+Because the linkage is static rather than a bundled upstream binary, the offer
+covers more than this repository. It is everything you would need to rebuild what
+actually ships, at the exact versions shipped:
+
+- **MuPDF 1.28.0** itself — the hash-verified upstream tarball, listed in
+  [`scripts/provision/mupdf.mjs`](scripts/provision/mupdf.mjs);
+- **the build configuration** used to produce the static libraries, which is what
+  makes the result reproducible rather than merely available;
+- **the source of the C shim** that links it,
+  [`native/mupdf-shim/`](native/mupdf-shim/);
+- **the separately AGPL-licensed components inside MuPDF's own tree** —
+  `extract` and `jbig2dec`, both AGPL-3.0-or-later. These arrive within MuPDF, so
+  "the MuPDF version" arguably covers them already. Naming them costs a line and
+  removes the argument.
+
+That list is the same one [`NOTICE`](NOTICE) states, because both come from
+[`scripts/release/nativeComponents.json`](scripts/release/nativeComponents.json)
+rather than being written twice.
+
+**To request it:** open an issue, or write to the address in
+[`SECURITY.md`](SECURITY.md). We will send a copy for at least three years after
+the last distribution of the corresponding binary.
+
+### Third-party notices
+
+[`NOTICE`](NOTICE) is generated, not hand-maintained: from the lockfile's
+production tree, and from the libraries the shim actually compiles. Every bundled
+licence names the file its terms were read from, inside MuPDF's source tree, so
+each claim can be checked in one command rather than taken on trust. One is worth
+calling out because it looks wrong and is not: **MuJS 1.3.8 is ISC here**, read
+from `thirdparty/mujs/COPYING`, although Artifex positions MuJS publicly as
+AGPL-or-commercial. The grant in the tree we ship is what governs.
+
+Two components carry conditions beyond attribution, and both are discharged in
+`NOTICE`: **FreeType** is dual-licensed and we take the FreeType License, whose
+binary-distribution clause requires a disclaimer that this software is based in
+part on the work of the FreeType Team; and **zint** is BSD only for its backend,
+which is the only part compiled here.
 
 The **brand assets** in [`assets/brand/`](assets/brand/) are owned by Tenslor
 Inc. and are not covered by the code licence — a fork must use its own, so users
