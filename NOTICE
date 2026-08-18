@@ -20,8 +20,24 @@ MuPDF 1.28.0 — AGPL-3.0-or-later
   PDF parsing, rendering and writing engine. Statically linked into the shim.
   Home:   https://mupdf.com/
   Source: https://github.com/ArtifexSoftware/mupdf-downloads/releases
-  Bundles: brotli, cmark-gfm, extract, freetype, gumbo-parser, harfbuzz, jbig2dec, lcms2, leptonica, libjpeg, mujs, openjpeg, tesseract, zint, zlib, zxing-cpp
-  Those libraries carry their own licences, distributed with the source above.
+  Bundles, each under its own terms:
+    brotli         MIT
+    cmark-gfm      BSD-2-Clause
+    extract        AGPL-3.0-or-later (Artifex)
+    freetype       FTL or GPL-2.0-or-later, at the user's option
+    gumbo-parser   Apache-2.0
+    harfbuzz       MIT ("Old MIT")
+    jbig2dec       AGPL-3.0-or-later (Artifex)
+    lcms2          MIT
+    leptonica      BSD-2-Clause
+    libjpeg        IJG (Independent JPEG Group)
+    mujs           ISC (Artifex)
+    openjpeg       BSD-2-Clause
+    tesseract      Apache-2.0
+    zint           BSD-3-Clause — backend only, which is all that is compiled
+    zlib           Zlib
+    zxing-cpp      Apache-2.0
+  Their full texts are distributed with the source above.
 
 MuPDF is AGPL, and that is why this application is. Its source, the exact
 version and build configuration used, and the source of the shim that links it

@@ -154,7 +154,15 @@ function licenceText(directory) {
 }
 
 /**
- * @typedef {{ name: string, role: string, licence: string, origin: string, source: string, bundled: string[] }} NativeComponent
+ * @typedef {{
+ *   name: string,
+ *   role: string,
+ *   licence: string,
+ *   origin: string,
+ *   source: string,
+ *   bundled: string[],
+ *   licences?: Record<string, string>,
+ * }} NativeComponent
  */
 
 /** @returns {NativeComponent[]} */
@@ -305,8 +313,22 @@ export function renderNotice() {
     lines.push(`  Home:   ${component.origin}`);
     lines.push(`  Source: ${component.source}`);
     if (component.bundled.length > 0) {
-      lines.push(`  Bundles: ${component.bundled.join(', ')}`);
-      lines.push('  Those libraries carry their own licences, distributed with the source above.');
+      lines.push('  Bundles, each under its own terms:');
+      for (const name of component.bundled) {
+        // Read from the library's own licence file in the provisioned source,
+        // not from a package index. A licence a notice states must be the one
+        // the shipped code actually carries.
+        const licence = component.licences?.[name];
+        if (licence === undefined) {
+          throw new Error(
+            `${component.name} bundles ${name} with no licence recorded. NOTICE will not list a ` +
+              `component without its terms — naming a library while omitting its licence is the ` +
+              `part of an attribution notice that does the work.`,
+          );
+        }
+        lines.push(`    ${name.padEnd(14)} ${licence}`);
+      }
+      lines.push('  Their full texts are distributed with the source above.');
     }
     lines.push('');
   }
