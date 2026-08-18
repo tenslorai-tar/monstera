@@ -416,6 +416,101 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-18 — Stage audit, range 1 of 4: `a969ae4..2aaa8f7`
+
+**Audited through 2aaa8f7.** 9 commits, 34 files, 5 proofs added, 1 modified.
+
+The owed Batch 7 audit is split into four ranges of 9/8/8/9 commits rather than
+run as one. 32 as a unit would be 3.5× the threshold — and the threshold is the
+median precisely because batch 7 at 31 was the stretch too large to audit as a
+unit. Auditing it as one would be that failure wearing the mechanism's name. The
+same argument rules out the two-way split: 20 commits is still 2.2×.
+
+**The one modified proof, read line by line.** `lintIgnores.proof.mjs` gained two
+`MUST_LINT` entries — `scripts/release/generateNotice.mjs` and
+`scripts/build/placeholder.ts`. **Additive; nothing loosened.** The check got
+stricter, which is the benign half of that column and worth recording as such,
+because "no loosening found" is only meaningful if somebody looked.
+
+### Finding R1-1: NOTICE shipped with a check and no proof
+
+`generateNotice.mjs` landed at `6997756` with a CI step (`notice:check`) and **no
+proof that the check could fail**. Coverage arrived 13 commits later at `98b764e`.
+
+That is the B2 shape exactly: a check whose control case does not exist. It was
+not harmless — the two wrong entries in the bundle list (OpenSSL declared but
+never linked; Tesseract and Leptonica linked but never declared) were found by
+*reasoning about the parse*, not by anything failing. A proof would have needed
+the provisioned source, which is the reason it was skipped, and "the proof is
+awkward here" is not one of B2's exemptions.
+
+**Closed by** `proof:licences`, which now runs against a fixture tree so it needs
+no 69 MB source to exercise its resolution case.
+
+### Items 4a and 4b over the eleven instruments this range added
+
+`peakRss`, `memoryBudgets`, `budgetGate` and `hookProbe` each have a resolution
+test that predates their first real measurement. `generateNotice`'s
+`checkNativeComponents` is search-shaped and did carry positive-control floors
+from the start — it throws when the link line yields no libraries and when the
+graph yields no thirdparty sources — so 4b was satisfied before 4b existed.
+
+`allocateFixture`, `largeFixture`, `roleMain` and `roleMupdfHost` have no direct
+proof. They are validated indirectly, by the gate they feed producing numbers
+that differ where they should (1.30× against 3.71× for the two content shapes).
+**Recorded as indirect rather than counted as covered.**
+
+---
+
+## 2026-08-18 — Stage audit, range 2 of 4: `2aaa8f7..63242af`
+
+**Audited through 63242af.** 8 commits, 15 files, 1 proof added, 1 modified.
+
+This is the range that rebuilt the escape guard: the separator fix, the scope
+fix, three false-negative corrections, the enumeration, and the generated
+per-rule cases.
+
+### Finding R2-1: the generalisation reintroduced the defect it generalised
+
+**`f84c686` stopped the redirect scan crossing a command separator. `63242af`
+put it back.**
+
+The generated-cases commit replaced three hand-written patterns with a shared
+`eitherOrder()` fragment — and built it on `SAME_LINE`, not `SAME_COMMAND`. So
+`echo "step" ; git show HEAD --stat > /dev/null` was denied: anchor from the
+first command, redirect from the second, nothing written by either.
+
+Found by hitting it while running the audit of that very range. That is the case
+for scoping the audit to a diff: the defect was created by the commit that
+generalised the fix, and a tree-wide sweep weeks later would have met it as a
+mysterious false positive rather than as a regression with an author.
+
+**The first fix was wrong too, and worth recording.** Switching `eitherOrder` to
+`SAME_COMMAND` turned 11 cases red — including occurrence 7's own command,
+because `SAME_COMMAND` stops at a `;` *inside a quoted payload*. That is the
+false negative `0dec3ec` had already fixed. The two spans fail in opposite
+directions:
+
+| span | `echo "x" ; cmd > f` | `printf 'a;b' > f` |
+|---|---|---|
+| `SAME_LINE` | **false positive** | blocked ✓ |
+| `SAME_COMMAND` | allowed ✓ | **false negative** |
+
+Neither side is acceptable, and picking one is what produced both defects. The
+fix removes the trade: `SAME_COMMAND_QUOTED` consumes quoted spans whole, so a
+separator inside quotes is text and a separator outside them ends the command.
+Both columns pass. 243 → **250 cases**, including the exact command the audit was
+denied.
+
+### The modified proof
+
+`blockEscapeResolvingWrites.proof.mjs`, modified in six of these eight commits —
+every change additive, each adding cases for a defect the same commit fixed. No
+case was deleted or weakened. Checked because a guard whose own proof is edited
+this often is exactly where a quietly loosened check would hide.
+
+---
+
 ## 2026-08-18 — The stage audit becomes scoped, starting from zero backlog
 
 **Audited through a969ae4** — "Record Batch 6", the last commit of the last batch

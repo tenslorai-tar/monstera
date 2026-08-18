@@ -258,6 +258,30 @@ const SAME_LINE = String.raw`[^\n]*`;
 const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-]|[=>])\S`;
 
 /**
+ * One command's extent, with separators recognised only OUTSIDE quotes.
+ *
+ * Neither of the two obvious spans is correct, and each failed in the opposite
+ * direction:
+ *
+ *   - `SAME_LINE` crosses real separators, so `echo "x" ; git show > /dev/null`
+ *     is read as echo writing a file. False POSITIVE.
+ *   - `SAME_COMMAND` stops at the first `;` or `|` even inside a quoted string,
+ *     so `printf 'a;b\n' > f` is not matched at all. False NEGATIVE — and that is
+ *     occurrence 7's exact command, the only one this guard has ever missed.
+ *
+ * A false negative is the unacceptable direction, which is why SAME_LINE was
+ * chosen when the payload defect was fixed. This fragment removes the trade
+ * instead of picking a side: quoted spans are consumed whole, so a separator
+ * inside one is text, and a separator outside one ends the command.
+ *
+ * The quoted alternatives come first so an apostrophe inside a longer quoted run
+ * is not mistaken for an opener; an UNTERMINATED quote falls through to the
+ * general branch and is consumed as an ordinary character, which keeps the span
+ * long rather than truncating it — the conservative direction here.
+ */
+const SAME_COMMAND_QUOTED = String.raw`(?:'[^']*'|"[^"]*"|&(?=>)|[^|;&\n])*`;
+
+/**
  * A construct and its redirect, in EITHER operand order.
  *
  * `printf 'x' > f` and `> f printf 'x'` are the same command; so are
@@ -269,6 +293,18 @@ const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-]|[=>])\S`;
  * lesson living in each pattern's own shape is inherited by nobody, and this
  * one had already been learned twice before it was written down once.
  *
+ * **Spans SAME_COMMAND, not SAME_LINE, and that was a regression when written.**
+ * `f84c686` stopped the redirect scan crossing a command separator; this fragment
+ * arrived at `63242af` built on SAME_LINE and reintroduced it for all three rules
+ * it replaced. `echo "x" ; git show HEAD > /dev/null` was denied — the anchor from
+ * the first command, the redirect from the second, nothing written by either.
+ *
+ * Found by the scoped stage audit of that very range, which is the case for
+ * scoping it: the defect was created by the commit that generalised the fix.
+ *
+ * The `alsoAfter` alternative still reaches its pipe, because SAME_COMMAND stops
+ * *before* `|` and the alternative itself begins with `\|`.
+ *
  * @param {string} anchor Source of the construct, e.g. `\bawk\b`.
  * @param {string} [alsoAfter] An extra alternative valid only after the anchor,
  *   such as `| tee`, which has no reversed form.
@@ -277,7 +313,7 @@ const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-]|[=>])\S`;
 function eitherOrder(anchor, alsoAfter) {
   const forward = alsoAfter === undefined ? TO_FILE : `(?:${TO_FILE}|${alsoAfter})`;
   return new RegExp(
-    `(?:${anchor}${SAME_LINE}${forward}|${TO_FILE}${SAME_LINE}${anchor})`,
+    `(?:${anchor}${SAME_COMMAND_QUOTED}${forward}|${TO_FILE}${SAME_COMMAND_QUOTED}${anchor})`,
   );
 }
 

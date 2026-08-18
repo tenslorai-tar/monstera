@@ -258,6 +258,24 @@ mustAllow('awk with stderr sent to a file', "awk '{print}' in.txt 2> errors.log"
 mustAllow('awk with a >= line-number range', "awk 'NR>=386 && NR<=390' scripts/hooks/guardFiles.mjs");
 mustAllow('awk printing when a field exceeds a bound', "awk '$2 >= 100 {print $1}' data.txt");
 mustAllow('grep for a literal >= in source', "grep -rn 'x >= 1' packages/kernel/src");
+
+// ---------------------------------------------------------------------------
+// A producer in one command and a redirect in another are not a write.
+//
+// f84c686 stopped the scan crossing a separator; 63242af generalised the rules
+// into eitherOrder() built on SAME_LINE and reintroduced it for all three. The
+// first case here is the exact command that was denied during the audit of that
+// range, and it writes nothing: `echo` prints to the terminal, and the redirect
+// belongs to `git show`.
+//
+// The `| tee` cases are what stops the fix going too far — SAME_COMMAND ends
+// before `|`, so the alternative has to reach its own pipe.
+// ---------------------------------------------------------------------------
+mustAllow('echo, then an unrelated command whose output is redirected', 'echo "step" ; git show HEAD --stat > /dev/null');
+mustAllow('echo, then a redirect in a && chain', 'echo "step" && git show HEAD:package.json > out.json');
+mustAllow('printf, then an unrelated redirect after a semicolon', "printf 'x' ; git log --oneline > log.txt");
+mustBlock('echo piped to tee', 'echo "content" | tee out.txt', 'tee writes what echo resolved');
+mustBlock('printf piped to tee -a', "printf 'a\\n' | tee -a out.txt", 'append is still a write');
 // `>>=` is the case that showed excluding `=` alone was not enough: with `>>?`
 // greedy the engine matched `>>`, saw `=`, backtracked to a single `>` and
 // accepted the SECOND `>` as a one-character filename.
