@@ -54,3 +54,4 @@ Each contains:
 | [0011](0011-engine-upgrade-cadence.md) | When the native engine is upgraded, and when it is not | Accepted |
 | [0012](0012-memory-budgets-are-machine-read-from-the-invariant.md) | The memory budgets are machine-read from invariant §9.17 | Accepted |
 | [0013](0013-pdfa-export-and-text-extraction-engines.md) | PDF/A-2b export gets a matrix row and no binary; the Poppler conditional is dropped | Accepted |
+| [0014](0014-ocr-stays-inside-the-engine.md) | OCR stays inside the engine: Tesseract and Leptonica are kept | Accepted |
