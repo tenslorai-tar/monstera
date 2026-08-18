@@ -1,6 +1,8 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 
 import { type FileHandle, asFileHandle } from '@monstera/shared';
+
+import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 
 /**
  * How a filesystem location reaches the renderer: as a capability token that
@@ -49,18 +51,10 @@ import { type FileHandle, asFileHandle } from '@monstera/shared';
  * normaliser's, and this primitive has one job.
  */
 /**
- * Where a handle's bytes come from.
- *
- * Injectable for one reason: the entropy claim above was previously untestable,
- * so it was untested. The test named for it asserted uniqueness and a
- * 43-character shape, both of which a padded counter satisfies — and a padded
- * counter substituted for the CSPRNG left the whole suite green. A property no
- * test can reach is a property the code is free to lose.
+ * Where a handle's bytes come from. See {@link TokenBytesSource} for why it is
+ * injectable; `DocId` mints from the same source type and the same width.
  */
-export type HandleBytesSource = (size: number) => Uint8Array;
-
-/** 32 bytes = 256 bits. Named so the width is one constant, not a literal in prose and code. */
-const HANDLE_BYTES = 32;
+export type HandleBytesSource = TokenBytesSource;
 
 export class CapabilityRegistry {
   readonly #pathsByHandle = new Map<string, string>();
@@ -72,7 +66,7 @@ export class CapabilityRegistry {
    * the width actually drawn; it is not a configuration seam, and production
    * code has no reason to pass one.
    */
-  constructor(randomBytesSource: HandleBytesSource = randomBytes) {
+  constructor(randomBytesSource: HandleBytesSource = cryptoBytes) {
     this.#randomBytes = randomBytesSource;
   }
 
@@ -97,21 +91,10 @@ export class CapabilityRegistry {
     const existing = this.#handlesByPath.get(path);
     if (existing !== undefined) return existing;
 
-    // base64url so the token is safe in a JSON payload and in any log line that
-    // manages to include one.
-    const bytes = this.#randomBytes(HANDLE_BYTES);
-    if (bytes.length !== HANDLE_BYTES) {
-      // Checked rather than trusted. A source returning a short buffer would
-      // mint a handle that still looks right — opaque, unique, base64url — while
-      // carrying a fraction of the entropy the design claims, and nothing
-      // downstream could tell. Refusing makes the weak handle unmintable rather
-      // than merely unlikely.
-      throw new Error(
-        `Handle byte source returned ${String(bytes.length)} bytes, expected ${String(HANDLE_BYTES)}. ` +
-          'A handle carries 256 bits of entropy by construction; a shorter draw is not a handle.',
-      );
-    }
-    const handle = asFileHandle(Buffer.from(bytes).toString('base64url'));
+    // The width and the short-draw refusal are in `mintToken`, shared with the
+    // `DocId` mint, so the entropy rule has one implementation rather than two
+    // that can drift apart unnoticed.
+    const handle = asFileHandle(mintToken('Handle', this.#randomBytes));
     this.#pathsByHandle.set(handle, path);
     this.#handlesByPath.set(path, handle);
     return handle;

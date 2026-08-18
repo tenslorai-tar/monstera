@@ -1,0 +1,416 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { CapabilityRegistry } from './capabilityRegistry.js';
+import { type FileIdentity } from './documentIdentity.js';
+import { DocumentService, type IdentityReader, type OpenOutcome } from './documentService.js';
+
+/**
+ * What carries the weight here, as in the identity tests, is the set of cases
+ * that must **fail**.
+ *
+ * Every positive case below — "the same file twice is one document", "a lone
+ * document may write" — is satisfied by an implementation that merges
+ * everything, or by one whose write check returns `sole-writer` unconditionally.
+ * The cases that distinguish a working service from that one are:
+ *
+ * - two copies of a document, matching on name, size and last-write time,
+ *   opening as two documents;
+ * - a document that must not be told it may write, because another open
+ *   document reaches the same file or because the file was replaced;
+ * - the write check refusing to answer at all when its own walk comes back
+ *   empty.
+ */
+
+const WINDOWS = process.platform === 'win32';
+
+let root = '';
+const original = (): string => join(root, 'annual.pdf');
+const hardLink = (): string => join(root, 'link.pdf');
+const other = (): string => join(root, 'other.pdf');
+const copy = (): string => join(root, 'backup', 'annual.pdf');
+
+beforeAll(() => {
+  root = mkdtempSync(join(tmpdir(), 'monstera-docservice-'));
+  writeFileSync(original(), 'document bytes\n');
+  writeFileSync(other(), 'a different document entirely\n');
+
+  mkdirSync(join(root, 'backup'), { recursive: true });
+  writeFileSync(copy(), 'document bytes\n');
+
+  // The copy matches the original on every corroborating attribute: same
+  // filename, same size, same last-write time. This is what a backup looks
+  // like, and it is the pair a merge-by-attributes service would wrongly join.
+  const when = new Date(1_700_000_000_000);
+  utimesSync(original(), when, when);
+  utimesSync(copy(), when, when);
+
+  if (WINDOWS) {
+    execFileSync('cmd', ['/c', 'mklink', '/H', hardLink(), original()], { stdio: 'ignore' });
+  }
+});
+
+afterAll(() => {
+  if (root !== '') rmSync(root, { recursive: true, force: true });
+});
+
+/** A constructed identity, for the cases that must not touch a filesystem. */
+function identity(): FileIdentity {
+  return {
+    canonicalPath: 'C:\\docs\\a.pdf',
+    dev: 1,
+    ino: 100,
+    size: 2048,
+    modifiedMs: 1_700_000_000_000,
+  };
+}
+
+/** A byte source of the right width whose output is fully determined. */
+function bytesOf(fill: number): () => Uint8Array {
+  return () => Uint8Array.from({ length: 32 }, () => fill);
+}
+
+/** Narrows an outcome that must have opened a new document. */
+function mustOpen(outcome: OpenOutcome): DocId {
+  if (outcome.kind !== 'opened') throw new Error(`expected 'opened', got '${outcome.kind}'`);
+  return outcome.docId;
+}
+
+describe('DocumentService — minting a DocId', () => {
+  it('mints from the byte source verbatim rather than deriving from the path', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      randomBytesSource: bytesOf(0x41),
+      readIdentity: () => Promise.resolve(identity()),
+    });
+
+    const outcome = await service.open(registry.mint('C:\\docs\\a.pdf'));
+
+    // 32 bytes of 0x41, base64url. Neither a hash of the path nor a counter can
+    // produce this, which is the point: ADR-0009 §1 rejects both, the first
+    // because it is the path in a lossy coat and the second because ids get
+    // reused after close.
+    expect(mustOpen(outcome)).toBe(Buffer.alloc(32, 0x41).toString('base64url'));
+  });
+
+  it('refuses a byte source that returns a short draw', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      randomBytesSource: () => new Uint8Array(4),
+      readIdentity: () => Promise.resolve(identity()),
+    });
+
+    await expect(service.open(registry.mint('C:\\docs\\a.pdf'))).rejects.toThrow(
+      /4 bytes, expected 32/,
+    );
+  });
+
+  it('does not reuse an id after close — a counter would', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const handle = registry.mint(original());
+
+    const first = mustOpen(await service.open(handle));
+    await service.close(first);
+    const second = mustOpen(await service.open(handle));
+
+    // A counter reset on close hands out `first` again, and a late renderer
+    // message naming it lands on a different document. That is invariant L10's
+    // failure mode; a minted token makes it a lookup miss.
+    expect(second).not.toBe(first);
+  });
+});
+
+describe('DocumentService — one file is one document', () => {
+  it('opens a file and reports the version it starts at', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const outcome = await service.open(registry.mint(original()));
+
+    // 1, because 0 is reserved for "never" (ADR-0009 §5).
+    expect(outcome).toMatchObject({ kind: 'opened', version: 1 });
+    expect(service.size).toBe(1);
+  });
+
+  it('a second open by a different path form returns the same DocId', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const first = mustOpen(await service.open(registry.mint(original())));
+    const second = await service.open(registry.mint(original().toUpperCase()));
+
+    expect(second).toStrictEqual({ kind: 'already-open', docId: first });
+    expect(service.size).toBe(1);
+  });
+
+  it("the 'already-open' outcome carries no state to build a second view from", async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    await service.open(registry.mint(original()));
+    const second = await service.open(registry.mint(original()));
+
+    // No version, no snapshot, nothing. "Render a second copy of an already-open
+    // document" is not a bug to be caught here; it is a sentence with no words.
+    expect(Object.keys(second).sort()).toStrictEqual(['docId', 'kind']);
+  });
+
+  it.runIf(WINDOWS)('a hard link is the same document', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const first = mustOpen(await service.open(registry.mint(original())));
+    const second = await service.open(registry.mint(hardLink()));
+
+    // `realpath.native` cannot fold these — both names are equally canonical.
+    // This case is the whole reason the identity rule has a second row.
+    expect(second).toStrictEqual({ kind: 'already-open', docId: first });
+  });
+
+  it('CONTROL: a copy matching on name, size and mtime opens as a SECOND document', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const first = mustOpen(await service.open(registry.mint(original())));
+    const second = mustOpen(await service.open(registry.mint(copy())));
+
+    expect(second).not.toBe(first);
+    expect(service.size).toBe(2);
+  });
+
+  it('CONTROL: concurrent opens of one file cannot both mint', async () => {
+    const registry = new CapabilityRegistry();
+
+    // Identity reads are released by hand, so the interleaving is chosen rather
+    // than raced for. Written first against the real filesystem, this case
+    // passed with the lane REMOVED — the two `realpath`+`stat` pairs happened to
+    // complete far enough apart that the second open saw the first's record. A
+    // control that depends on I/O landing in a convenient order is not a
+    // control; it is the vacuous proof of audit item 4.
+    const pending: (() => void)[] = [];
+    const service = new DocumentService(registry, {
+      readIdentity: () =>
+        new Promise((resolve) => {
+          pending.push(() => {
+            resolve(identity());
+          });
+        }),
+    });
+
+    const both = Promise.all([
+      service.open(registry.mint('C:\\docs\\a.pdf')),
+      service.open(registry.mint('C:\\DOCS\\A.PDF')),
+    ]);
+
+    // Release everything in flight together, repeatedly. Without the lane both
+    // opens are in flight at the same time: both see an empty index in the same
+    // release and both mint, which is the two-documents-over-one-file state the
+    // check exists to prevent.
+    for (let tick = 0; tick < 10; tick += 1) {
+      for (const release of pending.splice(0)) release();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    const [a, b] = await both;
+    expect(service.size).toBe(1);
+    expect([a.kind, b.kind].sort()).toStrictEqual(['already-open', 'opened']);
+  });
+
+  it('a path with no file gets no identity, and mints nothing', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const outcome = await service.open(registry.mint(join(root, 'absent.pdf')));
+
+    expect(outcome).toStrictEqual({ kind: 'absent' });
+    expect(service.size).toBe(0);
+  });
+
+  it('a failed open does not poison the lane for the next one', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    await expect(service.open(asFileHandle('never-minted'))).rejects.toThrow(/Unknown FileHandle/);
+    // One bad handle must not turn into a dead service.
+    await expect(service.open(registry.mint(original()))).resolves.toMatchObject({
+      kind: 'opened',
+    });
+  });
+});
+
+describe('DocumentService — close removes the document before it tears down', () => {
+  it('the index misses while teardown is still pending', async () => {
+    const registry = new CapabilityRegistry();
+    let release = (): void => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = new DocumentService(registry, { teardown: () => blocked });
+
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    const closing = service.close(docId);
+
+    // Nothing has been awaited yet: this is the state a message arriving during
+    // teardown sees. It must be a lookup miss rather than a document mid-close,
+    // which is what makes invariant L10 structural instead of a discipline
+    // every handler has to remember.
+    expect(service.isOpen(docId)).toBe(false);
+    expect(service.size).toBe(0);
+
+    release();
+    await closing;
+    expect(service.isOpen(docId)).toBe(false);
+  });
+
+  it('closing an unknown document is a no-op and tears nothing down', async () => {
+    const registry = new CapabilityRegistry();
+    let torn = 0;
+    const service = new DocumentService(registry, {
+      teardown: () => {
+        torn += 1;
+        return Promise.resolve();
+      },
+    });
+
+    await service.close(asDocId('never-opened'));
+    expect(torn).toBe(0);
+  });
+
+  it('a closed document reopens as a genuinely new document', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const first = mustOpen(await service.open(registry.mint(original())));
+    await service.close(first);
+
+    expect(await service.open(registry.mint(original()))).toMatchObject({ kind: 'opened' });
+  });
+});
+
+describe('DocumentService — the write-target check', () => {
+  it('a lone document is the sole writer of its file', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({ kind: 'sole-writer' });
+  });
+
+  it('two genuinely distinct documents are each the sole writer of their own', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const a = mustOpen(await service.open(registry.mint(original())));
+    const b = mustOpen(await service.open(registry.mint(other())));
+
+    expect(await service.checkWriteTarget(a)).toStrictEqual({ kind: 'sole-writer' });
+    expect(await service.checkWriteTarget(b)).toStrictEqual({ kind: 'sole-writer' });
+  });
+
+  it('refuses to answer for a document that is not open', async () => {
+    const service = new DocumentService(new CapabilityRegistry());
+    await expect(service.checkWriteTarget(asDocId('never-opened'))).rejects.toThrow(/not open/);
+  });
+
+  // -------------------------------------------------------------------------
+  // THE CONTROLS. Each is a case where `sole-writer` would permit a write that
+  // destroys something.
+  // -------------------------------------------------------------------------
+
+  it.runIf(WINDOWS)('CONTESTED: a file hard-linked to another open document', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const targetPath = join(root, 'contested-a.pdf');
+    const rivalPath = join(root, 'contested-b.pdf');
+    writeFileSync(targetPath, 'target\n');
+    writeFileSync(rivalPath, 'a rival document\n');
+
+    const a = mustOpen(await service.open(registry.mint(targetPath)));
+    const b = mustOpen(await service.open(registry.mint(rivalPath)));
+    // They were genuinely different when opened. Without this assertion the
+    // case proves nothing: a service that merged them at open would also reach
+    // the expectation below.
+    expect(b).not.toBe(a);
+
+    // Now the rival's path becomes a second name for the target's file. No
+    // identity taken at open can see this; only re-reading can.
+    unlinkSync(rivalPath);
+    execFileSync('cmd', ['/c', 'mklink', '/H', rivalPath, targetPath], { stdio: 'ignore' });
+
+    expect(await service.checkWriteTarget(a)).toStrictEqual({ kind: 'contested', others: [b] });
+  });
+
+  it('REPLACED: the file at this path is not the file that was opened', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const path = join(root, 'replaced.pdf');
+    writeFileSync(path, 'the file we opened\n');
+    const docId = mustOpen(await service.open(registry.mint(path)));
+
+    // Delete and recreate: same path, same name, different file. A sync client,
+    // a git checkout, or another application's Save As does exactly this.
+    unlinkSync(path);
+    writeFileSync(path, 'a different file wearing the same name\n');
+
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({ kind: 'replaced' });
+  });
+
+  it('TARGET ABSENT is its own answer, never a quiet clear verdict', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+
+    const path = join(root, 'vanishing.pdf');
+    writeFileSync(path, 'here for now\n');
+    const docId = mustOpen(await service.open(registry.mint(path)));
+    unlinkSync(path);
+
+    // The write would create rather than overwrite — and, the reason this is
+    // not folded into `sole-writer`, the walk never ran, so nothing was
+    // verified. "Had nothing to check" must not read as "checked and clear".
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({ kind: 'target-absent' });
+  });
+
+  it('CONTROL: with no file index, replacement is reported as unverifiable', async () => {
+    const registry = new CapabilityRegistry();
+    // A filesystem that supplies no index. `dev:ino` is the only evidence that
+    // can answer "is this still the file we opened" once the path is held
+    // fixed, so without it the honest answer is that the check could not
+    // settle it — never a clear verdict, and never a claim of replacement.
+    const service = new DocumentService(registry, {
+      readIdentity: () => Promise.resolve({ ...identity(), dev: null, ino: null }),
+    });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({
+      kind: 'unverifiable',
+      reason: 'no-file-index',
+    });
+  });
+
+  it('THE 4b CONTROL: refuses a verdict when its own walk comes back empty', async () => {
+    const registry = new CapabilityRegistry();
+
+    // The file answers the target read and is gone by the scan, so the walk
+    // returns nothing. Every other way of breaking the walk — an empty index, a
+    // mis-keyed map, a reader that fails on every path — produces this same
+    // empty result, and the empty result is the one that permits the write.
+    let reads = 0;
+    const vanishingMidCheck: IdentityReader = () => {
+      reads += 1;
+      return Promise.resolve(reads <= 2 ? identity() : null);
+    };
+    const service = new DocumentService(registry, { readIdentity: vanishingMidCheck });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    await expect(service.checkWriteTarget(docId)).rejects.toThrow(
+      /could not find this document at its own file/,
+    );
+  });
+});
