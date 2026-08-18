@@ -21,6 +21,53 @@
  * difference between B5's "make illegal states unrepresentable" and a runtime
  * check somebody has to run.
  *
+ * ## The enumeration — audit against THIS, not against the rules below
+ *
+ * Auditing the rules can only tell you whether each rule's span is right. It
+ * cannot tell you what no rule names, because a missing rule has no span to
+ * classify. That gap is real and was found twice: a bare double-quoted string
+ * redirected to a file in PowerShell, and a bash here-string, both of which
+ * resolve escapes and neither of which any rule anchored on.
+ *
+ * So the question is asked from the mechanism instead, and it is finite: which
+ * constructs (a) resolve escapes or expand, and (b) can place the result in a
+ * file? Every entry below is checked against the rule set; anything marked
+ * UNCOVERED is a live gap, not a note.
+ *
+ * ### bash
+ *
+ * | construct | resolves | reaches a file | rule |
+ * |---|---|---|---|
+ * | `echo` | `-e`, and by default in some shells | redirect, `tee` | producer |
+ * | `printf` | always | redirect, `tee` | producer |
+ * | `awk` | `printf`/`print` escapes | redirect | producer |
+ * | `sed s///` | `\n` etc in the replacement | `-i`, or a redirect | in-place rule + producer |
+ * | `perl -i` / `-pi` / `-ni` | yes | in place | in-place rule |
+ * | inline interpreters (`node -e`, `python -c`, `perl -e`, `ruby -e`, `php -r`) | yes | any write they perform | one rule each |
+ * | unquoted heredoc `<<EOF` | `$var`, backticks | any | heredoc rule |
+ * | heredoc → file, either operand order | quoted or not | redirect | heredoc-to-file rule |
+ * | here-string `<<<` | expands unless quoted | redirect | here-string rule |
+ * | `$'…'` ANSI-C quoting | `\n`, `\t`, `\x41`, octal | anywhere it appears | ANSI-C rule |
+ * | quoted heredoc `<<'EOF'` to stdin | **nothing** | — | deliberately allowed |
+ * | `>` from a byte-faithful producer (`git show`, `cat`) | nothing | redirect | deliberately allowed |
+ *
+ * ### PowerShell
+ *
+ * | construct | resolves | reaches a file | rule |
+ * |---|---|---|---|
+ * | `Write-Output` / `Write-Host` / `echo` | `` ` `` escapes and `$` in `"…"` | redirect | producer |
+ * | `Out-File` / `Set-Content` / `Add-Content` / `Tee-Object` | takes already-expanded values | file | cmdlet rule |
+ * | `[IO.File]::WriteAll*` / `AppendAll*` | same | file | .NET rule |
+ * | `@"` here-string | expands | any | here-string rule |
+ * | `@'` here-string | **nothing** | — | deliberately allowed |
+ * | bare `"…"` as a statement | `` ` `` escapes, `$var`, `$( )` | redirect | double-quoted-statement rule |
+ * | `-f` format operator | operates on a `"…"` | redirect | subsumed by the above |
+ * | `New-Item -Value` | value is usually `"…"` | file | New-Item rule |
+ *
+ * The two examples that prompted this are in the table as ordinary rows, which
+ * is the point: a list of examples grows one incident at a time, and a list of
+ * mechanisms is answerable in one sitting.
+ *
  * ## What it rejects, and why breadth is correct here
  *
  * The asymmetry decides the design. A false positive costs one retry through the
@@ -154,6 +201,23 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
       'occurrence 4 in the standing rule.',
   },
   {
+    // The in-place rule above covers `sed -i`. A substitution written through a
+    // redirect resolves the same escapes and lands in a file just as surely:
+    // `sed 's/x/a\nb/' in > out`.
+    pattern: new RegExp(String.raw`\bsed\b${SAME_LINE}${TO_FILE}`),
+    what: 'sed writing to a file',
+    instead:
+      "use Edit. sed's replacement text resolves \\n and \\t, so the bytes that land differ from " +
+      'the bytes you wrote.',
+  },
+  {
+    // perl -i in any spelling: -i, -pi, -ni, -i.bak. The interpreter rule below
+    // catches `perl -e`, but an in-place edit needs no -e to rewrite a file.
+    pattern: /\bperl\s+-[a-zA-Z.]*i/,
+    what: 'perl in-place editing',
+    instead: 'use Edit. Same mechanism as sed -i, and the same class as occurrence 4.',
+  },
+  {
     // echo/printf feeding a redirect or tee. The producer resolves escapes
     // (`\n`, `\a`, `\v`, octal) before a single byte reaches the file.
     pattern: new RegExp(String.raw`\b(?:echo|printf)\b${SAME_LINE}(?:${TO_FILE}|\|\s*tee\b)`),
@@ -188,6 +252,32 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     what: 'a heredoc redirected into a file',
     instead: 'use Write, which puts the bytes down exactly as given',
   },
+  {
+    // A here-string. The heredoc patterns require a delimiter WORD after `<<`,
+    // so `<<<` falls through both of them — there is no delimiter to match. It
+    // expands exactly like an unquoted heredoc unless its content is quoted, and
+    // it reaches a file through the same redirect.
+    // Either operand order, for the reason the heredoc rule already carries:
+    // `cat <<< $'a' > f` and `cat > f <<< $'a'` are the same command, and a
+    // rule matching only the first form is half a rule. That lesson was
+    // available three rules up and I still had to be shown it again.
+    pattern: new RegExp(String.raw`(?:<<<${SAME_LINE}${TO_FILE}|${TO_FILE}${SAME_LINE}<<<)`),
+    what: 'a here-string redirected into a file',
+    instead:
+      'use Write. `<<<` expands $variables and backticks like an unquoted heredoc, and no heredoc ' +
+      'pattern matches it because there is no delimiter word.',
+  },
+  {
+    // ANSI-C quoting resolves \n, \t, \xNN and octal wherever it appears — in an
+    // argument, in a here-string, in a variable assignment. It is the escape
+    // resolution itself rather than a command that performs it, so it is matched
+    // wherever the result can reach a file.
+    pattern: new RegExp(String.raw`(?:\$'${SAME_LINE}${TO_FILE}|${TO_FILE}${SAME_LINE}\$')`),
+    what: "ANSI-C quoting ($'…') whose result reaches a file",
+    instead:
+      "use Write. $'a\\nb' IS the escape resolution — occurrences 2 and 3 in one construct — and it " +
+      'needs no echo or printf to perform it.',
+  },
 ]);
 
 /** PowerShell reaches the same failure through different names. */
@@ -204,6 +294,34 @@ const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
     pattern: /\[(?:System\.)?IO\.File\]::(?:WriteAll|Append)/i,
     what: 'a .NET file write from an inline expression',
     instead: 'use Write',
+  },
+  {
+    // A bare double-quoted string used as a statement and redirected. There is
+    // no cmdlet to anchor on, so none of the other PowerShell rules see it —
+    // yet `"a`u{0060}nb" > out.txt` resolves the backtick escape and expands
+    // `$vars` exactly as the `@"` here-string two rules up does. The rule set
+    // already names that mechanism and covered only one of its two syntaxes.
+    //
+    // Anchored to a statement start, and required to contain a backtick or a
+    // `$`. `Get-ChildItem "C:\logs" > out.txt` redirects a COMMAND's output and
+    // its quoted argument is inert; denying that would be a false positive on
+    // ordinary work, which is how a guard gets argued down.
+    pattern: new RegExp(
+      String.raw`(?:^|[;&|]\s*)"[^"\n]*[\u0060$][^"\n]*"\s*${TO_FILE}`,
+      'i',
+    ),
+    what: 'a double-quoted string redirected into a file',
+    instead:
+      'use Write. PowerShell resolves ` escapes and expands $variables inside double quotes, which ' +
+      'is occurrence 3 and occurrence 1 in one construct — the backtick is PowerShell\'s escape ' +
+      'character.',
+  },
+  {
+    // New-Item -Value writes content directly, and the value is normally a
+    // double-quoted string.
+    pattern: /\bNew-Item\b[^\n]*-Value\b/i,
+    what: 'New-Item -Value writing file content',
+    instead: 'use Write. -Value takes an already-expanded string and puts it in a file.',
   },
   {
     pattern: /@"/,

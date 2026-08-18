@@ -160,6 +160,42 @@ mustAllow('Write-Output sending stderr to stdout', "Write-Output 'a; b' 2>&1", '
 mustAllow('an ordinary PowerShell pipeline with a semicolon in a string', "Write-Output 'a; b' | Select-Object -First 1", 'PowerShell');
 
 // ---------------------------------------------------------------------------
+// Constructs no rule anchored on. Found by enumerating from the mechanism —
+// what resolves escapes AND can reach a file — rather than by auditing the
+// rules that happened to exist, which cannot see a rule that is absent.
+// ---------------------------------------------------------------------------
+mustBlock(
+  'a bare double-quoted string redirected into a file',
+  'Write-Output x; "line1\u0060nline2" > out.txt',
+  'PowerShell',
+);
+mustBlock('a double-quoted string with a backtick escape, at statement start', '"a\u0060tb" > out.txt', 'PowerShell');
+mustBlock('a double-quoted string expanding a variable', '"value: $env:PATH" > out.txt', 'PowerShell');
+mustBlock('a double-quoted string appended to a file', '"a\u0060nb" >> out.txt', 'PowerShell');
+mustBlock('New-Item writing content through -Value', 'New-Item -Path f.txt -Value "a\u0060nb"', 'PowerShell');
+
+// The control that keeps the double-quote rule honest: a quoted ARGUMENT to a
+// command whose output is redirected is inert, and denying it would be a false
+// positive on entirely ordinary work.
+mustAllow('a command with a quoted path whose OUTPUT is redirected', 'Get-ChildItem "C:\\logs" > out.txt', 'PowerShell');
+mustAllow('a single-quoted string redirected, which expands nothing', "'a`nb' > out.txt", 'PowerShell');
+mustAllow('a double-quoted string with no escape or expansion', '"plain text" > out.txt', 'PowerShell');
+
+mustBlock('a here-string redirected into a file', "cat <<< $'a\\nb' > f");
+mustBlock('a here-string with a variable, redirected', 'cat <<< "$content" > f');
+// Either operand order, for both new rules. The heredoc rule already carried
+// this lesson and neither new one inherited it until a case failed.
+mustBlock("ANSI-C quoting whose result reaches a file", "cat > f <<< $'x\\ty'");
+mustBlock("a here-string with the redirect first", "cat > f <<< 'plain'");
+mustBlock("ANSI-C quoting with the redirect first", "printf > f $'x\\ty'");
+mustBlock('sed substitution written through a redirect', "sed 's/x/a\\nb/' in.txt > out.txt");
+mustBlock('perl in-place editing', "perl -pi -e 's/a/b/' notes.md");
+mustBlock('perl in-place with a backup suffix', "perl -i.bak -pe 's/a/b/' notes.md");
+
+mustAllow('a here-string feeding stdin with no file redirect', 'grep x <<< "$content"');
+mustAllow('sed reading a range with no redirect', "sed -n '1,5p' notes.md");
+
+// ---------------------------------------------------------------------------
 // The commands this project actually runs. Every one of these appears in the
 // session transcripts; blocking any of them makes the guard the problem.
 // ---------------------------------------------------------------------------
