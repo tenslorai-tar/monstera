@@ -214,31 +214,29 @@ re-rating and the deferrals. Batches, in the owner's priority order:
 - **Batch 7 — Stage 0 exit: PART DONE.** Closed: koffi (the item did not exist
   as described — see ADR-0010's correction) · NOTICE, generated · the
   Ghostscript decision (ADR-0013) · Poppler, dropped (ADR-0013) · every bundled
-  licence, read from the artefact.
+  licence, read from the artefact · **licence provenance**, so each of the
+  sixteen names the file it was read from · **Tesseract and Leptonica**, with a
+  derived door set (`reachability.ocr`) · **the keep-decision** (ADR-0014) ·
+  **the AGPL source offer**, README side.
 
-  **STILL OWED, in this order:**
+  **STILL OWED:**
 
-  1. **Tesseract and Leptonica.** Both are statically linked into the shipped
-     shim and nothing declared them until 2026-08-18. Owed: advisory register
-     entries triaged from **upstream history** per ADR-0011, never from CVE text
-     or distribution mappings · a reachability verdict **naming the symbols**,
-     so it expires when Stage 6 lands OCR — and *measured*, because a symbol in
-     the DLL does not establish that any exported shim function can reach it ·
-     **Leptonica named in the threat model as the image-format parser on the
-     untrusted-document path**, not as a footnote to Tesseract: it is the
-     security-relevant half, since it parses attacker-controlled image data the
-     moment OCR becomes reachable.
-  2. **The keep-decision, recorded.** Unlike Ghostscript, these stay. Stage 6
-     needs OCR and this is the engine's own integration, so removing them now
-     means re-adding them later. Write it down with the reason so nobody
-     re-derives why an OCR engine ships in 1.0 unused.
-  3. **The AGPL source offer** — the README side. NOTICE already states what it
-     must cover: MuPDF 1.28.0, the build configuration, the shim source, and
-     `extract` and `jbig2dec` by name.
-  4. **The packaging test.** Needs Electron to exist. It must assert the
-     unpacked `.node` is found via `resourcesPath` from a built application —
-     recorded in ADR-0010's correction as a packaging obligation rather than an
-     ABI one.
+  1. **The packaging test — BLOCKED, not forgotten.** `electron` is not a
+     dependency and there is no packaging configuration, so this cannot be
+     written as anything that runs, and a test that skips is the display-only
+     sin wearing a green tick. It owes two assertions, both in its
+     `docs/FEATURES.md` row: the unpacked `.node` found through
+     `resourcesPath` from a built application (ADR-0010's correction records
+     this as a packaging obligation rather than an ABI one), and **`NOTICE`
+     present in the installed layout**. The second is compliance: FreeType's
+     binary-distribution clause requires its disclaimer in the *distribution*
+     documentation, and a file in this repository is not that. `proof:licences`
+     covers the content half, so the gap is delivery.
+  2. **Leptonica in the threat model**, as the image-format parser on the
+     untrusted-document path rather than a footnote to Tesseract. Deferred to
+     task #22 rather than left as a note: `check:docs` check 7 now fails if a
+     threat model exists and does not say so, so the requirement cannot be
+     dropped by the person who writes it.
 
 **The audit's own text lives in a published artifact**, and the batch lists
 above are summaries of it rather than a substitute:
@@ -371,6 +369,82 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-18 — Four instruments, four reassuring answers
+
+Measuring whether the shim can reach Tesseract took five attempts. Every one of
+the four failures returned **"nothing reaches Tesseract"** — the answer a
+security verdict hopes for — and not one of them announced itself. That is the
+entry. The door list is incidental; the pattern is that a broken instrument on
+this question fails *quiet and comforting*, and only a resolution test told them
+apart from the truth.
+
+### The four
+
+1. **Edges followed direct calls.** Nothing in this subsystem is reached by a
+   direct call. `fz_new_ocr_device` stores `fz_ocr_close_device` in a device
+   vtable, and the OCR work happens when something later calls `fz_close_device`
+   on it. Closure of 8 functions, **zero** public doors. Taking a *mention* as an
+   edge is the fix, and it over-approximates on purpose.
+2. **The parser read comments.** `ocr-device.c` opens with a prose block comment
+   written flush to column 0, and the sentence *"The incoming calls are also
+   forwarded (mostly, eventually) to the"* has an identifier at column 0 followed
+   by a parenthesis — a definition's exact shape. A function called `forwarded`
+   opened and swallowed the file. **One** function parsed from the single most
+   important translation unit.
+3. **The definition pattern ate the name's first letter.** Its mandatory leading
+   character consumed the first letter of the identifier it was supposed to
+   capture, so a definition starting at column 0 — MuPDF's dominant style — could
+   never match. Only *prefixed* lines matched, which is exactly why English prose
+   matched and C did not. This one is the most instructive: defects 2 and 3 were
+   present simultaneously and each made the other harder to see.
+4. **The public-API scan used one greedy pattern per declaration.** It has to
+   cross newlines, because MuPDF wraps long declarations; once it can, a
+   candidate that is not a declaration runs forward to the next `);` and consumes
+   the real declarations in between. `fz_new_document_writer` went missing that
+   way, from one unremarkable line of `writer.h`. That is the **filename-driven**
+   door — the one that needs no caller to name an OCR symbol at all — so the
+   under-report landed on the most dangerous entry in the set.
+
+A fifth was over-approximation rather than under. Walking MuPDF's whole
+repository pulls in mutool, mudraw and muconvert; with names keyed globally,
+their `main` binds unrelated programs into one node, and five SVG entry points
+arrived as doors through a chain of two collisions and no real call. The walk is
+now over the files the shim **compiles**, and statics are keyed per file as C
+scopes them. Spurious doors are not harmless: a check that fires on innocent code
+is the one somebody eventually switches off.
+
+### What the measurement found
+
+Eleven public functions reach `ocr_init`/`ocr_recognise`/`ocr_fin`, and the shim
+references none of them. Presence in the binary was never the question —
+`?AVTessErrStream@tesseract@@` is in the 42 MB DLL because MuPDF's own OCR units
+reference it, which says nothing about our 24 exported functions.
+
+The door worth knowing: **`fz_new_document_writer` selects the pdfocr writer from
+a file extension**, so a path ending `.ocr` reaches Tesseract with no caller
+naming anything OCR-shaped. That dispatch is live in what we ship —
+`FZ_ENABLE_OCR_OUTPUT` defaults to 1 and `libmupdf.vcxproj`'s `Release|x64`
+defines `HAVE_TESSERACT` and `HAVE_LEPTONICA`.
+
+Two Tesseract advisories from 2026-08-11 are **AFFECTED** in the vendored 5.5.2,
+verified in the source rather than from the CVEs' version strings:
+`convolve.cpp:49` multiplies without an overflow check, and `dawg.cpp` accepts a
+dawg whose last edge carries no terminator, after which `dawg.h:542` indexes past
+`edges_`. Both fixed in 5.5.3, which MuPDF 1.28.0 does not vendor. Their attacker
+input is the **`.traineddata` model**, not the document — a different trust
+boundary, and the reason they do not go live the moment OCR ships. That is
+ADR-0014's constraint 1.
+
+### The generalisation
+
+The instrument's failure mode was the same shape every time: **an empty or
+near-empty intermediate result, silently interpreted as an absence of risk.** So
+the derivation now throws rather than returns when a seed set, a definition set,
+a public-API set or a file set comes back empty. An empty input is a broken
+parse, and the one thing it must never be allowed to look like is a clean result.
 
 ---
 
