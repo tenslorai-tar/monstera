@@ -26,7 +26,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -119,26 +119,48 @@ function writeRecordIn(root, overrides) {
       probeState(root).detail,
     );
 
-    // Attempt 1: the session's process started before the configuration existed.
+    // The asymmetry, which this proof originally had backwards.
+    //
+    // A denial cannot be produced by a session that never loaded the guard, so
+    // its own timing cannot weaken it. An "it ran" is the ambiguous one. The
+    // first denial this project ever observed came from a session that predated
+    // its configuration by forty hours, and a symmetric rule would have thrown
+    // that evidence away for being suspiciously old.
     writeRecordIn(root, {
+      outcome: 'denied',
       sessionStartedAt: '2026-08-16T08:29:43.000Z',
       inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
     });
     check(
-      'a denial recorded in a session older than the guard is REJECTED',
+      'a DENIAL is accepted even from a session older than the guard',
+      probeState(root).state === 'denied',
+      `A denial is self-certifying: nothing that failed to load the guard can be blocked by it. ` +
+        `${probeState(root).detail}`,
+    );
+
+    writeRecordIn(root, {
+      outcome: 'executed',
+      sessionStartedAt: '2026-08-16T08:29:43.000Z',
+      inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
+    });
+    check(
+      'but an EXECUTED from a session older than the guard is rejected',
       probeState(root).state === 'stale-session',
-      `This is the confound that produced attempt 1's result. ${probeState(root).detail}`,
+      `This is the confound that produced attempt 1's result: "it ran" cannot be told apart from ` +
+        `"there is no guard". ${probeState(root).detail}`,
     );
 
     // Resolution test for the boundary itself: one second later must be enough
-    // to be a different session, or the comparison is decorative.
+    // to be a different session, or the comparison is decorative. Run against
+    // the ambiguous outcome, because that is the only one the boundary governs.
     writeRecordIn(root, {
+      outcome: 'executed',
       sessionStartedAt: '2026-08-18T00:18:40.000Z',
       inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
     });
     check(
-      'and one second AFTER the configuration is accepted',
-      probeState(root).state === 'denied',
+      'and one second AFTER the configuration reads as executed, not stale',
+      probeState(root).state === 'executed',
       `the comparison must distinguish its two inputs, not merely reject. ${probeState(root).detail}`,
     );
 
@@ -213,6 +235,13 @@ function writeRecordIn(root, overrides) {
   const featuresPath = join(ROOT, 'docs', 'FEATURES.md');
   const original = readFileSync(featuresPath, 'utf8');
 
+  // The gate is satisfied now, so claiming the row done is legitimate and the
+  // control has to remove the EVIDENCE rather than merely make the claim. This
+  // case failed the moment the first denial was recorded, which is the control
+  // doing its job: its premise had changed and it said so instead of passing.
+  const recordPath = join(ROOT, RECORD_FILE);
+  const savedRecord = existsSync(recordPath) ? readFileSync(recordPath, 'utf8') : null;
+
   /** @returns {{ ok: boolean, output: string }} */
   const runDocs = () => {
     const result = spawnSync(
@@ -231,30 +260,45 @@ function writeRecordIn(root, overrides) {
       `a gate that fails from the day it is written is a red build people learn to read past.\n${quiet.output.slice(-600)}`,
     );
 
+    // Rewrites the status cell to done whatever it currently says. Matching only
+    // the unclaimed form broke the moment the gate was genuinely satisfied,
+    // which would have left the control below testing nothing.
+    let rowFound = false;
     const claimed = original
       .split('\n')
-      .map((line) =>
-        line.includes('the PreToolUse write guard has been')
-          ? line.replace(/\|\s*—\s*\|?\s*$/u, '| **done** |')
-          : line,
-      )
+      .map((line) => {
+        if (!line.includes('the PreToolUse write guard has been')) return line;
+        rowFound = true;
+        return line.replace(/\|\s*(?:—|\*\*done\*\*|wip|partly done)\s*\|?\s*$/u, '| **done** |');
+      })
       .join('\n');
     check(
-      'the gate row can be marked done by this proof',
-      claimed !== original,
+      'the gate row is present and its status cell can be set',
+      rowFound && /the PreToolUse write guard has been[\s\S]*?\|\s*\*\*done\*\*\s*\|/u.test(claimed),
       'the row was not found or its status cell did not match; the control below would be vacuous',
     );
     writeFileSync(featuresPath, claimed, 'utf8');
+    rmSync(recordPath, { force: true });
 
     const red = runDocs();
     check(
-      'CONTROL: claiming the gate done, unproven, fails check:docs',
+      'CONTROL: claiming the gate done with no evidence fails check:docs',
       !red.ok && /observed to fire|unrecorded/iu.test(red.output),
       `exit ok=${red.ok}. If this passes, the gate is a sentence in a table that nothing reads.\n` +
         `${red.output.slice(-800)}`,
     );
+
+    if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
+    const green = runDocs();
+    check(
+      'and passes again once the evidence is back',
+      green.ok,
+      `The control must restore what it removed, or every later run of check:docs is measuring ` +
+        `this proof's leftovers.\n${green.output.slice(-600)}`,
+    );
   } finally {
     writeFileSync(featuresPath, original, 'utf8');
+    if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
   }
 }
 

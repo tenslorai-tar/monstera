@@ -68,16 +68,20 @@ if (changedAt === null) {
   process.exit(1);
 }
 
-if (Date.parse(session.startedAt) <= Date.parse(changedAt)) {
+// Only an "executed" outcome needs the session to be newer than the guard it is
+// reporting on. A denial cannot be produced by a session that never loaded the
+// guard, so its own timing cannot weaken it — and refusing one on those grounds
+// would throw away the only evidence that matters.
+if (outcome === 'executed' && Date.parse(session.startedAt) <= Date.parse(changedAt)) {
   process.stderr.write(
     `REFUSING to record.\n\n` +
       `  session started        ${session.startedAt}\n` +
       `  inputs last changed    ${changedAt}\n\n` +
-      `This session's process started at or before the guard's configuration last changed. Hooks\n` +
-      `are read at process start, so this session cannot have loaded it, and neither outcome would\n` +
-      `mean anything: "executed" is indistinguishable from a guard that is simply absent.\n\n` +
-      `Note that /compact does NOT start a new process — it clears context inside the same session,\n` +
-      `keeping the same transcript and the same hook table. A genuinely new session is required.\n`,
+      `The probe RAN in a session that started at or before the guard's configuration last changed.\n` +
+      `That session may never have loaded it, so "it ran" cannot be told apart from "there is no\n` +
+      `guard", and recording it would assert something this run cannot establish.\n\n` +
+      `Re-run where the session is newer than the configuration. Note that /compact does not start a\n` +
+      `new process; it clears context inside the same session.\n`,
   );
   process.exit(1);
 }

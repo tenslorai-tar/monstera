@@ -259,12 +259,16 @@ These were given directly and bind every agent on this project.
   tells you *why* — and in any session where the hook is live it is no longer
   what stops you.
 
-  **That qualifier is load-bearing, and as of 2026-08-18 the hook has never been
-  observed to fire.** Its parts are proven — the script denies, the tracked
-  settings register it for both shells, and the configured command string run
-  verbatim denies (`npm run proof:escapeguard`, 51 cases). What no proof can
-  reach is the agent's own hook table, so *loaded and live* remains asserted
-  rather than executed.
+  **The hook has now been observed to fire: 2026-08-18T06:45Z.** It denied a
+  `node -e` call, unprompted, in the middle of ordinary work — not a probe, not
+  a test, exactly the situation the mechanism exists for. Recorded in
+  `docs/hook-probe.json`; `check:docs` fails if the Stage 0 gate row claims this
+  without the evidence.
+
+  Its parts were already proven — the script denies, the tracked settings
+  register it for both shells, and the configured command string run verbatim
+  denies (`npm run proof:escapeguard`, 51 cases). What no proof could reach was
+  the agent's own hook table. That is now executed rather than asserted.
 
   **There has now been a seventh: `printf` with a redirect, 2026-08-18.** This
   paragraph previously ended by telling you to treat the rule as the only thing
@@ -278,16 +282,28 @@ These were given directly and bind every agent on this project.
 
   Three limits worth knowing.
 
-  1. Hooks are read **when the process starts**. A change to
-     `.claude/settings.json` does not take effect until a new process — and
-     **`/compact` is not a new process.** It clears context inside the same
-     session: same session id, same transcript, same hook table as at startup.
-     This has already cost one attempt at the probe, which read as a guard
-     failure when it was a stale session.
-  2. A command that runs when you expected a denial is ambiguous on its own —
-     broken guard and stale session look identical. Disambiguate with
-     `npm run proof:escapeguard`: if it passes and the probe still executes, the
-     guard is sound and the session predates it.
+  1. **A newly registered hook does not take effect immediately, and the delay
+     is not explained by process lifetime.** Both halves of that were measured
+     in one session. The settings landed at 00:18 on 2026-08-18; at about 01:20
+     a `printf` redirect the guard covers ran unimpeded; at 06:45 a `node -e`
+     in the same session was denied. Same session id, same transcript, no
+     restart in between — so the hook table changed underneath a running
+     process, and "read once at startup" is not what happens.
+
+     What triggers the reload was not established and is not guessed at here.
+     The practical rule is the useful part: **after registering a hook, do not
+     assume it is live, and do not assume it is dead either.** Probe it, and
+     read the result with limit 2.
+  2. **The two outcomes are not symmetric.** A denial is self-certifying:
+     nothing that failed to load the guard can be blocked by it, so a denial
+     settles the question whatever the session's age. A command that *runs* is
+     ambiguous — a broken guard and an unloaded one look identical. Disambiguate
+     that case with `npm run proof:escapeguard`: if it passes and the command
+     still runs, the guard is sound and this session has not picked it up.
+
+     The recorder enforces exactly that asymmetry, and it did not at first: it
+     rejected both outcomes from a session older than the configuration, which
+     would have discarded the first denial this project ever observed.
   3. The hook governs shell tools only: `Edit` and `Write` are deliberately
      untouched, which is what makes failing closed safe, since a bug in the
      guard can always be repaired through the very tools the rule prefers.

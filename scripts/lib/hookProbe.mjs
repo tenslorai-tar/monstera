@@ -200,18 +200,29 @@ export function probeState(root = repoRoot()) {
     };
   }
 
-  if (Date.parse(record.sessionStartedAt) <= Date.parse(record.inputsLastChangedAt)) {
-    return {
-      state: 'stale-session',
-      detail:
-        `Recorded in a session that started ${record.sessionStartedAt}, at or before its inputs ` +
-        `last changed (${record.inputsLastChangedAt}). Hooks are read at process start, so that ` +
-        `session cannot have loaded this configuration and the result cannot mean what it appears ` +
-        `to. This is attempt 1's confound; re-run in a genuinely new process.`,
-    };
-  }
-
+  // The session-age check applies to ONE outcome, not both, and the asymmetry is
+  // the whole point.
+  //
+  // A denial is self-certifying: a session that had not loaded the guard cannot
+  // produce one, so no fact about when that session started can weaken it. "It
+  // ran" is the ambiguous outcome — indistinguishable from a guard that is
+  // simply absent — and that is the only one needing the session to be newer
+  // than the configuration.
+  //
+  // This was symmetric when first written, which would have rejected the first
+  // denial this project ever observed, on the grounds that the session predated
+  // the config. It did; the guard fired anyway.
   if (record.outcome !== 'denied') {
+    if (Date.parse(record.sessionStartedAt) <= Date.parse(record.inputsLastChangedAt)) {
+      return {
+        state: 'stale-session',
+        detail:
+          `The probe RAN, in a session that started ${record.sessionStartedAt} — at or before its ` +
+          `inputs last changed (${record.inputsLastChangedAt}). That session may never have loaded ` +
+          `this configuration, so "it ran" cannot be told apart from "there is no guard". Re-run ` +
+          `where the session is newer than the configuration.`,
+      };
+    }
     return {
       state: 'executed',
       detail:

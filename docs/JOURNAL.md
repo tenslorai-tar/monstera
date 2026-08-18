@@ -22,7 +22,38 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
-> ### The tool-use guard probe is a STAGE 0 EXIT GATE, not a handoff note
+> ### CLOSED 2026-08-18T06:45Z — the guard fired
+>
+> **It denied a `node -e` call in the middle of ordinary work.** Not a probe,
+> not a test: I was reading a path out of the provisioning module and reached
+> for `node -e` without thinking, which is exactly the moment the mechanism
+> exists for and exactly the moment a written rule has never once reached. The
+> denial is recorded in `docs/hook-probe.json` and the Stage 0 gate row is
+> marked done; `check:docs` fails if that row is claimed without the evidence.
+>
+> Two things I had written were wrong, and the observation is what showed it.
+>
+> **The process-start model does not hold.** The settings landed at 00:18; a
+> `printf` redirect ran unimpeded at about 01:20; a `node -e` was denied at
+> 06:45. Same session id, same transcript, no restart between them — the hook
+> table changed underneath a running process. What triggers the reload is not
+> established, and CLAUDE.md now says so rather than substituting a new guess
+> for the old one.
+>
+> **The recorder had the asymmetry backwards, and it nearly ate the evidence.**
+> It rejected *both* outcomes from a session older than the configuration. But a
+> denial is self-certifying — nothing that failed to load the guard can be
+> blocked by it — while "it ran" is the ambiguous one. As written it would have
+> refused the first denial this project ever observed, on the grounds that the
+> session looked too old to be trustworthy. Fixed, with cases in both
+> directions.
+>
+> The proof's control also failed the moment the gate was satisfied, because its
+> premise had changed: claiming the row done is legitimate now. It removes the
+> evidence instead, and restores it. A control that quietly kept passing there
+> would have been the more expensive outcome.
+
+> ### The tool-use guard probe was a STAGE 0 EXIT GATE, not a handoff note
 >
 > It was a handoff note, and the handoff is what failed: the one session that
 > could have run it read `/compact` as a new session. A mechanism `CLAUDE.md`
