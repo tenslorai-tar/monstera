@@ -85,6 +85,13 @@ const MUST_LINT = [
   'eslint.config.js',
   'scripts/lib/workspaceAliases.mjs',
   'outbound/index.js',
+  // Source living under a directory whose NAME matches an artifact pattern.
+  // `.gitignore` carried an unanchored `release/`, which matches at any depth,
+  // so scripts/release/ was untracked, unlinted and invisible to the file guard
+  // at once — three failures, no error from any of them. The patterns are
+  // anchored now; this is the case that notices if one comes loose again.
+  'scripts/release/generateNotice.mjs',
+  'scripts/build/placeholder.ts',
 ];
 
 for (const relative of MUST_IGNORE) {

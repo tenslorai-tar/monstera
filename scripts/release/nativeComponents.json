@@ -1,0 +1,47 @@
+{
+  "$comment": [
+    "Native components that are compiled into the shipped application and therefore appear in NOTICE.",
+    "They are not in package-lock.json because they are not npm packages: MuPDF is downloaded as source,",
+    "hash-verified, and statically linked into native/mupdf-shim by scripts/provision/mupdf.mjs.",
+    "",
+    "MuPDF's own version is NOT restated here. generateNotice.mjs imports MUPDF_VERSION from the",
+    "provisioning script, so the pin has one home and the NOTICE cannot claim a version nobody built.",
+    "",
+    "The bundled list below is what platform/win32/libmupdf.vcxproj actually COMPILES — not the",
+    "contents of thirdparty/, which carries sources for targets we do not build. Both readings were",
+    "tried and both were wrong in opposite directions: the directory listing over-declares by nine",
+    "libraries belonging to mutool, the GL viewer, OCR and barcodes (curl, freeglut, leptonica,",
+    "tesseract, zint, zxing-cpp among them), while a list written by hand from the spike's prose",
+    "omitted five that ARE linked, including openssl.",
+    "",
+    "It is a declaration rather than a scan because the source is only present on a machine that has",
+    "provisioned it, and a NOTICE generable only there would be generated rarely.",
+    "checkNativeComponents() in generateNotice.mjs parses the vcxproj whenever the source IS present,",
+    "so the declaration cannot drift from the build in silence — the native CI job is where that runs."
+  ],
+  "components": [
+    {
+      "name": "MuPDF",
+      "role": "PDF parsing, rendering and writing engine. Statically linked into the shim.",
+      "licence": "AGPL-3.0-or-later",
+      "origin": "https://mupdf.com/",
+      "source": "https://github.com/ArtifexSoftware/mupdf-downloads/releases",
+      "bundled": [
+        "brotli",
+        "cmark-gfm",
+        "extract",
+        "freetype",
+        "gumbo-parser",
+        "harfbuzz",
+        "jbig2dec",
+        "lcms2",
+        "libarchive",
+        "libjpeg",
+        "mujs",
+        "openjpeg",
+        "openssl",
+        "zlib"
+      ]
+    }
+  ]
+}

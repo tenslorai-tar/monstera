@@ -20,18 +20,29 @@ node_modules/
 .pnp.*
 
 # ─── Build output ────────────────────────────────────────────────────────────
+# `dist/` stays unanchored on purpose: every package builds into its own, so it
+# genuinely occurs at every depth. The rest are root-level artifacts and are
+# anchored, because `out` and `build` are ordinary directory names that source
+# could reasonably use — see the note on /release/ above for what that costs.
 dist/
-dist-electron/
-out/
-build/
+/dist-electron/
+/out/
+/build/
 *.tsbuildinfo
-.vite/
+/.vite/
 vite.config.*.timestamp-*
 
 # Electron packaging output. Vite's watcher must also ignore this directory:
 # chokidar holds a directory handle open for ReadDirectoryChangesW, and an open
 # handle blocks RENAME, so electron-builder's rename step fails with EPERM.
-release/
+#
+# Anchored with a leading slash. Unanchored, `release/` matches a directory of
+# that name at ANY depth, and it silently swallowed scripts/release/ — the
+# NOTICE generator was untracked, unlinted and invisible to the file guard, all
+# at once and with no error anywhere. Every artifact entry below that names a
+# conventional directory name carries the same hazard, which is why they are
+# anchored too.
+/release/
 
 # ─── Provisioned binaries — never in git (Part J) ────────────────────────────
 # Everything here is downloaded by scripts/provision/* against a pinned

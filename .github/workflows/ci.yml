@@ -238,6 +238,15 @@ jobs:
       - name: Prove the purge census mirrors pdf_clear_xref
         run: npm run proof:purge
 
+      # NOTICE is generated from the production dependency tree and from what
+      # libmupdf actually compiles. This job has the MuPDF source, so it is the
+      # only place the native half can be verified rather than trusted — and
+      # that comparison has already been worth it twice, catching six libraries
+      # declared but never linked and five linked but never declared, openssl
+      # among them.
+      - name: Check NOTICE against the tree and the native build
+        run: npm run notice:check
+
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring
       # it without one would measure nothing.
