@@ -151,6 +151,14 @@ jobs:
       - name: Prove the budgets are read, never substituted
         run: npm run proof:budgets
 
+      # The document checker enumerates from the commit and must read from it
+      # too. It used to read the filesystem, which is a different scope with a
+      # state of its own — tracked but absent from the working tree — and that
+      # state crashed it. Guarding the state left a document unchecked while the
+      # checker printed success; aligning the scopes removes it.
+      - name: Prove the document checker reads the scope it enumerates
+        run: npm run proof:docscope
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.

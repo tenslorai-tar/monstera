@@ -37,6 +37,7 @@
     "proof:escapeguard": "node scripts/hooks/blockEscapeResolvingWrites.proof.mjs",
     "proof:hookintegrity": "node scripts/lib/hookIntegrity.proof.mjs",
     "proof:hookprobe": "node scripts/proofs/hookProbe.proof.mjs",
+    "proof:docscope": "node scripts/proofs/documentScope.proof.mjs",
     "proof:budgets": "node scripts/proofs/memoryBudgets.proof.mjs",
     "proof:peakrss": "node scripts/proofs/peakRss.proof.mjs",
     "proof:nativeaddon": "node scripts/proofs/nativeAddon.proof.mjs",

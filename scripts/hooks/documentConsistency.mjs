@@ -27,10 +27,10 @@
  * Usage: node scripts/hooks/documentConsistency.mjs
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
+import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
@@ -42,9 +42,39 @@ import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
 // error, because the checks then pass against a tree nobody is committing to.
 const ROOT = repoRoot();
 
-/** @param {string} relativePath @returns {string} */
+/**
+ * Content of a document, from the same scope it was enumerated from.
+ *
+ * `filesInCommit()` answers about the tree this commit will leave. Reading the
+ * answer off the filesystem asks a different question — "whatever is on disk
+ * right now" — and `gitScope.mjs` names that as a fifth scope that is almost
+ * never the one wanted. The mismatch has a state: **tracked but absent from the
+ * working tree**, which crashed this script on a stack trace where four
+ * findings should have been.
+ *
+ * The first fix was `existsSync` and `continue`, which handles the state
+ * instead of removing it, and buys a document that goes unchecked while the
+ * checker reports success. This is finding 06 in a second file — every other
+ * rule reads the staged blob through git, this one reached for the filesystem —
+ * and it is closed the same way: align the scopes. A path present in the commit
+ * always has a blob, so neither the crash nor the skip has anything left to
+ * happen to.
+ *
+ * A null here is therefore not a routine absence to tolerate. It means the
+ * enumeration and the read disagree, which is the defect itself resurfacing.
+ *
+ * @param {string} relativePath
+ * @returns {string}
+ */
 function read(relativePath) {
-  return readFileSync(join(ROOT, relativePath), 'utf8');
+  const blob = readStagedBlob(relativePath);
+  if (blob === null) {
+    throw new Error(
+      `${relativePath} is in the commit scope but has no blob in the index. The enumeration and ` +
+        `the content read disagree, which is the scope mismatch this function exists to prevent.`,
+    );
+  }
+  return blob.toString('utf8');
 }
 
 /** @returns {string[]} Every tracked file, repo-relative, forward-slashed. */
@@ -168,15 +198,7 @@ const failures = [];
     // package-lock is machine-written and enormous; nothing in it names a script.
     if (document === 'package-lock.json') continue;
 
-    // Tracked but absent from the working tree — a deletion not yet staged, or a
-    // file a proof has temporarily removed. It has no content to inspect, and
-    // crashing the whole checker on it turns a missing file into an unreadable
-    // stack trace in place of the four findings this script exists to report.
-    // Not a silent skip in any meaningful sense: git and the file guard both
-    // see a missing tracked file, and neither needs this check to say so.
-    if (!existsSync(join(ROOT, document))) continue;
-
-    const text = readFileSync(join(ROOT, document), 'utf8');
+    const text = read(document);
     const lines = text.split('\n');
 
     for (let index = 0; index < lines.length; index += 1) {
