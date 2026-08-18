@@ -416,6 +416,191 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `caa59d0..d9f01b0`
+
+**Audited through d9f01b0.** 11 commits, 23 files, 1 proof added, **0 proofs
+modified**, 1 new instrument.
+
+Over the threshold at 11 against 9, and the gate caught it: `check:docs` went
+red the moment `d9f01b0` pushed HEAD past a batch. The audit ran before the next
+feature commit rather than after it, which is the only arrangement in which the
+gate does anything.
+
+**Proofs modified: none. Checked, and the column is empty.** That is the
+load-bearing column — a fix that quietly loosens a check looks identical to one
+that corrects it, and only the diff separates them. Recording "nobody needed to
+read one" is a different fact from omitting the column, so it is written here
+rather than left out. The one file that did change and could have hidden a
+loosening, `scripts/lib/auditWatermark.mjs`, gained **documentation only**: the
+structural-tail paragraph. No threshold moved, no logic changed.
+
+### Finding R-1 — `pathIdentity.mjs`'s floor is a COUNT, not an IDENTITY
+
+**Item 4b. Executed, not reasoned about.** This is the highest-consequence
+finding in the range: this instrument produced ADR-0009's measured path-form
+table, the merge-only identity rule rests on that table, and `DocumentService`
+and the write-target check rest on the rule.
+
+It already carries a control — `usable.length < 2` prints `MEASURED NOTHING` and
+exits 1 — added after its very first run reported `UNIFIES` having resolved
+nothing. **That control is a count, and a count is satisfied by the two easiest
+forms.**
+
+Measured, by running a copy with the redirector host changed to an unreachable
+name so every UNC form errors exactly as it would on a machine with admin shares
+disabled:
+
+```
+2 form(s) resolved.
+  realpath.native: 1 distinct
+  dev:ino:         1 distinct
+
+UNIFIES. Every form folds to one identity.        exit 0
+```
+
+It compared `C:\…` against `\\?\C:\…` — two local forms that were never going to
+disagree — never reached the redirector at all, and printed the reassuring
+answer with a clean exit. `\\localhost\C$` is an **admin share**, which is
+disabled or elevation-gated on a great many Windows machines, so this is the
+ordinary configuration and not a contrived one.
+
+The consequence is precise: ADR-0009's correction tells a future reader what
+would invalidate its rows and invites them to re-measure. On such a machine that
+re-measurement returns **the opposite of the recorded finding**, silently, and
+the whole identity rule rests on the row it contradicts.
+
+The recorded table itself stands — it was measured on this machine, where
+`\\localhost\C$` does resolve, and re-running the tracked script today still
+reports `realpath.native: 2 distinct, dev:ino: 1 distinct`, which is that row.
+
+**Fix:** the floor must span the boundary the instrument exists to measure — at
+least one **local** form and at least one **redirector** form resolved, not two
+forms of any kind.
+
+### Finding R-2 — `pathsEqual` depends on the process locale, in an identity primitive
+
+**Item 2, the hard shape.** `documentIdentity.ts` compares canonical paths with
+`localeCompare(a, b, undefined, { sensitivity: 'accent' })`. Measured:
+
+| locale | `FILE.pdf` vs `file.pdf` | `resume` vs `résumé` |
+|---|---|---|
+| default (en-US here) | EQUAL | differ |
+| `tr-TR` | **differ** | differ |
+| `lt-LT` | EQUAL | differ |
+
+Under a Turkish locale the *plain* case pair stops matching, because `FILE` and
+`file` contain `I`/`i` and Turkish collation pairs those with different letters.
+NTFS does not work that way: its case folding comes from the volume's uppercase
+table and carries no locale tailoring.
+
+The failure direction is the dangerous one. Row 1 of the merge rule failing to
+merge means **two `DocId`s for one file**, which is two command logs and a save
+that discards the other's edits — the exact loss the module exists to prevent.
+
+**Latent today, and the reason it is latent is the reason it will not stay
+that way.** Both sides currently come from `readFileIdentity`, so both strings
+are byte-identical and any locale returns 0. The function's own comment names
+the case that makes it live: *"a caller may hold a value from a different
+source, and NTFS is case-insensitive"* — which is the justification for doing a
+case-insensitive compare at all. The intended future use is precisely what
+breaks it.
+
+**Fix:** `toUpperCase()`, which is locale-**in**dependent (unlike
+`toLocaleUpperCase`) and matches the uppercase-table approach. Measured: it
+returns EQUAL for both case pairs and `differ` for the accent pair, in every
+locale.
+
+### Findings R-3 to R-7 — five fix-induced defects, all already closed
+
+Every one arrived **inside code written to close the previous step**. Third
+range in a row where that is the dominant shape, and the case for scoping the
+audit to a range rather than to the tree makes itself again: a tree-wide sweep
+finds these by luck, a range-scoped one reads the diff that made them.
+
+| # | Defect | Shape |
+|---|---|---|
+| R-3 | Replacement detection routed through `isSameDocument`, so **every replaced file reported `sole-writer`** | wrong question — the two take the same pair of identities and ask opposite things; path equality is sufficient evidence for one and carries none for the other |
+| R-4 | The concurrent-open control passed with the index lane **removed** | vacuous proof — it ran against the real filesystem and the two `realpath`+`stat` pairs happened to land far enough apart |
+| R-5 | The 4b control's message named two causes and there are **three** — `close` bypasses the lane by design and can land mid-check | a correct guard with a message that sends the next reader hunting a race that never happened |
+| R-6 | The advisory-register proof asserted only that a corrupt register **fails**, and passed identically with the fix reverted | vacuous proof — second in two days |
+| R-7 | `reviewed` was the one load-bearing key still guarded **by accident** | two-thirds of a class fix |
+
+R-3, R-4 and R-5 were caught by proofs and review before they shipped anywhere.
+R-6 and R-7 were caught by mutation testing during the same session that
+introduced them. All five are closed, with controls that go red on the
+mutation.
+
+### Finding R-8 — a defect from the REVIEW seat, recorded because the record is one-sided otherwise
+
+The reason given for fixing `readBaseline`'s bare `catch` was that a trailing
+comma **converted a corrupt register into a clean pass**. It did not. Restoring
+the `catch` and feeding the checker a register with one stray comma turned it
+red on `74 advisory/advisories have no recorded verdict` — an unreadable
+register also yields an empty `reviewed` map, so every advisory read as
+untriaged.
+
+The claim was **one condition worse than the truth**. The clean pass needs the
+advisory feed at zero as well, which is reachable but is a compound state, not
+the simple one described.
+
+What caught it was refusing to write down a claim that had not been reproduced.
+The check cost twenty seconds. Had it gone in as stated, the journal would carry
+a defect worse than the one that existed, in the document whose only value is
+that it is accurate.
+
+**This is the first finding in this record that originates from the review seat
+rather than the build seat**, and it is written down for that reason. A record
+in which only the builder is ever corrected is not a record of what happened; it
+is a record of who was watching whom. An overstatement from the reviewing side
+is also harder to catch later, because it arrives with authority on it.
+
+### The rest of the checklist
+
+**1 — root cause or workaround?** Every fix in the range names a mechanism. Two
+are worth stating as root-cause rather than symptom: the `.ocr` handler set is
+removed at **registration** rather than filtered at open, and `readBaseline`
+now **throws by name per key** rather than growing an `if` per instance.
+`--baseline <path>` was examined as a possible escape hatch and is not one: it
+selects *which* register is read, never *whether* a check runs, and — since
+`d9f01b0` — pointing it at a nonexistent file throws by construction, so it
+cannot become a route to a quiet pass.
+
+**3 — would CI have caught it?** R-3 to R-7, yes: all are covered by tests or
+proofs that now run in CI, including `proof:advisories`. **R-1 and R-2, no.**
+`pathIdentity.mjs` is a spike, run by hand, and nothing in CI executes it — which
+is exactly why 4b insists the control lives *in the instrument* rather than only
+in a proof. `pathsEqual`'s locale dependence is invisible to a suite running
+under `en-US`.
+
+**4 — proofs non-vacuous?** Nine mutations across the range, each confirmed red
+against the case named for it: six on `DocumentService` (index lane, close
+ordering, the 4b control, contested, dedup, over-merge) and three on the
+advisory register (parse swallow, control failures ignored, `reviewed`
+unguarded). Two of the nine found a vacuous control instead — R-4 and R-6.
+
+**4a — resolution.** `pathIdentity` **passes**: fed the local and UNC forms of
+one file, it reports `realpath.native: 2 distinct` against `dev:ino: 1 distinct`,
+which is precisely the distinction ADR-0009's row claims and precisely what a
+collapsed comparison would hide.
+
+**5 — executed or asserted?** Re-verified rather than carried forward: the
+environment ADR-0009 pins its rows to is still the environment
+(`node 24.12.0 / libuv 1.51.0 / win32 x64 10.0.26200`). Still asserted and
+labelled as such: the mapped-network-drive row, which no machine here can
+produce. Withdrawn on measurement: R-8.
+
+**6 — architecture before feature?** Clean. `ab6c153` (invariants 24 and 25) and
+`8acdc95` (Store-only distribution) are both B4 amendments in their own commits,
+both landing *before* the code they constrain. `DocumentService` was built on an
+ADR-0009 amended first, not retrofitted under it.
+
+**7 — documents match code?** `check:docs` passes its eight checks. The
+`DocumentService` and CommandBus rows in `FEATURES.md` state what is not built
+as explicitly as what is, and the sequencing constraint on the lane is on the
+row rather than in anyone's memory.
+
+---
+
 ## 2026-08-19 — The advisory register could not fail honestly, and the premise for fixing it was half wrong
 
 `readBaseline()` wrapped its parse in a bare `catch` and returned an empty
