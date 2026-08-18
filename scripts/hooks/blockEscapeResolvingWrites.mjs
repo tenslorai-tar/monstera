@@ -193,8 +193,11 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
 /** PowerShell reaches the same failure through different names. */
 const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
-    pattern: /\b(?:Set-Content|Add-Content|Out-File)\b/i,
-    what: 'Set-Content / Add-Content / Out-File',
+    // Tee-Object joins the list for the same reason bash's rule covers `| tee`:
+    // it writes its input to a file. Its absence was the same half-fix shape as
+    // the producer rule below — the bash side had the tee branch from the start.
+    pattern: /\b(?:Set-Content|Add-Content|Out-File|Tee-Object)\b/i,
+    what: 'Set-Content / Add-Content / Out-File / Tee-Object',
     instead: 'use Write',
   },
   {
@@ -208,7 +211,17 @@ const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
     instead: "use a single-quoted here-string (@'...'@) for stdin, or Write for a file",
   },
   {
-    pattern: /\b(?:echo|Write-Output|Write-Host)\b[^|;\n]*>>?\s*\S/i,
+    // A PowerShell producer carries its payload as an argument on the same line,
+    // exactly like echo and printf, so the gap scans the line and the descriptor
+    // test applies. This rule kept a separator-aware gap and a bare redirect
+    // after both were corrected for bash — one shell fixed and the other left is
+    // the half-fix Rule 0 names, and both shells are registered in
+    // .claude/settings.json because both resolve escapes.
+    //
+    // `Write-Output 'a;b' > f` halted at the semicolon inside the quotes and
+    // never reached the redirect, which is occurrence 7's mechanism in the other
+    // shell.
+    pattern: new RegExp(String.raw`\b(?:echo|Write-Output|Write-Host)\b${SAME_LINE}${TO_FILE}`, 'i'),
     what: 'echo/Write-Output writing to a file',
     instead: 'use Write',
   },

@@ -140,6 +140,24 @@ mustBlock('awk writing to a file', 'awk \'{printf "%s\\n", $1}\' in.txt > out.tx
 mustBlock('Set-Content', 'Set-Content -Path notes.md -Value "a`nb"', 'PowerShell');
 mustBlock('Out-File', '"text" | Out-File notes.md', 'PowerShell');
 mustBlock('a double-quoted here-string', 'git commit -m @"\nmessage $var\n"@', 'PowerShell');
+mustBlock('Tee-Object writing to a file', '"text" | Tee-Object notes.md', 'PowerShell');
+
+// The same false negative, in the other shell. A PowerShell producer carries
+// its payload on the matched line, so a separator-aware gap halts inside the
+// quotes and never reaches the redirect. One shell fixed and the other left is
+// the half-fix shape, and both are registered in .claude/settings.json.
+mustBlock('Write-Output whose payload contains a semicolon', "Write-Output 'const x = 1;' > f.js", 'PowerShell');
+mustBlock('Write-Output whose payload contains a pipe', "Write-Output 'a|b' > f.txt", 'PowerShell');
+mustBlock('Write-Output whose payload contains a chain operator', "Write-Output 'a && b' > f.txt", 'PowerShell');
+mustBlock('Write-Host whose payload contains a semicolon', "Write-Host 'a; b' > f.txt", 'PowerShell');
+mustBlock('a PowerShell echo alias writing to a file', "echo 'a; b' > f.txt", 'PowerShell');
+mustBlock('Write-Output appending to a file', "Write-Output 'a; b' >> f.txt", 'PowerShell');
+mustBlock('Write-Output with an explicit stdout descriptor', "Write-Output 'a; b' 1> f.txt", 'PowerShell');
+
+// And the descriptor distinction, which this rule also predated.
+mustAllow('Write-Output sending stderr to a file', "Write-Output 'a; b' 2> errors.log", 'PowerShell');
+mustAllow('Write-Output sending stderr to stdout', "Write-Output 'a; b' 2>&1", 'PowerShell');
+mustAllow('an ordinary PowerShell pipeline with a semicolon in a string', "Write-Output 'a; b' | Select-Object -First 1", 'PowerShell');
 
 // ---------------------------------------------------------------------------
 // The commands this project actually runs. Every one of these appears in the
