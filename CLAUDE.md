@@ -149,7 +149,13 @@ is wrong** — fix the boundary, not the test.
   `onColor(brand, background, minRatio)`; **storing a derived color is a
   defect**.
 
-The full invariant list (L1–L22) is in `docs/ARCHITECTURE.md`. A regression
+- **A filename never selects native code.** The shim names the entry point it
+  wants; it never hands a path to a format dispatcher. MuPDF's
+  `fz_new_document_writer` picks its writer from a file extension, so `.ocr`
+  starts Tesseract with nothing naming an OCR symbol. Banned set derived, not
+  listed (invariant 23).
+
+The full invariant list (L1–L23) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.
 
 ---

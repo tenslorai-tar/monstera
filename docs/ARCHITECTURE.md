@@ -638,6 +638,27 @@ say**.
     decides when under pressure; it does require that recycling be callable at a
     deliberately chosen moment too, since pressure arrives mid-scroll and the
     rebuild costs re-reading the current page.
+23. **The shim names the engine entry point it wants; it never hands a path to a
+    format dispatcher.** Wanting a PDF means calling the PDF constructor. It
+    never means passing a filename to a chooser and letting the extension decide
+    which code runs. This extends invariant 2 — a path never reaches a position
+    where it can drive behaviour — across the native boundary, the one place it
+    had not been stated.
+
+    The mechanism it closes is real and live in the shipped binary:
+    `fz_new_document_writer` selects a writer from a **file extension**, so a
+    path ending `.ocr` starts Tesseract, and through it Leptonica, with no caller
+    naming a single OCR symbol. `FZ_ENABLE_OCR_OUTPUT` defaults to 1 and the
+    `Release|x64` configuration defines `HAVE_TESSERACT` and `HAVE_LEPTONICA`, so
+    the dispatch is compiled in, not hypothetical.
+
+    Nothing reaches it today — measured forward from all 24 exports, not
+    inferred. That is precisely the reason for an invariant rather than a note: a
+    fact that is *currently* true has to be re-established at every engine
+    release, by whoever next writes an export, and it expires on someone
+    remembering. The banned set is derived from MuPDF's own `is_extension`, so a
+    writer added upstream joins it with no list to edit.
+    ([ADR-0015](DECISIONS/0015-a-filename-may-not-select-a-native-library.md))
 
 ---
 
