@@ -1,12 +1,12 @@
 {
   "outcome": "denied",
   "command": "node -e \"console.log('hook test')\"",
-  "recordedAt": "2026-08-18T06:45:49.447Z",
+  "recordedAt": "2026-08-18T07:15:53.122Z",
   "sessionStartedAt": "2026-08-16T06:29:43.686Z",
   "inputsLastChangedAt": "2026-08-18T00:18:39+02:00",
   "note": "The guard blocked the command. The mechanism CLAUDE.md describes is live.",
   "verdict": {
-    "digest": "936928e91f21972b76c4190af2eef94445801e0044e29db3a1dc85a2039eff71",
+    "digest": "0b130fb77fc6a63e948f60afccf8b0182d67f7037186f8df15745a7d60b4e111",
     "inputs": [
       {
         "name": "file:.claude/settings.json",
@@ -14,7 +14,7 @@
       },
       {
         "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-        "digest": "23d0d809c5a5be0f6d9c6703ed6a06dcc8d716861e2b01400b431b0d62c23e24"
+        "digest": "ceb70c6debda260d71596c3a96cf5b424dad215f92c4af3068fd25cde7392504"
       }
     ]
   }

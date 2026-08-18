@@ -168,6 +168,14 @@ const failures = [];
     // package-lock is machine-written and enormous; nothing in it names a script.
     if (document === 'package-lock.json') continue;
 
+    // Tracked but absent from the working tree — a deletion not yet staged, or a
+    // file a proof has temporarily removed. It has no content to inspect, and
+    // crashing the whole checker on it turns a missing file into an unreadable
+    // stack trace in place of the four findings this script exists to report.
+    // Not a silent skip in any meaningful sense: git and the file guard both
+    // see a missing tracked file, and neither needs this check to say so.
+    if (!existsSync(join(ROOT, document))) continue;
+
     const text = readFileSync(join(ROOT, document), 'utf8');
     const lines = text.split('\n');
 

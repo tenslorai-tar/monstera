@@ -149,6 +149,34 @@ mustAllow('a plain progress echo', 'echo "=== exit $? ==="');
 mustAllow('echo without a redirect, piped to a counter', 'echo "a b c" | wc -w');
 mustAllow('sed reading a line range', 'sed -n 200,240p docs/ARCHITECTURE.md');
 mustAllow('a quoted heredoc feeding stdin', "git commit -q -F - <<'EOF'\nSubject line\n\nBody.\nEOF");
+
+// ---------------------------------------------------------------------------
+// The redirect scan must not cross a command separator, and must tell a file
+// write from a descriptor duplication. Both halves were defects, found by the
+// guard firing on the commit that reported its own first denial.
+//
+// The deny cases here are the ones that make the fix a correction rather than a
+// narrowing: a redirect genuinely inside the heredoc's own segment still has to
+// be caught, whether the segment sits first, last or alone.
+// ---------------------------------------------------------------------------
+mustBlock('a heredoc redirected into a file, alone', "cat <<'EOF' > f\nx\nEOF");
+mustBlock('a heredoc whose redirect comes first', "cat > f <<'EOF'\nx\nEOF");
+mustBlock('a heredoc redirected into a file after a separator', "true && cat <<'EOF' > f\nx\nEOF");
+mustBlock('a heredoc redirected into a file before a separator', "cat <<'EOF' > f && true\nx\nEOF");
+mustBlock('a heredoc sending BOTH streams to a file with &>', "cat <<'EOF' &> f\nx\nEOF");
+mustBlock('a heredoc sending both streams to a file with >&word', "cat <<'EOF' >& f\nx\nEOF");
+
+mustAllow(
+  // The exact command that was denied on 2026-08-18. The 2>&1 belongs to
+  // `git push`, three separators away from the heredoc.
+  'a commit heredoc chained with a later command that redirects stderr',
+  "git commit -F - <<'MSG' && git log --oneline -1 && git push 2>&1 | tail -2\nSubject\nMSG",
+);
+mustAllow('a heredoc whose own line duplicates a descriptor', "cat <<'EOF' 2>&1\nx\nEOF");
+mustAllow('a heredoc whose own line closes a descriptor', "cat <<'EOF' 2>&-\nx\nEOF");
+mustAllow('echo sending stderr to stdout', 'echo hello 2>&1');
+mustAllow('echo sending stderr to stdout, then piped', 'echo hello 2>&1 | grep h');
+mustAllow('awk sending stderr to stdout', "awk '{print}' input.txt 2>&1");
 mustAllow('an npm script with a pipe', 'npm run check:docs 2>&1 | tail -3');
 mustAllow('git plumbing with a redirect from a byte-faithful producer', 'git show HEAD:package.json > /tmp/pkg.json');
 mustAllow('running a script by path', 'node scripts/hooks/documentConsistency.mjs');
@@ -281,10 +309,15 @@ process.stdout.write(`\n${passed.length} escape-guard cases passed.\n`);
 // loaded. Naming the discriminator here is what stops the next reader drawing
 // the wrong conclusion from the right observation.
 process.stdout.write(
-  `\nNOT established by this proof: that the guard is loaded in any given agent\n` +
-    `session. Hooks are read at process start, and /compact does not restart the\n` +
-    `process. Probe a session with:  node -e "console.log('hook test')"\n` +
-    `  denied            -> the guard is live in that session.\n` +
-    `  runs, proof green -> the guard is sound; the session predates it. Not a defect.\n` +
+  `\nNOT established by this proof: that the guard is loaded in the agent session\n` +
+    `running it. That lives in the agent's own hook table and no subprocess can see\n` +
+    `it. It HAS been observed once — 2026-08-18, recorded in docs/hook-probe.json —\n` +
+    `but liveness is a property of each session, not a fact about the repository.\n\n` +
+    `Registering a hook does not make it live immediately, and the delay is not\n` +
+    `explained by process lifetime: one session ran a covered command unimpeded at\n` +
+    `01:20 and was denied at 06:45, with no restart between. So assume neither.\n` +
+    `Probe the session, and read the result asymmetrically:\n` +
+    `  denied            -> live here. A denial cannot come from an unloaded guard.\n` +
+    `  runs, proof green -> the guard is sound; this session has not picked it up.\n` +
     `  runs, proof red   -> the guard itself is broken. Fix it before trusting the rule.\n`,
 );

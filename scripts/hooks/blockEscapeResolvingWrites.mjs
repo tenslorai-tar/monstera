@@ -59,6 +59,39 @@
  * @typedef {{ pattern: RegExp, what: string, instead: string }} Rule
  */
 
+/**
+ * The span between a producer and its redirect, which may not cross a command
+ * separator.
+ *
+ * A redirect belonging to a command three separators later is not this
+ * command's redirect, and a gap of `[^\n]*` cannot express that distinction —
+ * it walks straight past `&&`, `;` and `|` and attaches the first `>` it finds
+ * to whatever producer it started from. That is how
+ * `git commit -F - <<'EOF' && git push 2>&1` was read as a heredoc redirected
+ * into a file: the `2>&1` belongs to `git push`.
+ *
+ * `&` is excluded as a separator but re-admitted when it is immediately
+ * followed by `>`, because `&>file` is bash's both-streams redirect and is a
+ * genuine file write. Excluding it outright would have traded one defect for
+ * another.
+ */
+const SAME_COMMAND = String.raw`(?:[^|;&\n]|&(?=>))*`;
+
+/**
+ * A redirect that writes to a FILE, as opposed to duplicating a descriptor.
+ *
+ * `2>&1` and `2>&-` move or close a file descriptor; nothing is written and no
+ * escape is resolved. Reading them as file writes made the guard deny
+ * `echo hello 2>&1`, which is as ordinary as shell gets — and a guard that
+ * fires on ordinary work is the one someone eventually argues down.
+ *
+ * The distinction is what follows `>&`: a digit or `-` is a descriptor, and
+ * anything else is a filename, because `>&word` in bash sends both streams to
+ * `word`. Both halves were measured against the real shell semantics rather
+ * than assumed.
+ */
+const TO_FILE = String.raw`>>?\s*(?!&[0-9-])\S`;
+
 /** Commands whose own evaluation resolves escapes before anything is written. */
 const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
@@ -88,7 +121,7 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
     // echo/printf feeding a redirect or tee. The producer resolves escapes
     // (`\n`, `\a`, `\v`, octal) before a single byte reaches the file.
-    pattern: /\b(?:echo|printf)\b[^|;&\n]*(?:>>?\s*\S|\|\s*tee\b)/,
+    pattern: new RegExp(String.raw`\b(?:echo|printf)\b${SAME_COMMAND}(?:${TO_FILE}|\|\s*tee\b)`),
     what: 'echo/printf writing to a file',
     instead:
       'use Write. printf turned `\\v` into a vertical tab and `\\2` into an octal escape in a ' +
@@ -96,7 +129,7 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
       'to prose.',
   },
   {
-    pattern: /\bawk\b[^|;&\n]*>>?\s*\S/,
+    pattern: new RegExp(String.raw`\bawk\b${SAME_COMMAND}${TO_FILE}`),
     what: 'awk writing to a file',
     instead: "use Write. awk's printf resolves the same escapes.",
   },
@@ -113,8 +146,10 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     // Any heredoc whose output is redirected into a file, quoted or not — in
     // EITHER operand order. `cat <<'EOF' > f` and `cat > f <<'EOF'` are the same
     // command, and the first version of this rule only matched the first form.
-    pattern:
-      /(?:<<[-~]?\s*['"]?[A-Za-z_][\w-]*['"]?[^\n]*>>?\s*\S|>>?\s*\S[^\n]*<<[-~]?\s*['"]?[A-Za-z_])/,
+    pattern: new RegExp(
+      String.raw`(?:<<[-~]?\s*['"]?[A-Za-z_][\w-]*['"]?${SAME_COMMAND}${TO_FILE}` +
+        String.raw`|${TO_FILE}${SAME_COMMAND}<<[-~]?\s*['"]?[A-Za-z_])`,
+    ),
     what: 'a heredoc redirected into a file',
     instead: 'use Write, which puts the bytes down exactly as given',
   },
