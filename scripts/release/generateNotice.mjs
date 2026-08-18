@@ -155,13 +155,24 @@ function licenceText(directory) {
 
 /**
  * @typedef {{
+ *   spdx: string,
+ *   file: string,
+ *   marker: string,
+ *   version?: string,
+ *   note?: string,
+ * }} BundledLicence
+ *   `file` is relative to the MuPDF source root and is where these terms were
+ *   read from; `marker` must still appear in it. Both are checked by
+ *   {@link checkLicenceSources} whenever the source is provisioned.
+ *
+ * @typedef {{
  *   name: string,
  *   role: string,
  *   licence: string,
  *   origin: string,
  *   source: string,
  *   bundled: string[],
- *   licences?: Record<string, string>,
+ *   licences?: Record<string, BundledLicence>,
  * }} NativeComponent
  */
 
@@ -281,6 +292,75 @@ export function checkNativeComponents() {
   };
 }
 
+/**
+ * Verifies every declared licence against the file it was read from.
+ *
+ * A licence table is a set of claims about someone else's code, and until this
+ * existed not one of them was checkable: "read from each library's own licence
+ * file" was prose, and a reader who doubted an entry had to argue rather than
+ * look. Two of the sixteen are not even where a reader would look — leptonica
+ * keeps its terms in `leptonica-license.txt`, and libjpeg ships no licence file
+ * at all, its terms being a section of README.
+ *
+ * The marker is the half that catches a RELICENSING rather than a moved file.
+ * These libraries arrive inside someone else's tarball, so a version bump can
+ * change a component's terms with nobody here reviewing it; a marker that
+ * vanishes turns that into a failed build instead of a stale line in NOTICE.
+ *
+ * Skipped, and reported as skipped, when the source is not provisioned — the
+ * same rule {@link checkNativeComponents} follows, for the same reason: "could
+ * not check" must never print like "checked".
+ *
+ * @returns {{ checked: boolean, problems: string[] }}
+ */
+export function checkLicenceSources() {
+  const source = mupdfSourcePath(ROOT);
+  if (!existsSync(source)) return { checked: false, problems: [] };
+  return { checked: true, problems: verifyLicenceSources(nativeComponents(), source) };
+}
+
+/**
+ * The comparison itself, over values rather than over the repository.
+ *
+ * Separated so the proof can mutate a declaration without writing to a tracked
+ * file, and so its resolution test runs on any machine rather than only one
+ * with a 69 MB source tree provisioned.
+ *
+ * @param {readonly NativeComponent[]} components
+ * @param {string} sourceRoot
+ * @returns {string[]} One entry per problem; empty means every claim checks out.
+ */
+export function verifyLicenceSources(components, sourceRoot) {
+  /** @type {string[]} */
+  const problems = [];
+  for (const component of components) {
+    for (const [name, licence] of Object.entries(component.licences ?? {})) {
+      const path = join(sourceRoot, licence.file);
+      if (!existsSync(path)) {
+        problems.push(`${name}: ${licence.file} does not exist in the provisioned source`);
+        continue;
+      }
+      if (!readFileSync(path, 'utf8').includes(licence.marker)) {
+        problems.push(
+          `${name}: ${licence.file} no longer contains ${JSON.stringify(licence.marker)} — ` +
+            `its terms may have changed, and NOTICE still claims ${licence.spdx}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * The declared components, for callers that need to inspect the declaration
+ * rather than only the verdict over it.
+ *
+ * @returns {NativeComponent[]}
+ */
+export function declaredNativeComponents() {
+  return nativeComponents();
+}
+
 /** @returns {string} */
 export function renderNotice() {
   const shipped = shippedPackages();
@@ -313,7 +393,9 @@ export function renderNotice() {
     lines.push(`  Home:   ${component.origin}`);
     lines.push(`  Source: ${component.source}`);
     if (component.bundled.length > 0) {
-      lines.push('  Bundles, each under its own terms:');
+      lines.push('  Bundles, each under its own terms. Each line names the file those terms were');
+      lines.push('  read from, relative to the source above, so every claim here is checkable:');
+      lines.push('');
       for (const name of component.bundled) {
         // Read from the library's own licence file in the provisioned source,
         // not from a package index. A licence a notice states must be the one
@@ -326,12 +408,31 @@ export function renderNotice() {
               `part of an attribution notice that does the work.`,
           );
         }
-        lines.push(`    ${name.padEnd(14)} ${licence}`);
+        const version = licence.version === undefined ? '' : ` ${licence.version}`;
+        lines.push(`    ${name}${version} — ${licence.spdx}`);
+        lines.push(`      read from: ${licence.file}`);
+        if (licence.note !== undefined) lines.push(`      ${licence.note}`);
       }
+      lines.push('');
       lines.push('  Their full texts are distributed with the source above.');
     }
     lines.push('');
   }
+
+  // FreeType's binary-distribution clause is not discharged by naming FreeType
+  // in the table above. It requires a disclaimer, in the distribution
+  // documentation, stating that the software is based in part on the work of the
+  // FreeType Team — so the sentence is rendered rather than paraphrased, and the
+  // packaging test asserts this file reaches the installed application.
+  lines.push('─'.repeat(78));
+  lines.push('FreeType');
+  lines.push('─'.repeat(78));
+  lines.push('');
+  lines.push('Portions of this software are copyright The FreeType Project');
+  lines.push('(https://freetype.org). All rights reserved.');
+  lines.push('');
+  lines.push('This software is based in part on the work of the FreeType Team.');
+  lines.push('');
   lines.push('MuPDF is AGPL, and that is why this application is. The source offer in README');
   lines.push('covers, at the exact versions shipped:');
   lines.push('');
@@ -343,7 +444,9 @@ export function renderNotice() {
   lines.push('    individually rather than left to be inferred:');
   for (const component of native) {
     for (const [name, licence] of Object.entries(component.licences ?? {})) {
-      if (/AGPL/i.test(licence)) lines.push(`      ${name} — ${licence}`);
+      if (!/AGPL/i.test(licence.spdx)) continue;
+      const version = licence.version === undefined ? '' : ` ${licence.version}`;
+      lines.push(`      ${name}${version} — ${licence.spdx}`);
     }
   }
   lines.push('');
@@ -373,9 +476,41 @@ export function renderNotice() {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * Says which of the two source-dependent checks actually ran.
+ *
+ * Both are skipped without the provisioned MuPDF tree, and a run that skipped
+ * them must not print like a run that passed them.
+ *
+ * @param {boolean} bundleChecked
+ * @param {boolean} sourcesChecked
+ * @returns {string}
+ */
+function verifiedSuffix(bundleChecked, sourcesChecked) {
+  const ran = [
+    ...(bundleChecked ? ['bundle list'] : []),
+    ...(sourcesChecked ? ['licence provenance'] : []),
+  ];
+  if (ran.length === 2) return ' (bundle list and licence provenance verified against the source)';
+  if (ran.length === 1) return ` (${ran[0]} verified; the other check needs the MuPDF source)`;
+  return ' (NOT verified — MuPDF source not provisioned here)';
+}
+
 if (process.argv[1]?.endsWith('generateNotice.mjs')) {
   const notice = renderNotice();
   const native = checkNativeComponents();
+  const sources = checkLicenceSources();
+
+  if (sources.problems.length > 0) {
+    process.stderr.write(
+      `NOTICE's licence provenance does not match the provisioned source:\n` +
+        sources.problems.map((problem) => `  ${problem}\n`).join('') +
+        `Read the file named above and correct scripts/release/nativeComponents.json to say what ` +
+        `it actually grants. A licence table that cites a file it no longer matches is worse than ` +
+        `one with no citation, because the citation is what invites a reader to stop checking.\n`,
+    );
+    process.exit(1);
+  }
 
   if (native.checked && (native.missing.length > 0 || native.extra.length > 0)) {
     process.stderr.write(
@@ -397,13 +532,11 @@ if (process.argv[1]?.endsWith('generateNotice.mjs')) {
       );
       process.exit(1);
     }
-    process.stdout.write(
-      `NOTICE is current${native.checked ? ' (native bundle list verified against the source)' : ' (native bundle list NOT verified — MuPDF source not provisioned here)'}.\n`,
-    );
+    process.stdout.write(`NOTICE is current${verifiedSuffix(native.checked, sources.checked)}.\n`);
   } else {
     writeFileSync(NOTICE_PATH, notice, 'utf8');
     process.stdout.write(
-      `Wrote NOTICE${native.checked ? ', native bundle list verified against the source' : ''}.\n`,
+      `Wrote NOTICE${verifiedSuffix(native.checked, sources.checked)}.\n`,
     );
   }
 }

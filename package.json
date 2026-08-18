@@ -57,6 +57,7 @@
     "check:advisories": "node scripts/security/engineAdvisories.mjs",
     "notice:generate": "node scripts/release/generateNotice.mjs",
     "notice:check": "node scripts/release/generateNotice.mjs --check",
+    "proof:licences": "node scripts/proofs/licenceProvenance.proof.mjs",
     "proof:cff": "node scripts/security/cffOobProof.mjs",
     "proof:geometry": "node scripts/proofs/pageGeometry.proof.mjs",
     "proof:purge": "node scripts/proofs/purgeCensus.proof.mjs",

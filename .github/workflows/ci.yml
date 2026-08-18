@@ -247,6 +247,19 @@ jobs:
       - name: Check NOTICE against the tree and the native build
         run: npm run notice:check
 
+      # Every bundled licence now cites the file its terms were read from, and
+      # that file must still contain a marker distinguishing those terms. The
+      # earlier claim — "read from each library's own licence file" — was prose
+      # nobody could check, and two of the sixteen are not where a reader would
+      # look: leptonica keeps its terms in leptonica-license.txt, and libjpeg
+      # ships no licence file at all. The marker half is what catches an upstream
+      # RELICENSING on a version bump, which is the real exposure: these arrive
+      # inside someone else's tarball, so nobody here reviews their licence
+      # changes when they happen. This job has the source, so it is where the
+      # real declaration gets checked rather than skipped.
+      - name: Prove every bundled licence matches the file it cites
+        run: npm run proof:licences
+
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring
       # it without one would measure nothing.
