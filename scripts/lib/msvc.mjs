@@ -172,13 +172,21 @@ export function dumpbin() {
  * while this repository's own project files already name their toolset. A
  * default would silently override the second case to fix the first.
  *
+ * `compilerOptions` are passed through the `CL` environment variable, which
+ * cl.exe prepends to every command line it receives. That route is used rather
+ * than an MSBuild property because the definitions have to reach a VENDORED
+ * project file: `libmupdf.vcxproj` composes its own `PreprocessorDefinitions`
+ * from item metadata, which a `/p:` global property does not reach, and editing
+ * the vendored file would be undone by the next provisioning run.
+ *
  * @param {object} options
  * @param {string} options.project Absolute path to a .sln or .vcxproj.
  * @param {readonly string[]} [options.properties] `Name=Value` pairs.
+ * @param {readonly string[]} [options.compilerOptions] Raw cl.exe options.
  * @param {string} [options.target]
  * @param {string} [options.label] Shown in progress output.
  */
-export function build({ project, properties = [], target, label }) {
+export function build({ project, properties = [], compilerOptions = [], target, label }) {
   const msbuild = msbuildPath();
   const args = [
     project,
@@ -193,7 +201,16 @@ export function build({ project, properties = [], target, label }) {
   ];
 
   process.stderr.write(`\n  building ${label ?? project}\n`);
-  const result = spawnSync(msbuild, args, { stdio: 'inherit' });
+  if (compilerOptions.length > 0) {
+    process.stderr.write(`  with CL=${compilerOptions.join(' ')}\n`);
+  }
+
+  const env = { ...process.env };
+  if (compilerOptions.length > 0) {
+    env['CL'] = [process.env['CL'] ?? '', ...compilerOptions].join(' ').trim();
+  }
+
+  const result = spawnSync(msbuild, args, { stdio: 'inherit', env });
 
   if (result.error !== undefined) {
     throw new Error(`Could not run MSBuild for ${project}`, { cause: result.error });

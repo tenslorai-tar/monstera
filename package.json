@@ -55,6 +55,8 @@
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
     "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",
+    "proof:documenthandlers": "node scripts/proofs/documentHandlers.proof.mjs",
+    "check:handlers": "node scripts/security/handlerFootprint.mjs",
     "check:advisories": "node scripts/security/engineAdvisories.mjs",
     "notice:generate": "node scripts/release/generateNotice.mjs",
     "notice:check": "node scripts/release/generateNotice.mjs --check",

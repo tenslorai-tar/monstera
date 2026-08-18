@@ -294,6 +294,16 @@ jobs:
       - name: Enforce invariant 23 — no filename may select a native library
         run: npm run proof:pathdispatch
 
+      # ADR-0016. fz_open_document scores handlers on CONTENT, and the shim's
+      # "not a PDF" refusal used to come from pdf_specifics AFTER the foreign
+      # parser had already opened the file. Both paths return the same error
+      # code, so the only observable difference is the MESSAGE — this asserts the
+      # refusal is MuPDF's "cannot find document handler" rather than the shim's
+      # post-hoc one. Runs against the real DLL, with a real PDF opening as the
+      # control, since "refuses everything" would otherwise pass.
+      - name: Prove only PDF is opened, and foreign formats fail at recognition
+        run: npm run proof:documenthandlers
+
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring
       # it without one would measure nothing.

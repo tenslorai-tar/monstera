@@ -243,6 +243,43 @@ mustAllow('echo appending stderr to a log', 'echo hello 2>> errors.log');
 mustAllow('a heredoc with stderr sent to a file', "cat <<'EOF' 2> errors.log\nx\nEOF");
 mustAllow('awk with stderr sent to a file', "awk '{print}' in.txt 2> errors.log");
 
+// ---------------------------------------------------------------------------
+// A target beginning `=` is a comparison, never a redirect.
+//
+// `awk 'NR>=386 && NR<=390' file` was denied. It writes nothing: the `>` belongs
+// to `>=` inside a quoted awk program. A file literally named `=…` is one nobody
+// writes, while `>=` is routine in awk, perl, JS and shell arithmetic — the
+// asymmetry is why excluding it is a correctness fix rather than a narrowing.
+//
+// The last two are the ones that keep it honest. `>` followed by a real filename
+// must still be caught with `=` anywhere else in the line, or this exclusion
+// would have bought a false negative to cure a false positive.
+// ---------------------------------------------------------------------------
+mustAllow('awk with a >= line-number range', "awk 'NR>=386 && NR<=390' scripts/hooks/guardFiles.mjs");
+mustAllow('awk printing when a field exceeds a bound', "awk '$2 >= 100 {print $1}' data.txt");
+mustAllow('grep for a literal >= in source', "grep -rn 'x >= 1' packages/kernel/src");
+// `>>=` is the case that showed excluding `=` alone was not enough: with `>>?`
+// greedy the engine matched `>>`, saw `=`, backtracked to a single `>` and
+// accepted the SECOND `>` as a one-character filename.
+mustAllow('a shift-assign inside a quoted program', "awk 'BEGIN { x = 1; x >>= 2; print x }'");
+// Inline perl is banned in its own right, whatever follows it. Kept as a BLOCK
+// so the exclusion above is never mistaken for a general amnesty on comparisons.
+mustBlock(
+  'an inline perl script containing a comparison',
+  "perl -ne 'print if $. >= 10' notes.txt",
+  'the inline-interpreter rule is independent of the redirect test',
+);
+mustBlock(
+  'printf redirected to a file whose name follows an unrelated =',
+  'printf "a=b\\n" > out.txt',
+  'a `=` elsewhere on the line must not disarm the redirect test',
+);
+mustBlock(
+  'printf redirected to a file, with a comparison earlier in the command',
+  "awk 'NR>=2' in.txt && printf 'x\\n' > out.txt",
+  'the comparison and the redirect are different operators and only one is a write',
+);
+
 // The historical occurrences are stdout redirects and must stay caught. These
 // are the reason the descriptor test is a lookbehind rather than a blanket
 // exemption for anything with a digit in front of it.

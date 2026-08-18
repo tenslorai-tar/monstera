@@ -89,6 +89,32 @@ export const THREAT_MODEL_TOPICS = [
       '"we only open PDFs" is a statement about intent, and handler selection is decided by ' +
       'content scoring, not by intent.',
   },
+  {
+    // The threat model's own item list already carries "archive and
+    // embedded-file extraction path traversal", and it reads as future work.
+    // It was not: CBZ, XPS, EPUB and Office are all zip containers, and until
+    // the handler set was named they were reachable today through
+    // fz_open_document's content scoring — a zip parser handling an archive an
+    // attacker supplied, in an application that believes it only opens PDF.
+    //
+    // The two items govern each other, so a threat model that treats them
+    // separately gets both wrong: the traversal item's severity depends on
+    // which handlers are permitted, and the handler decision's consequences are
+    // mostly about what those parsers then do with an archive.
+    name: 'archive extraction, tied to the handler set',
+    subject: /path traversal|zip slip|archive extraction/iu,
+    engages: /(path traversal|zip slip|archive extraction)[\s\S]{0,600}?(cbz|xps|epub|office|zip|container|handler)/iu,
+    missing:
+      'does not raise archive extraction path traversal. It is on the item list this model was ' +
+      'built from, and it is not anticipated work: CBZ, XPS, EPUB and Office are zip containers ' +
+      'reached through the same content-scored open path, so its severity is decided by which ' +
+      'handlers are permitted.',
+    shallow:
+      'raises archive extraction without connecting it to the handler set. The two govern each ' +
+      'other — the traversal risk exists only for the container formats that are permitted, and ' +
+      'the handler decision is mostly a decision about which archive parsers run on ' +
+      'attacker-supplied bytes. A model that treats them as separate items gets both wrong.',
+  },
 ];
 
 /**

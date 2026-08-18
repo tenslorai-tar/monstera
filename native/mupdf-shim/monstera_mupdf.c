@@ -213,6 +213,12 @@ static void mz_alloc_free(void *user, void *p)
     free(p);
 }
 
+/* The one document handler this application registers. MuPDF declares it the
+ * same way in source/fitz/document-all.c; it is a linkable global rather than
+ * public API, so an upstream rename fails the link instead of silently
+ * registering nothing. See mz_init for why the bulk registration is not used. */
+extern fz_document_handler pdf_document_handler;
+
 #ifdef _WIN32
 #define MZ_EXPORT __declspec(dllexport)
 #else
@@ -292,8 +298,29 @@ MZ_EXPORT int mz_init(mz_ctx **out)
         return MZ_ERR;
     }
 
+    /* Register PDF and nothing else.
+     *
+     * fz_register_document_handlers() registers FOURTEEN parsers, and
+     * fz_open_document picks between them by scoring the stream's CONTENT as
+     * well as the filename. The "not a PDF" refusal in mz_open comes from
+     * pdf_specifics AFTER fz_open_document returns, so a file that scored as
+     * EPUB had already been opened and parsed by the EPUB handler before it was
+     * refused. That is a foreign parser on the untrusted-document path, reached
+     * without anything asking for it.
+     *
+     * The build also passes -DFZ_ENABLE_<FORMAT>=0 for every format not
+     * permitted (scripts/lib/documentHandlers.mjs). This call is the half that
+     * covers what those flags cannot: gz_document_handler has no flag at all,
+     * and a MuPDF release that adds a handler adds it to the bulk function
+     * rather than to a list anybody here reviews. Naming what we want is the
+     * only form that stays correct across an upgrade.
+     *
+     * pdf_document_handler is a linkable global, declared this way in MuPDF's
+     * own source/fitz/document-all.c. It is not in a public header, so an
+     * upstream rename breaks the LINK — loudly, which is the acceptable
+     * failure mode for this. */
     fz_try(c->fz)
-        fz_register_document_handlers(c->fz);
+        fz_register_document_handler(c->fz, &pdf_document_handler);
     fz_catch(c->fz) {
         mz_record(c);
         fz_drop_context(c->fz);

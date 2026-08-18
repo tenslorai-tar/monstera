@@ -285,6 +285,15 @@ the browser shim never reaching a distributed build, proven by a packaging test 
 the exact CSP pinned as an invariant · archive and embedded-file extraction path
 traversal.
 
+**One of those items is not future work.** "Archive and embedded-file extraction
+path traversal" reads as anticipated, and it was live: **CBZ and XPS are zip
+containers**, and until the handler set was named they were reachable today
+through `fz_open_document`'s content scoring — a zip parser writing entries out
+of an archive an attacker supplied, on the primary untrusted-input path, in an
+application that believes it only opens PDF. EPUB and Office are zip containers
+too. The handler decision is what governs whether this item is live or
+anticipated, so the two must be read together rather than separately.
+
 Then attach each remaining item to the stage that builds the thing it protects:
 **process restriction and CSP at Stage 0**, **fuzzing starting now as a small
 nightly job that grows** (its first corpus seed already exists —
@@ -369,6 +378,71 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-18 — Naming the handler set, and what the flags did not do
+
+The handler question was carried as a threat-model item and then decided
+([ADR-0016](DECISIONS/0016-the-document-handler-set-is-named.md)): register only
+what a feature requires, which today is PDF. Three overlapping mechanisms —
+build-time `-DFZ_ENABLE_<FORMAT>=0`, runtime registration of
+`pdf_document_handler` by name, and the existing post-hoc `pdf_specifics` check
+kept as belt and braces.
+
+### The premise that needed checking
+
+The build-time half was preferred because removing the code from the binary
+makes an advisory inapplicable rather than arguable. That rationale rests on a
+premise, and the premise is false as stated: **the `FZ_ENABLE_*` flags gate
+registration only.** Each is referenced from exactly two files — `document-all.c`
+and `config.h` — and nothing inside `epub-doc.c` or its siblings sits in an
+`#if`. The flag removes no code by itself.
+
+What removes code is the **linker discarding objects nothing references**, the
+same mechanism that keeps barcode symbols out of this DLL while `libzxing` is on
+the link line. Whether it fires is a fact about one link, not a property of a
+flag, so it was measured rather than claimed.
+
+### What the measurement said
+
+`handlerFootprint.mjs` searches the built DLL for literals each parser's own code
+carries, with PDF's markers as the positive control — a search reports "found
+nothing" for every way it can break, and here that is the flattering answer.
+
+EPUB, SVG, MOBI and FB2 markers **left the binary**; XPS was already absent.
+**HTML and Office markers did not**, most likely because MuPDF's HTML engine and
+story API are reachable independently of the document handlers. The DLL fell from
+**42,124,800 to 39,373,824 bytes**.
+
+So the discard is **partial**, and the honest claim is narrower than the one that
+motivated the design. For EPUB the verdict is "the code is absent"; for HTML and
+Office it is "present but not registered". Both are sound, they are not the same
+strength, and writing them as though they were would be the kind of tidy summary
+this project keeps having to unpick.
+
+### The observable that made the fix provable
+
+Before and after both return `MZ_ERR`, so the return code shows nothing. The
+difference is the **message**: `not a PDF` is `pdf_specifics` cleaning up after a
+foreign parser has already run, while `cannot find document handler for file` is
+MuPDF refusing at recognition. `proof:documenthandlers` generates `txt`, `html`,
+`svg` and `fb2` files, opens each through the real DLL, and requires the second
+message — with a real PDF opening as the control, since "refuses everything"
+would otherwise pass every case.
+
+### Two consequences
+
+`DEBIAN-CVE-2025-55780` is re-closed as **NOT-APPLICABLE on a mechanism** — the
+EPUB parser is not in the binary — rather than on the reachability premise that
+turned out to describe a guard that did not exist.
+
+And **"archive and embedded-file extraction path traversal" was never future
+work**. CBZ, XPS, EPUB and Office are zip containers, all reachable through the
+same content-scored open path, so an attacker-supplied archive reached a zip
+parser in an application that believed it only opened PDF. That item and the
+handler decision govern each other, and the threat-model check now requires them
+to be written together rather than as separate bullets.
 
 ---
 

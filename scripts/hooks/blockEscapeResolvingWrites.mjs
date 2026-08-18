@@ -235,11 +235,27 @@ const SAME_LINE = String.raw`[^\n]*`;
  * in bash sends both streams to `word`. `&>` and `&>>` still match, since both
  * include stdout.
  *
- * Both halves were measured against real shell semantics rather than assumed,
- * and both historical occurrences remain caught: occurrence 5 and occurrence 7
- * are stdout redirects.
+ * **A target beginning `=` is a comparison, not a redirect.** `>=` and `>>=` are
+ * routine — in `awk 'NR>=386'`, in a perl or JS one-liner, in any expression a
+ * command carries as an argument — while a file literally named `=…` is one
+ * nobody writes. The asymmetry is what makes this safe to exclude rather than a
+ * narrowing: the excluded shape has no legitimate reading as a write, and the
+ * shape it stops matching has a constant legitimate one. `awk 'NR>=386'` was
+ * denied on this, and it writes nothing at all.
+ *
+ * **A target beginning `>` is the other half of an operator.** Excluding only
+ * `=` was not enough, and the case that showed it is `x >>= 2`: with `>>?`
+ * greedy the engine matches `>>`, sees `=`, backtracks to a single `>`, and then
+ * accepts the SECOND `>` as a one-character filename. The lookbehind cannot stop
+ * that, because it guards the character before the match, not the target. So the
+ * target test rejects `>` as well — which costs nothing, since `>>file` is
+ * matched by the greedy branch before any backtracking happens.
+ *
+ * All three halves were measured against real shell semantics rather than
+ * assumed, and both historical occurrences remain caught: occurrence 5 and
+ * occurrence 7 are stdout redirects to ordinary filenames.
  */
-const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-])\S`;
+const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-]|[=>])\S`;
 
 /**
  * A construct and its redirect, in EITHER operand order.

@@ -44,6 +44,7 @@ import { fileURLToPath } from 'node:url';
 
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { archiveSymlinks, extract } from '../lib/extract.mjs';
+import { handlerDisableFlags } from '../lib/documentHandlers.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
 import { recordShimBuild } from '../lib/shimBinary.mjs';
 
@@ -196,6 +197,13 @@ async function buildMupdf(root, force) {
       // with MSB8020 under a VS2022-only install.
       'PlatformToolset=v143',
     ],
+    // The document formats this application will open, chosen rather than
+    // inherited. Without these, fz_register_document_handlers registers
+    // fourteen parsers and a file that content-scores as EPUB is opened by the
+    // EPUB handler before the shim's "not a PDF" check ever runs.
+    // scripts/lib/documentHandlers.mjs holds the list and explains why this is
+    // one of three overlapping mechanisms rather than the only one.
+    compilerOptions: handlerDisableFlags(),
     label: `MuPDF ${MUPDF_VERSION} static libraries (several minutes)`,
   });
 

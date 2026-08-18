@@ -56,3 +56,4 @@ Each contains:
 | [0013](0013-pdfa-export-and-text-extraction-engines.md) | PDF/A-2b export gets a matrix row and no binary; the Poppler conditional is dropped | Accepted |
 | [0014](0014-ocr-stays-inside-the-engine.md) | OCR stays inside the engine: Tesseract and Leptonica are kept | Accepted |
 | [0015](0015-a-filename-may-not-select-a-native-library.md) | A filename may not select a native library (invariant 23) | Accepted |
+| [0016](0016-the-document-handler-set-is-named.md) | The document handler set is named, not inherited | Accepted |

@@ -49,6 +49,12 @@ inherited from MuPDF's build defaults rather than named here.
 Leptonica parses image formats, so once OCR is reachable it decodes
 attacker-controlled bytes taken from the document. Tesseract's exposure is
 different: its inputs are model files we ship.
+
+## Archive extraction
+
+Path traversal on extraction is scoped by the handler decision above: CBZ, XPS,
+EPUB and Office are zip containers, so the risk exists exactly for the container
+formats that are permitted.
 `;
 
 /** Names both subjects, engages with neither. The realistic failure. */
@@ -62,6 +68,10 @@ const SHALLOW = `
 - Tesseract 5.5.2
 
 We only open PDFs, so the document handler question does not arise.
+
+## Future work
+
+- Path traversal during extraction.
 `;
 
 const SILENT = `
