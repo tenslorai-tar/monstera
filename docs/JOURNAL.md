@@ -211,8 +211,34 @@ re-rating and the deferrals. Batches, in the owner's priority order:
   printed string) · 36 (ESLint's ignore list derived from `.gitignore` instead
   of duplicated, plus `native/**`, whose exclusion two documents asserted and no
   code enforced).
-- **Batch 7: NEXT.** Stage 0 exit — koffi Electron ABI prebuilds · AGPL source
-  offer · packaging test · NOTICE · the Ghostscript decision.
+- **Batch 7 — Stage 0 exit: PART DONE.** Closed: koffi (the item did not exist
+  as described — see ADR-0010's correction) · NOTICE, generated · the
+  Ghostscript decision (ADR-0013) · Poppler, dropped (ADR-0013) · every bundled
+  licence, read from the artefact.
+
+  **STILL OWED, in this order:**
+
+  1. **Tesseract and Leptonica.** Both are statically linked into the shipped
+     shim and nothing declared them until 2026-08-18. Owed: advisory register
+     entries triaged from **upstream history** per ADR-0011, never from CVE text
+     or distribution mappings · a reachability verdict **naming the symbols**,
+     so it expires when Stage 6 lands OCR — and *measured*, because a symbol in
+     the DLL does not establish that any exported shim function can reach it ·
+     **Leptonica named in the threat model as the image-format parser on the
+     untrusted-document path**, not as a footnote to Tesseract: it is the
+     security-relevant half, since it parses attacker-controlled image data the
+     moment OCR becomes reachable.
+  2. **The keep-decision, recorded.** Unlike Ghostscript, these stay. Stage 6
+     needs OCR and this is the engine's own integration, so removing them now
+     means re-adding them later. Write it down with the reason so nobody
+     re-derives why an OCR engine ships in 1.0 unused.
+  3. **The AGPL source offer** — the README side. NOTICE already states what it
+     must cover: MuPDF 1.28.0, the build configuration, the shim source, and
+     `extract` and `jbig2dec` by name.
+  4. **The packaging test.** Needs Electron to exist. It must assert the
+     unpacked `.node` is found via `resourcesPath` from a built application —
+     recorded in ADR-0010's correction as a packaging obligation rather than an
+     ABI one.
 
 **The audit's own text lives in a published artifact**, and the batch lists
 above are summaries of it rather than a substitute:
@@ -345,6 +371,118 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-18 — The guard, audited from the mechanism instead of from itself
+
+The PreToolUse guard fired for the first time and then absorbed eight
+corrections in one sitting. The method is the part worth keeping.
+
+### What it cost to audit the rules rather than the mechanism
+
+Auditing the rule set answers *is each rule's span right*. It cannot answer
+*what does no rule name*, because a missing rule has no span to classify. Asked
+the second way — which constructs resolve escapes or expand, AND can put the
+result in a file — the answer is finite and was written out per shell. It is in
+the file header of `blockEscapeResolvingWrites.mjs`, as two tables, and **the
+audit runs against that list rather than against the rules that happen to
+exist.**
+
+Asking it that way found four constructs no example had suggested: `sed` writing
+through a redirect rather than in place, `perl -i` in any spelling (it needs no
+`-e`, so the interpreter rule missed it), PowerShell's `New-Item -Value`, and
+`Tee-Object`. Two more came from the owner: a bare double-quoted PowerShell
+string redirected to a file, and a bash here-string. Six new rules.
+
+### The defect classes, and which ones became structural
+
+| defect | found by | now |
+|---|---|---|
+| scan crossed a command separator | the guard denying its own commit | `SAME_COMMAND` fragment |
+| `2>` read as a content write | measuring `printf … 2>/dev/null` | `TO_FILE` fragment |
+| **a `;` in a quoted payload halted the scan** | adding occurrence 7 **verbatim** | `SAME_LINE` fragment |
+| operand order matched one way only | the generated cases, 4 rules | `eitherOrder()` fragment |
+| statement anchor missed `{`, `(`, newline, pipe | measuring 8 shapes | anchor class |
+
+The third is the one to remember: **it was a false negative, and the guard had
+allowed occurrence 7's exact command since the day a separator-aware gap was
+introduced.** The proof's `printf` case used a payload with no metacharacters,
+so it never showed. Historical occurrences now appear in the proof written
+exactly as they were run.
+
+**The property claim "three defects, all false positives, so the design fails
+safely" is withdrawn.** It was three data points and its real effect was to stop
+the search. Two false negatives were found immediately afterwards.
+
+### Why the cases are generated
+
+Two lessons became shared fragments and were inherited automatically; two lived
+in each pattern's own shape and were inherited by nobody — and those two were
+exactly the ones missed. Each redirect-bearing rule now declares a `probe`, and
+the proof generates both operand orders, the descriptor cases and the span-class
+payload cases from the table, the way `boundaries.proof.mjs` generates from
+`ALLOWED_IMPORTS`. **A rule whose pattern contains a redirect but declares no
+probe fails the proof.** 51 cases → 233.
+
+It earned itself on its first run: three operand-order gaps, all valid shell,
+all real escape-resolving writes that no rule matched.
+
+### Residual, characterised and deliberately not fixed
+
+A stdout redirect genuinely inside a command substitution — `foo $(bar > f)` —
+is still attributed to the outer command. Modelling substitution boundaries adds
+moving parts to a security matcher to close a case nobody has hit.
+
+---
+
+## 2026-08-18 — What the shim actually links, answered from the artefact
+
+I raised OpenSSL as a licence and advisory concern. **It was wrong**, and how it
+was wrong is the finding.
+
+**No OpenSSL, no libarchive.** The shipped 42 MB DLL carries no version banner,
+no `SSLeay` string and no `EVP_` symbol, and MuPDF 1.28.0's tarball has no
+`thirdparty/openssl` directory at all. Both entered NOTICE because the check
+matched any `thirdparty\X` in `libmupdf.vcxproj`, and both appear there **only
+inside `AdditionalIncludeDirectories`** — include paths pointing at directories
+that do not exist. An include path is not a source file.
+
+**Tesseract and Leptonica DO ship, and nothing declared them.**
+`?AVTessErrStream@tesseract@@` is in the DLL as a mangled C++ type, and
+`libtesseract` references `libleptonica`, which compiles 155 C files. An OCR
+engine is statically linked into the shim.
+
+**The method was wrong three times, always the same way: reading a list that
+answers a different question.** The `thirdparty/` directory answers "what did
+the tarball ship". `libmupdf.vcxproj` answers "what does MuPDF's own library
+compile" — only `source/**`, since every bundled library arrives through a
+project reference. **The authority is our own link line**,
+`native/mupdf-shim/monstera_mupdf.vcxproj`, because that is the only list
+deciding what can reach the DLL we distribute. Deliberately a superset: the
+linker discards unreferenced objects, and for attribution the superset is the
+safe direction.
+
+### The licences, each read from its own file
+
+All sixteen are permissive or AGPL; **nothing forces a term stricter than MuPDF
+already does.** Three points that needed reading rather than assuming:
+
+- **zint is two things under one name.** Its LICENSE records that in 2013 the
+  *backend* was relicensed to BSD expressly so it could be linked into other
+  products, while the frontends and Qt4 backend stayed GPL. What is compiled is
+  101 files, every one under `thirdparty/zint/backend`. A GPL-2-only component
+  would have been a genuine conflict in an AGPL-3 project. **This is not one**,
+  so no compliance position rests on what the linker discarded.
+- **FreeType is the only genuinely dual-licensed component, and we take the
+  FreeType License.** A notice records the option *taken*, not the menu. Its own
+  text says the two are mutually exclusive and that the FTL is compatible with
+  GPL-3 but **not** GPL-2 — the alternative is the branch that could conflict.
+  The FTL's advertising clause is why FreeType is named in NOTICE rather than
+  folded into a count.
+- **`mujs` is ISC, not AGPL.** Caught because the source-offer list is derived
+  from the recorded licences rather than typed. Artifex licenses it commercially
+  too, which is where the impression comes from.
 
 ---
 
