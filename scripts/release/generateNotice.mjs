@@ -188,22 +188,78 @@ function nativeComponents() {
  */
 export function checkNativeComponents() {
   const source = mupdfSourcePath(ROOT);
-  const project = join(source, 'platform', 'win32', 'libmupdf.vcxproj');
-  if (!existsSync(project)) return { checked: false, missing: [], extra: [] };
+  const projectDir = join(source, 'platform', 'win32');
+  const entry = join(projectDir, 'libmupdf.vcxproj');
+  if (!existsSync(entry)) return { checked: false, missing: [], extra: [] };
 
-  const actual = [
+  // The root is OUR link line, not MuPDF's project graph.
+  //
+  // `native/mupdf-shim/monstera_mupdf.vcxproj` names the static libraries this
+  // shim links, and that is the only list that decides what can reach the
+  // shipped DLL. Starting anywhere else was wrong three times over: MuPDF's
+  // libmupdf.vcxproj compiles only its own source/** and reaches the bundled
+  // libraries through project references it does not control our use of, so
+  // reading it missed tesseract, leptonica and the barcode libraries entirely.
+  //
+  // Names are then taken only from SOURCE FILE paths. Matching any
+  // `thirdparty\X` also matched AdditionalIncludeDirectories, which lists
+  // `thirdparty\openssl\include` and `thirdparty\libarchive\include` —
+  // directories the 1.28.0 tarball does not contain — and so put OpenSSL into a
+  // licence notice for a library the build has never seen. An include path is
+  // not a source file.
+  //
+  // This is deliberately a SUPERSET of what ends up in the binary: the linker
+  // discards objects nothing references, and no barcode symbol appears in the
+  // built DLL even though libzxing is on the link line. For attribution a
+  // superset is the safe direction — naming a library that did not survive
+  // linking costs a reader nothing, and omitting one that did is the compliance
+  // failure this file exists to prevent.
+  const shimProject = join(ROOT, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');
+  if (!existsSync(shimProject)) return { checked: false, missing: [], extra: [] };
+
+  /** @type {Set<string>} */
+  const visited = new Set();
+  /** @type {Set<string>} */
+  const found = new Set();
+
+  /** @param {string} projectPath */
+  const walk = (projectPath) => {
+    const name = projectPath.toLowerCase();
+    if (visited.has(name) || !existsSync(projectPath)) return;
+    visited.add(name);
+    const text = readFileSync(projectPath, 'utf8');
+
+    for (const match of text.matchAll(/Include="([^"]*\.(?:c|cc|cpp|cxx))"/gu)) {
+      const parts = `${match[1]}`.replaceAll('\\', '/').split('/');
+      const index = parts.indexOf('thirdparty');
+      if (index >= 0 && parts[index + 1] !== undefined) found.add(`${parts[index + 1]}`.toLowerCase());
+    }
+
+    for (const reference of text.matchAll(/ProjectReference Include="([^"]+)"/gu)) {
+      walk(join(projectDir, `${reference[1]}`.replaceAll('\\', '/')));
+    }
+  };
+
+  const linked = [
     ...new Set(
-      [...readFileSync(project, 'utf8').matchAll(/thirdparty\\([A-Za-z0-9_-]+)/gu)].map((match) =>
-        `${match[1]}`.toLowerCase(),
-      ),
+      [...readFileSync(shimProject, 'utf8').matchAll(/\b(lib[a-z0-9]+)\.lib\b/gu)].map((match) => `${match[1]}`),
     ),
-  ].sort();
+  ];
+  if (linked.length === 0) {
+    throw new Error(
+      `${shimProject} names no MuPDF static libraries. Either the shim's link line changed shape, ` +
+        `or this parse is reading the wrong thing — and a comparison that finds nothing would ` +
+        `silently agree with any declaration.`,
+    );
+  }
+
+  for (const library of linked) walk(join(projectDir, `${library}.vcxproj`));
+  const actual = [...found].sort();
 
   if (actual.length === 0) {
     throw new Error(
-      `${project} names no thirdparty directories. Either MuPDF restructured its build, or this ` +
-        `parse is reading the wrong file — and a comparison that finds nothing would silently ` +
-        `agree with any declaration.`,
+      `The link line ${linked.join(', ')} reaches no thirdparty source files. Either MuPDF ` +
+        `restructured its build, or this parse is reading the wrong thing.`,
     );
   }
 
