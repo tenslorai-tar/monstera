@@ -33,6 +33,6 @@
     "nobody revisits, so an assumed origin makes every later range inherit the gap in silence —",
     "which is precisely what the watermark exists to prevent. It survived one question."
   ],
-  "commit": "63242af",
-  "audited": "Batches 1-6, plus Batch 7 ranges 1 and 2 of 4 (a969ae4..2aaa8f7, 2aaa8f7..63242af). Ranges 3 and 4 still OWED — see docs/JOURNAL.md"
+  "commit": "513b061",
+  "audited": "Batches 1-6, and Batch 7 in four ranges (a969ae4..2aaa8f7, ..63242af, ..bcdf209, ..513b061). Findings R1-1, R2-1, R3-1 in docs/JOURNAL.md"
 }

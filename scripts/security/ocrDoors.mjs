@@ -468,6 +468,31 @@ export function deriveOcrDoors(sourceRoot, shimProject) {
   }
 
   const publicSymbols = publicApiSymbols(sourceRoot);
+  const doors = [...closure].filter((name) => publicSymbols.has(name)).sort();
+
+  // POSITIVE CONTROL, in the instrument rather than only in its proof (audit
+  // item 4b). Every one of this derivation's four failures produced an empty or
+  // near-empty door list, and the empty-set floors above catch only the ones
+  // that empty an INPUT — a walk that reads every input correctly and still
+  // reaches nothing looked exactly like a clean result.
+  //
+  // Zero doors is never a legitimate answer here: MuPDF exposes OCR through its
+  // public API by construction, so `ocr_init` is reachable from something
+  // declared in a public header. If that ever stops being true it is a finding,
+  // not a quiet pass.
+  //
+  // The proof asserts specific doors; this cannot, because the names are
+  // version-specific and the whole point is to survive an engine upgrade. What
+  // it can refuse is silence — and the proof runs in CI while the instrument
+  // gets run by hand on the day somebody needs an answer.
+  if (doors.length === 0) {
+    throw new Error(
+      `The closure reached ${closure.size} function(s) from ${seeds.length} seed(s) but none of ` +
+        `them is declared in a public header, so this run found no doors at all. MuPDF exposes ` +
+        `OCR through its public API, so zero doors means the walk is broken — not that nothing ` +
+        `reaches Tesseract. Run with the closure printed and find where the chain stops.`,
+    );
+  }
 
   /** @param {string} name @returns {string[]} The edge chain back to a seed. */
   const pathToSeed = (name) => {
@@ -483,7 +508,7 @@ export function deriveOcrDoors(sourceRoot, shimProject) {
 
   return {
     seeds,
-    doors: [...closure].filter((name) => publicSymbols.has(name)).sort(),
+    doors,
     closure: [...closure].sort(),
     publicSymbols: publicSymbols.size,
     pathToSeed,

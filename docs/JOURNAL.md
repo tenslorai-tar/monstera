@@ -416,6 +416,60 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-18 — Stage audit, ranges 3 and 4 of 4: `63242af..HEAD`
+
+**Audited through 513b061.** Range 3: 8 commits, 17 files, 2 proofs added, **0
+modified**. Range 4: 9 commits, 43 files, 5 proofs added, 2 modified.
+
+With range 3's load-bearing column empty, the weight falls entirely on items 4a
+and 4b over what it added — and range 3 added `ocrDoors.mjs`, the instrument that
+failed four times, every failure returning the reassuring answer.
+
+### Finding R3-1: the instrument satisfies 4b only in its proof
+
+`deriveOcrDoors` throws when its seed set, its definition set or its public-API
+set comes back empty. Those are floors on the **inputs**, and they catch three of
+the four historical failures.
+
+They do not catch the fourth shape: **a walk that reads every input correctly and
+still reaches nothing.** That returns an empty door list, cleanly, with no
+complaint — and an empty door list reads as "nothing reaches Tesseract", which is
+the answer the whole exercise is tempted by.
+
+The proof asserts specific doors, so CI is covered. But 4b says the control goes
+**in the instrument**, because the proof runs in CI while the instrument gets run
+by hand on the day somebody needs an answer — and "somebody needs an answer" here
+means an engine upgrade, which is exactly when the door list is expected to move
+and a shrunken one is easiest to believe.
+
+**Fixed:** zero doors now throws. It is never a legitimate answer — MuPDF exposes
+OCR through its public API by construction, so `ocr_init` is reachable from
+something in a public header. The instrument cannot assert *which* doors without
+defeating its own purpose of surviving an upgrade, but it can refuse silence.
+
+### Range 4, checked against the same rule
+
+`shimReach` carries two run-time controls that must locate something
+known-present before its result is readable. `pathDispatch` throws when
+`is_extension` is not found. `handlerFootprint` requires PDF's markers and exits
+non-zero without them. `auditWatermark` throws on an unreachable watermark rather
+than reporting an empty range. **All four were built with the control inside**,
+which is what R3-1 turns out to have been the exception to rather than the rule.
+
+Both modified proofs — `blockEscapeResolvingWrites.proof.mjs` and
+`guardFiles.proof.mjs` — are **additive with no deletions**, verified by reading
+the `-` side of each diff rather than by trusting the summary.
+
+### What four ranges cost, and what they bought
+
+Two real findings (R1-1, R2-1) and one instrument hardened (R3-1), against four
+sittings. R2-1 alone justifies the shape: a regression introduced by the commit
+that generalised the fix, found because the audit read that commit's diff. None
+of the three would have been visible in a tree-wide sweep, because the tree is
+correct — it is the history that was wrong.
+
+---
+
 ## 2026-08-18 — Stage audit, range 1 of 4: `a969ae4..2aaa8f7`
 
 **Audited through 2aaa8f7.** 9 commits, 34 files, 5 proofs added, 1 modified.
@@ -427,8 +481,8 @@ unit. Auditing it as one would be that failure wearing the mechanism's name. The
 same argument rules out the two-way split: 20 commits is still 2.2×.
 
 **The one modified proof, read line by line.** `lintIgnores.proof.mjs` gained two
-`MUST_LINT` entries — `scripts/release/generateNotice.mjs` and
-`scripts/build/placeholder.ts`. **Additive; nothing loosened.** The check got
+`MUST_LINT` entries — the NOTICE generator, and a synthetic path under a build
+directory that must still be linted. **Additive; nothing loosened.** The check got
 stricter, which is the benign half of that column and worth recording as such,
 because "no loosening found" is only meaningful if somebody looked.
 
