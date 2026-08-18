@@ -82,8 +82,179 @@ function imageSamples(width, height) {
 }
 
 /**
- * @typedef {{ path: string, bytes: number, pages: number, sha256: string, generated: boolean }} Fixture
+ * @typedef {{ path: string, bytes: number, pages: number, objects: number, sha256: string, generated: boolean }} Fixture
  */
+
+/**
+ * The OBJECT-DENSE shape: many small objects rather than few large streams.
+ *
+ * This is the hard shape, and the reason it has its own generator is stage-audit
+ * item 2 — "was it verified against the easy shape only". Under WASM the two
+ * shapes were not remotely interchangeable: an image-heavy 405 MB document with
+ * 53 objects peaked at 3.71x, while an object-dense 28 MB document with 127K
+ * objects peaked at 20.9x, and a 464 MB object-dense document failed outright
+ * inside the page walk without ever reaching a save.
+ *
+ * Those numbers were WASM's and are withdrawn — natively an object costs about
+ * 45 bytes rather than 4 KB — but "withdrawn" is not "measured". Nothing had
+ * measured the dense shape natively, and the fixtures that produced the original
+ * figures were built in a scratch directory that no longer exists, which is the
+ * evidence-outside-the-repository problem the native CI job was created for.
+ *
+ * Density is built from form XObjects: each page's resource dictionary names
+ * many tiny XObjects and its content stream invokes every one, so a page walk
+ * has to resolve and parse each. Objects that merely exist in the file would sit
+ * in the xref untouched and measure nothing.
+ *
+ * @param {{ objects?: number, pages?: number, name?: string, root?: string }} [options]
+ * @returns {Fixture}
+ */
+export function buildDenseFixture(options = {}) {
+  const root = options.root ?? repoRoot();
+  const objects = options.objects ?? 127_000;
+  const pages = options.pages ?? 40;
+  const perPage = Math.max(1, Math.floor(objects / pages));
+  const name = options.name ?? `perf-dense-${String(Math.round(objects / 1000))}k.pdf`;
+
+  const directory = fixtureDirectory(root);
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, name);
+  const stamp = `${path}.generator.json`;
+
+  const generatorDigest = createHash('sha256')
+    .update(readFileSync(join(HERE, 'largeFixture.mjs')))
+    .update(`dense:${String(objects)}:${String(pages)}`)
+    .digest('hex');
+
+  if (existsSync(path) && existsSync(stamp)) {
+    /** @type {{ generator?: string, sha256?: string, objects?: number }} */
+    const previous = JSON.parse(readFileSync(stamp, 'utf8'));
+    if (previous.generator === generatorDigest && typeof previous.sha256 === 'string') {
+      return {
+        path,
+        bytes: statSync(path).size,
+        pages,
+        objects: previous.objects ?? objects,
+        sha256: previous.sha256,
+        generated: false,
+      };
+    }
+  }
+
+  /** @type {number[]} */
+  const offsets = [];
+  let position = 0;
+  const digest = createHash('sha256');
+  const handle = openSync(path, 'w');
+
+  /** @param {Buffer | string} chunk */
+  const emit = (chunk) => {
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk, 'latin1') : chunk;
+    writeSync(handle, buffer);
+    digest.update(buffer);
+    position += buffer.length;
+  };
+
+  /** @param {number} id */
+  const startObject = (id) => {
+    offsets[id] = position;
+    emit(`${String(id)} 0 obj\n`);
+  };
+
+  let nextId = 3;
+  try {
+    emit('%PDF-1.7\n%âãÏÓ\n');
+
+    /** @type {number[]} */
+    const pageIds = [];
+    /** @type {string[]} */
+    const pageBodies = [];
+
+    // Bodies are composed first so the page objects can name their XObject ids,
+    // then everything is emitted in id order.
+    for (let page = 0; page < pages; page += 1) {
+      const pageId = nextId;
+      nextId += 1;
+      const contentsId = nextId;
+      nextId += 1;
+      const firstXObject = nextId;
+      nextId += perPage;
+
+      pageIds.push(pageId);
+      pageBodies.push(`${String(pageId)}:${String(contentsId)}:${String(firstXObject)}`);
+    }
+
+    startObject(1);
+    emit('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+    startObject(2);
+    emit(
+      `<< /Type /Pages /Count ${String(pages)} /Kids [${pageIds
+        .map((id) => `${String(id)} 0 R`)
+        .join(' ')}] >>\nendobj\n`,
+    );
+
+    for (const body of pageBodies) {
+      const [pageIdText, contentsIdText, firstText] = body.split(':');
+      const pageId = Number(pageIdText);
+      const contentsId = Number(contentsIdText);
+      const first = Number(firstText);
+
+      /** @type {string[]} */
+      const resources = [];
+      /** @type {string[]} */
+      const invocations = [];
+      for (let index = 0; index < perPage; index += 1) {
+        resources.push(`/X${String(index)} ${String(first + index)} 0 R`);
+        invocations.push(`q 1 0 0 1 ${String(index % 500)} ${String(index % 700)} cm /X${String(index)} Do Q`);
+      }
+
+      startObject(pageId);
+      emit(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] ` +
+          `/Resources << /XObject << ${resources.join(' ')} >> >> ` +
+          `/Contents ${String(contentsId)} 0 R >>\nendobj\n`,
+      );
+
+      const content = `${invocations.join('\n')}\n`;
+      startObject(contentsId);
+      emit(`<< /Length ${String(content.length)} >>\nstream\n${content}endstream\nendobj\n`);
+
+      for (let index = 0; index < perPage; index += 1) {
+        // Each is a complete, valid form XObject with a real drawing operator,
+        // so resolving it costs a parse rather than an early reject.
+        const inner = '0 0 1 rg\n0 0 3 3 re f\n';
+        startObject(first + index);
+        emit(
+          `<< /Type /XObject /Subtype /Form /BBox [0 0 4 4] /Resources << >> ` +
+            `/Length ${String(inner.length)} >>\nstream\n${inner}endstream\nendobj\n`,
+        );
+      }
+    }
+
+    const highest = nextId;
+    const xref = position;
+    emit(`xref\n0 ${String(highest)}\n`);
+    emit('0000000000 65535 f \n');
+    for (let id = 1; id < highest; id += 1) {
+      const offset = offsets[id];
+      if (offset === undefined) throw new Error(`denseFixture: object ${String(id)} was never written`);
+      emit(`${String(offset).padStart(10, '0')} 00000 n \n`);
+    }
+    emit(`trailer\n<< /Size ${String(highest)} /Root 1 0 R >>\nstartxref\n${String(xref)}\n%%EOF\n`);
+  } finally {
+    closeSync(handle);
+  }
+
+  const sha256 = digest.digest('hex');
+  const actualObjects = nextId - 1;
+  writeFileSync(
+    stamp,
+    `${JSON.stringify({ generator: generatorDigest, sha256, bytes: position, objects: actualObjects }, null, 2)}\n`,
+    'utf8',
+  );
+  return { path, bytes: position, pages, objects: actualObjects, sha256, generated: true };
+}
 
 /**
  * Writes a stream-heavy PDF of approximately `targetBytes`.
@@ -111,10 +282,17 @@ export function buildLargeFixture(options = {}) {
     .digest('hex');
 
   if (existsSync(path) && existsSync(stamp)) {
-    /** @type {{ generator?: string, sha256?: string }} */
+    /** @type {{ generator?: string, sha256?: string, objects?: number }} */
     const previous = JSON.parse(readFileSync(stamp, 'utf8'));
     if (previous.generator === generatorDigest && typeof previous.sha256 === 'string') {
-      return { path, bytes: statSync(path).size, pages, sha256: previous.sha256, generated: false };
+      return {
+        path,
+        bytes: statSync(path).size,
+        pages,
+        objects: previous.objects ?? 2 + pages * 3,
+        sha256: previous.sha256,
+        generated: false,
+      };
     }
   }
 
@@ -207,6 +385,11 @@ export function buildLargeFixture(options = {}) {
   }
 
   const sha256 = digest.digest('hex');
-  writeFileSync(stamp, `${JSON.stringify({ generator: generatorDigest, sha256, bytes: position }, null, 2)}\n`, 'utf8');
-  return { path, bytes: position, pages, sha256, generated: true };
+  const objects = 2 + pages * 3;
+  writeFileSync(
+    stamp,
+    `${JSON.stringify({ generator: generatorDigest, sha256, bytes: position, objects }, null, 2)}\n`,
+    'utf8',
+  );
+  return { path, bytes: position, pages, objects, sha256, generated: true };
 }

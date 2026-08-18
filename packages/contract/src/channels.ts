@@ -10,6 +10,15 @@ import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } 
  * channel with nothing behind it is a call that hangs, which is worse than a
  * call that is absent. The `Handlers` mapped type enforces this mechanically —
  * adding an entry here breaks the build until something implements it.
+ *
+ * **Invariant L11 applies to every entry below, and is not yet mechanically
+ * checked.** No channel's payload may scale with document size *per operation*;
+ * the single sanctioned byte crossing is a snapshot, once per **version**. The
+ * check was deliberately not written at Stage 0: with one channel carrying a
+ * version string it would have inspected nothing, passed, and stayed green
+ * while the channels that make L11 bite were added. It is a Stage 1 gate, owed
+ * as the first document-carrying channel lands — which is this file, so whoever
+ * writes that channel is the person who owes it.
  */
 export const channels = {
   'app.info': channel(

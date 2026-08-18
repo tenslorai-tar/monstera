@@ -546,6 +546,21 @@ say**.
     absolute bitmap-cache cap — and is not assertable until a renderer exists to
     measure; a number invented for it now would be the mistake ADR-0007 records.
 
+    **The multiple is of the document's cost, not of the process's footprint.**
+    It is measured as peak RSS *above that process's own fixed baseline* — the
+    runtime, the loaded engine, the process itself — because those do not scale
+    with the document and the ratio exists to detect what does. Including a fixed
+    cost makes the multiple a function of document size rather than of behaviour:
+    a small document reports a large multiple however correctly the process is
+    behaving, and a large one hides a regression inside the rounding. Measured,
+    `main` holding exactly one copy of a 25 MB document breaches its budget on
+    the runtime's own footprint alone. Each role's baseline is measured, never
+    assumed, by running that same role against a trivially small document.
+
+    **The absolute cap is not baseline-adjusted.** It bounds the whole process,
+    because the machine pays for the baseline too, and containment is about what
+    the machine has to survive.
+
     > **Memory budgets:** `main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB` ·
     > `renderer = provisional`
     >

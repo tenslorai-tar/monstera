@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { SOURCE_FILE } from '../lib/memoryBudgets.mjs';
-import { runBudgetGate } from '../perf/budgetGate.mjs';
+import { runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
 import { formatBytes } from '../perf/peakRss.mjs';
 
 const ROOT = repoRoot();
@@ -60,14 +60,36 @@ function withEntries(entries) {
 // The control: against the real invariant, the gate passes and reports the
 // renderer as deliberately unasserted.
 // ---------------------------------------------------------------------------
-const baseline = runBudgetGate();
+const shapes = runAllShapes();
+const baseline = shapes[0] ?? runBudgetGate();
+
+for (const run of shapes) {
+  check(
+    `${run.shape}: the gate passes against the budgets the invariant actually declares`,
+    run.results.every((result) => result.withinMultiplier && result.withinAbsolute),
+    run.results
+      .map((r) => `${r.role}: ${formatBytes(r.peakBytes)} - ${formatBytes(r.baselineBytes)} = ${r.ratio.toFixed(2)}x of ${formatBytes(run.fixture.bytes)}`)
+      .join('; '),
+  );
+}
 
 check(
-  'the gate passes against the budgets the invariant actually declares',
-  baseline.results.every((result) => result.withinMultiplier && result.withinAbsolute),
-  baseline.results
-    .map((r) => `${r.role}: ${formatBytes(r.peakBytes)} = ${r.ratio.toFixed(2)}x of ${formatBytes(baseline.fixture.bytes)}`)
-    .join('; '),
+  'both content shapes were measured, not just the easy one',
+  shapes.length === 2 && shapes.some((run) => run.shape === 'object-dense'),
+  `shapes run: ${shapes.map((run) => run.shape).join(', ')}. The two shapes give different ` +
+    `figures for the same role, so one is not evidence about the other.`,
+);
+
+check(
+  'the dense shape costs the host measurably more per byte than the image shape',
+  (() => {
+    /** @param {string} shape @returns {number} */
+    const host = (shape) =>
+      shapes.find((run) => run.shape === shape)?.results.find((r) => r.role === 'mupdf-host')?.ratio ?? 0;
+    return host('object-dense') > host('image-heavy');
+  })(),
+  `If these came back equal the two fixtures are not actually different shapes, and running both ` +
+    `proves nothing beyond running one.`,
 );
 
 check(
