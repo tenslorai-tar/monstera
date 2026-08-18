@@ -192,6 +192,15 @@ jobs:
       - name: Native engine advisories
         run: npm run check:advisories
 
+      # The register above is only as good as its inability to pass while
+      # unreadable. Its parse used to be wrapped in a bare `catch` returning an
+      # empty baseline, and every reachability verdict is a search whose broken
+      # state and whose clean state print the same thing. This proves the parse
+      # fails ON THE PARSE, and that the walk finds a symbol known to be there
+      # before any "no references" it reports is believed.
+      - name: Advisory register cannot be silently disarmed
+        run: npm run proof:advisories
+
       - name: File policy (whole tree)
         run: node scripts/hooks/guardFiles.mjs --tree
 

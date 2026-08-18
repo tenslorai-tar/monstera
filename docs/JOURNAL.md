@@ -416,6 +416,88 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — The advisory register could not fail honestly, and the premise for fixing it was half wrong
+
+`readBaseline()` wrapped its parse in a bare `catch` and returned an empty
+baseline. `docs/security/engine-advisories.json` is tracked, so it exists in
+every checkout: that `catch` had no bootstrapping case, and the only states it
+could reach were **missing** and **unparseable**. Item 4b's corollary, word for
+word — *an empty intermediate result is a broken parse, not a clean input.*
+
+Now: a missing register throws, an unparseable one throws, an empty
+`reachability` map throws, and `--refresh` throws on the same conditions rather
+than rewriting the file with every verdict marked UNTRIAGED.
+
+### The stated premise was that a trailing comma passed clean. It did not.
+
+That was the reason given for the fix, and it was worth twenty seconds to check
+rather than repeat. Restoring the bare `catch` and feeding the checker a
+register with one stray comma: **it went red anyway** — on
+`74 advisory/advisories have no recorded verdict`, because an unreadable
+register also yields an empty `reviewed` map, so every advisory read as
+untriaged.
+
+So the register had an **accidental control**, and the fix is still right,
+because the control is conditional on things that have already moved once:
+
+- it holds only while the advisory feed **returns entries**. This project has
+  already been bitten by that exact drift — OSV carries these under `Debian:12`
+  and nothing under a bare `mupdf` name. A feed returning zero entries plus an
+  unreadable register is a clean pass with the reachability mechanism disarmed;
+- the OCR door drift would also have fired, but only where MuPDF source is
+  provisioned. Where it is not, that check prints `--` and steps aside.
+
+Two conditions, both outside this repository's control, standing between a
+typo and a silently disarmed security register. **A guard that works for a
+reason unrelated to what it guards is not a guard**, and the correction matters
+more than the fix: writing "it converted a corrupt register into a clean pass"
+into the journal would have recorded a defect that was one condition worse than
+the one that existed.
+
+The proof is what forced this out. Its first version asserted only that a
+corrupt register **fails**, and it passed identically with the fix reverted —
+vacuous, and for the second time in two days a control was passing for a reason
+its label did not name. Each failure case now asserts the **reason**: the parse
+must fail *on the parse*, the missing register must say it is unreadable, the
+empty map must name the empty map. With those in place, reverting the swallow
+turns exactly one case red.
+
+### The walk that consumes the register had no control of its own
+
+The OCR **door set** is verified against the engine source. The **walk** that
+resolves every reachability verdict was not verified against anything, and it
+is a search: a glob matching no files, a symbol misspelt in the register, or
+`git grep` run from the wrong root all report *no references* — which in this
+file is always the answer someone hoped for.
+
+A count of verdicts checked is necessary and **not sufficient**, because a
+resolver that reads no files still produces a count. So the register now
+declares a control symbol **per path glob**, each known to be present, and the
+walk must find every one before any verdict it reports is believed:
+
+| glob | control | why that symbol |
+|---|---|---|
+| `native/**` | `fz_register_document_handler` | the shim's single registration call site (ADR-0016) |
+| `packages/*/src/**` | `CapabilityRegistry` | named by its module, its test and the kernel index |
+| `apps/*/src/**` | `export` | the only stable token in a bare `export {}` — weak as a symbol, exactly right as a control |
+
+The last is the one that matters: `kernel-error-path-sanitisation` scans that
+glob and no other, so a glob matching nothing would leave it permanently,
+silently green. And the coverage requirement is **derived from the verdicts**,
+not listed — a new verdict naming a new glob demands a control instead of
+inheriting one.
+
+`--baseline <path>` was added so the proof runs the real checker against
+deliberately broken registers **without editing the tracked one**; mutate-run-
+restore leaves a corrupt security register behind on any crash between the two
+steps. It changes which register is read, never whether a check runs, which is
+the distinction `MONSTERA_GITLEAKS` failed.
+
+Ten cases, two of them the controls that stop the other eight being satisfied
+by a checker that always fails. Three mutations confirmed red.
+
+---
+
 ## 2026-08-19 — The escape-resolving-write ban acquires a standing opponent
 
 Not an attack. **The tool's own default behaviour.**

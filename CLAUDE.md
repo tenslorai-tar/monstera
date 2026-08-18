@@ -538,6 +538,7 @@ part of the record.
 npm run proof:guards      # prove the pre-commit guards still catch what they claim
 npm run proof:secretscan  # prove the secret scan cannot be silently disarmed
 npm run proof:escapeguard # prove the escape-resolving-write hook blocks and permits correctly
+npm run proof:advisories  # prove the advisory register cannot pass while unreadable
 npm run guard:staged      # file policy against the index
 npm run guard:tree        # file policy against every tracked file (CI mirror)
 npm run scan:secrets      # full-history gitleaks scan

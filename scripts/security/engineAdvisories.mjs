@@ -74,7 +74,27 @@ import { deriveOcrDoors } from './ocrDoors.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
-const BASELINE = join(ROOT, 'docs', 'security', 'engine-advisories.json');
+const TRACKED_BASELINE = join(ROOT, 'docs', 'security', 'engine-advisories.json');
+
+/**
+ * The register to read. `--baseline <path>` points it at a fixture.
+ *
+ * This exists so `advisoryRegister.proof.mjs` can run the real checker against
+ * deliberately broken registers **without editing the tracked one**. The
+ * alternative — mutate `engine-advisories.json`, run, restore — leaves a
+ * corrupt security register behind on any crash between the two steps.
+ *
+ * It is not an escape hatch, and the distinction is the one `MONSTERA_GITLEAKS`
+ * failed: this changes *which* register is read, never *whether* a check runs.
+ * Every rule below applies identically to whatever file it names, so pointing it
+ * somewhere lenient requires writing a lenient register, which is exactly as
+ * visible in a diff as editing the tracked one.
+ */
+const BASELINE = (() => {
+  const flag = process.argv.indexOf('--baseline');
+  const supplied = flag === -1 ? undefined : process.argv[flag + 1];
+  return supplied === undefined ? TRACKED_BASELINE : resolve(supplied);
+})();
 
 /**
  * The components this watches, and the name each is addressable by.
@@ -172,16 +192,145 @@ async function fetchAdvisories() {
  *     shippedPaths: string[],
  *     symbols?: string[],
  *   }>,
+ *   reachabilityControl: { symbol: string, from: string[], why: string }[],
  * }} Baseline
  * @returns {Baseline}
  */
+/**
+ * Reads the register, or throws.
+ *
+ * This used to wrap the parse in a bare `catch` returning an empty baseline,
+ * and there is no bootstrapping case that justified it: `engine-advisories.json`
+ * is tracked, so it exists in every checkout. The only states that `catch` could
+ * actually reach were **missing** and **unparseable** — and it turned both into
+ * a clean pass. A trailing comma from a hand-edit disarmed the entire
+ * reachability mechanism and printed the identical silence to every verdict
+ * holding.
+ *
+ * That is item 4b's corollary word for word: **an empty intermediate result is
+ * a broken parse, not a clean input.** A register nobody can read is not a
+ * register with nothing in it.
+ *
+ * `--refresh` throws here too, deliberately. A refresh that found no baseline
+ * would rewrite the file with every entry marked UNTRIAGED, discarding every
+ * triage verdict in it — recovering a deleted register is a `git checkout`, not
+ * a regeneration.
+ */
 function readBaseline() {
+  let raw;
   try {
-    const parsed = JSON.parse(readFileSync(BASELINE, 'utf8'));
-    return { watch: {}, reachability: {}, ...parsed };
-  } catch {
-    return { version: MUPDF_VERSION, reviewed: {}, watch: {}, reachability: {} };
+    raw = readFileSync(BASELINE, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `Cannot read the advisory register at ${BASELINE}: ${String(error)}\n` +
+        'It is tracked, so it exists in every checkout. A missing register is not an ' +
+        'empty one — restore it with git rather than regenerating it, which would ' +
+        'discard every triage verdict.',
+      { cause: error },
+    );
   }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `The advisory register at ${BASELINE} is not valid JSON: ${String(error)}\n` +
+        'This check reads its every claim from that file. Failing here is the ' +
+        'point: the alternative is a hand-edit typo disarming the whole ' +
+        'reachability mechanism while the output looks exactly like success.',
+      { cause: error },
+    );
+  }
+
+  /** @type {Baseline} */
+  const baseline = { watch: {}, ...parsed };
+
+  // Neither of these can be defaulted to empty. A verdict register with no
+  // verdicts, and a walk with no control, are the two states whose output is
+  // indistinguishable from everything being fine.
+  if (typeof baseline.reachability !== 'object' || Object.keys(baseline.reachability).length === 0) {
+    throw new Error(
+      `The advisory register at ${BASELINE} declares no reachability verdicts.\n` +
+        'Every NOT-REACHABLE verdict in it rests on one, so an empty map means the ' +
+        'file was truncated or the key was renamed — not that nothing is watched.',
+    );
+  }
+  if (!Array.isArray(baseline.reachabilityControl) || baseline.reachabilityControl.length === 0) {
+    throw new Error(
+      `The advisory register at ${BASELINE} declares no reachability controls.\n` +
+        'The walk that resolves those verdicts reports "no references" for every way ' +
+        'it can be broken, so without a symbol it is known to find, its silence about ' +
+        'every other symbol is worthless.',
+    );
+  }
+
+  return baseline;
+}
+
+/**
+ * Fails when the reachability walk cannot find a symbol that is known to be
+ * there.
+ *
+ * Every reachability verdict here is a **search**, and a search has one output
+ * for every way it can be broken: *no references*. A path glob that matches
+ * nothing, a symbol misspelt in the register, a `git grep` invoked from the
+ * wrong root — all of them print the same reassuring result as a genuine
+ * absence, and in this file "found nothing" is always the answer someone hoped
+ * for (audit item 4b).
+ *
+ * A count of verdicts checked is necessary and not sufficient: a resolver that
+ * reads no files at all still produces a count. What proves the walk can see
+ * anything is an entry it is **known to be able to find**, asserted on every
+ * run — the same control `DocumentService.checkWriteTarget` carries, for the
+ * same reason.
+ *
+ * One control per distinct path glob any verdict names, because a control that
+ * proves the `native` glob resolves says nothing about whether the `apps` one
+ * does, and the entry scanning `apps` is the one whose blindness would be
+ * silent — `kernel-error-path-sanitisation` names that glob and no other.
+ * The coverage requirement is derived from the verdicts rather than listed, so
+ * a new verdict naming a new glob demands a control instead of inheriting one.
+ *
+ * @param {Baseline} baseline
+ * @returns {{ failures: string[], found: number }}
+ */
+function brokenReachabilityControls(baseline) {
+  /** @type {string[]} */
+  const failures = [];
+  let found = 0;
+
+  for (const control of baseline.reachabilityControl) {
+    /** @type {import('../lib/verdict.mjs').Input[]} */
+    const inputs = [{ absent: control.symbol, from: control.from, why: control.why }];
+    const detail = digestInputs(inputs, { root: ROOT }).inputs[0]?.detail ?? '';
+    if (detail === 'no references') {
+      failures.push(
+        `${control.symbol} was NOT found in ${control.from.join(', ')}, and it is the ` +
+          `control for those paths.\n` +
+          `      Expected: present. This says the WALK is broken, not that the symbol is gone —\n` +
+          `      and while it is broken, every "no references" this check prints is worthless.\n` +
+          `      Why this symbol: ${control.why}`,
+      );
+      continue;
+    }
+    found += 1;
+  }
+
+  // Every glob a verdict scans must have a control proving that glob resolves.
+  const controlled = new Set(baseline.reachabilityControl.flatMap((control) => control.from));
+  const uncontrolled = [
+    ...new Set(Object.values(baseline.reachability).flatMap((claim) => claim.shippedPaths)),
+  ].filter((glob) => !controlled.has(glob));
+  for (const glob of uncontrolled) {
+    failures.push(
+      `${glob} is scanned by a reachability verdict and has no control.\n` +
+        `      Add one to reachabilityControl naming a symbol known to be present there.\n` +
+        `      Without it, a glob that matches no files reads as a clean verdict.`,
+    );
+  }
+
+  return { failures, found };
 }
 
 /**
@@ -307,6 +456,10 @@ async function main() {
           reviewed,
           watch: baseline.watch,
           reachability: baseline.reachability,
+          // Carried through explicitly. A refresh that dropped the controls
+          // would leave the walk unverified while every other check kept
+          // passing, which is the failure the controls exist to make loud.
+          reachabilityControl: baseline.reachabilityControl,
         },
         null,
         2,
@@ -442,6 +595,37 @@ async function main() {
     drift.checked
       ? `  ok  ${(baseline.reachability['ocr']?.symbols ?? []).length} OCR doors match the engine source\n`
       : `  --  OCR door set NOT verified here — MuPDF source not provisioned\n`,
+  );
+
+  // Can the walk see anything at all? Asked BEFORE asking what it found, for
+  // the same reason the OCR door drift is: "your instrument is blind" has to be
+  // reported before "your instrument found nothing", because the second
+  // statement means nothing while the first is outstanding.
+  const controls = brokenReachabilityControls(baseline);
+  if (controls.failures.length > 0) {
+    process.stderr.write(
+      `\nThe reachability walk failed its own control(s):\n\n` +
+        controls.failures.map((entry) => `  - ${entry}`).join('\n\n') +
+        `\n\nEvery verdict below rests on this walk reporting "no references" honestly. ` +
+        `A broken walk reports exactly that, for every symbol, on every run — which is ` +
+        `why it must first find something it is known to be able to find.\n\n`,
+    );
+    return 1;
+  }
+
+  const symbolCount = Object.entries(baseline.reachability).reduce(
+    (total, [name, claim]) => total + (claim.symbols ?? [name]).length,
+    0,
+  );
+  if (symbolCount === 0) {
+    process.stderr.write(
+      `\nThe reachability verdicts name no symbols at all, so nothing was searched for.\n\n`,
+    );
+    return 1;
+  }
+  process.stdout.write(
+    `  ok  reachability walk: ${controls.found} control(s) found, ` +
+      `${Object.keys(baseline.reachability).length} verdict(s) / ${symbolCount} symbol(s) checked\n`,
   );
 
   // Verdicts that rest on unreachability expire when the code changes under

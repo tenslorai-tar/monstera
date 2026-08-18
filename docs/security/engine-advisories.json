@@ -151,5 +151,28 @@
         "apps/*/src/**"
       ]
     }
-  }
+  },
+  "reachabilityControl": [
+    {
+      "symbol": "fz_register_document_handler",
+      "from": [
+        "native/**"
+      ],
+      "why": "Every verdict above is a SEARCH, and a search reports 'no references' for every way it can be broken — a glob matching no files, a symbol misspelt here, git grep run from the wrong root. All of them look exactly like the answer everyone hoped for. So the walk must first find something it is known to find, per path glob, on every run (audit item 4b). This symbol is the shim's single registration call site (ADR-0016, invariant 23): it is present by construction and its disappearance would itself be worth stopping on."
+    },
+    {
+      "symbol": "CapabilityRegistry",
+      "from": [
+        "packages/*/src/**"
+      ],
+      "why": "The control proving packages/*/src/** resolves. A control over native/** says nothing about whether this glob matches any files, and pdf_subset_fonts and engine-host-containment both rest on it being scanned. CapabilityRegistry is the oldest class in packages/kernel and is named by its own module, its test and the kernel index."
+    },
+    {
+      "symbol": "export",
+      "from": [
+        "apps/*/src/**"
+      ],
+      "why": "The control proving apps/*/src/** resolves, and the one that matters most: kernel-error-path-sanitisation scans ONLY this glob, so a glob that matched nothing would leave that verdict permanently, silently green. apps/desktop/src/index.ts is a bare 'export {};' today, which leaves 'export' as the only stable token in it — weak as a symbol and exactly right as a control, because what is being controlled for is whether any file under this glob is read at all."
+    }
+  ]
 }
