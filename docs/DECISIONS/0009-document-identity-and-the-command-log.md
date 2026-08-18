@@ -314,6 +314,28 @@ establishes identity **after** the rename. Measured, rather than re-reasoned:
 requirement, so `dev:ino` does not fail that constraint any differently. The gap
 narrows from two questions to one.
 
+### What would invalidate these rows
+
+**Every path-form measurement in this correction was taken on Node v24.12.0,
+libuv 1.51.0, Windows 11 (10.0.26200), x64.**
+
+Pinned because the rows are behavioural claims about
+`uv_fs_realpath` — `CreateFile` plus `GetFinalPathNameByHandle` — and a Node or
+libuv change could alter which volume-name form it returns without anything here
+noticing. The constructed-identity cases in
+`packages/kernel/src/documentIdentity.test.ts` exercise the *rule*, not the
+platform, so **they keep passing if the platform's folding behaviour drifts**.
+
+This is record-keeping rather than risk, and the merge-only design is why. A form
+that stops folding stops *merging* — it never starts merging wrongly — so drift
+degrades to two documents over one file, which the save-time re-verification
+against the actual file catches as an error rather than an overwrite. The
+consequence is bounded by the rule's shape, not by the accuracy of these
+versions.
+
+Re-run `scripts/spike/pathIdentity.mjs` on an engine upgrade or a Node major, and
+correct the rows if they move.
+
 ### Extended measurement: a redirector path by machine name
 
 `\\localhost\` is a special case Windows treats differently from an ordinary
