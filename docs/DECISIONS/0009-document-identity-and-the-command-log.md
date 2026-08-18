@@ -297,35 +297,94 @@ equally canonical — while `dev:ino` is identical for both (`nlink=2`).
 identity-by-`realpath.native` they are **two `DocId`s, two command logs, and a
 second save that discards the first's edits.**
 
-**Neither mechanism alone is sufficient**, and that is the finding:
+### A claim in the first draft of this correction was wrong, and is withdrawn
 
-- `realpath.native` fails the UNC-versus-local case and cannot fold hard links.
-- `dev:ino` folds both, but **requires the file to exist** — which the Save As /
-  ENOENT resolution above explicitly does not — and its stability on a **real
-  remote SMB share is unmeasured**. The share tested here is loopback to the
-  same NTFS volume, so a matching file index proves less than it appears to.
+That draft said `dev:ino` "requires the file to exist, which the Save As / ENOENT
+resolution explicitly does not", and treated that as a second design gap.
+**There is no such conflict.** §1 above resolves a not-yet-existing path by
+giving it *no identity at all* — `realpath.native` throws `ENOENT` and Save As
+establishes identity **after** the rename. Measured, rather than re-reasoned:
 
-### What is still unmeasured, stated rather than inferred
+| Input | `realpath.native` | `statSync` |
+|---|---|---|
+| missing file | `ENOENT` | `ENOENT` |
+| path through a file | `ENOENT` | `ENOENT` |
 
-**A genuine mapped network drive was not tested.** `net use` could not reach a
-share on this machine (`\\localhost\C$` resolves from Node but refuses a
-mapping), so the `Z:` → `\\server\share` fold is **inferred from its two
-neighbours, not measured.** The inference is that a mapped drive resolves to its
-UNC target — which would unify it with the UNC form and leave both distinct from
-any local form. **Do not build on that inference.** It is exactly the shape of
-unmeasured row the three measured ones exist to shame, and it needs a machine
-with a real share.
+**Identical failure modes.** Both mechanisms have the same existence
+requirement, so `dev:ino` does not fail that constraint any differently. The gap
+narrows from two questions to one.
+
+### Extended measurement: a redirector path by machine name
+
+`\\localhost\` is a special case Windows treats differently from an ordinary
+share, so the same file was measured again through the machine's own name —
+`\\EMEM-PC\C$\…`, a normal redirector path:
+
+| Form | `realpath.native` | `dev:ino` |
+|---|---|---|
+| `C:\…\f.txt` | `C:\…\f.txt` | `1182584447:3377699720809809` |
+| `\\EMEM-PC\C$\…\f.txt` | `\\EMEM-PC\C$\…\f.txt` | *identical* |
+| `\\localhost\C$\…\f.txt` | `\\localhost\C$\…\f.txt` | *identical* |
+
+**Three distinct `realpath.native` values for one file — the two UNC forms do not
+even fold to each other. One `dev:ino`.**
+
+### What remains unmeasured, stated rather than inferred
+
+- **A genuine mapped network drive.** `net use` fails with "the network name
+  cannot be found" for the admin share, from both Git Bash and `cmd`, while Node
+  opens the same UNC path successfully. Mapping appears to need elevation this
+  session does not have. **The `Z:` → `\\server\share` fold is inferred from its
+  neighbours, not measured. Do not build on that inference.**
+- **A remote share on a different volume and a different server implementation.**
+  Every share reachable here is this machine's own NTFS volume, so a matching
+  file index proves less than it looks. `net share` returns "Access is denied";
+  WSL is installed with **no distribution**, and adding one needs the same
+  elevation. Attempt abandoned rather than fought, per the time box.
+
+A corporate NAS may report file indexes differently, or report zero. The rule
+below is designed so that this uncertainty cannot cause loss.
+
+### Decision: identity may MERGE on `dev:ino`, never SPLIT on it
+
+This degrades safely whatever a future measurement returns.
+
+| `realpath.native` | `dev:ino` | Verdict |
+|---|---|---|
+| match | — | **Same document.** High confidence, no dependence on file indexes |
+| differ | match | **Same document.** The fold for UNC-versus-mapped, and for hard links |
+| differ | differ | **Different documents** |
+
+`dev:ino` is only ever allowed to *join* two paths that `realpath.native` kept
+apart. It can never separate two paths `realpath.native` agreed on, so a
+filesystem that reports unstable or zero indexes degrades to today's behaviour
+rather than to a new failure.
+
+The only risk is in the middle row, and it is a **false merge** — corruption
+rather than loss. Guarded:
+
+- **`dev:ino` must be non-zero.** A filesystem that supplies no index supplies no
+  evidence, and zero is what that looks like.
+- **A second attribute must corroborate** before merging — size and last-write
+  time. Two genuinely distinct files colliding on file index *and* size *and*
+  last-write time is not worth designing against.
+
+### The save-time check is independent of all of it
+
+Before writing, verify **against the actual file** that no other `DocId` is
+managing it.
+
+No path-derived identity can cover a file being replaced, renamed or hard-linked
+*while open*, so this check is needed whatever wins. With it in place, a **false
+split becomes a caught error rather than a silent overwrite** — which is what
+makes the merge-only rule safe to ship ahead of the missing measurement.
 
 ### Consequence
 
-`DocumentService` must not be written around identity-by-`realpath.native`. The
-resolution is deferred to the component's own design rather than guessed at
-here, and it is a **blocking input to that work**, not a refinement of it. The
-candidates are a composite (`dev:ino` when the file exists, `realpath.native`
-when it does not, with the transition on first save handled explicitly), or
-`dev:ino` with a measured fallback for filesystems that do not supply a stable
-index. Both need the remote-share measurement before either can be chosen.
+`DocumentService` is built on the merge-only rule now. If a real share ever
+contradicts a row above, the correction is a **verdict change rather than a
+rewrite**, because nothing catastrophic was reachable in the meantime.
 
-**Hard links are an accepted limitation only if stated as one.** If identity ends
-up keyed on `realpath.native` for any case, two hard links to one file are two
-documents in that case, and that is a data-loss shape rather than a curiosity.
+**Hard links are folded** by the middle row, so they are not a limitation under
+this rule. They would be one under identity-by-`realpath.native` alone, and that
+is precisely what this rule replaces.
