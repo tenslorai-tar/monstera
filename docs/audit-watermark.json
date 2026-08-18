@@ -1,0 +1,26 @@
+{
+  "$comment": [
+    "The last commit covered by a stage audit whose findings are written into docs/JOURNAL.md.",
+    "",
+    "The stage audit used to be periodic — run at the end of a stage, against the tree. That was",
+    "right for the 43-finding audit, which caught things that had sat for weeks. It is the wrong",
+    "shape for what the evidence now says produces most defects: this project's own record shows",
+    "them arriving INSIDE the proofs and instruments written an hour earlier to close the previous",
+    "defect. The separator gap that gave the guard its only false negative, the crash the",
+    "history-reach fix introduced, the verdict state that printed in no output, and two wrong",
+    "entries in a licence notice were all fix-induced.",
+    "",
+    "So the audit is scoped to a range rather than a moment. `npm run audit:scope` reports",
+    "watermark..HEAD, and CLAUDE.md's checklist is applied to that range instead of to the tree.",
+    "",
+    "This file advances ONLY in the commit that writes the findings, and check:docs enforces that",
+    "by requiring this sha to appear in docs/JOURNAL.md — the same shape as a FEATURES.md row that",
+    "turns the check red when it is claimed without evidence.",
+    "",
+    "Started at zero backlog, deliberately. Every batch through 7 was audited as it closed, so this",
+    "origin is a measured fact rather than a guess. Once feature code begins the change rate rises",
+    "and no honest starting point is available."
+  ],
+  "commit": "710cd94",
+  "audited": "Batches 1-7, each audited at close; findings in docs/JOURNAL.md"
+}

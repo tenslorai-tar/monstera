@@ -30,6 +30,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { auditScope } from '../lib/auditWatermark.mjs';
 import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
@@ -378,6 +379,45 @@ const failures = [];
   }
 }
 
+// ---------------------------------------------------------------------------
+// 8. The stage audit is owed for a RANGE, and the watermark cannot advance
+//    without a record.
+// ---------------------------------------------------------------------------
+//
+// Two properties, and each fails differently.
+//
+// The watermark's commit must appear in docs/JOURNAL.md. That is what makes an
+// audit claimable only with evidence — the same shape as a FEATURES.md row that
+// turns this check red when marked done without one. Advancing the file alone
+// would otherwise record an audit nobody performed, and there is no later moment
+// at which that becomes visible.
+//
+// And HEAD must be within one batch of the watermark, where "one batch" is the
+// median of batches 4 to 7 measured from this repository's own history. Past
+// that, the checklist stops being applicable to a diff anybody reads.
+{
+  const scope = auditScope({ root: ROOT });
+  const journal = read('docs/JOURNAL.md');
+
+  if (!journal.includes(scope.watermark)) {
+    failures.push(
+      `docs/audit-watermark.json names ${scope.watermark}, but docs/JOURNAL.md does not mention ` +
+        `it. The watermark advances only in the commit that writes the findings; a watermark with ` +
+        `no journal entry is an audit claimed without a record, and nothing later makes that ` +
+        `visible. Write the findings, and include the sha.`,
+    );
+  }
+
+  if (scope.overBudget.length > 0) {
+    failures.push(
+      `The unaudited range ${scope.watermark}..HEAD has grown past one batch: ` +
+        `${scope.overBudget.join('; ')}. Run \`npm run audit:scope\` and apply CLAUDE.md's stage ` +
+        `audit to that range. The threshold is the MEDIAN of batches 4-7, not the maximum — the ` +
+        `maximum was batch 7, the one stretch that was plainly too large to audit as a unit.`,
+    );
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `\nDocument consistency — ${failures.length} problem(s):\n\n` +
@@ -397,4 +437,5 @@ process.stdout.write('  ok  §9.17 states each budget value once, in the machine
 process.stdout.write(
   `  ok  the threat model, if written, raises all ${THREAT_MODEL_TOPICS.length} carried questions\n`,
 );
-process.stdout.write('\n7 document consistency checks passed.\n');
+process.stdout.write('  ok  the audit watermark is recorded in the journal and within one batch\n');
+process.stdout.write('\n8 document consistency checks passed.\n');

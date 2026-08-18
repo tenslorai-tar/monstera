@@ -294,6 +294,12 @@ application that believes it only opens PDF. EPUB and Office are zip containers
 too. The handler decision is what governs whether this item is live or
 anticipated, so the two must be read together rather than separately.
 
+**This list runs BEFORE `DocumentService` and `CommandBus`**, and the ordering is
+resolved rather than implied — see the sequencing note under "Next, in order"
+below. Four of these items are properties of those two components, so building
+the components first turns all four into restrictions retrofitted under finished
+code.
+
 Then attach each remaining item to the stage that builds the thing it protects:
 **process restriction and CSP at Stage 0**, **fuzzing starting now as a small
 nightly job that grows** (its first corpus seed already exists —
@@ -315,8 +321,37 @@ under `watch`. It is NOT reachable today only because no shipped path calls
 reference to that symbol fails the build and names the verdicts it invalidates.
 Optimise and export are the features that will trip it.
 
+**Sequencing, resolved 2026-08-18.** This list and the security list above
+contradicted each other: one said a threat model is owed before the remaining
+security work, the other put `DocumentService` and `CommandBus` first. Nothing
+reconciled them, so the conflict would have resolved the wrong way by default —
+whichever list was read last.
+
+**The threat model and the B4 security amendment go first.** Four of the eleven
+owed security items are properties of exactly these two components, not
+neighbours of them:
+
+- **restricted engine processes** belong to the utility hosts `DocumentService`
+  creates;
+- **the active-content policy on open** belongs to its open path — the same path
+  ADR-0016 has just had to change once already;
+- **bounded work per operation against hostile documents** belongs to
+  `CommandBus`;
+- **the crash-recovery sidecar's location, permissions and lifetime** belong to
+  the per-document state it owns.
+
+Build those first and all four arrive afterwards as restrictions fitted
+underneath finished code. That is architecture retrofitted under features, which
+is the specific failure this rebuild exists to prevent, and it never announces
+itself — it arrives as one reasonable-looking exception at a time.
+
+The **Store-only packaging amendment** (task #10) stays where it is. Nothing in
+it constrains these components, so it does not gate them.
+
 **Next, in order:**
 
+0. **The threat model, then the B4 security amendment.** See above. This is a
+   precondition of item 1, not a parallel track.
 1. **`DocumentService` + `CommandBus`.** Design fully settled in
    [ADR-0009](DECISIONS/0009-document-identity-and-the-command-log.md); build
    against it rather than re-deriving. Blocking requirement recorded before the
@@ -378,6 +413,61 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-08-18 — The stage audit becomes scoped, starting from zero backlog
+
+**Audited through 710cd94.** Batches 1–7, each audited as it closed; the findings
+are the entries below this one. That makes the starting point a measured fact
+rather than a guess, which is the whole reason to do this now: once feature code
+begins, the change rate rises and no honest origin is available.
+
+### What changed, and why the old shape was wrong
+
+The audit was periodic — end of a stage, against the tree. That was right for the
+43-finding audit, which caught things that had sat for weeks. It is the wrong
+shape for what this project's own record now says produces most defects. All four
+of these arrived **inside the proof or instrument written an hour earlier to
+close the previous defect**:
+
+- the separator gap that gave the escape guard its only false negative, in the
+  fragment added to make the guard separator-aware;
+- the crash `documentConsistency` acquired from the history-reach fix;
+- the `UNDER REVIEW` verdict that printed in no output at all, created by the
+  marking meant to keep it visible;
+- two wrong entries in a licence notice, in the generator built so licence claims
+  would stop being hand-maintained.
+
+A tree-wide sweep weeks later finds those by luck. A range-scoped audit reads the
+diff that made them.
+
+### The mechanism
+
+`npm run audit:scope` reports `watermark..HEAD`: commits, files, proofs added,
+**proofs modified**, new scripts. Proofs-modified is load-bearing — a fix that
+quietly loosened a check looks identical to one that corrected it, and only the
+diff separates them.
+
+Two gates in `check:docs`, because otherwise this is a discipline:
+
+- the watermark's sha must appear in `docs/JOURNAL.md`, so an audit cannot be
+  claimed by advancing one file — the same shape as a `FEATURES.md` row that
+  turns the check red when claimed without evidence;
+- HEAD must be within **one batch** of the watermark: 9 commits or 24 files,
+  the **median** of batches 4–7 measured from this repository (7/13, 7/23, 11/26,
+  31/69). Deliberately not the maximum — the maximum is batch 7, the one stretch
+  plainly too large to audit as a unit, and the reason the gate exists. Setting
+  the bar there would enshrine the failure.
+
+**It fired on its first run**, refusing the watermark until this entry existed.
+
+One thing the proof got wrong before the code did, worth keeping: a proof both
+added *and* edited inside the range is correctly reported as ADDED, not modified.
+"Modified" is relative to the last audited commit, not to anywhere in the range —
+new coverage gets read whole anyway, and the case that matters is a check that
+was already audited and has since changed. The fixture was wrong; the code was
+right.
 
 ---
 

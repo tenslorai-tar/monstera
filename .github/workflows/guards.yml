@@ -174,6 +174,15 @@ jobs:
       - name: Prove the carried threat-model questions can fail
         run: npm run proof:threattopics
 
+      # The audit watermark gate guards a condition that is false almost all the
+      # time, so nothing in ordinary work exercises it — and a gate never
+      # observed to fail is indistinguishable from one that cannot. Both halves
+      # are proven over a throwaway repository: the size threshold must trip past
+      # one batch and must NOT trip below it, since an always-red gate gets
+      # switched off rather than obeyed.
+      - name: Prove the stage-audit watermark gate can fail
+        run: npm run proof:auditscope
+
       # MuPDF is compiled into the shim and parses the most attacker-controlled
       # input this application has. Pinning it is correct — it makes builds
       # reproducible — but a pin with nothing watching it is how a project ships

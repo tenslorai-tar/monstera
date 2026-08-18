@@ -356,15 +356,42 @@ These were given directly and bind every agent on this project.
 - **Do not rush.** Nothing is chasing this build. A wrong foundation costs more
   than a slow one.
 
-## The stage audit — run it after every substantial unit of work
+## The stage audit — scoped to a range, not to a moment
 
 Not a formality. **Every item below is here because it caught something real**,
 and each was found by auditing rather than by a failing test — which is the
 point: these are the failures that do not announce themselves.
 
-Run this at the end of a stage, before starting the next, and write the findings
-into `docs/JOURNAL.md`. Fixing one of these early costs an hour; finding it after
-features are built on top costs a rewrite.
+**Audit `watermark..HEAD`, not the tree.** `npm run audit:scope` prints the
+range: commits, files, proofs added, **proofs modified**, and new scripts.
+
+The scoping is not a convenience. A tree-wide audit run at the end of a stage was
+right for the 43-finding audit, which caught things that had sat for weeks. It is
+the wrong shape for what this project's record now says produces most defects —
+they arrive **inside the proofs and instruments written an hour earlier to close
+the previous defect**: the separator gap that gave the escape guard its only
+false negative, the crash the history-reach fix introduced, the `UNDER REVIEW`
+verdict that printed in no output, two wrong entries in a licence notice. A
+tree-wide sweep finds those by luck; a range-scoped one reads the diff that made
+them.
+
+**Proofs modified is the load-bearing column.** A new proof is coverage
+arriving. A modified one is a check whose meaning changed, and a fix that quietly
+loosened a check looks identical to one that corrected it. Only the diff
+separates them, so read each one.
+
+Two mechanisms, because this is otherwise a discipline:
+
+- `docs/audit-watermark.json` advances **only** in the commit that writes the
+  findings into `docs/JOURNAL.md`, and `check:docs` fails if its sha does not
+  appear there — an audit cannot be claimed without a record.
+- `check:docs` also fails once HEAD is more than **one batch** past the
+  watermark. The threshold is the median of batches 4–7 measured from this
+  repository, not a round number, and deliberately not the maximum: the maximum
+  was batch 7, the one stretch plainly too large to audit as a unit.
+
+Fixing one of these early costs an hour; finding it after features are built on
+top costs a rewrite.
 
 **1. Classify every fix you made: root cause, or workaround?**
 Go back through the session's corrections one at a time. For each, state the
