@@ -2,6 +2,8 @@ import { stat } from 'node:fs/promises';
 import { realpath as realpathCallback } from 'node:fs';
 import { promisify } from 'node:util';
 
+import { type Brand } from '@monstera/shared';
+
 /**
  * Whether two paths name the same document.
  *
@@ -76,6 +78,55 @@ import { promisify } from 'node:util';
 const realpathNative = promisify(realpathCallback.native);
 
 /**
+ * A path as the operating system spells it: the output of `realpath.native`,
+ * and nothing else.
+ *
+ * Kernel-private (ADR-0009 §1). The brand has one producer —
+ * {@link readFileIdentity} — and there is deliberately no exported constructor,
+ * so a hand-built string cannot become one. That is the whole mechanism behind
+ * comparing these with `===`.
+ *
+ * ## Why there is no case fold here, and why every candidate fold was wrong
+ *
+ * This used to be compared with `localeCompare(a, b, undefined, { sensitivity:
+ * 'accent' })`, justified by a comment saying a caller might hold a value from
+ * a different source. **That caller did not exist**, and the fold was designed
+ * around a limit nobody established. Both folds available are wrong, in
+ * opposite directions, and each is wrong for a different character class:
+ *
+ * - `localeCompare` is **locale-dependent**. Under `tr-TR` it reports
+ *   `FILE.pdf` and `file.pdf` as different, because both contain `I`/`i` and
+ *   Turkish collation pairs those with other letters. A row-1 miss is a **false
+ *   split**: two `DocId`s for one file, two command logs, one save discarding
+ *   the other's edits.
+ * - `toUpperCase()` fixes that and introduces a worse one. JavaScript expands
+ *   `ß` to `SS`; NTFS's `$UpCase` is a 1:1 16-bit table that cannot expand one
+ *   code unit into two, so it maps `ß` to itself. Measured on this filesystem:
+ *   `straße.pdf` and `STRASSE.pdf` coexist in one directory as **two files with
+ *   different indexes**, while `plain.pdf` and `PLAIN.PDF` are one. So
+ *   `toUpperCase` merges two genuinely distinct documents — a **false merge**,
+ *   which is the worse direction: the second open returns `already-open`, one
+ *   file becomes unopenable, and a write can land on the other one.
+ *
+ * The fold itself was the defect, so it is gone rather than replaced.
+ *
+ * ## Why exact comparison is strictly safer, not merely adequate
+ *
+ * - **Where `dev:ino` exists, row 1 is an optimisation.** Row 2 carries the
+ *   merge, so a row-1 miss degrades into a row-2 merge rather than into a
+ *   split.
+ * - **Where `dev:ino` is absent, row 1 is the only path** — and both sides
+ *   still come from `realpath.native`, which ADR-0009's measured table shows
+ *   returns the name as recorded on disk, with case corrected. A false split
+ *   would require that call to return two different strings for one file, which
+ *   is the one thing it is specified not to do.
+ *
+ * A future caller holding a hand-built path is now a **compile error**, which
+ * is what the old comment was reaching for and could not express (rule B5).
+ */
+export type CanonicalPath = Brand<string, 'CanonicalPath'>;
+
+/**
  * The identity of one existing file.
  *
  * A path that does not exist has **no identity**, per ADR-0009 §1: there is no
@@ -88,8 +139,8 @@ const realpathNative = promisify(realpathCallback.native);
  * adding `dev:ino` costs nothing in reachability.
  */
 export interface FileIdentity {
-  /** From `realpath.native`. The primary signal. */
-  readonly canonicalPath: string;
+  /** From `realpath.native`. The primary signal. See {@link CanonicalPath}. */
+  readonly canonicalPath: CanonicalPath;
   /** `dev`, or null when the filesystem supplies no usable index. */
   readonly dev: number | null;
   /** `ino`, or null when the filesystem supplies no usable index. */
@@ -116,7 +167,9 @@ export async function readFileIdentity(path: string): Promise<FileIdentity | nul
     const hasIndex = stats.dev !== 0 && stats.ino !== 0;
 
     return {
-      canonicalPath,
+      // The only place a CanonicalPath is minted. Keeping this cast unexported
+      // is what makes `===` sound in `isSameDocument`.
+      canonicalPath: canonicalPath as CanonicalPath,
       dev: hasIndex ? stats.dev : null,
       ino: hasIndex ? stats.ino : null,
       size: stats.size,
@@ -139,8 +192,10 @@ export async function readFileIdentity(path: string): Promise<FileIdentity | nul
  * and are not the same file.
  */
 export function isSameDocument(a: FileIdentity, b: FileIdentity): boolean {
-  // Row 1. No dependence on file indexes.
-  if (pathsEqual(a.canonicalPath, b.canonicalPath)) return true;
+  // Row 1. No dependence on file indexes, and no case fold — see
+  // CanonicalPath for why every fold on offer is wrong for some character
+  // class, and why exact comparison degrades safely here.
+  if (a.canonicalPath === b.canonicalPath) return true;
 
   // Row 2. dev:ino is REQUIRED — absent index, no merge, no fallback.
   if (a.dev === null || a.ino === null || b.dev === null || b.ino === null) return false;
@@ -153,13 +208,8 @@ export function isSameDocument(a: FileIdentity, b: FileIdentity): boolean {
   return a.size === b.size && a.modifiedMs === b.modifiedMs;
 }
 
-/**
- * Windows path comparison.
- *
- * `realpath.native` returns the name as recorded on disk, so two results for
- * one file agree exactly — but a caller may hold a value from a different
- * source, and NTFS is case-insensitive.
- */
-function pathsEqual(a: string, b: string): boolean {
-  return a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
-}
+// There is deliberately no exported constructor for CanonicalPath. Adding one
+// would restore, as an export, exactly the hazard the brand removes: a caller
+// asserting that a string it built is what the operating system would have
+// returned. Tests that need to construct identities without a filesystem cast
+// locally, so the assertion is visible in the file making it.

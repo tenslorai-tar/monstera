@@ -7,7 +7,7 @@ import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
-import { type FileIdentity } from './documentIdentity.js';
+import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
 import { DocumentService, type IdentityReader, type OpenOutcome } from './documentService.js';
 
 /**
@@ -62,7 +62,9 @@ afterAll(() => {
 /** A constructed identity, for the cases that must not touch a filesystem. */
 function identity(): FileIdentity {
   return {
-    canonicalPath: 'C:\\docs\\a.pdf',
+    // Cast locally: `CanonicalPath` has one producer in production, which is
+    // what makes row 1's `===` sound.
+    canonicalPath: 'C:\\docs\\a.pdf' as CanonicalPath,
     dev: 1,
     ino: 100,
     size: 2048,

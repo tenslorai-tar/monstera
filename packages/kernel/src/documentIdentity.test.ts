@@ -5,7 +5,12 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
+import {
+  type CanonicalPath,
+  type FileIdentity,
+  isSameDocument,
+  readFileIdentity,
+} from './documentIdentity.js';
 
 /**
  * The cases that carry the weight here are the ones that must stay APART.
@@ -19,15 +24,29 @@ import { type FileIdentity, isSameDocument, readFileIdentity } from './documentI
  * corroboration-based merge would wrongly join.
  */
 
+/**
+ * Brands a spelling without resolving it.
+ *
+ * The assertion lives here, in the file making it, rather than behind an
+ * exported constructor — `CanonicalPath` has exactly one producer in production
+ * (`readFileIdentity`), and that is what makes comparing them with `===` sound.
+ */
+function canonical(spelling: string): CanonicalPath {
+  return spelling as CanonicalPath;
+}
+
 /** A constructed identity, so the rule can be exercised without a filesystem. */
-function identity(overrides: Partial<FileIdentity>): FileIdentity {
+function identity(
+  overrides: Partial<Omit<FileIdentity, 'canonicalPath'>> & { canonicalPath?: string },
+): FileIdentity {
+  const { canonicalPath, ...rest } = overrides;
   return {
-    canonicalPath: 'C:\\docs\\a.pdf',
     dev: 1,
     ino: 100,
     size: 2048,
     modifiedMs: 1_700_000_000_000,
-    ...overrides,
+    ...rest,
+    canonicalPath: canonical(canonicalPath ?? 'C:\\docs\\a.pdf'),
   };
 }
 
@@ -91,6 +110,51 @@ describe('isSameDocument — the merge rule', () => {
     const a = identity({ canonicalPath: 'C:\\docs\\a.pdf', dev: 1 });
     const b = identity({ canonicalPath: 'D:\\docs\\a.pdf', dev: 2 });
     expect(isSameDocument(a, b)).toBe(false);
+  });
+});
+
+/**
+ * Row 1 compares canonical paths EXACTLY. No case fold, because both folds
+ * available are wrong and they are wrong in opposite directions — so a proof
+ * that killed only one of them would pass the other, and the other is the worse
+ * one.
+ *
+ * Each case below carries its OWN control: an assertion that the hazard is real
+ * on this machine and in this runtime. Without those, the Turkish case is
+ * indistinguishable from an accident of the CI locale, and the eszett case from
+ * a coincidence.
+ */
+describe('row 1 compares exactly — and neither fold is acceptable', () => {
+  it('LOCALE FOLD: two spellings of one path stay apart, so no locale can split them', () => {
+    // The control. Under a Turkish collator, FILE and file differ — both carry
+    // I/i, and Turkish pairs those with other letters. An explicit 'tr'
+    // collator makes this assertion true under en-US too, so CI can see the
+    // hazard it was structurally blind to.
+    expect('FILE.pdf'.localeCompare('file.pdf', 'tr', { sensitivity: 'accent' })).not.toBe(0);
+
+    // `realpath.native` returns the name as recorded on disk, so these two
+    // spellings never both arrive from it. Row 1 says they are different
+    // documents; where an index exists row 2 merges them anyway, and where none
+    // exists a false SPLIT is the outcome a locale-sensitive compare produced
+    // for real.
+    const shouted = identity({ canonicalPath: 'C:\\docs\\FILE.pdf', dev: null, ino: null });
+    const quiet = identity({ canonicalPath: 'C:\\docs\\file.pdf', dev: null, ino: null });
+    expect(isSameDocument(shouted, quiet)).toBe(false);
+  });
+
+  it('UPPERCASE FOLD: eszett and SS are two files, and must stay two documents', () => {
+    // The control naming the fold that would have merged them. JavaScript
+    // expands eszett to SS; NTFS's $UpCase is a 1:1 16-bit table and cannot,
+    // so it maps eszett to itself. Measured on this filesystem: the two names
+    // coexist in one directory with different file indexes.
+    expect('straße.pdf'.toUpperCase()).toBe('STRASSE.PDF');
+
+    // This is why `toUpperCase()` was the wrong repair for the locale bug. A
+    // false MERGE is the worse direction: the second open returns already-open,
+    // one file becomes unopenable, and a write can land on the other.
+    const sharp = identity({ canonicalPath: 'C:\\docs\\straße.pdf', dev: 1, ino: 100 });
+    const doubled = identity({ canonicalPath: 'C:\\docs\\STRASSE.pdf', dev: 1, ino: 200 });
+    expect(isSameDocument(sharp, doubled)).toBe(false);
   });
 });
 

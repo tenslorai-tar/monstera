@@ -410,3 +410,93 @@ rewrite**, because nothing catastrophic was reachable in the meantime.
 **Hard links are folded** by the middle row, so they are not a limitation under
 this rule. They would be one under identity-by-`realpath.native` alone, and that
 is precisely what this rule replaces.
+
+---
+
+## Correction, 2026-08-19 — row 1 compares EXACTLY; the case fold was the defect
+
+Found by stage audit `caa59d0..d9f01b0`, finding R-2. **Row 1 of the rule above
+is unchanged. What changes is how "equal" is computed**, and the answer is that
+it is not computed at all.
+
+### What was wrong
+
+`isSameDocument` compared canonical paths with
+`localeCompare(a, b, undefined, { sensitivity: 'accent' })`, and the comment
+above it gave the justification: *"a caller may hold a value from a different
+source, and NTFS is case-insensitive."*
+
+That comparison is **locale-dependent**. Measured:
+
+| locale | `FILE.pdf` vs `file.pdf` | `resume` vs `résumé` |
+|---|---|---|
+| `en-US` | EQUAL | differ |
+| `tr-TR` | **differ** | differ |
+| `lt-LT` | EQUAL | differ |
+
+Under a Turkish locale the plain case pair stops matching, because both strings
+contain `I`/`i` and Turkish collation pairs those with other letters. A row-1
+miss where no file index exists is a **false split**: two `DocId`s for one file,
+two command logs, one save discarding the other's edits.
+
+### The obvious repair was worse, and this is the part worth keeping
+
+`toUpperCase()` is locale-**in**dependent, so it fixes the split. It also
+introduces a **false merge**, which is the worse direction. JavaScript expands
+`ß` to `SS`; NTFS's `$UpCase` is a 1:1 16-bit table that cannot expand one code
+unit into two, so it maps `ß` to itself.
+
+Measured on this filesystem rather than reasoned about:
+
+```
+'straße.pdf'.toUpperCase()            -> 'STRASSE.PDF'
+directory holds 2 file(s): STRASSE.pdf, straße.pdf
+  straße.pdf   dev:ino -> 1182584447:5066549581804663
+  STRASSE.pdf  dev:ino -> 1182584447:3659174698251406
+NTFS treats them as TWO DISTINCT files.
+CONTROL — plain ASCII case still folds: ONE file
+```
+
+So `toUpperCase` reports two genuinely distinct documents as one. The second
+open returns `already-open`, one file becomes unopenable, and a write can land
+on the other. That is a locale-independent false merge traded for a
+locale-dependent false split — **the same class, a different character set**.
+
+### The fold itself was the defect
+
+Every fold on offer is wrong for some character class, and the reason a fold was
+there at all is a limit nobody established: **the foreign caller did not
+exist.** `canonicalPath` had one producer (`realpathNative`) and one consumer
+(row 1).
+
+So the fold is deleted and the comparison is `===`. `CanonicalPath` is now a
+branded, kernel-private type with **no exported constructor**, so a hand-built
+path cannot become one — a future caller holding a value from a different source
+is a **compile error**, which is what the old comment was reaching for and could
+not express (rule B5).
+
+### Why exact comparison is strictly safer here
+
+- **Where `dev:ino` exists, row 1 is an optimisation.** Row 2 carries the merge,
+  so a row-1 miss degrades into a row-2 merge rather than into a split.
+- **Where `dev:ino` is absent, row 1 is the only path** — and both sides still
+  come from `realpath.native`, which the measured table above shows returns the
+  name as recorded on disk, with case corrected. A false split would require
+  that call to return two different strings for one file, which is the one thing
+  it is specified not to do.
+
+### Two controls, because three designs must be told apart
+
+A proof that killed only the locale fold would have passed `toUpperCase()`, and
+the merge bug would have shipped. Each case carries its own control asserting
+the hazard is real in this runtime — an explicit `'tr'` collator so CI can see a
+locale hazard it was structurally blind to, and the `toUpperCase()` expansion
+named directly.
+
+| implementation | `LOCALE FOLD` case | `UPPERCASE FOLD` case |
+|---|---|---|
+| `===` (shipped) | passes | passes |
+| `localeCompare(…, undefined, …)` | **red** | passes |
+| `toUpperCase()` | **red** | **red** |
+
+Verified by substituting both, not by reasoning about it.

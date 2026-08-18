@@ -1,5 +1,10 @@
 export { CapabilityRegistry, type HandleBytesSource, handlesEqual } from './capabilityRegistry.js';
-export { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
+export {
+  type CanonicalPath,
+  type FileIdentity,
+  isSameDocument,
+  readFileIdentity,
+} from './documentIdentity.js';
 export {
   DocumentService,
   type DocumentTeardown,
