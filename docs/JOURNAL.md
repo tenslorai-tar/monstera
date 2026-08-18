@@ -416,6 +416,84 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-18 — Identity: measured, corrected twice, and made to degrade safely
+
+The end of a chain where **every step corrected the step before it**, and the
+corrections are the content.
+
+### What was measured
+
+One file, on Node v24.12.0 / libuv 1.51.0 / Windows 11:
+
+| Form | `realpath.native` | `dev:ino` |
+|---|---|---|
+| `C:\…\f.txt` | itself | one value |
+| `\\EMEM-PC\C$\…` | itself | *same* |
+| `\\localhost\C$\…` | itself | *same* |
+| `Y:\…` via `subst` | folded to target | *same* |
+| hard link | itself | *same* |
+
+**Three distinct `realpath.native` values for one file — the two UNC forms do not
+even fold to each other. One `dev:ino`.** A `subst` DOS device mapping *is*
+folded; a UNC is not, and nothing in libuv's call would fold it, because the UNC
+*is* the canonical DOS-namespace name for a redirector path.
+
+### Two corrections, both to me
+
+**First:** I wrote that `dev:ino` "requires the file to exist, which the Save As /
+ENOENT resolution explicitly does not", and called it a second design gap. The
+owner read §1 again and was right — a not-yet-existing path gets **no identity at
+all**, and `realpath.native` throws `ENOENT` on the same input. Measured:
+`realpath.native` and `stat` return `ENOENT` identically, for a missing file and
+for a path through a file. **No conflict. The gap narrowed from two questions to
+one.**
+
+**Second:** `\\localhost\` is a special case Windows treats differently. Measuring
+again through the machine's own name turned two identities into three and made
+the finding stronger.
+
+### The rule, and why it ships without the missing measurement
+
+**MERGE on `dev:ino`, never SPLIT on it.** `dev:ino` may only *join* paths
+`realpath.native` kept apart; it can never separate paths it agreed on.
+
+That asymmetry is the whole design. A filesystem reporting unstable or zero
+indexes degrades to `realpath`-only behaviour — where this project already was —
+rather than to a new failure. **A drifting platform stops merging; it never
+starts merging wrongly.**
+
+**No `dev:ino` means no merge, and there is no fallback.** The tempting change,
+the first time a NAS reports a zero index, is "then merge on size and last-write
+time instead" — and that turns the corroboration guard into the bug, because
+size and last-write time are *how two copies look*. Written at the call site,
+because that is where the improvement becomes a corruption defect.
+
+### The controls are the proof
+
+Every positive case is satisfied by an implementation returning `true`
+unconditionally, so the weight sits on pairs that must stay **apart** — above all
+**two copies of one document**: same filename in a different directory, identical
+size, identical last-write time, forced with `utimesSync` so the fixture is not
+weaker than a real backup.
+
+Both widenings were applied rather than argued about: attribute fallback turns 2
+red, dropping corroboration turns 1 red.
+
+### What is still unmeasured
+
+**A genuine mapped network drive**, and **a remote share on a different volume
+and server implementation.** `net use` needs elevation this machine lacks;
+`net share` is denied; WSL is installed with no distribution. Abandoned rather
+than fought, and recorded as inference-not-measurement.
+
+It is not blocking, and the reason is structural: merge-only bounds the
+consequence, and the **save-time re-verification against the actual file** —
+independent of the rule by design — turns a wrong answer into a caught error
+rather than a silent overwrite. If a real share ever contradicts a row, the
+correction is a verdict change rather than a rewrite.
+
+---
+
 ## 2026-08-18 — Store-only distribution, corrected in the law rather than noted
 
 [ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md). **A correction
