@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { POWERSHELL_RULES, SHELL_RULES } from './blockEscapeResolvingWrites.mjs';
 
 const ROOT = repoRoot();
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), 'blockEscapeResolvingWrites.mjs');
@@ -298,6 +299,92 @@ mustAllow('an ordinary PowerShell cmdlet', 'Get-ChildItem -Recurse | Measure-Obj
     !denied,
     'blocking on absence would fire on every tool whose input this hook does not understand',
   );
+}
+
+// ---------------------------------------------------------------------------
+// GENERATED per-rule property cases, from the rule table itself.
+//
+// Four corrections were each found by hand, one incident at a time: the
+// descriptor test, the span class, operand order, statement anchoring. Two
+// became structural — TO_FILE and SAME_LINE/SAME_COMMAND are shared fragments,
+// so a rule built from them inherits those lessons whether or not its author
+// knows they exist. The other two live in each pattern's own shape and are
+// inherited by nobody, which is precisely why those two were the ones missed.
+//
+// Generating from the table, the way boundaries.proof.mjs generates from
+// ALLOWED_IMPORTS, makes them coverage rather than memory: a rule added next
+// year is exercised against both operand orders, the descriptor cases and its
+// span class on the day it lands, without anyone recalling four corrections
+// spread across a hundred hand-written cases.
+// ---------------------------------------------------------------------------
+{
+  /** @type {Array<{ rules: readonly import('./blockEscapeResolvingWrites.mjs').Rule[], shell: 'Bash' | 'PowerShell' }>} */
+  const tables = [
+    { rules: SHELL_RULES, shell: 'Bash' },
+    { rules: POWERSHELL_RULES, shell: 'PowerShell' },
+  ];
+
+  for (const { rules, shell } of tables) {
+    for (const rule of rules) {
+      // The forcing function. A rule whose pattern contains a redirect but
+      // declares no probe would silently opt out of every property below, which
+      // is the state this whole section exists to make impossible.
+      const usesRedirect = /TO_FILE|>/.test(rule.pattern.source);
+      if (usesRedirect && rule.probe === undefined) {
+        failures.push(
+          `${shell} rule "${rule.what}" matches a redirect but declares no probe, so it is ` +
+            `covered by no generated property case. Add one — see the Probe typedef.`,
+        );
+        continue;
+      }
+      if (rule.probe === undefined) continue;
+
+      const { plain, semicolon, chain, span, reversible, reversed } = rule.probe;
+      const name = `[generated] ${rule.what}`;
+
+      /**
+       * Puts the redirect where the construct takes it. A fragment naming `{R}`
+       * says so explicitly; anything else takes it at the end.
+       *
+       * @param {string} fragment @param {string} redirect
+       */
+      const compose = (fragment, redirect) =>
+        fragment.includes('{R}') ? fragment.replaceAll('{R}', redirect) : `${fragment} ${redirect}`;
+
+      mustBlock(`${name}: redirected into a file`, compose(plain, '> out.txt'), shell);
+      mustBlock(`${name}: appended to a file`, compose(plain, '>> out.txt'), shell);
+
+      if (reversible) {
+        // `cat > f <<'EOF'` and `cat <<'EOF' > f` are the same command. FOUR
+        // rules matched only one order, three of them found by this generator
+        // on its first run.
+        mustBlock(
+          `${name}: redirect written first`,
+          reversed === undefined ? `> out.txt ${plain}` : compose(reversed, '> out.txt'),
+          shell,
+        );
+      }
+
+      // A descriptor redirect writes no content this guard is about.
+      mustAllow(`${name}: stderr to a file`, compose(plain, '2> errors.log'), shell);
+      mustAllow(`${name}: stderr duplicated to stdout`, compose(plain, '2>&1'), shell);
+
+      if (span === 'line') {
+        // The payload sits on the matched line, so a separator inside it is
+        // data. This is occurrence 7's mechanism.
+        mustBlock(`${name}: payload carrying a semicolon`, compose(semicolon, '> out.txt'), shell);
+        mustBlock(`${name}: payload carrying a chain operator`, compose(chain, '> out.txt'), shell);
+      } else {
+        // The payload is beneath the matched line, so a separator on it really
+        // is a separator and a later command's redirect is not this one's.
+        mustAllow(
+          `${name}: a later command's redirect is not this construct's`,
+          `${compose(plain, '')} && git push 2>&1 | tail -2`,
+          shell,
+        );
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

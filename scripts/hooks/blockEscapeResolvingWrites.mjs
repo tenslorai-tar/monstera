@@ -103,7 +103,48 @@
  */
 
 /**
- * @typedef {{ pattern: RegExp, what: string, instead: string }} Rule
+ * @typedef {{
+ *   pattern: RegExp,
+ *   what: string,
+ *   instead: string,
+ *   probe?: Probe,
+ * }} Rule
+ *
+ * @typedef {{
+ *   plain: string,
+ *   semicolon: string,
+ *   chain: string,
+ *   span: 'line' | 'command',
+ *   reversible: boolean,
+ *   reversed?: string,
+ * }} Probe
+ *   Fragments the proof composes redirects around, so every redirect-bearing
+ *   rule is generated against the same property set.
+ *
+ *   Four corrections were each found by hand, and each cost a separate
+ *   incident: the descriptor test, the span class, operand order, and statement
+ *   anchoring. Two of them became structural — TO_FILE carries the descriptor
+ *   lesson and SAME_LINE/SAME_COMMAND carry the span lesson, so a new rule
+ *   built from those fragments inherits both automatically. The other two live
+ *   in each pattern's own shape and are inherited by nobody, which is exactly
+ *   why they were the two that were missed.
+ *
+ *   Declaring a probe makes them coverage instead of memory. A rule added later
+ *   is generated against both operand orders, the descriptor cases and its span
+ *   class on the day it is added, and `proof:escapeguard` fails if a rule whose
+ *   pattern contains a redirect declares no probe at all.
+ *
+ *   `span` says where that rule's payload sits — on the matched line, or
+ *   beneath it — which is the question that decides whether a separator in the
+ *   payload is data or grammar. `reversible` says whether the construct accepts
+ *   the redirect before it, which is valid for a POSIX producer and not for a
+ *   PowerShell cmdlet.
+ *
+ *   Each fragment carries a `{R}` marker showing where a redirect attaches.
+ *   That is not cosmetic: a heredoc takes its redirect on the OPENING line, and
+ *   a generator that appended one to the end of the construct would produce
+ *   `EOF > out.txt`, which redirects nothing and would have reported a false
+ *   failure for the one rule that was already correct.
  */
 
 /**
@@ -174,8 +215,32 @@ const SAME_LINE = String.raw`[^\n]*`;
  */
 const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-])\S`;
 
+/**
+ * A construct and its redirect, in EITHER operand order.
+ *
+ * `printf 'x' > f` and `> f printf 'x'` are the same command; so are
+ * `cat <<'EOF' > f` and `cat > f <<'EOF'`. Only the heredoc rule ever carried
+ * both, and every rule written afterwards matched producer-then-redirect alone
+ * — four of them, found by generating the property rather than by review.
+ *
+ * Made a shared fragment for the same reason TO_FILE and SAME_LINE are: a
+ * lesson living in each pattern's own shape is inherited by nobody, and this
+ * one had already been learned twice before it was written down once.
+ *
+ * @param {string} anchor Source of the construct, e.g. `\bawk\b`.
+ * @param {string} [alsoAfter] An extra alternative valid only after the anchor,
+ *   such as `| tee`, which has no reversed form.
+ * @returns {RegExp}
+ */
+function eitherOrder(anchor, alsoAfter) {
+  const forward = alsoAfter === undefined ? TO_FILE : `(?:${TO_FILE}|${alsoAfter})`;
+  return new RegExp(
+    `(?:${anchor}${SAME_LINE}${forward}|${TO_FILE}${SAME_LINE}${anchor})`,
+  );
+}
+
 /** Commands whose own evaluation resolves escapes before anything is written. */
-const SHELL_RULES = /** @type {readonly Rule[]} */ ([
+export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
     pattern: /\bnode\s+(?:-[a-zA-Z]*e|--eval|-[a-zA-Z]*p\b|--print)\b/,
     what: 'node -e / --eval / --print',
@@ -204,7 +269,14 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     // The in-place rule above covers `sed -i`. A substitution written through a
     // redirect resolves the same escapes and lands in a file just as surely:
     // `sed 's/x/a\nb/' in > out`.
-    pattern: new RegExp(String.raw`\bsed\b${SAME_LINE}${TO_FILE}`),
+    pattern: eitherOrder(String.raw`\bsed\b`),
+    probe: {
+      plain: "sed 's/x/y/' in.txt",
+      semicolon: "sed 's/x/a;b/' in.txt",
+      chain: "sed 's/x/a && b/' in.txt",
+      span: 'line',
+      reversible: true,
+    },
     what: 'sed writing to a file',
     instead:
       "use Edit. sed's replacement text resolves \\n and \\t, so the bytes that land differ from " +
@@ -220,7 +292,14 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
     // echo/printf feeding a redirect or tee. The producer resolves escapes
     // (`\n`, `\a`, `\v`, octal) before a single byte reaches the file.
-    pattern: new RegExp(String.raw`\b(?:echo|printf)\b${SAME_LINE}(?:${TO_FILE}|\|\s*tee\b)`),
+    pattern: eitherOrder(String.raw`\b(?:echo|printf)\b`, String.raw`\|\s*tee\b`),
+    probe: {
+      plain: "printf 'x'",
+      semicolon: "printf 'a;b'",
+      chain: "printf 'a && b'",
+      span: 'line',
+      reversible: true,
+    },
     what: 'echo/printf writing to a file',
     instead:
       'use Write. printf turned `\\v` into a vertical tab and `\\2` into an octal escape in a ' +
@@ -228,7 +307,14 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
       'to prose.',
   },
   {
-    pattern: new RegExp(String.raw`\bawk\b${SAME_LINE}${TO_FILE}`),
+    pattern: eitherOrder(String.raw`\bawk\b`),
+    probe: {
+      plain: "awk '{print}' in.txt",
+      semicolon: "awk '{print \"a;b\"}' in.txt",
+      chain: "awk '{print \"a && b\"}' in.txt",
+      span: 'line',
+      reversible: true,
+    },
     what: 'awk writing to a file',
     instead: "use Write. awk's printf resolves the same escapes.",
   },
@@ -251,6 +337,22 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     ),
     what: 'a heredoc redirected into a file',
     instead: 'use Write, which puts the bytes down exactly as given',
+    probe: {
+      // `{R}` marks where the redirect attaches. A heredoc takes it on the
+      // OPENING line: appending to the end of the construct would produce
+      // `EOF > out.txt`, which redirects nothing and would have failed the one
+      // rule that was already right.
+      plain: "cat <<'EOF' {R}\nx\nEOF",
+      reversed: "cat {R} <<'EOF'\nx\nEOF",
+      // A heredoc's payload is on the lines beneath, so a separator on the
+      // opening line really is one. The span-'command' case asserts the
+      // opposite property to span-'line': a later command's redirect must NOT
+      // be attached to this construct.
+      semicolon: "cat <<'EOF' {R}\nx\nEOF",
+      chain: "cat <<'EOF' {R}\nx\nEOF",
+      span: 'command',
+      reversible: true,
+    },
   },
   {
     // A here-string. The heredoc patterns require a delimiter WORD after `<<`,
@@ -266,6 +368,13 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     instead:
       'use Write. `<<<` expands $variables and backticks like an unquoted heredoc, and no heredoc ' +
       'pattern matches it because there is no delimiter word.',
+    probe: {
+      plain: "cat <<< 'x'",
+      semicolon: "cat <<< 'a;b'",
+      chain: "cat <<< 'a && b'",
+      span: 'line',
+      reversible: true,
+    },
   },
   {
     // ANSI-C quoting resolves \n, \t, \xNN and octal wherever it appears — in an
@@ -277,11 +386,18 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     instead:
       "use Write. $'a\\nb' IS the escape resolution — occurrences 2 and 3 in one construct — and it " +
       'needs no echo or printf to perform it.',
+    probe: {
+      plain: "grep $'a\\tb' in.txt",
+      semicolon: "grep $'a;b' in.txt",
+      chain: "grep $'a && b' in.txt",
+      span: 'line',
+      reversible: true,
+    },
   },
 ]);
 
 /** PowerShell reaches the same failure through different names. */
-const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
+export const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
     // Tee-Object joins the list for the same reason bash's rule covers `| tee`:
     // it writes its input to a file. Its absence was the same half-fix shape as
@@ -302,14 +418,29 @@ const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
     // `$vars` exactly as the `@"` here-string two rules up does. The rule set
     // already names that mechanism and covered only one of its two syntaxes.
     //
+    // "Statement start" means every token PowerShell can begin a statement
+    // after, not merely the start of the command string. Anchoring on `^` and
+    // the separators alone allowed `if ($true) { "a<bt>nb" > f }` and every
+    // other block-bodied one-liner: a brace, a parenthesis and a newline all
+    // begin a statement, and `ForEach-Object { … }` puts one behind a pipe.
+    // Four of eight shapes escaped before this was measured.
+    //
     // Anchored to a statement start, and required to contain a backtick or a
     // `$`. `Get-ChildItem "C:\logs" > out.txt` redirects a COMMAND's output and
     // its quoted argument is inert; denying that would be a false positive on
     // ordinary work, which is how a guard gets argued down.
     pattern: new RegExp(
-      String.raw`(?:^|[;&|]\s*)"[^"\n]*[\u0060$][^"\n]*"\s*${TO_FILE}`,
+      String.raw`(?:^|[;&|({\n]\s*)"[^"\n]*[\u0060$][^"\n]*"\s*${TO_FILE}`,
       'i',
     ),
+    probe: {
+      plain: '"a`nb"',
+      semicolon: '"a;b`n"',
+      chain: '"a && b`n"',
+      span: 'line',
+      // PowerShell does not accept the redirect before the expression.
+      reversible: false,
+    },
     what: 'a double-quoted string redirected into a file',
     instead:
       'use Write. PowerShell resolves ` escapes and expands $variables inside double quotes, which ' +
@@ -340,6 +471,13 @@ const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
     // never reached the redirect, which is occurrence 7's mechanism in the other
     // shell.
     pattern: new RegExp(String.raw`\b(?:echo|Write-Output|Write-Host)\b${SAME_LINE}${TO_FILE}`, 'i'),
+    probe: {
+      plain: "Write-Output 'x'",
+      semicolon: "Write-Output 'a;b'",
+      chain: "Write-Output 'a && b'",
+      span: 'line',
+      reversible: false,
+    },
     what: 'echo/Write-Output writing to a file',
     instead: 'use Write',
   },
