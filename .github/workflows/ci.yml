@@ -228,3 +228,15 @@ jobs:
       # and a per-section walk genuinely see different populations.
       - name: Prove the purge census mirrors pdf_clear_xref
         run: npm run proof:purge
+
+      # The Stage 0 performance gate. Runs here because it needs the built shim:
+      # the mupdf-host role is the process that holds the parser, and measuring
+      # it without one would measure nothing.
+      #
+      # No limit appears in the proof. It mutates the declared line in §9.17 and
+      # requires the gate's verdict to move with it, with the thresholds derived
+      # from what was measured — a proof carrying its own copy of the budgets
+      # would be a fourth copy of the numbers, in the place people look last, and
+      # it would pass forever while the invariant said something else.
+      - name: Prove the performance gate follows the declared budgets
+        run: npm run proof:perfbudget
