@@ -416,6 +416,76 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-18 — The security substrate, and the range that carries it
+
+**Audited through caa59d0**, covering `513b061..caa59d0` — the two
+audit-recording commits, folded forward into this amendment. The single modified proof in that
+range is `blockEscapeResolvingWrites.proof.mjs`, the R2-1 fix: **additive, seven
+new cases, no deletions**, read on the minus side rather than trusted.
+
+Folded forward rather than closed with a bookkeeping commit, because that commit
+would become the new tail and reproduce the gap one further along.
+
+### The structural tail, written down so it stops being a finding
+
+**The watermark can never equal HEAD at the moment of recording.** The commit
+that records an audit is written after the range it audits, so it cannot be
+inside it; advancing to HEAD would claim the recording commit had been audited by
+the audit it contains.
+
+A one- or two-commit tail is therefore the mechanism working. It is now stated in
+`scripts/lib/auditWatermark.mjs` and `CLAUDE.md`, because otherwise someone reads
+the gap as a defect and either raises it or closes it with the commit that
+recreates it. The batch-sized thresholds tolerate it deliberately.
+
+Found by asking whether the terminal state was measured or assumed — the same
+question that had just caught the origin. It was assumed; the watermark was two
+commits behind, and one of those two carried a modified proof.
+
+### Two invariants, both before the components they constrain
+
+[ADR-0017](DECISIONS/0017-the-security-substrate.md). **24: opening a document
+runs none of its content.** **25: an engine host contains a compromise, not only
+a crash.** Both are rows from the threat model's consequence ordering rather than
+policies someone thought of.
+
+### The correction that mattered most was to my own proposal
+
+I proposed the reachability-verdict expiry as invariant 25's trigger on the
+grounds that it was existing machinery. Checking before committing showed the
+suggestion was *right for a reason I had not verified*: the expiry is a
+`git grep` over path globs in `scripts/lib/verdict.mjs`, **not** the C walker
+that derives the OCR doors. It reads TypeScript exactly as it reads C, confirmed
+against `packages/*/src/**`.
+
+Had that gone the other way, "reuse the existing mechanism" would have meant
+building a second walker for a second language — a different amount of work,
+discovered mid-task.
+
+### A forcing function is not a test, and saying so is the point
+
+The trigger fires the day shipped code names `utilityProcess`. **Controlled:**
+planting the symbol in `apps/desktop/src` turns `check:advisories` red naming
+invariant 25.
+
+But it catches *"a host was written"*, not *"and it was contained"*. A prompt to
+implement, with nothing recorded about what implementing means, degrades into a
+prompt to write another note — so what it forces is a `FEATURES.md` row naming
+the runtime assertion: integrity level, job limits and network denial **against a
+running process**, not against the options passed to `fork`. A flag that did not
+take effect and one that did are indistinguishable until it matters, which is why
+the mitigations check reads the PE image and not the build flags.
+
+Invariant 24's row names its own trap: a proof that the JavaScript did not run is
+worthless if the same result appears when the JavaScript is absent. The control
+is the same document opened by something that does run it.
+
+**CSP is deliberately not here.** The renderer does not exist, so an exact policy
+would be a guess, and an invariant relaxed in its first week teaches that
+relaxing invariants is normal. Recorded as a stage item, not dropped.
+
+---
+
 ## 2026-08-18 — Stage audit, ranges 3 and 4 of 4: `63242af..HEAD`
 
 **Audited through 513b061.** Range 3: 8 commits, 17 files, 2 proofs added, **0

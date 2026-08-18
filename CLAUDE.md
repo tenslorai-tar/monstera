@@ -155,7 +155,16 @@ is wrong** — fix the boundary, not the test.
   starts Tesseract with nothing naming an OCR symbol. Banned set derived, not
   listed (invariant 23).
 
-The full invariant list (L1–L23) is in `docs/ARCHITECTURE.md`. A regression
+- **Opening a document runs none of its content.** No embedded JavaScript, no
+  automatic action, no external fetch, no embedded file to disk — until the user
+  asks, for that item. MuJS is in the shim; the interpreter is present whether or
+  not anything calls it (invariant 24).
+- **An engine host contains a compromise, not only a crash.** Lowest workable
+  integrity level, job object limits, no network, no filesystem beyond what it
+  was handed. Policy before mechanism, because the hosts are `DocumentService`'s
+  to create (invariant 25).
+
+The full invariant list (L1–L25) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.
 
 ---
@@ -389,6 +398,14 @@ Two mechanisms, because this is otherwise a discipline:
   watermark. The threshold is the median of batches 4–7 measured from this
   repository, not a round number, and deliberately not the maximum: the maximum
   was batch 7, the one stretch plainly too large to audit as a unit.
+
+**The watermark never equals HEAD, by construction.** The commit that records an
+audit is written after the range it audits, so it cannot be inside it. A one- or
+two-commit tail after an audit is the mechanism working. Do not raise it as a
+finding, and do not close it with a bookkeeping commit — that commit becomes the
+new tail and reproduces the gap one further along. The regress stops at the next
+range, which audits the recording commits. The batch-sized thresholds tolerate
+the tail deliberately.
 
 Fixing one of these early costs an hour; finding it after features are built on
 top costs a rewrite.

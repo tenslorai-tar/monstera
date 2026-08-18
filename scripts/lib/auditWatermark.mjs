@@ -40,6 +40,23 @@ const WATERMARK_PATH = 'docs/audit-watermark.json';
 export const BATCH = { commits: 9, files: 24 };
 
 /**
+ * ## The watermark never equals HEAD, and that is structural
+ *
+ * The commit that records an audit is written *after* the range it audits, so it
+ * cannot be inside it. Advancing the watermark to HEAD in that same commit would
+ * claim the recording commit had been audited by the audit it contains.
+ *
+ * So a gap of one or two commits after an audit is the mechanism working, not a
+ * defect. Do not raise it as a finding, and do not try to close it with a
+ * bookkeeping commit — that commit becomes the new tail and produces the same
+ * gap again, one commit further along. The regress has to stop somewhere, and
+ * the honest place is the next range: the recording commits get audited by the
+ * audit that follows them.
+ *
+ * {@link BATCH} tolerates this by design — the thresholds are batch-sized, so a
+ * two-commit tail is nowhere near them. That tolerance is deliberate rather than
+ * incidental, which is why it is written down here.
+ *
  * @typedef {{ commit: string, audited: string }} Watermark
  * @returns {Watermark}
  */

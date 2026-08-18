@@ -659,6 +659,42 @@ say**.
     remembering. The banned set is derived from MuPDF's own `is_extension`, so a
     writer added upstream joins it with no list to edit.
     ([ADR-0015](DECISIONS/0015-a-filename-may-not-select-a-native-library.md))
+24. **Opening a document runs none of its content.** No embedded JavaScript
+    executes, no automatic action runs, no external reference is fetched, and no
+    embedded file reaches disk — until the user asks for it, explicitly, for that
+    item.
+
+    A PDF is a program as well as a page. MuJS is linked into the shim, so a
+    JavaScript interpreter is present in the process that parses the single most
+    attacker-controlled thing this application touches. Nothing calls it on the
+    open path today, and "nothing calls it today" is the shape of claim this
+    project has twice found resting on a guard that did not exist — once for
+    `pdf_subset_fonts`, once for the EPUB handler that the `"not a PDF"` check
+    was refusing only *after* it had parsed the file.
+
+    Pinned now because the open path is small now. Stages 3 and 4 add
+    annotations, form actions and JavaScript-bearing widgets, and each arrives
+    with a plausible reason to run something on open.
+    ([Threat model §4.2](security/THREAT-MODEL.md))
+25. **An engine host contains a compromise, not only a crash.** Every process
+    that parses a document runs at the lowest workable integrity level, under a
+    job object bounding memory and process creation, **with no network access**,
+    and reaches no filesystem path it was not handed.
+
+    Invariant 20 put native engine code in utility processes so a native fault
+    could not take the application down. That contains a *crash*. A
+    memory-safety bug that reaches code execution currently inherits everything
+    the process has, and MuPDF's advisory history is memory-safety bugs.
+
+    The hosts do not exist yet, so this is policy before mechanism — deliberately,
+    because it is a property of processes `DocumentService` will create, and
+    fitting it underneath them afterwards is the retrofit this project exists to
+    avoid. The trigger is declared in `docs/security/engine-advisories.json`:
+    the day shipped code references `utilityProcess`, the verdict expires and
+    names this invariant. **That trigger catches "a host was written"; it cannot
+    check "and it was contained"** — the runtime assertion that does is a
+    scheduled row in `docs/FEATURES.md`, not an intention.
+    ([Threat model §4.4](security/THREAT-MODEL.md))
 
 ---
 

@@ -110,6 +110,21 @@
         "fz_write_pixmap_as_pdfocr"
       ]
     },
+    "engine-host-containment": {
+      "guards": [
+        "INVARIANT-25"
+      ],
+      "why": "Invariant 25 requires every document-parsing process to run at the lowest workable integrity level, under a job object bounding memory and process creation, with NO NETWORK, and with no filesystem reach beyond what it was handed. The hosts do not exist yet — electron is not a dependency and apps/desktop is a bare index.ts — so this is policy before mechanism, declared here so it cannot decay into a note. The day shipped code names utilityProcess or MessageChannelMain, this verdict expires and the build fails naming the invariant. WHAT THIS TRIGGER DOES NOT DO: it catches 'a utility host was written', not 'and it was contained'. It is a prompt to implement, and the thing it prompts is the runtime assertion recorded as a docs/FEATURES.md row — integrity level, job limits and network denial asserted against a RUNNING process, not against the options passed to it. This mechanism is a git grep over path globs (scripts/lib/verdict.mjs), not the C walker that derives the OCR doors, so it reads TypeScript exactly as it reads C — verified against packages/*/src/**.",
+      "shippedPaths": [
+        "native/**",
+        "packages/*/src/**",
+        "apps/*/src/**"
+      ],
+      "symbols": [
+        "utilityProcess",
+        "MessageChannelMain"
+      ]
+    },
     "pdf_subset_fonts": {
       "guards": [
         "DEBIAN-CVE-2026-7233",
