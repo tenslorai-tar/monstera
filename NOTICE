@@ -24,9 +24,9 @@ MuPDF 1.28.0 — AGPL-3.0-or-later
     brotli         MIT
     cmark-gfm      BSD-2-Clause
     extract        AGPL-3.0-or-later (Artifex)
-    freetype       FTL or GPL-2.0-or-later, at the user's option
+    freetype       FreeType License (FTL) — the option taken; see the note above
     gumbo-parser   Apache-2.0
-    harfbuzz       MIT ("Old MIT")
+    harfbuzz       MIT ("Old MIT"); some subdirectories carry their own COPYING
     jbig2dec       AGPL-3.0-or-later (Artifex)
     lcms2          MIT
     leptonica      BSD-2-Clause
@@ -39,9 +39,20 @@ MuPDF 1.28.0 — AGPL-3.0-or-later
     zxing-cpp      Apache-2.0
   Their full texts are distributed with the source above.
 
-MuPDF is AGPL, and that is why this application is. Its source, the exact
-version and build configuration used, and the source of the shim that links it
-are all covered by the offer in README.
+MuPDF is AGPL, and that is why this application is. The source offer in README
+covers, at the exact versions shipped:
+
+  - MuPDF 1.28.0 itself;
+  - the build configuration used to produce the static libraries, which is what
+    makes the result reproducible rather than merely available;
+  - the source of the shim that links it;
+  - and the separately AGPL-licensed components bundled in MuPDF's own tree, named
+    individually rather than left to be inferred:
+      extract — AGPL-3.0-or-later (Artifex)
+      jbig2dec — AGPL-3.0-or-later (Artifex)
+
+    Those arrive inside MuPDF's tree, so "the MuPDF version" arguably covers them
+    already. Naming them costs a line and removes the argument.
 
 ══════════════════════════════════════════════════════════════════════════════
 BUNDLED PACKAGES — 1 from the production dependency tree

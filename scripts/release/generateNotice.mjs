@@ -332,9 +332,23 @@ export function renderNotice() {
     }
     lines.push('');
   }
-  lines.push('MuPDF is AGPL, and that is why this application is. Its source, the exact');
-  lines.push('version and build configuration used, and the source of the shim that links it');
-  lines.push('are all covered by the offer in README.');
+  lines.push('MuPDF is AGPL, and that is why this application is. The source offer in README');
+  lines.push('covers, at the exact versions shipped:');
+  lines.push('');
+  lines.push(`  - MuPDF ${MUPDF_VERSION} itself;`);
+  lines.push('  - the build configuration used to produce the static libraries, which is what');
+  lines.push('    makes the result reproducible rather than merely available;');
+  lines.push('  - the source of the shim that links it;');
+  lines.push('  - and the separately AGPL-licensed components bundled in MuPDF\'s own tree, named');
+  lines.push('    individually rather than left to be inferred:');
+  for (const component of native) {
+    for (const [name, licence] of Object.entries(component.licences ?? {})) {
+      if (/AGPL/i.test(licence)) lines.push(`      ${name} — ${licence}`);
+    }
+  }
+  lines.push('');
+  lines.push('    Those arrive inside MuPDF\'s tree, so "the MuPDF version" arguably covers them');
+  lines.push('    already. Naming them costs a line and removes the argument.');
   lines.push('');
 
   lines.push('═'.repeat(78));
