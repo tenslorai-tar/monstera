@@ -291,6 +291,120 @@ export function declaredIn(source) {
  */
 
 /**
+ * Every function name MuPDF's public headers declare.
+ *
+ * @param {string} sourceRoot
+ * @returns {Set<string>}
+ */
+export function publicApiSymbols(sourceRoot) {
+  /** @type {Set<string>} */
+  const symbols = new Set();
+  for (const path of filesUnder(join(sourceRoot, PUBLIC_HEADER_ROOT), ['.h'])) {
+    for (const name of declaredIn(readFileSync(path, 'utf8'))) symbols.add(name);
+  }
+
+  if (symbols.size === 0) {
+    throw new Error(
+      `No declarations were found under ${PUBLIC_HEADER_ROOT}/. Without the public API there is ` +
+        `nothing to intersect a closure with, and every derived list would come back empty — ` +
+        `which reads as "nothing to worry about".`,
+    );
+  }
+  return symbols;
+}
+
+/**
+ * @typedef {{
+ *   callers: Map<string, string[]>,
+ *   callees: Map<string, string[]>,
+ *   globals: Set<string>,
+ *   locals: Set<string>,
+ *   fileCount: number,
+ * }} CallGraph
+ */
+
+/**
+ * The call graph over the files the shim compiles, plus any extra sources.
+ *
+ * Both directions are kept. The door derivation walks callers upward from
+ * Tesseract; the shim-reachability question walks callees downward from our own
+ * exports, and the two must agree about what an edge is or the pair of answers
+ * means nothing.
+ *
+ * @param {string} sourceRoot
+ * @param {string} shimProject
+ * @param {object} [options]
+ * @param {readonly string[]} [options.extraFiles] Sources outside the MuPDF
+ *   build graph — our own shim translation unit, for the forward walk.
+ * @param {readonly string[]} [options.assumeDefined] Names that are functions
+ *   whether or not a definition was parsed. A parse that stops recognising one
+ *   must lose call sites, not lose the node and report an empty result.
+ * @returns {CallGraph}
+ */
+export function buildCallGraph(sourceRoot, shimProject, options = {}) {
+  const build = compiledSources(sourceRoot, shimProject);
+  if (build === null) {
+    throw new Error(
+      `Could not read the build graph rooted at ${shimProject}. An analysis over the wrong file ` +
+        `set is not a smaller answer, it is a different one.`,
+    );
+  }
+
+  const units = [...build.files, ...(options.extraFiles ?? [])]
+    .filter((path) => existsSync(path))
+    .map((path) => ({ path, functions: functionsIn(readFileSync(path, 'utf8')) }));
+
+  // A `static` function's name is file-local: two translation units may each
+  // define `file_level_headers` and they are different functions. Keying every
+  // name globally merged them, and five unrelated entry points bled into the
+  // door list through one such collision.
+  /** @type {Set<string>} */
+  const globals = new Set(options.assumeDefined ?? []);
+  /** @type {Set<string>} */
+  const locals = new Set();
+  for (const unit of units) {
+    for (const fn of unit.functions) {
+      if (fn.isStatic) locals.add(`${unit.path}::${fn.name}`);
+      else globals.add(fn.name);
+    }
+  }
+
+  if (globals.size <= (options.assumeDefined ?? []).length && locals.size === 0) {
+    throw new Error(
+      `No function definitions were found in ${units.length} source file(s). The parse is reading ` +
+        `the wrong thing, and an analysis over an empty call graph reports nothing — which reads ` +
+        `as "nothing is reachable".`,
+    );
+  }
+
+  /** @type {Map<string, string[]>} */
+  const callers = new Map();
+  /** @type {Map<string, string[]>} */
+  const callees = new Map();
+  for (const unit of units) {
+    for (const fn of unit.functions) {
+      const from = fn.isStatic ? `${unit.path}::${fn.name}` : fn.name;
+      for (const referenced of new Set(referencesIn(fn.body))) {
+        // File-local resolution first, exactly as C resolves it.
+        const local = `${unit.path}::${referenced}`;
+        const target = locals.has(local) ? local : globals.has(referenced) ? referenced : null;
+        if (target === null || target === from) continue;
+
+        const inbound = callers.get(target);
+        if (inbound === undefined) callers.set(target, [from]);
+        else inbound.push(from);
+
+        const outbound = callees.get(from);
+        if (outbound === undefined) callees.set(from, [target]);
+        else outbound.push(target);
+      }
+    }
+  }
+
+  return { callers, callees, globals, locals, fileCount: units.length };
+}
+
+/**
  * @param {string} sourceRoot Absolute path to the MuPDF source tree.
  * @param {string} shimProject Absolute path to monstera_mupdf.vcxproj — the
  *   root of the link line, and therefore of the file set this walks.
@@ -330,65 +444,7 @@ export function deriveOcrDoors(sourceRoot, shimProject) {
   // — five SVG entry points arrived as doors by way of
   // `fz_new_svg_device_with_options -> main -> file_level_headers`, a chain
   // through two collisions and no real call.
-  const build = compiledSources(sourceRoot, shimProject);
-  if (build === null) {
-    throw new Error(
-      `Could not read the build graph rooted at ${shimProject}. A door derivation over the wrong ` +
-        `file set is not a smaller answer, it is a different one.`,
-    );
-  }
-
-  const units = build.files
-    .filter((path) => existsSync(path))
-    .map((path) => ({ path, functions: functionsIn(readFileSync(path, 'utf8')) }));
-
-  // A `static` function's name is file-local: two translation units may each
-  // define `file_level_headers` and they are different functions. Keying every
-  // name globally merged them, which is the second half of the SVG bleed above.
-  // Non-static names are global, so they keep their bare name and link across
-  // units exactly as the linker does.
-  /** @param {{ path: string, name: string, isStatic: boolean }} fn @returns {string} */
-  const idOf = (fn) => (fn.isStatic ? `${fn.path}::${fn.name}` : fn.name);
-
-  // The seeds are functions whether or not the parse found their definitions.
-  // They come from headers, so this holds by construction — and it is a
-  // deliberate floor: a parse that stops recognising a seed's definition must
-  // lose call sites, not lose the seed itself and report an empty closure.
-  /** @type {Set<string>} */
-  const globals = new Set(seeds);
-  /** @type {Set<string>} */
-  const locals = new Set();
-  for (const unit of units) {
-    for (const fn of unit.functions) {
-      if (fn.isStatic) locals.add(`${unit.path}::${fn.name}`);
-      else globals.add(fn.name);
-    }
-  }
-
-  if (globals.size <= seeds.length && locals.size === 0) {
-    throw new Error(
-      `No function definitions were found in ${build.files.length} compiled source file(s). The ` +
-        `parse is reading the wrong thing, and a derivation over an empty call graph reports no ` +
-        `doors — which reads as "nothing is reachable".`,
-    );
-  }
-
-  /** @type {Map<string, string[]>} */
-  const callers = new Map();
-  for (const unit of units) {
-    for (const fn of unit.functions) {
-      const from = idOf({ path: unit.path, name: fn.name, isStatic: fn.isStatic });
-      for (const referenced of new Set(referencesIn(fn.body))) {
-        // File-local resolution first, exactly as C resolves it.
-        const local = `${unit.path}::${referenced}`;
-        const target = locals.has(local) ? local : globals.has(referenced) ? referenced : null;
-        if (target === null || target === from) continue;
-        const list = callers.get(target);
-        if (list === undefined) callers.set(target, [from]);
-        else list.push(from);
-      }
-    }
-  }
+  const { callers } = buildCallGraph(sourceRoot, shimProject, { assumeDefined: seeds });
 
   // Upward closure: anything that can reach something already in the set.
   //
@@ -411,18 +467,7 @@ export function deriveOcrDoors(sourceRoot, shimProject) {
     }
   }
 
-  /** @type {Set<string>} */
-  const publicSymbols = new Set();
-  for (const path of filesUnder(join(sourceRoot, PUBLIC_HEADER_ROOT), ['.h'])) {
-    for (const name of declaredIn(readFileSync(path, 'utf8'))) publicSymbols.add(name);
-  }
-
-  if (publicSymbols.size === 0) {
-    throw new Error(
-      `No declarations were found under ${PUBLIC_HEADER_ROOT}/. Without the public API there is ` +
-        `nothing to intersect the closure with, and the door list would come back empty.`,
-    );
-  }
+  const publicSymbols = publicApiSymbols(sourceRoot);
 
   /** @param {string} name @returns {string[]} The edge chain back to a seed. */
   const pathToSeed = (name) => {

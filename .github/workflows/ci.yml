@@ -272,6 +272,18 @@ jobs:
       - name: Prove the OCR door derivation can tell a call path from none
         run: npm run proof:ocrdoors
 
+      # The door check answers a question about our source text: does any shipped
+      # file NAME a door. This answers the one about the binary: walking forward
+      # from the 24 exports, can anything be reached. The two differ where an
+      # export reaches a door through an intermediate that names it for us, and
+      # fz_new_document_writer makes that concrete — it picks a writer from a
+      # file extension, so a path ending .ocr runs Tesseract with no caller
+      # naming an OCR symbol. The control is the point: a shim that DOES route a
+      # path into the dispatcher must be reported as reaching, or a walk that
+      # returns the empty set for every input would pass everything else.
+      - name: Prove no shim export reaches the OCR subsystem
+        run: npm run proof:shimreach
+
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring
       # it without one would measure nothing.
