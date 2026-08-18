@@ -284,6 +284,16 @@ jobs:
       - name: Prove no shim export reaches the OCR subsystem
         run: npm run proof:shimreach
 
+      # Invariant 23 (ADR-0015). The measurement above is true today and would
+      # have to be re-established at every engine release; this removes the class
+      # instead. The banned set is derived from MuPDF's own is_extension, so a
+      # writer added upstream joins it with no list to edit. The resolution cases
+      # are what keep it usable: fz_open_document and pdf_save_document take a
+      # path and are NOT dispatchers, because a rule banning every path-taking
+      # function would ban the shim's own save and be switched off within a week.
+      - name: Enforce invariant 23 — no filename may select a native library
+        run: npm run proof:pathdispatch
+
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring
       # it without one would measure nothing.
