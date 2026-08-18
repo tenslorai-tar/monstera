@@ -113,6 +113,15 @@ jobs:
       - name: Prove the React lint rules are registered and fire
         run: npm run proof:lintrules
 
+      # The instrument the Stage 0 performance gate will use, resolution-tested
+      # before it measures anything real. Its predecessor was a setInterval
+      # sampler that could not fire while a synchronous FFI loop held the event
+      # loop and reported 63 MB for a walk that cost 526 MB — reproducibly,
+      # which is what made it convincing. The blocked-loop case here is that
+      # exact failure mode, ruled out rather than assumed away.
+      - name: Prove the peak-RSS instrument can tell two numbers apart
+        run: npm run proof:peakrss
+
       - name: Prove the architecture boundaries are enforced
         run: npm run proof:boundaries
 
