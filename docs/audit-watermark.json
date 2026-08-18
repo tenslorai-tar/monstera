@@ -17,10 +17,22 @@
     "by requiring this sha to appear in docs/JOURNAL.md — the same shape as a FEATURES.md row that",
     "turns the check red when it is claimed without evidence.",
     "",
-    "Started at zero backlog, deliberately. Every batch through 7 was audited as it closed, so this",
-    "origin is a measured fact rather than a guess. Once feature code begins the change rate rises",
-    "and no honest starting point is available."
+    "ORIGIN, CORRECTED 2026-08-18. It first read 710cd94 with 'batches 1-7, each audited at close'.",
+    "That was ASSERTED from the presence of batch COMPLETION records, not established from audit",
+    "records, and it is wrong: docs/JOURNAL.md marks Batch 7 'PART DONE'. A batch that never closed",
+    "was never audited at close, and Batch 7 is 31 commits.",
+    "",
+    "The origin is now a969ae4 — 'Record Batch 6' — the last commit of the last batch that closed.",
+    "Batches 1 to 6 each carry a journal entry with findings; 3 and 6 carry explicit stage-audit",
+    "sections. That is a defensible lower bound. 710cd94 was not.",
+    "",
+    "The consequence is immediate and correct: the gate reports an audit owed for Batch 7 from the",
+    "day the mechanism exists, rather than starting green on a claim nobody checked.",
+    "",
+    "This is the failure the origin was always going to have. It is the one value in this mechanism",
+    "nobody revisits, so an assumed origin makes every later range inherit the gap in silence —",
+    "which is precisely what the watermark exists to prevent. It survived one question."
   ],
-  "commit": "710cd94",
-  "audited": "Batches 1-7, each audited at close; findings in docs/JOURNAL.md"
+  "commit": "a969ae4",
+  "audited": "Batches 1-6. Batch 7 is open and its audit is OWED — see docs/JOURNAL.md"
 }

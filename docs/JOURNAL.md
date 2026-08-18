@@ -418,10 +418,28 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ## 2026-08-18 — The stage audit becomes scoped, starting from zero backlog
 
-**Audited through 710cd94.** Batches 1–7, each audited as it closed; the findings
-are the entries below this one. That makes the starting point a measured fact
-rather than a guess, which is the whole reason to do this now: once feature code
-begins, the change rate rises and no honest origin is available.
+**Audited through a969ae4** — "Record Batch 6", the last commit of the last batch
+that closed.
+
+**This origin was wrong when first written, and the correction is the point.** It
+read `710cd94`, with "batches 1–7, each audited at close". That was **asserted
+from the presence of batch COMPLETION records**, not established from audit
+records — and this same journal marks **Batch 7 "PART DONE"**. A batch that never
+closed was never audited at close. Batch 7 is 31 commits.
+
+Batches 1–6 each carry a journal entry with findings sections, and 3 and 6 carry
+explicit stage-audit sections, so `a969ae4` is a defensible lower bound. `710cd94`
+was not one.
+
+The consequence is immediate and correct: **the gate reports an audit owed for
+Batch 7 from the day the mechanism exists**, rather than starting green on a
+claim nobody checked.
+
+This is the failure an origin was always going to have. It is the one value in
+this mechanism nobody revisits, so an assumed origin makes every later range
+inherit the gap in silence — which is exactly what the watermark exists to
+prevent. It survived one question, which is one more than it would have survived
+if the question had come after feature code started.
 
 ### What changed, and why the old shape was wrong
 
