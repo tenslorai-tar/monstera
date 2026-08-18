@@ -83,14 +83,14 @@ function withEntries(entries) {
   // Resolution test. Two budgets that differ only in the digit that matters must
   // come back different, or the parser cannot distinguish the numbers it exists
   // to carry.
-  const nudged = memoryBudgets({ text: withEntries('`main = 1.6x, 1.5 GB` · `mupdf-host = 6x, 3 GB` · `renderer = provisional`') });
+  const nudged = memoryBudgets({ text: withEntries('`main = 1.6x, 1.5 GB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') });
   check(
     'changing 1.5x to 1.6x in the line changes the parsed budget',
     assertableBudget(nudged, 'main').multiplier === 1.6,
     'the parser reports the same multiplier for two different declarations, so it is not reading the line',
   );
 
-  const rescaled = memoryBudgets({ text: withEntries('`main = 1.5x, 1500 MB` · `mupdf-host = 6x, 3 GB` · `renderer = provisional`') });
+  const rescaled = memoryBudgets({ text: withEntries('`main = 1.5x, 1500 MB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') });
   check(
     'and MB is not silently treated as GB',
     assertableBudget(rescaled, 'main').absoluteBytes === 1500 * 1024 ** 2,
@@ -134,31 +134,84 @@ checkThrows(
 
 checkThrows(
   'a malformed entry refuses',
-  () => memoryBudgets({ text: withEntries('`main = about one and a half times` · `mupdf-host = 6x, 3 GB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = about one and a half times` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') }),
   /cannot parse budget entry/u,
 );
 
 checkThrows(
   'a missing budget refuses rather than budgeting two processes out of three',
-  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `renderer = provisional`') }),
   /no budget declared for mupdf-host/u,
 );
 
 checkThrows(
   'an unknown budget name refuses',
-  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB` · `renderer = provisional` · `gpu = 2x, 1 GB`') }),
+  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional` · `gpu = 2x, 1 GB, base 64 MB`') }),
   /unknown budget gpu/u,
 );
 
 checkThrows(
   'a duplicated budget refuses',
-  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB` · `main = 9x, 9 GB` · `mupdf-host = 6x, 3 GB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `main = 9x, 9 GB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') }),
   /declared twice/u,
+);
+
+// ---------------------------------------------------------------------------
+// The baseline term, which exists because the other two cannot see a regression
+// in it: the multiple is taken above the baseline, so an inflated fixed cost
+// raises numerator and subtrahend together and the ratio does not move.
+// ---------------------------------------------------------------------------
+{
+  const budgets = memoryBudgets({ text: REAL });
+  const main = assertableBudget(budgets, 'main');
+  check(
+    'the real line declares a baseline budget for main',
+    main.baselineBytes > 0 && main.baselineText.length > 0,
+    `got ${JSON.stringify({ bytes: main.baselineBytes, text: main.baselineText })}`,
+  );
+
+  // Resolution test: a one-unit change must come back as a different number, or
+  // the term is being parsed but not read.
+  const nudged = memoryBudgets({
+    text: withEntries('`main = 1.5x, 1.5 GB, base 97 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+  });
+  check(
+    'changing the baseline by 1 MB changes the parsed budget',
+    assertableBudget(nudged, 'main').baselineBytes === main.baselineBytes + 1024 ** 2,
+    `${String(assertableBudget(nudged, 'main').baselineBytes)} against ${String(main.baselineBytes)}`,
+  );
+}
+
+checkThrows(
+  'an entry with no baseline term refuses',
+  () =>
+    memoryBudgets({
+      text: withEntries('`main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+    }),
+  /cannot parse budget entry/u,
+);
+
+checkThrows(
+  'a baseline at or above the absolute cap refuses',
+  () =>
+    memoryBudgets({
+      text: withEntries('`main = 1.5x, 1.5 GB, base 2 GB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+    }),
+  /baseline at or above its absolute cap/u,
+);
+
+checkThrows(
+  'a zero baseline refuses',
+  () =>
+    memoryBudgets({
+      text: withEntries('`main = 1.5x, 1.5 GB, base 0 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+    }),
+  /non-positive baseline/u,
 );
 
 checkThrows(
   'a zero multiplier refuses',
-  () => memoryBudgets({ text: withEntries('`main = 0x, 1.5 GB` · `mupdf-host = 6x, 3 GB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = 0x, 1.5 GB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') }),
   /non-positive multiplier/u,
 );
 

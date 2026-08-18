@@ -79,8 +79,11 @@ function baselineFor(script, tinyDocument) {
  *   multiplierLimit: number,
  *   absoluteLimit: number,
  *   absoluteText: string,
+ *   baselineLimit: number,
+ *   baselineText: string,
  *   withinMultiplier: boolean,
  *   withinAbsolute: boolean,
+ *   withinBaseline: boolean,
  *   detail: Record<string, unknown>,
  * }} RoleResult
  */
@@ -139,8 +142,15 @@ export function runBudgetGate(options = {}) {
       multiplierLimit: budget.multiplier,
       absoluteLimit: budget.absoluteBytes,
       absoluteText: budget.absoluteText,
+      baselineLimit: budget.baselineBytes,
+      baselineText: budget.baselineText,
       withinMultiplier: ratio <= budget.multiplier,
       withinAbsolute: measurement.peakRssBytes <= budget.absoluteBytes,
+      // The measured baseline is now part of the verdict rather than merely
+      // subtracted and printed. It was the latter for one commit, which is the
+      // shape of a flag computed into a detail string and left out of the pass
+      // expression — the exact defect closed in the H2 spike case.
+      withinBaseline: baselineBytes <= budget.baselineBytes,
       detail: measurement.detail,
     });
   }
@@ -189,11 +199,13 @@ if (process.argv[1]?.endsWith('budgetGate.mjs')) {
         `${shape}: ${formatBytes(fixture.bytes)} (${String(fixture.bytes)} bytes)\n`,
       );
       for (const result of results) {
-        const verdict = result.withinMultiplier && result.withinAbsolute ? 'ok  ' : 'FAIL';
+        const verdict =
+          result.withinMultiplier && result.withinAbsolute && result.withinBaseline ? 'ok  ' : 'FAIL';
         process.stdout.write(
           `  ${verdict} ${result.role.padEnd(11)} peak ${formatBytes(result.peakBytes).padStart(9)} ` +
-            `- baseline ${formatBytes(result.baselineBytes).padStart(9)} ` +
-            `= ${result.ratio.toFixed(2)}x  (limits: ${String(result.multiplierLimit)}x and ${result.absoluteText})\n`,
+            `- baseline ${formatBytes(result.baselineBytes).padStart(9)}${result.withinBaseline ? '' : ' OVER'} ` +
+            `= ${result.ratio.toFixed(2)}x  (limits: ${String(result.multiplierLimit)}x, ` +
+            `${result.absoluteText}, base ${result.baselineText})\n`,
         );
       }
       for (const entry of unasserted) {
@@ -204,7 +216,9 @@ if (process.argv[1]?.endsWith('budgetGate.mjs')) {
   }
 
   const breaches = runs.flatMap(({ shape, results }) =>
-    results.filter((result) => !result.withinMultiplier || !result.withinAbsolute).map((result) => ({ shape, result })),
+    results
+      .filter((result) => !result.withinMultiplier || !result.withinAbsolute || !result.withinBaseline)
+      .map((result) => ({ shape, result })),
   );
   if (breaches.length > 0) {
     process.stderr.write(

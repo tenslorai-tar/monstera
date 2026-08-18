@@ -309,7 +309,12 @@ const failures = [];
 
     for (const budget of budgets.values()) {
       if (budget.kind !== 'assertable') continue;
-      for (const value of [`${budget.multiplier}x`, `${budget.multiplier}×`, budget.absoluteText]) {
+      for (const value of [
+        `${budget.multiplier}x`,
+        `${budget.multiplier}×`,
+        budget.absoluteText,
+        budget.baselineText,
+      ]) {
         if (prose.includes(value)) {
           failures.push(
             `docs/ARCHITECTURE.md §9.17 restates the ${budget.name} budget's "${value}" in prose. ` +

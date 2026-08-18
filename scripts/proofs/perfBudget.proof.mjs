@@ -113,14 +113,14 @@ for (const measured of baseline.results) {
   const others = baseline.results
     .filter((result) => result.role !== measured.role)
     // Left generous, so only the role under test can decide the verdict.
-    .map((result) => `${result.role} = ${String(Math.ceil(result.ratio) + 10)}x, 64 GB`);
+    .map((result) => `${result.role} = ${String(Math.ceil(result.ratio) + 10)}x, 64 GB, base 32 GB`);
 
   const tooTight = (measured.ratio - 0.05).toFixed(2);
   const justEnough = (measured.ratio + 0.05).toFixed(2);
 
   {
     const gate = runBudgetGate({
-      budgetsText: withEntries([`${measured.role} = ${tooTight}x, 64 GB`, ...others, 'renderer = provisional']),
+      budgetsText: withEntries([`${measured.role} = ${tooTight}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
     });
     const role = gate.results.find((result) => result.role === measured.role);
     check(
@@ -133,7 +133,7 @@ for (const measured of baseline.results) {
 
   {
     const gate = runBudgetGate({
-      budgetsText: withEntries([`${measured.role} = ${justEnough}x, 64 GB`, ...others, 'renderer = provisional']),
+      budgetsText: withEntries([`${measured.role} = ${justEnough}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
     });
     const role = gate.results.find((result) => result.role === measured.role);
     check(
@@ -145,12 +145,57 @@ for (const measured of baseline.results) {
   }
 
   {
+    // The baseline term. Its whole reason for existing is that the other two
+    // cannot see a regression in it — the multiple is taken above the baseline,
+    // so an inflated fixed cost raises numerator and subtrahend together and
+    // the ratio does not move. Both directions, because a gate that always
+    // failed on the baseline would satisfy the tightening case alone.
+    const belowBaselineMB = Math.max(1, Math.floor(measured.baselineBytes / MB) - 4);
+    const aboveBaselineMB = Math.ceil(measured.baselineBytes / MB) + 4;
+    const generousOthers = [...others, 'renderer = provisional'];
+
+    const tight = runBudgetGate({
+      documentPath: baseline.fixture.path,
+      documentBytes: baseline.fixture.bytes,
+      budgetsText: withEntries([
+        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(belowBaselineMB)} MB`,
+        ...generousOthers,
+      ]),
+    });
+    const tightRole = tight.results.find((result) => result.role === measured.role);
+    check(
+      `${measured.role}: a baseline budget below its measured fixed cost turns the gate red`,
+      tightRole?.withinBaseline === false && tightRole.withinMultiplier === true,
+      `declared base ${String(belowBaselineMB)} MB against a measured ` +
+        `${formatBytes(measured.baselineBytes)}; withinBaseline=${String(tightRole?.withinBaseline)}. ` +
+        `Without this the baseline is measured, subtracted and asserted by nothing — a number in a ` +
+        `detail string, which is the H2 defect.`,
+    );
+
+    const loose = runBudgetGate({
+      documentPath: baseline.fixture.path,
+      documentBytes: baseline.fixture.bytes,
+      budgetsText: withEntries([
+        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(aboveBaselineMB)} MB`,
+        ...generousOthers,
+      ]),
+    });
+    check(
+      `${measured.role}: and a baseline budget just above it passes`,
+      loose.results.find((result) => result.role === measured.role)?.withinBaseline === true,
+      `declared base ${String(aboveBaselineMB)} MB against a measured ` +
+        `${formatBytes(measured.baselineBytes)} and the gate still failed.`,
+    );
+  }
+
+  {
     // The absolute term is a separate limit and needs its own case: a gate that
     // only ever consulted the multiplier would pass every case above.
     const belowPeakMB = Math.max(1, Math.floor(measured.peakBytes / MB) - 8);
     const gate = runBudgetGate({
       budgetsText: withEntries([
-        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB`,
+        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB, ` +
+          `base ${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
         ...others,
         'renderer = provisional',
       ]),
@@ -171,7 +216,7 @@ for (const measured of baseline.results) {
 // ---------------------------------------------------------------------------
 {
   const main = baseline.results.find((result) => result.role === 'main');
-  const generous = `main = ${String(Math.ceil(main?.ratio ?? 1) + 10)}x, 64 GB`;
+  const generous = `main = ${String(Math.ceil(main?.ratio ?? 1) + 10)}x, 64 GB, base 32 GB`;
 
   let threw = false;
   let message = '';
@@ -198,9 +243,12 @@ for (const measured of baseline.results) {
   const source = readFileSync(new URL(import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('const ROOT ='));
   const declared = [...body.matchAll(/(\d+(?:\.\d+)?)\s*(?:x|GB\b)/gu)].map((match) => match[0]);
-  // `64 GB` is a deliberately unreachable stand-in used to neutralise the term
-  // not under test in a case; it is not a budget and is not asserted against.
-  const suspicious = declared.filter((entry) => !/^64 GB$/u.test(entry));
+  // `64 GB` and `32 GB` are deliberately unreachable stand-ins used to
+  // neutralise whichever terms are not under test in a case, so that only one
+  // limit can decide the verdict. They are not budgets and nothing is asserted
+  // against them; every threshold that IS asserted against is computed from a
+  // measurement above.
+  const suspicious = declared.filter((entry) => !/^(?:64|32) GB$/u.test(entry));
   check(
     'this proof states no budget of its own',
     suspicious.length === 0,

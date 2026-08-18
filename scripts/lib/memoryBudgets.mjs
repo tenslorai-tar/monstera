@@ -56,16 +56,42 @@ export const REQUIRED_BUDGETS = ['main', 'mupdf-host', 'renderer'];
 const DECLARATION = /^\s*>\s*\*\*Memory budgets:\*\*(.*)$/u;
 const CONTINUATION = /^\s*>\s*(.*)$/u;
 
-/** `name = 1.5x, 1.5 GB` */
-const ASSERTABLE = /^([a-z][a-z0-9-]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)x\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)$/u;
+/**
+ * `name = 1.5x, 1.5 GB, base 96 MB`
+ *
+ * The third term bounds the process's FIXED cost, and it exists because the
+ * first two cannot see a regression in it. The multiple is taken above the
+ * baseline, so anything that inflates the baseline inflates the subtrahend too:
+ * a warmed cache or an engine that starts preloading fonts moves both halves
+ * together and the ratio holds at 1.00x while the process gets hundreds of
+ * megabytes fatter. The absolute cap would not notice until it was gigabytes
+ * late. A number that is measured, printed and part of no verdict is the same
+ * defect as a flag computed into a detail string and left out of the pass
+ * expression.
+ */
+const ASSERTABLE =
+  /^([a-z][a-z0-9-]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)x\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)\s*,\s*base\s+([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)$/u;
 /** `name = provisional` */
 const PROVISIONAL = /^([a-z][a-z0-9-]*)\s*=\s*provisional$/u;
 
 /**
- * @typedef {{ name: string, kind: 'assertable', multiplier: number, absoluteBytes: number, absoluteText: string }} AssertableBudget
+ * @typedef {{
+ *   name: string,
+ *   kind: 'assertable',
+ *   multiplier: number,
+ *   absoluteBytes: number,
+ *   absoluteText: string,
+ *   baselineBytes: number,
+ *   baselineText: string,
+ * }} AssertableBudget
  * @typedef {{ name: string, kind: 'provisional' }} ProvisionalBudget
  * @typedef {AssertableBudget | ProvisionalBudget} Budget
  */
+
+/** @param {string} magnitude @param {string} unit @returns {number} */
+function toBytes(magnitude, unit) {
+  return Number(magnitude) * (unit === 'GB' ? 1024 ** 3 : 1024 ** 2);
+}
 
 /** @param {string} what @returns {never} */
 function fail(what) {
@@ -76,7 +102,8 @@ function fail(what) {
       `than read is indistinguishable from a measured one at the moment it decides whether the ` +
       `build passes.\n` +
       `Expected exactly one line of the form:\n` +
-      `  > **Memory budgets:** \`main = 1.5x, 1.5 GB\` · \`mupdf-host = 6x, 3 GB\` · \`renderer = provisional\``,
+      `  > **Memory budgets:** \`main = 1.5x, 1.5 GB, base 96 MB\` · ` +
+      `\`mupdf-host = 6x, 3 GB, base 128 MB\` · \`renderer = provisional\``,
   );
 }
 
@@ -153,14 +180,29 @@ export function memoryBudgets(options = {}) {
       const multiplier = Number(assertable[2]);
       const magnitude = Number(assertable[3]);
       const unit = `${assertable[4]}`;
+      const baseMagnitude = Number(assertable[5]);
+      const baseUnit = `${assertable[6]}`;
       if (!Number.isFinite(multiplier) || multiplier <= 0) fail(`\`${entry}\` has a non-positive multiplier`);
       if (!Number.isFinite(magnitude) || magnitude <= 0) fail(`\`${entry}\` has a non-positive absolute limit`);
+      if (!Number.isFinite(baseMagnitude) || baseMagnitude <= 0) fail(`\`${entry}\` has a non-positive baseline limit`);
+
+      const absoluteBytes = toBytes(`${assertable[3]}`, unit);
+      const baselineBytes = toBytes(`${assertable[5]}`, baseUnit);
+      if (baselineBytes >= absoluteBytes) {
+        fail(
+          `\`${entry}\` declares a baseline at or above its absolute cap, which leaves no room for a ` +
+            `document and means one of the two is not what its author intended`,
+        );
+      }
+
       budgets.set(name, {
         name,
         kind: 'assertable',
         multiplier,
-        absoluteBytes: magnitude * (unit === 'GB' ? 1024 ** 3 : 1024 ** 2),
+        absoluteBytes,
         absoluteText: `${assertable[3]} ${unit}`,
+        baselineBytes,
+        baselineText: `${assertable[5]} ${baseUnit}`,
       });
     } else {
       budgets.set(name, { name, kind: 'provisional' });

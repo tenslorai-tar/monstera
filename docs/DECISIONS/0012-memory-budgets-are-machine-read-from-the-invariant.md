@@ -16,9 +16,27 @@ its process is for; it does not repeat a value. The performance assertion parses
 that line rather than defining constants.
 
 ```
-> **Memory budgets:** `main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB` ·
-> `renderer = provisional`
+> **Memory budgets:** `main = 1.5x, 1.5 GB, base 96 MB` ·
+> `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`
 ```
+
+> **Addition — 2026-08-18: the third term.** The entry grammar gained a
+> `base <n> MB|GB` term after the gate was built. It is not a fourth kind of
+> thing; it is a budget on the same process, and it exists because the first two
+> terms cannot see a regression in it.
+>
+> The multiple is taken *above* the measured baseline, which is correct — a
+> fixed cost in the numerator makes the ratio a function of document size rather
+> than of behaviour. But it also means an inflated baseline raises the numerator
+> and the subtrahend together: an engine that starts preloading fonts, or a cache
+> warmed at startup, moves both and the ratio does not budge, while the process
+> grows by hundreds of megabytes and the absolute cap says nothing until it is
+> gigabytes late.
+>
+> For one commit the baseline was measured, subtracted, printed, and part of no
+> verdict — which is the same defect as the H2 spike case that computed
+> `acroFormGone` into a detail string and left it out of the pass expression.
+> Bounding it costs one term per role on a line that already had the shape.
 
 The shape is deliberately the one ADR-0007 already uses for its withdrawn
 phrases: a blockquote, a bolded label, backticked entries separated by `·`. A

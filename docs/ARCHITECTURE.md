@@ -561,8 +561,22 @@ say**.
     because the machine pays for the baseline too, and containment is about what
     the machine has to survive.
 
-    > **Memory budgets:** `main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB` ·
-    > `renderer = provisional`
+    **The baseline is itself budgeted**, and that third term is not bookkeeping:
+    without it a baseline regression is invisible to the other two. Because the
+    multiple is taken *above* the baseline, anything that inflates the fixed cost
+    inflates the subtrahend as well — an engine that begins preloading fonts, a
+    cache warmed at startup — so the ratio holds steady while the process grows
+    by hundreds of megabytes, and the absolute cap does not object until it is
+    gigabytes late. Each baseline is argued the same way as the budgets it sits
+    beside: `main` runs the language runtime and nothing else, so its fixed cost
+    should be within a small factor of a bare interpreter, and anything more
+    means it is loading something it has no business loading. `mupdf-host` also
+    carries the FFI binding and the statically linked engine, so its fixed cost
+    is larger by the engine's own footprint — but the engine's fixed cost is
+    meant to be a fraction of the runtime's, not a multiple of it.
+
+    > **Memory budgets:** `main = 1.5x, 1.5 GB, base 96 MB` ·
+    > `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`
     >
     > That line is machine-read, and it is the **only** place this section
     > states these numbers — the prose above names each budget and argues it,
