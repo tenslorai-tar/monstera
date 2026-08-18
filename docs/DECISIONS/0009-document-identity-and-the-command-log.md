@@ -256,3 +256,76 @@ Recorded rather than guessed, each with what would settle it:
 Each of these is here because `rotatePages` is the *easy* shape — single engine,
 in place, index-based, tiny inverse — and a design verified only against the
 easy shape is not verified.
+
+---
+
+## Correction, 2026-08-18 — `realpath.native` is not sufficient for identity
+
+The measured table above covers case folding, 8.3 short names and the `\\?\`
+prefix. It omits the shape this application's users generate constantly, and
+measuring it (`scripts/spike/pathIdentity.mjs`) shows the decision above is
+**wrong as stated**.
+
+### What was measured
+
+One file, five path forms, on this machine:
+
+| Form | `realpath.native` | `dev:ino` |
+|---|---|---|
+| `C:\…\probe.txt` | `C:\…\probe.txt` | `1182584447:14918173765904544` |
+| `\\localhost\C$\…\probe.txt` | **`\\localhost\C$\…\probe.txt`** | `1182584447:14918173765904544` |
+| `\\?\C:\…\probe.txt` | `C:\…\probe.txt` | same |
+| `\\?\UNC\localhost\C$\…` | `\\localhost\C$\…` | same |
+| `Y:\…` via `subst` | `C:\…\probe.txt` | same |
+
+**`realpath.native` yields TWO identities for one file. `dev:ino` yields one.**
+
+A DOS device mapping (`subst`) *is* resolved back to its target — so
+`GetFinalPathNameByHandle`'s DOS volume-name flag does unfold drive
+substitutions. A **UNC path is not folded to its local equivalent**, and nothing
+in libuv's call would make it: the UNC *is* the canonical DOS-namespace name for
+a redirector path.
+
+Separately, hard links: `mklink /H` produces two names, `realpath.native` returns
+each unchanged — it cannot fold them, **by construction**, because both are
+equally canonical — while `dev:ino` is identical for both (`nlink=2`).
+
+### What this means for the decision
+
+`Z:\reports\annual.pdf` from Recent Files and
+`\\server\share\reports\annual.pdf` from a colleague's link are one file. Under
+identity-by-`realpath.native` they are **two `DocId`s, two command logs, and a
+second save that discards the first's edits.**
+
+**Neither mechanism alone is sufficient**, and that is the finding:
+
+- `realpath.native` fails the UNC-versus-local case and cannot fold hard links.
+- `dev:ino` folds both, but **requires the file to exist** — which the Save As /
+  ENOENT resolution above explicitly does not — and its stability on a **real
+  remote SMB share is unmeasured**. The share tested here is loopback to the
+  same NTFS volume, so a matching file index proves less than it appears to.
+
+### What is still unmeasured, stated rather than inferred
+
+**A genuine mapped network drive was not tested.** `net use` could not reach a
+share on this machine (`\\localhost\C$` resolves from Node but refuses a
+mapping), so the `Z:` → `\\server\share` fold is **inferred from its two
+neighbours, not measured.** The inference is that a mapped drive resolves to its
+UNC target — which would unify it with the UNC form and leave both distinct from
+any local form. **Do not build on that inference.** It is exactly the shape of
+unmeasured row the three measured ones exist to shame, and it needs a machine
+with a real share.
+
+### Consequence
+
+`DocumentService` must not be written around identity-by-`realpath.native`. The
+resolution is deferred to the component's own design rather than guessed at
+here, and it is a **blocking input to that work**, not a refinement of it. The
+candidates are a composite (`dev:ino` when the file exists, `realpath.native`
+when it does not, with the transition on first save handled explicitly), or
+`dev:ino` with a measured fallback for filesystems that do not supply a stable
+index. Both need the remote-share measurement before either can be chosen.
+
+**Hard links are an accepted limitation only if stated as one.** If identity ends
+up keyed on `realpath.native` for any case, two hard links to one file are two
+documents in that case, and that is a data-loss shape rather than a curiosity.
