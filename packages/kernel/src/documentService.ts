@@ -236,6 +236,13 @@ export class DocumentService {
    *
    * Deliberately **not** routed through {@link #indexLane}: waiting for the lane
    * is exactly the await that would reopen that window.
+   *
+   * The cost of that bypass is real and is paid where it should be. A close can
+   * land inside a running {@link checkWriteTarget} for the same document, and
+   * the check then finds nothing and refuses to report a verdict. Refusing to
+   * write a document that is being closed is the correct outcome; the failure
+   * message names this cause first among the three so nobody who hits it goes
+   * hunting a filesystem race instead.
    */
   close(docId: DocId): Promise<void> {
     if (!this.#records.delete(docId)) return Promise.resolve();
@@ -270,11 +277,20 @@ export class DocumentService {
    *
    * So the walk must locate something it is known to be able to find, on every
    * run, and here that is **this document itself**: its own record is in the
-   * index and its own path is the target, so the walk reaches it or the walk is
-   * broken. Not finding it means the index is not being walked, or the file
-   * moved between the target read and the scan. Neither is "all clear", and a
-   * check that returned `sole-writer` for either would be worse than no check —
-   * `sole-writer` is what permits the write.
+   * index and its own path is the target, so the walk reaches it or something
+   * is wrong. Three things can be wrong, and they are not equally exotic:
+   *
+   * - the index is not being walked at all;
+   * - the file moved between the target read and the scan;
+   * - **the document was closed while this check was running.** {@link close}
+   *   removes from the index without waiting for the lane, by design, so it can
+   *   land inside this method's first `await`. This is the ordinary one, and it
+   *   is the case the close-with-unsaved-changes flow will produce routinely.
+   *
+   * None is "all clear", so all three throw. Whether the third deserves an
+   * outcome of its own rather than a throw is a design question for when that
+   * flow exists; refusing to write a document that is being closed is the right
+   * answer either way, and `sole-writer` is what permits the write.
    *
    * A stale `contested` — a document closing while this scan runs — is possible
    * and deliberately tolerated: it fails towards a caught error, never towards
@@ -309,11 +325,15 @@ export class DocumentService {
     // this document is in the index and this is its own path.
     if (!reaching.includes(docId)) {
       throw new Error(
-        'Write-target check could not find this document at its own file. Either the ' +
-          'open-document index is not being walked, or the file moved between the two ' +
-          'reads. Refusing to report a verdict: a search that finds nothing looks ' +
-          'identical whether it is working or broken, and here "nothing" is the ' +
-          'answer that permits the write.',
+        'Write-target check could not find this document at its own file. Three ' +
+          'causes, and the third is the ordinary one: (1) the open-document index is ' +
+          'not being walked; (2) the file moved between the two reads; (3) THE ' +
+          'DOCUMENT WAS CLOSED WHILE THIS CHECK WAS RUNNING — `close` removes from ' +
+          'the index without waiting for the lane, by design, so it can land during ' +
+          "this check's first read. Do not go hunting a filesystem race before ruling " +
+          'that out. Refusing to report a verdict either way: a search that finds ' +
+          'nothing looks identical whether it is working or broken, and here ' +
+          '"nothing" is the answer that permits the write.',
       );
     }
 

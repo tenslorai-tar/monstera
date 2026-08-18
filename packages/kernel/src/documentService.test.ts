@@ -394,6 +394,41 @@ describe('DocumentService — the write-target check', () => {
     });
   });
 
+  it('a close landing mid-check refuses the write instead of reporting a verdict', async () => {
+    const registry = new CapabilityRegistry();
+
+    // `close` bypasses the index lane by design, so it can land inside this
+    // check's first read. That is not an exotic race: it is what the
+    // close-with-unsaved-changes flow will do routinely. Refusing to write a
+    // document that is being closed is correct — what would be wrong is a
+    // message sending the next reader after a filesystem race that never
+    // happened.
+    let releaseTargetRead = (): void => undefined;
+    let reads = 0;
+    const service = new DocumentService(registry, {
+      readIdentity: () => {
+        reads += 1;
+        if (reads !== 2) return Promise.resolve(identity());
+        return new Promise((resolve) => {
+          releaseTargetRead = () => {
+            resolve(identity());
+          };
+        });
+      },
+    });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    const checking = service.checkWriteTarget(docId);
+    // Let the check reach its first read before closing; otherwise close wins
+    // outright and the check fails at the record lookup instead, which is a
+    // different branch.
+    await new Promise((resolve) => setImmediate(resolve));
+    await service.close(docId);
+    releaseTargetRead();
+
+    await expect(checking).rejects.toThrow(/CLOSED WHILE THIS CHECK WAS RUNNING/);
+  });
+
   it('THE 4b CONTROL: refuses a verdict when its own walk comes back empty', async () => {
     const registry = new CapabilityRegistry();
 

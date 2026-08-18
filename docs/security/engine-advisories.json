@@ -125,6 +125,20 @@
         "MessageChannelMain"
       ]
     },
+    "kernel-error-path-sanitisation": {
+      "guards": [
+        "INVARIANT-2",
+        "ADR-0009-SECTION-9"
+      ],
+      "why": "Not an engine advisory. It is here because this register is the project's one mechanism for a verdict that expires when the code moves, and rebuilding that mechanism elsewhere is how two hand-rolled copies of one idea get to disagree (scripts/lib/verdict.mjs). THE CLAIM: no filesystem path reaches the renderer through a DocumentService error. THE INPUT ITS TRUTH RESTS ON: no IPC handler calls DocumentService yet. readFileIdentity narrows absence to ENOENT/ENOTDIR and RETHROWS every other errno, which is correct — a catch-all there would be a normaliser wearing a guard's clothes — but a rethrown EACCES is a Node fs error carrying the absolute path in both .message and .path, and it escapes open() to whoever called it. The kernel is the right place to throw honestly and the boundary is the right place to sanitise (ADR-0009 §9), so today's claim holds only because apps/desktop/src is a bare index.ts. It stops holding on the day the first handler is written, and that day is a routine feature commit that will not prompt anyone to re-read the ADR. WHAT THIS TRIGGER DOES NOT DO: it catches 'a handler reached DocumentService', not 'and its errors were sanitised'. It is a prompt to implement, and the thing it prompts is the docs/FEATURES.md row for the sanitising boundary — errors mapped to structured failures carrying no path, proven by a control that asserts a path DOES appear when the mapping is removed. Passing this red requires recording a new verdict that names the boundary, which is the point: mechanical rather than remembered. Scoped to apps/*/src/** because the kernel obviously names its own class and apps/desktop is the only package that can register an ipcMain handler.",
+      "shippedPaths": [
+        "apps/*/src/**"
+      ],
+      "symbols": [
+        "DocumentService",
+        "readFileIdentity"
+      ]
+    },
     "pdf_subset_fonts": {
       "guards": [
         "DEBIAN-CVE-2026-7233",

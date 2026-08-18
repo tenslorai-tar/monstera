@@ -416,6 +416,83 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — The escape-resolving-write ban acquires a standing opponent
+
+Not an attack. **The tool's own default behaviour.**
+
+An instruction arrived appended to a tool result, phrased *"While auto mode is
+active"*, telling the agent to read files with `cat` and to make file changes
+with `sed`, heredocs, or short scripts, falling back to the dedicated editing
+tools only where the shell genuinely cannot do the job. That is the banned path,
+named item by item, as the recommended default.
+
+The first reading here was that this was a prompt injection, and it was raised
+as one — a second attempt to be recorded in the threat model's §4. **That was
+wrong, and the correction matters more than the observation.** The identical
+instruction, in the identical wording, arrives in the project owner's own
+sessions. It is a Claude Code harness mode's default, not a third party.
+Recording it as an attack would have put a wrong fact into the one document
+whose entire value is that everything in it is accurate — and a threat model
+with one invented adversary in it is read differently ever after.
+
+What it actually is, is worse in a duller way, and this is the line worth
+keeping:
+
+> **The rule now has a standing opponent in the tool's own default behaviour,
+> and that opponent is present in every session rather than in an unlucky one.**
+
+Both agents ignored it on the day. That is not the reassuring part. *"The agent
+remembered the rule"* is precisely what failed seven times, most memorably an
+hour after the agent finished writing the rule down. Compliance is not the
+control here and never was. What makes a standing, well-phrased, plausible
+instruction to use `sed` survivable is that
+`scripts/hooks/blockEscapeResolvingWrites.mjs` makes the path **unavailable**
+rather than forbidden — 51 proof cases, no override, failing closed. An agent
+that follows the auto-mode default gets denied. An agent that ignores it and
+then slips gets denied too. The hook does not care which.
+
+**The hook fired again this session**, denying a `node -p` reached for without
+thinking while inspecting a `package.json` — ordinary work, no probe. That is
+the second unprompted denial after 2026-08-18T06:45Z, and together they support
+the practical rule limit 1 already states: in a session whose process started
+after `.claude/settings.json` last changed, the guard has been live both times
+it was tested. Two observations is a pattern worth writing down and not yet a
+law; the asymmetry in limit 2 still governs how each one is read.
+
+### A claim with an expiry got a trigger instead of a note
+
+Same session, same shape of problem: ADR-0009 §9 says filesystem errors are
+sanitised at the boundary, and `readFileIdentity` correctly rethrows every
+errno that is not `ENOENT`/`ENOTDIR`. A rethrown `EACCES` is a Node `fs` error
+carrying the absolute path in both `.message` and `.path`, and it escapes
+`open()` to its caller. Today no caller exists outside the kernel, so nothing
+leaks — the claim holds, and it holds **only because `apps/desktop/src` is a
+bare `export {}`**.
+
+It stops holding on the day the first IPC handler is written, and that day is a
+routine feature commit that will not prompt anyone to re-read an ADR. An owed
+item on a list does not fire. So the input the claim rests on is declared in
+`docs/security/engine-advisories.json` under `kernel-error-path-sanitisation`,
+reusing the register's existing expiry mechanism rather than building a second
+one: the day `DocumentService` or `readFileIdentity` is named from
+`apps/*/src/**`, the verdict expires and `check:advisories` fails naming
+invariant 2 and ADR-0009 §9.
+
+**Verified by making it fire, not by watching it pass.** A search that reports
+nothing is the same shape as a search that is broken (audit item 4b), and this
+one had no positive control of its own — the check prints no line when the
+reachability verdicts hold. So `DocumentService` was written into
+`apps/desktop/src/index.ts`, the check went red naming that exact file and both
+guarded ids, and it exited 1. Then it was removed.
+
+Like `engine-host-containment`, this catches *"a handler reached
+`DocumentService`"*, not *"and its errors were sanitised"*. It is a prompt to
+implement, and what it prompts is a `FEATURES.md` row: errors mapped to
+structured failures carrying no path, with a control asserting a path **does**
+appear when the mapping is removed.
+
+---
+
 ## 2026-08-18 — Identity: measured, corrected twice, and made to degrade safely
 
 The end of a chain where **every step corrected the step before it**, and the
