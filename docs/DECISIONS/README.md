@@ -58,3 +58,4 @@ Each contains:
 | [0015](0015-a-filename-may-not-select-a-native-library.md) | A filename may not select a native library (invariant 23) | Accepted |
 | [0016](0016-the-document-handler-set-is-named.md) | The document handler set is named, not inherited | Accepted |
 | [0017](0017-the-security-substrate.md) | The security substrate: invariants 24 and 25 | Accepted |
+| [0018](0018-distribution-is-the-microsoft-store.md) | Distribution is the Microsoft Store | Accepted |

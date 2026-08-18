@@ -416,6 +416,82 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-18 — Store-only distribution, corrected in the law rather than noted
+
+[ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md). **A correction
+to the living law, not a new decision.** The founding record describes a
+two-flavour distribution with a direct download and a self-update path; none of
+that is true, and this journal had recorded the correction as owed for days.
+
+That is exactly not sufficient, and `CLAUDE.md`'s own table says why: **the
+architecture document is the law and the journal is not.** Someone following the
+process correctly — read `ARCHITECTURE.md`, build against it — would have built
+the wrong thing and been right to. The stale document *is* the defect.
+
+### The seam is kept, and the reason is written where it will be found
+
+Flavour switch, `WebUpdateProvider` registered with no implementation, signing
+certificate as an empty config value. **Deleting them converts a future config
+change back into an amendment** — it does not simplify anything, it moves the
+cost and hides it. Recorded in the ADR and in `CLAUDE.md` because "unused
+registration" is exactly what a tidy-up removes in six months.
+
+It is also the one place an unimplemented registration is correct without
+breaking the wired-tools rule: that rule bans a control that renders and does
+nothing, and this renders nothing.
+
+### The CSP got the mechanism it was missing
+
+Deferring the CSP's *value* was right — the renderer does not exist and an
+invariant relaxed in its first week teaches that relaxing invariants is normal.
+But it was left as a stage item, and **a stage item does not fail a build**. The
+engine-host policy had a trigger and a named test; the CSP had a note in a
+document, which is the asymmetry that turns one of them into a good intention.
+
+It now has a row that fires when the renderer lands, naming what must be pinned
+and — the part that matters — requiring the policy to be **read back from the
+running renderer** rather than from the source that sets it. Same reason the
+mitigations check reads the PE image and the containment row asserts against a
+live process: a directive that did not take effect and one that did are
+indistinguishable until they matter.
+
+### Updates, and the join to the security work
+
+Windows updates Store apps. The application never installs its own package and
+never overrides a user who disabled automatic updates — the second is the one
+worth stating, because working around that setting substitutes our judgement for
+theirs on their own machine.
+
+`StoreUpdateProvider` adds a static-manifest version check that **sends
+nothing**, an indicator linking to the Store, and a settings toggle. One HTTPS
+GET to a host we control, in an application that otherwise makes none, stated in
+three places because an open-source-audience application that quietly acquires a
+call home has spent something it cannot get back.
+
+The `security` boolean is the join: **the advisory tracker decides how fast a fix
+can ship, this decides how fast it reaches users.** Concrete rather than
+anticipated — the tracker already carries CVE-2026-73066 and CVE-2026-73067 as
+AFFECTED in the vendored Tesseract 5.5.2, fixed in a 5.5.3 that MuPDF 1.28.0 does
+not vendor.
+
+**Rejected and recorded:** triggering the update through the Store's own update
+API. Correct route for that behaviour, but it needs native interop from Electron
+and so adds another native surface — the thing the threat model ranks second by
+consequence. Deferred until the simple version shows users are not updating,
+which is a measurement. If built: verify the API against current Microsoft
+documentation rather than recalling it, and note its silent path works only when
+automatic updates are enabled, which is the setting we must not override.
+
+**MSIX assumptions move to the packaging-skeleton row** rather than staying a
+note: an MSIX application cannot write to its install directory, and its data
+paths differ from the installer flavour's. Both are executable only once the
+skeleton exists, and a note would be read after submission rather than before.
+
+**Partner Center gradual rollout** is a release-checklist item, not code — a bad
+build goes to a fraction of users and can be halted.
+
+---
+
 ## 2026-08-18 — The security substrate, and the range that carries it
 
 **Audited through caa59d0**, covering `513b061..caa59d0` — the two

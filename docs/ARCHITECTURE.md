@@ -509,6 +509,42 @@ shortcut.
   a private-range blocklist and a DNS-rebinding pin — re-validated on **every**
   resolution, not just the first — for user-supplied URLs.
 
+- **Distribution is the Microsoft Store, and only the Store.** The website
+  carries information and its download button links to the Store listing. **No
+  direct download exists**, so no installer flavour, no signing certificate in
+  use, and no self-update path.
+
+  The two-flavour design is **kept as a seam and not deleted**. The flavour
+  switch stays, `WebUpdateProvider` stays **registered with no implementation
+  behind it**, and the signing certificate stays as an **empty build config
+  value**. A signed direct download may be added later, and when it is it must
+  be a configuration change rather than an architecture change. That is the
+  reason the seam exists — it is not dead code, and removing it converts a
+  future config change back into an amendment.
+
+- **Updates come from Windows, not from us.** The Store updates its apps in the
+  background by default, staging the package and applying it on close. **The
+  application must never attempt to install its own package, and must never
+  override a user who has disabled automatic updates.**
+
+  `StoreUpdateProvider` adds only what the Store does not:
+
+  1. **A version check against a static JSON manifest we host** — current
+     version, minimum supported version, and a `security` boolean. A plain
+     HTTPS GET of a static file that **sends nothing**: no machine identifier,
+     no install ID, no usage data, no query parameters. This is the
+     application's only call to our own server, and its audience will read the
+     network tab.
+  2. **An in-app indicator** when a newer version exists, with a button opening
+     the Store listing through the Store protocol link. A `security` release
+     shows a notice requiring acknowledgement.
+  3. **A settings entry to disable the check**, describing exactly what it sends
+     and what it fetches. Default on.
+
+  The `security` flag is the join between the advisory tracker and the user: the
+  tracker decides how fast a fix can ship, this decides how fast it arrives.
+  ([ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md))
+
 ---
 
 ## 9. Invariants
@@ -924,3 +960,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | The memory budget is stated **per process** with an absolute ceiling on each — main ≤ 1.5× and ≤ 1.5 GB, MuPDF host ≤ 6× and ≤ 3 GB as a containment limit, renderer provisional and two-term. Stage 0 exit is gated on the three budgets. *(This row originally also recorded a two-term heap model and an admission gate reading both terms; ADR-0007's own correction withdrew them the next day as WASM artefacts — see the 2026-08-17 row below.)* | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
 | 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.19). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
 | 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn; §8 now separates native code we build and statically link from prebuilt binaries we download, and the AGPL source offer covers the MuPDF version, our build configuration and the shim source (§2, §3, §8, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |
+| 2026-08-18 | Opening a document runs none of its content, and an engine host contains a compromise rather than only a crash (§9.24, §9.25). Both land before the components they constrain, per the sequencing resolved the same day. | Nothing in the founding record — Part K is silent on active content, and Part C3's process split addresses faults rather than containment | [ADR-0017](DECISIONS/0017-the-security-substrate.md) |
+| 2026-08-18 | **Distribution is the Microsoft Store only.** No direct download exists; the website's download button links to the Store listing. The two-flavour seam is kept — flavour switch, `WebUpdateProvider` registered with no implementation, signing certificate as an empty config value — so a signed direct download is later a config change rather than an amendment. Updates are Windows'; `StoreUpdateProvider` adds a static-manifest version check that sends nothing, an in-app indicator linking to the Store, and a settings toggle (§8). | `BUILD-PROMPT.md` Part J's two-flavour distribution with a direct download, and its self-update path | [ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md) |

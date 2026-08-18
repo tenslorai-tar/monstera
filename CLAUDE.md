@@ -164,6 +164,14 @@ is wrong** — fix the boundary, not the test.
   was handed. Policy before mechanism, because the hosts are `DocumentService`'s
   to create (invariant 25).
 
+- **Distribution is the Microsoft Store only.** No direct download. The
+  two-flavour seam is kept deliberately — flavour switch, `WebUpdateProvider`
+  registered with nothing behind it, signing certificate as an empty config
+  value — so adding a signed download later is a config change, not an
+  amendment. **Do not delete it as dead code** (ADR-0018). Windows updates Store
+  apps; the app never installs its own package and never overrides a user who
+  disabled automatic updates.
+
 The full invariant list (L1–L25) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.
 
