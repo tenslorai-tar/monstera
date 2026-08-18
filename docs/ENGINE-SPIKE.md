@@ -309,3 +309,30 @@ PDFium text editing and HD render (needs the koffi FFI host), signatures via
 `@signpdf`, print/export rasterisation at DPI, and the PDF.js render path with
 its four runtime asset directories. Each is executed as its stage arrives, and
 its result appended here.
+
+Two more were added on 2026-08-18 by [ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md),
+and they differ from the list above in an important way: those rows have an
+engine that is present and merely unexercised, while these have an engine that
+is **not installed at all**. Nobody in this project has ever run either.
+
+**H6 — Ghostscript converts to PDF/A-2b, and reports what it could not fix.**
+D10 specifies PDF/A-2b export with honest blocker reporting, and the interesting
+half is the second one: a converter that silently produces a non-conformant file
+is worse than one that refuses. To execute, at Stage 8: convert a document
+carrying a non-embeddable font, transparency and an untagged image; validate the
+output with veraPDF rather than with Ghostscript's own exit code — the writer
+asserting its own conformance is the shape this project bans — and check that
+every unfixable condition is reported rather than dropped. Ghostscript is not
+provisioned, deliberately; the row is a guess until then.
+
+**H7 — MuPDF's structured text preserves enough layout that Poppler is
+unnecessary.** The founding record said "layout-preserving when Poppler
+available", and this row is the reason that clause is withdrawn rather than
+implemented. MuPDF exposes block, line and span geometry through
+`toStructuredText`; whether that reconstructs a two-column article, a table, and
+correct reading order is untested. To execute: extract from a multi-column
+academic page, a bordered table and a page with rotated text, and compare
+against the same documents through `pdftotext -layout` — the comparison is the
+point, since "the output looks reasonable" is not a measurement. If MuPDF falls
+short, Poppler returns through the external-converter seam and ADR-0013 gets a
+dated correction.

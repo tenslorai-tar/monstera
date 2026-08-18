@@ -219,6 +219,8 @@ model survives a round trip through a reader that cannot express it) and
 | In-place text editing (line/run rewriting), styled runs, HD render | **PDFium** | PDFium |
 | Content composition: new document generation (markdown/CSV/TOC/image-to-PDF), drawing onto pages (watermark, headers/footers, Bates, OCR text layer) | **@cantoo/pdf-lib** — pdf-lib itself is unmaintained since 2021-11-06 | — |
 | Digital signatures (PKCS#7) | **@signpdf** | node-forge (verify) |
+| Text extraction, plain and layout-preserving | — (read-only) | **MuPDF** structured text. The founding record's "layout-preserving when Poppler available" is withdrawn: Poppler was named in no matrix row and no provisioning list, and MuPDF exposes block, line and span geometry. Whether that geometry is *sufficient* for columns and tables is **unexecuted** ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)) |
+| PDF/A-2b export (Stage 8) | **Ghostscript** — MuPDF has no PDF/A output mode and veraPDF validates without converting. **Not provisioned and not shipped until Stage 8 builds the feature**: a binary in the 1.0 installer that nothing calls is the wired-tools rule one layer down. Row **unexecuted** ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)) | — |
 
 ### 3.1 The matrix is evidence, and stays that way
 
@@ -492,7 +494,11 @@ shortcut.
   bundled upstream binary, the AGPL source offer covers the MuPDF version, our
   build configuration and the shim source — see ADR-0001's correction.
 
-  **Downloaded as prebuilt binaries** (Ghostscript, LibreOffice, `pdfium.dll`)
+  **Downloaded as prebuilt binaries** (LibreOffice, `pdfium.dll`, and
+  **Ghostscript from Stage 8 only** — it is not provisioned before the PDF/A-2b
+  export that needs it, per [ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md);
+  a binary shipped for years before anything calls it is the wired-tools rule
+  applied to components)
   are provisioned by a pinned, SHA-256-verified script: pinned version,
   host-locked download, size bounded independently of `Content-Length`, hash
   verified **before** any parser or unzipper touches the bytes. Spawned without

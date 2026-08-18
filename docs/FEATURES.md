@@ -208,7 +208,7 @@ wired-tools rule.
 | Feature | Status |
 |---|---|
 | Pages → PNG / JPEG / WebP (range, DPI, quality) | — |
-| Text extraction (layout-preserving when Poppler available) | — |
+| Text extraction, plain and layout-preserving — **MuPDF** structured text; the founding record's "when Poppler available" is withdrawn, since Poppler was named in no matrix row and no provisioning list ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)). Layout fidelity is **unexecuted**: ENGINE-SPIKE H7 compares it against `pdftotext -layout` before this is built on | — |
 | Word (rich / layout / text modes) | — |
 | PowerPoint | — |
 | Excel: table detection (automatic / force-OCR / local handwriting / Azure) | — |
@@ -217,7 +217,7 @@ wired-tools rule.
 | Excel: combine-pages option | — |
 | Email document | — |
 | Print (MuPDF raster at chosen DPI to system dialog — never print the DOM) | — |
-| PDF/A-2b export (honest blocker reporting) | — |
+| PDF/A-2b export (honest blocker reporting) — **Ghostscript**, which is **not provisioned and does not ship until this is built** ([ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md)). The provisioning script and its registration into the external-converter seam are part of this row's work, not a prerequisite sitting in a binary list. **Unexecuted**: ENGINE-SPIKE H6 converts a document with a non-embeddable font, transparency and an untagged image, and validates with veraPDF rather than Ghostscript's own exit code | — |
 | Optimize / compress | — |
 | Barcode generate and read | — |
 
