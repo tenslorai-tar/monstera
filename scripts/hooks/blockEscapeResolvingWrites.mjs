@@ -78,19 +78,54 @@
 const SAME_COMMAND = String.raw`(?:[^|;&\n]|&(?=>))*`;
 
 /**
- * A redirect that writes to a FILE, as opposed to duplicating a descriptor.
+ * The span between a PRODUCER and its redirect, which deliberately spans the
+ * whole line.
  *
- * `2>&1` and `2>&-` move or close a file descriptor; nothing is written and no
- * escape is resolved. Reading them as file writes made the guard deny
- * `echo hello 2>&1`, which is as ordinary as shell gets — and a guard that
- * fires on ordinary work is the one someone eventually argues down.
+ * Separator-awareness is right for a heredoc and wrong here, and the difference
+ * is where the payload sits. A heredoc's opening line is pure shell syntax —
+ * its content is on the lines beneath — so every `;` and `&&` there really is a
+ * separator. `echo` and `printf` carry their payload as an ARGUMENT on the same
+ * line, so a `;` or `|` in that argument is data, not grammar, and a gap that
+ * stops at one stops inside a quoted string.
  *
- * The distinction is what follows `>&`: a digit or `-` is a descriptor, and
- * anything else is a filename, because `>&word` in bash sends both streams to
- * `word`. Both halves were measured against the real shell semantics rather
- * than assumed.
+ * That is not hypothetical. Occurrence 7 was
+ * `printf 'export const built = 1;\n' > out/index.js`, whose payload contains a
+ * semicolon: with a separator-aware gap the scan halts at it and never reaches
+ * the redirect, so the guard would have allowed the exact command it exists to
+ * stop. It was found by adding the historical occurrences to the proof
+ * verbatim rather than paraphrased.
+ *
+ * Matching quotes properly would fix it precisely, and is not worth it: a
+ * character class cannot know what is quoted, and every attempt to approximate
+ * it trades a cheap false positive for a possible false negative. The whole
+ * asymmetry of this guard says take the false positive.
  */
-const TO_FILE = String.raw`>>?\s*(?!&[0-9-])\S`;
+const SAME_LINE = String.raw`[^\n]*`;
+
+/**
+ * A redirect that writes CONTENT to a file.
+ *
+ * Two things disqualify a redirect, and both were learned by the guard denying
+ * ordinary work.
+ *
+ * **The descriptor must be stdout** — explicit `1>` or the default `>`. A `2>`
+ * redirects stderr, which is not the content an escape-resolving tool produces,
+ * so it can never be the write this guard exists to catch. `printf … 2>/dev/null`
+ * was denied on that basis; nothing printf formats goes near the file. The
+ * lookbehind also rejects a preceding `>`, so the second angle of `2>>` cannot
+ * be matched as though it were a fresh redirect.
+ *
+ * **The target must be a file, not a descriptor.** `2>&1` and `2>&-` move or
+ * close a descriptor; nothing is written. The distinction is what follows `>&`:
+ * a digit or `-` is a descriptor, anything else is a filename, because `>&word`
+ * in bash sends both streams to `word`. `&>` and `&>>` still match, since both
+ * include stdout.
+ *
+ * Both halves were measured against real shell semantics rather than assumed,
+ * and both historical occurrences remain caught: occurrence 5 and occurrence 7
+ * are stdout redirects.
+ */
+const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-])\S`;
 
 /** Commands whose own evaluation resolves escapes before anything is written. */
 const SHELL_RULES = /** @type {readonly Rule[]} */ ([
@@ -121,7 +156,7 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
     // echo/printf feeding a redirect or tee. The producer resolves escapes
     // (`\n`, `\a`, `\v`, octal) before a single byte reaches the file.
-    pattern: new RegExp(String.raw`\b(?:echo|printf)\b${SAME_COMMAND}(?:${TO_FILE}|\|\s*tee\b)`),
+    pattern: new RegExp(String.raw`\b(?:echo|printf)\b${SAME_LINE}(?:${TO_FILE}|\|\s*tee\b)`),
     what: 'echo/printf writing to a file',
     instead:
       'use Write. printf turned `\\v` into a vertical tab and `\\2` into an octal escape in a ' +
@@ -129,7 +164,7 @@ const SHELL_RULES = /** @type {readonly Rule[]} */ ([
       'to prose.',
   },
   {
-    pattern: new RegExp(String.raw`\bawk\b${SAME_COMMAND}${TO_FILE}`),
+    pattern: new RegExp(String.raw`\bawk\b${SAME_LINE}${TO_FILE}`),
     what: 'awk writing to a file',
     instead: "use Write. awk's printf resolves the same escapes.",
   },

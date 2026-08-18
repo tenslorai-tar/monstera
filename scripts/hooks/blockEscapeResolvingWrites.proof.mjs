@@ -177,6 +177,34 @@ mustAllow('a heredoc whose own line closes a descriptor', "cat <<'EOF' 2>&-\nx\n
 mustAllow('echo sending stderr to stdout', 'echo hello 2>&1');
 mustAllow('echo sending stderr to stdout, then piped', 'echo hello 2>&1 | grep h');
 mustAllow('awk sending stderr to stdout', "awk '{print}' input.txt 2>&1");
+
+// ---------------------------------------------------------------------------
+// A redirect carries content only when its descriptor is stdout. `2>` sends
+// stderr, which is never what an escape-resolving producer formatted.
+// ---------------------------------------------------------------------------
+mustAllow('printf discarding stderr', 'printf "%s" "$x" 2>/dev/null');
+mustAllow('echo with stderr sent to a log', 'echo hello 2> errors.log');
+mustAllow('echo appending stderr to a log', 'echo hello 2>> errors.log');
+mustAllow('a heredoc with stderr sent to a file', "cat <<'EOF' 2> errors.log\nx\nEOF");
+mustAllow('awk with stderr sent to a file', "awk '{print}' in.txt 2> errors.log");
+
+// The historical occurrences are stdout redirects and must stay caught. These
+// are the reason the descriptor test is a lookbehind rather than a blanket
+// exemption for anything with a digit in front of it.
+// Payloads carrying shell metacharacters. A separator-aware gap stops INSIDE
+// the quoted string and never reaches the redirect, which is how the guard
+// came to allow occurrence 7 verbatim. These are the regression cases for that.
+mustBlock('printf whose payload contains a semicolon', "printf 'const x = 1;\\n' > f.js");
+mustBlock('printf whose payload contains a pipe', "printf 'a|b\\n' > f.txt");
+mustBlock('printf whose payload contains an ampersand', "printf 'a && b\\n' > f.txt");
+mustBlock('echo whose payload contains a semicolon', "echo 'a; b' > f.txt");
+
+mustBlock('printf writing to a file (occurrence 5)', 'printf "C:\\Build\\vcvars64.bat" > path.txt');
+mustBlock('printf writing a fixture (occurrence 7)', "printf 'export const built = 1;\\n' > out/index.js");
+mustBlock('echo with an EXPLICIT stdout descriptor', 'echo hello 1> notes.txt');
+mustBlock('echo appending to a file', 'echo hello >> notes.txt');
+mustBlock('echo with both streams to a file', 'echo hello &> notes.txt');
+mustBlock('echo appending both streams to a file', 'echo hello &>> notes.txt');
 mustAllow('an npm script with a pipe', 'npm run check:docs 2>&1 | tail -3');
 mustAllow('git plumbing with a redirect from a byte-faithful producer', 'git show HEAD:package.json > /tmp/pkg.json');
 mustAllow('running a script by path', 'node scripts/hooks/documentConsistency.mjs');
