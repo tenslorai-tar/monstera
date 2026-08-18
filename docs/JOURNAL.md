@@ -496,6 +496,41 @@ the distinction `MONSTERA_GITLEAKS` failed.
 Ten cases, two of them the controls that stop the other eight being satisfied
 by a checker that always fails. Three mutations confirmed red.
 
+### Then the class, because two of three keys is not a fix
+
+`reachability` and `reachabilityControl` got a guard each, written one at a
+time in response to one instance each. `reviewed` did not: it was defaulted
+from a spread, arrived `undefined` from a truncated file, and killed the
+untriaged filter with a `TypeError` instead of naming the register.
+
+**And `reviewed` is the key whose accidental guard corrected the premise for
+this whole fix.** The one key still protected by coincidence was the one that
+produced the coincidence. Its failure is loud — but only while the feed returns
+entries, which is the same condition that made the previous accidental control
+conditional. Truncated register plus an empty feed is the identical compound
+clean pass, reached through the third key instead of the first.
+
+So the keys are a table rather than four `if` blocks, each naming what an
+absent or an empty one means. The asymmetry is deliberate and asserted:
+`watch` may legitimately be empty — zero hand-curated upstream items is a real
+state — but its **key** must be present, because that is what separates it from
+a file that lost the section. Claiming "every key must be non-empty" would have
+been stricter than the evidence supports.
+
+Two things the tooling found that the proof did not:
+
+- **`typeof null === 'object'`**, so `"reviewed": null` passed the obvious
+  shape check and died later on a `TypeError` — the exact failure the table
+  exists to replace with a named error. Found by `tsc`, not by a test, and now
+  a case of its own.
+- a dynamic `delete` in the proof, which lint rejected; the truncation fixtures
+  are built by filtering keys instead.
+
+17 cases. Removing `reviewed` from the table turns exactly the two cases named
+for it red, and they fail on the **reason** — the check still goes red, just
+not for a reason connected to what it guards, which is the distinction the
+whole entry is about.
+
 ---
 
 ## 2026-08-19 — The escape-resolving-write ban acquires a standing opponent

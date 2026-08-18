@@ -159,14 +159,77 @@ try {
       `nothing is watched.\n${emptyMap.output}`,
   );
 
-  const noControls = /** @type {Record<string, unknown>} */ (parsed(pristine));
-  delete noControls['reachabilityControl'];
-  const uncontrolled = runAgainst('no-controls', JSON.stringify(noControls));
+  const emptyControls = /** @type {Record<string, unknown>} */ (parsed(pristine));
+  emptyControls['reachabilityControl'] = [];
+  const uncontrolled = runAgainst('empty-controls', JSON.stringify(emptyControls));
   check(
-    'a register with NO CONTROLS FAILS, naming the missing controls',
+    'an EMPTY control list FAILS, naming the missing controls',
     !uncontrolled.ok && /declares no reachability controls/.test(uncontrolled.output),
     "Without a symbol it is known to find, the walk's silence about every other " +
       `symbol is worthless.\n${uncontrolled.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // EVERY load-bearing key, not the two that each got an `if` written for them.
+  //
+  // `reviewed` was the key still guarded by accident, and it is the key whose
+  // accidental guard corrected the premise for this whole fix: an unreadable
+  // register yielded an empty `reviewed`, all 74 advisories read untriaged, and
+  // the check went red for a reason unrelated to what it was guarding. Same
+  // compound clean pass as before — truncated register plus a feed returning
+  // zero — reached through the third key instead of the first.
+  //
+  // A missing key is a truncated file, at every one of them.
+  // -------------------------------------------------------------------------
+  for (const key of ['reviewed', 'watch', 'reachability', 'reachabilityControl']) {
+    const whole = /** @type {Record<string, unknown>} */ (parsed(pristine));
+    const truncated = Object.fromEntries(
+      Object.entries(whole).filter(([name]) => name !== key),
+    );
+    const result = runAgainst(`no-${key}`, JSON.stringify(truncated));
+    check(
+      `a register missing "${key}" FAILS, naming that key`,
+      !result.ok && new RegExp(`is missing its "${key}" key`).test(result.output),
+      `A truncated file and a renamed key both land here. Reporting it by name is ` +
+        `what stops the next reader debugging a TypeError.\n${result.output}`,
+    );
+  }
+
+  // `typeof null === 'object'`, so a null key would slip past a shape check
+  // written the obvious way and die later on a TypeError — the failure this
+  // table exists to replace with a named error.
+  const nulled = /** @type {Record<string, unknown>} */ (parsed(pristine));
+  nulled['reviewed'] = null;
+  const nullKey = runAgainst('null-reviewed', JSON.stringify(nulled));
+  check(
+    'a NULL key FAILS as a missing key, not as an empty one',
+    !nullKey.ok && /is missing its "reviewed" key/.test(nullKey.output),
+    `typeof null === 'object' is the hole here, and it is a hole the type ` +
+      `checker found rather than the proof.\n${nullKey.output}`,
+  );
+
+  const noTriage = /** @type {Record<string, unknown>} */ (parsed(pristine));
+  noTriage['reviewed'] = {};
+  const untriaged = runAgainst('no-triage', JSON.stringify(noTriage));
+  check(
+    'an EMPTY reviewed map FAILS on the register, not on the advisory count',
+    !untriaged.ok && /declares no triaged advisories/.test(untriaged.output),
+    'This is the case that only fails loudly while the feed returns entries. ' +
+      'Guarded by name, it fails whatever the feed does — which is the whole ' +
+      `difference between a guard and a coincidence.\n${untriaged.output}`,
+  );
+
+  // `watch` is the one key where empty is legitimate: zero hand-curated
+  // upstream items is a real state. Its KEY must still be present, and that
+  // asymmetry is asserted rather than assumed.
+  const noWatched = /** @type {Record<string, unknown>} */ (parsed(pristine));
+  noWatched['watch'] = {};
+  check(
+    'an EMPTY watch map is ACCEPTED — empty is a real state there',
+    runAgainst('no-watched', JSON.stringify(noWatched)).ok,
+    'Without this, the rule above would be "every key must be non-empty", which ' +
+      'is a stricter claim than the evidence supports and would fail a register ' +
+      'that is simply up to date.',
   );
 
   // -------------------------------------------------------------------------

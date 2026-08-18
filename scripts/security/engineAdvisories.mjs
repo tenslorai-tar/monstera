@@ -216,6 +216,67 @@ async function fetchAdvisories() {
  * triage verdict in it — recovering a deleted register is a `git checkout`, not
  * a regeneration.
  */
+/**
+ * The keys this register cannot be read without, and what an absent or empty
+ * one actually means.
+ *
+ * This is a table rather than four `if` blocks because the first two guards
+ * were written one at a time, in response to one instance each, and the third
+ * key went on being guarded by accident: `reviewed` was defaulted from a spread
+ * and would arrive `undefined` from a truncated file, at which point the
+ * untriaged filter died on a `TypeError` instead of naming the register.
+ *
+ * That was loud enough to notice — but only while the advisory feed returns
+ * entries, which is exactly the condition that made the *previous* accidental
+ * control conditional. A truncated register plus an empty feed is the same
+ * compound clean pass, reached through a different key. Enumerating the keys
+ * closes the class; adding a third `if` would have closed three-quarters of it.
+ *
+ * `emptyMeans: null` marks a key that may legitimately be empty. `watch` is
+ * hand-curated and "nothing is currently watched upstream" is a real state; its
+ * KEY still has to be present, because that is what distinguishes it from a
+ * file that lost the section.
+ *
+ * @type {readonly { key: string, array: boolean, emptyMeans: string | null, why: string }[]}
+ */
+const LOAD_BEARING_KEYS = [
+  {
+    key: 'reviewed',
+    array: false,
+    emptyMeans: 'declares no triaged advisories',
+    why:
+      'Every published advisory has a recorded verdict here. An empty map means the ' +
+      'file was truncated, not that nothing needed triage — and it reads as "nothing ' +
+      'needed triage" the moment the advisory feed returns zero entries, which has ' +
+      'already happened once to this project under a renamed package key.',
+  },
+  {
+    key: 'watch',
+    array: false,
+    emptyMeans: null,
+    why:
+      'Upstream fixes with no CVE and no release. Zero of them is a real state, so an ' +
+      'empty map is legitimate; a missing KEY is a file that lost the section.',
+  },
+  {
+    key: 'reachability',
+    array: false,
+    emptyMeans: 'declares no reachability verdicts',
+    why:
+      'Every NOT-REACHABLE verdict rests on one, so an empty map means the file was ' +
+      'truncated or the key was renamed — not that nothing is watched.',
+  },
+  {
+    key: 'reachabilityControl',
+    array: true,
+    emptyMeans: 'declares no reachability controls',
+    why:
+      'The walk that resolves those verdicts reports "no references" for every way it ' +
+      'can be broken, so without a symbol it is known to find, its silence about every ' +
+      'other symbol is worthless.',
+  },
+];
+
 function readBaseline() {
   let raw;
   try {
@@ -244,25 +305,30 @@ function readBaseline() {
   }
 
   /** @type {Baseline} */
-  const baseline = { watch: {}, ...parsed };
+  const baseline = /** @type {Baseline} */ (parsed);
 
-  // Neither of these can be defaulted to empty. A verdict register with no
-  // verdicts, and a walk with no control, are the two states whose output is
-  // indistinguishable from everything being fine.
-  if (typeof baseline.reachability !== 'object' || Object.keys(baseline.reachability).length === 0) {
-    throw new Error(
-      `The advisory register at ${BASELINE} declares no reachability verdicts.\n` +
-        'Every NOT-REACHABLE verdict in it rests on one, so an empty map means the ' +
-        'file was truncated or the key was renamed — not that nothing is watched.',
-    );
-  }
-  if (!Array.isArray(baseline.reachabilityControl) || baseline.reachabilityControl.length === 0) {
-    throw new Error(
-      `The advisory register at ${BASELINE} declares no reachability controls.\n` +
-        'The walk that resolves those verdicts reports "no references" for every way ' +
-        'it can be broken, so without a symbol it is known to find, its silence about ' +
-        'every other symbol is worthless.',
-    );
+  for (const rule of LOAD_BEARING_KEYS) {
+    const value = /** @type {Record<string, unknown>} */ (parsed)[rule.key];
+    // `typeof null === 'object'`, so null must be excluded explicitly — a
+    // `"reviewed": null` would otherwise pass the shape check and die later on
+    // a TypeError, which is the exact failure mode this table exists to end.
+    if (
+      value === null ||
+      value === undefined ||
+      (rule.array ? !Array.isArray(value) : typeof value !== 'object' || Array.isArray(value))
+    ) {
+      throw new Error(
+        `The advisory register at ${BASELINE} is missing its "${rule.key}" key.\n` +
+          'A truncated file and a renamed key both land here, and neither is a ' +
+          `register with nothing in it. ${rule.why}`,
+      );
+    }
+    const count = Array.isArray(value) ? value.length : Object.keys(value).length;
+    if (count === 0 && rule.emptyMeans !== null) {
+      throw new Error(
+        `The advisory register at ${BASELINE} ${rule.emptyMeans}.\n${rule.why}`,
+      );
+    }
   }
 
   return baseline;
