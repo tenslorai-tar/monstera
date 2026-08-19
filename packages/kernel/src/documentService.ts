@@ -623,9 +623,6 @@ export class DocumentService {
     // FIRST STATEMENT, before the removal. Placed after it, this would refuse
     // AND remove the document, handing the caller an error with the index
     // already mutated — worse than either outcome alone.
-    // FIRST STATEMENT, before the removal. Placed after it, this would refuse
-    // AND remove the document, handing the caller an error with the index
-    // already mutated — worse than either outcome alone.
     if (this.#executingDocument.getStore() === docId) {
       throw new Error(
         'Cannot close a document from inside its own lane. The returned promise awaits a ' +

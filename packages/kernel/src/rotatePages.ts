@@ -164,23 +164,6 @@ export function captureRotatePages(
 }
 
 /**
- * Rotates each named page by the command's quarter turns.
- *
- * Mutates the live session in place and returns nothing — `Apply` for a
- * live-session writer is `=> Promise<void>` (§8). Returning the inverse from
- * here was the rejected alternative in the ADR: it would change that signature
- * one commit after it landed.
- *
- * The base is the **inheritable** value, snapped the way the engine snaps it,
- * so one quarter turn moves the page one quarter turn from what was on screen.
- * The result is written to the leaf, which is correct — the page now has a
- * rotation of its own — and is exactly why the inverse has to be able to delete
- * the key rather than write a value back.
- *
- * Validated in full before the first write, so a bad index cannot leave a
- * partly rotated document behind.
- */
-/**
  * Restores each page's prior `/Rotate` **own-state**, verbatim (ADR-0009 §3).
  *
  * ## The two branches are the whole finding
@@ -220,6 +203,23 @@ export const invertRotatePages: Invert<'mupdf', 'rotatePages'> = (
     }
   });
 
+/**
+ * Rotates each named page by the command's quarter turns.
+ *
+ * Mutates the live session in place and returns nothing — `Apply` for a
+ * live-session writer is `=> Promise<void>` (§8). Returning the inverse from
+ * here was the rejected alternative in the ADR: it would change that signature
+ * one commit after it landed.
+ *
+ * The base is the **inheritable** value, snapped the way the engine snaps it,
+ * so one quarter turn moves the page one quarter turn from what was on screen.
+ * The result is written to the leaf, which is correct — the page now has a
+ * rotation of its own — and is exactly why the inverse has to be able to delete
+ * the key rather than write a value back.
+ *
+ * Validated in full before the first write, so a bad index cannot leave a
+ * partly rotated document behind.
+ */
 export const applyRotatePages: Apply<'mupdf', 'rotatePages'> = (
   session: MupdfSession,
   command: CommandOfKind<'rotatePages'>,
