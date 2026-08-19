@@ -913,10 +913,18 @@ was handed to it.** The guard's comment was correct about its reasoning and
 wrong only about scope, and nothing about it looked wrong — which is what makes
 the shape worth sweeping for rather than waiting to trip over again.
 
-Swept `scripts/hooks/`, `scripts/security/` and `scripts/lib/`, for the phrasing
-(*already handled*, *keys on*, *covered by*, *delegated to*) and for the
-underlying mechanism (`subarray`, `slice(0, …)`, window and limit constants used
-by one check and relied on by another).
+Swept **every `.mjs` and `.ts` in the repository** — not only the guard and
+security directories — for the phrasing (*already handled*, *keys on*, *covered
+by*, *delegated to*) and for the underlying mechanism (`subarray`,
+`slice(0, …)`, window and limit constants used by one check and relied on by
+another).
+
+**The search's positive control, which is what makes the empty result worth
+anything.** Run against the **pre-fix** `guardFiles.mjs`, the patterns
+`already handled` and `keys on` hit lines 298 and 452 — the defect itself. So
+the sweep demonstrably finds the thing it was built for, and the proof is one
+`git show 612d896~1` away and permanent. A sweep reporting nothing is worth
+exactly as much as its evidence that it can report something (audit item 4b).
 
 **Nothing found.** Recorded as checked-and-empty, which is a different record
 from not looking. The near-misses and why each is sound:
@@ -930,6 +938,22 @@ from not looking. The near-misses and why each is sound:
   something narrower.
 - `lockfileIntegrity.mjs`'s `.slice(0, 12)` truncates displayed error lines, not
   a check's scope.
+- `generateNotice.mjs` scopes licences deliberately; `secretScan.mjs` **refuses**
+  to delegate rather than delegating; `blockEscapeResolvingWrites.proof.mjs`
+  enforces that every property has a case.
+
+**What "checked and empty" does NOT mean here, stated so it is not read as
+stronger than it is.** This sweep matches **comments**. It finds *documented*
+delegations only. A check that silently assumes another covers a case, with
+nothing written down, is invisible to it — and the next one may well be exactly
+that, since this one was documented by luck rather than by policy.
+
+**The instrument for the undocumented kind already exists, and it is not a
+better sweep.** It is a proof case sitting on each check's **scope boundary**:
+the past-8000-byte case and its NUL twin are precisely that, and they would have
+caught this with no comment to grep. Boundary cases are the general mechanism;
+the sweep is the cheap one-off. Recorded together so nobody repeats the sweep
+later and believes it covers more than it does.
 
 ### A claim with an expiry got a trigger instead of a note
 
