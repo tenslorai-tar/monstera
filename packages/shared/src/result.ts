@@ -73,10 +73,86 @@ export interface StructuredError {
  * a `DocId`, a count, an enum member — which inherits invariant L2 rather than
  * restating it.
  */
-export interface Failure<C extends string = string> {
+
+/**
+ * The code that means *"this was not a planned failure"*.
+ *
+ * Lives here rather than in the contract package because {@link Failure}'s shape
+ * turns on it: the id-carrying half of that union is *this code's* half. Two
+ * declarations of one literal is how the type and the schema get to disagree
+ * about which failures carry an id.
+ */
+export const INTERNAL_FAILURE = 'internal';
+export type InternalFailure = typeof INTERNAL_FAILURE;
+
+/**
+ * A failure on the wire, in **one of two shapes** (ADR-0009, 2026-08-19).
+ *
+ * A declared code travels alone. `internal` travels with the id of the log entry
+ * its diagnostic was withheld into. So an `incident` accompanies **exactly** the
+ * failures that hid something, and that is a property of the type rather than a
+ * convention someone follows.
+ *
+ * ## Why the id is not on both halves
+ *
+ * It was, for two commits, and the first handler is what showed the problem:
+ * `wrapHandler` gives a handler its params and nothing else, so a handler
+ * returning a **declared** failure has no source for an id the type demands. The
+ * only instances in the tree were test fixtures writing `'i0'` by hand.
+ *
+ * Both ways of supplying one are worse than not having one. A **fabricated** id
+ * points at no log line, so the one action a user can take — report it — leads
+ * whoever searches the log to nothing. A **second log** collides: counters are
+ * per log and both start at zero, so a handler's `i1` and the boundary's `i1`
+ * are different failures wearing one id, which is the state
+ * `boundary.ts` keeps one log per registry to prevent.
+ *
+ * A declared failure hides nothing — the code is the whole of what happened —
+ * so there is no entry for an id to point at.
+ *
+ * ## The limit of the unparameterised form, stated rather than left to be found
+ *
+ * `Exclude<string, 'internal'>` is `string`: a literal cannot be subtracted from
+ * the open type. So `Failure` with no argument does **not** forbid
+ * `{ code: 'internal' }` without an id. Every real use is parameterised by a
+ * channel's declared codes, where the exclusion does work, and the schema
+ * refuses the shape at runtime on the wire — but the bare default is weaker than
+ * the parameterised type and saying so here is cheaper than someone concluding
+ * otherwise from the name.
+ */
+export type Failure<C extends string = string> =
+  // The declared half is ELIDED when a channel declares nothing, rather than
+  // left as `{ code: never }`. An uninhabited member is not harmless here: the
+  // property access `error.incident` fails against it — a member no value can
+  // ever take — while narrowing on the code is simultaneously flagged as always
+  // false, because the code really is `'internal'`. The type would be demanding
+  // a discrimination it had already made. `[X] extends [never]` is the
+  // non-distributive form; the bare `X extends never` distributes and answers
+  // for each member instead of for the union.
+  | ([Exclude<C, InternalFailure>] extends [never]
+      ? never
+      : { readonly code: Exclude<C, InternalFailure> })
+  | {
+      readonly code: InternalFailure;
+      /** Opaque id of the full diagnostic in the main-side log. Never a path. */
+      readonly incident: string;
+    };
+
+/**
+ * What a **handler** may report: a code its channel declared, and nothing else.
+ *
+ * No `incident`, because a handler cannot obtain one honestly. No `internal`
+ * either — that is the boundary's to produce, which `channel.ts` asserted in
+ * prose while the type put it in the handler's own return union and then
+ * demanded an id the handler could not reach. The rule and the type disagreed,
+ * and the type was the one being compiled.
+ *
+ * A channel declaring no failures gives `{ code: never }`, which is uninhabited:
+ * its handler can only succeed. That is the mapped type doing the work rather
+ * than a comment asking for it.
+ */
+export interface DeclaredFailure<C extends string> {
   readonly code: C;
-  /** Opaque id of the full diagnostic in the main-side log. Never a path. */
-  readonly incident: string;
 }
 
 export function ok<T>(value: T): Result<T, never> {

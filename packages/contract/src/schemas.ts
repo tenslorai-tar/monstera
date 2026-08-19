@@ -1,4 +1,10 @@
-import { asDocId, asDocVersion, asFileHandle, type StructuredError } from '@monstera/shared';
+import {
+  INTERNAL_FAILURE,
+  asDocId,
+  asDocVersion,
+  asFileHandle,
+  type StructuredError,
+} from '@monstera/shared';
 import { z } from 'zod';
 
 /**
@@ -48,22 +54,43 @@ export function envelopeSchema<T extends z.ZodType>(value: T) {
 }
 
 /**
- * What a failure looks like on the wire (ADR-0009 §9).
+ * What a failure looks like on the wire (ADR-0009 §9, and its 2026-08-19
+ * decision).
  *
- * Two fields, both strings, and **`.strict()` is the load-bearing part**: a
- * `message`, a `stack` or a `cause` arriving on a failure is rejected here
- * rather than passed through. That matters because this schema is what the
- * renderer validates against, so it is the last place a diagnostic could sneak
- * across from a main build that drifted — and the failure it would produce is
- * silent, since extra fields are exactly what a permissive parse ignores.
+ * **Two shapes, both `.strict()`, and neither one is optional-field shaped.** A
+ * declared code travels alone; `internal` travels with the id of the log entry
+ * its diagnostic was withheld into. `.strict()` is the load-bearing part on both:
+ * a `message`, a `stack` or a `cause` arriving on a failure is rejected here
+ * rather than passed through, and this schema is what the renderer validates
+ * against — the last place a diagnostic could cross from a main build that
+ * drifted, and a silent place, since extra fields are exactly what a permissive
+ * parse ignores.
  *
- * `structuredErrorSchema` above is unchanged and still used for the diagnostic
- * that stays main-side. The two schemas describe the two objects, which is the
- * decision made visible: one crosses and one does not.
+ * **The `internal`-without-an-id state is closed by the refinement, not left to
+ * member order.** A union tries its members in turn, so `{ code: 'internal' }`
+ * with no id would fall through the first member and parse cleanly as the second
+ * — an unreportable failure arriving as a well-formed one. Excluding the code
+ * there is what makes the two shapes disjoint rather than merely ordered.
+ *
+ * `structuredErrorSchema` above is unchanged and still describes the diagnostic
+ * that stays main-side. Two schemas for two objects: one crosses and one does
+ * not.
  */
-export const failureSchema = z
-  .object({
-    code: z.string().min(1),
-    incident: z.string().min(1),
-  })
-  .strict();
+export const failureSchema = z.union([
+  z
+    .object({
+      code: z.literal(INTERNAL_FAILURE),
+      incident: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      code: z
+        .string()
+        .min(1)
+        .refine((code) => code !== INTERNAL_FAILURE, {
+          message: `"${INTERNAL_FAILURE}" must carry an incident id; a declared code must not.`,
+        }),
+    })
+    .strict(),
+]);

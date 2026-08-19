@@ -11,9 +11,12 @@ export {
   asFileHandle,
 } from './ids.js';
 export {
+  type DeclaredFailure,
   type Failure,
+  type InternalFailure,
   type Result,
   type StructuredError,
+  INTERNAL_FAILURE,
   ok,
   err,
   toStructuredError,

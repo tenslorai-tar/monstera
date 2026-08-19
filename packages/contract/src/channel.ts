@@ -1,4 +1,4 @@
-import type { Failure, Result } from '@monstera/shared';
+import { type DeclaredFailure, type Failure, INTERNAL_FAILURE, type InternalFailure, type Result } from '@monstera/shared';
 import type { z } from 'zod';
 
 /**
@@ -60,13 +60,26 @@ export function channel<
  * Available on every channel without being declared. A handler does not produce
  * it — the boundary does, when something throws — and it carries an incident id
  * rather than the reason, because the reason is the thing that must not cross.
+ *
+ * **Re-exported, not declared here.** It lives beside `Failure` in
+ * `@monstera/shared` because that union's shape turns on it: the id-carrying
+ * half is this code's half. Declaring it twice is how a type and a schema get to
+ * disagree about which failures carry an id.
  */
-export const INTERNAL_FAILURE = 'internal';
-export type InternalFailure = typeof INTERNAL_FAILURE;
+export { INTERNAL_FAILURE, type InternalFailure };
+
+/** The codes a channel DECLARED — what its handler may report. */
+export type DeclaredOf<TMap extends ChannelMap, K extends keyof TMap> = TMap[K] extends Channel<
+  z.ZodType,
+  z.ZodType,
+  infer C
+>
+  ? C
+  : never;
 
 /** Every failure code one channel can report, including the implicit one. */
 export type FailureOf<TMap extends ChannelMap, K extends keyof TMap> =
-  | (TMap[K] extends Channel<z.ZodType, z.ZodType, infer C> ? C : never)
+  | DeclaredOf<TMap, K>
   | InternalFailure;
 
 /** A registry of channels, keyed by channel id. */
@@ -104,11 +117,19 @@ export type ResultOf<TMap extends ChannelMap, K extends keyof TMap> = z.infer<
  * the full diagnostic main-side. The distinction is the same one `Result`
  * already draws: an expected failure is part of the return type, a violated
  * invariant is not.
+ *
+ * ## `DeclaredFailure`, not `Failure` — and the difference is enforced here
+ *
+ * A handler returns **only** the codes its channel declared, with no `incident`
+ * and no `internal` (ADR-0009, 2026-08-19). The paragraph above has said "a
+ * handler does not produce `internal`" since the codes landed, while the return
+ * type included it and then demanded an id `wrapHandler` never hands over. This
+ * mapped type is now what says it, so the prose and the compiler agree.
  */
 export type Handlers<TMap extends ChannelMap> = {
   readonly [K in keyof TMap]: (
     params: ParamsOf<TMap, K>,
-  ) => Promise<Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>>;
+  ) => Promise<Result<ResultOf<TMap, K>, DeclaredFailure<DeclaredOf<TMap, K>>>>;
 };
 
 /**

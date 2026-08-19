@@ -114,19 +114,68 @@ describe('wrapHandler', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('passes a DECLARED failure straight through', async () => {
-    const refuses: FixtureHandlers['fixture.add'] = () =>
-      Promise.resolve(err({ code: 'too-large', incident: 'i0' }));
+  it('passes a DECLARED failure straight through, and it carries NO incident id', async () => {
+    const refuses: FixtureHandlers['fixture.add'] = () => Promise.resolve(err({ code: 'too-large' }));
     const result = await wrapOne('fixture.add', refuses)({ left: 1, right: 1 });
 
-    expect(result).toStrictEqual({ ok: false, error: { code: 'too-large', incident: 'i0' } });
+    // `toStrictEqual` rather than a field check: the assertion is that the code
+    // is the WHOLE of what crossed. A declared failure hides nothing, so there
+    // is no log entry for an id to point at (ADR-0009, 2026-08-19).
+    expect(result).toStrictEqual({ ok: false, error: { code: 'too-large' } });
+  });
+
+  it('CONTROL: a declared failure carrying an incident id is refused MAIN-SIDE', async () => {
+    // The type cannot catch this on its own and that is why the check exists:
+    // `err()` infers its argument, so an excess `incident` survives assignment
+    // to `DeclaredFailure`. Without the wire-shape check in the boundary this
+    // travels all the way to the renderer's envelope parse — failing in the
+    // process that did not write the bug.
+    //
+    // The id would also be a fabrication: `wrapHandler` hands a handler its
+    // params and nothing else, so nothing a handler can write here resolves to
+    // a log line.
+    const fabricates = {
+      'fixture.add': () => Promise.resolve(err({ code: 'too-large', incident: 'i0' })),
+    };
+    const { sink, seen } = recorder();
+    const result = await wrapOne(
+      'fixture.add',
+      fabricates['fixture.add'] as unknown as FixtureHandlers['fixture.add'],
+      sink,
+    )({ left: 1, right: 1 });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('internal');
+    expect(seen[0]?.diagnostic.message).toContain('not a wire failure');
+  });
+
+  it('CONTROL: a handler reporting `internal` becomes a REAL internal, with an id that resolves', async () => {
+    // `internal` is the boundary's to produce, never a handler's — the code
+    // means "a diagnostic was withheld", and a handler has nowhere to withhold
+    // one to. Forwarding it would put an unreportable failure on the wire
+    // wearing the shape of a reportable one.
+    const impostor = { 'fixture.add': () => Promise.resolve(err({ code: 'internal' })) };
+    const { sink, seen } = recorder();
+    const result = await wrapOne(
+      'fixture.add',
+      impostor['fixture.add'] as unknown as FixtureHandlers['fixture.add'],
+      sink,
+    )({ left: 1, right: 1 });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('internal');
+    // The point of the case: the id it now carries is one the log actually
+    // minted, rather than the absent one the handler offered.
+    if (result.error.code === 'internal') expect(seen[0]?.id).toBe(result.error.incident);
+    expect(seen[0]?.diagnostic.message).toContain('undeclared failure code');
   });
 
   it('CONTROL: an UNDECLARED code becomes internal rather than crossing', async () => {
     // The type already forbids this. The runtime check covers what the type
     // cannot see — a handler reached through an `any`, or a build that drifted
     // from the contract it was compiled against.
-    const rogue = { 'fixture.add': () => Promise.resolve(err({ code: 'invented', incident: 'x' })) };
+    const rogue = { 'fixture.add': () => Promise.resolve(err({ code: 'invented' })) };
     const { sink, seen } = recorder();
     const result = await wrapOne(
       'fixture.add',
@@ -198,6 +247,12 @@ describe('a thrown error does not carry its diagnostic across (ADR-0009 §9)', (
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
+    // No narrowing needed HERE, and that is the type being precise rather than
+    // lax: `fixture.fail` declares no failure codes, so `internal` is the only
+    // shape its failure can take and the declared half of the union is elided.
+    // A channel that declares codes forces the discrimination — see the
+    // `fixture.add` cases above.
+    expect(result.error.code).toBe('internal');
     expect(seen[0]?.id).toBe(result.error.incident);
     // Opaque: it identifies a log line, not a file. A hash of the path would
     // join them just as well and would be a disclosure.
@@ -217,7 +272,7 @@ describe('everything that crosses survives structuredClone', () => {
    */
   const crossing = [
     ['a success envelope', ok({ sum: 5 })],
-    ['a declared failure', err({ code: 'too-large', incident: 'i1' })],
+    ['a declared failure', err({ code: 'too-large' })],
     ['an internal failure', err({ code: 'internal', incident: 'i2' })],
     ['params', { left: 1, right: 2 }],
   ] as const;
@@ -302,5 +357,47 @@ describe('createClient', () => {
     await expect(client['fixture.add']({ left: 1, right: 1 })).rejects.toThrow(
       'Malformed response envelope',
     );
+  });
+
+  describe('the two failure shapes are DISJOINT on the wire, not merely ordered', () => {
+    function clientReturning(error: unknown) {
+      return createClient(fixture, () => Promise.resolve({ ok: false, error }));
+    }
+
+    // The positive control, and it runs first for a reason: every case below
+    // asserts a REJECTION, and "rejects everything" produces the same result as
+    // "rejects exactly these". Without a shape that gets through, the three
+    // cases below are satisfied by a parser that has stopped working.
+    it('CONTROL: both well-formed shapes get through', async () => {
+      await expect(
+        clientReturning({ code: 'internal', incident: 'i1' })['fixture.add']({ left: 1, right: 1 }),
+      ).resolves.toStrictEqual(err({ code: 'internal', incident: 'i1' }));
+      await expect(
+        clientReturning({ code: 'too-large' })['fixture.add']({ left: 1, right: 1 }),
+      ).resolves.toStrictEqual(err({ code: 'too-large' }));
+    });
+
+    it('`internal` WITHOUT an id is refused rather than read as a declared code', async () => {
+      // The case member order alone would let through: a union tries its members
+      // in turn, so this would fall past the internal shape and parse cleanly as
+      // a bare code. An unreportable failure would then arrive wearing the shape
+      // of a reportable one, and the id the renderer offers a user would simply
+      // not be there.
+      await expect(
+        clientReturning({ code: 'internal' })['fixture.add']({ left: 1, right: 1 }),
+      ).rejects.toThrow('Malformed response envelope');
+    });
+
+    it('a DECLARED code carrying an id is refused', async () => {
+      // The other direction. A declared failure withheld nothing, so an id on it
+      // points at no log entry — and an id that cannot be looked up is worse
+      // than none, because it consumes the one action a user can take.
+      await expect(
+        clientReturning({ code: 'too-large', incident: 'i1' })['fixture.add']({
+          left: 1,
+          right: 1,
+        }),
+      ).rejects.toThrow('Malformed response envelope');
+    });
   });
 });

@@ -10,7 +10,7 @@ import {
   type ResultOf,
 } from './channel.js';
 import { IncidentLog, type IncidentSink } from './incident.js';
-import { envelopeSchema } from './schemas.js';
+import { envelopeSchema, failureSchema } from './schemas.js';
 
 /**
  * Wraps one handler so that everything crossing the boundary is validated in
@@ -72,7 +72,11 @@ export function wrapHandler<TMap extends ChannelMap, K extends keyof TMap & stri
       );
     }
 
-    let produced: Result<unknown>;
+    // Typed as what a HANDLER may report — a declared code, no incident, no
+    // `internal`. Widening this to `Result<unknown>` would let the default
+    // `Failure` in, whose unparameterised form cannot subtract a literal from
+    // `string` and so does not forbid an id-less `internal`.
+    let produced: Result<unknown, { readonly code: string }>;
     try {
       produced = await handler(parsedParams.data as ParamsOf<TMap, K>);
     } catch (thrown) {
@@ -84,12 +88,36 @@ export function wrapHandler<TMap extends ChannelMap, K extends keyof TMap & stri
       // The type already forbids an undeclared code; this catches the case the
       // type cannot see — a handler reached through an `any` at some boundary,
       // or a build that drifted from the contract it was compiled against.
-      const declared: readonly string[] = [...definition.failures, INTERNAL_FAILURE];
+      //
+      // `internal` is NOT in this list, and its absence is the check rather than
+      // an omission: a handler that reports it has produced a code carrying no
+      // incident id, so forwarding it would put an unreportable failure on the
+      // wire wearing the shape of a reportable one. It becomes a real internal —
+      // recorded, with an id that resolves.
+      const declared: readonly string[] = definition.failures;
       if (!declared.includes(produced.error.code)) {
         return internal(
           new Error(
             `Handler for "${id}" reported the undeclared failure code ` +
-              `"${produced.error.code}". Declared: ${declared.join(', ')}.`,
+              `"${produced.error.code}". Declared: ${declared.join(', ') || '(none)'}.`,
+          ),
+        );
+      }
+
+      // Checked against the wire shape HERE, not only when the renderer parses
+      // the envelope, and the reason is the one the outbound result validation
+      // already gives: a drifted handler should fail in the process that owns
+      // the bug. The type cannot cover this on its own — `err()` infers its
+      // argument, so excess properties survive assignment to `DeclaredFailure`,
+      // and an `incident` attached to a declared failure would otherwise travel
+      // as far as the client's envelope parse before anyone noticed.
+      const parsedFailure = failureSchema.safeParse(produced.error);
+      if (!parsedFailure.success) {
+        return internal(
+          new Error(
+            `Handler for "${id}" reported a failure that is not a wire failure: ` +
+              parsedFailure.error.message,
+            { cause: parsedFailure.error },
           ),
         );
       }

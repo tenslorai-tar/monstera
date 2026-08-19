@@ -147,6 +147,25 @@ export const handlers: ContractHandlers = {
 `,
   },
   {
+    name: 'a handler may not report a failure its channel did not declare',
+    expect: 'reject',
+    code: 'TS2322',
+    // `app.info` declares no failure codes, so `DeclaredFailure<never>` is
+    // uninhabited and its handler can only succeed. `internal` is the sharpest
+    // thing to try here: it is the one code that exists on every channel, and a
+    // handler still may not produce it — it means "a diagnostic was withheld",
+    // and a handler has nowhere to withhold one to (ADR-0009, 2026-08-19).
+    because: /Type 'string' is not assignable to type 'never'/u,
+    notBecause: null,
+    source: `
+import type { ContractHandlers } from '@monstera/contract';
+import { err } from '@monstera/shared';
+export const handlers: ContractHandlers = {
+  'app.info': () => Promise.resolve(err({ code: 'internal' })),
+};
+`,
+  },
+  {
     name: 'a client stub missing a channel does not compile',
     expect: 'reject',
     code: 'TS2741',
