@@ -416,6 +416,149 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `77d4c2c..d61d995`
+
+**Audited through d61d995.** 10 commits, 20 files, 0 proofs added, **3 proofs
+modified**, 0 new scripts.
+
+**Past the gate, not on it.** `check:docs` was already red at 10 against a
+threshold of 9 when this started. Recorded because "on the line" and "over it"
+are different states and only one of them is a rule being kept.
+
+Read in the order the range demanded: `auditScope.proof.mjs` **first and
+slowly**, because it is the proof of the instrument that defines the range being
+audited, and it changed inside the range it scopes. Not circular — but everything
+else here is bounded by it, so a defect there mis-scopes every other finding.
+
+### Finding V-1 — the append-only control has never tested anything
+
+`proofChurn` is built from **modified** proofs only. The control's fixture,
+`fresh.proof.mjs`, is **added** inside the range — so it lands in `proofsAdded`,
+never appears in `proofChurn`, and `appended` is `undefined` on every run. The
+guard reads:
+
+```js
+appended === undefined || appended.net.removed === appended.perCommit.removed
+```
+
+so **"not found" passes**. Measured, not inferred: replacing `===` with `!==`
+fails the case immediately, printing `net -? vs per-commit -?` — the `?` being
+the entry that was never there.
+
+Three things make this worth more than its size.
+
+**It is audit item 4b's corollary applied to a test rather than to an
+instrument.** *An empty intermediate result is a broken parse, not a clean
+input* — written about seed sets and symbol tables, and it holds identically for
+a fixture lookup. A control that cannot find its own subject must throw, never
+pass.
+
+**It is the vacuous shape inside the control written to prevent a vacuous
+shape**, one commit old. The case exists so the RESOLUTION case above it cannot
+be satisfied by a report that *always* claims a difference. It has been
+protecting nothing since it was written.
+
+**The mutation missed it, and the reason is instructive.** The mutation run when
+this landed pointed `perCommit` at the range diff, which makes net equal
+per-commit for *everything* — a state the vacuous branch also passes. A mutation
+that moves both sides of a comparison cannot separate a control from its own
+emptiness. The one that would have caught it is the opposite: make the figures
+always differ, and watch this case stay green.
+
+**Would CI have caught it?** No. `proof:auditscope` runs in `guards.yml` and
+passes, because the vacuous branch is the thing being run.
+
+**Not mis-scoping this audit.** The instrument itself is sound — the range report
+printed `net +118 −8 / per-commit +120 −10` for `contract.proof.mjs` with *2
+deletion(s) DO NOT APPEAR*, which is U-2's fix working on its first real range.
+What is unguarded is a future regression to always-differ.
+
+### Finding V-2 — the report a human reads has no test at all
+
+`proof:auditscope` imports `auditScope` from `scripts/lib/auditWatermark.mjs`. It
+never runs `scripts/audit/scope.mjs`. So the **data** is tested and the
+**rendering** is not: delete `proofChurnSection`'s hidden-deletions line entirely
+and every case still passes.
+
+That line is the whole of U-2's value — the figures without it are two numbers an
+auditor has to subtract in their head. The same class as V-1 one level out: the
+part that changes behaviour is the part being read, and it is the part nothing
+asserts. Open, and its fix belongs with V-1's since both are about the same
+instrument.
+
+### The modified-proof column, read
+
+`auditScope.proof.mjs` **+45 −0** and `guardFiles.proof.mjs` **+61 −0**: purely
+additive, no case altered, no expectation flipped.
+
+`contract.proof.mjs` **+118 −8 net, +120 −10 per commit**. The two hidden
+deletions are the `VersionWriter` → `CommandWriter` rename inside a control
+fixture — a rename, not a loosening. Read and classified, which is the record the
+column exists to produce; U-2's line is what made them visible at all.
+
+`guardFiles.mjs` is again a **widening** (the Trojan Source codepoints), and the
+evidence a widening needs is the opposite of a loosening's: `guard:tree` over
+every tracked file passes, and the non-ASCII prose control passes, so nothing
+legitimate is now rejected.
+
+### The rest of the checklist
+
+**1 — root cause or workaround?** No loosened check, no escape hatch. Two fixes
+are root-cause in the strong sense: U-1 made the guard **decode** rather than
+widening a byte range it structurally could not express, and U-2 printed the
+figure the column was missing rather than telling auditors to run `git log -p`
+themselves.
+
+**Corrections inside the range:** three, all before push — the vacuous
+cross-document log control (caught by mutation), the cross-product refusing a
+confusable `because` pair, and two guards deleted for being unreachable
+(`isKind`, and a runtime `replay` check that lint proved always-false, replaced
+by a compile-time trigger). V-1 is the fourth and it is **not** in that group: it
+shipped, and this audit found it.
+
+**2 — easy shape only?** Hard shape throughout: a **misspelt** symbol, a
+checkpoint that must hold the **pre-command** document, a **truncated** type
+dump, a page whose prior rotation is **absent** rather than present. The one
+place the hard shape was not tried is V-1 — the control was never run against a
+proof that actually appears in the column it reports on.
+
+**3 — would CI have caught it?** V-1 and V-2: **no**, and structurally — CI runs
+the proof whose control is vacuous, and runs nothing that exercises the report.
+Everything else in the range is covered.
+
+**4 — proofs non-vacuous?** Mutated throughout, and one mutation found a defect
+in a **test** rather than in the code for the second range running: making every
+document share one log left all 126 tests green, because the cross-document
+control read a context *stub*. It now asserts against the service, and reddens.
+
+**4a — resolution.** The churn reporting got its resolution test in the same
+commit as the instrument, which is the second range in a row that has happened.
+The resolution case is sound; its **control** is V-1.
+
+**4b — search-shaped instruments.** None added. V-1 is a 4b-shaped failure in a
+test, which is the generalisation worth carrying: the corollary is about *empty
+results being treated as answers*, and a fixture lookup is one.
+
+**5 — executed or asserted?** Executed: every mutation; V-1 measured by flipping
+its own condition; the error-boundary leak measured on the real filesystem
+(`EPERM: operation not permitted, stat 'C:\pagefile.sys'`, with the path in the
+stack too); `.path` confirmed **not** copied by `toStructuredError`; the claim
+that the kernel builds `{ cause: error }` chains checked and found **false** —
+all four sites are in `boundary.ts`, `result.ts` and `schemas.ts`.
+
+**6 — architecture before feature?** Clean, and deliberately so for the second
+range running. Two ADR decisions, each in its own commit, each **before** the
+code: the composition point with the log's home, and §9 as a type rather than a
+sanitiser — the second landing before any handler exists at all, which is the
+whole reason it is cheap.
+
+**7 — documents match code?** `check:docs` passes its eight checks once the
+watermark advances. A marker was corrected in this range rather than found stale
+later: `rotatePages` read **done** while this file's own legend requires a UI
+dispatch test, and now reads `kernel done, unwired`.
+
+---
+
 ## 2026-08-19 — Checkpoint retention is not blocked, it is already shipped and unsized
 
 Recorded from the review seat's third point, and the correction runs in the
