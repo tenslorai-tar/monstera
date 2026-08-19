@@ -20,6 +20,38 @@
  * second, subtly different opinion about what "in sync" means, and the failure
  * mode of getting that wrong is a guard that passes broken lockfiles.
  *
+ * ## THAT PREMISE HOLDS ONLY FOR AN NPM THAT VALIDATES, and one did not
+ *
+ * Occurrence 3 shipped a broken lockfile past this guard and stopped CI for two
+ * days. The guard ran on every commit and said yes, because **`npm ci
+ * --dry-run` answered a different question on the npm that ran it**: it
+ * resolved an ideal tree and reported what it *would* install — output
+ * indistinguishable from validating the recorded one.
+ *
+ * Bisected against a clean export holding the pre-repair lockfile:
+ *
+ * | npm | verdict |
+ * |---|---|
+ * | 11.6.2 | exit 0, `added 217 packages` — resolved an ideal tree |
+ * | **11.6.3** | exit 1, `Missing: @emnapi/runtime@1.11.3 from lock file` |
+ * | 11.6.4 … 11.17.0 | exit 1, the same |
+ *
+ * One patch release, not a platform: both CI runners rejected a lockfile this
+ * machine installed cleanly, and one of those runners is `windows-latest`.
+ *
+ * So the guard now **refuses to answer** below {@link LOCKFILE_VALIDATING_NPM}
+ * rather than reporting a pass it cannot stand behind — the same shape as
+ * refusing to commit when the secret scanner is missing.
+ *
+ * ## Why a floor and not a pinned npm
+ *
+ * Provisioning a pinned npm the way `gitleaks` is pinned was the alternative,
+ * and it is worse *here* for a reason specific to what this checks. The
+ * question is **"will `npm ci` succeed for whoever runs it"**, and the person
+ * who runs it uses the npm they have. Validating with a second, provisioned npm
+ * would answer about a version nobody installs with. A floor keeps the guard
+ * and the eventual install on the same tool.
+ *
  * It runs only when a manifest or the lockfile is staged, because it costs a
  * few seconds and nothing else can cause the failure.
  *
@@ -86,9 +118,77 @@ export function touchesDependencies() {
 }
 
 /**
+ * The oldest npm whose `ci --dry-run` validates the recorded tree rather than
+ * resolving an ideal one.
+ *
+ * **Measured, not chosen.** 11.6.2 accepts the lockfile that stopped CI;
+ * 11.6.3 rejects it naming the missing entries. See the table in this file's
+ * header. It is deliberately not `NPM_VERSION` from `toolchain.mjs`: that is
+ * what the runners happen to ship today, and requiring it would refuse
+ * contributors whose npm answers this question perfectly well.
+ */
+export const LOCKFILE_VALIDATING_NPM = '11.6.3';
+
+/**
+ * Compares two dotted version strings numerically.
+ *
+ * `'11.6.10' < '11.6.3'` under string comparison, which is the ordinary way to
+ * get this wrong and would let exactly one npm series through unchecked.
+ *
+ * @param {string} left
+ * @param {string} right
+ * @returns {number} negative when `left` is older
+ */
+export function compareVersions(left, right) {
+  const parse = (/** @type {string} */ value) =>
+    value.split('.').map((part) => Number.parseInt(part, 10));
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/**
+ * The npm that would run the check, or `null` when it cannot be established.
+ *
+ * `null` is not "assume it is fine". A version this cannot read is a version it
+ * cannot compare, and the caller treats that the same as too old — for the same
+ * reason an unreadable staged list arms the contract-drift gate.
+ *
+ * @returns {string | null}
+ */
+export function npmVersion() {
+  const result = spawnSync(process.execPath, [npmCliPath(), '--version'], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) return null;
+  const reported = `${result.stdout ?? ''}`.trim();
+  return /^\d+\.\d+\.\d+/u.test(reported) ? reported : null;
+}
+
+/**
  * @returns {{ ok: boolean, output: string }}
  */
 export function checkLockfile() {
+  // Asked BEFORE the check runs, because the answer decides whether the check
+  // means anything. An npm that resolves an ideal tree reports success for a
+  // lockfile it never validated, and that success is what shipped occurrence 3.
+  const version = npmVersion();
+  if (version === null || compareVersions(version, LOCKFILE_VALIDATING_NPM) < 0) {
+    return {
+      ok: false,
+      output:
+        `REFUSED: npm ${version ?? '(version could not be read)'} cannot validate a lockfile.\n` +
+        `Its \`ci --dry-run\` resolves an ideal tree and reports what it WOULD install, which ` +
+        `is indistinguishable from validating the recorded one — measured at 11.6.2, and ` +
+        `fixed in ${LOCKFILE_VALIDATING_NPM}.\n`,
+    };
+  }
+
   // --ignore-scripts because validation must not execute dependency lifecycle
   // code; --dry-run because nothing should be written.
   const result = spawnSync(
@@ -111,6 +211,17 @@ export function checkLockfile() {
  * @returns {string}
  */
 export function explain(output) {
+  if (output.startsWith('REFUSED:')) {
+    return (
+      `\nCommit blocked — the lockfile check could not be run, so it was not run.\n\n` +
+      `${output}\n` +
+      `  Fix:  npm install -g npm@latest\n\n` +
+      `This is a refusal, not a failure of the lockfile: nothing here says your lockfile is ` +
+      `wrong, only that this npm cannot tell. A guard that passes when it could not look is ` +
+      `the green tick meaning "did not check" — and that is exactly how a broken lockfile ` +
+      `reached CI and stopped it for two days while this check said yes on every commit.\n\n`
+    );
+  }
   return (
     `\nCommit blocked — package-lock.json cannot satisfy package.json.\n\n` +
     `${output

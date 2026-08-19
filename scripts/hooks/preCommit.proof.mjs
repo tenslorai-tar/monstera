@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { CONFIG_FILE, configPathFor } from '../lib/secretScan.mjs';
 import { provisionGitleaks } from '../provision/gitleaks.mjs';
 import { pathsTouchContractTypes, touchesContractTypes } from './contractDrift.mjs';
+import { LOCKFILE_VALIDATING_NPM, compareVersions, explain } from './lockfileIntegrity.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), 'preCommit.mjs');
 
@@ -242,8 +243,60 @@ check('CONTROL: an unreadable index arms the gate rather than skipping it', () =
   }
 });
 
+// -----------------------------------------------------------------------------
+// The lockfile guard refuses below a MEASURED floor. Occurrence 3 of the
+// regenerating lockfile defect got past this guard because `npm ci --dry-run`
+// on npm 11.6.2 resolves an ideal tree and reports what it WOULD install — a
+// success indistinguishable from validating the recorded one. Bisected: 11.6.2
+// accepts, 11.6.3 rejects.
+// -----------------------------------------------------------------------------
+
+check('versions compare NUMERICALLY, not as strings', () => {
+  // The ordinary way to get this wrong. Under string comparison '11.6.10' sorts
+  // BELOW '11.6.3', which would refuse an entire npm series that answers this
+  // question perfectly well — and, worse, the reverse mistake would admit one
+  // that cannot.
+  if (compareVersions('11.6.10', '11.6.3') <= 0) return "'11.6.10' was not treated as newer than '11.6.3'.";
+  if (compareVersions('11.6.3', '11.6.10') >= 0) return 'the comparison is not antisymmetric.';
+  if (compareVersions('11.6.3', '11.6.3') !== 0) return 'equal versions did not compare equal.';
+  return null;
+});
+
+check('the floor admits the version that validates and refuses the one that does not', () => {
+  // The resolution test, at the smallest difference that changes a decision:
+  // one patch release, which is where the behaviour actually changed.
+  if (compareVersions('11.6.2', LOCKFILE_VALIDATING_NPM) >= 0) {
+    return `11.6.2 was admitted. It reports success for a lockfile it never validated, which is ` +
+      `how the defect this guard exists for reached CI.`;
+  }
+  if (compareVersions('11.6.3', LOCKFILE_VALIDATING_NPM) < 0) {
+    return `11.6.3 was refused. It is the measured floor — refusing it would make the guard ` +
+      `unrunnable for no reason.`;
+  }
+  if (compareVersions('11.17.0', LOCKFILE_VALIDATING_NPM) < 0) return 'a much newer npm was refused.';
+  return null;
+});
+
+check('a refusal explains that nothing was checked, not that the lockfile is wrong', () => {
+  const text = explain('REFUSED: npm 11.6.2 cannot validate a lockfile.\n');
+  if (!/could not be run/u.test(text)) return `the refusal reads as a lockfile failure:\n${text}`;
+  if (!/npm install -g npm/u.test(text)) return `the refusal does not name the remedy:\n${text}`;
+  return null;
+});
+
+check('CONTROL: a real lockfile failure still reads as one', () => {
+  // Without this, the branch above is satisfied by an `explain` that returns the
+  // refusal text for everything — and then a genuinely broken lockfile would be
+  // reported as a stale npm, sending the reader to the wrong fix.
+  const text = explain('npm error code EUSAGE\nnpm error Missing: @emnapi/runtime@1.11.3 from lock file\n');
+  if (/could not be run/u.test(text)) return `a genuine failure was reported as a refusal:\n${text}`;
+  if (!/cannot satisfy package\.json/u.test(text)) return `the failure lost its message:\n${text}`;
+  if (!/rm -rf node_modules/u.test(text)) return `the failure does not name the repair:\n${text}`;
+  return null;
+});
+
 if (failures.length > 0) {
   process.stderr.write(`\n${failures.length} hook proof failure(s):\n\n${failures.join('\n\n')}\n`);
   process.exit(1);
 }
-process.stdout.write('\n7 hook cases passed.\n');
+process.stdout.write('\n11 hook cases passed.\n');
