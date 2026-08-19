@@ -579,6 +579,36 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
 `,
   },
   {
+    name: 'A LANE ENTRY CANNOT BUMP THE VERSION, because it cannot obtain the capability',
+    expect: 'reject',
+    code: 'TS2554',
+    // ADR-0009 §5's writer of record, as a capability rather than an intention.
+    // `bumpVersion` sat on the context reachable by any lane entry, with the
+    // narrowing recorded in the ADR as something that would happen when the bus
+    // landed — and an intention is what a property has just before it acquires
+    // a second writer (B3).
+    //
+    // This is the ordinary lane entry, calling it the way it used to.
+    because: /Expected 1 arguments, but got 0/u,
+    notBecause: null,
+    source: `
+import type { DocumentContext } from '@monstera/kernel';
+export const work = (context: DocumentContext) => context.bumpVersion();
+`,
+  },
+  {
+    name: 'CONTROL: and it compiles for a holder of the capability',
+    expect: 'allow',
+    // Without this the case above is satisfied by a `bumpVersion` that cannot
+    // be called at all — "narrowed to one writer" and "removed" are different
+    // claims, and only the first is §5.
+    source: `
+import type { DocumentContext, VersionWriter } from '@monstera/kernel';
+export const work = (context: DocumentContext, writer: VersionWriter) =>
+  context.bumpVersion(writer);
+`,
+  },
+  {
     name: 'NOTHING OUTSIDE THE BUS CAN MINT A CHECKPOINT',
     expect: 'reject',
     code: 'TS2322',

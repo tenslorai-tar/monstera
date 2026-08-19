@@ -60,6 +60,7 @@ export {
   type DocumentTeardown,
   type IdentityReader,
   type OpenOutcome,
+  type VersionWriter,
   type Versioned,
   type WriteTargetVerdict,
 } from './documentService.js';

@@ -13,7 +13,32 @@ import {
   DocumentService,
   type IdentityReader,
   type OpenOutcome,
+  type VersionWriter,
 } from './documentService.js';
+
+/**
+ * A `VersionWriter` for tests of the counter itself.
+ *
+ * `bumpVersion` narrowed to a capability whose only production mint is
+ * module-private to `commandBus.ts` (B3). These are `DocumentService` tests, so
+ * the token is a **collaborator's capability being stubbed** rather than a guard
+ * being bypassed — the same relationship `commandBus.test.ts` has to
+ * `MupdfSession` when it forges one to prove the adapter refuses it.
+ *
+ * Declared once, named, and visible. The brand never made forgery impossible —
+ * a cast produces one, here as for every brand in this kernel. What it makes
+ * impossible is bumping **by accident**, and what it makes visible is any
+ * production code that tries: a second one of these lines outside a test is a
+ * diff nobody reads past.
+ *
+ * The alternative was measured rather than assumed. Driving these six tests
+ * through a real `CommandBus` does **not** avoid the engine: `capture` and
+ * `apply` come from the spec table, not from the writer registry, so a stub
+ * writer still reaches `documentFor` and rejects with *"not produced by this
+ * adapter"*. Bumping through the bus needs a real PDF and a real MuPDF session
+ * — an engine, to exercise a counter.
+ */
+const VERSION_WRITER_FOR_TEST = 'version-writer' as VersionWriter;
 
 /**
  * What carries the weight here, as in the identity tests, is the set of cases
@@ -361,7 +386,7 @@ describe('DocumentService — the per-document lane', () => {
 
     const result = await service.run(docId, (context) => {
       expect(context.version).toBe(1); // what the work operates against
-      context.bumpVersion();
+      context.bumpVersion(VERSION_WRITER_FOR_TEST);
       return Promise.resolve('mutated');
     });
 
@@ -381,7 +406,7 @@ describe('DocumentService — the per-document lane', () => {
     const held = deferred();
     const command = service.run(docId, async (context) => {
       await held.promise;
-      context.bumpVersion();
+      context.bumpVersion(VERSION_WRITER_FOR_TEST);
       return 'command';
     });
     const query = service.run(docId, (context) => Promise.resolve(context.version));
@@ -415,7 +440,7 @@ describe('DocumentService — the per-document lane', () => {
     // isDirty is read live, not snapshotted at entry start, so work that bumps
     // and then asks gets the answer it just produced.
     const afterBump = await service.run(docId, (context) => {
-      context.bumpVersion();
+      context.bumpVersion(VERSION_WRITER_FOR_TEST);
       return Promise.resolve(context.isDirty());
     });
     expect(afterBump).toStrictEqual({ value: true, version: 2 });
@@ -433,7 +458,7 @@ describe('DocumentService — the per-document lane', () => {
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     await service.run(docId, (context) => {
-      context.bumpVersion();
+      context.bumpVersion(VERSION_WRITER_FOR_TEST);
       return Promise.resolve();
     });
     // Dirtiness is DOCUMENT state, not entry state. Confirmed by mutation:
@@ -451,10 +476,10 @@ describe('DocumentService — the per-document lane', () => {
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const result = await service.run(docId, (context) => {
-      context.bumpVersion(); // a command      -> v2
+      context.bumpVersion(VERSION_WRITER_FOR_TEST); // a command      -> v2
       context.markSaved(); //  saved at        -> v2
-      context.bumpVersion(); // undo           -> v3
-      context.bumpVersion(); // redo           -> v4
+      context.bumpVersion(VERSION_WRITER_FOR_TEST); // undo           -> v3
+      context.bumpVersion(VERSION_WRITER_FOR_TEST); // redo           -> v4
       return Promise.resolve(context.isDirty());
     });
 
@@ -472,7 +497,7 @@ describe('DocumentService — the per-document lane', () => {
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const seen = await service.run(docId, (context) =>
-      Promise.resolve([context.version, context.bumpVersion(), context.bumpVersion()]),
+      Promise.resolve([context.version, context.bumpVersion(VERSION_WRITER_FOR_TEST), context.bumpVersion(VERSION_WRITER_FOR_TEST)]),
     );
 
     // §5: bumped by every applied mutation INCLUDING undo and redo, never

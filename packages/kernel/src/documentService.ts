@@ -1,6 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-import { type DocId, type DocVersion, type FileHandle, asDocId, asDocVersion } from '@monstera/shared';
+import {
+  type Brand,
+  type DocId,
+  type DocVersion,
+  type FileHandle,
+  asDocId,
+  asDocVersion,
+} from '@monstera/shared';
 
 import { type CapabilityRegistry } from './capabilityRegistry.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
@@ -147,6 +154,21 @@ export class DocumentBusyError extends Error {
 }
 
 /**
+ * Permission to advance a document's version (ADR-0009 §5, rule B3).
+ *
+ * Declared here, beside the method it guards, and **minted only inside
+ * `commandBus.ts`** — that module-private line is what makes the `CommandBus`
+ * the counter's single writer of record rather than its most likely one.
+ *
+ * A capability rather than a comment because the alternative was measured and
+ * rejected in this project's own history: `bumpVersion` sat on the context
+ * reachable by any lane entry, with the narrowing recorded as an intention in
+ * the ADR. An intention is what a property has just before it acquires a second
+ * writer.
+ */
+export type VersionWriter = Brand<'version-writer', 'VersionWriter'>;
+
+/**
  * Everything a lane entry is told about the document, **as of the moment it
  * actually runs**.
  *
@@ -172,15 +194,23 @@ export interface DocumentContext {
    * a version can change, and it is reachable only from inside the lane, so a
    * bump cannot race a stamp.
    *
-   * **Writer of record: the `CommandBus`, once it exists (B3).** It sits on the
-   * context today only because there is no bus and the context is the only
-   * thing that exists inside a lane entry. When the bus lands, this and
-   * {@link markSaved} narrow to it — the bus for `DocVersion`, the save
-   * pipeline for `savedVersion` — rather than staying reachable by any lane
-   * entry. Deciding that now is cheap; deciding it after two callers exist is
-   * how a property acquires a second writer.
+   * **Writer of record: the `CommandBus` (B3), and now by capability rather
+   * than by intention.** The token is minted in one module-private line in
+   * `commandBus.ts`, so a lane entry cannot bump without one — the same
+   * mechanism `Checkpoint` uses to keep §4's *"never by a handler"* structural,
+   * and the same one `MupdfSession` uses for provenance.
+   *
+   * The brand does not make forgery impossible; a cast could produce one, as it
+   * could for any brand here. What it makes impossible is bumping **by
+   * accident**, and forgery visible in a diff — which is the whole difference
+   * between a property with one writer and a property with a convention.
+   *
+   * {@link markSaved} deliberately keeps no token. Its writer of record is the
+   * save pipeline, which does not exist, and a token with no minter is a method
+   * nobody can call — a narrowing that reads as a decision and behaves as a
+   * deletion.
    */
-  bumpVersion(): DocVersion;
+  bumpVersion(writer: VersionWriter): DocVersion;
 
   /**
    * Records that the document's current content is what the file now holds.
@@ -621,6 +651,9 @@ export class DocumentService {
           docId: record.docId,
           path: record.path,
           version,
+          // The token is not read. Its whole job is being unobtainable outside
+          // `commandBus.ts`, which is a compile-time property — checking it at
+          // runtime would be the guard B5 says to prefer a type over.
           bumpVersion: () => {
             record.version = asDocVersion(record.version + 1);
             return record.version;

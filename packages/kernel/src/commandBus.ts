@@ -2,7 +2,7 @@ import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 
 import { type Checkpoint, CommandLog, type LogEntry, type LogEntryFor } from './commandLog.js';
 import { type DeclaredSpecs, type WriterOf, declaredSpecs } from './commandSpecs.js';
-import { type DocumentContext } from './documentService.js';
+import { type DocumentContext, type VersionWriter } from './documentService.js';
 import { type ByteImage, type EngineWriter, type WriterSession } from './engineSeam.js';
 
 /**
@@ -60,6 +60,16 @@ export type WriterRegistry = {
 function asCheckpoint(bytes: ByteImage): Checkpoint {
   return bytes as Checkpoint;
 }
+
+/**
+ * The one {@link VersionWriter} in existence, and the reason `bumpVersion` has
+ * a single writer of record rather than a documented intention (B3).
+ *
+ * Module-private, like {@link asCheckpoint}'s mint one line above, and for the
+ * same reason: a lane entry that wanted to bump would have to write a cast, and
+ * a cast is visible in a diff in a way "someone called the method" is not.
+ */
+const VERSION_WRITER = 'version-writer' as VersionWriter;
 
 /** A command routed to a writer of record that has no adapter registered. */
 export class UnregisteredWriterError extends Error {
@@ -170,7 +180,7 @@ export class CommandBus {
     // covered. Revisit when a second command has an `apply` that can fail on
     // its own.
     this.#log.record(entry);
-    return { entry, version: context.bumpVersion() };
+    return { entry, version: context.bumpVersion(VERSION_WRITER) };
   }
 
   /**
@@ -206,7 +216,7 @@ export class CommandBus {
     await spec.invert(session as WriterSession[WriterOf<typeof entry.command.kind>], entry.inverse);
 
     this.#log.undo();
-    return { entry, version: context.bumpVersion() };
+    return { entry, version: context.bumpVersion(VERSION_WRITER) };
   }
 
   /**
@@ -257,6 +267,6 @@ export class CommandBus {
     );
 
     this.#log.redo();
-    return { entry, version: context.bumpVersion() };
+    return { entry, version: context.bumpVersion(VERSION_WRITER) };
   }
 }

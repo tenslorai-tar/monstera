@@ -10,7 +10,7 @@ import {
   UnregisteredWriterError,
 } from './commandBus.js';
 import { CommandLog, type LogEntry } from './commandLog.js';
-import { type DocumentContext } from './documentService.js';
+import { type DocumentContext, type VersionWriter } from './documentService.js';
 import { type ByteImage, type MupdfSession } from './engineSeam.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
@@ -42,7 +42,7 @@ function contextStub(): DocumentContext & { readonly bumps: () => number } {
     get version(): DocVersion {
       return version;
     },
-    bumpVersion(): DocVersion {
+    bumpVersion(_writer: VersionWriter): DocVersion {
       bumps += 1;
       version = asDocVersion(version + 1);
       return version;
