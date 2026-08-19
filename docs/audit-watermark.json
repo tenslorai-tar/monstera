@@ -33,6 +33,6 @@
     "nobody revisits, so an assumed origin makes every later range inherit the gap in silence —",
     "which is precisely what the watermark exists to prevent. It survived one question."
   ],
-  "commit": "d9f01b0",
-  "audited": "Batches 1-6; Batch 7 in four ranges (a969ae4..2aaa8f7, ..63242af, ..bcdf209, ..513b061), findings R1-1, R2-1, R3-1; 513b061..caa59d0 folded into the security-substrate amendment; and caa59d0..d9f01b0 — identity, DocumentService and the advisory register — findings R-1 to R-8, of which R-1 (a comparison instrument whose floor is a count rather than an identity) and R-2 (a locale-dependent path comparison in an identity primitive) were open at recording time. The watermark never equals HEAD at recording time — see scripts/lib/auditWatermark.mjs"
+  "commit": "8f097e3",
+  "audited": "Batches 1-6; Batch 7 in four ranges (a969ae4..2aaa8f7, ..63242af, ..bcdf209, ..513b061), findings R1-1, R2-1, R3-1; 513b061..caa59d0 folded into the security-substrate amendment; caa59d0..d9f01b0 — identity, DocumentService and the advisory register — findings R-1 to R-8, both open ones since closed in f1737be and fe2274b; and d9f01b0..8f097e3 — the lane, the version counter and the command declaration — findings S-1 (the compile-fail harness accepts any error as a rejection, so a case can pass for a reason it does not claim) and S-2 (the engine seam's both-shapes claim has no control until a byte-image fixture exists). The watermark never equals HEAD at recording time — see scripts/lib/auditWatermark.mjs"
 }

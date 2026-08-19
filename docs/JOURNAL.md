@@ -416,6 +416,135 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `d9f01b0..8f097e3`
+
+**Audited through 8f097e3.** 8 commits, 14 files, 0 proofs added, **1 proof
+modified**, 0 new instruments.
+
+Run at 8 against a threshold of 9, deliberately early: the engine seam plus its
+first command would have tripped the gate mid-build, and a seam is precisely the
+thing this project forbids discovering partway through.
+
+### The modified proof, read line by line
+
+`scripts/proofs/contract.proof.mjs`: **165 insertions, 0 deletions.** No existing
+case altered, no expectation flipped, none removed. Purely additive, which is
+the benign half of that column — recorded because "no loosening found" is only
+worth anything if somebody looked.
+
+### Finding S-1 — the compile-fail harness accepts ANY error as a rejection
+
+Reading the diff produced the finding, which is the argument for the column.
+
+A `reject` case passes when `tsc` exits non-zero. **It does not check why.** So a
+case can pass while failing for a reason unrelated to what it claims: a typo in
+the probe, a renamed export, a second error masking the absent first one. The
+harness already guards the catastrophic version of this with paired `allow`
+controls — a broken import fails those — but not the subtle version, where the
+code *is* rejected and the stated reason is not the operative one.
+
+That gap has been live since the file was written and no case has yet been wrong.
+It matters now because six of the nine new cases turn on **which property**
+mismatches, and two of them differ from each other only in that.
+
+Checked by hand, running each probe and reading the compiler's own words:
+
+| case | tsc says |
+|---|---|
+| omits the reproducibility axis | `missing the following properties: reproducible, replay` |
+| non-reproducible claiming intent replay | `Types of property 'replay' are incompatible` |
+| non-invertible claiming inverse undo | `Types of property 'undo' are incompatible` |
+
+Each rejects for the reason it claims. **By hand is not a mechanism**, and the
+next case added will not get this treatment — so the finding is not "these three
+are wrong", it is that nothing would have told me if they were.
+
+Also observed while checking: with **both** axes mismatched at once, tsc reports
+only `undo`. A single case asserting a combined failure would therefore say
+nothing about the second axis, which is why the two are separate cases.
+
+**Closed by** letting a case declare the reason it expects, matched against the
+compiler output — before the seam commit, because the seam's own fixture goes
+into this same harness.
+
+### Finding S-2 — "the seam expresses both writer shapes" is a claim with no control
+
+Recorded before it is relied on rather than after. §8 requires the engine seam to
+express **whole-byte-image writers as well as live-session operations**, because
+three of the four writers of record consume and produce whole byte images and a
+seam modelled only on live sessions breaks at Stage 4.
+
+The build ahead implements **one** adapter — the live-session one, which is what
+`rotatePages` needs. The byte-image variant will exist in the type with nothing
+behind it, and **an unimplemented variant nobody constructs is exactly the
+vacuous check this session has been full of.** The control is a type-level
+fixture that constructs a byte-image adapter satisfying the seam, living in the
+proof and never registered: if it cannot be written, the type does not express
+the shape, and that is found now rather than at Stage 4.
+
+There is precedent for a deliberately empty seam — ADR-0018 keeps
+`WebUpdateProvider` registered with nothing behind it and forbids deleting it as
+dead code. The difference is that an empty registration is visible on
+inspection and a type's expressiveness is not, which is why this one needs a
+fixture and that one does not.
+
+### The rest of the checklist
+
+**1 — root cause or workaround?** No loosened check, no escape hatch, no
+special-cased input in the range. Two are worth naming as root-cause rather than
+symptom: R-2 **deleted** the case fold rather than replacing it with a different
+fold, and `close` was **split into two halves** rather than given an exception —
+§2's synchronous removal and §7's serialised teardown are properties of
+different halves, so neither had to bend. `close` becoming `async` is not a
+loosening: the body still reaches the index removal without yielding.
+
+**2 — easy shape only?** The hard shape was tested in every case, and in three it
+was the case that found the defect: two copies matching on name/size/mtime for
+identity, a **nested** page tree for inheritance (ADR-0006's own correction), the
+Turkish collator and the eszett expansion for path comparison, and
+undo-redo-back-to-identical-content for `dirty`.
+
+**3 — would CI have caught it?** Yes for everything in this range: `vitest`,
+`proof:contract` and `typecheck` all run in CI. The two findings above are
+*about* CI's blind spots rather than instances of them — S-1 is a check CI runs
+that cannot see its own reason, S-2 is a claim CI has nothing to check.
+
+**4 — proofs non-vacuous?** **15 mutations**, each confirmed red against the case
+named for it: 2 on the path comparison, 5 on the lane, 2 on the stamp and
+reentry, 2 on the close guard, 3 on the counter, 1 on the spec table. Two of
+them are worth more than the rest because the failure is not an assertion:
+removing either reentry guard makes its proof **hang to the 5-second timeout**
+rather than fail, which is the guard's justification demonstrated instead of
+argued.
+
+**4a — resolution.** No measuring instruments added. The compile-fail cases are
+the equivalent shape, and S-1 is exactly a resolution failure: the harness cannot
+distinguish two rejections that differ only in which property is wrong.
+
+**4b — search-shaped instruments.** None added this range.
+
+**5 — executed or asserted?** Executed: the eszett pair against the real
+filesystem (two inodes, one directory), Turkish collation across four locales,
+every mutation, and each new reject case's compiler reason. Asserted and labelled
+as such: S-2. Corrected on execution: one control comment in the counter claimed
+to guard against a per-entry `isDirty` snapshot and does not — the mutation
+showed it actually guards `savedVersion` being re-seeded per entry, and the
+comment now says so.
+
+**6 — architecture before feature?** Clean, and worth stating why the judgement
+went this way: ADR-0009 gained three **dated clarifications** in this range
+rather than B4 amendments. Each resolves or corrects something the ADR already
+specified — §2 against §7 on close, how §7's version echo is realised, and a
+defect in what §5's neighbouring comment claimed. None introduces a constraint
+the ADR did not have. A new constraint would have been an amendment in its own
+commit.
+
+**7 — documents match code?** `check:docs` passes its eight checks; every commit
+in the range updated its `FEATURES.md` row in the same commit, including the one
+that records `apply` as deliberately absent.
+
+---
+
 ## 2026-08-19 — Stage audit: `caa59d0..d9f01b0`
 
 **Audited through d9f01b0.** 11 commits, 23 files, 1 proof added, **0 proofs
