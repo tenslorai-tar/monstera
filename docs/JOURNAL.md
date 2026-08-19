@@ -416,6 +416,51 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Checkpoint retention is not blocked, it is already shipped and unsized
+
+Recorded from the review seat's third point, and the correction runs in the
+direction that strengthens it rather than against it.
+
+**The claim reviewed:** checkpoint restore needs byte images per terminal entry;
+that is the same ADR-0007 memory question as `DocumentService` holding canonical
+bytes; one sizing decision wearing two hats, and building retention before sizing
+it means retrofitting under a log that already exists.
+
+**Agreed, and `ARCHITECTURE` §4 already says so** — *"Memory is one document plus
+a few checkpoints"* is a single budget statement covering both, with the rejected
+alternative named as *"full-byte snapshots rationed by a memory budget"*, whose
+worst case is several resident copies of a large file. The law treats them as one
+budget. They are not one *mechanism*: the canonical image is one per open
+document and unconditional, while checkpoints are many and need a cap plus an
+eviction rule, and evicting a checkpoint costs undo depth. But the eviction rule
+cannot be chosen without knowing what share of the budget the canonical image
+takes, which is what makes it one decision.
+
+**The correction: this is not a future unit that restore unblocks.** It is
+already built. `CommandBus.execute` mints a checkpoint from `writer.serialise`
+and stores it on the entry; `CommandLog` has **no cap of any kind**; entries are
+dropped only when a new command truncates the redo tail. So the log already
+retains an unbounded number of full document images, one per terminal entry, and
+§4's budget sentence is enforced by nothing.
+
+Three things follow from the difference between *blocked* and *shipped*:
+
+- It is a **defect, not a design gap**, and belongs in the next audit range under
+  item 1 rather than on an owed list.
+- It is not reachable today — no IPC boundary, no renderer, and terminal entries
+  need a malformed document — which is why it is not urgent, and is exactly the
+  reasoning `verdict.mjs` records as finding 32's lesson: *"the blast radius is
+  empty today"* is not a verdict, because ordinary progress fills it.
+- The sizing unit is therefore **closing a live gap**, not unblocking a future
+  one, and its proof needs a control that the cap actually evicts rather than
+  only that a limit is configured.
+
+**What it does not change:** the order. The two small units already agreed come
+first, and the retention sizing is one unit covering both hats, before any of the
+IPC work that would give this a caller.
+
+---
+
 ## 2026-08-19 — Stage audit: `b315e2c..77d4c2c`
 
 **Audited through 77d4c2c.** 7 commits, 18 files, 0 proofs added, **2 proofs
