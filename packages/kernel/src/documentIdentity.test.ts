@@ -11,6 +11,7 @@ import {
   isSameDocument,
   readFileIdentity,
 } from './documentIdentity.js';
+import { acceptsExtendedPrefix, foldsCase } from './filesystemProbe.js';
 
 /**
  * The cases that carry the weight here are the ones that must stay APART.
@@ -45,6 +46,7 @@ function identity(
     ino: 100,
     size: 2048,
     modifiedMs: 1_700_000_000_000,
+    changedMs: 1_700_000_000_000,
     ...rest,
     canonicalPath: canonical(canonicalPath ?? 'C:\\docs\\a.pdf'),
   };
@@ -202,14 +204,34 @@ describe('readFileIdentity — against a real filesystem', () => {
     return found;
   }
 
-  it('the same file by two path forms is one document', async () => {
+  // Both cases below are about a FILESYSTEM property, and both used to assert
+  // the Windows answer unconditionally — which is how they went red on an
+  // ubuntu runner while passing on windows-latest. The condition is probed at
+  // runtime rather than read off `process.platform`, because the platform is
+  // not the property: macOS folds case by default and does not when the volume
+  // says otherwise, and a network share can fold anywhere.
+  //
+  // NEITHER BRANCH IS A SKIP. A case-sensitive filesystem is not a filesystem
+  // with nothing to assert here — it is one where the other spelling names a
+  // file that does not exist, and "reports absence rather than throwing or
+  // inventing" is exactly what `readFileIdentity` promises.
+
+  it('the same file by two path forms is one document, where the prefix resolves', async () => {
     const direct = await mustRead(original());
+    if (!(await acceptsExtendedPrefix(original()))) {
+      expect(await readFileIdentity(`\\\\?\\${original()}`)).toBeNull();
+      return;
+    }
     const extended = await mustRead(`\\\\?\\${original()}`);
     expect(isSameDocument(direct, extended)).toBe(true);
   });
 
-  it('wrong case is one document', async () => {
+  it('wrong case is one document, where the filesystem folds case', async () => {
     const direct = await mustRead(original());
+    if (!(await foldsCase(original()))) {
+      expect(await readFileIdentity(original().toUpperCase())).toBeNull();
+      return;
+    }
     const shouted = await mustRead(original().toUpperCase());
     expect(isSameDocument(direct, shouted)).toBe(true);
   });

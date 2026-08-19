@@ -449,8 +449,21 @@ export type WriteTargetVerdict =
   | { readonly kind: 'replaced' }
   /** Nothing is at this path. The write would create rather than overwrite. */
   | { readonly kind: 'target-absent' }
-  /** The check ran and could not settle whether the file was replaced. */
-  | { readonly kind: 'unverifiable'; readonly reason: 'no-file-index' };
+  /**
+   * The check ran and could not settle whether the file was replaced.
+   *
+   * `index-reused-or-modified` is the case ADR-0009's 2026-08-19 correction
+   * added: the file index matches, and the inode's change time does not. That
+   * is either a different file on a reused inode or the same file edited in
+   * place by something else, and nothing available here separates them. Both
+   * are states where writing discards something the user has not seen, so both
+   * refuse — and the verdict says "could not tell" rather than claiming a
+   * replacement it cannot demonstrate.
+   */
+  | {
+      readonly kind: 'unverifiable';
+      readonly reason: 'no-file-index' | 'no-change-time' | 'index-reused-or-modified';
+    };
 
 /**
  * Releases whatever a document holds outside this index — the engine session,
@@ -479,17 +492,49 @@ const noTeardown: DocumentTeardown = () => Promise.resolve();
  * which is `sole-writer` for a write that destroys a file the user never
  * opened. It was written that way first, and the proof caught it.
  *
- * So the only evidence here is `dev:ino`, and where the filesystem supplies
+ * So the primary evidence here is `dev:ino`, and where the filesystem supplies
  * none, replacement is undetectable — reported as such rather than as a clear
  * verdict. That case does not arise on NTFS; it is the unmeasured network-share
  * shape from ADR-0009's correction, and it degrades to the behaviour this
  * project already had, which is to say no detection.
+ *
+ * ## A MATCHING index is not sufficient, and that half was missing
+ *
+ * ADR-0009's 2026-08-19 correction, found by an ubuntu runner reporting
+ * `sole-writer` — the one verdict that permits a write — for a file deleted and
+ * recreated at the same path. An inode number is a slot, and slots are handed
+ * back out: `unlink` then `create` can land the new file on the freed inode, and
+ * then the pair matches for two different files.
+ *
+ * So the two directions are not symmetric. `dev:ino` **differing** settles
+ * replacement. `dev:ino` **matching** is necessary and never sufficient, and it
+ * needs a corroborator that a reused inode cannot fake. `ctime` is that: it is
+ * set at creation and moves on any change to the inode, so a reused one always
+ * carries a fresh value.
+ *
+ * `birthtime` is the field this obviously wants and is the one that lies —
+ * measured on NTFS, file tunneling restores the previous file's creation time
+ * for exactly the delete-and-recreate pattern. See the ADR for the table.
+ *
+ * What `ctime` cannot do is tell a reused inode from an in-place edit by another
+ * application. Both mean the file is not in the state that was opened, so both
+ * land in `unverifiable` — which refuses the write and, unlike `replaced`, does
+ * not claim something it cannot demonstrate.
  */
 function replacementVerdict(opened: FileIdentity, now: FileIdentity): WriteTargetVerdict {
   if (opened.dev === null || opened.ino === null || now.dev === null || now.ino === null) {
     return { kind: 'unverifiable', reason: 'no-file-index' };
   }
   if (opened.dev !== now.dev || opened.ino !== now.ino) return { kind: 'replaced' };
+
+  // The index matches. That is where the old implementation returned
+  // `sole-writer`, and where inode reuse made it wrong.
+  if (opened.changedMs === null || now.changedMs === null) {
+    return { kind: 'unverifiable', reason: 'no-change-time' };
+  }
+  if (opened.changedMs !== now.changedMs) {
+    return { kind: 'unverifiable', reason: 'index-reused-or-modified' };
+  }
   return { kind: 'sole-writer' };
 }
 

@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CapabilityRegistry } from './capabilityRegistry.js';
 import { type LogEntry } from './commandLog.js';
 import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
+import { foldsCase } from './filesystemProbe.js';
 import {
   DocumentBusyError,
   DocumentNotOpenError,
@@ -92,7 +101,7 @@ afterAll(() => {
 });
 
 /** A constructed identity, for the cases that must not touch a filesystem. */
-function identity(): FileIdentity {
+function identity(overrides: Partial<FileIdentity> = {}): FileIdentity {
   return {
     // Cast locally: `CanonicalPath` has one producer in production, which is
     // what makes row 1's `===` sound.
@@ -101,6 +110,8 @@ function identity(): FileIdentity {
     ino: 100,
     size: 2048,
     modifiedMs: 1_700_000_000_000,
+    changedMs: 1_700_000_000_000,
+    ...overrides,
   };
 }
 
@@ -178,6 +189,17 @@ describe('DocumentService — one file is one document', () => {
 
     const first = mustOpen(await service.open(registry.mint(original())));
     const second = await service.open(registry.mint(original().toUpperCase()));
+
+    // Probed, not assumed from `process.platform` — see filesystemProbe.ts.
+    // Where the filesystem does not fold case the upper-cased spelling names a
+    // file that does not exist, and the assertion worth making is the other
+    // one: an absent path yields `absent`, never a second document over
+    // nothing. That is the branch that was failing on ubuntu.
+    if (!(await foldsCase(original()))) {
+      expect(second).toStrictEqual({ kind: 'absent' });
+      expect(service.size).toBe(1);
+      return;
+    }
 
     expect(second).toStrictEqual({ kind: 'already-open', docId: first });
     expect(service.size).toBe(1);
@@ -828,9 +850,24 @@ describe('DocumentService — the write-target check', () => {
 
     // Delete and recreate: same path, same name, different file. A sync client,
     // a git checkout, or another application's Save As does exactly this.
+    const before = statSync(path);
     unlinkSync(path);
     writeFileSync(path, 'a different file wearing the same name\n');
+    const after = statSync(path);
 
+    // WHICH verdict is correct depends on the filesystem's allocator, so it is
+    // measured here rather than assumed — this case asserted `replaced`
+    // unconditionally and went red on an ubuntu runner whose tmpfs handed the
+    // freed inode straight back. Both branches assert a specific verdict, and
+    // neither is `sole-writer`: the write is refused either way, which is the
+    // property that matters.
+    if (before.dev === after.dev && before.ino === after.ino) {
+      expect(await service.checkWriteTarget(docId)).toStrictEqual({
+        kind: 'unverifiable',
+        reason: 'index-reused-or-modified',
+      });
+      return;
+    }
     expect(await service.checkWriteTarget(docId)).toStrictEqual({ kind: 'replaced' });
   });
 
@@ -863,6 +900,81 @@ describe('DocumentService — the write-target check', () => {
     expect(await service.checkWriteTarget(docId)).toStrictEqual({
       kind: 'unverifiable',
       reason: 'no-file-index',
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // INODE REUSE (ADR-0009, 2026-08-19). A matching dev:ino is NOT evidence that
+  // the file is the one that was opened — an inode number is a slot, and slots
+  // are handed back out. Driven through the injected reader rather than through
+  // a real unlink+create, because whether a filesystem reuses the slot is luck:
+  // the ubuntu runner that found this reuses, this machine's NTFS did not in 40
+  // attempts, and a defect that only reproduces on someone else's allocator is
+  // one that gets closed as flaky.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A reader answering with one identity at open and another afterwards.
+   *
+   * The first call is the open; every later call is the write-target check.
+   */
+  function readerThatChangesAfterOpen(
+    atOpen: FileIdentity,
+    afterwards: FileIdentity,
+  ): IdentityReader {
+    let reads = 0;
+    return () => {
+      reads += 1;
+      return Promise.resolve(reads === 1 ? atOpen : afterwards);
+    };
+  }
+
+  it('THE HOLE: a REUSED index with a fresh change time is not a clear verdict', async () => {
+    const registry = new CapabilityRegistry();
+    // Same dev, same ino, later ctime: exactly what unlink+create looks like
+    // when the new file lands on the freed inode. This returned `sole-writer`
+    // — the one verdict that PERMITS a write — until the ADR correction.
+    const service = new DocumentService(registry, {
+      readIdentity: readerThatChangesAfterOpen(
+        identity({ changedMs: 1_700_000_000_000 }),
+        identity({ changedMs: 1_700_000_005_000 }),
+      ),
+    });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({
+      kind: 'unverifiable',
+      reason: 'index-reused-or-modified',
+    });
+  });
+
+  it('CONTROL: an unchanged file still reports sole-writer', async () => {
+    // Without this the case above is satisfied by a check that never permits a
+    // write at all, which would be the same defect with the sign flipped — and
+    // the one a user notices, so it would be found. This is the direction that
+    // stays quiet.
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      readIdentity: () => Promise.resolve(identity()),
+    });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({ kind: 'sole-writer' });
+  });
+
+  it('a filesystem that reports no change time cannot corroborate a matching index', async () => {
+    // The corroborator's own absence case. An absent value must not compare
+    // equal to another absent value and read as "unchanged" — the same reason
+    // dev and ino are nullable rather than zero.
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      readIdentity: () => Promise.resolve(identity({ changedMs: null })),
+    });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    expect(await service.checkWriteTarget(docId)).toStrictEqual({
+      kind: 'unverifiable',
+      reason: 'no-change-time',
     });
   });
 

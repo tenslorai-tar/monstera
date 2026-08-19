@@ -149,6 +149,22 @@ export interface FileIdentity {
   readonly size: number;
   /** Corroboration only. Never evidence of sameness on its own. */
   readonly modifiedMs: number;
+  /**
+   * The inode's change time, and the corroborator a **matching** `dev:ino`
+   * needs (ADR-0009's 2026-08-19 correction).
+   *
+   * The other two corroborating fields are marked "never evidence of sameness".
+   * This one is not evidence of sameness either — it is evidence of
+   * **difference**, which is the direction that was missing. `dev:ino` matching
+   * is necessary and not sufficient, because an inode number is a slot and
+   * slots are handed back out; a reused inode always carries a fresh change
+   * time, so this cannot miss the case a bare index comparison did.
+   *
+   * `null` when the filesystem reports no usable value, for the same reason
+   * `dev` and `ino` are nullable: an absent corroborator must never read as an
+   * unchanged one.
+   */
+  readonly changedMs: number | null;
 }
 
 /**
@@ -174,6 +190,10 @@ export async function readFileIdentity(path: string): Promise<FileIdentity | nul
       ino: hasIndex ? stats.ino : null,
       size: stats.size,
       modifiedMs: stats.mtimeMs,
+      // Same treatment as the index: a zero or non-finite change time is a
+      // filesystem that did not answer, not the instant zero. Kept apart so it
+      // can never compare equal to another absent value and read as unchanged.
+      changedMs: Number.isFinite(stats.ctimeMs) && stats.ctimeMs !== 0 ? stats.ctimeMs : null,
     };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
