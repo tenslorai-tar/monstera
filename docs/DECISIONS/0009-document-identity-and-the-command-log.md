@@ -807,3 +807,80 @@ Where the capture sits on `CommandSpec`, and what a log entry holds. Both need
 the log's two-shape union (§4), which is the next unit. Deciding the *writer*
 now costs one paragraph; deciding the *type* now would be a guess about a side
 that does not exist — the same restraint §5's counter clarification took.
+
+---
+
+## Decision, 2026-08-19 — invertibility is DECLARED per command and DETERMINED per entry
+
+A second silence, in §4 this time, and named as one rather than dressed as a
+clarification. §4 fixes the two entry shapes and the spec declares
+`invertible: true | false`. Nothing says whether a **declared-invertible command
+may produce a terminal entry**.
+
+**It may, and it should.** The declaration is a *capability claim*; the entry
+records the *outcome*.
+
+### The case that forces it
+
+`rotatePages` is invertible in general. On a page whose `/Rotate` is a name or a
+string — malformed, since the specification says integer — it is not: §3 types
+prior state `raw: number`, so there is no honest capture, and a document like
+that is one every other reader opens without complaint.
+
+The alternative is refusing the operation, and refusing **loses function over a
+byte the user cannot see**, with no route forward. A user who cannot rotate a
+page, for a reason invisible in the document and unexplainable in the interface,
+is in a dead end.
+
+### It needs no new mechanism, which is the tell that it is right
+
+The bus captures before `apply` (the decision above, one commit old). So: if
+capture fails, the bus takes a checkpoint instead and then applies. Nothing is
+checkpointed speculatively, and nothing has to predict whether capture will
+succeed — the fallback is expressible *because* capture is a separate step that
+runs first.
+
+### Rejected, and each rejection is a way of being wrong that renders correctly
+
+- **Coerce the malformed value to a number.** Records an inverse that is
+  well-formed and wrong.
+- **Treat malformed as absent.** Worse, and the most tempting: undo would then
+  `delete` a key that was **present**, leaving a document that is not the one
+  that was there. That is R3 through a third door — and like R3 it renders
+  identically, which is what makes it dangerous.
+- **Widen §3's prior state to carry arbitrary PDF objects.** Not rejected on
+  principle: typing prior state as `number` *is* a quantisation, and §3's whole
+  finding was that quantising prior state is the defect. It is rejected on
+  **cost** — an inverse holding engine object structure couples the log to one
+  engine's object model, across the very seam §8 exists to keep it away from.
+  §4 already supplies the answer for an inverse that cannot be expressed, and
+  using the seam that exists beats widening the one that works.
+
+### The fork this leaves, named now so it is a decision then
+
+The malformed case is *scalar but wrongly typed*. A different case is coming and
+it is not the same: **an inheritable key whose prior value is legitimately not
+scalar.** §3 says its finding "generalises past rotation: every attribute-writing
+command over an inheritable key needs prior own-state" — and `/Resources`,
+`/MediaBox` and `/CropBox` are dictionaries and arrays.
+
+For those the choice is real: another terminal entry (cheap, and it costs
+granular undo on an ordinary operation), or a structural prior state (expressive,
+and it is the coupling rejected above). **Not decided here.** Recorded so that
+the first command over a non-scalar inheritable key *meets* a decision instead of
+*making* one, which is how this project acquires an exception nobody argued for.
+
+### What does not change
+
+`invertible: false` still forces a terminal entry, always — §4's "a
+non-invertible command without a checkpoint is unrepresentable" is untouched.
+The mapping loosens in one direction only, and the bus is what enforces it.
+
+### What B must therefore build
+
+The capture step returns prior state **or a signal that it could not be taken**,
+and the terminal branch is constructed by this case. That matters for more than
+tidiness: §4's terminal variant would otherwise land with nothing constructing
+it, which is an unexercised branch — the vacuous shape in its purest form. A
+malformed `/Rotate` fixture is a genuine constructor rather than one invented to
+exercise the branch, so it ships proven instead of merely present.

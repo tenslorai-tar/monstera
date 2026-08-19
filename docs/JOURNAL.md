@@ -416,6 +416,32 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — S-1's harness paid in a different currency
+
+Worth separating from the two earlier payments, because the source is different
+and that is the whole point of recording it.
+
+Making `apply` a required field on `CommandSpec` meant every existing spec
+fixture in `contract.proof.mjs` began failing for **a reason it did not claim**:
+*"Property 'apply' is missing"*, rather than the axis defect or the routing
+defect each case exists to demonstrate. Seven cases would have gone on printing
+green while testing nothing they advertised.
+
+The harness refused to certify any of them, and said which case and why.
+
+**The two earlier payments were proofs catching proofs.** S-1 itself was found by
+auditing a proof; the confusable-reason pair was found by the resolution test
+added to that proof. Both were the instrument turning on its own kind. This one
+is a **feature** breaking a proof's meaning while leaving its verdict intact —
+the direction that arrives during ordinary work, from someone who is not thinking
+about the proof at all, and the direction nobody is auditing at the time.
+
+A verdict-only harness cannot tell the two apart, because in both cases the case
+still rejects. That is the argument for matching the reason, restated by
+something that happened rather than by reasoning about what could.
+
+---
+
 ## 2026-08-19 — T-1 closed: a symbol is derived, witnessed, or printed as unverifiable
 
 **Finding T-1 is closed. Finding T-2's real significance is a recurrence, named
