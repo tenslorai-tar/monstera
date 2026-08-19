@@ -326,6 +326,34 @@ the mitigations it claims.
 code execution, and a flag that did not take effect is indistinguishable from one
 that did until it matters.
 
+### 4.16 Source that reads differently than it compiles — DONE
+
+The attacker here is **a contributor**, and the target is **the reviewer** — not
+the application, not a document. Bidirectional overrides reorder the glyphs a
+reviewer sees while leaving the codepoint sequence the compiler consumes
+untouched, so a line that reads as an access check inside a comment is compiled
+as a call (Trojan Source, CVE-2021-42574). Zero-width characters do the quieter
+half: two identifiers that render identically are different symbols.
+
+`guardFiles.mjs` rejects `U+202A`–`U+202E`, `U+2066`–`U+2069`, `U+061C`,
+`U+200B`–`U+200D`, `U+2060`, `U+FEFF` and `U+00AD` in any text file, at both the
+staged and tree scopes, so CI sees what the hook sees. Ordinary non-ASCII prose
+is explicitly accepted — a control case exists for it, because a guard that
+rejected em dashes and CJK would be discovered as broken rather than as wrong.
+
+**Reason:** this project is developed in public under AGPL with outside
+contributions expected, and **review is the control** on what enters it. Every
+other item here defends the application from a document; this one defends the
+review from the source. It also completes the guard's own stated purpose — it
+already existed to catch characters *invisible to a reader*, and covered only the
+byte range it could see, since these codepoints are all multi-byte UTF-8 and a
+byte-wise scan cannot express them.
+
+**Not covered by it:** homoglyphs — Cyrillic `а` beside Latin `a` — which render
+*differently in principle* and identically in most fonts. That is a confusable-
+script problem needing a normalisation policy rather than a codepoint set, and
+listing it here is the honest boundary rather than an implied claim.
+
 ---
 
 ## 5. What this document does not cover

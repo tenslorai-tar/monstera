@@ -260,7 +260,7 @@ Not user-facing features, but the exit gate for everything above.
 
 | Item | Status |
 |---|---|
-| Pre-commit guards (secret scan, file policy, lockfile integrity) + CI mirror + proofs | **done** |
+| Pre-commit guards (secret scan, file policy, lockfile integrity) + CI mirror + proofs. The file policy rejects text carrying characters **invisible to a reader**, in two families with one purpose: C0 controls and `0x7f` (a mangled escape sequence, scanned over the whole blob rather than the sniff window), and the **Trojan Source** class — bidi overrides and zero-width characters, [threat model §4.16](security/THREAT-MODEL.md), decoded rather than read byte-wise since a byte scan cannot express them. Ordinary non-ASCII prose is accepted, with a control case, because a guard rejecting em dashes and CJK would read as broken rather than as wrong. | **done** |
 | Pinned-hash binary provisioning primitive | **done** |
 | Governing documents (ARCHITECTURE, CLAUDE, README, CONTRIBUTING, SECURITY, ADRs) | **done** |
 | Monorepo workspaces + enforced import boundaries | **done** |

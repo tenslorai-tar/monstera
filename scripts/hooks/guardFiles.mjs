@@ -325,6 +325,78 @@ function findControlCharacter(bytes) {
 }
 
 /**
+ * Codepoints that change how text READS without changing what it CONTAINS.
+ *
+ * Two families, one property, and the property is the reason they belong in the
+ * same check as the C0 scan above rather than in a separate one:
+ *
+ * - **Bidirectional overrides and isolates** (`U+202A`–`U+202E`,
+ *   `U+2066`–`U+2069`, `U+061C`). These reorder the glyphs a reader sees while
+ *   leaving the codepoint sequence a compiler consumes untouched. That is
+ *   Trojan Source, CVE-2021-42574: a comment that renders as if it ends where it
+ *   does not, so a line the reviewer reads as inert is compiled as code.
+ * - **Zero-width and invisible characters** (`U+200B`–`U+200D`, `U+2060`,
+ *   `U+FEFF`, `U+00AD`). These render as nothing at all, so two identifiers
+ *   that look identical are different symbols — the homoglyph attack's quieter
+ *   sibling, and the reason `U+00AD` (a *soft hyphen*, invisible unless the
+ *   line wraps) is here beside the more obvious ones.
+ *
+ * ## Why this belongs to this guard specifically
+ *
+ * `findControlCharacter`'s stated purpose is text carrying characters that are
+ * **invisible to a reader** — its message says the surrounding text "simply
+ * appears to lose characters". This is that purpose, one codepoint range short.
+ * The scan was C0 plus `0x7f` because it reads raw bytes, and every codepoint
+ * here is a multi-byte UTF-8 sequence, so the whole class was not merely
+ * unchecked but *unreachable* by the check's own shape.
+ *
+ * And it matters here more than it would elsewhere. This repository's premise is
+ * that the world reads the code, under AGPL, with outside contributions
+ * arriving. **Review integrity is precisely what these characters attack**, and
+ * a guard protecting a public repository's readability is the right place for
+ * them — see `docs/security/THREAT-MODEL.md`, which previously covered supply
+ * chain only as a malicious upstream release.
+ *
+ * @type {ReadonlySet<number>}
+ */
+const DECEPTIVE_CODEPOINTS = new Set([
+  0x202a, 0x202b, 0x202c, 0x202d, 0x202e, // LRE RLE PDF LRO RLO
+  0x2066, 0x2067, 0x2068, 0x2069, // LRI RLI FSI PDI
+  0x061c, // ARABIC LETTER MARK
+  0x200b, 0x200c, 0x200d, // ZWSP ZWNJ ZWJ
+  0x2060, // WORD JOINER
+  0xfeff, // ZERO WIDTH NO-BREAK SPACE / BOM anywhere
+  0x00ad, // SOFT HYPHEN
+]);
+
+/**
+ * The first {@link DECEPTIVE_CODEPOINTS} member in `bytes`, or `null`.
+ *
+ * **Decodes**, where the C0 scan reads bytes. That is not a stylistic
+ * difference: a byte-wise scan cannot express these at all, which is why the
+ * class was invisible rather than merely unlisted.
+ *
+ * Reported by codepoint and by the line it sits on rather than by byte offset,
+ * because the whole difficulty with these characters is finding them once you
+ * know they are there — an offset into a decoded string does not locate one in
+ * an editor.
+ *
+ * @param {Buffer} bytes
+ * @returns {{ codepoint: number, line: number } | null}
+ */
+function findDeceptiveCodepoint(bytes) {
+  const text = bytes.toString('utf8');
+  let line = 1;
+  for (const character of text) {
+    const codepoint = character.codePointAt(0);
+    if (codepoint === undefined) continue;
+    if (DECEPTIVE_CODEPOINTS.has(codepoint)) return { codepoint, line };
+    if (character === '\n') line += 1;
+  }
+  return null;
+}
+
+/**
  * @param {Buffer} head
  * @returns {boolean}
  */
@@ -481,6 +553,22 @@ function violations(path, sha, size, scope) {
             `at byte ${at}. These are nearly always a mangled escape sequence rather than intent, ` +
             `and they are invisible in most viewers — the surrounding text simply appears to lose ` +
             `characters.`,
+      );
+    }
+
+    // The same purpose, one codepoint range further out. The scan above reads
+    // bytes and so cannot express these at all; this one decodes.
+    const deceptive = findDeceptiveCodepoint(blob);
+    if (deceptive !== null) {
+      const name = `U+${deceptive.codepoint.toString(16).toUpperCase().padStart(4, '0')}`;
+      reasons.push(
+        `is a text file containing ${name} on line ${String(deceptive.line)}, a codepoint that ` +
+          `changes how the text READS without changing what it contains. Bidirectional overrides ` +
+          `reorder the glyphs a reviewer sees while the compiler consumes the original order ` +
+          `(Trojan Source, CVE-2021-42574); zero-width characters make two different identifiers ` +
+          `look identical. Neither is visible in a diff, which is exactly why they are rejected ` +
+          `rather than flagged. If this codepoint is genuinely wanted — in a test fixture for ` +
+          `this very class, say — the fixture must construct it numerically rather than carry it.`,
       );
     }
   }

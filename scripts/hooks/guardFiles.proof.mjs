@@ -286,6 +286,67 @@ const CASES = [
       ),
   },
   {
+    name: 'source whose comment ends where a BIDI OVERRIDE says it does, not where it does',
+    expect: 'reject',
+    because: 'U+202E',
+    // Trojan Source, CVE-2021-42574, in its canonical form: RLO reorders the
+    // glyphs a reviewer sees while the compiler consumes the original order, so
+    // the reader is shown an early access check that the compiler never gets.
+    //
+    // EVERY codepoint here is built numerically. Two reasons and both matter:
+    // this proof is itself a tracked text file, so a literal RLO in it would be
+    // rejected by the very guard it tests — and an escape for one is
+    // indistinguishable at a glance from the six characters that spell it,
+    // which is the trap the elision sentinel already met.
+    setup: (root) =>
+      stage(
+        root,
+        'src/access.ts',
+        `if (user.isAdmin) {\n` +
+          `  /* ${String.fromCharCode(0x202e)} } if (false) /* */ grantAll();\n` +
+          `}\n`,
+      ),
+  },
+  {
+    name: 'identifier split by a ZERO-WIDTH SPACE, which no diff shows',
+    expect: 'reject',
+    because: 'U+200B',
+    // The quieter half of the class: two identifiers that render identically
+    // are different symbols. A reviewer comparing them sees one name twice.
+    setup: (root) =>
+      stage(
+        root,
+        'src/tokens.ts',
+        `export const apiKey = read('a');\n` +
+          `export const api${String.fromCharCode(0x200b)}Key = read('b');\n`,
+      ),
+  },
+  {
+    name: 'SOFT HYPHEN, invisible until the line happens to wrap',
+    expect: 'reject',
+    because: 'U+00AD',
+    // Included deliberately as the least obvious member. It is two bytes, it
+    // renders as nothing, and it is the one a reader would defend as harmless
+    // right up until it splits an identifier.
+    setup: (root) =>
+      stage(root, 'docs/note.md', `A permit${String.fromCharCode(0x00ad)}ted word.\n`),
+  },
+  {
+    name: 'CONTROL: ordinary non-ASCII prose is ACCEPTED',
+    expect: 'accept',
+    // Without this the three cases above are satisfied by a guard that rejects
+    // anything outside ASCII — which would reject most of this repository's own
+    // documents, and would be discovered as "the guard is broken" rather than
+    // as "the guard is wrong". Em dashes, curly quotes, accents and CJK are
+    // ordinary text and must pass.
+    setup: (root) =>
+      stage(
+        root,
+        'docs/prose.md',
+        `An em dash — a curly quote “like this” — café, naïve, 日本語, and π ≈ 3.14159.\n`,
+      ),
+  },
+  {
     name: 'long clean text file past the sniff window',
     expect: 'accept',
     // Control for the case above: a file of the same shape and size with no
