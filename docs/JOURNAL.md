@@ -464,6 +464,74 @@ it constrains these components, so it does not gate them.
 > all**. The containment assertion needs a *running* host, so that job must
 > install the binary deliberately rather than inheriting it from the install
 > step. Named now so it is a step someone writes, not a surprise at the end.
+>
+> #### The `@types/node` collision: NEST, and the premise of the alternative is wrong
+>
+> **Chosen: let npm nest Electron's copy** — and it is not "whatever npm happens
+> to do". Measured in a clean export with the runners' npm:
+>
+> | location | version |
+> |---|---|
+> | `node_modules/@types/node` | 22.20.1 — ours, the direct devDependency |
+> | `node_modules/electron/node_modules/@types/node` | 24.13.3 — nested |
+> | `node_modules/png-to-ico/node_modules/@types/node` | 25.9.5 — **already there** |
+>
+> Three things this establishes rather than assumes. The placement is
+> **deterministic**: we declare `@types/node` directly, so npm gives our version
+> the root slot and nests conflicting transitive ones. The arrangement **already
+> exists** — `png-to-ico` has been nesting a 25.x all along, so "three
+> `@types/node` in one tree" is the current working state, not a risk Electron
+> introduces. And nothing hoists it into the global type surface: `tsc --build`
+> and `tsc -p tsconfig.scripts.json` both exit 0 **with Electron imported and
+> `utilityProcess` / `MessageChannelMain` used**, and that probe carries its own
+> control — naming an export `electron.d.ts` does not have fails `TS2305`, so the
+> module genuinely resolved instead of degrading to `any`.
+>
+> **The alternative's premise does not hold, and that matters more than the
+> choice.** The 22-types / 24-runtime gap is not a mismatch to close: `@types/node`
+> should describe the **minimum supported** runtime, which `engines.node:
+> ">=22.19.0"` declares. The types and `engines` agree today. Bumping the types to
+> `^24` would make them **disagree** — `scripts/` could then use a Node 24-only
+> API while the manifest promises 22.19.0 works.
+>
+> **There is a real defect nearby and it is a different one.** `engines` claims
+> `>=22.19.0` and **nothing tests it**: every CI job pins 24.19.0. That is an
+> untested support claim, the shape this project treats as a finding everywhere
+> else. Closing it means either testing on 22 or narrowing the claim to what is
+> exercised — a decision about who can build this project, not a types question,
+> and deliberately not folded into commit 1.
+>
+> #### The Electron binary is a second supply chain, and its verification is switchable
+>
+> `install.js` fetches from GitHub releases through `@electron/get`, not the
+> registry — so commit 3's host cannot arrive by installing dependencies, and
+> dropping `--ignore-scripts` would not help either, because there is no lifecycle
+> script to run.
+>
+> **Measured, and it decides the design:** `install.js:45` reads
+>
+> ```
+> checksums: process.env.electron_use_remote_checksums ||
+>   process.env.npm_config_electron_use_remote_checksums ? <remote> : require('./checksums.json')
+> ```
+>
+> — the shipped pin is the default and **an environment variable switches
+> verification to a remote source**. Trusting the installer's own check would mean
+> trusting a pin that an env var can replace, which is the escape hatch this
+> project closes everywhere else.
+>
+> So commit 3 uses the primitive already built and used twice (`gitleaks.mjs`'s
+> per-platform `sha256` table, `mupdf.mjs`'s `SOURCE_SHA256`): **fetch and verify
+> against a hash we record**, not through `install.js`. The chain is recorded
+> rather than trusted at each link — package version → its `checksums.json` →
+> our pin, so bumping Electron is a diff someone reads:
+>
+> ```
+> electron-v43.4.1-win32-x64.zip
+>   c2ef9a5f65472c34d14bd3e67b7d14e66b0c01f124aba45263d6a4232160e13a
+> ```
+>
+> That is commit 3's **design**, not a step in its YAML.
 
 0. **The threat model, then the B4 security amendment.** See above. This is a
    precondition of item 1, not a parallel track.
