@@ -681,3 +681,63 @@ One sibling is left **open, with the analysis rather than a guard**:
   **both forms fail the same way** — there is no inversion to punish a careful
   caller, and no call site. The fix when one arrives is a total order on
   `DocId`s acquired low-to-high, not a blanket refusal.
+
+---
+
+## Clarification, 2026-08-19 — §5's counter, and what `dirty` does not claim
+
+Written with the counter, on the lane that was built first. §5 is unchanged;
+these are the three things building it made explicit.
+
+### `dirty` is a CONSERVATIVE APPROXIMATION, not a definition
+
+`savedVersion !== currentVersion` has a false-dirty case, and it is reachable:
+
+> Save at v5, undo to v6, redo to v7. The content is byte-identical to the file,
+> and this reports dirty.
+
+That is the **right trade** — it fails towards prompting for a save nobody
+needed, and never towards losing work. But "right trade" and "exact" are
+different claims and only the first is true. It is written down as an
+approximation because an approximation recorded as a definition is how a later
+reader concludes a real false-clean is impossible.
+
+The direction is the whole point, and it is the opposite of what §5 already
+rejects: cursor equality fails towards **clean**, because a new command
+truncating the redo tail can land the cursor back on the saved index while the
+content differs, and the document renders clean while holding unsaved work.
+
+The false-dirty case has a proof of its own, asserting the approximate answer,
+so nobody "corrects" it into the exact-looking rule that loses work.
+
+### 0 is reserved for a state that does not exist yet, and `savedVersion` is never seeded to it
+
+§5 seeds `savedVersion` from the **initial** version, so an untouched document
+is not dirty and closing it prompts nobody. Every document `DocumentService`
+opens comes from a file, so "never written" is unreachable through any existing
+path — a path with no file gets no identity at all.
+
+The reservation is kept for the case that **will** exist: File → New, a document
+with no file behind it. A code comment beside `FIRST_VERSION` previously
+justified the reservation by saying `savedVersion === 0` distinguishes a
+never-written document from one saved at its opening version, which described a
+state nothing can produce — and sat exactly where someone seeding `savedVersion`
+would look. Seeding to 0 on its authority makes **every freshly opened document
+dirty**; that mutation now turns a proof red.
+
+### Writer of record for the counter: the `CommandBus`, once it exists
+
+`bumpVersion` and `markSaved` sit on the lane's `DocumentContext` today, which
+makes them reachable by anything running in a lane — so "queries do not bump" is
+currently a convention rather than a constraint.
+
+**Decided now rather than by whichever caller arrives first (B3):** when the
+`CommandBus` lands, these narrow to it — the bus as writer of record for
+`DocVersion`, since §5 says every applied mutation bumps and the bus is what
+applies mutations, and the save pipeline for `savedVersion`. They are on the
+context only because there is no bus and the context is the only thing that
+exists inside a lane entry.
+
+Not built now, deliberately: a seam with one side missing is a guess about the
+side that does not exist. But B3 is cheapest to satisfy before there are two
+callers, and this is the moment there are none.

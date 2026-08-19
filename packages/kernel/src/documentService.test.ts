@@ -394,6 +394,93 @@ describe('DocumentService — the per-document lane', () => {
     expect(await query).toStrictEqual({ value: 2, version: 2 });
   });
 
+  it('a freshly opened document is CLEAN — savedVersion seeds from the initial version', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    // Seeding savedVersion to 0 — the reading the old FIRST_VERSION comment
+    // invited — makes every freshly opened document dirty, and closing one
+    // prompts a user who changed nothing.
+    await expect(
+      service.run(docId, (context) => Promise.resolve(context.isDirty())),
+    ).resolves.toStrictEqual({ value: false, version: 1 });
+  });
+
+  it('a bump makes it dirty, and markSaved makes it clean again', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    // isDirty is read live, not snapshotted at entry start, so work that bumps
+    // and then asks gets the answer it just produced.
+    const afterBump = await service.run(docId, (context) => {
+      context.bumpVersion();
+      return Promise.resolve(context.isDirty());
+    });
+    expect(afterBump).toStrictEqual({ value: true, version: 2 });
+
+    const afterSave = await service.run(docId, (context) => {
+      context.markSaved();
+      return Promise.resolve(context.isDirty());
+    });
+    expect(afterSave).toStrictEqual({ value: false, version: 2 });
+  });
+
+  it('CONTROL: dirty is dirty across lane entries, not just within one', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    await service.run(docId, (context) => {
+      context.bumpVersion();
+      return Promise.resolve();
+    });
+    // Dirtiness is DOCUMENT state, not entry state. Confirmed by mutation:
+    // re-seeding savedVersion at each lane entry — which looks harmless, since
+    // every entry then starts "clean" — satisfies the case above and reports
+    // clean here, so a document would go clean the moment anything else ran.
+    await expect(
+      service.run(docId, (context) => Promise.resolve(context.isDirty())),
+    ).resolves.toMatchObject({ value: true });
+  });
+
+  it('CONTROL: dirty is CONSERVATIVE — undo/redo back to saved content still reports dirty', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const result = await service.run(docId, (context) => {
+      context.bumpVersion(); // a command      -> v2
+      context.markSaved(); //  saved at        -> v2
+      context.bumpVersion(); // undo           -> v3
+      context.bumpVersion(); // redo           -> v4
+      return Promise.resolve(context.isDirty());
+    });
+
+    // The content is byte-identical to the file and this says dirty. That is
+    // the RIGHT TRADE and not an exact answer: it fails towards prompting for a
+    // save nobody needed, never towards losing work. Asserted so the
+    // approximation is a recorded property rather than a surprise — and so
+    // nobody "fixes" it into cursor equality, which fails the other way.
+    expect(result).toStrictEqual({ value: true, version: 4 });
+  });
+
+  it('the version is monotonic across undo and redo — it never goes backwards', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const seen = await service.run(docId, (context) =>
+      Promise.resolve([context.version, context.bumpVersion(), context.bumpVersion()]),
+    );
+
+    // §5: bumped by every applied mutation INCLUDING undo and redo, never
+    // reused. A late async result stamped with an old version is then
+    // unambiguously stale.
+    expect(seen.value).toStrictEqual([1, 2, 3]);
+  });
+
   it('REENTRY: work cannot close its own document, and the index is untouched', async () => {
     const registry = new CapabilityRegistry();
     let torn = 0;

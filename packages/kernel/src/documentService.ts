@@ -93,9 +93,23 @@ import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
  */
 
 /**
- * `DocVersion` starts at 1; 0 is reserved for "never" (ADR-0009 §5), so
- * `savedVersion === 0` on a document that has never been written is
- * distinguishable from one saved at its opening version.
+ * `DocVersion` starts at 1; 0 is reserved for "never" (ADR-0009 §5).
+ *
+ * **Nothing here can produce a 0, and `savedVersion` must never be seeded to
+ * one.** §5 seeds `savedVersion` from the *initial* version, so an untouched
+ * document is not dirty and closing it prompts nobody. Every document this
+ * service opens comes from a file, so "never written" is unreachable through
+ * any existing path.
+ *
+ * This comment previously justified the reservation by saying `savedVersion ===
+ * 0` distinguishes a never-written document from one saved at its opening
+ * version. That state does not exist, and the comment sits exactly where
+ * someone seeding `savedVersion` looks — seeding to 0 on its authority would
+ * make every freshly opened document dirty.
+ *
+ * The reservation is kept for the case that will exist: **File → New**, a
+ * document with no file behind it, which cannot be opened here at all today
+ * because a path with no file gets no identity.
  */
 const FIRST_VERSION = 1;
 
@@ -151,13 +165,65 @@ export interface DocumentContext {
   /**
    * Advances the document's version and returns the new value.
    *
-   * The seam, not the policy. *What* bumps — every applied mutation including
-   * undo and redo — and what `savedVersion` and `dirty` mean, is ADR-0009 §5
-   * and comes with the command log. What exists here is the only mechanism by
-   * which a version can change, and it can only be reached from inside the
-   * lane, so a bump cannot race a stamp.
+   * ADR-0009 §5: monotonic, never reused, bumped by **every applied mutation
+   * including undo and redo**, so a late async result stamped with an old
+   * version is unambiguously stale. *Which* operations count as applied
+   * mutations is the command log's to say; this is the only mechanism by which
+   * a version can change, and it is reachable only from inside the lane, so a
+   * bump cannot race a stamp.
+   *
+   * **Writer of record: the `CommandBus`, once it exists (B3).** It sits on the
+   * context today only because there is no bus and the context is the only
+   * thing that exists inside a lane entry. When the bus lands, this and
+   * {@link markSaved} narrow to it — the bus for `DocVersion`, the save
+   * pipeline for `savedVersion` — rather than staying reachable by any lane
+   * entry. Deciding that now is cheap; deciding it after two callers exist is
+   * how a property acquires a second writer.
    */
   bumpVersion(): DocVersion;
+
+  /**
+   * Records that the document's current content is what the file now holds.
+   *
+   * Called by the save pipeline after the bytes land. Safe to read the current
+   * version here rather than one captured earlier: the whole save is one lane
+   * entry, so nothing can bump between serialising and this call.
+   *
+   * Writer of record: the save pipeline, once it exists. See
+   * {@link bumpVersion}.
+   */
+  markSaved(): DocVersion;
+
+  /**
+   * Whether the document holds content the file does not.
+   *
+   * `savedVersion !== currentVersion` (ADR-0009 §5), read **live** rather than
+   * snapshotted, so work that bumps and then asks gets the answer it just
+   * produced.
+   *
+   * ## A conservative approximation, not an exact answer
+   *
+   * Save at v5, undo to v6, redo to v7: the content is byte-identical to the
+   * file, and this reports dirty. That is the right trade — it fails towards
+   * prompting for a save nobody needed, never towards losing work — but "right
+   * trade" and "exact" are different claims and only the first is true here.
+   * Recorded as an approximation so a later reader does not conclude a real
+   * false-clean is impossible.
+   *
+   * Cursor equality is what this replaces, and it fails the other way: once a
+   * new command truncates the redo tail the cursor can land back on the saved
+   * index while the content differs, and the document renders clean while
+   * holding unsaved work.
+   *
+   * ## Why there is no service-level `isDirty(docId)`
+   *
+   * Reading dirtiness outside the lane can race a command that bumps, and the
+   * stale answer is **clean** — which closes a document without prompting and
+   * loses work. That is the same reasoning that removed `versionOf`, with a
+   * worse consequence, so dirtiness is a query like any other: it runs in the
+   * lane and its result carries the version it was computed at.
+   */
+  isDirty(): boolean;
 }
 
 /**
@@ -206,6 +272,14 @@ interface DocumentRecord {
   readonly openedIdentity: FileIdentity;
   /** Mutable only through {@link DocumentContext.bumpVersion}, inside the lane. */
   version: DocVersion;
+  /**
+   * The version whose content the file holds.
+   *
+   * Seeded from the **initial version** at open, not from 0 (ADR-0009 §5): an
+   * untouched document is not dirty, and closing it prompts nobody. Mutable
+   * only through {@link DocumentContext.markSaved}, inside the lane.
+   */
+  savedVersion: DocVersion;
   /**
    * ADR-0009 §7's lane, **living on the record**.
    *
@@ -417,6 +491,9 @@ export class DocumentService {
       path,
       openedIdentity: identity,
       version,
+      // §5: seeded from the initial version, never from 0. A freshly opened
+      // document is clean.
+      savedVersion: version,
       lane: Promise.resolve(),
       queued: 0,
     });
@@ -548,6 +625,11 @@ export class DocumentService {
             record.version = asDocVersion(record.version + 1);
             return record.version;
           },
+          markSaved: () => {
+            record.savedVersion = record.version;
+            return record.savedVersion;
+          },
+          isDirty: () => record.savedVersion !== record.version,
         });
         // Read AGAIN, after the work, still inside the lane. See `Versioned`.
         return { value, version: record.version };
