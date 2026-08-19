@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 
 /**
  * What the filesystem under a given path actually does — measured, not derived
@@ -43,14 +44,22 @@ export async function foldsCase(path: string): Promise<boolean> {
   // nothing. A missing fixture would otherwise read as "case-sensitive".
   await stat(path);
 
-  const shouted = path.toUpperCase();
-  if (shouted === path) {
+  // The BASENAME, not the whole path — found by the stage audit, which asked
+  // what this guard was actually reading. A temp directory almost always
+  // carries lower-case letters, so a whole-path check passes for any fixture
+  // and the probe ends up reporting whether the DIRECTORY's name folds. That is
+  // a different question with the same answer on most filesystems and the wrong
+  // one on a case-sensitive volume holding a case-insensitive mount.
+  const name = basename(path);
+  if (name.toUpperCase() === name) {
     throw new Error(
-      `Cannot probe case folding with "${path}": upper-casing it changes nothing, so a ` +
+      `Cannot probe case folding with "${name}": upper-casing it changes nothing, so a ` +
         'successful stat would prove only that the original exists. Use a fixture whose name ' +
         'has lower-case letters in it.',
     );
   }
+
+  const shouted = join(dirname(path), name.toUpperCase());
 
   try {
     await stat(shouted);

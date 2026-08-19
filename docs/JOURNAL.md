@@ -438,6 +438,148 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `f144768..81b9b2b`
+
+**Audited through 81b9b2b.** 9 commits, 29 files, **2 proofs added, 9 modified**,
+3 new instruments. The first range in this project's history audited against a
+**running board** — every finding below either came from a CI run that executed,
+or was found by the checklist against one.
+
+### The range's own shape: three defects, one mechanism
+
+G-1, G-2 and X-3 are the same failure wearing three faces: **the developer
+machine has something the runner does not.**
+
+- **G-1** — `HEAD` did not typecheck, on either platform, and the file was mine.
+  A capture group is `string | undefined`; the case that failed to compile was
+  the *control*. I had run `proof:toolchain`, `lint` and `test` before committing
+  and not `typecheck` — and a `.mjs` file executes regardless of `tsc`, so "the
+  proof passes" and "the repository typechecks" are two different questions.
+- **G-2** — `NOTICE` was under-declaring **`mupdf@1.28.0`, AGPL-3.0-or-later**, a
+  bundled *production* package. Not the cause it looked like: `crypto-js` is
+  dev-only and never appeared there. The old lockfile marked `mupdf` `"dev":
+  true` while `packages/kernel` declares it under `dependencies`. The generator
+  was right the whole time; its input was wrong — the same pruned lockfile as
+  F-2, with a **compliance** consequence rather than a build one.
+- **X-3** — `proof:documenthandlers` found its control PDF in a **gitignored**
+  directory another step happens to write. Present here, absent on a runner,
+  where the proof correctly refused to be evidence. Measured: that step's
+  conclusion is `skipped` on every CI run back to `d61d995` and `failure` the
+  first time it executed. The proof now **builds** its control — item 4b says put
+  the control in the instrument, and a control that exists only after some other
+  step ran is not in the instrument.
+
+Last range's T-1 breakage was the same shape (a derivation verified where the
+engine source was provisioned). That is four, and it is now the most reliable
+source of red builds here.
+
+### X-1 — the blind spot recurred one directory over
+
+Last range widened the audit report's proof classifier to see `*.test.ts`. Its
+**instrument** column was still scoped to `scripts/` — and this range landed
+`packages/kernel/src/filesystemProbe.ts`, an instrument in the plainest sense,
+whose wrong answer silently disables the assertions that depend on it. The column
+that exists to say *"resolution-test this"* did not mention it, and neither did I
+until the checklist asked.
+
+Fixing a classifier's **pattern** and leaving its **root** is half a fix, and
+both halves report "found nothing" identically. Widened to new non-test source
+under `scripts/`, `packages/*/src/` and `apps/*/src/`, with a case for the probe
+and a **control that a new test is *not* listed there** — without it the widening
+is satisfied by listing every added file, which makes the column the file list it
+sits beside. Its first act after the fix was to name the probe.
+
+### X-2 — and the instrument the column had missed was in fact wrong
+
+Writing that probe's first test found it. `foldsCase` guarded against a fixture
+whose name carries no case by comparing **the whole path**, and a temp directory
+almost always has lower-case letters in it — so the guard passed for any fixture
+and the probe was reporting whether the *directory's* name folds. A different
+question with the same answer on most filesystems and the wrong one on a
+case-sensitive volume holding a case-insensitive mount. Now the basename.
+
+Found by writing the guard's first test, which is the whole argument for item 4a:
+**the probe had been in use, and used correctly, while measuring the wrong
+string.**
+
+### X-4 — a proof that failed for something that was not its subject
+
+`proof:hookprobe` asserted that `check:docs` **exits 0** either side of the
+failure it induces, which couples a proof about the tool-use guard gate to every
+other consistency check here. It duly went red on both platforms because the
+stage-audit gate was over budget on an unrelated range, reporting the hook gate
+as broken when it was fine.
+
+It now asserts on the gate's **own message**. Absence is meaningful only because
+its sibling asserts presence in the same run: if the checker printed nothing at
+all, the induced-failure case fails. Mutation-tested — making the message
+unseeable reddens that control alone and leaves both absence cases green.
+
+Worth recording because it decided the shape: `documentConsistency.mjs` prints
+its `ok` lines only when **every** check passes, so a positive control on this
+gate's own line is unavailable while anything else is red.
+
+### The checklist
+
+**1. Root cause or workaround?** All root-cause. The one repair that can
+regenerate is `NOTICE`, and `notice:check` guards it in CI — which now runs. The
+lockfile guard itself is still blind (F-3) and still owed; nothing here papered
+over it.
+
+**2. The hard shape.** Named above and it is the range's theme. Also still
+unverified: union dispatch at a second command kind, held by a compile-time
+trigger.
+
+**3. Would CI have caught it?** **G-1 and G-2 it did catch** — the first time
+that sentence has been true here, and the reason both are in this record at all.
+X-1 and X-2 it would not: no check reads the audit report's own classifier, and
+the probe's guard had no test.
+
+**4. Non-vacuous.** Mutations run this range: the toolchain pin at a bare major
+**and** at a one-patch difference (`24.19.0` → `24.19.1` reddens both workflow
+cases — the resolution test proper, which the coarse mutation alone would not
+have established); `replacementVerdict` in both directions; the contract-drift
+predicate in both; the workflow invocation pair; the hook-probe message. Each
+reddened its own case and no other.
+
+**4a. Resolution.** Three new instruments. `toolchain.mjs` resolution-tested at
+the smallest difference that changes a decision. `contractDrift.mjs` has its
+fires/quiet pair and a fail-closed control. `filesystemProbe.ts` had **none**
+until this audit, and giving it two found X-2.
+
+**4b.** X-1.
+
+**5. Executed, or asserted?** Everything executed, including the CI runs — read
+through the REST API rather than predicted. That is the correction from the
+previous range applied rather than repeated.
+
+**6. Architecture before the feature.** Yes: the `dev:ino` correction
+(`0b2e9fe`) landed before the fix (`7ef7ef9`), in its own commit.
+
+**7. Documents.** `CLAUDE.md` item 4b gains X-1's generalisation — a classifier's
+root is as much a scope as its pattern. `FEATURES.md`'s `DocumentService` row
+carries the write-target correction. ADR-0009 carries the `dev:ino` section.
+
+### The buckets, with a new one
+
+- **CI-caught:** G-1, G-2. **A category that did not exist in the previous three
+  ranges**, because the board was not running. Both were found within an hour of
+  the board coming back.
+- **Instrument-caught, during the work:** X-3's proof refusing to be evidence
+  without its control — the proof was right and the workflow was wrong, which is
+  the good failure.
+- **Mutation-caught:** none. All confirmed existing checks.
+- **Audit-caught:** X-1, X-2, X-4.
+
+Three audit-caught against the previous range's two. **Worse, and the reason is
+worth more than the count:** two of the three are the same instrument I widened
+one range earlier, and the third is a proof I wrote three ranges ago. The pattern
+across four ranges is now unambiguous — *the checks are where the defects are* —
+and the thing that finally started catching them at the right time is a CI board
+that runs.
+
+---
+
 ## 2026-08-19 — Stage audit: `d61d995..f144768`
 
 **Audited through f144768.** 12 commits, 27 files. The column figures are given

@@ -216,6 +216,26 @@ describe('readFileIdentity — against a real filesystem', () => {
   // file that does not exist, and "reports absence rather than throwing or
   // inventing" is exactly what `readFileIdentity` promises.
 
+  // The probe's own positive controls, which nothing exercised until the stage
+  // audit asked (item 4a). A probe reports `false` both when the answer is no
+  // and when its subject is missing, so it throws on the second — and a throw
+  // nothing tests is a throw that can be deleted by anyone who finds it
+  // inconvenient.
+  it('CONTROL: the probes REFUSE rather than answering about a path that is not there', async () => {
+    const missing = join(root, 'no-such-fixture.pdf');
+    await expect(foldsCase(missing)).rejects.toThrow();
+    await expect(acceptsExtendedPrefix(missing)).rejects.toThrow();
+  });
+
+  it('CONTROL: case folding cannot be probed with a name that has no case', async () => {
+    // Upper-casing "1234.pdf" changes nothing, so a successful stat would prove
+    // only that the original exists — the probe would answer "folds case" on
+    // every filesystem. It refuses the fixture instead of the answer.
+    const caseless = join(root, '1234');
+    writeFileSync(caseless, 'x');
+    await expect(foldsCase(caseless)).rejects.toThrow(/upper-casing it changes nothing/u);
+  });
+
   it('the same file by two path forms is one document, where the prefix resolves', async () => {
     const direct = await mustRead(original());
     if (!(await acceptsExtendedPrefix(original()))) {

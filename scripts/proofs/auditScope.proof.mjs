@@ -135,6 +135,9 @@ try {
     writeFileSync(join(scratch, 'added.test.ts'), 'export const a = 1;\n', 'utf8');
     writeFileSync(join(scratch, 'unit.test.ts'), 'export const a = 2;\n', 'utf8');
     writeFileSync(join(scratch, 'plain.ts'), 'export const a = 2;\n', 'utf8');
+    // X-1's subject: an instrument that is not under scripts/.
+    mkdirSync(join(scratch, 'packages', 'kernel', 'src'), { recursive: true });
+    writeFileSync(join(scratch, 'packages', 'kernel', 'src', 'probe.ts'), 'export const a = 1;\n', 'utf8');
     git(scratch, ['add', '-A']);
     git(scratch, ['commit', '--quiet', '-m', 'add a proof and a script, and edit an audited proof']);
 
@@ -148,6 +151,24 @@ try {
       'a new non-proof script is reported as an instrument to check',
       scope.newScripts.includes('scripts/tool.mjs'),
       `new scripts: ${scope.newScripts.join(', ') || '(none)'} — items 4a and 4b apply to these`,
+    );
+
+    // X-1: an instrument is not a directory. This column was scoped to
+    // `scripts/` while a filesystem probe landed in packages/kernel/src, doing
+    // exactly what 4a and 4b are about.
+    check(
+      'X-1: a new instrument under a package src is reported too',
+      scope.newScripts.includes('packages/kernel/src/probe.ts'),
+      `new scripts: ${scope.newScripts.join(', ') || '(none)'} — scoping this column to one ` +
+        `directory is the same blind spot as scoping the proof column to one filename shape.`,
+    );
+
+    check(
+      'CONTROL: a new TEST is not listed as an instrument',
+      !scope.newScripts.includes('added.test.ts'),
+      `new scripts: ${scope.newScripts.join(', ') || '(none)'} — a test belongs in the proofs ` +
+        `column. Without this the widening above is satisfied by listing every added file, ` +
+        `which makes the column the file list it sits next to.`,
     );
     check(
       'RESOLUTION: a proof that existed at the watermark and changed is MODIFIED',

@@ -216,6 +216,10 @@ function buildScope({ commit, range, commits, root }) {
   const isProof = (/** @type {string} */ path) =>
     /\.proof\.mjs$|proofs\/|\.test\.[cm]?tsx?$|\.test\.[cm]?jsx?$/u.test(path);
 
+  /** Where source that can be an instrument lives. */
+  const isSource = (/** @type {string} */ path) =>
+    /^scripts\/|^packages\/[^/]+\/src\/|^apps\/[^/]+\/src\//u.test(path);
+
   const modified = status.filter((e) => e.state === 'M' && isProof(e.path)).map((e) => e.path);
 
   return {
@@ -225,8 +229,19 @@ function buildScope({ commit, range, commits, root }) {
     proofsAdded: status.filter((e) => e.state === 'A' && isProof(e.path)).map((e) => e.path),
     proofsModified: modified,
     proofChurn: modified.map((path) => ({ path, ...churnFor(range, path, root) })),
+    // Instruments are not a directory, and scoping this to `scripts/` was W-1's
+    // blind spot one folder over. Measured on the range that found it: a new
+    // filesystem probe landed in `packages/kernel/src/`, doing exactly what
+    // items 4a and 4b are about — answering a question whose wrong answer
+    // silently disables the assertions that depend on it — and this column,
+    // which exists to say "resolution-test this", did not mention it.
+    //
+    // Widened to new non-test source in the three places source lives. That
+    // lists a handful of ordinary modules per range too, and the auditor
+    // filters; a column that misses the instrument is worse than one that also
+    // names its neighbours.
     newScripts: status
-      .filter((e) => e.state === 'A' && e.path.startsWith('scripts/') && !isProof(e.path))
+      .filter((e) => e.state === 'A' && !isProof(e.path) && isSource(e.path))
       .map((e) => e.path),
     overBudget: [
       ...(commits > BATCH.commits ? [`${commits} commits (one batch is ${BATCH.commits})`] : []),

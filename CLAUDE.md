@@ -536,6 +536,11 @@ returned the reassuring answer:
   looks at, its rule needs a control for the things it must *exclude* as well as
   the things it must find — otherwise "counts the right files" and "counts
   everything" and "counts almost nothing" all produce output that reads fine.
+  **And it recurred one range later by SCOPE rather than by filename shape**: the
+  same report's instrument column was scoped to `scripts/`, while a filesystem
+  probe — an instrument in the plainest sense — landed under `packages/*/src/`.
+  Fixing a classifier's *pattern* and leaving its *root* is half a fix, and both
+  halves report "found nothing" identically.
 
 Corollary, and it is where three of the four hid: **an empty intermediate result
 is a broken parse, not a clean input.** Throw. A seed set, a symbol table, a file
