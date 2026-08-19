@@ -371,6 +371,25 @@ it constrains these components, so it does not gate them.
 > B8 and is written here only so it is not collapsed into one commit by whoever
 > reaches it — adding the dependency is a working, provable unit on its own, and
 > the other two are separately provable against it.
+>
+> **CORRECTION, 2026-08-19 — "a working, provable unit on its own" is wrong, and
+> it was written without testing it.** Measured before starting: adding
+> `"electron"` to `package.json` and running nothing else turns
+> `check:advisories` **red**, naming both symbols, the condition and the
+> remedy — the T-1 expiry firing exactly as designed, and it fires on the
+> *manifest*, before any install. So a commit that adds the dependency and stops
+> is a red commit, and this project does not commit red.
+>
+> Worse for the split than it first looks: a witness scope is a glob over
+> **tracked** files (`git grep`), and `node_modules/electron` is not tracked. So
+> the symbols cannot be witnessed by the dependency merely existing — they can
+> only be witnessed by shipped code that *names* them, which is the host, which
+> is commit 3's work. The three-commit split therefore needs re-deciding rather
+> than following: either the witness entries change shape to something a tracked
+> tree can satisfy, or the dependency and its first use land together.
+>
+> Recorded here rather than discovered mid-commit. The probe was one edit and one
+> command, and it cost less than the first attempt at a split that cannot hold.
 
 0. **The threat model, then the B4 security amendment.** See above. This is a
    precondition of item 1, not a parallel track.
