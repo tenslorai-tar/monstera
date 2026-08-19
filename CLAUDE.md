@@ -514,7 +514,7 @@ This is 4a's sibling and it is not covered by it. 4a asks whether two values tha
 differ are reported as different; 4b asks whether the instrument can see anything
 at all. An empty result passes 4a vacuously.
 
-Four instruments in this project failed exactly this way, and every one of them
+Five instruments in this project failed exactly this way, and every one of them
 returned the reassuring answer:
 
 - the OCR reachability walk, **four times in a row** — direct-call edges only, a
@@ -525,6 +525,17 @@ returned the reassuring answer:
 - the H3 widget probe, which read `/T` off the widget alone and reported "no
   field name" for a fixture whose fields were named — the same shape, and its fix
   was the same: make the fixture's own known-present data the control.
+- **the audit-scope report itself**, whose proof-classification matched
+  `*.proof.mjs` and `proofs/` only and was therefore blind to every `*.test.ts`
+  — which is where most of this project's controls live. Measured: a range that
+  added 254 lines of test carrying its strongest control reported "proofs ADDED:
+  none", and a test file at +312/−77 whose controls had changed meaning appeared
+  in no column. The instrument that scopes every audit had the blind spot in the
+  column it calls load-bearing. **A file-naming convention is not a check**, and
+  that is the general form: whenever a classifier decides what an instrument
+  looks at, its rule needs a control for the things it must *exclude* as well as
+  the things it must find — otherwise "counts the right files" and "counts
+  everything" and "counts almost nothing" all produce output that reads fine.
 
 Corollary, and it is where three of the four hid: **an empty intermediate result
 is a broken parse, not a clean input.** Throw. A seed set, a symbol table, a file

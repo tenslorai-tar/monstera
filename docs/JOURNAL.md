@@ -430,6 +430,196 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `d61d995..f144768`
+
+**Audited through f144768.** 12 commits, 27 files. The column figures are given
+twice below, because **the instrument's answer changed during the audit** and
+that is this range's main finding.
+
+As reported when the audit opened: *0 proofs added, 3 proofs modified, 0 new
+scripts.* As reported after W-1 was fixed: **1 added, 5 modified** — including
+`boundary.test.ts` at +312/−77 with nine deletions the range diff hides.
+
+### W-1 — the report that scopes every audit could not see a vitest test
+
+`isProof` in `scripts/lib/auditWatermark.mjs` matched `*.proof.mjs` and
+`proofs/` and nothing else. Every `*.test.ts` in the workspace was therefore
+invisible to **both** columns — and that is where most of this project's
+controls live: §9's path assertions, the composition point's ordering control,
+every mutation-tested pair in the packages.
+
+Measured on this range rather than reasoned about: 254 lines of new test
+carrying the range's strongest control reported as **"proofs ADDED: none"**, and
+a test file whose controls had changed meaning at +312/−77 listed in no column
+at all.
+
+That is audit item 4b in the instrument that *administers* item 4b. Its output
+is "found nothing", and an auditor cannot tell that from "there was nothing to
+find" — while the MODIFIED column is the one this report's own comment calls the
+reason it exists in this shape.
+
+**A file-naming convention is not a check.** The fix widens the classifier and
+adds three cases, and the third is the one that makes the other two mean
+anything: an ordinary source file must land in **neither** column. Without it,
+"counts tests" and "counts every changed file" pass identically and the column
+becomes the file list it sits next to. Both mutation directions run: narrowing
+the pattern back reddens the two W-1 cases alone; widening it to accept
+everything reddens the control and the new-scripts case alone.
+
+Its first act after the fix was to surface nine hidden deletions in
+`boundary.test.ts` — U-2's mechanism paying out on the first range it could see
+tests. Read: they are the pre-§9 boundary cases that asserted `error.message`
+and `error.cause`, removed by `4a9ac84` because those fields no longer exist,
+plus my own fixture rewrites. Nothing was lost quietly.
+
+### W-2 — the contract proof holds its fixtures as STRINGS, and it drifted twice
+
+`scripts/proofs/contract.proof.mjs` compiles handler-map and client-stub source
+held in template literals. That is what a compile-fail proof *is* — it asserts
+the shapes TypeScript must reject, which no compiling file can express — and it
+is also why `npm run typecheck` cannot see inside it. So the contract's types
+have **two** implementations and only one is in the fast loop.
+
+It drifted twice, in this one range:
+
+1. `4a9ac84` changed `Handlers` to return a `Result` and left four cases stale.
+   The proof was **red on `main` for three pushes** while `typecheck` and `test`
+   were green — and they were right to be, because `boundary.test.ts`'s own
+   fixture map was rewritten in the same commit. Only the copy inside the
+   strings was orphaned.
+2. Adding the `document.execute` channel left three more stale — about an hour
+   after the first was found and written up, by the person who had just written
+   it up.
+
+Twice is a class, and the second occurrence is the argument: *"run the proof
+when you touch the contract"* is a rule that has to be recalled at the moment a
+command is composed, which this project has already measured the worth of seven
+times over in `CLAUDE.md`'s standing rules.
+
+**So it is a mechanism now.** The pre-commit gate runs `proof:contract` when —
+and only when — the commit stages a contract, shared or kernel **source**. Not
+documents, not tests: tests are read by `typecheck` like any other file and
+cannot change what the proof compiles against. It costs about **50 seconds** on
+those commits and nothing on any other. It adds no coverage, since CI already
+runs the proof on everything; what it changes is *where the failure lands* — a
+blocked commit instead of a red `main` nobody reads. Four cases, including a
+control that it stays quiet for documents and tests, and a fail-closed control
+executed rather than asserted: pointed at a directory git will not answer for,
+the predicate must return **true**. `root` is injectable for exactly that
+reason, the same argument `IdentityReader` carries.
+
+Also fixed while here: `packages/contract/src/channels.test.ts` implements the
+**real** channel map for the first time. Every other map in the tree is a
+fixture, so nothing had ever asked whether the shipping contract can be
+satisfied at all.
+
+**If the 50 seconds is not worth it, remove the gate rather than weakening it** —
+a conditional check that got quietly narrowed until it stopped firing would be
+worse than none, because the record would still say the class was closed.
+
+### W-3 — the reachability walk cannot see an untracked file
+
+Found by running it: the first handler named `DocumentService` under
+`apps/desktop/src` and `check:advisories` stayed **green**. The cause is not a
+bug — `scripts/lib/verdict.mjs` resolves an absent-symbol input with `git grep`,
+which reads tracked files only, deliberately, so that build artefacts and
+vendored trees do not fire every verdict constantly.
+
+The consequence had not been written down: **a newly written source file is
+invisible to every reachability verdict until it is staged.** An author writing
+exactly the unit a trigger is armed for sees green for the whole time they are
+writing it. Recorded in the register's own control entry, which is where someone
+meets it.
+
+The trigger then fired correctly the moment the files were staged, named both,
+and its successor verdict — `renderer-facing-errors-carry-no-text` — now rests on
+the failure *type* rather than on the absence of a handler.
+
+**Checked explicitly, because a replaced verdict is where a loosening hides:**
+the old trigger would also have fired for a *second* handler reaching the kernel.
+Nothing is lost by dropping that, because the obligation it prompted is now met
+by a type that every handler inherits rather than by a per-handler review.
+
+### W-4 — a comment in a scanned file is scanned text, again
+
+My test named the diagnostic function in prose and expired the verdict the file
+exists to evidence. `mupdfWriter.ts` learned this about the format dispatcher.
+The instrument is right and stays as it is: it cannot tell a comment from a call,
+and giving a text search a parser is how it acquires a second way to be wrong.
+
+### The checklist, item by item
+
+**1. Root cause or workaround?** No workarounds. Two narrowings and no
+widenings: `Failure` lost a field it could not honestly carry, and the
+boundary's declared-code list lost `internal`. The one replacement — the
+advisory verdict — is examined above rather than assumed benign. The one thing
+that could regenerate is W-2's drift, which is why it got a mechanism rather
+than a note.
+
+**2. The hard shape.** Named and **not** verified: union dispatch with a second
+command kind. The code carries a compile-time trigger that fails the day
+`CommandKind` widens, rather than a dispatch design invented from one data
+point. Also unverified, and unverifiable today: the handler under a real
+transport. `structuredClone` deep-equal on everything the new channel puts on
+the wire is what stands in for it.
+
+**3. Would CI have caught it?** W-2, yes — and did, for three pushes, with
+nobody reading it; that gap is now closed at the commit. W-1, **no**: CI runs
+`proof:auditscope`, and that proof shared the classifier's blind spot exactly.
+A proof written from the same assumption as the thing it checks is not
+independent evidence.
+
+**4. Non-vacuous.** Eleven mutations run, each reddening its own case and no
+other: three on the failure-shape union, one on the named error, one on the
+lane's serialisation, one on the §9 fixture's path, two on `isProof` in opposite
+directions, two on the drift gate, and the contract proof's own cross-product
+check. The §9 mutation is the one worth naming: taking the path **out of the
+fixture** reddens the control alone while the "no path crosses" case stays
+green, which is the whole reason that control exists.
+
+**4a. Resolution.** One new instrument, `scripts/hooks/contractDrift.mjs`, and
+it was given its pair before it gated anything: fires on a contract source,
+quiet for a document and a test.
+
+**4b.** W-1, above.
+
+**5. Executed, or asserted?** Everything above was run. **Asserted, and it is
+the one thing in this entry that was not executed:** that CI actually went red
+on `main` for those three pushes. `gh` is not installed on this machine. What
+was executed is that `proof:contract` fails at `4a9ac84` and that
+`.github/workflows/ci.yml:141` names it.
+
+**6. Architecture before the feature.** Yes, both times, and in separate
+commits: the composition point's location (`d30ab77`) and the incident-id
+decision (`01d4e96`) each landed before the code they govern. The one question
+this range *declined* to answer — who owns engine session lifetime — is deferred
+behind an existing trigger rather than answered inside a composition point,
+which would have been the retrofit B4 exists to prevent.
+
+**7. Documents.** `CLAUDE.md` item 4b gains the audit-scope report as its fifth
+blind instrument, with the general form stated: a classifier deciding what an
+instrument looks at needs a control for what it must **exclude**.
+`docs/FEATURES.md` gains the composition-point row and records the trigger
+firing. The register carries the successor verdict and W-3.
+
+### The three buckets
+
+- **Instrument-caught, during the work:** W-3 and W-4 (the advisory register),
+  W-2's first occurrence (running the proof), the irregular-whitespace zero-width
+  space and the phantom `{ code: never }` union member (lint), and **two escape-
+  guard denials** — a `python -c` and a `node -e`, both reflexive one-liners,
+  neither a probe.
+- **Mutation-caught:** none. All eleven confirmed existing checks rather than
+  finding new defects.
+- **Audit-caught — shipped, then corrected:** W-1, and W-2's second occurrence.
+
+Two, against the previous range's two. **Flat, not improving** — and two ranges
+is still not a trend. What the two audit-caught items have in common is worth
+more than the count: both are instruments that could not see part of their own
+subject, which is now three ranges running.
+
+---
+
 ## 2026-08-19 — Stage audit: `77d4c2c..d61d995`
 
 **Audited through d61d995.** 10 commits, 20 files, 0 proofs added, **3 proofs

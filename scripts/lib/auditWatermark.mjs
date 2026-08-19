@@ -198,7 +198,23 @@ function buildScope({ commit, range, commits, root }) {
       return { state: `${state}`.charAt(0), path: rest.join('\t') };
     });
 
-  const isProof = (/** @type {string} */ path) => /\.proof\.mjs$|proofs\//u.test(path);
+  // A CHECK, not a file naming convention — and the distinction cost a whole
+  // range. This matched `*.proof.mjs` and `proofs/` only, so it was blind to
+  // every `*.test.ts` in the workspace, which is where most of this project's
+  // controls actually live: §9's path assertions, the composition point's
+  // ordering control, every mutation-tested pair. Measured on the range that
+  // found it — 254 lines of new test carrying that range's strongest control,
+  // and `boundary.test.ts` at +312/−77 changing what several controls assert —
+  // reported as "proofs ADDED: none" with nothing in the MODIFIED column.
+  //
+  // That is item 4b exactly: the output is "found nothing", and an auditor
+  // cannot tell it from "there was nothing to find". It is also the column this
+  // report calls load-bearing, so its blind spot was the report's own subject.
+  //
+  // `scripts/` keeps a second door because a proof there need not be named
+  // `.proof.mjs` if it sits under `proofs/`.
+  const isProof = (/** @type {string} */ path) =>
+    /\.proof\.mjs$|proofs\/|\.test\.[cm]?tsx?$|\.test\.[cm]?jsx?$/u.test(path);
 
   const modified = status.filter((e) => e.state === 'M' && isProof(e.path)).map((e) => e.path);
 

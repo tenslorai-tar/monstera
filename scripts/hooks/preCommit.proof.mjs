@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 import { CONFIG_FILE, configPathFor } from '../lib/secretScan.mjs';
 import { provisionGitleaks } from '../provision/gitleaks.mjs';
+import { pathsTouchContractTypes, touchesContractTypes } from './contractDrift.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), 'preCommit.mjs');
 
@@ -175,8 +176,74 @@ check('missing scanner blocks the commit instead of skipping the scan', () => {
   }
 });
 
+// -----------------------------------------------------------------------------
+// Finding W-2: the contract proof holds its fixtures as STRINGS, so `typecheck`
+// cannot see them and a contract change leaves two copies with only one in the
+// fast loop. It happened twice in one range. The gate is conditional because the
+// proof costs about fifty seconds, and a gate that charges that on every commit
+// is one somebody switches off.
+// -----------------------------------------------------------------------------
+
+check('the contract-drift gate fires on a contract source', () => {
+  return pathsTouchContractTypes(['packages/contract/src/channel.ts'])
+    ? null
+    : 'a staged contract source did not arm the gate, so the proof would not have run.';
+});
+
+check('the contract-drift gate fires on a shared source, because Failure lives there', () => {
+  return pathsTouchContractTypes(['packages/shared/src/result.ts'])
+    ? null
+    : 'the wire failure type lives in packages/shared, and both occurrences of this finding ' +
+        'began with a change to it.';
+});
+
+check('CONTROL: it stays quiet for documents and tests', () => {
+  // Without this the predicate is satisfied by one that returns true always,
+  // and then every commit pays fifty seconds — which is how a gate gets
+  // switched off. Tests are excluded deliberately: `typecheck` already reads
+  // them, so they cannot change what the proof compiles against.
+  const quiet = [
+    'docs/JOURNAL.md',
+    'packages/contract/src/boundary.test.ts',
+    'apps/desktop/src/documentCommands.test.ts',
+    'scripts/audit/scope.mjs',
+  ];
+  return pathsTouchContractTypes(quiet)
+    ? `the gate armed for ${quiet.join(', ')} — none of these can change what the contract ` +
+        'proof compiles against.'
+    : null;
+});
+
+check('CONTROL: an unreadable index arms the gate rather than skipping it', () => {
+  // Fail-closed, executed rather than asserted. `touchesContractTypes` reads the
+  // staged list with git; pointed somewhere git will not answer, it must return
+  // TRUE. Running a check that was not needed costs fifty seconds; skipping one
+  // that was costs a red main nobody reads.
+  //
+  // The `root` parameter exists for exactly this: the branch is unreachable from
+  // inside this repository, and a property no test can reach is one the code is
+  // free to lose.
+  const outside = mkdtempSync(join(tmpdir(), 'monstera-nogit-'));
+  try {
+    // The premise of the case, checked rather than assumed — under a $TMPDIR
+    // that happened to sit inside a work tree, git would answer and this would
+    // be testing the ordinary path while reporting on the failure one.
+    const reachable = spawnSync('git', ['rev-parse', '--git-dir'], { cwd: outside });
+    if (reachable.status === 0) {
+      return `the fixture directory ${outside} is inside a git work tree, so the read does not ` +
+        'fail and this case proves nothing about the fail-closed branch.';
+    }
+    return touchesContractTypes(outside)
+      ? null
+      : 'an unreadable index left the gate disarmed. A staged list that cannot be read is not ' +
+          'evidence that nothing relevant is staged.';
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 if (failures.length > 0) {
   process.stderr.write(`\n${failures.length} hook proof failure(s):\n\n${failures.join('\n\n')}\n`);
   process.exit(1);
 }
-process.stdout.write('\n3 hook cases passed.\n');
+process.stdout.write('\n7 hook cases passed.\n');

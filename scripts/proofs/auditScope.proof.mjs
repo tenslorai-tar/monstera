@@ -89,6 +89,14 @@ try {
   // proof ADDED inside the range, which therefore never reached that column at
   // all — the control looked up an entry that could not exist and passed on not
   // finding it.
+  // A vitest TEST that existed at the watermark, and beside it an ordinary
+  // source file. Finding W-1: `isProof` matched `*.proof.mjs` and `proofs/`
+  // only, so every `*.test.ts` in the workspace was invisible to both columns —
+  // and that is where most of this project's controls live. The pair is what
+  // makes the widening checkable: without the source file, "counts tests" and
+  // "counts everything" produce the same non-empty columns.
+  commit('unit.test.ts', 'export const a = 1;\n');
+  commit('plain.ts', 'export const a = 1;\n');
   const base = commit('appended.proof.mjs', 'export const a = 1;\n');
   setWatermark(base);
 
@@ -122,6 +130,11 @@ try {
     writeFileSync(join(scratch, 'scripts', 'tool.mjs'), 'export const b = 1;\n', 'utf8');
     // The one that was already audited, now loosened.
     writeFileSync(join(scratch, 'scripts.proof.mjs'), 'export const a = 2;\n', 'utf8');
+    // W-1's trio: a test added, a test already audited and changed, and an
+    // ordinary source file changed alongside them.
+    writeFileSync(join(scratch, 'added.test.ts'), 'export const a = 1;\n', 'utf8');
+    writeFileSync(join(scratch, 'unit.test.ts'), 'export const a = 2;\n', 'utf8');
+    writeFileSync(join(scratch, 'plain.ts'), 'export const a = 2;\n', 'utf8');
     git(scratch, ['add', '-A']);
     git(scratch, ['commit', '--quiet', '-m', 'add a proof and a script, and edit an audited proof']);
 
@@ -144,6 +157,33 @@ try {
         `${scope.proofsModified.join(', ') || '(none)'} — this is the column the report exists ` +
         `for. A fix that quietly loosened an already-audited check looks exactly like one that ` +
         `corrected it, and merging the two categories hides the only signal there is.`,
+    );
+
+    // W-1. A vitest test is a check, and both columns must see one. The
+    // instrument reported "proofs ADDED: none" for a range that added 254 lines
+    // of test carrying its strongest control, and listed nothing for a test file
+    // at +312/−77 whose controls had changed meaning — the reassuring answer,
+    // from the column this report calls load-bearing.
+    check(
+      'W-1: a vitest TEST added since the watermark is reported as ADDED',
+      scope.proofsAdded.includes('added.test.ts'),
+      `added: ${scope.proofsAdded.join(', ') || '(none)'} — most of this project's controls are ` +
+        `in *.test.ts, so a column blind to them answers "found nothing" for a range full of ` +
+        `new coverage, which is indistinguishable from a range with none.`,
+    );
+    check(
+      'W-1: a vitest TEST that existed at the watermark and changed is MODIFIED',
+      scope.proofsModified.includes('unit.test.ts'),
+      `modified: ${scope.proofsModified.join(', ') || '(none)'} — a control whose assertion ` +
+        `changed is exactly what this column exists to make someone read.`,
+    );
+    check(
+      'CONTROL: an ordinary source file is in NEITHER column',
+      !scope.proofsAdded.includes('plain.ts') && !scope.proofsModified.includes('plain.ts'),
+      `added: ${scope.proofsAdded.join(', ') || '(none)'} | modified: ` +
+        `${scope.proofsModified.join(', ') || '(none)'} — without this, "counts tests" and ` +
+        `"counts every changed file" pass the two cases above identically, and the column ` +
+        `becomes the file list it sits next to.`,
     );
   }
 

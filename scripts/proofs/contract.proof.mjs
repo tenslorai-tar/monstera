@@ -75,9 +75,10 @@ const CASES = [
     // The control. Every rejection below is only meaningful because this passes.
     source: `
 import type { ContractHandlers } from '@monstera/contract';
-import { ok } from '@monstera/shared';
+import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
 };
 `,
   },
@@ -89,11 +90,20 @@ export const handlers: ContractHandlers = {
     // also matched the client-stub case's diagnostic, which begins with exactly
     // the same words before continuing `…but required in type 'ClientApi…`. The
     // cross-product check found it; the two were never a hand-written pair.
-    because: /Property ''app\.info'' is missing in type '\{…\}' but required in type 'Handlers</u,
+    because:
+      /Property ''document\.execute'' is missing in type '\{…\}' but required in type 'Handlers</u,
     notBecause: null,
+    // Exactly ONE channel omitted, deliberately. An empty map is missing every
+    // channel, and TypeScript then reports TS2739 with a LIST — a diagnostic
+    // that names no particular channel and whose code changes the day a second
+    // one is declared. Omitting one keeps the failure singular, so the matcher
+    // can anchor on the name of the thing that is missing.
     source: `
 import type { ContractHandlers } from '@monstera/contract';
-export const handlers: ContractHandlers = {};
+import { ok } from '@monstera/shared';
+export const handlers: ContractHandlers = {
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+};
 `,
   },
   {
@@ -169,7 +179,8 @@ export const handlers: ContractHandlers = {
     name: 'a client stub missing a channel does not compile',
     expect: 'reject',
     code: 'TS2741',
-    because: /Property ''app\.info'' is missing in type '\{…\}' but required in type 'ClientApi<\{…\}>'/u,
+    because:
+      /Property ''document\.execute'' is missing in type '\{…\}' but required in type 'ClientApi<\{…\}>'/u,
     // THE NESTED-DUMP CONTROL, and it needed no synthetic fixture — this
     // diagnostic already nests: `ClientApi<{ … Channel<ZodObject<{ … }>> }>`.
     // Collapsing only the innermost level leaves `installChannel` visible in
@@ -179,9 +190,15 @@ export const handlers: ContractHandlers = {
     // This is what keeps the browser shim honest. A shim that has drifted from
     // the contract would otherwise pass its own tests while proving nothing
     // about the real application.
+    // One channel short, for the same reason as its handler sibling: an empty
+    // stub is missing every channel and TypeScript reports a LIST under a
+    // different code, naming nothing in particular.
     source: `
 import type { ContractClient } from '@monstera/contract';
-export const shim: ContractClient = {};
+import { ok } from '@monstera/shared';
+export const shim: ContractClient = {
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+};
 `,
   },
   {

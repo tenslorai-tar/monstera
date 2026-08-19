@@ -21,6 +21,11 @@ import {
 } from '../lib/scannerCanary.mjs';
 import { formatSuppressions, runSecretScan } from '../lib/secretScan.mjs';
 import { GITLEAKS_VERSION, resolveGitleaks } from '../provision/gitleaks.mjs';
+import {
+  explainContractDrift,
+  runContractProof,
+  touchesContractTypes,
+} from './contractDrift.mjs';
 import { formatFailures, guardFiles } from './guardFiles.mjs';
 import { checkLockfile, explain, touchesDependencies } from './lockfileIntegrity.mjs';
 
@@ -47,6 +52,19 @@ async function main() {
     const lockfile = checkLockfile();
     if (!lockfile.ok) {
       process.stderr.write(explain(lockfile.output));
+      return 1;
+    }
+  }
+
+  // Only when the commit can change what the contract proof compiles against.
+  // It costs about fifty seconds, and it is the only check here that a running
+  // `typecheck` cannot substitute for — the proof's fixtures are strings. See
+  // contractDrift.mjs for the two occurrences that made this a mechanism rather
+  // than a rule.
+  if (touchesContractTypes()) {
+    const proof = runContractProof();
+    if (!proof.ok) {
+      process.stderr.write(explainContractDrift(proof.output));
       return 1;
     }
   }
