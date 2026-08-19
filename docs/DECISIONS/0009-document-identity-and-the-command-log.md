@@ -962,3 +962,113 @@ writer* and *removed* are different claims.
 `markSaved` still keeps **no** token. Its writer of record is the save pipeline,
 which does not exist, and a token with no minter is a narrowing that reads as a
 decision and behaves as a deletion. It waits for the pipeline that will mint it.
+
+---
+
+## Decision, 2026-08-19 — §9 is a TYPE, not a sanitiser: two error objects, not one
+
+§9 said errors crossing to the renderer are path-sanitised. It did not say
+**how**, and the how decides whether the guarantee is a filter that must be right
+every time or a shape that cannot express the failure. This fills that silence
+before the first handler, because every handler written against the current error
+type is a call site that has to change afterwards.
+
+### What is actually there, measured
+
+`toStructuredError` copies `name`, copies `message`, copies `stack`, and
+**recurses into `cause` with itself**. Nothing is stripped. `wrapHandler`
+converts a throw in exactly one place — structurally what §9 asks for — and its
+comment says preserving name, stack and cause is the reason it exists.
+
+The concrete leak, run rather than reasoned. `readFileIdentity` narrows absence
+to `ENOENT`/`ENOTDIR` and rethrows every other errno, which is correct. A
+rethrown `EPERM` looks like this:
+
+```
+code:    EPERM
+message: EPERM: operation not permitted, stat 'C:\pagefile.sys'
+stack:   carries the same absolute path
+```
+
+Both `message` and `stack` carry it. **Two corrections to how this was first
+described, both worth recording**: the raw `fs` error also has a `.path`
+property, and that channel is **already closed** — `toStructuredError` copies
+four named fields and `.path` is not one, so nobody should "fix" this by adding a
+spread. And the kernel does **not** currently build `{ cause: error }` chains;
+all four such sites are in `boundary.ts` and `result.ts`. So today's leak is
+top-level rather than through a chain. The *class* stands unchanged, because the
+boundary itself builds chains and the recursion is what carries a sanitiser's
+blind spot down them.
+
+### The trap this decision exists to disarm
+
+The mechanism **looks finished**. One conversion point, a stated reason, tests
+around it. The `kernel-error-path-sanitisation` trigger will fire the day a
+handler names `DocumentService`, a developer will find a one-place error boundary
+already built, and conclude the second half is done.
+
+That trigger's own text says it catches *"a handler reached DocumentService"*,
+not *"and its errors were sanitised"*. This is what that limitation looks like
+when it bites.
+
+### The collision, and why the answer is two objects
+
+`wrapHandler` exists to **preserve** diagnostics — a rejection across Electron's
+bridge loses name, stack and cause, and losing them makes a bug much harder to
+walk back. §9 exists to **strip** them. Both are right, on their own side of the
+boundary, which is the tell that one object is being asked to be two.
+
+**Decision: they are two objects.**
+
+- **`StructuredError` keeps everything and stops crossing.** It is the main-side
+  diagnostic record, logged in full where the path is already known and carries
+  no disclosure.
+- **The renderer-facing failure is a closed union of codes with typed fields.**
+  No `message`, no `stack`, no `cause`.
+
+### Why a type and not a sanitiser (B5, and it is the whole point)
+
+Any `message: string` can carry a path, so sanitising it is a filter that must be
+right on every message ever written — the runtime check B5 says to prefer a type
+over. A discriminated code with typed fields **cannot express a path at all**.
+
+`stack` is worse than `message` and gets no field. It carries the absolute paths
+of *source files* as well as of the target, which no sanitiser pattern-matching
+document paths would catch. **A field that does not exist cannot leak**, and
+diagnostics belong on the side that already knows the path.
+
+Typed fields carry what the renderer legitimately needs — a `DocId`, a count, an
+enum member. They cannot carry a path because a path in a renderer-facing type is
+already a compile error (invariant L2), so this inherits that guarantee rather
+than restating it.
+
+**Text is looked up, not sent.** The renderer maps a code to an i18n key. That
+also closes a second hole for free: a boundary that cannot carry a string cannot
+carry an unlocalised one (B9).
+
+**Codes are declared per channel**, beside `params` and `result`, so a handler
+returning an undeclared code does not compile and the renderer knows exactly
+which failures a channel can produce — the same mapped-type mechanism as
+`Handlers` and `CommandSpecs`, for the third time.
+
+**An unexpected throw is a code too** — `internal`, plus an opaque incident id
+that joins it to the full diagnostic in the main-side log. Not free text, and not
+silence.
+
+### The control this owes, and the shape it must have
+
+The `FEATURES.md` row already owes a control that asserts a path **does** appear
+when the mapping is removed. It must assert on **`message`, `stack`, and a nested
+`cause` separately**: a sanitiser that misses one of the three passes a test that
+checks the other two, and the nested case is the one a top-level fix leaves open.
+
+The fixture reproduces the measured shape above — `EPERM: operation not
+permitted, stat '<absolute path>'` with a matching stack — rather than inventing
+an error, and constructs it directly so it holds on every platform CI runs.
+
+### Not decided here
+
+Whether `Result`'s error position becomes generic over the channel's code union
+or the codes ride inside a single failure type. That is an implementation shape
+with no consequence for the guarantee, and choosing it before writing the first
+handler would be guessing at a call site that does not exist.
