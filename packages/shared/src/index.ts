@@ -10,4 +10,11 @@ export {
   asDocVersion,
   asFileHandle,
 } from './ids.js';
-export { type Result, type StructuredError, ok, err, toStructuredError } from './result.js';
+export {
+  type Failure,
+  type Result,
+  type StructuredError,
+  ok,
+  err,
+  toStructuredError,
+} from './result.js';

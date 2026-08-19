@@ -43,6 +43,27 @@ export const structuredErrorSchema: z.ZodType<StructuredError> = z.lazy(() =>
 export function envelopeSchema<T extends z.ZodType>(value: T) {
   return z.discriminatedUnion('ok', [
     z.object({ ok: z.literal(true), value }),
-    z.object({ ok: z.literal(false), error: structuredErrorSchema }),
+    z.object({ ok: z.literal(false), error: failureSchema }),
   ]);
 }
+
+/**
+ * What a failure looks like on the wire (ADR-0009 §9).
+ *
+ * Two fields, both strings, and **`.strict()` is the load-bearing part**: a
+ * `message`, a `stack` or a `cause` arriving on a failure is rejected here
+ * rather than passed through. That matters because this schema is what the
+ * renderer validates against, so it is the last place a diagnostic could sneak
+ * across from a main build that drifted — and the failure it would produce is
+ * silent, since extra fields are exactly what a permissive parse ignores.
+ *
+ * `structuredErrorSchema` above is unchanged and still used for the diagnostic
+ * that stays main-side. The two schemas describe the two objects, which is the
+ * decision made visible: one crosses and one does not.
+ */
+export const failureSchema = z
+  .object({
+    code: z.string().min(1),
+    incident: z.string().min(1),
+  })
+  .strict();

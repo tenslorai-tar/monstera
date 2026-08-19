@@ -12,7 +12,7 @@
  * Wrapping those in a Result would ask every caller to handle a condition that
  * means the program is already wrong.
  */
-export type Result<T, E = StructuredError> =
+export type Result<T, E = Failure> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: E };
 
@@ -33,6 +33,50 @@ export interface StructuredError {
   // so the narrower form is what we emit, not what we can insist on receiving.
   readonly stack?: string | undefined;
   readonly cause?: StructuredError | undefined;
+}
+
+/**
+ * What a failure looks like **to the renderer** (ADR-0009 §9, 2026-08-19).
+ *
+ * ## Why this is not `StructuredError` with the paths taken out
+ *
+ * `StructuredError` copies `message`, copies `stack`, and recurses into `cause`
+ * with itself. Sanitising it means filtering free text, and free text is a
+ * filter that has to be right on every message ever written — the runtime check
+ * B5 says to prefer a type over. Measured, a rethrown `EPERM` reads
+ * `EPERM: operation not permitted, stat '<absolute path>'`, with the same path
+ * in the stack.
+ *
+ * So this carries **no `message`, no `stack`, no `cause`**. A field that does
+ * not exist cannot leak, and `stack` is the worst of the three: it carries the
+ * absolute paths of *source files* as well as of the target, which no sanitiser
+ * matching document paths would catch.
+ *
+ * The two objects have opposite jobs and both are right on their own side.
+ * `StructuredError` preserves diagnostics and stays in the main process, where
+ * the path is already known and discloses nothing. This crosses.
+ *
+ * ## What the renderer does with it
+ *
+ * `code` selects an i18n key. **No text crosses at all**, which closes a second
+ * hole for free: a boundary that cannot carry a string cannot carry an
+ * unlocalised one (B9).
+ *
+ * `incident` joins this to the full diagnostic in the main-side log. Opaque by
+ * construction — it identifies a log entry, not a file.
+ *
+ * ## Typed fields
+ *
+ * There are none yet, and that is deliberate rather than unfinished. A code
+ * needing a field gets one when a caller needs it; what the type forbids either
+ * way is free text. Fields it may carry are ones that cannot express a path —
+ * a `DocId`, a count, an enum member — which inherits invariant L2 rather than
+ * restating it.
+ */
+export interface Failure<C extends string = string> {
+  readonly code: C;
+  /** Opaque id of the full diagnostic in the main-side log. Never a path. */
+  readonly incident: string;
 }
 
 export function ok<T>(value: T): Result<T, never> {

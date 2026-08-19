@@ -1,3 +1,4 @@
+import type { Failure, Result } from '@monstera/shared';
 import type { z } from 'zod';
 
 /**
@@ -12,9 +13,23 @@ import type { z } from 'zod';
 export interface Channel<
   TParams extends z.ZodType = z.ZodType,
   TResult extends z.ZodType = z.ZodType,
+  TFailure extends string = string,
 > {
   readonly params: TParams;
   readonly result: TResult;
+  /**
+   * The failures this channel can report, **declared beside its schemas**.
+   *
+   * ADR-0009 §9: a renderer-facing failure is a code, never text. Declaring the
+   * codes here is what makes them checkable in both directions — a handler
+   * returning an undeclared code does not compile, and the renderer knows the
+   * complete set it must handle.
+   *
+   * `internal` is not listed and never needs to be. It is always available,
+   * because an unexpected throw is a failure the channel did not plan for and
+   * every channel can have one.
+   */
+  readonly failures: readonly TFailure[];
   /** Why this channel exists. Surfaced in generated documentation. */
   readonly summary: string;
 }
@@ -22,14 +37,37 @@ export interface Channel<
 /**
  * Declares a channel. The generic parameters are inferred from the schemas, so
  * the types flow to every derived surface without being restated.
+ *
+ * `failures` is a tuple of literals rather than a `string[]`, so the codes reach
+ * the handler's return type as a union instead of collapsing to `string`.
  */
-export function channel<TParams extends z.ZodType, TResult extends z.ZodType>(
+export function channel<
+  TParams extends z.ZodType,
+  TResult extends z.ZodType,
+  const TFailure extends string = never,
+>(
   summary: string,
   params: TParams,
   result: TResult,
-): Channel<TParams, TResult> {
-  return { summary, params, result };
+  failures: readonly TFailure[] = [],
+): Channel<TParams, TResult, TFailure> {
+  return { summary, params, result, failures };
 }
+
+/**
+ * The code that means *"this was not a planned failure"*.
+ *
+ * Available on every channel without being declared. A handler does not produce
+ * it — the boundary does, when something throws — and it carries an incident id
+ * rather than the reason, because the reason is the thing that must not cross.
+ */
+export const INTERNAL_FAILURE = 'internal';
+export type InternalFailure = typeof INTERNAL_FAILURE;
+
+/** Every failure code one channel can report, including the implicit one. */
+export type FailureOf<TMap extends ChannelMap, K extends keyof TMap> =
+  | (TMap[K] extends Channel<z.ZodType, z.ZodType, infer C> ? C : never)
+  | InternalFailure;
 
 /** A registry of channels, keyed by channel id. */
 export type ChannelMap = Readonly<Record<string, Channel>>;
@@ -54,11 +92,23 @@ export type ResultOf<TMap extends ChannelMap, K extends keyof TMap> = z.infer<
  * whole point, because the failure mode of a forgotten handler is a renderer
  * call that hangs rather than one that errors.
  *
- * Handlers may throw. The boundary wrapper converts a throw into a structured
- * error, so a handler never has to think about the wire.
+ * ## A handler RETURNS its planned failures and THROWS its unplanned ones
+ *
+ * The return type carries the channel's declared codes, so producing one the
+ * channel did not declare is a compile error rather than a runtime surprise.
+ * That is §9 as a type: there is no free-text field to put a path in, and no
+ * sanitiser that has to be right every time.
+ *
+ * A handler may still throw, and a throw is a **defect** rather than an
+ * outcome — the boundary turns it into `internal` with an incident id and logs
+ * the full diagnostic main-side. The distinction is the same one `Result`
+ * already draws: an expected failure is part of the return type, a violated
+ * invariant is not.
  */
 export type Handlers<TMap extends ChannelMap> = {
-  readonly [K in keyof TMap]: (params: ParamsOf<TMap, K>) => Promise<ResultOf<TMap, K>>;
+  readonly [K in keyof TMap]: (
+    params: ParamsOf<TMap, K>,
+  ) => Promise<Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>>;
 };
 
 /**
@@ -66,9 +116,18 @@ export type Handlers<TMap extends ChannelMap> = {
  *
  * Structurally identical to `Handlers`, and deliberately a separate name: the
  * two sit on opposite sides of a process boundary and read very differently at
- * a call site. Rejections arrive as thrown `Error`s here, reconstructed from
- * the structured form by the bridge.
+ * a call site.
+ *
+ * **A failure arrives as a value here, not as a throw.** It used to be
+ * reconstructed into an `Error` so callers could use `try`/`catch` — which was
+ * right while the wire carried a message, and is wrong now that it carries a
+ * code: reconstructing an `Error` from a code would mean inventing text on the
+ * renderer side, and the renderer's text comes from an i18n key. A `Result` also
+ * makes the failure part of the type a caller cannot forget, which a `catch`
+ * does not.
  */
 export type ClientApi<TMap extends ChannelMap> = {
-  readonly [K in keyof TMap]: (params: ParamsOf<TMap, K>) => Promise<ResultOf<TMap, K>>;
+  readonly [K in keyof TMap]: (
+    params: ParamsOf<TMap, K>,
+  ) => Promise<Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>>;
 };

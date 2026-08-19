@@ -1,5 +1,8 @@
 export {
   type Channel,
+  type FailureOf,
+  INTERNAL_FAILURE,
+  type InternalFailure,
   type ChannelMap,
   type ClientApi,
   type Handlers,
@@ -17,7 +20,8 @@ export {
   channelIds,
   channels,
 } from './channels.js';
-export { createClient, toError, unwrap, wrapHandler, wrapHandlers } from './boundary.js';
+export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
+export { type Incident, IncidentLog, type IncidentSink } from './incident.js';
 export {
   type Command,
   type CommandKind,

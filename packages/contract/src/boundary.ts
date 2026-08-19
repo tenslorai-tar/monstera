@@ -1,6 +1,15 @@
-import { type Result, type StructuredError, err, ok, toStructuredError } from '@monstera/shared';
+import { type Failure, type Result, err, ok } from '@monstera/shared';
 
-import type { ChannelMap, ClientApi, Handlers, ParamsOf, ResultOf } from './channel.js';
+import {
+  type ChannelMap,
+  type ClientApi,
+  type FailureOf,
+  type Handlers,
+  INTERNAL_FAILURE,
+  type ParamsOf,
+  type ResultOf,
+} from './channel.js';
+import { IncidentLog, type IncidentSink } from './incident.js';
 import { envelopeSchema } from './schemas.js';
 
 /**
@@ -20,48 +29,80 @@ import { envelopeSchema } from './schemas.js';
  *   a renderer reading `undefined` off a view model, which is a much longer
  *   walk back to the cause.
  *
- * A handler may throw. The throw is converted to a structured error rather than
- * being allowed to reject the IPC call, because a rejection across Electron's
- * bridge arrives having lost its name, stack and cause.
+ * ## What crosses when something goes wrong (ADR-0009 §9)
+ *
+ * A handler may throw, and a throw must not reject the IPC call — a rejection
+ * across Electron's bridge arrives having lost its name, stack and cause. But
+ * the diagnostic that preserves them is exactly what must not reach the
+ * renderer: `toStructuredError` copies `message`, copies `stack`, and recurses
+ * into `cause`, and a rethrown `EPERM` carries an absolute path in the first
+ * two.
+ *
+ * So the throw is **split**. The diagnostic is recorded main-side, where the
+ * path is already known, and the renderer gets `internal` plus the incident id
+ * that names the log entry. Both purposes served, by two objects rather than
+ * one object crossing.
+ *
+ * A **declared** failure never comes through that path at all: it is returned,
+ * typed to the channel's codes, and passes straight out.
  */
 export function wrapHandler<TMap extends ChannelMap, K extends keyof TMap & string>(
   channels: TMap,
   id: K,
   handler: Handlers<TMap>[K],
-): (rawParams: unknown) => Promise<Result<ResultOf<TMap, K>>> {
+  incidents: IncidentLog,
+): (rawParams: unknown) => Promise<Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>> {
   const definition = channels[id];
   if (definition === undefined) {
     throw new Error(`No channel declared for "${id}"`);
   }
 
+  const internal = (thrown: unknown): Result<never, Failure<FailureOf<TMap, K>>> =>
+    err({ code: INTERNAL_FAILURE, incident: incidents.record(id, thrown) });
+
   return async (rawParams: unknown) => {
     const parsedParams = definition.params.safeParse(rawParams);
     if (!parsedParams.success) {
-      return err(
-        toStructuredError(
-          new Error(`Invalid params for "${id}": ${parsedParams.error.message}`, {
-            cause: parsedParams.error,
-          }),
-        ),
+      // A schema error names fields and values, which is a disclosure question
+      // as much as the fs errors are — so it is recorded, not forwarded.
+      return internal(
+        new Error(`Invalid params for "${id}": ${parsedParams.error.message}`, {
+          cause: parsedParams.error,
+        }),
       );
     }
 
-    let produced: unknown;
+    let produced: Result<unknown>;
     try {
       produced = await handler(parsedParams.data as ParamsOf<TMap, K>);
     } catch (thrown) {
-      return err(toStructuredError(thrown));
+      return internal(thrown);
     }
 
-    const parsedResult = definition.result.safeParse(produced);
-    if (!parsedResult.success) {
-      return err(
-        toStructuredError(
+    if (!produced.ok) {
+      // A DECLARED failure, checked against the declaration rather than trusted.
+      // The type already forbids an undeclared code; this catches the case the
+      // type cannot see — a handler reached through an `any` at some boundary,
+      // or a build that drifted from the contract it was compiled against.
+      const declared: readonly string[] = [...definition.failures, INTERNAL_FAILURE];
+      if (!declared.includes(produced.error.code)) {
+        return internal(
           new Error(
-            `Handler for "${id}" returned a value that does not match its declared result: ` +
-              parsedResult.error.message,
-            { cause: parsedResult.error },
+            `Handler for "${id}" reported the undeclared failure code ` +
+              `"${produced.error.code}". Declared: ${declared.join(', ')}.`,
           ),
+        );
+      }
+      return produced as Result<never, Failure<FailureOf<TMap, K>>>;
+    }
+
+    const parsedResult = definition.result.safeParse(produced.value);
+    if (!parsedResult.success) {
+      return internal(
+        new Error(
+          `Handler for "${id}" returned a value that does not match its declared result: ` +
+            parsedResult.error.message,
+          { cause: parsedResult.error },
         ),
       );
     }
@@ -77,49 +118,39 @@ export function wrapHandler<TMap extends ChannelMap, K extends keyof TMap & stri
 export function wrapHandlers<TMap extends ChannelMap>(
   channels: TMap,
   handlers: Handlers<TMap>,
-): { readonly [K in keyof TMap]: (rawParams: unknown) => Promise<Result<ResultOf<TMap, K>>> } {
+  sink: IncidentSink,
+): {
+  readonly [K in keyof TMap]: (
+    rawParams: unknown,
+  ) => Promise<Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>>;
+} {
+  // One log for the registry, so ids are unique across its channels and a
+  // report naming i7 identifies one line rather than one per channel.
+  const incidents = new IncidentLog(sink);
   const entries = Object.keys(channels).map((id) => [
     id,
-    wrapHandler(channels, id as keyof TMap & string, handlers[id as keyof TMap]),
+    wrapHandler(channels, id as keyof TMap & string, handlers[id as keyof TMap], incidents),
   ]);
   return Object.fromEntries(entries) as {
     readonly [K in keyof TMap]: (
       rawParams: unknown,
-    ) => Promise<Result<ResultOf<TMap, K>>>;
+    ) => Promise<Result<ResultOf<TMap, K>, Failure<FailureOf<TMap, K>>>>;
   };
 }
 
 /**
- * Rebuilds a thrown `Error` from its structured form, preserving the cause
- * chain, so a renderer caller can use `try`/`catch` normally.
+ * `toError` and `unwrap` were here and are **deleted**, not moved.
  *
- * The original `stack` is kept as a property rather than assigned over the new
- * error's own stack: the two describe different processes, and silently
- * replacing the local stack with a remote one makes the call site that failed
- * unfindable.
+ * They rebuilt a thrown `Error` from the wire form so a renderer caller could
+ * use `try`/`catch`, and kept the remote `stack` on it as a property. That was
+ * right while the wire carried a message and a stack. It is wrong now that it
+ * carries a code and an incident id (ADR-0009 §9): there is no message to
+ * rebuild an `Error` from, the renderer's text comes from an i18n key, and
+ * `remoteStack` was a field whose entire content was absolute paths.
+ *
+ * A failure is now a value the caller must destructure — which is also the
+ * property a `catch` never had, since nothing makes a caller write one.
  */
-export function toError(structured: StructuredError): Error {
-  const error = new Error(structured.message, {
-    ...(structured.cause === undefined ? {} : { cause: toError(structured.cause) }),
-  });
-  error.name = structured.name;
-  if (structured.stack !== undefined) {
-    Object.defineProperty(error, 'remoteStack', {
-      value: structured.stack,
-      enumerable: true,
-    });
-  }
-  return error;
-}
-
-/**
- * Unwraps an envelope on the client side: a success becomes the value, a
- * failure becomes a thrown reconstructed `Error`.
- */
-export function unwrap<T>(result: Result<T>): T {
-  if (result.ok) return result.value;
-  throw toError(result.error);
-}
 
 /**
  * Builds the client surface for a registry from a single transport function.
@@ -146,16 +177,19 @@ export function createClient<TMap extends ChannelMap>(
 
     return [
       id,
-      async (params: unknown): Promise<unknown> => {
+      async (params: unknown): Promise<Result<unknown>> => {
         const raw = await invoke(id, params);
         const parsed = envelope.safeParse(raw);
         if (!parsed.success) {
-          throw new Error(
-            `Malformed response envelope for "${id}": ${parsed.error.message}`,
-            { cause: parsed.error },
-          );
+          // A malformed envelope is main misbehaving, not a channel failure, so
+          // it throws rather than being reported as one. It is also the one
+          // error here whose text is ours: it names the channel and the schema,
+          // never a document.
+          throw new Error(`Malformed response envelope for "${id}": ${parsed.error.message}`, {
+            cause: parsed.error,
+          });
         }
-        return unwrap(parsed.data as Result<unknown>);
+        return parsed.data;
       },
     ];
   });
