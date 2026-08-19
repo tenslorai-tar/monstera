@@ -390,6 +390,80 @@ it constrains these components, so it does not gate them.
 >
 > Recorded here rather than discovered mid-commit. The probe was one edit and one
 > command, and it cost less than the first attempt at a split that cannot hold.
+>
+> ### RESOLVED, 2026-08-20 — two units, and the middle one stops being a gap
+>
+> **Commit 1 = the dependency AND the derivation, together.** The two Electron
+> symbols move from `in: null` to **derived from Electron's own API surface**, in
+> the same commit that makes deriving possible. It is green standing alone and it
+> **strengthens** the check — those two symbols stop being hand-typed — rather
+> than relaxing one to unblock a commit. Then commit 2 is the host, commit 3 the
+> containment assertion against a running one.
+>
+> The register already prescribed this in its own words: *"the day Electron lands
+> … the symbol list stops being hand-picked because it can then be DERIVED from
+> Electron's own API surface, the way the OCR doors are derived from the engine
+> source."* `node_modules/electron` is provisioned in exactly the sense
+> `.tools/mupdf` is — untracked, absent where nothing installed it, and reported
+> as unverifiable there.
+>
+> **Rejected: pointing `witness.in` at an ADR or a `FEATURES.md` row.** A string
+> someone typed sitting beside another string someone typed. It proves nothing
+> about Electron's API and it is the shape of a check edited until it goes green.
+>
+> **Rejected: the dependency landing with its first use.** That makes the first
+> unit "dependency + host + containment" — three separately provable things in
+> one commit (B8) — and leaves the null-witness mechanism exactly where it is.
+>
+> #### Measured before building, not reasoned about
+>
+> **1. The seam: registration, not B4 — stated explicitly rather than implied by
+> the diff.** `unwitnessedSymbols` takes one derivation, `{ verified, checked,
+> claim: 'ocr' }`. A second deriver keys that by claim. The register already
+> models derivation as a first-class state — a third bucket beside witnessed and
+> unverifiable, with its own count and its own mandatory-where-possible flag — so
+> nothing new is being expressed and no seam is being bent. What changes is
+> **arity**, which is the same move `WriterRegistry` and the command spec table
+> already make.
+>
+> Two things that are **not** pure arity, called out rather than hidden inside
+> "generalising":
+>
+> - `derived.includes(symbol)` is today a **flat** list checked against every
+>   claim's symbols, so a symbol derived for one claim would count as verified
+>   under another. Harmless with one deriver and a real cross-claim collision
+>   with two. Keying by claim **narrows** it, which is a behaviour change in the
+>   tightening direction.
+> - `ocrDoorDrift` conflates two jobs: deriving symbols (feeds `verified`) and
+>   **completeness** — declared-but-not-derived and derived-but-not-declared both
+>   fail. The second must **not** generalise: every Electron API name is
+>   "derived but not declared", and thousands of them. Electron gets the first
+>   half only, and the register's existing sentence stands unchanged — *"it
+>   checks spelling, not completeness"*.
+>
+> It would be B4 if the second deriver needed a different **kind** of evidence,
+> or if `--require-derivation` needed per-claim policy. Neither: both read a
+> provisioned untracked tree and answer *"does the source actually contain the
+> symbol as declared"*.
+>
+> **2. `electron.d.ts` survives `--ignore-scripts`, and the reason is stronger
+> than expected.** Measured from the published artifact rather than on a runner,
+> and stated as such: `electron@43.4.1`'s tarball is 195 KB, lists
+> `electron.d.ts` in its `files`, and **has no `scripts` block at all** — the
+> binary download is a `bin` entry (`install-electron`), not a lifecycle script.
+> So `--ignore-scripts` cannot affect whether the type surface is present; there
+> is nothing for it to skip. The file is 1.1 MB and declares `utilityProcess` and
+> `MessageChannelMain`.
+>
+> That is the artifact answering the question more directly than one runner
+> could, and it is **not** a runner measurement — recorded that way rather than
+> claimed as one.
+>
+> **And it changes commit 3, which the question did not anticipate.** No
+> postinstall means `npm ci --ignore-scripts` leaves **no Electron binary at
+> all**. The containment assertion needs a *running* host, so that job must
+> install the binary deliberately rather than inheriting it from the install
+> step. Named now so it is a step someone writes, not a surprise at the end.
 
 0. **The threat model, then the B4 security amendment.** See above. This is a
    precondition of item 1, not a parallel track.
