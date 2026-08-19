@@ -350,6 +350,20 @@ it constrains these components, so it does not gate them.
 
 **Next, in order:**
 
+> **Where the list stands, 2026-08-19.** Items 1 and 2 are built **kernel-side
+> and unwired** — `DocumentService`, the stateless `CommandBus`, the log on the
+> record, `rotatePages` with its inverse, and §9's failure type. The immediate
+> unit is the **handler and composition point**, under `apps/desktop/src` and
+> importing no Electron (ADR-0009, 2026-08-19).
+>
+> **Then Electron, in three commits rather than one:** add the dependency · close
+> the witness gap, since `in: null` stops being accepted the moment Electron is a
+> dependency (`FEATURES.md`, the reachability-witness row) · then the containment
+> assertion against a running host (invariant 25's row). That split follows from
+> B8 and is written here only so it is not collapsed into one commit by whoever
+> reaches it — adding the dependency is a working, provable unit on its own, and
+> the other two are separately provable against it.
+
 0. **The threat model, then the B4 security amendment.** See above. This is a
    precondition of item 1, not a parallel track.
 1. **`DocumentService` + `CommandBus`.** Design fully settled in
