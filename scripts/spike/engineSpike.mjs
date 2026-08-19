@@ -20,6 +20,7 @@
 import { PDFDocument, PDFName } from '@cantoo/pdf-lib';
 import * as mupdf from 'mupdf';
 
+import { formatError } from '../lib/reportError.mjs';
 import { buildFixture, buildNestedFixture } from './makeFixture.mjs';
 import { reorderPagesInPlace } from './reorderInPlace.mjs';
 
@@ -634,7 +635,7 @@ async function main() {
 main().then(
   (status) => process.exit(status),
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exit(1);
   },
 );

@@ -42,6 +42,7 @@ import { rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import { divergenceNotice, verifyScannerCapability } from './scannerCanary.mjs';
+import { formatError } from './reportError.mjs';
 import { GITLEAKS_VERSION, gitleaksBinaryPath, provisionGitleaks } from '../provision/gitleaks.mjs';
 
 /**
@@ -212,7 +213,7 @@ main().then(
     process.exitCode = status;
   },
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exitCode = 1;
   },
 );

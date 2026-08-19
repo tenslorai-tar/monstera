@@ -28,6 +28,7 @@ import { downloadVerified, fileExists } from '../lib/fetchVerified.mjs';
 // 'tar' everywhere else, so PATH still decided the outcome on the platform CI
 // actually runs — the Windows instance was fixed and the class left open.
 import { extract } from '../lib/extract.mjs';
+import { formatError } from '../lib/reportError.mjs';
 
 export const GITLEAKS_VERSION = '8.30.1';
 
@@ -378,7 +379,11 @@ const invokedDirectly =
 
 if (invokedDirectly) {
   provisionGitleaks({ force: process.argv.includes('--force') }).catch((error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    // formatError, not `error.stack`: `publish` attaches the failing rename as
+    // `cause`, and the errno inside it is the whole diagnosis. `stack` does not
+    // include `cause`, so printing it discarded the chain at the one step that
+    // was going to be read — see scripts/lib/reportError.mjs.
+    process.stderr.write(`${formatError(error)}\n`);
     process.exit(1);
   });
 }

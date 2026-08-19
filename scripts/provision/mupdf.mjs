@@ -47,6 +47,7 @@ import { archiveSymlinks, extract } from '../lib/extract.mjs';
 import { handlerDisableFlags } from '../lib/documentHandlers.mjs';
 import { build, dumpbin } from '../lib/msvc.mjs';
 import { recordShimBuild } from '../lib/shimBinary.mjs';
+import { formatError } from '../lib/reportError.mjs';
 
 /**
  * Pinned deliberately, and NOT bumped to the newest release.
@@ -348,7 +349,7 @@ if (invokedDirectly) {
   main().then(
     (status) => process.exit(status),
     (error) => {
-      process.stderr.write(`\nProvisioning failed:\n${error instanceof Error ? error.stack : String(error)}\n\n`);
+      process.stderr.write(`\nProvisioning failed:\n${formatError(error)}\n\n`);
       process.exit(1);
     },
   );

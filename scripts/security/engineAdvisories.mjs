@@ -68,6 +68,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { digestInputs } from '../lib/verdict.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
 import { declaredNativeComponents } from '../release/generateNotice.mjs';
 import { deriveOcrDoors } from './ocrDoors.mjs';
@@ -997,7 +998,7 @@ main().then(
     process.exitCode = status;
   },
   (error) => {
-    process.stderr.write(`\n${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`\n${formatError(error)}\n`);
     process.exitCode = 1;
   },
 );

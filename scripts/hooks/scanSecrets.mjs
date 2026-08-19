@@ -18,6 +18,7 @@ import {
 } from '../lib/scannerCanary.mjs';
 import { formatSuppressions, runSecretScan } from '../lib/secretScan.mjs';
 import { GITLEAKS_VERSION, provisionGitleaks } from '../provision/gitleaks.mjs';
+import { formatError } from '../lib/reportError.mjs';
 
 async function main() {
   const binary = await provisionGitleaks();
@@ -47,7 +48,7 @@ async function main() {
 main().then(
   (status) => process.exit(status),
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exit(1);
   },
 );

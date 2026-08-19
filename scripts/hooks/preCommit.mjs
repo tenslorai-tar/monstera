@@ -14,6 +14,7 @@
  */
 
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import {
   divergenceNotice,
   formatCanaryFailure,
@@ -120,7 +121,7 @@ main().then(
   (error) => {
     process.stderr.write(
       `\nCommit blocked — the pre-commit guard itself failed:\n` +
-        `${error instanceof Error ? error.stack : String(error)}\n\n` +
+        `${formatError(error)}\n\n` +
         `A guard that errors is treated as a guard that found something. Fix the guard.\n\n`,
     );
     process.exit(1);

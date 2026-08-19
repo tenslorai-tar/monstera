@@ -32,6 +32,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from '../lib/msvc.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
 import { malformedCff } from './makeCffFixture.mjs';
 
@@ -204,7 +205,7 @@ function removeBoundsChecks(file) {
 main().then(
   (status) => process.exit(status),
   (error) => {
-    process.stderr.write(`\n${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`\n${formatError(error)}\n`);
     process.exit(1);
   },
 );

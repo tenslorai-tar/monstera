@@ -30,6 +30,8 @@ import { fileURLToPath } from 'node:url';
 import pngToIco from 'png-to-ico';
 import sharp from 'sharp';
 
+import { formatError } from '../lib/reportError.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const BRAND = join(REPO_ROOT, 'assets', 'brand');
 const MASTER = join(BRAND, 'logo.png');
@@ -138,7 +140,7 @@ async function main() {
 main().then(
   (status) => process.exit(status),
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exit(1);
   },
 );

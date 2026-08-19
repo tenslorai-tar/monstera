@@ -80,6 +80,22 @@ jobs:
       - name: Prove the guards still catch what they claim
         run: npm run proof:guards
 
+      # Before the proofs that report failures, because a blind reporter turns
+      # every red step below it into a message nobody can act on. Both platforms
+      # run it deliberately: the errno a failed rename produces is exactly what
+      # differs between them.
+      #
+      # Invoked directly rather than through `npm run proof:errorreport`, which
+      # is where it belongs. Registering the script means staging package.json,
+      # and the lockfile guard refuses any commit that stages it while the local
+      # npm is below 11.6.3 — correctly, since that npm cannot tell a valid
+      # lockfile from an invalid one. Waiting would have held the measurement
+      # this proof exists to enable behind a global install this commit does not
+      # need. THIS LINE IS OWED A CONVERSION in the first commit that stages
+      # package.json again; the entry is written and ready.
+      - name: Prove a reported failure names its cause
+        run: node scripts/lib/reportError.proof.mjs
+
       - name: Prove provisioning is safe under concurrency
         run: npm run proof:provision
 

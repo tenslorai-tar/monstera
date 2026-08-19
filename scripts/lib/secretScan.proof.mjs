@@ -40,6 +40,7 @@ import {
   unsanctionedSuppressions,
 } from './secretScan.mjs';
 import { GITLEAKS_VERSION, resolveGitleaks } from '../provision/gitleaks.mjs';
+import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
@@ -354,7 +355,7 @@ main().then(
     process.exitCode = status;
   },
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exitCode = 1;
   },
 );

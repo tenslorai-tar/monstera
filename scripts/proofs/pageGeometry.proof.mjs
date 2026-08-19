@@ -38,6 +38,7 @@ import koffi from 'koffi';
 import { PDFDocument, PDFName, PDFNumber, StandardFonts } from '@cantoo/pdf-lib';
 
 import { requireCurrentShim } from '../lib/shimBinary.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import { buildFixture, buildNestedFixture } from '../spike/makeFixture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -280,7 +281,7 @@ main().then(
     process.exitCode = status;
   },
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exitCode = 1;
   },
 );

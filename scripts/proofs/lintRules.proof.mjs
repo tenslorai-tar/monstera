@@ -33,6 +33,7 @@ import { ESLint } from 'eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
 
@@ -161,7 +162,7 @@ main().then(
     process.exitCode = status;
   },
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exitCode = 1;
   },
 );

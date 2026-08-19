@@ -22,12 +22,13 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
 import { fileExists } from '../lib/fetchVerified.mjs';
+import { formatError } from '../lib/reportError.mjs';
 
 const RACERS = 3;
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -160,11 +161,16 @@ async function main() {
   await mkdir(occupied, { recursive: true });
   await writeFile(join(occupied, 'placeholder'), 'x');
   let renameOntoOccupiedFailed = false;
+  // The errno is captured, not written down: it differs across platforms and
+  // the last case below compares the provisioner's own output against whatever
+  // this machine actually throws.
+  /** @type {string} */
+  let occupiedRenameCode = '';
   try {
-    const { rename } = await import('node:fs/promises');
     await rename(occupied, versionDirectory);
-  } catch {
+  } catch (error) {
     renameOntoOccupiedFailed = true;
+    occupiedRenameCode = /** @type {NodeJS.ErrnoException} */ (error).code ?? '';
   }
   await rm(occupied, { recursive: true, force: true });
   if (!renameOntoOccupiedFailed) {
@@ -208,6 +214,63 @@ async function main() {
     failures.push(`quarantine director${leftovers.length === 1 ? 'y' : 'ies'} survived: ${leftovers.join(', ')}`);
   }
 
+  // ---------------------------------------------------------------------------
+  // A publish failure names the errno, not merely the operation.
+  //
+  // `publish` attaches the failing rename as `cause`, and every top-level
+  // handler under scripts/ used to print `error.stack` — which does not include
+  // `cause`. So this is what a red Windows runner produced on 2026-08-19:
+  //
+  //   Error: Could not publish gitleaks to D:\a\…\.tools\gitleaks\8.30.1
+  //       at publish (…/gitleaks.mjs:268:13)
+  //
+  // EPERM, EACCES, EBUSY and ENOTEMPTY are four different mechanisms with four
+  // different repairs, and that text distinguishes none of them. An instrument
+  // that cannot separate the things it exists to separate is audit item 4a.
+  //
+  // This case belongs here rather than beside the reporter's unit cases because
+  // it is the only one that runs the real entry point: a passing provision
+  // never prints an error, so nothing else in this repository would notice the
+  // reporter regressing.
+  // ---------------------------------------------------------------------------
+  const preserved = `${versionDirectory}.preserved`;
+  await rm(preserved, { recursive: true, force: true });
+  await rename(versionDirectory, preserved);
+  // Occupied, but holding no binary — so `publish` measures fileExists(binary)
+  // as false and takes the plain-rename path at the bottom, which fails onto an
+  // occupied destination. Deterministic on both platforms, and it is the same
+  // syscall the control above just measured.
+  await mkdir(versionDirectory, { recursive: true });
+  await writeFile(join(versionDirectory, 'decoy'), 'x');
+
+  const reported = await raceOne();
+
+  // Restored before anything is asserted, so a failure here cannot leave later
+  // steps in this job without a scanner.
+  await rm(versionDirectory, { recursive: true, force: true });
+  await rename(preserved, versionDirectory);
+
+  if (reported.status === 0) {
+    failures.push(
+      'publishing onto an occupied destination was expected to fail and did not, so the errno ' +
+        'case measured nothing. An empty induced failure passes every check below by having ' +
+        'nothing to print.',
+    );
+  } else if (!reported.output.includes('Could not publish gitleaks to')) {
+    failures.push(
+      `the induced failure was not the publish failure this case exists to print, so whatever ` +
+        `it did print says nothing about the reporter:\n${reported.output}`,
+    );
+  } else if (occupiedRenameCode === '' || !reported.output.includes(occupiedRenameCode)) {
+    failures.push(
+      `the provisioner reported a publish failure without the errno ` +
+        `(expected ${occupiedRenameCode === '' ? '<none captured>' : occupiedRenameCode}):\n` +
+        `${reported.output}\n` +
+        `The errno is the diagnosis. Printing error.stack discards the attached cause, which is ` +
+        `how a red board produced an argument instead of a measurement.`,
+    );
+  }
+
   if (failures.length > 0) {
     process.stderr.write(`\n${failures.length} provisioning proof failure(s):\n\n${failures.join('\n\n')}\n`);
     return 1;
@@ -219,7 +282,8 @@ async function main() {
   process.stdout.write('  ok  a corrupted install is repaired without --force\n');
   process.stdout.write('  ok  a healthy install is left untouched by a re-run\n');
   process.stdout.write('  ok  no quarantine directories survive the swap\n');
-  process.stdout.write('\n6 provisioning cases passed.\n');
+  process.stdout.write(`  ok  a publish failure names the errno (${occupiedRenameCode}), not just the operation\n`);
+  process.stdout.write('\n7 provisioning cases passed.\n');
   return 0;
 }
 
@@ -232,7 +296,7 @@ function spawnedVersion(binary) {
 main().then(
   (status) => process.exit(status),
   (error) => {
-    process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`${formatError(error)}\n`);
     process.exit(1);
   },
 );

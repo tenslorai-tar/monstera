@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { fileExists } from '../lib/fetchVerified.mjs';
 import { readPeHardening } from '../lib/peHardening.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import { shimLibraryPath, verifyExports } from './mupdf.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -215,7 +216,7 @@ async function main() {
 main().then(
   (status) => process.exit(status),
   (error) => {
-    process.stderr.write(`\n${error instanceof Error ? error.stack : String(error)}\n`);
+    process.stderr.write(`\n${formatError(error)}\n`);
     process.exit(1);
   },
 );

@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process';
 import koffi from 'koffi';
 
 import { requireCurrentShim } from '../lib/shimBinary.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import { buildFixture } from './makeFixture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -366,6 +367,6 @@ async function replayAdrCheckpoints() {
 await replayAdrCheckpoints();
 
 main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+  process.stderr.write(`${formatError(error)}\n`);
   process.exit(1);
 });
