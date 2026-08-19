@@ -84,9 +84,11 @@ export const handlers: ContractHandlers = {
     name: 'a handler map missing a channel does not compile',
     expect: 'reject',
     code: 'TS2741',
-    because: /Property ''app\.info'' is missing/u,
-    // The offending type is `{}` and the required type names one channel, which
-    // is the operative name. Nothing else quoted to match spuriously.
+    // Anchored on the type it is missing FROM. Without that tail this pattern
+    // also matched the client-stub case's diagnostic, which begins with exactly
+    // the same words before continuing `…but required in type 'ClientApi…`. The
+    // cross-product check found it; the two were never a hand-written pair.
+    because: /Property ''app\.info'' is missing in type '\{…\}' but required in type 'Handlers</u,
     notBecause: null,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
@@ -97,8 +99,9 @@ export const handlers: ContractHandlers = {};
     name: 'a handler map with an undeclared channel does not compile',
     expect: 'reject',
     code: 'TS2353',
-    because: /'app\.notDeclared'' does not exist/u,
-    // TS2353 quotes the target type by name only.
+    // Same shape as its sibling above: anchored on the target type, so it
+    // cannot drift into matching another case's diagnostic later.
+    because: /''app\.notDeclared'' does not exist in type 'Handlers</u,
     notBecause: null,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
@@ -139,8 +142,13 @@ export const handlers: ContractHandlers = {
     name: 'a client stub missing a channel does not compile',
     expect: 'reject',
     code: 'TS2741',
-    because: /Property ''app\.info'' is missing in type '\{…\}' but required in type 'ClientApi/u,
-    notBecause: null,
+    because: /Property ''app\.info'' is missing in type '\{…\}' but required in type 'ClientApi<\{…\}>'/u,
+    // THE NESTED-DUMP CONTROL, and it needed no synthetic fixture — this
+    // diagnostic already nests: `ClientApi<{ … Channel<ZodObject<{ … }>> }>`.
+    // Collapsing only the innermost level leaves `installChannel` visible in
+    // the reason text, so this fires the moment the elision stops handling
+    // depth.
+    notBecause: /installChannel/u,
     // This is what keeps the browser shim honest. A shim that has drifted from
     // the contract would otherwise pass its own tests while proving nothing
     // about the real application.
@@ -482,22 +490,59 @@ function diagnose(output) {
 }
 
 /**
- * Replaces the contents of every `{ … }` with an ellipsis, innermost first.
+ * A brace-free stand-in used while collapsing dumps. See {@link elideTypeDumps}.
  *
- * Repeated to a fixed point because type dumps nest — `Handlers<{ readonly
- * 'app.info': (p: { … }) => … }>` — and one pass would leave the outer level
- * intact.
+ * Written as an escape rather than a literal so it is visible in source, and
+ * chosen as a character no compiler diagnostic can contain.
+ */
+const DUMP_SENTINEL = ' ';
+
+/**
+ * Collapses every `{ … }` — **at every level** — to a single `{…}`.
+ *
+ * ## Why this is not a one-line replace to a fixed point
+ *
+ * Substituting `{…}` directly reintroduces braces, so `[^{}]*` can never span
+ * the placeholder and the enclosing level never matches. The loop then reaches
+ * a fixed point that looks like completion while having collapsed only the
+ * innermost level. Measured:
+ *
+ * ```
+ * in        Type '{ outer: { inner: 1 }; sibling: 2 }' …
+ * naive     Type '{ outer: {…}; sibling: 2 }' …        <- outer, sibling survive
+ * this      Type '{…}' …
+ * ```
+ *
+ * `outer` and `sibling` surviving is precisely what "a type dump is never
+ * evidence" forbids, and **this is live rather than hypothetical**: the client
+ * stub's diagnostic nests `ClientApi<{ … Channel<ZodObject<{ … }>> }>`, so
+ * `version` and `installChannel` reach the reason text under the naive form.
+ * A terminating fixed-point loop is a convincing shape for a job half done.
+ *
+ * So the collapse targets a **brace-free sentinel**, iterates to the fixed
+ * point, and restores once at the end. Flat inputs produce byte-identical
+ * output either way, which is why existing patterns keep matching.
  *
  * @param {string} text
  * @returns {string}
  */
 function elideTypeDumps(text) {
+  if (text.includes(DUMP_SENTINEL)) {
+    // A sentinel already present would be restored as a dump that was never
+    // there, corrupting the very evidence this function exists to clean.
+    throw new Error(
+      'Diagnostic text already contains the elision sentinel, so restoring it would ' +
+        'invent a type dump. Choose a different sentinel rather than trusting the input.',
+    );
+  }
+
   let previous = text;
   for (;;) {
-    const next = previous.replace(/\{[^{}]*\}/gu, '{…}');
-    if (next === previous) return next;
+    const next = previous.replace(/\{[^{}]*\}/gu, DUMP_SENTINEL);
+    if (next === previous) break;
     previous = next;
   }
+  return previous.replaceAll(DUMP_SENTINEL, '{…}');
 }
 
 /**
@@ -546,20 +591,17 @@ function buildWorkspace() {
  * category needs a different anchor, and this test is what says which category
  * a case is in.
  *
- * @returns {string[]} one entry per pair that failed to discriminate
+ * @param {{ testCase: Case, reason: string }[]} rejected every reject case with
+ *   its diagnostic's reason, computed once and shared with the verdict loop —
+ *   so this validates the same strings the verdicts are read from, and costs no
+ *   extra compiler runs.
+ * @returns {string[]} one entry per collision
  */
-function resolutionTest() {
+function resolutionTest(rejected) {
   /** @type {string[]} */
   const problems = [];
 
-  const pairs = [
-    ['a non-reproducible spec claiming intent replay does not compile',
-     'a non-invertible spec claiming inverse undo does not compile'],
-    ['a spec that omits the reproducibility axis does not compile',
-     'a spec that omits the invertibility axis does not compile'],
-  ];
-
-  // PART ONE — the summary must not be evidence.
+  // PART ONE — a type dump must not be evidence.
   //
   // DERIVED from the case list, not listed here. A hardcoded pair covers the
   // cases somebody remembered; every reject case declaring a `notBecause`
@@ -574,11 +616,8 @@ function resolutionTest() {
   // phrase it, with a bare property name. Removing the elision now turns SIX
   // cases red here, one of them on the atomic path that previously had no
   // control at all.
-  for (const subject of CASES) {
-    if (subject.expect !== 'reject' || subject.notBecause === undefined || subject.notBecause === null) {
-      continue;
-    }
-    const { reason } = diagnose(typecheck(subject.source).output);
+  for (const { testCase: subject, reason } of rejected) {
+    if (subject.notBecause === undefined || subject.notBecause === null) continue;
     if (subject.notBecause.test(reason)) {
       problems.push(
         `"${subject.name}": the reason text matches ${String(subject.notBecause)}, which names ` +
@@ -591,29 +630,31 @@ function resolutionTest() {
     }
   }
 
-  // PART TWO — two cases differing only in which property is wrong must not
-  // accept each other's reason.
-  for (const [leftName, rightName] of pairs) {
-    const left = CASES.find((c) => c.name === leftName);
-    const right = CASES.find((c) => c.name === rightName);
-    if (left === undefined || right === undefined || left.because === undefined || right.because === undefined) {
-      problems.push(`resolution test names a case that does not exist: ${leftName} / ${rightName}`);
-      continue;
-    }
-
-    for (const [subject, foreign] of [
-      [left, right.because],
-      [right, left.because],
-    ]) {
-      const { output } = typecheck(/** @type {Case} */ (subject).source);
-      const { reason } = diagnose(output);
-      if (/** @type {RegExp} */ (foreign).test(reason)) {
-        problems.push(
-          `"${/** @type {Case} */ (subject).name}" also matches the OTHER case's reason ` +
-            `${String(foreign)}. The matcher cannot tell these two apart, so neither ` +
-            `verdict means anything.\n      reason was:\n${reason}`,
-        );
-      }
+  // PART TWO — no case's expected reason may match ANY OTHER case's reason.
+  //
+  // The full cross-product, not a hand-written list of confusable pairs. Pairs
+  // cover the collisions somebody noticed, and the one that mattered was
+  // outside them: `a handler map missing a channel` anchors on
+  // `Property ''app.info'' is missing` with no anchor on the type it is missing
+  // FROM, and the client-stub diagnostic begins with exactly that text before
+  // continuing `…but required in type 'ClientApi…`. One case's matcher accepted
+  // another's reason, and being unpaired is why nothing looked.
+  //
+  // Every reason is already computed, so this costs n² regex tests over strings
+  // in hand. A legitimate collision is a finding — two cases not distinguishable
+  // by reason need a stronger anchor — not noise to be exempted.
+  for (const { testCase: subject, reason } of rejected) {
+    for (const other of rejected) {
+      if (other.testCase === subject) continue;
+      if (other.testCase.because === undefined) continue;
+      if (!other.testCase.because.test(reason)) continue;
+      problems.push(
+        `"${subject.name}" is also matched by the expected reason of ` +
+          `"${other.testCase.name}" (${String(other.testCase.because)}). One case's matcher ` +
+          `accepts another case's diagnostic, so neither verdict distinguishes them. ` +
+          `Usually the weaker pattern is missing the type it names — anchor it on ` +
+          `"…but required in type 'X'" or equivalent.\n      reason was:\n${reason}`,
+      );
     }
   }
   return problems;
@@ -629,27 +670,44 @@ function main() {
   /** @type {string[]} */
   const failures = [];
 
-  try {
-    const unresolved = resolutionTest();
-    if (unresolved.length > 0) {
-      process.stderr.write(
-        `\nThe reason matcher failed its own resolution test:\n\n` +
-          unresolved.map((p) => `  - ${p}`).join('\n\n') +
-          `\n\nNothing below is reported, because a matcher that cannot distinguish two ` +
-          `known-different reasons cannot certify any of them.\n\n`,
-      );
-      return 1;
-    }
-    process.stdout.write(`  ok  4a     reason matcher distinguishes swapped property reasons\n`);
-  } catch (error) {
-    rmSync(PROBE_DIR, { recursive: true, force: true });
-    throw error;
-  }
+  /**
+   * Every case compiled once. The resolution test and the verdicts read the
+   * same strings, so the matcher is validated against exactly what it will
+   * certify — and the whole file costs one compiler run per case rather than
+   * one per case plus one per resolution check.
+   *
+   * @type {{ testCase: Case, ok: boolean, output: string, heads: string[], reason: string }[]}
+   */
+  const results = [];
 
   try {
     for (const testCase of CASES) {
       const { ok, output } = typecheck(testCase.source);
+      const { heads, reason } = diagnose(output);
+      results.push({ testCase, ok, output, heads, reason });
+    }
 
+    // Reject cases that actually rejected: the only ones with a reason to
+    // validate. A case that wrongly compiled is reported below on its own.
+    const rejected = results
+      .filter((r) => r.testCase.expect === 'reject' && !r.ok)
+      .map((r) => ({ testCase: r.testCase, reason: r.reason }));
+
+    const unresolved = resolutionTest(rejected);
+    if (unresolved.length > 0) {
+      process.stderr.write(
+        `\nThe reason matcher failed its own resolution test:\n\n` +
+          unresolved.map((p) => `  - ${p}`).join('\n\n') +
+          `\n\nNothing below is reported, because a matcher that cannot tell two ` +
+          `known-different reasons apart cannot certify any of them.\n\n`,
+      );
+      return 1;
+    }
+    process.stdout.write(
+      `  ok  4a     ${String(rejected.length)} reasons are mutually exclusive, and none rests on a type dump\n`,
+    );
+
+    for (const { testCase, ok, output, heads, reason } of results) {
       if (testCase.expect === 'allow') {
         if (ok) process.stdout.write(`  ok  allow  ${testCase.name}\n`);
         else failures.push(`${testCase.name}: expected this to compile, tsc rejected it:\n${output}`);
@@ -667,8 +725,6 @@ function main() {
       // rejection. Every way of breaking a probe (a typo, a renamed export, a
       // second error masking an absent first one) also produces a rejection,
       // and until this check existed the case would have passed on any of them.
-      const { heads, reason } = diagnose(output);
-
       if (heads.length !== 1) {
         // Counted as unindented lines carrying an error code, NOT as a line
         // count: a diagnostic spans two or three lines with indented
