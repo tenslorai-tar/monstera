@@ -890,6 +890,47 @@ after `.claude/settings.json` last changed, the guard has been live both times
 it was tested. Two observations is a pattern worth writing down and not yet a
 law; the asymmetry in limit 2 still governs how each one is read.
 
+### Third fire, and the first from the review seat
+
+The guard denied an `echo` with ANSI-C quoting — **in the reviewing session, not
+the building one**. Third recorded unprompted fire after 2026-08-18T06:45Z and
+the `node -p` above.
+
+What is new is not the count. It is that nothing until now had shown the hook
+covers **both seats**. Every prior observation came from the session writing
+code, which left "does it protect the reviewer too" as an assumption nobody had
+tested — and the reviewing seat runs verification commands constantly, which is
+exactly where an `echo` or a `printf` gets reached for.
+
+Two fires in the build seat and one in the review seat is still a pattern rather
+than a law, and limit 2's asymmetry governs each of them.
+
+### The delegation shape, swept — and empty
+
+The NUL defect had a searchable shape: **a check reasoning "that other check
+already handles this case", where the other check's scope is narrower than what
+was handed to it.** The guard's comment was correct about its reasoning and
+wrong only about scope, and nothing about it looked wrong — which is what makes
+the shape worth sweeping for rather than waiting to trip over again.
+
+Swept `scripts/hooks/`, `scripts/security/` and `scripts/lib/`, for the phrasing
+(*already handled*, *keys on*, *covered by*, *delegated to*) and for the
+underlying mechanism (`subarray`, `slice(0, …)`, window and limit constants used
+by one check and relied on by another).
+
+**Nothing found.** Recorded as checked-and-empty, which is a different record
+from not looking. The near-misses and why each is sound:
+
+- `executableSignature(head)` also reads only the sniff window — correct, and
+  not the same shape: a magic-byte signature is a property of the file's start
+  by definition, so the window is the whole question rather than a sample of it.
+- `ocrDoors.mjs` says its empty-set floors "catch only the ones that empty an
+  INPUT". That is the pattern done **right**: it names the limitation and then
+  adds the control that covers the remainder, instead of handing the case to
+  something narrower.
+- `lockfileIntegrity.mjs`'s `.slice(0, 12)` truncates displayed error lines, not
+  a check's scope.
+
 ### A claim with an expiry got a trigger instead of a note
 
 Same session, same shape of problem: ADR-0009 §9 says filesystem errors are
