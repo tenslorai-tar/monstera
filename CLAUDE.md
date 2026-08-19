@@ -450,6 +450,22 @@ cannot fail is a green check that verifies nothing. When a mutation *doesn't*
 turn it red, find out why before concluding the proof is vacuous — the build may
 have failed and left stale output for the proof to test.
 
+**The DIRECTION of the mutation decides whether it separates anything.** When the
+property under test is *"these two agree"*, mutate **towards disagreement** —
+because agreement is also what **absence** produces, so a mutation that moves
+both sides together is indistinguishable from the bug.
+
+This is item 4b's corollary — *an empty result is a broken lookup, not a clean
+one* — arriving inside a comparison rather than a search, which is where nobody
+had applied it. It cost a control that protected nothing for a whole range: a
+case asserting two churn figures agreed looked up a fixture that could never be
+in the set it queried, got `undefined`, and passed. The mutation run against it
+made every figure agree, which the missing entry already did. Forcing the figures
+to always **differ** reddened it immediately.
+
+So for a comparison, ask which mutation the *bug* would be indistinguishable
+from, and run the other one.
+
 **4a. Has every instrument passed a resolution test — BEFORE it measured
 anything real?**
 Not after, and not "it looked plausible". Feed it two values you know differ by
