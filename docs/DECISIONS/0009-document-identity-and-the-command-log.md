@@ -741,3 +741,69 @@ exists inside a lane entry.
 Not built now, deliberately: a seam with one side missing is a guess about the
 side that does not exist. But B3 is cheapest to satisfy before there are two
 callers, and this is the moment there are none.
+
+---
+
+## Decision, 2026-08-19 — the bus captures prior state, in a step of its own
+
+This fills a **silence**, and says so rather than dressing itself as a
+clarification of something already written. §3 fixes the *shape* of prior state
+and §4 fixes who takes a *checkpoint*. Neither says who captures the **inverse**,
+and `rotatePages` is the command §3 was derived from — so the question decides
+itself the moment the handler is written, in whichever direction the author was
+not thinking about.
+
+**Decision: a separate per-command capture, called by the `CommandBus` before
+`apply`, in one code path, never by a handler.** The same discipline §4 already
+states for checkpoints, and for the same reason: one writer per concern (B3).
+
+### Rejected: `apply` returns the inverse
+
+This is the shape that looks natural, because the handler is holding the prior
+state at exactly the right moment. It is rejected on a mechanical argument
+rather than on symmetry.
+
+`Apply<W, K>` for a live-session writer is `(session, command) => Promise<void>`
+— §8, landed one commit before this question arose. Returning the inverse
+changes that signature, so the seam would be **retrofitted under a feature at a
+distance of one commit**. That is the failure this project exists to prevent,
+and it does not become acceptable for being caught early; it becomes cheap to
+avoid.
+
+It is also wrong on the other side of the seam. A byte-image writer's `apply`
+already returns the new image, so this design forces a pair — bytes *and*
+possibly an inverse — and the seam then expresses two unrelated concerns in one
+return type. §8's whole point is that the seam says how a writer is driven, not
+what the log stores.
+
+### Rejected: the handler captures, and hands it to the bus
+
+A second writer of one concern, which is the B3 violation §4 closed for
+checkpoints and would reopen here. Worse, its failure is silent: a handler that
+captures *after* mutating, or that captures the effective value instead of the
+own-state, produces an inverse that is **well-formed and wrong**. It undoes to
+something that renders correctly and is not the document that was there — R3's
+defect exactly, arriving through a different door.
+
+Capture-before-apply in one code path makes "captured after the mutation"
+unrepresentable rather than forbidden (B5).
+
+### What this obliges of a handler written before the bus exists
+
+One thing, and it is the reason to settle this now: **`apply` must not consume
+what the inverse will need.** For `rotatePages` that means the prior `/Rotate`
+**own-state** — present with a raw value, or absent — is read before anything is
+mutated, and that read is reachable by a caller rather than buried inside the
+mutation.
+
+Forward normalises to quarter turns; the union already makes an arbitrary angle
+unrepresentable on the wire. The inverse restores **verbatim**, so a page that
+arrived carrying `45` or `-90` must still be able to come back carrying it, and
+the raw value has to survive until the log exists to hold it.
+
+### Not decided here
+
+Where the capture sits on `CommandSpec`, and what a log entry holds. Both need
+the log's two-shape union (§4), which is the next unit. Deciding the *writer*
+now costs one paragraph; deciding the *type* now would be a guess about a side
+that does not exist — the same restraint §5's counter clarification took.
