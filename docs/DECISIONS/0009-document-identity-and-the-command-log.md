@@ -1185,3 +1185,108 @@ rather than ignored; the diagnostic still goes to a sink the composer supplies.
 This narrows what may cross — it does not widen it — so every control written for
 §9 still holds, and the `.strict()` schema becomes a union of two strict shapes
 rather than one.
+
+---
+
+## Correction, 2026-08-19 — `dev:ino` equality is NOT evidence that the file is the one we opened
+
+The save-time write-target check reported **`sole-writer` for a file that had
+been deleted and recreated at the same path**. Measured, on an ubuntu CI runner,
+by the check's own test; `windows-latest` passed the same case.
+
+`sole-writer` is the one verdict that permits a write. So the check that exists
+to stand between a save and *"overwriting a file that is no longer the one that
+was opened"* said yes to exactly that.
+
+### The mechanism
+
+`replacementVerdict` compared `dev` and `ino` and nothing else. **An inode number
+is a slot, and slots are handed back out.** `unlink` followed by `create` in the
+same directory can land the new file on the freed inode, and then the pair
+matches for two different files. Nothing about that is exotic — it is ordinary
+allocator behaviour on ext4 and on tmpfs, which is what a CI runner's `$TMPDIR`
+usually is.
+
+The asymmetry is the whole correction, and the original code had only half of it:
+
+- `dev:ino` **differing** is conclusive evidence of replacement.
+- `dev:ino` **matching** is *necessary* evidence of sameness and never
+  *sufficient*.
+
+`FileIdentity`'s own comments were already right about this — `size` and
+`modifiedMs` are marked *"corroboration only. Never evidence of sameness on its
+own."* What was missing is that corroboration is precisely what a **matching**
+index needs, because the matching direction is the one that can be wrong.
+
+### Windows is not the counter-example it looks like
+
+Measured here: 40 rounds of `unlink` + `create` with directory churn between
+them, on NTFS — **0 reuse**. That is not immunity and must not be recorded as
+one. An NTFS file reference is an MFT record number plus a sequence number that
+increments when the record is reused, so reuse yields a *different* 64-bit id;
+the sequence field is 16 bits and wraps. **That mechanism is a hypothesis about
+why the measurement came out as it did, not something this project has
+verified** — the measurement is the fact, the explanation is not.
+
+### `birthtime` is the field a reasonable person reaches for, and on NTFS it lies
+
+Measured on the same volume, across a genuine delete-and-recreate:
+
+| field | at open | after replacement |
+|---|---|---|
+| `ino` | 27866022694471064 | 28147497671181720 — moved |
+| `ctimeMs` | …525475.335 | …525483.62 — moved |
+| `birthtimeMs` | …525475.335 | **…525475.335 — unchanged** |
+
+That is NTFS **file tunneling**: recreating a file with the same name in the same
+directory within a short window restores the original creation time. So the one
+field whose name promises "when this file came into being" reports the *previous*
+file's answer, for exactly the delete-and-recreate pattern this check exists to
+catch. Recorded because it is the obvious fix and it is worse than the defect.
+
+### The decision: `sole-writer` now requires a corroborator, and `ctime` is it
+
+`ctime` is the inode's change time. It is set at creation and moves on any change
+to the inode — so a **reused** inode always carries a fresh one, which is what
+makes it unable to miss the case above. Measured stable across a read, so the
+ordinary open-then-save flow does not trip it.
+
+- `dev:ino` differ → **`replaced`**, unchanged.
+- `dev:ino` match and `ctime` unchanged → **`sole-writer`**.
+- `dev:ino` match and `ctime` moved → **`unverifiable`**.
+
+The third case is the correction, and it deliberately reuses a verdict that
+already exists and already refuses the write. `unverifiable` means *"the check
+ran and could not settle whether the file was replaced"*, which is exactly true
+here: `ctime` cannot tell *"a different file on a reused inode"* from *"the same
+file, edited in place by another application"*. Both are states where writing
+discards something the user has not seen.
+
+**This only ever narrows what may be reported as safe.** No verdict gains
+permission it did not have, no caller meets a variant it did not already handle,
+and every existing control still holds.
+
+### Rejected
+
+**Report `replaced` for the moved-`ctime` case.** It would be a false statement
+in a message a person reads: an in-place edit is not a replacement, and a check
+that says so teaches its users to disbelieve it.
+
+**Use `birthtime` as the corroborator.** Measured above to be wrong in the exact
+pattern that matters.
+
+**Hold an open handle from open to save and compare that.** It is the one answer
+that settles the question completely, and it is a different decision with its own
+consequences for handle lifetime — which this project has already settled once,
+deliberately, in the other direction. Not reopened here as a side effect of a
+verdict correction.
+
+### What is still not closed
+
+`ctime` moving is not proof of replacement, so a document edited in place by
+another application now blocks the save with `unverifiable` rather than telling
+the user what happened. That is the conservative direction and it is the right
+one at this stage — but the save pipeline, when it exists, will want to
+distinguish *"someone else wrote to your file"* from *"we cannot tell"*, and that
+needs evidence this check does not have. Named so it is a decision then rather
+than an omission now.
