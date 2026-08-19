@@ -606,3 +606,58 @@ exactly that field with a public getter on it. It is removed: the lane **hands**
 work the version it is running at and returns the result stamped with it, so the
 read-then-stamp sentence has no words. Building this now, while the API has one
 shape to change, is cheaper than adding it under a renderer later.
+
+### The version handed IN and the version stamped ON are two different values
+
+Corrected the same day, before the counter was built. The lane first passed one
+variable to both, reading it before the work.
+
+Passing the pre-work version to the work is right — that is what the work
+operates against. Using it as the result's stamp is not:
+
+| kind | pre-work stamp | correct stamp |
+|---|---|---|
+| query | equal, nothing bumps during it | same |
+| **command that bumps** | the version it **replaced** | the version it produced |
+
+A command stamped with the version it replaced is **§7's failure with the sign
+flipped**: instead of a query stamped too new, a command stamped too old. The
+renderer's staleness check then reads a fresh result as stale, and can read a
+later stale one as fresh.
+
+So the stamp is read **after** `work` returns, still inside the lane. That is
+exact for both kinds precisely *because* the lane is serial — nothing can bump
+between the work finishing and the read — which is the same argument that makes
+the lane worth having. Reading before is exact only for the kind that cannot
+change it.
+
+The only mechanism that can change a version is `DocumentContext.bumpVersion`,
+reachable only from inside the lane, so a bump cannot race a stamp. What bumps,
+and what `savedVersion` and `dirty` mean, stays §5's and arrives with the
+command log; this is the seam, not the policy.
+
+### Same-document lane reentry is refused
+
+`run(A, work)` where `work` calls `run(A, …)` cannot complete: the inner entry
+queues behind the outer while the outer awaits the inner. **No error, no
+timeout, no stack — a document that stops responding.** Removing the guard does
+not make its proof fail; it makes it hang to the test timeout, which is the
+whole argument for closing it.
+
+Refused by a second async-context marker carrying the executing `DocId`. **Keyed
+on the `DocId`, not on "any nested run"** — refusing all nesting is stricter
+than the evidence supports.
+
+Two siblings are left **open, with the analysis rather than a guard**, because
+neither has a call site and a guard built for a caller that does not exist is
+how a guard ends up rejecting the shape somebody eventually writes:
+
+- **`run(A)` from inside `run(B)`.** Independent lanes, so it completes unless
+  B's work depends on A's. A lock-ordering hazard, not a certain deadlock; the
+  fix when it is needed is a total order on `DocId`s acquired low-to-high, not a
+  blanket refusal.
+- **`close(A)` from inside `run(A)`.** The synchronous half behaves; the
+  returned promise awaits a lane containing the work that called it, so
+  *awaiting* it hangs and ignoring it does not. Certain only in the awaited
+  form. A command that wants to close its own document should return and let the
+  caller close.

@@ -59,6 +59,28 @@ import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
  * counter was rejected for this — it cannot tell "called from inside the index
  * lane" from "called concurrently while an index-lane entry happens to be
  * mid-await", and a guard that rejects legitimate work is worse than the hazard.
+ *
+ * **Same-document reentry into `run` is refused too**, and it is the worse of
+ * the two: it is a certain deadlock with no error and no stack.
+ *
+ * ## Two reentry hazards left OPEN, with the analysis rather than a guard
+ *
+ * Neither has a call site today, and building a guard for a caller that does
+ * not exist is how a guard ends up rejecting the legitimate shape somebody
+ * eventually writes. Whoever writes the first one inherits the reasoning:
+ *
+ * 1. **`run(A)` from inside `run(B)`.** Not a certain deadlock — the lanes are
+ *    independent, so it completes whenever B's work does not itself depend on
+ *    A's. It is a **lock-ordering hazard**: two documents' work each entering
+ *    the other's lane deadlocks the pair. The fix when it is needed is a total
+ *    order on `DocId`s, acquired low-to-high, not a blanket refusal — hence the
+ *    guard above is keyed on the `DocId` rather than on "any nested run".
+ * 2. **`close(A)` from inside `run(A)`.** The synchronous half is fine and does
+ *    what it says. The returned promise awaits a lane containing the very work
+ *    that called it, so **awaiting it** hangs; ignoring it does not. Certain
+ *    only in the awaited form, which is why it is recorded rather than guarded.
+ *    A command that wants to close its own document should return, and let the
+ *    caller close.
  */
 
 /**
@@ -115,7 +137,18 @@ export class DocumentBusyError extends Error {
 export interface DocumentContext {
   readonly docId: DocId;
   readonly path: string;
+  /** The version the document is at **now**, which is what this work operates against. */
   readonly version: DocVersion;
+  /**
+   * Advances the document's version and returns the new value.
+   *
+   * The seam, not the policy. *What* bumps — every applied mutation including
+   * undo and redo — and what `savedVersion` and `dirty` mean, is ADR-0009 §5
+   * and comes with the command log. What exists here is the only mechanism by
+   * which a version can change, and it can only be reached from inside the
+   * lane, so a bump cannot race a stamp.
+   */
+  bumpVersion(): DocVersion;
 }
 
 /**
@@ -126,6 +159,22 @@ export interface DocumentContext {
  */
 export interface Versioned<T> {
   readonly value: T;
+  /**
+   * The version the document was at **when this work finished**.
+   *
+   * Read after the work, not before, and the distinction is not pedantic: they
+   * are two different values wearing one name. The version handed to the work is
+   * what it operated against; the version stamped on the result is what the
+   * document is at now. For a query they are equal, because nothing bumps
+   * during one. For a **command that bumps**, stamping the pre-work value
+   * returns the version the command *replaced* — §7's failure with the sign
+   * flipped: a fresh result that reads as stale, and a later stale one that can
+   * read as fresh.
+   *
+   * Reading after is exact for both kinds precisely because the lane is serial:
+   * nothing can bump between the work finishing and the read. That is the same
+   * argument that makes the lane worth having.
+   */
   readonly version: DocVersion;
 }
 
@@ -146,7 +195,8 @@ interface DocumentRecord {
    * the cases the walk exists to catch are the ones where it moved.
    */
   readonly openedIdentity: FileIdentity;
-  readonly version: DocVersion;
+  /** Mutable only through {@link DocumentContext.bumpVersion}, inside the lane. */
+  version: DocVersion;
   /**
    * ADR-0009 §7's lane, **living on the record**.
    *
@@ -293,6 +343,22 @@ export class DocumentService {
    */
   readonly #insideIndexLane = new AsyncLocalStorage<true>();
 
+  /**
+   * The document whose lane entry is currently executing, if any.
+   *
+   * Same mechanism as {@link #insideIndexLane}, closing the **worse** of the two
+   * reentry hazards. `run(A, work)` where `work` calls `run(A, …)` cannot
+   * complete: by then `record.lane` is a promise that settles only when the
+   * outer work does, so the inner entry queues behind the outer while the outer
+   * awaits the inner. Neither ever resolves — **no error, no timeout, no stack,
+   * just a document that stops responding.** A named error is debuggable in
+   * seconds; a hang is a bug report.
+   *
+   * Keyed on the `DocId`, not on "any nested run". Refusing all nesting is
+   * stricter than the evidence supports — see the open hazards below.
+   */
+  readonly #executingDocument = new AsyncLocalStorage<DocId>();
+
   constructor(
     capabilities: CapabilityRegistry,
     options: {
@@ -425,6 +491,15 @@ export class DocumentService {
       );
     }
 
+    if (this.#executingDocument.getStore() === docId) {
+      throw new Error(
+        'Lane reentry: work running in a document\'s lane asked to run more work in the ' +
+          'same lane. The inner entry would queue behind the outer while the outer awaits ' +
+          'the inner, and neither would ever resolve — a silent hang rather than a ' +
+          'failure. Whatever the inner work does belongs in the outer entry, or after it.',
+      );
+    }
+
     const record = this.#records.get(docId);
     if (record === undefined) {
       // Get-or-miss. A lazily created lane would run this work against a
@@ -435,12 +510,23 @@ export class DocumentService {
     if (record.queued >= MAX_QUEUED) throw new DocumentBusyError(docId, record.queued);
     record.queued += 1;
 
-    const started = record.lane.then(async () => {
-      // Read here, when the work actually runs — not when it was queued.
-      const version = record.version;
-      const value = await work({ docId: record.docId, path: record.path, version });
-      return { value, version };
-    });
+    const started = record.lane.then(() =>
+      this.#executingDocument.run(docId, async () => {
+        // Read here, when the work actually runs — not when it was queued.
+        const version = record.version;
+        const value = await work({
+          docId: record.docId,
+          path: record.path,
+          version,
+          bumpVersion: () => {
+            record.version = asDocVersion(record.version + 1);
+            return record.version;
+          },
+        });
+        // Read AGAIN, after the work, still inside the lane. See `Versioned`.
+        return { value, version: record.version };
+      }),
+    );
 
     // The lane carries no failures forward. Without this, one command that
     // threw would reject every command after it on that document — turning a

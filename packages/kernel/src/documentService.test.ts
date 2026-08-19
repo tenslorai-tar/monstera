@@ -340,11 +340,10 @@ describe('DocumentService — the per-document lane', () => {
     expect(order).toStrictEqual(['a:start', 'a:end', 'b:start']);
   });
 
-  it('hands work the version it runs at, and stamps the result with it', async () => {
+  it('hands work the version it runs at, and stamps a query with the same one', async () => {
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry);
-    const opened = await service.open(registry.mint(original()));
-    const docId = mustOpen(opened);
+    const docId = mustOpen(await service.open(registry.mint(original())));
 
     const result = await service.run(docId, (context) => Promise.resolve(context.version));
 
@@ -353,6 +352,65 @@ describe('DocumentService — the per-document lane', () => {
     // the result with it" has no words.
     expect(result).toStrictEqual({ value: 1, version: 1 });
     expect('versionOf' in service).toBe(false);
+  });
+
+  it('CONTROL: a command that bumps is stamped with the version it PRODUCED', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const result = await service.run(docId, (context) => {
+      expect(context.version).toBe(1); // what the work operates against
+      context.bumpVersion();
+      return Promise.resolve('mutated');
+    });
+
+    // Stamping the PRE-work version returns the version this command REPLACED.
+    // That is §7's failure with the sign flipped: instead of a query stamped
+    // too new, a command stamped too old — a fresh result the renderer's
+    // staleness check reads as stale, and a later stale one it can read as
+    // fresh. The two values are different and only one of them is the stamp.
+    expect(result).toStrictEqual({ value: 'mutated', version: 2 });
+  });
+
+  it('CONTROL: a query queued behind a command sees the version the command produced', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const held = deferred();
+    const command = service.run(docId, async (context) => {
+      await held.promise;
+      context.bumpVersion();
+      return 'command';
+    });
+    const query = service.run(docId, (context) => Promise.resolve(context.version));
+
+    held.release();
+    expect(await command).toStrictEqual({ value: 'command', version: 2 });
+    // Not 1. The lane is serial, so the query cannot observe the pre-bump
+    // value — which is the same argument that makes reading the stamp after
+    // the work exact for both kinds.
+    expect(await query).toStrictEqual({ value: 2, version: 2 });
+  });
+
+  it('REENTRY: work cannot re-enter its own document lane', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    // The inner entry queues behind the outer while the outer awaits the inner.
+    // Without the guard this test does not fail — it HANGS, which is why the
+    // guard exists: a named error is debuggable in seconds, a hang is a bug
+    // report.
+    await expect(
+      service.run(docId, () => service.run(docId, () => Promise.resolve('inner'))),
+    ).rejects.toThrow(/Lane reentry/);
+
+    // And the document still works afterwards.
+    await expect(service.run(docId, () => Promise.resolve('after'))).resolves.toMatchObject({
+      value: 'after',
+    });
   });
 
   it('a failed entry does not poison the lane for the next one', async () => {
