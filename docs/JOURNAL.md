@@ -478,15 +478,52 @@ one import, and the `because` change, which was a **tightening** forced by the
 cross-product check. Read them and that is visible. But nothing made an auditor
 read them, and the column reported zero.
 
-The hazard is the general case: a proof loosened in one commit and re-tightened
-in another inside the same range shows **zero deletions**, while the loosened
-state was committed and pushed in between. The instrument that exists to make
-loosening visible cannot see loosening that was subsequently reverted.
+**"Benign here" is not the reason to fix it, and recording it that way would get
+it deprioritised by whoever reads this next.** The reason is that U-2 is the
+range-scoped audit's own founding argument turned on its own instrument.
+
+This project audits ranges rather than trees because *an end state that looks
+clean hides defects that arrived and were corrected inside the range* — measured
+in the range before this one, where four of eight substantive commits corrected
+something an earlier commit had introduced. A column reporting the **net range
+diff** is a tree-wide sweep at smaller scale: the same shape, the same blindness,
+one level down. The instrument built to stop an auditor trusting a clean end
+state presents a clean end state of its own.
+
+So the hazard is not hypothetical in kind, only in instance: a proof loosened in
+one commit and re-tightened in another inside the same range shows **zero
+deletions**, while the loosened state was committed and pushed in between.
+
+**The blind spot's exact limit, stated so nobody overclaims it:** it needs an
+*exact revert* within the range. A loosening replaced by a *different* tightening
+still shows in the net diff, because the lines differ. That is narrow — and it is
+narrow in precisely the way "the end state is clean" is narrow, which is the case
+this project already decided was worth an instrument.
 
 Cheap fix, not taken here: have `audit:scope` report per-commit churn for files
 in the proofs column alongside the range total. Left **open**, with the fix
 named, because changing that instrument needs its own resolution test and this
 range's owed work is C.
+
+### The first quantitative evidence the mechanisms are paying, and it is one data point
+
+Worth stating on its own rather than leaving inside item 1, and worth stating
+with its limit attached.
+
+- **Previous range:** four of eight substantive commits corrected something an
+  earlier commit in the same range had introduced. Found by an audit reading the
+  diff afterwards.
+- **This range:** three corrections happened **inside** the commits that caused
+  them, before anything was pushed — the elision's truncated-dump gap, the
+  confusable `because` pair, and a vacuous test. All three were caught by
+  instruments firing during the work.
+
+That is the difference between *finding* defects and *not shipping* them, and it
+is the trend that decides whether this scaffolding was worth building.
+
+**One range is not a trend.** Measure it again next range before anyone calls it
+one — and record the comparison whichever way it goes, because a measurement kept
+only when it flatters the mechanism is not a measurement.
 
 ### The rest of the checklist
 
