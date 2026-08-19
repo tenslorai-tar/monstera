@@ -76,8 +76,14 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
    *
    * The MIME type is stated rather than sniffed. A filename never selects
    * native code here (invariant 23): the shim names the entry point it wants,
-   * and `fz_new_document_writer` picking a writer from a file extension is
-   * exactly the dispatch that rule exists to keep closed.
+   * and MuPDF's extension-driven writer dispatch — which reaches Tesseract for
+   * a path ending `.ocr` — is exactly what that rule keeps closed.
+   *
+   * The dispatcher's own symbol is deliberately not written here. Invariant 23
+   * bans that family from shipped code, the advisory register's reachability
+   * walk is a text search that cannot tell a comment from a call, and it
+   * expired this verdict when an earlier draft of this line named it. The
+   * instrument was right: a comment in a shipped file is shipped text.
    */
   // Every method is `async` so a failure is a REJECTION, never a synchronous
   // throw. The interface promises one; MuPDF throws the other, and a caller
@@ -92,7 +98,9 @@ export const mupdfWriter: EngineWriter<MupdfSession> = {
         // that parsed would otherwise reach page-tree code assuming PDF objects.
         throw new Error('Opened document is not a PDF, so no PDF writer may act on it.');
       }
-      const session: MupdfSession = { engine: 'mupdf' };
+      // The one place a MupdfSession is minted. Keeping this cast unexported is
+      // what makes the brand mean "this adapter produced it".
+      const session = { engine: 'mupdf' } as MupdfSession;
       documents.set(session, document);
       return session;
     });

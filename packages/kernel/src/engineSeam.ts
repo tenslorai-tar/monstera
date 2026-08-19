@@ -1,4 +1,5 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
+import { type Brand } from '@monstera/shared';
 
 /**
  * The seam between the kernel and the engines that write documents (ADR-0009
@@ -31,15 +32,31 @@ import { type CommandKind, type CommandOfKind } from '@monstera/contract';
  * visible on inspection and a type's expressiveness is not, which is why this
  * one needs a fixture and that one does not.
  *
- * ## `DocumentService` keeps the canonical bytes
+ * ## §8's second constraint is ENABLED here, not satisfied
  *
- * Every session is **opened from bytes the kernel holds** and serialises back
- * to bytes; nothing here lets an engine become the owner of authoritative
- * state. That is §8's second constraint and it is the easier one to lose — a
- * live-session-first design drifts naturally into "the session *is* the
- * document", which forecloses the recovery path ADR-0007 makes the designed
- * response to a memory breach: killing the engine process. With the bytes on
- * this side, that is a re-open rather than a loss.
+ * §8 says `DocumentService` keeps the canonical bytes, so that killing an
+ * engine process — ADR-0007's *designed* response to a memory breach — is a
+ * re-open rather than a loss.
+ *
+ * What this seam does is keep that reachable: `open` takes bytes and
+ * `serialise` returns them, so **nothing forces an engine to become
+ * authoritative**. A live-session-first design drifts naturally into "the
+ * session *is* the document", and this shape does not.
+ *
+ * **What it does NOT do is satisfy the constraint.** `DocumentService` holds no
+ * bytes today — its record is `docId`, `handle`, `path`, `openedIdentity`,
+ * `version`, `savedVersion`, and the lane. So killing an engine host right now
+ * loses everything since the last save; the only bytes anywhere are the file on
+ * disk. An earlier draft of this comment said the opposite, which would have
+ * been read as a guarantee by exactly the code that depends on it.
+ *
+ * Retaining a full document image per open document is its own design unit with
+ * ADR-0007 budget consequences, so it is sized rather than arriving as a field.
+ * The obligation has a **trigger** rather than a place on a list:
+ * `kernel-holds-canonical-bytes` in `docs/security/engine-advisories.json` turns
+ * `check:advisories` red the day `documentService.ts` names `ByteImage` or
+ * `Uint8Array` — which is the day a save pipeline or a recovery path first
+ * assumes the bytes are there.
  */
 
 /**
@@ -56,18 +73,27 @@ export type WriterShape = 'live-session' | 'byte-image';
 /**
  * A live MuPDF session.
  *
- * Opaque here on purpose: the kernel passes it back to the adapter and to the
+ * Opaque on purpose: the kernel passes it back to the adapter and to the
  * command that declared MuPDF as its writer, and nothing else may reach into
- * it. The concrete type lives in the adapter module.
+ * it. The concrete document lives in the adapter module.
+ *
+ * **Branded, for the same reason `CanonicalPath` is.** Unbranded this was
+ * `{ readonly engine: 'mupdf' }`, which any object literal satisfies
+ * structurally — so a fabricated session type-checked and the adapter's
+ * `WeakMap` caught it at runtime, on its way to a native call. The hazard is
+ * strictly worse than the one branding already covers for paths (a wrong string
+ * comparison), so leaving this one to a runtime check would have been an
+ * asymmetry with no argument behind it.
+ *
+ * The brand and the `WeakMap` do different jobs and both are needed: the brand
+ * makes fabrication a **compile error**, and the `WeakMap` covers what a brand
+ * cannot — a genuinely-minted session that has already been closed, or one
+ * minted by a different adapter instance.
  */
-export interface MupdfSession {
-  readonly engine: 'mupdf';
-}
+export type MupdfSession = Brand<{ readonly engine: 'mupdf' }, 'MupdfSession'>;
 
 /** A live PDFium session. Declared, with no adapter behind it yet. */
-export interface PdfiumSession {
-  readonly engine: 'pdfium';
-}
+export type PdfiumSession = Brand<{ readonly engine: 'pdfium' }, 'PdfiumSession'>;
 
 /**
  * What each writer of record works on.

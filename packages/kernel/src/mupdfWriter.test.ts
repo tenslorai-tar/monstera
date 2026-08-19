@@ -1,7 +1,7 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { type ByteImage } from './engineSeam.js';
+import { type ByteImage, type MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 
 /**
@@ -55,13 +55,12 @@ describe('mupdfWriter — session lifecycle', () => {
   });
 
   it('CONTROL: a session from elsewhere is refused rather than dereferenced', async () => {
-    // The seam hands back an opaque token. A `{ engine: 'mupdf' }` that this
-    // adapter did not produce satisfies the exported type and has no document
-    // behind it — the failure must be a named error, not a property access on
-    // undefined somewhere inside a native call.
-    await expect(mupdfWriter.serialise({ engine: 'mupdf' })).rejects.toThrow(
-      /not produced by this adapter/,
-    );
+    // Fabricating one is now a COMPILE error — MupdfSession is branded — so
+    // the assertion has to be written here, in the file making it. What the
+    // WeakMap covers is what the brand cannot: a token that is nominally a
+    // session but was never minted by this adapter.
+    const forged = { engine: 'mupdf' } as unknown as MupdfSession;
+    await expect(mupdfWriter.serialise(forged)).rejects.toThrow(/not produced by this adapter/);
   });
 
   it('CONTROL: bytes that are not a PDF are refused at open', async () => {
