@@ -58,6 +58,48 @@ function section(title, entries) {
   return `  ${title} (${entries.length}):\n${entries.map((entry) => `    ${entry}\n`).join('')}`;
 }
 
+/**
+ * The modified-proofs column, with **both** churn figures (audit finding U-2).
+ *
+ * The net range diff was all this printed, and that made the column a tree-wide
+ * sweep at smaller scale: a line added in one commit and rewritten in a later
+ * one nets to an insertion, so the deletion never appeared. The instrument that
+ * exists to make a loosened check visible was itself presenting a clean end
+ * state — the exact reasoning that moved this project from tree-wide audits to
+ * ranges, one level down.
+ *
+ * Printing both is the whole fix. When they differ, the range diff is not the
+ * thing to read: `git log -p <range> -- <path>` is, because the intermediate
+ * states are where a loosening lived.
+ *
+ * @param {import('../lib/auditWatermark.mjs').ProofChurn[]} entries
+ * @returns {string}
+ */
+function proofChurnSection(entries) {
+  const title = 'proofs MODIFIED — read each diff; a loosened check looks like a corrected one';
+  if (entries.length === 0) return `  ${title}: none\n`;
+
+  return (
+    `  ${title} (${entries.length}):\n` +
+    entries
+      .map((entry) => {
+        const net = `+${entry.net.added} -${entry.net.removed}`;
+        const walked = `+${entry.perCommit.added} -${entry.perCommit.removed}`;
+        const hidden = entry.perCommit.removed - entry.net.removed;
+        return (
+          `    ${entry.path}\n` +
+          `      net ${net}   per-commit ${walked}\n` +
+          (hidden > 0
+            ? `      ${hidden} deletion(s) DO NOT APPEAR in the range diff — a line added and then\n` +
+              `      rewritten inside this range nets to an insertion. Read: git log -p ` +
+              `${scope.watermark}..HEAD -- ${entry.path}\n`
+            : '')
+        );
+      })
+      .join('')
+  );
+}
+
 const scope = auditScope({ root: ROOT });
 
 if (process.argv.includes('--record')) {
@@ -81,7 +123,7 @@ process.stdout.write(
     `  commits: ${scope.commits} (one batch is ${BATCH.commits})\n` +
     `  files:   ${scope.files.length} (one batch is ${BATCH.files})\n\n` +
     section('proofs ADDED — new coverage', scope.proofsAdded) +
-    section('proofs MODIFIED — read each diff; a loosened check looks like a corrected one', scope.proofsModified) +
+    proofChurnSection(scope.proofChurn) +
     section('new scripts — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
     `\n`,
 );

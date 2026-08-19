@@ -550,6 +550,16 @@ in the proofs column alongside the range total. Left **open**, with the fix
 named, because changing that instrument needs its own resolution test and this
 range's owed work is C.
 
+**CLOSED after C.** The column now prints both figures and, when they differ,
+says how many deletions the range diff hides and names the command that shows
+them. Two cases, and the second is what keeps it useful: a rewrite inside the
+range must make the figures **differ** by one hidden deletion, and an
+append-only change must make them **agree** — a report that always claims a
+difference is a warning nobody reads by the third range. Checked against the
+real case as well as the synthetic one: on `b315e2c..77d4c2c`,
+`contract.proof.mjs` is `net −0` and `per-commit −14`, so the instrument would
+have printed the line on the range that produced the finding.
+
 ### The first quantitative evidence the mechanisms are paying, and it is one data point
 
 Worth stating on its own rather than leaving inside item 1, and worth stating

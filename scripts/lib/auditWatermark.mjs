@@ -85,6 +85,11 @@ export function readWatermark(root = repoRoot()) {
  *   files: string[],
  *   proofsAdded: string[],
  *   proofsModified: string[],
+ *   proofChurn: Array<{
+ *     path: string,
+ *     net: { added: number, removed: number },
+ *     perCommit: { added: number, removed: number },
+ *   }>,
  *   newScripts: string[],
  *   overBudget: string[],
  * }}
@@ -107,6 +112,78 @@ export function auditScope({ root = repoRoot(), head = 'HEAD' } = {}) {
   const range = `${commit}..${head}`;
   const commits = Number(`${git(['rev-list', '--count', range], { cwd: root }).stdout}`.trim());
 
+  return buildScope({ commit, range, commits, root });
+}
+
+/**
+ * @typedef {{
+ *   path: string,
+ *   net: { added: number, removed: number },
+ *   perCommit: { added: number, removed: number },
+ * }} ProofChurn
+ */
+
+/**
+ * Insertions and deletions for one path, **as the range reports them and as the
+ * commits actually made them** (audit finding U-2).
+ *
+ * The two differ, and the difference is the whole point of measuring both. A
+ * range diff shows the NET change: a line added in one commit and rewritten in a
+ * later one appears as a single insertion, so the deletion is invisible.
+ *
+ * That matters for exactly one column. The modified-proofs column exists because
+ * *a loosened check looks like a corrected one*, and it tells an auditor to read
+ * each diff. Reporting the net range diff makes it **a tree-wide sweep at
+ * smaller scale** — the same shape and the same blindness as the whole-tree
+ * audit this project replaced, one level down. The instrument built to stop an
+ * auditor trusting a clean end state was presenting a clean end state of its
+ * own.
+ *
+ * **The blind spot's exact limit, so nobody overclaims it:** it needs an *exact
+ * revert* within the range. A loosening replaced by a *different* tightening
+ * still shows in the net diff, because the lines differ. That is narrow — and
+ * narrow in precisely the way "the end state is clean" is narrow.
+ *
+ * Measured on the range that produced the finding: `contract.proof.mjs` reported
+ * `+191 −0` net and `+72 −0` then `+133 −14` per commit, so fourteen deletions —
+ * including a `because` matcher being re-anchored — appeared nowhere.
+ *
+ * @param {string} range
+ * @param {string} path
+ * @param {string} root
+ * @returns {{ net: { added: number, removed: number }, perCommit: { added: number, removed: number } }}
+ */
+function churnFor(range, path, root) {
+  /** @param {readonly string[]} args */
+  const sum = (args) => {
+    let added = 0;
+    let removed = 0;
+    for (const line of `${git([...args, '--', path], { cwd: root }).stdout}`.split('\n')) {
+      const [a = '', r = ''] = line.trim().split('\t');
+      // A binary file reports `-`, which is not zero and must not be counted as
+      // zero — Number('-') is NaN, and a NaN total would print as a churn of
+      // NaN rather than as a silent 0.
+      if (a === '-' || r === '') continue;
+      added += Number(a);
+      removed += Number(r);
+    }
+    return { added, removed };
+  };
+
+  return {
+    net: sum(['diff', '--numstat', range]),
+    // `log --numstat` walks each commit, so a line added then rewritten counts
+    // in both directions rather than cancelling.
+    perCommit: sum(['log', '--numstat', '--format=', range]),
+  };
+}
+
+/**
+ * @param {{ commit: string, range: string, commits: number, root: string }} input
+ * @returns {ReturnType<typeof auditScope>}
+ */
+function buildScope({ commit, range, commits, root }) {
+
   // Added and modified are reported apart because they mean opposite things for
   // a proof. A NEW proof is coverage arriving. A MODIFIED one is a check whose
   // meaning changed, and a fix that quietly loosened it looks exactly like one
@@ -123,12 +200,15 @@ export function auditScope({ root = repoRoot(), head = 'HEAD' } = {}) {
 
   const isProof = (/** @type {string} */ path) => /\.proof\.mjs$|proofs\//u.test(path);
 
+  const modified = status.filter((e) => e.state === 'M' && isProof(e.path)).map((e) => e.path);
+
   return {
     watermark: commit,
     commits,
     files: status.map((entry) => entry.path),
     proofsAdded: status.filter((e) => e.state === 'A' && isProof(e.path)).map((e) => e.path),
-    proofsModified: status.filter((e) => e.state === 'M' && isProof(e.path)).map((e) => e.path),
+    proofsModified: modified,
+    proofChurn: modified.map((path) => ({ path, ...churnFor(range, path, root) })),
     newScripts: status
       .filter((e) => e.state === 'A' && e.path.startsWith('scripts/') && !isProof(e.path))
       .map((e) => e.path),

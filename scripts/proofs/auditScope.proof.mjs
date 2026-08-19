@@ -141,6 +141,51 @@ try {
     );
   }
 
+  // Finding U-2: the column reported the NET range diff, so a line added in one
+  // commit and rewritten in a later one showed as an insertion with the deletion
+  // nowhere. The column exists to make a loosened check visible; reporting the
+  // net turned it into a tree-wide sweep at smaller scale.
+  {
+    // A rewrite INSIDE the range. Two commits: one appends, the next changes the
+    // line it appended.
+    writeFileSync(join(scratch, 'scripts.proof.mjs'), 'export const a = 2;\nexport const b = 2;\n', 'utf8');
+    git(scratch, ['add', '-A']);
+    git(scratch, ['commit', '--quiet', '-m', 'append a line']);
+    writeFileSync(join(scratch, 'scripts.proof.mjs'), 'export const a = 2;\nexport const b = 3;\n', 'utf8');
+    git(scratch, ['add', '-A']);
+    git(scratch, ['commit', '--quiet', '-m', 'rewrite the line just appended']);
+
+    const scope = auditScope({ root: scratch });
+    const churn = scope.proofChurn.find((entry) => entry.path === 'scripts.proof.mjs');
+
+    check(
+      'RESOLUTION: per-commit churn reports a deletion the NET range diff does not',
+      churn !== undefined && churn.perCommit.removed > churn.net.removed,
+      `net -${String(churn?.net.removed ?? '?')} vs per-commit -${String(churn?.perCommit.removed ?? '?')}. ` +
+        `These must DIFFER on a rewrite inside the range, by the smallest amount that changes a ` +
+        `decision — one hidden deletion. Equal figures mean the report is reading one number ` +
+        `twice, which is the shape the finding was about.`,
+    );
+
+    // Append only, no rewrite: the two figures must AGREE. Without this the case
+    // above is satisfied by a report that always claims a difference, which
+    // would send an auditor to `git log -p` on every clean range and get the
+    // line ignored.
+    writeFileSync(join(scratch, 'scripts', 'proofs', 'fresh.proof.mjs'), 'export const a = 1;\nexport const c = 1;\n', 'utf8');
+    git(scratch, ['add', '-A']);
+    git(scratch, ['commit', '--quiet', '-m', 'append only']);
+
+    const after = auditScope({ root: scratch });
+    const appended = after.proofChurn.find((e) => e.path === 'scripts/proofs/fresh.proof.mjs');
+    check(
+      'CONTROL: an append-only proof reports the SAME figures both ways',
+      appended === undefined || appended.net.removed === appended.perCommit.removed,
+      `net -${String(appended?.net.removed ?? '?')} vs per-commit ` +
+        `-${String(appended?.perCommit.removed ?? '?')} — a report that always differs is a ` +
+        `warning nobody reads by the third range.`,
+    );
+  }
+
   // An unreachable watermark must throw rather than report an empty range.
   {
     setWatermark('deadbee');
