@@ -114,6 +114,16 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
       entry.kind === 'invertible' ? entry.inverse : null,
     );
 
+    // COUPLED TO THE TEST ABOVE, deliberately and with a cost worth stating.
+    // The service, the session and the document are module-level, so these
+    // figures encode the first test's effect: 90 is what it left, 180 is what
+    // the first of this pair produced. Run alone, this case fails loudly rather
+    // than passing — so it is not vacuous — but a change to the first test moves
+    // this one's expectations for a reason that has nothing to do with what it
+    // asserts. Left as it is because the alternative is computing the expected
+    // values from the observed ones, which is the assertion agreeing with
+    // itself.
+    //
     // Three commands have run in this describe block: the first test's, and the
     // two above. Read the LAST TWO, and they must differ — which is the whole
     // assertion, because interleaving makes them identical.

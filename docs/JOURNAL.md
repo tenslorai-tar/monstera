@@ -350,6 +350,14 @@ it constrains these components, so it does not gate them.
 
 **Next, in order:**
 
+> **BEFORE ANY OF IT — the lockfile guard, 2026-08-19.** The lockfile itself is
+> repaired (`686d1a7`) and CI can install again, but the guard for that class
+> answers with whichever npm is installed and this machine's cannot see the
+> defect (finding F-3). Adding a dependency is precisely the incremental install
+> that produced occurrences 2 and 3, so the Electron unit runs straight at it.
+> Fix the guard, watch CI go green, then start Electron. The shape is a decision
+> the owner should weigh, not one to inherit — see the correction section below.
+>
 > **Where the list stands, 2026-08-19.** Items 1 and 2 are built **kernel-side
 > and unwired** — `DocumentService`, the stateless `CommandBus`, the log on the
 > record, `rotatePages` with its inverse, and §9's failure type. The immediate
@@ -569,6 +577,10 @@ nobody reading it; that gap is now closed at the commit. W-1, **no**: CI runs
 A proof written from the same assumption as the thing it checks is not
 independent evidence.
 
+> **The first sentence of that answer is WRONG. See the correction below** — CI
+> could not have caught W-2, because CI had not executed a proof since
+> 2026-08-17.
+
 **4. Non-vacuous.** Eleven mutations run, each reddening its own case and no
 other: three on the failure-shape union, one on the named error, one on the
 lane's serialisation, one on the §9 fixture's path, two on `isProof` in opposite
@@ -617,6 +629,91 @@ Two, against the previous range's two. **Flat, not improving** — and two range
 is still not a trend. What the two audit-caught items have in common is worth
 more than the count: both are instruments that could not see part of their own
 subject, which is now three ranges running.
+
+### Correction, 2026-08-19 — CI had not run a proof in two days, and this entry assumed it had
+
+Three findings from the Actions API, which this session could not reach. They
+are measured except where marked.
+
+**F-1. Item 3 above is wrong about W-2.** It says CI *"did"* catch the contract
+proof's drift, *"for three pushes, with nobody reading it"*. It did not. The last
+successful `ci.yml` run is **4579645, 2026-08-17** — 138 commits back. Every run
+since fails at the **Install** step, all three jobs, both platforms, with
+
+```
+npm error code EUSAGE
+Missing: @emnapi/runtime@1.11.3 from lock file
+Missing: @emnapi/core@1.11.3 from lock file
+```
+
+So no CI job has executed a proof since the day before yesterday, and
+`674c453`'s commit message carries the same mistake: it reads as though a working
+CI had gone red unread. What actually happened is that nothing ran. **The
+correct answer to "would CI have caught it" for the whole range is *no*, for
+every finding in it** — which also removes the mitigation that entry leaned on,
+and is why the pre-commit contract gate is not merely a convenience.
+
+The mistake is worth naming for its shape: I read `ci.yml:141` and concluded
+what CI *would* do. That is a declaration, and the project's own rule is that a
+declaration is not behaviour. Reading a workflow file is not reading a run.
+
+**F-2. The lockfile was occurrence 3 of the regenerating class.**
+`@img/sharp-wasm32` declares `@emnapi/runtime ^1.11.1` and
+`@napi-rs/wasm-runtime` declares `@emnapi/core`, and the lock carried **no
+top-level entry for either** — only a nested 1.10.0 pair under
+`@unrs/resolver-binding-wasm32-wasi`. The documented repair, in its own commit:
+`686d1a7`.
+
+**F-3. And the guard built for that class cannot see it from this machine.**
+This is the finding, not the lockfile. Measured, same clean `git archive` export
+with no `node_modules`, same lockfile:
+
+| npm | `npm ci --dry-run --ignore-scripts` |
+|---|---|
+| 11.6.2 (Node 24.12.0, this machine) | **exit 0**, printing *"added 217 packages"* |
+| 11.17.0 (Node 24.19.0, what the runners resolved) | **exit 1**, the annotation verbatim |
+
+`lockfileIntegrity.mjs`'s header says the check is *"npm's own validation rather
+than a reimplementation of it"*. That premise does not hold: this npm answers a
+different question — it resolves an ideal tree and reports what it *would*
+install, which is indistinguishable from validating one.
+
+`e259d17` pins the runner's Node exactly, which closes the half where CI's npm
+could move without a commit. **It does not fix the guard**, and regenerating the
+lockfile without fixing it is the repair-that-regenerates shape the guard exists
+to prevent: the instance closes and the instrument stays exactly as blind.
+
+**OWED, as its own unit and before anything builds on it:** the guard must stop
+depending on whichever npm is installed. The shape is not chosen here — the
+candidates are a provisioned npm pinned the way `gitleaks` is, or a refusal when
+the local npm is older than `NPM_VERSION`, and the second blocks every
+dependency-touching commit on a machine that has not been updated, which is a
+cost the owner should weigh rather than inherit.
+
+**F-4. Guards was red independently, and it was NOT the live OSV query.**
+Reproduced rather than inferred, in a worktree with no `.tools/`: the OSV query
+**succeeded** (`74 advisories … all triaged`) and the failure came four lines
+later, from the T-1 witness rule reading *"the derivation could not run"* as
+*"the derivation found nothing"*. Fixed in `02f21d8`, with the distinction now
+carried in both directions.
+
+The live-query exposure is real and is **not** what broke this: a required gate
+that depends on an unauthenticated third-party POST goes red for reasons that
+have nothing to do with the code. Recorded as a separate item; the fix is not
+obvious, since the query is also what makes the register honest, and skipping it
+on a network error is the *"could not check"* reading *"nothing to report"*
+failure this whole check exists to refuse. It already refuses correctly.
+
+**What the two days cost, and it is the point.** Every push in this range was
+made against a green local board and a CI that had not run. Two of this range's
+four findings were about instruments that could not see their subject; this makes
+a third, one layer out — **the board itself**. A red CI nobody reads is the same
+failure as a green check that verifies nothing, and it lasted 138 commits.
+
+**One more count for the record:** the escape-resolving-write hook denied **three**
+calls during this range's work — a `python -c`, a `node -e` and a `sed -i` — all
+three reflexive one-liners in the middle of ordinary work, none a probe. That is
+the mechanism doing the job the written rule failed at seven times.
 
 ---
 
