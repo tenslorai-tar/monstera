@@ -264,6 +264,28 @@ const CASES = [
       ),
   },
   {
+    name: 'text file whose only NUL byte is past the 8000-byte sniff window',
+    expect: 'reject',
+    because: 'NUL byte',
+    // The twin of the case above, and its absence is why the delegation gap
+    // survived the very fix that closed the window problem. That fix split the
+    // sniff window from the corruption scan for every C0 byte EXCEPT NUL, which
+    // it left delegated to `looksBinary` — and `looksBinary` reads only the
+    // window. So the repair's own proof tested the window for the bytes that
+    // were not delegated, and the one that was went on being unchecked past
+    // byte 8000.
+    //
+    // Found for real: `scripts/proofs/contract.proof.mjs` carried a literal NUL
+    // at byte 19204 and `guard:tree` passed it, exit 0.
+    setup: (root) =>
+      stage(
+        root,
+        'long-notes-with-nul.md',
+        `${'Filler line that is unremarkable prose.\n'.repeat(600)}` +
+          `A sentinel leaked into the text: ${String.fromCharCode(0)}\n`,
+      ),
+  },
+  {
     name: 'long clean text file past the sniff window',
     expect: 'accept',
     // Control for the case above: a file of the same shape and size with no

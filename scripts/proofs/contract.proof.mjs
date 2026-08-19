@@ -492,10 +492,22 @@ function diagnose(output) {
 /**
  * A brace-free stand-in used while collapsing dumps. See {@link elideTypeDumps}.
  *
- * Written as an escape rather than a literal so it is visible in source, and
- * chosen as a character no compiler diagnostic can contain.
+ * NUL, because no compiler diagnostic can contain one.
+ *
+ * **Constructed numerically, never written as a literal.** A raw NUL in this
+ * file makes it binary to git and to grep: diffs stop rendering and searches
+ * skip it. That is not hypothetical — this constant was a literal NUL for one
+ * commit, and it is what surfaced the guard gap that let it through
+ * (`findControlCharacter` had delegated NUL to a check that reads only the
+ * first 8000 bytes).
+ *
+ * `String.fromCharCode(0)` also sidesteps a second trap, met while fixing the
+ * first: a backslash-u-0000 escape is one backslash away from the SIX-CHARACTER
+ * text of the same name, and the two are indistinguishable at a glance in a
+ * diff. Writing the intent as arithmetic removes the question — and no escape
+ * for a control character appears anywhere in this file, deliberately.
  */
-const DUMP_SENTINEL = ' ';
+const DUMP_SENTINEL = String.fromCharCode(0);
 
 /**
  * Collapses every `{ … }` — **at every level** — to a single `{…}`.

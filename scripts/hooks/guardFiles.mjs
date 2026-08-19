@@ -294,9 +294,22 @@ function blobBytes(sha) {
 /**
  * The first byte in `bytes` that is a C0 control character, or -1.
  *
- * Tab, LF and CR are legitimate text. NUL is excluded because `looksBinary`
- * keys on it, so it is already handled as a type question rather than a
- * corruption one.
+ * Tab, LF and CR are legitimate text. **Everything else, NUL included.**
+ *
+ * NUL used to be excluded here, on the reasoning that `looksBinary` keys on it
+ * so it is already handled as a type question rather than a corruption one.
+ * That sentence is true only for the **first 8000 bytes**, which is all
+ * `looksBinary` reads. Past that window nothing checked NUL at all.
+ *
+ * This is the same defect this check already fixed once, arriving as one
+ * reasonable-looking exception. The repair split the sniff window from the
+ * corruption scan for every C0 byte **except the one it delegated away** — and
+ * the delegation target still had the limitation the repair existed to correct.
+ * Fixing the class means not leaving a byte behind on someone else's window.
+ *
+ * A NUL found here is by construction one `looksBinary` could not see, so both
+ * readings — a corrupt text file, or a binary the type check misclassified —
+ * warrant rejection, and the message names both rather than picking one.
  *
  * @param {Buffer} bytes
  * @returns {number} Index of the first offending byte, or -1.
@@ -305,7 +318,7 @@ function findControlCharacter(bytes) {
   for (let index = 0; index < bytes.length; index += 1) {
     const byte = bytes[index];
     if (byte === undefined) continue;
-    if ((byte < 0x09 && byte > 0x00) || byte === 0x0b || byte === 0x0c) return index;
+    if (byte < 0x09 || byte === 0x0b || byte === 0x0c) return index;
     if ((byte >= 0x0e && byte <= 0x1f) || byte === 0x7f) return index;
   }
   return -1;
@@ -448,17 +461,26 @@ function violations(path, sha, size, scope) {
   // two questions need different amounts of the file: "is this binary" is a
   // property of the start, "is this corrupt" is a property of all of it.
   //
-  // Tab, LF and CR are excluded — they are legitimate text. NUL is not checked
-  // here because it is what `looksBinary` keys on, so it is already handled.
+  // Tab, LF and CR are excluded — they are legitimate text. NUL is INCLUDED,
+  // and used not to be: it was delegated to `looksBinary`, which reads only the
+  // sniff window, so a NUL past byte 8000 was checked by nothing. That is this
+  // check's own defect repeating on the one byte it handed away — see
+  // `findControlCharacter`.
   if (!looksBinary(head)) {
     const at = findControlCharacter(blob);
     if (at !== -1) {
       const byte = blob[at] ?? 0;
       reasons.push(
-        `is a text file containing the control character 0x${byte.toString(16).padStart(2, '0')} ` +
-          `at byte ${at}. These are nearly always a mangled escape sequence rather than intent, ` +
-          `and they are invisible in most viewers — the surrounding text simply appears to lose ` +
-          `characters.`,
+        byte === 0x00
+          ? `contains a NUL byte at byte ${at}, past the ${String(SNIFF_BYTES)}-byte window the ` +
+            `type check reads — so it was classified as text without anything having looked ` +
+            `there. Either it is a text file corrupted by a tool that resolved an escape, or it ` +
+            `is a binary the type check could not recognise. Both are rejected; which one it is ` +
+            `is for you to say, not for this guard to guess.`
+          : `is a text file containing the control character 0x${byte.toString(16).padStart(2, '0')} ` +
+            `at byte ${at}. These are nearly always a mangled escape sequence rather than intent, ` +
+            `and they are invisible in most viewers — the surrounding text simply appears to lose ` +
+            `characters.`,
       );
     }
   }
