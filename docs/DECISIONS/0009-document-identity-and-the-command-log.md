@@ -553,3 +553,56 @@ answer.
 **The unmeasured row is unchanged.** A genuine mapped network drive still cannot
 be produced on this machine, and it is still recorded as unmeasured rather than
 inferred. What is fixed is that a machine which *cannot* answer now says so.
+
+---
+
+## Clarification, 2026-08-19 — §7 and §2 both bind on close, and close splits in two
+
+Written when §7's lane was built, because **read literally the two sections
+contradict each other** and the next reader deserves the resolution rather than
+the puzzle.
+
+- §2 requires the index entry to be gone **before anything is awaited**. That is
+  what turns invariant L10 into a lookup miss instead of a discipline every
+  commit path has to remember.
+- §7 says save, queries and close run in the **same lane** as commands.
+
+Queue the whole of close behind pending commands and §2's property is lost: the
+document is closing and still findable, which is the window `c86b434` shut.
+Bypass the lane entirely and §7's is lost: an engine session gets torn down
+underneath a command still executing against it.
+
+Both are wanted and both are reachable, because they are properties of
+**different halves**:
+
+| half | where it runs | why |
+|---|---|---|
+| index removal | synchronous, outside every lane | it is the part that must not wait |
+| teardown | inside the document's lane | it is the part that must be serialised |
+
+They compose safely because the lane **lives on the record**. Once the record is
+gone the lane cannot be joined — lane lookup is get-or-**miss**, never
+get-or-create — so the captured lane is a closed set of already-accepted work
+and teardown is genuinely last. Teardown runs whether that work succeeded or
+failed; a command that threw still leaves a session to release.
+
+### Two related rules fixed at the same time, while there was one call site
+
+**Lane ordering.** There are two lanes: the service-wide index lane, and §7's
+per-document lane. The only permitted direction is **per-document → index**
+(save runs in a document's lane and calls the write-target check, which enters
+the index lane). Nothing may await a per-document lane from inside the index
+lane: these are promise chains with no reentrancy, so that direction
+self-deadlocks, and a `saveAll` or `closeAll` is the obvious future thing that
+would try it. Enforced rather than only written — the index lane marks its async
+context and `run` refuses inside it, so the violation is a named error rather
+than a hang.
+
+**No accessor for a document's current version.** §7 warns that a query result
+must carry the version echoed with the reply, never read from a main-side field
+after an await, or a query that executed at v3 gets stamped v4 and the
+renderer's staleness check passes on stale content. `versionOf(docId)` was
+exactly that field with a public getter on it. It is removed: the lane **hands**
+work the version it is running at and returns the result stamped with it, so the
+read-then-stamp sentence has no words. Building this now, while the API has one
+shape to change, is cheaper than adding it under a renderer later.

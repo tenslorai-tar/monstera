@@ -8,7 +8,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
 import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
-import { DocumentService, type IdentityReader, type OpenOutcome } from './documentService.js';
+import {
+  DocumentBusyError,
+  DocumentService,
+  type IdentityReader,
+  type OpenOutcome,
+} from './documentService.js';
 
 /**
  * What carries the weight here, as in the identity tests, is the set of cases
@@ -292,6 +297,203 @@ describe('DocumentService — close removes the document before it tears down', 
     await service.close(first);
 
     expect(await service.open(registry.mint(original()))).toMatchObject({ kind: 'opened' });
+  });
+});
+
+describe('DocumentService — the per-document lane', () => {
+  /** A promise plus its resolver, for holding a lane entry open on purpose. */
+  function deferred(): { promise: Promise<void>; release: () => void } {
+    let release = (): void => undefined;
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { promise, release };
+  }
+
+  it('two entries on one document do not interleave', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const first = deferred();
+    const order: string[] = [];
+
+    const a = service.run(docId, async () => {
+      order.push('a:start');
+      await first.promise;
+      order.push('a:end');
+      return 'a';
+    });
+    const b = service.run(docId, () => {
+      order.push('b:start');
+      return Promise.resolve('b');
+    });
+
+    // b must not have started. A save serialising a live engine session while a
+    // command mutates it writes a byte image mixing pre- and post-command
+    // state, and the atomic rename then promotes it over the user's file.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(order).toStrictEqual(['a:start']);
+
+    first.release();
+    await Promise.all([a, b]);
+    expect(order).toStrictEqual(['a:start', 'a:end', 'b:start']);
+  });
+
+  it('hands work the version it runs at, and stamps the result with it', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const opened = await service.open(registry.mint(original()));
+    const docId = mustOpen(opened);
+
+    const result = await service.run(docId, (context) => Promise.resolve(context.version));
+
+    // The stamp comes from the lane, not from the caller. There is no accessor
+    // for a document's current version, so "read it after the await and stamp
+    // the result with it" has no words.
+    expect(result).toStrictEqual({ value: 1, version: 1 });
+    expect('versionOf' in service).toBe(false);
+  });
+
+  it('a failed entry does not poison the lane for the next one', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    await expect(service.run(docId, () => Promise.reject(new Error('boom')))).rejects.toThrow(
+      /boom/,
+    );
+    // One bad command must not turn into a dead document.
+    await expect(service.run(docId, () => Promise.resolve('fine'))).resolves.toMatchObject({
+      value: 'fine',
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // THE CONTROLS.
+  // -------------------------------------------------------------------------
+
+  it('GET-OR-MISS: a closed document gets no lane, it gets a miss', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+    await service.close(docId);
+
+    // A lazily-filled Map<DocId, lane> would mint a lane here and run the work
+    // against a torn-down document — the resurrection L10 forbids, arriving
+    // through the structure meant to prevent it.
+    await expect(service.run(docId, () => Promise.resolve('x'))).rejects.toThrow(/not open/);
+  });
+
+  it('CLOSE SPLITS: removal is immediate, teardown waits for the lane to drain', async () => {
+    const registry = new CapabilityRegistry();
+    const held = deferred();
+    const torn: string[] = [];
+    const service = new DocumentService(registry, {
+      teardown: () => {
+        torn.push('teardown');
+        return Promise.resolve();
+      },
+    });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const running = service.run(docId, async () => {
+      await held.promise;
+      torn.push('command');
+      return 'done';
+    });
+
+    const closing = service.close(docId);
+
+    // Half 1: the index entry is already gone, with nothing awaited. This is
+    // what makes invariant L10 a lookup miss.
+    expect(service.isOpen(docId)).toBe(false);
+    expect(torn).toStrictEqual([]);
+
+    // Half 2: teardown has NOT run — it is queued behind the command. Tearing
+    // an engine session down underneath a command still executing against it is
+    // what §7's lane exists to prevent.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(torn).toStrictEqual([]);
+
+    held.release();
+    await Promise.all([running, closing]);
+    expect(torn).toStrictEqual(['command', 'teardown']);
+  });
+
+  it('teardown still runs when the pending work failed', async () => {
+    const registry = new CapabilityRegistry();
+    let torn = 0;
+    const service = new DocumentService(registry, {
+      teardown: () => {
+        torn += 1;
+        return Promise.resolve();
+      },
+    });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const failing = service.run(docId, () => Promise.reject(new Error('boom')));
+    const closing = service.close(docId);
+
+    await expect(failing).rejects.toThrow(/boom/);
+    await closing;
+    // A command that threw still leaves an engine session to release.
+    expect(torn).toBe(1);
+  });
+
+  it('THE CAP: a saturated lane refuses with a named busy failure', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    // Drive the cap without a pathological loop — which is why the limit is 64
+    // and not 1000. A cap no proof can reach is a vacuous check.
+    const held = deferred();
+    const queued = [service.run(docId, () => held.promise)];
+    for (let i = 1; i < 64; i += 1) queued.push(service.run(docId, () => Promise.resolve()));
+
+    await expect(service.run(docId, () => Promise.resolve())).rejects.toThrow(DocumentBusyError);
+
+    held.release();
+    await Promise.all(queued);
+
+    // And the lane recovers: refusing is back-pressure, not a broken document.
+    await expect(service.run(docId, () => Promise.resolve('after'))).resolves.toMatchObject({
+      value: 'after',
+    });
+  });
+
+  it('LANE ORDER: awaiting a document lane from inside the index lane is refused', async () => {
+    const registry = new CapabilityRegistry();
+
+    // It must be the SAME service on both sides. Written first with a second
+    // DocumentService reaching into the first, this case passed while proving
+    // nothing: the marker is per-instance, so one service's index lane is not
+    // inside the other's — and two independent lanes do not deadlock either, so
+    // there was nothing there to catch. The hazard is one service re-entering
+    // its own lanes.
+    const state: { doc?: DocId; attempt?: Promise<unknown> } = {};
+
+    const service: DocumentService = new DocumentService(registry, {
+      readIdentity: () => {
+        // `checkWriteTarget` calls this from inside the index lane. A
+        // service-wide saveAll or closeAll would reach for a document lane from
+        // exactly here — and these are promise chains with no reentrancy, so it
+        // would DEADLOCK silently rather than fail.
+        if (state.doc !== undefined && state.attempt === undefined) {
+          state.attempt = service.run(state.doc, () => Promise.resolve('x'));
+        }
+        return Promise.resolve(identity());
+      },
+    });
+
+    const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
+    state.doc = docId;
+
+    await service.checkWriteTarget(docId);
+
+    expect(state.attempt).toBeDefined();
+    await expect(state.attempt).rejects.toThrow(/Lane ordering violation/);
   });
 });
 

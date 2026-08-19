@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import { type DocId, type DocVersion, type FileHandle, asDocId, asDocVersion } from '@monstera/shared';
 
 import { type CapabilityRegistry } from './capabilityRegistry.js';
@@ -30,6 +32,33 @@ import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
  * the merge-only identity rule shippable ahead of the one filesystem shape
  * ADR-0009's correction could not measure: with it in place, a wrong identity
  * answer is a **caught error rather than a silent overwrite**.
+ *
+ * ## Two lanes, and the order between them is a rule
+ *
+ * There are two serial lanes here and they are not the same thing:
+ *
+ * - **`#indexLane`** is service-wide. It protects the open-document index
+ *   itself, because `open` is check-then-insert across an `await`.
+ * - **the per-document lane**, one per record, is ADR-0009 §7's: commands,
+ *   queries, save and teardown for one `DocId` queue behind each other.
+ *
+ * **The only permitted direction is per-document lane → index lane.** Save runs
+ * in a document's lane and calls {@link DocumentService.checkWriteTarget},
+ * which enters the index lane; that is the sanctioned nesting.
+ *
+ * **Nothing may await a per-document lane from inside the index lane.** These
+ * are promise chains with no reentrancy, so that direction self-deadlocks — the
+ * index-lane entry waits for a document lane that cannot start until the index
+ * lane frees. A service-wide `saveAll` or `closeAll` is the obvious future thing
+ * that would do it, and a deadlock is the worst failure to ship because it is
+ * silent.
+ *
+ * The rule is enforced rather than only written: {@link DocumentService.run}
+ * refuses when it is called from inside the index lane's async context, so the
+ * violation is a named error at the call site rather than a hang. A depth
+ * counter was rejected for this — it cannot tell "called from inside the index
+ * lane" from "called concurrently while an index-lane entry happens to be
+ * mid-await", and a guard that rejects legitimate work is worse than the hazard.
  */
 
 /**
@@ -38,6 +67,67 @@ import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
  * distinguishable from one saved at its opening version.
  */
 const FIRST_VERSION = 1;
+
+/**
+ * How many entries may be queued on one document's lane before work is refused.
+ *
+ * ADR-0009 §7 wants a runaway loop to surface as a busy failure rather than
+ * unbounded growth. The value is chosen so a **proof can drive it without a
+ * pathological loop** — a cap no test can reach is a vacuous check, and "set it
+ * to 1000" is exactly that cap. 64 is also far above any legitimate depth: a
+ * user producing 64 outstanding operations on one document is a stuck retry
+ * loop, not a fast typist.
+ */
+const MAX_QUEUED = 64;
+
+/**
+ * Refusal because a document's lane is saturated.
+ *
+ * A distinct type rather than a message, because the correct response differs
+ * from every other failure here: back off and retry, not surface an error to
+ * the user. Errors cross boundaries structurally (`{name, message, stack,
+ * cause}`), so the name is what survives the trip.
+ */
+export class DocumentBusyError extends Error {
+  override readonly name = 'DocumentBusyError';
+
+  constructor(docId: DocId, queued: number) {
+    super(
+      `Document lane is saturated: ${String(queued)} entries queued, limit ${String(MAX_QUEUED)}. ` +
+        'Work is refused rather than queued, so a runaway loop surfaces as a busy failure ' +
+        'instead of growing without bound. ' +
+        `(document ${docId.slice(0, 8)}…)`,
+    );
+  }
+}
+
+/**
+ * Everything a lane entry is told about the document, **as of the moment it
+ * actually runs**.
+ *
+ * The version is handed in rather than read, and that is the whole point
+ * (ADR-0009 §7). A caller that read a version from a main-side field after an
+ * await would stamp a result that executed at v3 with v4; the renderer's
+ * staleness check then passes and it caches stale content as current. There is
+ * no accessor for a document's current version, so that sentence cannot be
+ * written.
+ */
+export interface DocumentContext {
+  readonly docId: DocId;
+  readonly path: string;
+  readonly version: DocVersion;
+}
+
+/**
+ * A lane entry's result, stamped with the version it ran at.
+ *
+ * The stamp comes from the lane, not from the caller, so a late result is
+ * recognisable rather than plausible.
+ */
+export interface Versioned<T> {
+  readonly value: T;
+  readonly version: DocVersion;
+}
 
 /** What one open document is, from this service's side of the boundary. */
 interface DocumentRecord {
@@ -57,6 +147,20 @@ interface DocumentRecord {
    */
   readonly openedIdentity: FileIdentity;
   readonly version: DocVersion;
+  /**
+   * ADR-0009 §7's lane, **living on the record**.
+   *
+   * Not in a `Map<DocId, lane>` filled lazily, and the difference is not
+   * stylistic: a lazily-filled map is get-or-**create**, so it happily mints a
+   * lane for a `DocId` that was closed and runs the work against a torn-down
+   * document — the resurrection invariant L10 forbids, arriving through the
+   * structure meant to prevent it. Here the lane cannot outlive the record and
+   * cannot exist without one, so "no record, no lane, miss" is the shape rather
+   * than a check. It also cannot leak: dropping the record drops the lane.
+   */
+  lane: Promise<void>;
+  /** Entries queued or running on {@link lane}, for the {@link MAX_QUEUED} cap. */
+  queued: number;
 }
 
 /**
@@ -177,6 +281,18 @@ export class DocumentService {
    */
   #indexLane: Promise<void> = Promise.resolve();
 
+  /**
+   * Marks the async context of work running inside {@link #indexLane}.
+   *
+   * This is what makes the lane-ordering rule in the class comment enforced
+   * rather than merely stated. `AsyncLocalStorage` propagates through awaits, so
+   * it answers precisely the question that matters — *was this call made from
+   * within an index-lane entry* — which a flag or a depth counter cannot: those
+   * also fire for unrelated work that happens to run while an index-lane entry
+   * is mid-await, and rejecting legitimate work is worse than the deadlock.
+   */
+  readonly #insideIndexLane = new AsyncLocalStorage<true>();
+
   constructor(
     capabilities: CapabilityRegistry,
     options: {
@@ -220,24 +336,43 @@ export class DocumentService {
     // L10 exists to prevent. A random token makes that a lookup miss.
     const docId = asDocId(mintToken('DocId', this.#randomBytes));
     const version = asDocVersion(FIRST_VERSION);
-    this.#records.set(docId, { docId, handle, path, openedIdentity: identity, version });
+    this.#records.set(docId, {
+      docId,
+      handle,
+      path,
+      openedIdentity: identity,
+      version,
+      lane: Promise.resolve(),
+      queued: 0,
+    });
     return { kind: 'opened', docId, version };
   }
 
   /**
-   * Closes a document. The index entry is gone **before** teardown is awaited.
+   * Closes a document. **Two halves, and they are deliberately not symmetric.**
    *
-   * That ordering is the whole point (ADR-0009 §2). It turns invariant L10 —
-   * "an async result must not land in a closed document's state" — into a
-   * lookup miss, rather than a discipline every commit path has to remember. A
-   * `close` that awaited teardown first would leave a window in which the
-   * document is closing and still findable, and every handler would need its
-   * own still-open check to survive it.
+   * ADR-0009 §2 requires the index entry to be gone before anything is awaited;
+   * §7 requires close to run in the per-document lane. Read literally those
+   * contradict, and resolving it by queueing the whole of close behind pending
+   * commands would lose the §2 property — the document would be closing and
+   * still findable, which is exactly the window `c86b434` shut. So close splits:
    *
-   * Deliberately **not** routed through {@link #indexLane}: waiting for the lane
-   * is exactly the await that would reopen that window.
+   * 1. **Index removal is synchronous and outside every lane.** This is the part
+   *    that must not wait. It turns invariant L10 — "an async result must not
+   *    land in a closed document's state" — into a lookup miss rather than a
+   *    discipline every commit path has to remember.
+   * 2. **Teardown enters the document's lane** and runs after pending work
+   *    drains. This is the part that must be serialised: tearing an engine
+   *    session down underneath a command still executing against it is the
+   *    failure §7 exists to prevent.
    *
-   * The cost of that bypass is real and is paid where it should be. A close can
+   * The two halves compose safely because of the record-owned lane: once the
+   * record is gone, {@link run} misses, so **nothing further can join the lane**.
+   * The captured lane is therefore a closed set of already-accepted work, and
+   * teardown is genuinely last. Teardown runs whether that work succeeded or
+   * failed — a command that threw still leaves an engine session to release.
+   *
+   * The cost of the bypass is real and is paid where it should be. A close can
    * land inside a running {@link checkWriteTarget} for the same document, and
    * the check then finds nothing and refuses to report a verdict. Refusing to
    * write a document that is being closed is the correct outcome; the failure
@@ -245,8 +380,82 @@ export class DocumentService {
    * hunting a filesystem race instead.
    */
   close(docId: DocId): Promise<void> {
-    if (!this.#records.delete(docId)) return Promise.resolve();
-    return this.#teardown(docId);
+    const record = this.#records.get(docId);
+    if (record === undefined) return Promise.resolve();
+
+    // Half 1. Synchronous, before any await, outside every lane.
+    this.#records.delete(docId);
+
+    // Half 2. The lane is captured after the removal, so it can only contain
+    // work accepted while the document was open.
+    return record.lane.then(
+      () => this.#teardown(docId),
+      () => this.#teardown(docId),
+    );
+  }
+
+  /**
+   * Runs `work` in this document's serial lane (ADR-0009 §7).
+   *
+   * Commands, queries and save share one lane per `DocId`. They queue; they do
+   * not interleave and are not rejected on contention, because rejecting loses
+   * user intent and pushes a second scheduler into the UI. **A save that
+   * serialised a live engine session while a command mutated it would write a
+   * byte image mixing pre- and post-command state**, and the atomic rename would
+   * then promote that over the user's file — which is why byte-producing reads
+   * belong in the lane and not beside it.
+   *
+   * `work` is **handed** the version it is running at, and the result comes back
+   * stamped with it. Nothing here exposes a document's current version, so a
+   * caller cannot read one after an await and stamp a result that executed
+   * earlier — the mistake that makes a renderer's staleness check pass on stale
+   * content.
+   *
+   * @throws `DocumentBusyError` when the lane is saturated ({@link MAX_QUEUED}).
+   * @throws if the document is not open — **get-or-miss, never get-or-create**.
+   * @throws if called from inside the index lane; see the class comment.
+   */
+  async run<T>(docId: DocId, work: (context: DocumentContext) => Promise<T>): Promise<Versioned<T>> {
+    if (this.#insideIndexLane.getStore() === true) {
+      throw new Error(
+        'Lane ordering violation: a per-document lane was awaited from inside the index ' +
+          'lane. The only permitted direction is per-document lane -> index lane. These ' +
+          'are promise chains with no reentrancy, so this would have deadlocked silently ' +
+          'rather than failed. A service-wide saveAll or closeAll is the usual cause.',
+      );
+    }
+
+    const record = this.#records.get(docId);
+    if (record === undefined) {
+      // Get-or-miss. A lazily created lane would run this work against a
+      // torn-down document, which is the resurrection L10 forbids.
+      throw new Error('Cannot run work for a document that is not open.');
+    }
+
+    if (record.queued >= MAX_QUEUED) throw new DocumentBusyError(docId, record.queued);
+    record.queued += 1;
+
+    const started = record.lane.then(async () => {
+      // Read here, when the work actually runs — not when it was queued.
+      const version = record.version;
+      const value = await work({ docId: record.docId, path: record.path, version });
+      return { value, version };
+    });
+
+    // The lane carries no failures forward. Without this, one command that
+    // threw would reject every command after it on that document — turning a
+    // single bad operation into a dead document, a worse failure than the one
+    // being reported. Same reasoning as the index lane.
+    record.lane = started.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    try {
+      return await started;
+    } finally {
+      record.queued -= 1;
+    }
   }
 
   /**
@@ -352,10 +561,15 @@ export class DocumentService {
     return this.#records.has(docId);
   }
 
-  /** The version a document is at, or `undefined` if it is not open. */
-  versionOf(docId: DocId): DocVersion | undefined {
-    return this.#records.get(docId)?.version;
-  }
+  // There is deliberately NO `versionOf(docId)`.
+  //
+  // It existed, and it was ADR-0009 §7's warned-about main-side field with a
+  // public accessor on it. Anything that reads a version after an await and
+  // stamps a result with it produces a result that executed at v3 carrying v4;
+  // the renderer's staleness check passes and it caches stale content as
+  // current. The version is handed to `run`'s work and returned stamped, so the
+  // read-then-stamp sentence has no words — rather than being a rule somebody
+  // has to remember while there is a convenient getter sitting next to it.
 
   /** Number of open documents. */
   get size(): number {
@@ -382,7 +596,9 @@ export class DocumentService {
 
   /** Runs `work` after every previously queued lane entry, whatever their fate. */
   #throughIndexLane<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.#indexLane.then(work);
+    // The work runs inside the marked async context, so anything it calls —
+    // however deep — can be told it is inside the index lane. See `run`.
+    const run = this.#indexLane.then(() => this.#insideIndexLane.run(true, work));
     // The lane carries no failures forward. Without this, one open that threw
     // would reject every open after it — turning a single bad path into a dead
     // service, which is a worse failure than the one being reported.
