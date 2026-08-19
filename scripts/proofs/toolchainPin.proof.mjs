@@ -58,7 +58,19 @@ check(
 for (const workflow of WORKFLOWS) {
   const path = join('.github', 'workflows', workflow);
   const text = readFileSync(join(ROOT, path), 'utf8');
-  const declarations = [...text.matchAll(/node-version:\s*(\S+)/gu)].map((match) => match[1]);
+  // Narrowed HERE, where the value is produced, rather than at each use. A
+  // capture group is `string | undefined` to TypeScript, and widening a
+  // parameter or casting at the call site would move the uncertainty rather
+  // than remove it — leaving every later reader to re-derive that these are
+  // always defined.
+  //
+  // The filter shrinks the set, which is exactly why the emptiness check below
+  // stays AFTER it: a workflow this regex no longer matches produces no
+  // declarations and must fail, not pass with nothing to compare.
+  /** @type {string[]} */
+  const declarations = [...text.matchAll(/node-version:\s*(\S+)/gu)]
+    .map((match) => match[1])
+    .filter((declared) => declared !== undefined);
 
   // An empty set is a broken read, not a clean one — the file could have been
   // renamed, or the key spelt differently, and both report "nothing to
