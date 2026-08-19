@@ -189,6 +189,16 @@ jobs:
       # a known-vulnerable parser for a year. This fails when an advisory has no
       # recorded verdict; it does not invent one, because the available data is
       # keyed to distribution packages whose versions do not map onto upstream.
+      # DELIBERATELY WITHOUT --require-derivation. This job does not provision
+      # MuPDF, so the OCR door derivation cannot run here and its symbols report
+      # as unverifiable — counted apart, printed, never folded into verified.
+      # The shim job in ci.yml has the source and passes the flag, so the
+      # derivation is mandatory exactly where something can look.
+      #
+      # Adding the flag here would turn every Guards run red on both platforms,
+      # which is what happened for two days when the witness rule treated "could
+      # not derive" as "was not derived" — the rule's own distinction, broken by
+      # its own implementation.
       - name: Native engine advisories
         run: npm run check:advisories
 

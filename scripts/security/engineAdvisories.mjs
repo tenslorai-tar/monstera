@@ -468,11 +468,33 @@ const REGISTER_PATH = 'docs/security/engine-advisories.json';
  * Only derivation fixes that, and derivation needs the same dependency the
  * condition above watches for.
  *
+ * ## "COULD NOT DERIVE" IS NOT "WAS NOT DERIVED", and this rule broke on that
+ *
+ * The OCR doors are derived from the engine source rather than witnessed, so
+ * they carry no `witness` entry — correctly, since a derivation is stronger than
+ * a witness. On a machine with no provisioned MuPDF source the derivation cannot
+ * run, and this rule then met eleven symbols that were neither derived nor
+ * witnessed and failed the build on all eleven.
+ *
+ * That is this rule's own distinction, violated by its own implementation, four
+ * lines after the check prints *"OCR door set NOT verified here — MuPDF source
+ * not provisioned"*. **Measured** in a worktree with no `.tools/`: every Guards
+ * run failed from the commit that added this rule, on both platforms, while the
+ * same command passed on a provisioned machine.
+ *
+ * So the derivation's *state* is an input here, not just its result. When it
+ * could not run, its symbols are **unverifiable** — printed, counted apart, and
+ * never folded into `verified`. What stops that being a hole is the other half:
+ * `--require-derivation` turns an unprovisioned source into a failure, and the
+ * one CI job that has the source runs it that way. Unverifiable where nothing
+ * could look, mandatory where something can.
+ *
  * @param {Baseline} baseline
- * @param {readonly string[]} derived Symbols an engine-source derivation confirmed this run.
+ * @param {{ verified: readonly string[], checked: boolean, claim: string }} derivation
  * @returns {{ failures: string[], verified: number, unverifiable: string[] }}
  */
-function unwitnessedSymbols(baseline, derived) {
+function unwitnessedSymbols(baseline, derivation) {
+  const derived = derivation.verified;
   /** @type {string[]} */
   const failures = [];
   /** @type {string[]} */
@@ -488,6 +510,19 @@ function unwitnessedSymbols(baseline, derived) {
 
       const witness = claim.witness?.[symbol];
       if (witness === undefined) {
+        if (!derivation.checked && name === derivation.claim) {
+          // The derivation could not RUN. That is not the same as its having
+          // run and confirmed nothing, and collapsing the two is the exact
+          // failure this rule exists to prevent — arriving inside the rule.
+          // These symbols are declared as derived, so they carry no witness by
+          // design; reporting them as unwitnessed would be a true-sounding
+          // sentence about the wrong thing.
+          unverifiable.push(
+            `${name}: ${symbol} — the engine source is not provisioned, so the derivation ` +
+              `could not run`,
+          );
+          continue;
+        }
         // A symbol the engine source did not confirm and the register does not
         // account for. Not tolerated as an omission: an unaccounted symbol is
         // exactly the state a misspelt one is in.
@@ -665,6 +700,10 @@ function ocrDoorDrift(baseline) {
 
 async function main() {
   const refresh = process.argv.includes('--refresh');
+  // Passed by the one CI job that provisions the MuPDF source. Everywhere else
+  // an absent source makes the OCR doors unverifiable rather than failing; here
+  // it fails, because here something could have looked.
+  const requireDerivation = process.argv.includes('--require-derivation');
   const baseline = readBaseline();
 
   /** @type {Advisory[]} */
@@ -816,6 +855,22 @@ async function main() {
   // wrong" is reported before "nothing on your list was called" — the second
   // statement is worthless while the first is outstanding.
   const drift = ocrDoorDrift(baseline);
+
+  // The one job that HAS the engine source runs with this flag, so an
+  // unprovisioned source is a failure exactly where something could have looked.
+  // Without it, "unverifiable everywhere" would be a stable, quiet state — which
+  // is what the unverifiable bucket exists to make visible, not to permit.
+  if (requireDerivation && !drift.checked) {
+    process.stderr.write(
+      `\nThe OCR door derivation could not run: the MuPDF source is not provisioned.\n\n` +
+        `This invocation passed --require-derivation, which is used where the source IS ` +
+        `expected — so "could not look" is a failure here rather than a count. Elsewhere the ` +
+        `same absence reports the doors as unverifiable.\n\n` +
+        `  Run:  npm run provision:mupdf\n\n`,
+    );
+    return 1;
+  }
+
   if (drift.missing.length > 0 || drift.extra.length > 0) {
     process.stderr.write(
       `\nThe OCR door set in ${BASELINE} does not match the engine source:\n\n` +
@@ -869,7 +924,11 @@ async function main() {
   // check, for the third time and the same reason: an instrument that cannot
   // find what it is looking for reports "no references" for every symbol, and
   // that is the answer every verdict below wants to hear.
-  const witnesses = unwitnessedSymbols(baseline, drift.verified);
+  const witnesses = unwitnessedSymbols(baseline, {
+    verified: drift.verified,
+    checked: drift.checked,
+    claim: 'ocr',
+  });
   if (witnesses.failures.length > 0) {
     process.stderr.write(
       `\n${witnesses.failures.length} reachability symbol(s) cannot be shown to be findable:\n\n` +

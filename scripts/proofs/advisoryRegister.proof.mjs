@@ -445,6 +445,44 @@ try {
     readFileSync(TRACKED, 'utf8') === pristine,
     'This proof must not be able to leave a corrupt security register behind.',
   );
+
+  // -------------------------------------------------------------------------
+  // THE DERIVATION IS MANDATORY IN EXACTLY ONE JOB, AND OPTIONAL IN THE OTHER.
+  //
+  // The register reports the OCR doors as unverifiable where the MuPDF source
+  // is absent, which is right — "could not look" is not "looked and found
+  // nothing" — and would be a hole if it were true everywhere. The shim job has
+  // the source and passes --require-derivation, so absence is a failure there.
+  //
+  // Two invocations, and each can be undone in its own direction: drop the flag
+  // from the shim job and the doors are derived nowhere; add it to Guards and
+  // every run goes red on both platforms, which is what happened for two days.
+  // Neither shows up in any test, so the pair is asserted here.
+  //
+  // This is what CAN be proven without spawning: the branch itself runs in
+  // Guards on every push and is exercised by that job's own environment. A
+  // direct case needs the witness rule extracted from the script, which is owed
+  // and named rather than implied.
+  // -------------------------------------------------------------------------
+  const shimJob = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+  const guardsJob = readFileSync(join(ROOT, '.github', 'workflows', 'guards.yml'), 'utf8');
+
+  check(
+    'the job that provisions MuPDF requires the derivation',
+    /check:advisories -- --require-derivation/u.test(shimJob),
+    'ci.yml must run check:advisories with --require-derivation in the job that provisions ' +
+      'MuPDF. Without it the OCR door set is derived in no job at all, and "unverifiable ' +
+      'everywhere" is a stable state nothing reports as wrong.',
+  );
+
+  check(
+    'CONTROL: and the job that does NOT provision it must not require the derivation',
+    guardsJob.includes('npm run check:advisories\n') &&
+      !/check:advisories -- --require-derivation/u.test(guardsJob),
+    'guards.yml does not provision MuPDF, so requiring the derivation there turns every run ' +
+      'red on both platforms. Without this control the case above is satisfied by putting the ' +
+      'flag on every invocation, which is the failure that was just fixed.',
+  );
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

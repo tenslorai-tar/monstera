@@ -272,6 +272,19 @@ jobs:
       - name: Prove the OCR door derivation can tell a call path from none
         run: npm run proof:ocrdoors
 
+      # The register runs in Guards too, and there it CANNOT derive the door set:
+      # that job does not provision MuPDF, so the doors report as unverifiable
+      # and are counted apart rather than failing. This is the other half of that
+      # pair, and without it the derivation would be verified in no job at all —
+      # "unverifiable everywhere" is a stable, quiet state, which is exactly what
+      # the unverifiable bucket exists to make visible rather than to permit.
+      #
+      # --require-derivation turns an unprovisioned source into a failure. This
+      # job has the source, so here "could not look" is a defect in the job, not
+      # a fact about the machine.
+      - name: The OCR door set is derived HERE, where the source exists
+        run: npm run check:advisories -- --require-derivation
+
       # The door check answers a question about our source text: does any shipped
       # file NAME a door. This answers the one about the binary: walking forward
       # from the 24 exports, can anything be reached. The two differ where an
