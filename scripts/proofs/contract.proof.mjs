@@ -75,8 +75,9 @@ const CASES = [
     // The control. Every rejection below is only meaningful because this passes.
     source: `
 import type { ContractHandlers } from '@monstera/contract';
+import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve({ version: '1.0.0', installChannel: 'development' }),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
 };
 `,
   },
@@ -105,9 +106,10 @@ export const handlers: ContractHandlers = {};
     notBecause: null,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
+import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve({ version: '1.0.0', installChannel: 'development' }),
-  'app.notDeclared': () => Promise.resolve({}),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'app.notDeclared': () => Promise.resolve(ok({})),
 };
 `,
   },
@@ -115,13 +117,18 @@ export const handlers: ContractHandlers = {
     name: 'a handler returning the wrong result shape does not compile',
     expect: 'reject',
     code: 'TS2322',
-    because: /Types of property 'version' are incompatible/u,
+    // Anchored INSIDE the Result — `value.version`, not `version`. A handler
+    // returns `Result<T, …>` rather than `T`, so the payload's own fields are
+    // one level down and a matcher anchored at the top level would pass on the
+    // outer "not assignable to Result" line, which every wrong shape produces.
+    because: /The types of 'value\.version' are incompatible/u,
     // `installChannel` is quoted in the summary and is not the reason.
     notBecause: /installChannel/u,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
+import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve({ version: 1, installChannel: 'development' }),
+  'app.info': () => Promise.resolve(ok({ version: 1, installChannel: 'development' })),
 };
 `,
   },
@@ -129,12 +136,13 @@ export const handlers: ContractHandlers = {
     name: 'a handler returning an undeclared enum member does not compile',
     expect: 'reject',
     code: 'TS2322',
-    because: /Types of property 'installChannel' are incompatible/u,
+    because: /The types of 'value\.installChannel' are incompatible/u,
     notBecause: /'version'/u,
     source: `
 import type { ContractHandlers } from '@monstera/contract';
+import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
-  'app.info': () => Promise.resolve({ version: '1.0.0', installChannel: 'beta' }),
+  'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'beta' })),
 };
 `,
   },
