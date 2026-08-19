@@ -62,7 +62,10 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          # EXACT, not a major — see the note in ci.yml and
+          # scripts/lib/toolchain.mjs. A floating major means the runtime under
+          # every proof here can change between two runs of the same commit.
+          node-version: 24.19.0
 
       # The guards are proven before they are trusted. Rule B2 requires every
       # check to ship a control case, and these run first so a guard that has
@@ -182,6 +185,13 @@ jobs:
       # switched off rather than obeyed.
       - name: Prove the stage-audit watermark gate can fail
         run: npm run proof:auditscope
+
+      # The pin these very jobs run on is one declaration, not three copies. A
+      # workflow left on a floating major keeps working and keeps passing while
+      # changing the npm that validates this project's lockfile — which is how
+      # CI came to reject a lockfile that every developer machine accepted.
+      - name: Prove the toolchain pin is one declaration
+        run: npm run proof:toolchain
 
       # MuPDF is compiled into the shim and parses the most attacker-controlled
       # input this application has. Pinning it is correct — it makes builds

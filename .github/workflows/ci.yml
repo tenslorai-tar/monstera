@@ -55,7 +55,13 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          # EXACT, not a major. `24` resolves to the newest 24.x at job start,
+          # so the npm that validates this lockfile changed without any commit —
+          # and on 2026-08-19 it had diverged far enough from a developer machine
+          # that the two disagreed about whether the lockfile was valid. Keep in
+          # step with scripts/lib/toolchain.mjs, which records the bundled npm
+          # and is asserted against this file by proof:toolchain.
+          node-version: 24.19.0
           cache: npm
 
       - name: Toolchain versions
@@ -192,7 +198,13 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          # EXACT, not a major. `24` resolves to the newest 24.x at job start,
+          # so the npm that validates this lockfile changed without any commit —
+          # and on 2026-08-19 it had diverged far enough from a developer machine
+          # that the two disagreed about whether the lockfile was valid. Keep in
+          # step with scripts/lib/toolchain.mjs, which records the bundled npm
+          # and is asserted against this file by proof:toolchain.
+          node-version: 24.19.0
 
       # MuPDF's static libraries take ~10 minutes to build and change only when
       # the pinned version does, so the key is the version itself. A miss costs
