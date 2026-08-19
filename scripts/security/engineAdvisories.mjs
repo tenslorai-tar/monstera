@@ -191,6 +191,11 @@ async function fetchAdvisories() {
  *     why: string,
  *     shippedPaths: string[],
  *     symbols?: string[],
+ *     witness?: Record<string, {
+ *       in: string[] | null,
+ *       acceptedWhile?: { absent: string, from: string[] },
+ *       why: string,
+ *     }>,
  *   }>,
  *   reachabilityControl: { symbol: string, from: string[], why: string }[],
  * }} Baseline
@@ -399,6 +404,169 @@ function brokenReachabilityControls(baseline) {
   return { failures, found };
 }
 
+/** The tracked register's repo-relative path, as `git grep` reports it. */
+const REGISTER_PATH = 'docs/security/engine-advisories.json';
+
+/**
+ * Fails when a verdict's SYMBOL cannot be shown to be findable — the half of
+ * audit item 4b that the glob controls above do not reach.
+ *
+ * ## The hole this closes, measured rather than argued
+ *
+ * `brokenReachabilityControls` proves each path glob resolves. It says nothing
+ * about the symbol searched for inside it. Misspell `utilityProcess` to
+ * `utilityProcesss` and this whole check exits **0**, printing the same
+ * `18 symbol(s) checked` — because a count of declarations is not a count of
+ * findings. Invariant 25's containment verdict would then read green forever,
+ * and nothing anywhere would say otherwise. That is finding T-1, and it is this
+ * file's own stated failure mode occurring inside it: the comment on
+ * `brokenReachabilityControls` names *"a symbol misspelt in the register"* as a
+ * way the walk breaks, and the control it built catches the glob.
+ *
+ * ## Three states, and the third is the one that has to be got right
+ *
+ * - **derived** — the engine source confirms the symbol (the OCR doors). The
+ *   strongest form, because the list is computed rather than recalled, and it
+ *   is the shape every other symbol here should eventually take.
+ * - **witnessed** — the symbol is found in a declared scope, on every run. The
+ *   scope must be **disjoint from the paths the verdict scans**, or the witness
+ *   could be satisfied by the very reference whose appearance expires the
+ *   verdict. A witness may never resolve to the register itself: a misspelling
+ *   would be present there too and would find itself, which is a search
+ *   confirming its own typo.
+ * - **unverifiable** — nothing in the repository can witness it. Printed on
+ *   every run and **counted apart from the verified**, never folded in. "Could
+ *   not look" must not render as "looked and found nothing" — the same
+ *   distinction `checkWriteTarget` draws between `target-absent` and
+ *   `sole-writer`, and the reason T-1 stayed invisible is precisely that one
+ *   number covered both.
+ *
+ * ## Why `in: null` is not an escape hatch
+ *
+ * Because it is not permitted by declaration. It is permitted by a **condition
+ * the register checks itself**: `acceptedWhile` names an input, this resolves
+ * it every run, and the null holds only while the condition does. For the
+ * Electron host symbols the condition is *"electron is named in no
+ * package.json"* — one file read, and false the moment it stops being true.
+ *
+ * So an author cannot assert their way past this. They can only state a fact,
+ * and the fact is checked. A symbol with no checkable condition gets no null.
+ * That is the difference between a derived state and a config flag, and it is
+ * the same difference as between the OCR door set and a hand-written list.
+ *
+ * The expiry falls out with no second mechanism: the day Electron becomes a
+ * dependency the condition fails, the null stops being accepted, and this says
+ * so — which is also the day a witness becomes possible AND the day the symbol
+ * list can stop being hand-picked, because it can then be derived from
+ * Electron's own API surface. One condition, three consequences.
+ *
+ * ## What this still does not do
+ *
+ * It checks spelling, not **completeness**. `utilityProcess` and
+ * `MessageChannelMain` are two hand-picked names for "Electron spawns a
+ * document-parsing process", and a correctly spelt list can still be short.
+ * Only derivation fixes that, and derivation needs the same dependency the
+ * condition above watches for.
+ *
+ * @param {Baseline} baseline
+ * @param {readonly string[]} derived Symbols an engine-source derivation confirmed this run.
+ * @returns {{ failures: string[], verified: number, unverifiable: string[] }}
+ */
+function unwitnessedSymbols(baseline, derived) {
+  /** @type {string[]} */
+  const failures = [];
+  /** @type {string[]} */
+  const unverifiable = [];
+  let verified = 0;
+
+  for (const [name, claim] of Object.entries(baseline.reachability)) {
+    for (const symbol of claim.symbols ?? [name]) {
+      if (derived.includes(symbol)) {
+        verified += 1;
+        continue;
+      }
+
+      const witness = claim.witness?.[symbol];
+      if (witness === undefined) {
+        // A symbol the engine source did not confirm and the register does not
+        // account for. Not tolerated as an omission: an unaccounted symbol is
+        // exactly the state a misspelt one is in.
+        failures.push(
+          `${name}: ${symbol} has no witness and no derivation.\n` +
+            `      Its absence from shipped code is therefore unproven — a misspelling here reads\n` +
+            `      identically to a clean verdict. Declare witness.${symbol} with a scope the\n` +
+            `      symbol IS found in, or with in: null plus an acceptedWhile condition.`,
+        );
+        continue;
+      }
+
+      if (witness.in === null) {
+        if (witness.acceptedWhile === undefined) {
+          failures.push(
+            `${name}: ${symbol} declares no witness and states no condition.\n` +
+              `      A bare null is an author asserting an exemption, which is the escape hatch\n` +
+              `      this rule exists to refuse. Name a condition the register can resolve.`,
+          );
+          continue;
+        }
+        const condition = { ...witness.acceptedWhile, why: witness.why };
+        const detail = digestInputs([condition], { root: ROOT }).inputs[0]?.detail ?? '';
+        if (detail !== 'no references') {
+          failures.push(
+            `${name}: ${symbol} is unwitnessed on a condition that NO LONGER HOLDS.\n` +
+              `      Condition: ${witness.acceptedWhile.absent} absent from ` +
+              `${witness.acceptedWhile.from.join(', ')}\n` +
+              `      Now: ${detail}\n` +
+              `      The null was accepted only while nothing could witness this symbol. Something\n` +
+              `      can now. Witness it — and reconsider whether the symbol LIST can stop being\n` +
+              `      hand-picked at the same time.\n` +
+              `      Why it was unwitnessed: ${witness.why}`,
+          );
+          continue;
+        }
+        unverifiable.push(`${name}: ${symbol} — ${witness.acceptedWhile.absent} is not present`);
+        continue;
+      }
+
+      if (witness.in.length === 0) {
+        failures.push(
+          `${name}: ${symbol} declares an empty witness scope, which finds nothing by\n` +
+            `      construction and would pass as an absence. Name a scope or state a condition.`,
+        );
+        continue;
+      }
+
+      const resolved = digestInputs([{ absent: symbol, from: witness.in, why: witness.why }], {
+        root: ROOT,
+      }).inputs[0];
+      const detail = resolved?.detail ?? '';
+      if (detail === 'no references') {
+        failures.push(
+          `${name}: ${symbol} was NOT found in its own witness scope ` +
+            `${witness.in.join(', ')}.\n` +
+            `      Either the symbol is misspelt in this register — the failure this rule exists\n` +
+            `      for, and one that leaves the verdict green forever — or the witness scope moved.\n` +
+            `      Both are the walk being blind, not the symbol being absent from shipped code.\n` +
+            `      Why this scope: ${witness.why}`,
+        );
+        continue;
+      }
+      if (detail.includes(REGISTER_PATH)) {
+        failures.push(
+          `${name}: ${symbol}'s witness resolves to the register itself ` +
+            `(${REGISTER_PATH}).\n` +
+            `      That is circular: a misspelling is present there too, so the search finds its\n` +
+            `      own typo and reports success. Witness it in text that does not declare it.`,
+        );
+        continue;
+      }
+      verified += 1;
+    }
+  }
+
+  return { failures, verified, unverifiable };
+}
+
 /**
  * Fails when a verdict that rests on "we never call that function" stops being
  * true.
@@ -468,14 +636,21 @@ function expiredReachabilityVerdicts(baseline) {
  *
  * Skipped, and reported as skipped, without the provisioned source.
  *
+ * `verified` is what makes this a **witness** for those symbols and not only a
+ * drift check: a symbol the engine source confirms cannot be misspelt here, so
+ * the witness rule below has nothing left to add for it. It is the intersection
+ * of derived and declared rather than the declaration, so the coverage is
+ * COMPUTED — rename the entry this reads and `verified` empties, which surfaces
+ * those symbols as unverifiable instead of leaving a stale exemption behind.
+ *
  * @param {Baseline} baseline
- * @returns {{ checked: boolean, missing: string[], extra: string[] }}
+ * @returns {{ checked: boolean, missing: string[], extra: string[], verified: string[] }}
  */
 function ocrDoorDrift(baseline) {
   const source = mupdfSourcePath(ROOT);
   const shimProject = join(ROOT, 'native', 'mupdf-shim', 'monstera_mupdf.vcxproj');
   if (!existsSync(join(source, 'source', 'fitz', 'tessocr.h')) || !existsSync(shimProject)) {
-    return { checked: false, missing: [], extra: [] };
+    return { checked: false, missing: [], extra: [], verified: [] };
   }
 
   const derived = deriveOcrDoors(source, shimProject);
@@ -484,6 +659,7 @@ function ocrDoorDrift(baseline) {
     checked: true,
     missing: derived.doors.filter((door) => !declared.includes(door)),
     extra: declared.filter((symbol) => !derived.doors.includes(symbol)),
+    verified: derived.doors.filter((door) => declared.includes(door)),
   };
 }
 
@@ -689,10 +865,39 @@ async function main() {
     );
     return 1;
   }
+  // Can it see the SYMBOL, not only the path? Asked here, before the expiry
+  // check, for the third time and the same reason: an instrument that cannot
+  // find what it is looking for reports "no references" for every symbol, and
+  // that is the answer every verdict below wants to hear.
+  const witnesses = unwitnessedSymbols(baseline, drift.verified);
+  if (witnesses.failures.length > 0) {
+    process.stderr.write(
+      `\n${witnesses.failures.length} reachability symbol(s) cannot be shown to be findable:\n\n` +
+        witnesses.failures.map((entry) => `  - ${entry}`).join('\n\n') +
+        `\n\nA path glob with a control proves the walk reads files. It says nothing about ` +
+        `whether the string it searches for is one that could ever match. A misspelt symbol ` +
+        `produces "no references" on every run, forever, which is the verdict's passing answer.\n\n`,
+    );
+    return 1;
+  }
+
+  // Two numbers, never one. A single count covering both is how T-1 stayed
+  // invisible: "18 symbol(s) checked" was true of a register with two symbols
+  // misspelt, because it counted declarations rather than findings.
   process.stdout.write(
     `  ok  reachability walk: ${controls.found} control(s) found, ` +
-      `${Object.keys(baseline.reachability).length} verdict(s) / ${symbolCount} symbol(s) checked\n`,
+      `${Object.keys(baseline.reachability).length} verdict(s) / ${symbolCount} symbol(s): ` +
+      `${witnesses.verified} verified, ${witnesses.unverifiable.length} unverifiable\n`,
   );
+  if (witnesses.unverifiable.length > 0) {
+    process.stdout.write(
+      `  --  ${witnesses.unverifiable.length} symbol(s) UNVERIFIABLE — nothing here can witness ` +
+        `them, so their spelling is unchecked:\n` +
+        witnesses.unverifiable.map((entry) => `        ${entry}\n`).join('') +
+        `      These verdicts do not hold on this evidence. "Could not look" is not "looked and ` +
+        `found nothing".\n`,
+    );
+  }
 
   // Verdicts that rest on unreachability expire when the code changes under
   // them. Checked LAST so its message is the final thing printed.

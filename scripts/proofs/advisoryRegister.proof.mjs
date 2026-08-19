@@ -274,6 +274,170 @@ try {
   );
 
   // -------------------------------------------------------------------------
+  // THE SYMBOL, not only the glob — finding T-1.
+  //
+  // A control per path glob proves the walk reads files. It says nothing about
+  // whether the string being searched for could ever match. Misspell a symbol
+  // and the walk reports "no references" forever, which is the verdict's
+  // passing answer, and the summary line still counts it as checked because it
+  // counts DECLARATIONS.
+  //
+  // Every case below was measured against the checker before the witness rule
+  // existed: the first one exited 0.
+  // -------------------------------------------------------------------------
+
+  /**
+   * @param {(register: any) => void} mutate
+   * @returns {string}
+   */
+  function register(mutate) {
+    const value = parsed(pristine);
+    mutate(value);
+    return JSON.stringify(value);
+  }
+
+  const misspeltUnwitnessed = runAgainst(
+    'misspelt-unwitnessed',
+    register((value) => {
+      value.reachability['engine-host-containment'].symbols[0] = 'utilityProcesss';
+    }),
+  );
+  check(
+    'THE T-1 CASE: a symbol misspelt in the register FAILS',
+    !misspeltUnwitnessed.ok && /has no witness and no derivation/.test(misspeltUnwitnessed.output),
+    'This exact mutation exited 0 before the witness rule, printing "18 symbol(s) checked" ' +
+      'with invariant 25\'s containment verdict green forever.\n' +
+      misspeltUnwitnessed.output,
+  );
+
+  const misspeltWitnessed = runAgainst(
+    'misspelt-witnessed',
+    register((value) => {
+      const claim = value.reachability['kernel-error-path-sanitisation'];
+      claim.symbols[0] = 'DocumentServcie';
+      claim.witness['DocumentServcie'] = claim.witness['DocumentService'];
+      delete claim.witness['DocumentService'];
+    }),
+  );
+  check(
+    'a symbol misspelt CONSISTENTLY, in the list and its own witness, still FAILS',
+    !misspeltWitnessed.ok && /NOT found in its own witness scope/.test(misspeltWitnessed.output),
+    'Renaming both halves is what a careful typo looks like. The witness is a search for the ' +
+      `same string in text that does not declare it, so it cannot follow the mistake.\n${misspeltWitnessed.output}`,
+  );
+
+  check(
+    'a symbol with NO witness entry FAILS rather than being tolerated',
+    !runAgainst(
+      'no-witness',
+      register((value) => {
+        delete value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'];
+      }),
+    ).ok,
+    'An unaccounted symbol is in exactly the state a misspelt one is in. Omission cannot be ' +
+      'the quiet way past this rule.',
+  );
+
+  check(
+    'an EMPTY witness scope FAILS',
+    !runAgainst(
+      'empty-scope',
+      register((value) => {
+        value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'].in = [];
+      }),
+    ).ok,
+    'A scope matching nothing finds nothing by construction, which is the shape of every ' +
+      'broken search in this file.',
+  );
+
+  const circular = runAgainst(
+    'circular-witness',
+    register((value) => {
+      value.reachability['pdf_subset_fonts'].witness['pdf_subset_fonts'].in = ['docs/security/**'];
+    }),
+  );
+  check(
+    'a witness resolving to the REGISTER ITSELF FAILS as circular',
+    !circular.ok && /circular/.test(circular.output),
+    'A misspelling is present in the register too, so a witness that reads it finds the typo ' +
+      `and reports success — a search confirming itself.\n${circular.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // `in: null` is a DERIVED state, not a declared one. These two cases are the
+  // whole difference between it and a config flag.
+  // -------------------------------------------------------------------------
+  const bareNull = runAgainst(
+    'bare-null',
+    register((value) => {
+      delete value.reachability['engine-host-containment'].witness['utilityProcess'].acceptedWhile;
+    }),
+  );
+  check(
+    'a bare in: null with NO condition FAILS',
+    !bareNull.ok && /asserting an exemption/.test(bareNull.output),
+    'Without a condition the register can resolve, a null is an author writing their own ' +
+      `exemption — the escape hatch this rule refuses.\n${bareNull.output}`,
+  );
+
+  const staleNull = runAgainst(
+    'stale-null',
+    register((value) => {
+      value.reachability['engine-host-containment'].witness[
+        'utilityProcess'
+      ].acceptedWhile.absent = 'devDependencies';
+    }),
+  );
+  check(
+    'an in: null whose CONDITION NO LONGER HOLDS FAILS',
+    !staleNull.ok && /NO LONGER HOLDS/.test(staleNull.output),
+    'The null is accepted only while nothing could witness the symbol. When that stops being ' +
+      'true the exemption expires by itself — the day Electron becomes a dependency, with no ' +
+      `second mechanism needed.\n${staleNull.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // ITEM 4b's CONTROL FOR THIS RULE, and it is not optional.
+  //
+  // Every case above is satisfied by a rule that verifies NOTHING and calls all
+  // 18 symbols unverifiable — it would still fail each mutation, and still exit
+  // 0 on the pristine register. So the rule must be shown to verify something
+  // known-verifiable, on every run.
+  // -------------------------------------------------------------------------
+  const counts = /(\d+) verified, (\d+) unverifiable/.exec(control.output);
+  check(
+    'CONTROL: the walk reports a NON-ZERO verified count',
+    counts !== null && Number(counts[1]) > 0,
+    'A rule that verifies nothing passes every case above. "0 verified, 18 unverifiable" is ' +
+      `the shape of this rule being blind.\n${control.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // ITEM 4a — RESOLUTION. Two counts that must move in opposite directions by
+  // one, which is the smallest change that alters what the line means.
+  // -------------------------------------------------------------------------
+  const shifted = runAgainst(
+    'one-fewer-witnessed',
+    register((value) => {
+      value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
+        in: null,
+        acceptedWhile: { absent: 'electron', from: ['package.json'] },
+        why: 'resolution fixture',
+      };
+    }),
+  );
+  const moved = /(\d+) verified, (\d+) unverifiable/.exec(shifted.output);
+  check(
+    'RESOLUTION: moving ONE symbol from witnessed to unverifiable moves BOTH counts by one',
+    counts !== null &&
+      moved !== null &&
+      Number(moved[1]) === Number(counts[1]) - 1 &&
+      Number(moved[2]) === Number(counts[2]) + 1,
+    'A single number covering both states is how T-1 stayed invisible for a whole range. ' +
+      `These two must be distinguishable at a difference of one.\n${control.output}\n${shifted.output}`,
+  );
+
+  // -------------------------------------------------------------------------
   // And the tracked register is untouched, which is the point of --baseline.
   // -------------------------------------------------------------------------
   check(

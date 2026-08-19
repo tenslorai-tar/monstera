@@ -416,6 +416,113 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — T-1 closed: a symbol is derived, witnessed, or printed as unverifiable
+
+**Finding T-1 is closed. Finding T-2's real significance is a recurrence, named
+here rather than left as a new event.**
+
+### What was wrong, in one sentence
+
+A reachability verdict's **path glob** had a positive control and its **symbol**
+had none, so a misspelt symbol produced "no references" on every run forever —
+which is the verdict's passing answer — while the summary line reported it as
+checked.
+
+### Three states, and the third is the one that had to be got right
+
+- **derived** — the OCR doors, computed from the engine source and compared. The
+  coverage is now taken from **what the derivation actually confirmed** rather
+  than from the declaration that it exists: rename the register entry the drift
+  check reads and the confirmed set empties, which surfaces those eleven symbols
+  as unverifiable instead of leaving a stale exemption behind. A declared
+  `derived: true` would have been the escape hatch wearing the fix's clothes.
+- **witnessed** — found on every run in a declared scope. Two constraints, and
+  each closes a way the witness could confirm nothing. The scope must be
+  **disjoint from the paths the verdict scans**, or the witness is satisfied by
+  the very reference whose appearance expires the verdict. And it may never
+  resolve to the **register itself**: a misspelling is present there too, so the
+  search finds its own typo and reports success. That second one is a proof case
+  because it is the mistake a careful author makes.
+- **unverifiable** — nothing here can witness it. Printed every run and counted
+  **apart**, never folded in.
+
+### Two numbers, never one — and the proof case is T-1's own mechanism
+
+`18 symbol(s) checked` was true of a register with two symbols misspelt. One
+number covering both states is not a summary of this rule; it is the exact shape
+of its failure, and it is why T-1 survived a whole range unseen.
+
+So the resolution case (item 4a) asserts that moving **one** symbol from
+witnessed to unverifiable moves both counts by one. Mutating the line to print
+`verified + unverifiable` as a single figure reddens that case **and nothing
+else** — the non-zero-verified control stays green. The instrument's resolution
+test fails on precisely the defect the instrument was built for, which is as
+close as this gets to a demonstration rather than an argument.
+
+This is `target-absent` versus `sole-writer` again, in a third place. "Could not
+look" and "looked and found nothing" must not share an output.
+
+### `in: null` is a derived state, not a declaration
+
+The objection to permitting it was that an exemption an author writes is a
+workaround with a config flag on it. That objection is answered by mechanism
+rather than argued with: **a null is accepted only while a condition the
+register resolves itself still holds.** For the two Electron host symbols the
+condition is *electron is named in no `package.json`* — one file read, resolved
+through the same `absent` input every other verdict uses.
+
+An author therefore cannot assert their way past this. They can only state a
+fact, and the fact is checked on every run. A symbol with no checkable condition
+gets no null: two proof cases, one for a bare null and one for a condition that
+has stopped holding.
+
+The expiry needs no second mechanism, and it carries **three consequences on one
+day**. When Electron becomes a dependency: the condition fails and the null stops
+being accepted; a witness becomes possible; and the symbol list can stop being
+hand-picked, because it can then be **derived** from Electron's own API surface
+the way the OCR doors are derived from the engine source.
+
+That last one is the completeness hazard, which witnessing does not touch and
+nothing available today does. `utilityProcess` and `MessageChannelMain` are two
+hand-picked names for "Electron spawns a document-parsing process", and a
+correctly spelt list can still be short. The mechanism that fixes it is the one
+already working elsewhere, attached to the same trigger — so the next reader
+inherits the plan rather than the problem.
+
+### Mutations, and what each one separated
+
+Three, and the separations are the point rather than the count:
+
+- neutralise the enforcement gate → **the seven enforcement cases red, the
+  control and resolution cases green**;
+- make the rule verify nothing (`0 verified, 18 unverifiable`) → **only the
+  control and resolution cases red**, every enforcement case still green;
+- print one combined number → **only the resolution case red**.
+
+Neither half carries the other. A rule that verified nothing would have passed
+all seven enforcement cases, which is why the non-zero-verified control is not
+optional — it is item 4b applied to the fix for a 4b finding.
+
+### T-2 is a RECURRENCE, and that is worse than a new finding
+
+The retention test compared **length** while byte equality sat unused and equal.
+Beside it, the round-trip test stayed green on a document mutated to differ by
+one byte at the same length — pdf-lib reloaded it and counted two pages.
+
+**Two instruments blind at once, each concealing the other.** This project has
+had that exact pair before: the OCR reachability walk failed four times running,
+and *two of the four were live simultaneously, each concealing the other*. The
+shape is not "an instrument was weak". It is that a weak instrument sitting next
+to a second weak one produces a **consistent** reassuring answer, and consistency
+is what reads as confirmation.
+
+Recording it as a recurrence rather than as a new event is the difference between
+a lesson and a list. The general form: when an instrument is found to be blind,
+the next question is not "what else does it miss" but **"what else was agreeing
+with it"**.
+
+---
+
 ## 2026-08-19 — Stage audit: `8f097e3..b315e2c`
 
 **Audited through b315e2c.** 9 commits, 12 files, 0 proofs added, **2 proofs

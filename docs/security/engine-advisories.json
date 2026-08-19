@@ -123,7 +123,33 @@
       "symbols": [
         "utilityProcess",
         "MessageChannelMain"
-      ]
+      ],
+      "witness": {
+        "utilityProcess": {
+          "in": null,
+          "acceptedWhile": {
+            "absent": "electron",
+            "from": [
+              "package.json",
+              "packages/*/package.json",
+              "apps/*/package.json"
+            ]
+          },
+          "why": "No witness exists for this symbol anywhere in the repository, because Electron is not a dependency — so there is nothing to find it in, and its spelling cannot be checked. That is recorded as UNVERIFIABLE and printed on every run, never folded into the verified count: 'could not look' must not read as 'looked and found nothing', which is the same distinction target-absent draws from sole-writer. The null is NOT an author's assertion. It is accepted only while the stated condition resolves — electron named in no package.json — and the register checks that itself on every run. The day Electron lands, the condition fails, the null stops being accepted, and this build goes red saying so. That is also the day the fix becomes possible: a witness appears, and the symbol list stops being hand-picked because it can then be DERIVED from Electron's own API surface, the way the OCR doors are derived from the engine source. One condition, three consequences."
+        },
+        "MessageChannelMain": {
+          "in": null,
+          "acceptedWhile": {
+            "absent": "electron",
+            "from": [
+              "package.json",
+              "packages/*/package.json",
+              "apps/*/package.json"
+            ]
+          },
+          "why": "Same condition and same three consequences as utilityProcess. Stated per symbol rather than per verdict because the unit that can be misspelt is the symbol, and a verdict-level condition would let a second symbol join an existing null without anyone restating why it cannot be witnessed."
+        }
+      }
     },
     "kernel-error-path-sanitisation": {
       "guards": [
@@ -137,7 +163,21 @@
       "symbols": [
         "DocumentService",
         "readFileIdentity"
-      ]
+      ],
+      "witness": {
+        "DocumentService": {
+          "in": [
+            "packages/kernel/src/**"
+          ],
+          "why": "The kernel names its own class, and the verdict scans apps/*/src/** — disjoint scopes, so the witness cannot be satisfied by the very reference whose appearance would expire the verdict."
+        },
+        "readFileIdentity": {
+          "in": [
+            "packages/kernel/src/**"
+          ],
+          "why": "Defined in documentIdentity.ts and named by its own test. Same disjointness as above."
+        }
+      }
     },
     "kernel-holds-canonical-bytes": {
       "guards": [
@@ -151,7 +191,21 @@
       "symbols": [
         "ByteImage",
         "Uint8Array"
-      ]
+      ],
+      "witness": {
+        "ByteImage": {
+          "in": [
+            "packages/kernel/src/engineSeam.ts"
+          ],
+          "why": "The type is declared there, and that file is deliberately OUTSIDE this verdict's single-file scope — so the witness is never satisfied by the reference that would expire the verdict."
+        },
+        "Uint8Array": {
+          "in": [
+            "packages/kernel/src/engineSeam.ts"
+          ],
+          "why": "ByteImage is an alias of it, declared in the same file. Same disjointness."
+        }
+      }
     },
     "pdf_subset_fonts": {
       "guards": [
@@ -163,7 +217,15 @@
         "native/**",
         "packages/*/src/**",
         "apps/*/src/**"
-      ]
+      ],
+      "witness": {
+        "pdf_subset_fonts": {
+          "in": [
+            "docs/DECISIONS/**"
+          ],
+          "why": "ADR-0015 and ADR-0017 name the symbol as part of the decisions that rest on it. Deliberately NOT the register or the script that reads it: witnessing a symbol in the file that declares it is circular, since a misspelling would be present in both places and find itself. The ADRs are independent text, and their losing the name would itself be worth stopping on."
+        }
+      }
     }
   },
   "reachabilityControl": [
