@@ -381,6 +381,73 @@ export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns:
 `,
   },
   {
+    name: 'THE SEAM EXPRESSES A BYTE-IMAGE WRITER, with no type assertion',
+    expect: 'allow',
+    // S-2's control, and the entire evidence for "the seam expresses both
+    // writer shapes". Exactly one adapter is implemented — the live-session
+    // one, which is what the first command needs — so the byte-image side has
+    // nothing behind it, and an unimplemented variant nobody constructs is a
+    // vacuous check.
+    //
+    // NO `as`, NO `any`, NO `satisfies` escape. `any` is already banned by B7;
+    // an assertion is not, and a fixture that compiles because of a cast proves
+    // the cast works rather than that the type expresses the shape. If this
+    // ever needs one, the type does not express it — and that is the finding.
+    //
+    // Three of the four writers of record consume and produce whole byte
+    // images, so this failing is Stage 4 discovering a seam redesign.
+    source: `
+import type { ByteImage, Apply, EngineWriter } from '@monstera/kernel';
+
+// Lifecycle: for a byte-image writer the session IS the image, so open and
+// serialise are identity and nothing is retained by the engine.
+export const writer: EngineWriter<ByteImage> = {
+  open: (image: ByteImage) => Promise.resolve(image),
+  serialise: (session: ByteImage) => Promise.resolve(session),
+  close: () => Promise.resolve(),
+};
+
+// And the shape difference: consumes an image, PRODUCES a new one. A seam
+// modelled only on live-session operations cannot type this — the signature
+// would demand a void return and mutation in place.
+export const rotate: Apply<'pdf-lib', 'rotatePages'> = (image, command) =>
+  Promise.resolve(command.pages.length === 0 ? image : new Uint8Array(image));
+`,
+  },
+  {
+    name: 'a byte-image writer may not mutate in place and return void',
+    expect: 'reject',
+    code: 'TS2322',
+    // The other half. Without this the case above passes for a seam whose
+    // `Apply` ignores the writer entirely — both shapes would be assignable to
+    // one signature, and "expresses both" would mean "distinguishes neither".
+    because: /Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    notBecause: null,
+    source: `
+import type { Apply, ByteImage } from '@monstera/kernel';
+export const rotate: Apply<'pdf-lib', 'rotatePages'> = (_image: ByteImage) => {};
+`,
+  },
+  {
+    name: 'a live-session apply may not be handed another engine session',
+    expect: 'reject',
+    code: 'TS2345',
+    // §6's B3 binding: a spec's apply is bound to the session type of its
+    // DECLARED writer, so naming one engine and reaching for another's handle
+    // is a type error at the point of authoring rather than a review comment.
+    because: /'PdfiumSession' is not assignable to parameter of type 'MupdfSession'/u,
+    notBecause: null,
+    source: `
+import type { Apply, MupdfSession, PdfiumSession } from '@monstera/kernel';
+declare const apply: Apply<'mupdf', 'rotatePages'>;
+declare const foreign: PdfiumSession;
+declare const command: { kind: 'rotatePages'; pages: number[]; quarterTurns: 1 };
+declare const own: MupdfSession;
+export const ok = apply(own, command);
+export const bad = apply(foreign, command);
+`,
+  },
+  {
     name: 'a command missing a required parameter does not compile',
     expect: 'reject',
     code: 'TS2741',

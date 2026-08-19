@@ -15,5 +15,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "clean": "node ../../scripts/clean.mjs dist"
+  },
+  "dependencies": {
+    "mupdf": "^1.28.0"
   }
 }

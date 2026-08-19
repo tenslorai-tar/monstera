@@ -1,5 +1,16 @@
 export { CapabilityRegistry, type HandleBytesSource, handlesEqual } from './capabilityRegistry.js';
 export {
+  type Apply,
+  type ByteImage,
+  type EngineWriter,
+  type MupdfSession,
+  type PdfiumSession,
+  type WriterSession,
+  type WriterShape,
+  type WriterShapeOf,
+} from './engineSeam.js';
+export { mupdfWriter } from './mupdfWriter.js';
+export {
   type CommandSpec,
   type CommandSpecs,
   type Invertibility,
