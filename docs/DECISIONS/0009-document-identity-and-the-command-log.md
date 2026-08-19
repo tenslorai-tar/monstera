@@ -1096,3 +1096,92 @@ Whether `Result`'s error position becomes generic over the channel's code union
 or the codes ride inside a single failure type. That is an implementation shape
 with no consequence for the guarantee, and choosing it before writing the first
 handler would be guessing at a call site that does not exist.
+
+---
+
+## Decision, 2026-08-19 — an incident id belongs to the failure that WITHHELD something
+
+The §9 decision above fixed what a failure looks like on the wire — `{ code,
+incident }` — and did not say **who mints the id**. Writing the first handler is
+what asked the question, which is the sequence working rather than a gap in it:
+the shape was decided against the leak it prevents, and the minting is only
+visible from a call site.
+
+### Measured, before deciding
+
+`wrapHandler` hands a handler exactly one thing: its validated params. The
+`IncidentLog` is constructed inside `wrapHandlers` and never leaves it. So a
+handler returning a **declared** failure — `document-not-open`, `document-busy` —
+has no source for the `incident` the type demands.
+
+The only examples in the tree are test fixtures writing `incident: 'i0'` and
+`incident: 'x'` by hand. That is not a gap in the tests. It is the type being
+satisfiable only by invention, and the fixtures are where invention shows up
+first.
+
+### Both ways of supplying one are worse than not having one
+
+**A fabricated id points at no log line.** The renderer shows it, a user reports
+it, and whoever searches the log finds nothing. An id that cannot be looked up is
+worse than no id, because it consumes the one action a user can take.
+
+**A second log collides.** A handler that kept its own `IncidentLog` to get a
+real id would mint `i1` while the boundary's log also mints `i1` — the counter is
+per log and starts at zero in both. `boundary.ts` already says why one log per
+registry is the point: *"so ids are unique across its channels and a report
+naming i7 identifies one line rather than one per channel."* Two logs is that
+sentence failing, with no symptom until someone reads a report.
+
+### The decision
+
+**The wire failure becomes a two-shape union.** A declared code travels alone; a
+diagnostic that was withheld travels with the id of the entry it was withheld
+into:
+
+```ts
+export type Failure<C extends string = string> =
+  | { readonly code: C }
+  | { readonly code: 'internal'; readonly incident: string };
+```
+
+An `incident` accompanies **exactly** the failures that withheld something, and
+that is now a property of the type rather than a convention. A declared failure
+hides nothing — the code is the whole of what happened — so there is nothing for
+an id to point at.
+
+Two things fall out, and the second is the one worth having:
+
+- **A handler cannot produce `internal`.** `channel.ts` already asserted this in
+  prose — *"A handler does not produce it — the boundary does"* — while the type
+  put `internal` in the handler's own return union and then demanded an id the
+  handler could not obtain. The rule and the type disagreed, and the type was the
+  one being compiled.
+- **The unlookupable id becomes unrepresentable** rather than discouraged. That
+  is B5 in the small: the failing state is not checked for, it cannot be written.
+
+### Rejected, and each is a way of looking finished
+
+**`incident?: string`, optional.** Permits both wrong states it was meant to
+prevent: a declared failure carrying an id that points nowhere, and an `internal`
+carrying none. An optional field says the question was not settled.
+
+**The boundary mints an id for declared failures too**, recording a diagnostic
+like *"handler reported document-busy"*. Uniform wire shape, real lookups, and
+wrong for a reason that only shows up in operation: a document closed while a
+command was in flight is an **ordinary outcome**, not an incident. A log that
+records every one of them is a log a real incident hides in — the same reason
+`unverifiable` is counted apart from `verified` in the advisory register rather
+than folded in to make one tidy number.
+
+**Leave it, and let the first handler pass `incident: 'unused'`.** This is the
+one that would actually have happened, because it compiles. Recorded so it is
+visibly a rejected option rather than a path nobody noticed.
+
+### What this does not change
+
+The guarantee, and the mechanism behind it. No `message`, no `stack`, no `cause`
+crosses; `failureSchema` stays `.strict()` so a drifted main build is rejected
+rather than ignored; the diagnostic still goes to a sink the composer supplies.
+This narrows what may cross — it does not widen it — so every control written for
+§9 still holds, and the `.strict()` schema becomes a union of two strict shapes
+rather than one.
