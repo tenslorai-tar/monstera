@@ -648,16 +648,36 @@ Refused by a second async-context marker carrying the executing `DocId`. **Keyed
 on the `DocId`, not on "any nested run"** — refusing all nesting is stricter
 than the evidence supports.
 
-Two siblings are left **open, with the analysis rather than a guard**, because
-neither has a call site and a guard built for a caller that does not exist is
-how a guard ends up rejecting the shape somebody eventually writes:
+**`close(A)` from inside `run(A)` is refused too**, and the reason it is guarded
+while its sibling is not is worth stating exactly, because "no call site yet" is
+the argument that would have left it open.
+
+The synchronous half behaves; the returned promise awaits a lane containing the
+work that called it, so **`await close(A)` hangs and `void close(A)` does not**.
+That inversion is what separates it. Every other refusal here punishes the wrong
+shape; this one punishes the **careful** caller and rewards the careless — so
+the person who eventually meets it is someone whose fire-and-forget version
+already worked, and a recorded hazard does not reach that person. The flow is
+ordinary rather than exotic: `run(A, async () => { await save(); await
+close(A); })` is the obvious implementation of close-with-unsaved-changes.
+
+Refused with a **named error, not a conditional contract**. Making `close`'s
+promise mean "teardown finished" everywhere except inside the lane, where it
+would mean "teardown scheduled", is the reasonable-looking exception that gets
+cited later. The correct flow is available and simpler: run the save in the
+lane, close outside it. Closing terminates the stream; it is not an operation
+within it.
+
+The guard is the **first statement** in `close`, before the index removal.
+Placed after, it would refuse *and* remove — an error handed back with the index
+already mutated, worse than either outcome alone. Its proof asserts both the
+named error and that the document is still open, because a misplaced guard
+passes the first assertion and fails only the second. Verified by moving it.
+
+One sibling is left **open, with the analysis rather than a guard**:
 
 - **`run(A)` from inside `run(B)`.** Independent lanes, so it completes unless
-  B's work depends on A's. A lock-ordering hazard, not a certain deadlock; the
-  fix when it is needed is a total order on `DocId`s acquired low-to-high, not a
-  blanket refusal.
-- **`close(A)` from inside `run(A)`.** The synchronous half behaves; the
-  returned promise awaits a lane containing the work that called it, so
-  *awaiting* it hangs and ignoring it does not. Certain only in the awaited
-  form. A command that wants to close its own document should return and let the
-  caller close.
+  B's work depends on A's. A lock-ordering hazard, not a certain deadlock, and
+  **both forms fail the same way** — there is no inversion to punish a careful
+  caller, and no call site. The fix when one arrives is a total order on
+  `DocId`s acquired low-to-high, not a blanket refusal.

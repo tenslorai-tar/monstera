@@ -394,6 +394,39 @@ describe('DocumentService — the per-document lane', () => {
     expect(await query).toStrictEqual({ value: 2, version: 2 });
   });
 
+  it('REENTRY: work cannot close its own document, and the index is untouched', async () => {
+    const registry = new CapabilityRegistry();
+    let torn = 0;
+    const service = new DocumentService(registry, {
+      teardown: () => {
+        torn += 1;
+        return Promise.resolve();
+      },
+    });
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    // `run(A, async () => { await save(); await close(A); })` is the obvious
+    // implementation of close-with-unsaved-changes, and it is the hang. Unlike
+    // every other refusal here, this hazard punishes the CAREFUL caller —
+    // `await close(A)` hangs while `void close(A)` behaves — so the person who
+    // meets it is one whose fire-and-forget version already worked.
+    await expect(service.run(docId, () => service.close(docId))).rejects.toThrow(
+      /Cannot close a document from inside its own lane/,
+    );
+
+    // BOTH assertions are needed. The guard must be the FIRST statement in
+    // `close`: placed after the removal it would refuse AND remove, handing the
+    // caller an error with the index already mutated. A misplaced guard passes
+    // the assertion above and fails only this one.
+    expect(service.isOpen(docId)).toBe(true);
+    expect(torn).toBe(0);
+
+    // And closing from outside the lane — the correct flow — still works.
+    await service.close(docId);
+    expect(service.isOpen(docId)).toBe(false);
+    expect(torn).toBe(1);
+  });
+
   it('REENTRY: work cannot re-enter its own document lane', async () => {
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry);

@@ -60,27 +60,36 @@ import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
  * lane" from "called concurrently while an index-lane entry happens to be
  * mid-await", and a guard that rejects legitimate work is worse than the hazard.
  *
- * **Same-document reentry into `run` is refused too**, and it is the worse of
- * the two: it is a certain deadlock with no error and no stack.
+ * **Same-document reentry is refused for both `run` and `close`**, and it is the
+ * worse hazard of the two kinds: a certain deadlock with no error and no stack.
  *
- * ## Two reentry hazards left OPEN, with the analysis rather than a guard
+ * `close(A)` from inside `run(A)` is guarded despite having no call site today,
+ * because of an **inversion the other guards do not have**. Every other refusal
+ * here punishes the wrong shape. This one punishes the *careful* caller and
+ * rewards the careless: `await close(A)` hangs while `void close(A)` behaves.
+ * So the person who eventually meets it is someone whose fire-and-forget
+ * version already worked, and a recorded hazard does not reach that person.
+ * The flow that produces it is ordinary, not exotic —
+ * `run(A, async () => { await save(); await close(A); })` is the obvious
+ * implementation of close-with-unsaved-changes.
  *
- * Neither has a call site today, and building a guard for a caller that does
- * not exist is how a guard ends up rejecting the legitimate shape somebody
- * eventually writes. Whoever writes the first one inherits the reasoning:
+ * It is refused with a **named error, not a conditional contract**. Making
+ * `close`'s promise mean "teardown finished" everywhere except inside the lane,
+ * where it would mean "teardown scheduled", is exactly the reasonable-looking
+ * exception that gets cited later. The correct flow is available and simpler:
+ * run the save in the lane, close outside it. Closing terminates the stream; it
+ * is not an operation within it.
  *
- * 1. **`run(A)` from inside `run(B)`.** Not a certain deadlock — the lanes are
- *    independent, so it completes whenever B's work does not itself depend on
- *    A's. It is a **lock-ordering hazard**: two documents' work each entering
- *    the other's lane deadlocks the pair. The fix when it is needed is a total
- *    order on `DocId`s, acquired low-to-high, not a blanket refusal — hence the
- *    guard above is keyed on the `DocId` rather than on "any nested run".
- * 2. **`close(A)` from inside `run(A)`.** The synchronous half is fine and does
- *    what it says. The returned promise awaits a lane containing the very work
- *    that called it, so **awaiting it** hangs; ignoring it does not. Certain
- *    only in the awaited form, which is why it is recorded rather than guarded.
- *    A command that wants to close its own document should return, and let the
- *    caller close.
+ * ## One reentry hazard left OPEN, with the analysis rather than a guard
+ *
+ * **`run(A)` from inside `run(B)`.** Not a certain deadlock — the lanes are
+ * independent, so it completes whenever B's work does not itself depend on A's.
+ * It is a **lock-ordering hazard**: two documents' work each entering the
+ * other's lane deadlocks the pair. Both forms fail the same way, so there is no
+ * inversion to punish a careful caller, and there is no call site. The fix when
+ * one arrives is a total order on `DocId`s acquired low-to-high, not a blanket
+ * refusal — which is why the guard above is keyed on the `DocId` rather than on
+ * "any nested run".
  */
 
 /**
@@ -445,11 +454,28 @@ export class DocumentService {
    * message names this cause first among the three so nobody who hits it goes
    * hunting a filesystem race instead.
    */
-  close(docId: DocId): Promise<void> {
-    const record = this.#records.get(docId);
-    if (record === undefined) return Promise.resolve();
+  async close(docId: DocId): Promise<void> {
+    // FIRST STATEMENT, before the removal. Placed after it, this would refuse
+    // AND remove the document, handing the caller an error with the index
+    // already mutated — worse than either outcome alone.
+    // FIRST STATEMENT, before the removal. Placed after it, this would refuse
+    // AND remove the document, handing the caller an error with the index
+    // already mutated — worse than either outcome alone.
+    if (this.#executingDocument.getStore() === docId) {
+      throw new Error(
+        'Cannot close a document from inside its own lane. The returned promise awaits a ' +
+          'lane containing the work that called it, so awaiting this would hang. Closing ' +
+          'terminates the stream; it is not an operation within it. Run the save in the ' +
+          'lane and close outside it.',
+      );
+    }
 
-    // Half 1. Synchronous, before any await, outside every lane.
+    const record = this.#records.get(docId);
+    if (record === undefined) return;
+
+    // Half 1. Synchronous, before any await, outside every lane. `close` is
+    // `async` only so the guard above rejects rather than throwing
+    // synchronously; the body reaches this line without yielding.
     this.#records.delete(docId);
 
     // Half 2. The lane is captured after the removal, so it can only contain
