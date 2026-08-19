@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 import { CONFIG_FILE, configPathFor } from '../lib/secretScan.mjs';
 import { provisionGitleaks } from '../provision/gitleaks.mjs';
+import { NPM_VERSION } from '../lib/toolchain.mjs';
 import { pathsTouchContractTypes, touchesContractTypes } from './contractDrift.mjs';
 import { LOCKFILE_VALIDATING_NPM, compareVersions, explain } from './lockfileIntegrity.mjs';
 
@@ -113,6 +114,8 @@ await provisionGitleaks();
 /** @type {string[]} */
 const failures = [];
 
+let passed = 0;
+
 /**
  * @param {string} name
  * @param {() => string | null} run Returns a failure message, or null to pass.
@@ -120,6 +123,7 @@ const failures = [];
 function check(name, run) {
   const message = run();
   if (message === null) {
+    passed += 1;
     process.stdout.write(`  ok  ${name}\n`);
   } else {
     failures.push(`${name}: ${message}`);
@@ -284,6 +288,27 @@ check('a refusal explains that nothing was checked, not that the lockfile is wro
   return null;
 });
 
+check('the remedy names the PINNED npm, never a floating tag', () => {
+  // The defect this case exists for: the first draft advised `npm@latest`,
+  // which is today a MAJOR above what the runners run — a guard that exists
+  // because a floating `node-version: 24` moved the runners' npm without a
+  // commit, advising a moving target of its own, pointing the disagreement the
+  // other way.
+  const text = explain('REFUSED: npm 11.6.2 cannot validate a lockfile.\n');
+  if (/@latest|@next|@beta/u.test(text)) {
+    return `the remedy names a floating tag:\n${text}`;
+  }
+  if (!text.includes(`npm@${NPM_VERSION}`)) {
+    return `the remedy does not name the pinned npm (${NPM_VERSION}), so it can drift from the ` +
+      `version the runners actually use:\n${text}`;
+  }
+  if (!text.includes(LOCKFILE_VALIDATING_NPM)) {
+    return `the refusal does not state the minimum separately. A contributor already past the ` +
+      `floor has no reason to move, and telling them to would be advice they should ignore.`;
+  }
+  return null;
+});
+
 check('CONTROL: a real lockfile failure still reads as one', () => {
   // Without this, the branch above is satisfied by an `explain` that returns the
   // refusal text for everything — and then a genuinely broken lockfile would be
@@ -299,4 +324,7 @@ if (failures.length > 0) {
   process.stderr.write(`\n${failures.length} hook proof failure(s):\n\n${failures.join('\n\n')}\n`);
   process.exit(1);
 }
-process.stdout.write('\n11 hook cases passed.\n');
+// Counted, not typed. A hand-written total drifts the moment a case is added,
+// and it drifts SILENTLY: the number is prose, so nothing compares it to
+// anything. This file has carried a stale one twice.
+process.stdout.write(`\n${String(passed)} hook cases passed.\n`);

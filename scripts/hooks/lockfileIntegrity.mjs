@@ -63,6 +63,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { NPM_VERSION } from '../lib/toolchain.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
@@ -215,7 +217,15 @@ export function explain(output) {
     return (
       `\nCommit blocked — the lockfile check could not be run, so it was not run.\n\n` +
       `${output}\n` +
-      `  Fix:  npm install -g npm@latest\n\n` +
+      // NOT `@latest`, and not a literal. `@latest` is a floating tag, so this
+      // guard — which exists because a floating `node-version: 24` moved the
+      // runners' npm without a commit — would have been advising a moving
+      // target, and today that target is a MAJOR above what CI runs. Sourced
+      // from the pin so it cannot drift from it.
+      `  Fix:  npm install -g npm@${NPM_VERSION}\n\n` +
+      `That is the npm the runners use. The MINIMUM is ${LOCKFILE_VALIDATING_NPM} — anything ` +
+      `at or above it validates correctly, so a contributor already past the floor has no ` +
+      `reason to move.\n\n` +
       `This is a refusal, not a failure of the lockfile: nothing here says your lockfile is ` +
       `wrong, only that this npm cannot tell. A guard that passes when it could not look is ` +
       `the green tick meaning "did not check" — and that is exactly how a broken lockfile ` +
