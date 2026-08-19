@@ -19,6 +19,13 @@ export {
 } from './channels.js';
 export { createClient, toError, unwrap, wrapHandler, wrapHandlers } from './boundary.js';
 export {
+  type Command,
+  type CommandKind,
+  type CommandOfKind,
+  commandSchema,
+  rotatePagesSchema,
+} from './commands.js';
+export {
   docIdSchema,
   docVersionSchema,
   envelopeSchema,

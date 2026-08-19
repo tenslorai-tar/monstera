@@ -1,5 +1,13 @@
 export { CapabilityRegistry, type HandleBytesSource, handlesEqual } from './capabilityRegistry.js';
 export {
+  type CommandSpec,
+  type CommandSpecs,
+  type Invertibility,
+  type Reproducibility,
+  type WriterOfRecord,
+  commandSpecs,
+} from './commandSpecs.js';
+export {
   type CanonicalPath,
   type FileIdentity,
   isSameDocument,
