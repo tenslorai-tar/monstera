@@ -416,6 +416,167 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `b315e2c..77d4c2c`
+
+**Audited through 77d4c2c.** 7 commits, 18 files, 0 proofs added, **2 proofs
+modified**, 0 new instruments in `scripts/`.
+
+Run at 7 of 9 rather than on the gate. C is §3's real assertion — undo restoring
+a leaf to *inheriting* — and it is not a thing to build under a gate about to
+trip.
+
+### Finding U-1 — the file guard's scope is narrower than its stated purpose
+
+`findControlCharacter` scans **C0 plus `0x7f`**, byte-wise. It does not cover the
+Trojan Source class (CVE-2021-42574): bidirectional overrides `U+202A`–`U+202E`,
+`U+2066`–`U+2069`, `U+061C`, and the invisibles `U+200B`–`U+200D`, `U+2060`,
+`U+FEFF`, `U+00AD`. It **cannot** cover them in its present form — it reads raw
+bytes, and every one of those is a multi-byte UTF-8 sequence.
+
+**Verified independently rather than accepted**: 186 tracked files, 183 read as
+text (the three skipped are the icon set, whose bytes decode into watched
+codepoints by coincidence — scanning them would bury a real finding in noise).
+**Zero hits**, with a positive control confirming the search can locate a watched
+codepoint at all, because a scan reports "found nothing" for every way it can be
+broken and here that is the answer everyone wants.
+
+So this is a **gap, not a defect** — and the reason it is worth closing now is
+specific to this repository rather than general. The premise is that the world
+reads this code, under AGPL, with outside contributions eventually arriving.
+**Review integrity is exactly the property those characters attack**: source that
+renders one way to a reviewer and compiles another. And the guard's own stated
+purpose is protecting text from characters *invisible to a reader* — it is that
+purpose, one codepoint range short.
+
+The same shape as the NUL finding, and that is the point of recording it as a
+class rather than an item: **a check whose scope is narrower than its purpose,
+where nothing about it looks wrong.** Nothing in the output, the tests or the
+diff says "this only covers one byte range" — the count of cases passing is the
+same either way.
+
+`docs/security/THREAT-MODEL.md` covers supply chain as *a malicious upstream
+release* and does not cover source that reads differently than it compiles. The
+codepoint set lands with a threat-model line, so the scan has a stated reason
+rather than being a list somebody extended.
+
+**CI would not have caught it.** `guard:tree` runs in `guards.yml` and is
+structurally blind to the whole class.
+
+### Finding U-2 — the modified-proofs column reports NET change, so intra-range churn is invisible
+
+The column exists because *a loosened check looks like a corrected one*, and it
+tells the auditor to read each diff. It reports the **range** diff.
+
+Measured on this range. `scripts/proofs/contract.proof.mjs` reports **+191, −0**
+at range level. Per commit it is **+72, −0** in `6c8d28f` and **+133, −14** in
+`77d4c2c`. A line added in one commit and rewritten in a later one nets to an
+insertion, so the fourteen deletions — including one `because` matcher being
+re-anchored — do not appear at all.
+
+Here it is benign: the fourteen are eight import rewrites, four comment lines,
+one import, and the `because` change, which was a **tightening** forced by the
+cross-product check. Read them and that is visible. But nothing made an auditor
+read them, and the column reported zero.
+
+The hazard is the general case: a proof loosened in one commit and re-tightened
+in another inside the same range shows **zero deletions**, while the loosened
+state was committed and pushed in between. The instrument that exists to make
+loosening visible cannot see loosening that was subsequently reverted.
+
+Cheap fix, not taken here: have `audit:scope` report per-commit churn for files
+in the proofs column alongside the range total. Left **open**, with the fix
+named, because changing that instrument needs its own resolution test and this
+range's owed work is C.
+
+### The rest of the checklist
+
+**1 — root cause or workaround?** No loosened check, no escape hatch, no
+special-cased input. Two fixes are root-cause in the strong sense: T-1 was closed
+by **derivation and witnessing** rather than by checking the current spellings,
+and T-2 by comparing the exact quantity rather than tightening the proxy.
+
+The corrective work in this range has a **different shape from the last one**,
+and the difference is the interesting part. Last range, four of eight substantive
+commits corrected something an earlier commit had introduced. This range, three
+corrections happened **inside** the commits that caused them, before anything was
+pushed: the elision's truncated-dump gap, the confusable `because` pair, and a
+vacuous test. All three were caught by instruments firing during the work rather
+than by an audit reading the diff afterwards. That is the same defects arriving
+earlier, which is what the instruments are for.
+
+**2 — easy shape only?** Hard shape throughout. A **misspelt** symbol rather than
+a correct one (T-1). A checkpoint that must hold the **pre-command** document
+rather than merely exist. A **truncated** type dump rather than a nested one. A
+malformed `/Rotate` as a **real** constructor for the terminal branch rather than
+a fixture invented to reach it.
+
+**3 — would CI have caught it?** U-1: **no**, and structurally so. U-2: no — it
+is a property of the audit instrument, which CI does not run as a judgement.
+Everything else in the range is covered: `proof:contract`, `proof:advisories`,
+`vitest`, `typecheck` and `guard:tree` all run in CI.
+
+**4 — proofs non-vacuous?** Mutated throughout, and the separations matter more
+than the count. On the register: three, each reddening only its own half — the
+enforcement gate, verify-nothing, and one-combined-number, the last being T-1's
+own mechanism. On `rotatePages`: four, plus two on the writer binding failing in
+**opposite** directions. On the log and bus: five, including checkpoint-after-
+apply, which reddens with `expected '90' to be '/Landscape'` — a sentence an
+existence check cannot produce.
+
+**One mutation found a defect in a test rather than in the code.** Moving
+`record` before `apply` changed nothing, because the case named *a failing apply
+records nothing* never reached `apply`: capture validates the same page indices
+and threw first. The test asserted something it could not observe. Renamed to
+what it tests, its reachable neighbour added, and the case one command cannot
+construct recorded as uncovered **at the call site** rather than assumed away.
+
+**4a — resolution.** Two instruments gained resolution treatment, and one of them
+got it **before it measured anything** for the first time in this project: the
+witness rule's resolution case — one symbol moving from witnessed to unverifiable
+must move both counts by one — was written in the same commit as the rule. The
+other is `elideTypeDumps`, whose truncation pass now ends in a **refusal** if any
+brace survives, rather than degrading quietly.
+
+**4b — search-shaped instruments.** One added and it is the range's main work:
+the witness rule is a `git grep` per symbol, so it carries a control asserting a
+**non-zero verified count** on every run. Without it a rule that verified nothing
+would pass all seven enforcement cases. The U-1 scan above carried its own
+positive control for the same reason.
+
+**5 — executed or asserted?** Executed: every mutation; the full bidi and
+invisible-codepoint scan over 183 text files with its control; MuPDF's rotation
+behaviour on four questions before a line was written; the snap port compared
+**engine-to-engine** over 23 raw values. Asserted and labelled: that `apply`
+throwing where `capture` succeeded behaves correctly — not constructible with one
+command, recorded at the call site.
+
+**6 — architecture before feature?** Clean, and for the first time in this
+project it ran forwards **deliberately** rather than being caught. Two ADR
+decisions, each in its own commit, each **before** the code that would have
+decided it by accident: who captures prior state (`cb96db8`, before the handler),
+and whether a declared-invertible command may produce a terminal entry
+(`5684c08`, before the log). Both are recorded as **silences filled**, not as
+clarifications of something already written — the ADR was not wrong, it was
+quiet, and saying which is part of the record.
+
+**7 — documents match code?** `check:docs` passes its eight checks. Every commit
+updated its `FEATURES.md` row, including two rows moved from `—` to `done` and
+one to `partly done` with what it still owes stated.
+
+### The escape guard fired twice more
+
+`sed -i` from the review seat — **while writing a finding about text corruption**
+— and `node -e` from the build seat, reached for as a throwaway prefix on a `sed`
+while auditing the file that records these fires.
+
+Fifth and sixth recorded unprompted denials; second from the review seat. Neither
+adds anything about the mechanism. What both add is the same observation from
+opposite chairs: the rule was maximally primed in each case — one seat was
+literally composing text about invisible characters corrupting files — and it was
+still not in reach at the moment the command was formed.
+
+---
+
 ## 2026-08-19 — S-1's harness paid in a different currency
 
 Worth separating from the two earlier payments, because the source is different
