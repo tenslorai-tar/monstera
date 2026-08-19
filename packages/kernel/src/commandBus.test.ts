@@ -10,7 +10,7 @@ import {
   UnregisteredWriterError,
 } from './commandBus.js';
 import { CommandLog, type LogEntry } from './commandLog.js';
-import { type DocumentContext, type VersionWriter } from './documentService.js';
+import { type CommandWriter, type DocumentContext } from './documentService.js';
 import { type ByteImage, type MupdfSession } from './engineSeam.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
@@ -32,21 +32,38 @@ beforeAll(async () => {
   flat = await document.save();
 });
 
-/** A minimal lane context. The counter is §5's; the bus only bumps it. */
-function contextStub(): DocumentContext & { readonly bumps: () => number } {
+/**
+ * A minimal lane context.
+ *
+ * It carries a **real `CommandLog`**, because that is where the log now lives —
+ * on the document's record, not on the bus (ADR-0009's composition decision).
+ * One context stands for one document, so two contexts are two logs, which is
+ * the property the decision exists to make structural.
+ */
+function contextStub(): DocumentContext & {
+  readonly bumps: () => number;
+  /** The same log, reachable without minting a capability inside a test. */
+  readonly mutableLog: CommandLog;
+} {
   let version = asDocVersion(1);
   let bumps = 0;
+  const log = new CommandLog();
   return {
+    mutableLog: log,
     docId: 'stub' as DocumentContext['docId'],
     path: 'stub',
     get version(): DocVersion {
       return version;
     },
-    bumpVersion(_writer: VersionWriter): DocVersion {
+    bumpVersion(_writer: CommandWriter): DocVersion {
       bumps += 1;
       version = asDocVersion(version + 1);
       return version;
     },
+    commandLog(_writer: CommandWriter): CommandLog {
+      return log;
+    },
+    log,
     markSaved(): DocVersion {
       return version;
     },
@@ -181,7 +198,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       expect(entry).toMatchObject({ inverse: [{ page: 0, prior: { present: false } }] });
       expect(version).toBe(2);
       expect(context.bumps()).toBe(1);
-      expect(bus.log.entries).toHaveLength(1);
+      expect(context.log.entries).toHaveLength(1);
     } finally {
       await mupdfWriter.close(session);
     }
@@ -254,7 +271,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         document.loadPage(0).getObject().get('Rotate').isNull(),
       );
       expect(untouched).toBe(true);
-      expect(bus.log.entries).toStrictEqual([]);
+      expect(context.log.entries).toStrictEqual([]);
       expect(context.bumps()).toBe(0);
     } finally {
       await mupdfWriter.close(session);
@@ -272,7 +289,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       );
       // An entry for work that did not happen is worse than no entry: undo
       // would then reverse a change the document never received.
-      expect(bus.log.entries).toStrictEqual([]);
+      expect(context.log.entries).toStrictEqual([]);
       expect(context.bumps()).toBe(0);
     } finally {
       await mupdfWriter.close(session);
@@ -296,7 +313,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       await expect(bus.execute(session, context, rotateFirst)).rejects.toThrow(
         /refused to serialise/u,
       );
-      expect(bus.log.entries).toStrictEqual([]);
+      expect(context.log.entries).toStrictEqual([]);
       expect(context.bumps()).toBe(0);
       // And the document is untouched, because the checkpoint is taken before
       // apply rather than beside it.
@@ -409,13 +426,13 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     try {
       await bus.execute(session, context, rotateFirst);
       await bus.undo(session, context);
-      expect(bus.log.redoDepth).toBe(1);
+      expect(context.log.redoDepth).toBe(1);
 
       await bus.redo(session, context);
 
       expect(await ownRotation(session, 0)).toBe(180);
-      expect(bus.log.redoDepth).toBe(0);
-      expect(bus.log.entries).toHaveLength(1);
+      expect(context.log.redoDepth).toBe(0);
+      expect(context.log.entries).toHaveLength(1);
       // Three applied mutations: the command, the undo, the redo.
       expect(context.bumps()).toBe(3);
     } finally {
@@ -437,7 +454,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       // document is untouched. A checkpoint restore opens a NEW session from
       // those bytes, which is a question about session ownership rather than
       // about this bus.
-      expect(bus.log.entries).toHaveLength(1);
+      expect(context.log.entries).toHaveLength(1);
       expect(await ownRotation(session, 0)).toBe(90);
       expect(context.bumps()).toBe(1);
     } finally {
@@ -459,15 +476,45 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
   it('a new command through the bus truncates the redo tail', async () => {
     const bus = new CommandBus({ mupdf: mupdfWriter });
     const session = await mupdfWriter.open(flat);
+    // ONE context, because one context is one document's log. This test used a
+    // fresh stub per call and passed, which it could only do while the log lived
+    // on the bus and was therefore shared across every document — the defect the
+    // composition decision removed. Three stubs now means three logs and the
+    // assertions below would be meaningless.
+    const context = contextStub();
     try {
-      await bus.execute(session, contextStub(), rotateFirst);
-      await bus.execute(session, contextStub(), rotateFirst);
-      bus.log.undo();
-      expect(bus.log.redoDepth).toBe(1);
+      await bus.execute(session, context, rotateFirst);
+      await bus.execute(session, context, rotateFirst);
+      context.mutableLog.undo();
+      expect(context.log.redoDepth).toBe(1);
 
-      await bus.execute(session, contextStub(), rotateFirst);
-      expect(bus.log.redoDepth).toBe(0);
-      expect(bus.log.entries).toHaveLength(2);
+      await bus.execute(session, context, rotateFirst);
+      expect(context.log.redoDepth).toBe(0);
+      expect(context.log.entries).toHaveLength(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: two documents have two logs, so undo cannot cross between them', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const first = contextStub();
+    const second = contextStub();
+    try {
+      await bus.execute(session, first, rotateFirst);
+      await bus.execute(session, second, rotateFirst);
+
+      // The reason the log is on the record rather than on an application-wide
+      // bus. A shared log would report two entries on both and let undo on one
+      // document walk the other's — which is the cross-document corruption the
+      // per-document store rule makes unrepresentable by shape.
+      expect(first.log.entries).toHaveLength(1);
+      expect(second.log.entries).toHaveLength(1);
+
+      await bus.undo(session, first);
+      expect(first.log.canUndo).toBe(false);
+      expect(second.log.canUndo).toBe(true);
     } finally {
       await mupdfWriter.close(session);
     }

@@ -1,8 +1,8 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 
-import { type Checkpoint, CommandLog, type LogEntry, type LogEntryFor } from './commandLog.js';
+import { type Checkpoint, type LogEntry, type LogEntryFor } from './commandLog.js';
 import { type DeclaredSpecs, type WriterOf, declaredSpecs } from './commandSpecs.js';
-import { type DocumentContext, type VersionWriter } from './documentService.js';
+import { type CommandWriter, type DocumentContext } from './documentService.js';
 import { type ByteImage, type EngineWriter, type WriterSession } from './engineSeam.js';
 
 /**
@@ -62,14 +62,16 @@ function asCheckpoint(bytes: ByteImage): Checkpoint {
 }
 
 /**
- * The one {@link VersionWriter} in existence, and the reason `bumpVersion` has
- * a single writer of record rather than a documented intention (B3).
+ * The one {@link CommandWriter} in existence, and the reason the version
+ * counter and the command log have a single writer of record rather than a
+ * documented intention (B3).
  *
  * Module-private, like {@link asCheckpoint}'s mint one line above, and for the
- * same reason: a lane entry that wanted to bump would have to write a cast, and
- * a cast is visible in a diff in a way "someone called the method" is not.
+ * same reason: a lane entry that wanted to bump or to record would have to
+ * write a cast, and a cast is visible in a diff in a way "someone called the
+ * method" is not.
  */
-const VERSION_WRITER = 'version-writer' as VersionWriter;
+const COMMAND_WRITER = 'command-writer' as CommandWriter;
 
 /** A command routed to a writer of record that has no adapter registered. */
 export class UnregisteredWriterError extends Error {
@@ -113,16 +115,27 @@ export interface Executed {
 /** What one undo or redo did. */
 export type Undone = Executed;
 
+/**
+ * The bus, and it holds **no per-document state** (ADR-0009's composition
+ * decision).
+ *
+ * It used to own the log as an instance field, which forced a choice between
+ * one bus per application — one log across every open document, so undo on one
+ * walks another's entries — and one bus per document, which needs a
+ * `Map<DocId, bus>` and is therefore get-or-create, minting a bus for a closed
+ * `DocId`.
+ *
+ * Taking the log off it makes the choice unnecessary rather than making it
+ * correctly: writers and routing are application-wide because they are the same
+ * for every document, and the log arrives from the `DocumentContext` the lane
+ * already hands in. One instance, no map, and the log's lifetime is the
+ * record's.
+ */
 export class CommandBus {
   readonly #writers: WriterRegistry;
-  readonly #log = new CommandLog();
 
   constructor(writers: WriterRegistry) {
     this.#writers = writers;
-  }
-
-  get log(): CommandLog {
-    return this.#log;
   }
 
   /**
@@ -179,8 +192,8 @@ export class CommandBus {
     // The reachable neighbour — a checkpoint that fails between them — is
     // covered. Revisit when a second command has an `apply` that can fail on
     // its own.
-    this.#log.record(entry);
-    return { entry, version: context.bumpVersion(VERSION_WRITER) };
+    context.commandLog(COMMAND_WRITER).record(entry);
+    return { entry, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -200,7 +213,8 @@ export class CommandBus {
     session: WriterSession[keyof WriterSession],
     context: DocumentContext,
   ): Promise<Undone | undefined> {
-    const entry = this.#log.entries.at(-1);
+    const log = context.commandLog(COMMAND_WRITER);
+    const entry = log.entries.at(-1);
     if (entry === undefined) return undefined;
 
     if (entry.kind === 'terminal') {
@@ -215,8 +229,8 @@ export class CommandBus {
     const spec = declaredSpecs[entry.command.kind];
     await spec.invert(session as WriterSession[WriterOf<typeof entry.command.kind>], entry.inverse);
 
-    this.#log.undo();
-    return { entry, version: context.bumpVersion(VERSION_WRITER) };
+    log.undo();
+    return { entry, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -238,7 +252,8 @@ export class CommandBus {
     session: WriterSession[keyof WriterSession],
     context: DocumentContext,
   ): Promise<Undone | undefined> {
-    const entry = this.#log.peekRedo();
+    const log = context.commandLog(COMMAND_WRITER);
+    const entry = log.peekRedo();
     if (entry === undefined) return undefined;
 
     const spec = declaredSpecs[entry.command.kind];
@@ -266,7 +281,7 @@ export class CommandBus {
       entry.command,
     );
 
-    this.#log.redo();
-    return { entry, version: context.bumpVersion(VERSION_WRITER) };
+    log.redo();
+    return { entry, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

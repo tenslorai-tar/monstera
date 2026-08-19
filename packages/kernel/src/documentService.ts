@@ -10,6 +10,7 @@ import {
 } from '@monstera/shared';
 
 import { type CapabilityRegistry } from './capabilityRegistry.js';
+import { CommandLog, type ReadonlyCommandLog } from './commandLog.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
 import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 
@@ -154,19 +155,31 @@ export class DocumentBusyError extends Error {
 }
 
 /**
- * Permission to advance a document's version (ADR-0009 §5, rule B3).
+ * Proof that the holder is the `CommandBus` (rule B3).
  *
- * Declared here, beside the method it guards, and **minted only inside
- * `commandBus.ts`** — that module-private line is what makes the `CommandBus`
- * the counter's single writer of record rather than its most likely one.
+ * Declared here, beside the properties it guards, and **minted only inside
+ * `commandBus.ts`** — that module-private line is what makes the bus the single
+ * writer of record for the two properties ADR-0009 assigns it: the version
+ * counter (§5) and the command log (§4).
  *
- * A capability rather than a comment because the alternative was measured and
- * rejected in this project's own history: `bumpVersion` sat on the context
- * reachable by any lane entry, with the narrowing recorded as an intention in
- * the ADR. An intention is what a property has just before it acquires a second
+ * **Named for its holder, not for one of the properties.** B3 is about one
+ * *component* being permitted to write, so a second token would say there are
+ * two writers when there is one. It was `VersionWriter` for one commit, before
+ * the log moved onto the record and needed the same guarantee.
+ *
+ * **What a brand buys, stated precisely rather than generously:** it does not
+ * make forgery impossible — a cast produces one, here as for every brand in this
+ * kernel. It makes writing **by accident** impossible, and it makes any
+ * production code that tries **visible in a diff**. That is the whole difference
+ * between a property with one writer and a property with a convention.
+ *
+ * A capability rather than a comment because the alternative was measured in
+ * this project's own history: `bumpVersion` sat on the context reachable by any
+ * lane entry, with the narrowing recorded as an intention in the ADR for three
+ * commits. An intention is what a property has just before it acquires a second
  * writer.
  */
-export type VersionWriter = Brand<'version-writer', 'VersionWriter'>;
+export type CommandWriter = Brand<'command-writer', 'CommandWriter'>;
 
 /**
  * Everything a lane entry is told about the document, **as of the moment it
@@ -210,7 +223,36 @@ export interface DocumentContext {
    * nobody can call — a narrowing that reads as a decision and behaves as a
    * deletion.
    */
-  bumpVersion(writer: VersionWriter): DocVersion;
+  bumpVersion(writer: CommandWriter): DocVersion;
+
+  /**
+   * This document's command log (ADR-0009 §4), for the bus to record into.
+   *
+   * **Per document, and on the record rather than on the bus.** A log held by
+   * an application-wide bus would be one log across every open document, so
+   * undo on one would walk another's entries — the cross-document corruption
+   * the per-document store rule makes unrepresentable by shape, reintroduced
+   * one layer down. A `Map<DocId, log>` would be get-or-create, minting a log
+   * for a closed `DocId`; that is the hazard that put the lane here too.
+   *
+   * Living on the record means its lifetime **is** the record's, dropped on
+   * close by construction rather than by anyone remembering to.
+   *
+   * Guarded, because the log is a property of the document and §4 gives it one
+   * writer. {@link CommandLog.entries} and the cursor predicates are readable
+   * without a token through {@link log}; recording and moving the cursor are
+   * not.
+   */
+  commandLog(writer: CommandWriter): CommandLog;
+
+  /**
+   * A read-only view of the log, for work that needs to ask rather than change.
+   *
+   * "Is there anything to undo" is a query a lane entry may legitimately make.
+   * Separating it from {@link commandLog} is what lets the mutating half stay
+   * behind a capability without making the readable half useless.
+   */
+  readonly log: ReadonlyCommandLog;
 
   /**
    * Records that the document's current content is what the file now holds.
@@ -324,6 +366,21 @@ interface DocumentRecord {
   lane: Promise<void>;
   /** Entries queued or running on {@link lane}, for the {@link MAX_QUEUED} cap. */
   queued: number;
+  /**
+   * ADR-0009 §4's log, **on the record for the same reason the lane is**.
+   *
+   * The alternative shapes both fail, and each is what somebody reaches for
+   * first. A log held by an application-wide `CommandBus` is **one log across
+   * every open document**, so undo on one walks another's entries — the
+   * cross-document corruption the per-document store rule makes unrepresentable
+   * by shape, arriving one layer down. A `Map<DocId, log>` is get-or-create, so
+   * it mints a log for a closed `DocId`.
+   *
+   * Here the log's lifetime **is** the record's. Dropping the record drops the
+   * log and every checkpoint in it, by construction rather than by discipline —
+   * which is also what stops a closed document's byte snapshots outliving it.
+   */
+  readonly log: CommandLog;
 }
 
 /**
@@ -526,6 +583,7 @@ export class DocumentService {
       savedVersion: version,
       lane: Promise.resolve(),
       queued: 0,
+      log: new CommandLog(),
     });
     return { kind: 'opened', docId, version };
   }
@@ -658,6 +716,12 @@ export class DocumentService {
             record.version = asDocVersion(record.version + 1);
             return record.version;
           },
+          // Same treatment, same reason: the token is not read, because being
+          // unobtainable outside `commandBus.ts` is a compile-time property and
+          // checking it here would be the runtime guard B5 says to prefer a
+          // type over.
+          commandLog: () => record.log,
+          log: record.log,
           markSaved: () => {
             record.savedVersion = record.version;
             return record.savedVersion;

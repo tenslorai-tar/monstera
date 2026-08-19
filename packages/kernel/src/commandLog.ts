@@ -112,13 +112,29 @@ export type LogEntryFor<K extends CommandKind> =
 export type LogEntry = { readonly [K in CommandKind]: LogEntryFor<K> }[CommandKind];
 
 /**
+ * What a lane entry may ask of the log without holding the bus's capability.
+ *
+ * Queries only. "Is there anything to undo" is a fair question for any work
+ * running in the lane; recording an entry or moving the cursor is not, because
+ * an entry recorded without an applied command makes undo reverse a change the
+ * document never received.
+ */
+export interface ReadonlyCommandLog {
+  readonly entries: readonly LogEntry[];
+  readonly redoDepth: number;
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+  peekRedo(): LogEntry | undefined;
+}
+
+/**
  * The log and its cursor.
  *
  * The cursor is a count of **applied** entries, not an index, so "nothing
  * applied" is `0` rather than `-1` and there is no off-by-one to get wrong at
  * either end.
  */
-export class CommandLog {
+export class CommandLog implements ReadonlyCommandLog {
   /** @internal */
   readonly #entries: LogEntry[] = [];
 

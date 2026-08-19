@@ -26,6 +26,7 @@ export {
   type CommandPrior,
   type LogEntry,
   type LogEntryFor,
+  type ReadonlyCommandLog,
 } from './commandLog.js';
 export {
   CheckpointRestoreNotBuiltError,
@@ -60,7 +61,7 @@ export {
   type DocumentTeardown,
   type IdentityReader,
   type OpenOutcome,
-  type VersionWriter,
+  type CommandWriter,
   type Versioned,
   type WriteTargetVerdict,
 } from './documentService.js';

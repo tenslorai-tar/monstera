@@ -579,6 +579,41 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
 `,
   },
   {
+    name: 'THE READABLE LOG IS NOT THE WRITABLE ONE',
+    expect: 'reject',
+    code: 'TS2739',
+    // §4 gives the log one writer, and it is the same component that owns the
+    // counter — so it is the same capability, not a second one. An entry
+    // recorded without an applied command makes undo reverse a change the
+    // document never received.
+    //
+    // Asserted on the VIEW rather than on the accessor's arity, and the
+    // cross-product check is why: `context.commandLog()` and
+    // `context.bumpVersion()` both produce *Expected 1 arguments, but got 0*,
+    // so two cases would have had one indistinguishable reason between them.
+    // This asks a stronger question anyway — whether `log` is genuinely
+    // narrower than the guarded accessor, or merely a second name for it.
+    because: /missing the following properties from type 'CommandLog': #private, record, undo, redo/u,
+    notBecause: null,
+    source: `
+import type { CommandLog, DocumentContext } from '@monstera/kernel';
+export const mutate = (context: DocumentContext): CommandLog => context.log;
+`,
+  },
+  {
+    name: 'CONTROL: but it may ASK the log, without any capability at all',
+    expect: 'allow',
+    // The half that must stay open. "Is there anything to undo" is a fair
+    // question for any work running in the lane, and a narrowing that closed it
+    // would push callers towards holding the mutable log for a query — which is
+    // how a capability gets handed around until it means nothing.
+    source: `
+import type { DocumentContext } from '@monstera/kernel';
+export const askable = (context: DocumentContext) =>
+  context.log.canUndo && context.log.entries.length > 0 && context.log.redoDepth === 0;
+`,
+  },
+  {
     name: 'A LANE ENTRY CANNOT BUMP THE VERSION, because it cannot obtain the capability',
     expect: 'reject',
     code: 'TS2554',
@@ -603,8 +638,8 @@ export const work = (context: DocumentContext) => context.bumpVersion();
     // be called at all — "narrowed to one writer" and "removed" are different
     // claims, and only the first is §5.
     source: `
-import type { DocumentContext, VersionWriter } from '@monstera/kernel';
-export const work = (context: DocumentContext, writer: VersionWriter) =>
+import type { CommandWriter, DocumentContext } from '@monstera/kernel';
+export const work = (context: DocumentContext, writer: CommandWriter) =>
   context.bumpVersion(writer);
 `,
   },

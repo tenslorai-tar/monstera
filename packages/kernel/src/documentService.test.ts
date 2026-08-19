@@ -7,19 +7,20 @@ import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
+import { type LogEntry } from './commandLog.js';
 import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
 import {
   DocumentBusyError,
   DocumentService,
   type IdentityReader,
   type OpenOutcome,
-  type VersionWriter,
+  type CommandWriter,
 } from './documentService.js';
 
 /**
- * A `VersionWriter` for tests of the counter itself.
+ * A `CommandWriter` for tests of the per-document state the bus writes.
  *
- * `bumpVersion` narrowed to a capability whose only production mint is
+ * The counter and the log narrowed to a capability whose only production mint is
  * module-private to `commandBus.ts` (B3). These are `DocumentService` tests, so
  * the token is a **collaborator's capability being stubbed** rather than a guard
  * being bypassed — the same relationship `commandBus.test.ts` has to
@@ -38,7 +39,7 @@ import {
  * adapter"*. Bumping through the bus needs a real PDF and a real MuPDF session
  * — an engine, to exercise a counter.
  */
-const VERSION_WRITER_FOR_TEST = 'version-writer' as VersionWriter;
+const COMMAND_WRITER_FOR_TEST = 'command-writer' as CommandWriter;
 
 /**
  * What carries the weight here, as in the identity tests, is the set of cases
@@ -386,7 +387,7 @@ describe('DocumentService — the per-document lane', () => {
 
     const result = await service.run(docId, (context) => {
       expect(context.version).toBe(1); // what the work operates against
-      context.bumpVersion(VERSION_WRITER_FOR_TEST);
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST);
       return Promise.resolve('mutated');
     });
 
@@ -406,7 +407,7 @@ describe('DocumentService — the per-document lane', () => {
     const held = deferred();
     const command = service.run(docId, async (context) => {
       await held.promise;
-      context.bumpVersion(VERSION_WRITER_FOR_TEST);
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST);
       return 'command';
     });
     const query = service.run(docId, (context) => Promise.resolve(context.version));
@@ -440,7 +441,7 @@ describe('DocumentService — the per-document lane', () => {
     // isDirty is read live, not snapshotted at entry start, so work that bumps
     // and then asks gets the answer it just produced.
     const afterBump = await service.run(docId, (context) => {
-      context.bumpVersion(VERSION_WRITER_FOR_TEST);
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST);
       return Promise.resolve(context.isDirty());
     });
     expect(afterBump).toStrictEqual({ value: true, version: 2 });
@@ -458,7 +459,7 @@ describe('DocumentService — the per-document lane', () => {
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     await service.run(docId, (context) => {
-      context.bumpVersion(VERSION_WRITER_FOR_TEST);
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST);
       return Promise.resolve();
     });
     // Dirtiness is DOCUMENT state, not entry state. Confirmed by mutation:
@@ -470,16 +471,72 @@ describe('DocumentService — the per-document lane', () => {
     ).resolves.toMatchObject({ value: true });
   });
 
+  it('EACH DOCUMENT HAS ITS OWN LOG — asserted against the service, not a stub', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const first = mustOpen(await service.open(registry.mint(original())));
+    const second = mustOpen(await service.open(registry.mint(other())));
+
+    const entry = (page: number): LogEntry => ({
+      kind: 'invertible',
+      command: { kind: 'rotatePages', pages: [page], quarterTurns: 1 },
+      inverse: [{ page, prior: { present: false } }],
+    });
+
+    await service.run(first, (context) => {
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(entry(0));
+      return Promise.resolve();
+    });
+
+    // The log lives on the RECORD (ADR-0009's composition decision). Held by an
+    // application-wide bus it would be one log across every open document, and
+    // undo on one would walk the other's entries — the cross-document
+    // corruption the per-document store rule makes unrepresentable by shape.
+    //
+    // This is asserted through the service because a context stub carries
+    // whatever log the stub builds: a control that reads a double proves the
+    // double is right.
+    const counts = await Promise.all([
+      service.run(first, (context) => Promise.resolve(context.log.entries.length)),
+      service.run(second, (context) => Promise.resolve(context.log.entries.length)),
+    ]);
+    expect(counts.map((result) => result.value)).toStrictEqual([1, 0]);
+  });
+
+  it('and closing a document drops its log, with every checkpoint in it', async () => {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    await service.run(docId, (context) => {
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record({
+        kind: 'invertible',
+        command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+        inverse: [{ page: 0, prior: { present: false } }],
+      });
+      return Promise.resolve();
+    });
+    await service.close(docId);
+
+    // Lifetime by construction rather than by discipline: the log cannot
+    // outlive the record, so a closed document's byte snapshots cannot either.
+    // Reopening the same file mints a new record and therefore a fresh log.
+    const reopened = mustOpen(await service.open(registry.mint(original())));
+    await expect(
+      service.run(reopened, (context) => Promise.resolve(context.log.entries.length)),
+    ).resolves.toMatchObject({ value: 0 });
+  });
+
   it('CONTROL: dirty is CONSERVATIVE — undo/redo back to saved content still reports dirty', async () => {
     const registry = new CapabilityRegistry();
     const service = new DocumentService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const result = await service.run(docId, (context) => {
-      context.bumpVersion(VERSION_WRITER_FOR_TEST); // a command      -> v2
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST); // a command      -> v2
       context.markSaved(); //  saved at        -> v2
-      context.bumpVersion(VERSION_WRITER_FOR_TEST); // undo           -> v3
-      context.bumpVersion(VERSION_WRITER_FOR_TEST); // redo           -> v4
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST); // undo           -> v3
+      context.bumpVersion(COMMAND_WRITER_FOR_TEST); // redo           -> v4
       return Promise.resolve(context.isDirty());
     });
 
@@ -497,7 +554,7 @@ describe('DocumentService — the per-document lane', () => {
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const seen = await service.run(docId, (context) =>
-      Promise.resolve([context.version, context.bumpVersion(VERSION_WRITER_FOR_TEST), context.bumpVersion(VERSION_WRITER_FOR_TEST)]),
+      Promise.resolve([context.version, context.bumpVersion(COMMAND_WRITER_FOR_TEST), context.bumpVersion(COMMAND_WRITER_FOR_TEST)]),
     );
 
     // §5: bumped by every applied mutation INCLUDING undo and redo, never
