@@ -1,5 +1,6 @@
 export {
   type Channel,
+  type DeclaredOf,
   type FailureOf,
   INTERNAL_FAILURE,
   type InternalFailure,

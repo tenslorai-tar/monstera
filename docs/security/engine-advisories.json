@@ -151,31 +151,31 @@
         }
       }
     },
-    "kernel-error-path-sanitisation": {
+    "renderer-facing-errors-carry-no-text": {
       "guards": [
         "INVARIANT-2",
         "ADR-0009-SECTION-9"
       ],
-      "why": "Not an engine advisory. It is here because this register is the project's one mechanism for a verdict that expires when the code moves, and rebuilding that mechanism elsewhere is how two hand-rolled copies of one idea get to disagree (scripts/lib/verdict.mjs). THE CLAIM: no filesystem path reaches the renderer through a DocumentService error. THE INPUT ITS TRUTH RESTS ON: no IPC handler calls DocumentService yet. readFileIdentity narrows absence to ENOENT/ENOTDIR and RETHROWS every other errno, which is correct — a catch-all there would be a normaliser wearing a guard's clothes — but a rethrown EACCES is a Node fs error carrying the absolute path in both .message and .path, and it escapes open() to whoever called it. The kernel is the right place to throw honestly and the boundary is the right place to sanitise (ADR-0009 §9), so today's claim holds only because apps/desktop/src is a bare index.ts. It stops holding on the day the first handler is written, and that day is a routine feature commit that will not prompt anyone to re-read the ADR. WHAT THIS TRIGGER DOES NOT DO: it catches 'a handler reached DocumentService', not 'and its errors were sanitised'. It is a prompt to implement, and the thing it prompts is the docs/FEATURES.md row for the sanitising boundary — errors mapped to structured failures carrying no path, proven by a control that asserts a path DOES appear when the mapping is removed. Passing this red requires recording a new verdict that names the boundary, which is the point: mechanical rather than remembered. Scoped to apps/*/src/** because the kernel obviously names its own class and apps/desktop is the only package that can register an ipcMain handler.",
+      "why": "THE SUCCESSOR TO kernel-error-path-sanitisation, which EXPIRED as designed on 2026-08-19 when the first handler named DocumentService from apps/desktop/src. That verdict rested on 'no IPC handler calls DocumentService yet', and the handler is now written; re-arming the old input would be a verdict resting on a fact that is no longer true. Recorded here rather than deleted, because the old one was a prompt to implement and this one is what the implementation now claims. THE CLAIM: no filesystem path reaches the renderer through an IPC failure. THE BASIS, which is a TYPE rather than a filter: a wire Failure is a code, plus an incident id when a diagnostic was withheld, and nothing else — no message, no stack, no cause, and failureSchema is two disjoint .strict() shapes so an extra field is rejected rather than ignored. A field that does not exist cannot leak, which is why this is not a sanitiser that has to be right on every message ever written (B5). THE INPUT ITS TRUTH RESTS ON: no code under apps/*/src/** builds a diagnostic. toStructuredError copies message, copies stack and RECURSES INTO cause with itself; structuredErrorSchema is the wire shape of that diagnostic. Either one named from a handler is somebody assembling free text on the renderer-facing side, and that is the only remaining route by which a path could cross — a handler cannot put text in a Failure, but it could put one in a channel's RESULT if a result schema ever carried a diagnostic. WHAT THIS TRIGGER DOES NOT DO: it catches 'a handler reached for the diagnostic type', not 'and the diagnostic leaked'. It is a prompt to re-read ADR-0009 §9 before writing that line, and the evidence that the claim holds today lives in apps/desktop/src/documentCommands.test.ts — the renderer-facing failure carries the path in no field, with a control asserting the path IS in message, stack and a NESTED cause main-side, mutation-tested in the direction that matters: removing the path from the fixture reddens the control alone. Scoped to apps/*/src/** because packages/shared and packages/contract define these symbols and must name them.",
       "shippedPaths": [
         "apps/*/src/**"
       ],
       "symbols": [
-        "DocumentService",
-        "readFileIdentity"
+        "toStructuredError",
+        "structuredErrorSchema"
       ],
       "witness": {
-        "DocumentService": {
+        "toStructuredError": {
           "in": [
-            "packages/kernel/src/**"
+            "packages/shared/src/**"
           ],
-          "why": "The kernel names its own class, and the verdict scans apps/*/src/** — disjoint scopes, so the witness cannot be satisfied by the very reference whose appearance would expire the verdict."
+          "why": "Defined in result.ts and named by incident.ts. The verdict scans apps/*/src/** — disjoint scopes, so the witness cannot be satisfied by the very reference whose appearance would expire the verdict."
         },
-        "readFileIdentity": {
+        "structuredErrorSchema": {
           "in": [
-            "packages/kernel/src/**"
+            "packages/contract/src/**"
           ],
-          "why": "Defined in documentIdentity.ts and named by its own test. Same disjointness as above."
+          "why": "Defined in schemas.ts and re-exported by the contract index. Same disjointness as above."
         }
       }
     },
@@ -255,7 +255,7 @@
       "from": [
         "apps/*/src/**"
       ],
-      "why": "The control proving apps/*/src/** resolves, and the one that matters most: kernel-error-path-sanitisation scans ONLY this glob, so a glob that matched nothing would leave that verdict permanently, silently green. apps/desktop/src/index.ts is a bare 'export {};' today, which leaves 'export' as the only stable token in it — weak as a symbol and exactly right as a control, because what is being controlled for is whether any file under this glob is read at all."
+      "why": "The control proving apps/*/src/** resolves, and the one that matters most: renderer-facing-errors-carry-no-text scans ONLY this glob, so a glob that matched nothing would leave that verdict permanently, silently green. 'export' is deliberately a weak symbol and exactly the right control, because what is being controlled for is whether any file under this glob is read at all — it held when apps/desktop/src was a bare 'export {};' and it holds now that the composition point and the first handler live there. A SECOND PROPERTY OF THIS GLOB, learned by running it: scripts/lib/verdict.mjs resolves an absent-symbol input with `git grep`, which reads TRACKED files only. A newly written, still-untracked source file is therefore invisible to every reachability verdict — so an author writing the first handler sees green until the moment they stage it. That is not a defect in the tracked-only choice, which exists so build artefacts and vendored trees do not fire every verdict constantly; it is a consequence nobody had written down, and it is exactly the window in which the work is being done."
     }
   ]
 }

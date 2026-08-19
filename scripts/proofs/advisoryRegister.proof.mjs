@@ -313,10 +313,10 @@ try {
   const misspeltWitnessed = runAgainst(
     'misspelt-witnessed',
     register((value) => {
-      const claim = value.reachability['kernel-error-path-sanitisation'];
-      claim.symbols[0] = 'DocumentServcie';
-      claim.witness['DocumentServcie'] = claim.witness['DocumentService'];
-      delete claim.witness['DocumentService'];
+      const claim = value.reachability['renderer-facing-errors-carry-no-text'];
+      claim.symbols[0] = 'toStructuredErrror';
+      claim.witness['toStructuredErrror'] = claim.witness['toStructuredError'];
+      delete claim.witness['toStructuredError'];
     }),
   );
   check(

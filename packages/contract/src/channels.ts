@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
+import { commandSchema } from './commands.js';
+import { docIdSchema, docVersionSchema } from './schemas.js';
 
 /**
  * Every IPC channel, defined once.
@@ -33,6 +35,37 @@ export const channels = {
        */
       installChannel: z.enum(['store', 'web', 'development']),
     }),
+  ),
+
+  /**
+   * Applies one command to an open document.
+   *
+   * **This is not a document-carrying channel**, and saying so is the L11 note
+   * above being answered rather than skipped. What crosses is *intent*:
+   * `{ pages, quarterTurns }` is the same size for a 2-page document and a
+   * 20,000-page one, and the array scales with what the user selected, never
+   * with the document. The gate the note owes is still owed, by the first
+   * channel that carries bytes.
+   *
+   * **The result is the version and nothing else.** A log entry holds an inverse
+   * or a checkpoint — a whole byte image of the document — so returning what the
+   * bus produced would put the document on the wire once per operation, which is
+   * exactly what L11 forbids. The version is what the renderer needs to know its
+   * view is stale.
+   *
+   * Both failure codes are **outcomes, not defects**. A document closes while a
+   * command is in flight (`document-not-open`) and a runaway caller saturates a
+   * lane (`document-busy`); the renderer's answer is to drop the result or to
+   * back off, neither of which is an error report. Everything else a command can
+   * do wrong — an out-of-range page index, an unregistered writer, an engine
+   * throw — is a defect, and defects are `internal` with the diagnostic recorded
+   * main-side.
+   */
+  'document.execute': channel(
+    'Applies one command to an open document, returning the version it produced.',
+    z.object({ docId: docIdSchema, command: commandSchema }),
+    z.object({ version: docVersionSchema }),
+    ['document-not-open', 'document-busy'],
   ),
 } as const;
 
