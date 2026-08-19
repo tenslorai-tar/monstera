@@ -876,7 +876,7 @@ the first command over a non-scalar inheritable key *meets* a decision instead o
 non-invertible command without a checkpoint is unrepresentable" is untouched.
 The mapping loosens in one direction only, and the bus is what enforces it.
 
-### What B must therefore build
+### What B must therefore build (done — see the composition decision below)
 
 The capture step returns prior state **or a signal that it could not be taken**,
 and the terminal branch is constructed by this case. That matters for more than
@@ -884,3 +884,81 @@ tidiness: §4's terminal variant would otherwise land with nothing constructing
 it, which is an unexercised branch — the vacuous shape in its purest form. A
 malformed `/Rotate` fixture is a genuine constructor rather than one invented to
 exercise the branch, so it ships proven instead of merely present.
+
+---
+
+## Decision, 2026-08-19 — one composition point, and the log lives on the record
+
+The third silence, and the last one before the IPC boundary — which is exactly
+why it is filled now. §7 fixes the lane, §4 fixes the log, §6 fixes routing.
+**Nothing says who assembles them**, and the assembly is
+`handler → DocumentService.run → CommandBus.execute`.
+
+If every handler assembles that itself, a handler that forgets the lane is a
+race, and there is now **a second place where a feature is wired** — the thing
+the command registry exists to forbid. So: **one composition point, thin, owning
+the ordering and re-implementing neither side.** It lands with its first caller
+rather than ahead of one, because a composition point with nothing to compose is
+a shape nobody has tested.
+
+### Where the log lives, and why the question dissolves
+
+Settling composition surfaces a question that looks like a preference and is not:
+is the bus per document or per application?
+
+`CommandBus` held its log as an instance field. **Per application is therefore
+one log across every open document**, and undo on one document walks another's
+entries. That is not a trade-off to weigh; it is the cross-document corruption
+the per-document store rule makes unrepresentable *by shape*, reintroduced one
+layer down. Ruled out — and written here because "one bus per application" is
+otherwise the tidy default somebody reaches for.
+
+**Per document is right, and it inherits a question already answered once.** A
+per-document bus has to live somewhere, and a `Map<DocId, bus>` is get-or-create:
+it mints a bus for a closed `DocId` and runs it against a torn-down document.
+That is the exact hazard that put the lane **on the record** rather than in a map
+— §7's clarification, *"lane lookup must be get-or-miss, never get-or-create"*.
+
+**So take the log off the bus and the question stops existing.** `CommandBus`
+becomes **stateless** — writers and the routing table, one instance,
+application-wide — and the log becomes per-document state carried on the record
+beside the lane, reached through `DocumentContext` under the same capability that
+already guards the version counter.
+
+Four things follow, and the fourth is the one worth having:
+
+- no map, so no get-or-create and no resurrection;
+- the log's lifetime is the record's, dropped on close **by construction** rather
+  than by discipline;
+- `DocumentService` owns per-document state, which it already does, without
+  owning dispatch — so B3 holds and this is **not** the merge of the two that was
+  rejected;
+- the per-document/per-application question **stops existing** instead of being
+  decided, which is a different and better outcome than choosing correctly.
+
+The cost is one wider reach on `execute`, `undo` and `redo`: they take the log
+from the context they already receive. What it buys is that a whole class of
+lifetime bug has nowhere to live — the same trade putting the lane on the record
+made, which paid there.
+
+### The capability, stated accurately
+
+The token guarding the counter is extended to the log, because B3 is about *one
+component permitted to write* and that component is the same one. It is renamed
+to say what it identifies — the bus — rather than one of the properties it
+carries.
+
+And what it buys is worth stating precisely rather than generously: **a brand
+does not make forgery impossible.** A cast produces one, here as for every brand
+in this kernel. What it makes impossible is writing **by accident**, and what it
+makes visible is any production code that tries — a cast is a diff nobody reads
+past. That is the whole difference between a property with one writer and a
+property with a convention.
+
+Proving it needs **both** directions. The reject case alone — a lane entry cannot
+call it — is satisfied by a method nobody can call at all, and *narrowed to one
+writer* and *removed* are different claims.
+
+`markSaved` still keeps **no** token. Its writer of record is the save pipeline,
+which does not exist, and a token with no minter is a narrowing that reads as a
+decision and behaves as a deletion. It waits for the pipeline that will mint it.
