@@ -416,6 +416,224 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-19 — Stage audit: `8f097e3..b315e2c`
+
+**Audited through b315e2c.** 9 commits, 12 files, 0 proofs added, **2 proofs
+modified**, 0 new instruments.
+
+Run at 9 against a threshold of 9 — on the gate rather than past it. The next
+unit is `rotatePages` with a working `apply`, the first end-to-end command, and
+building a substantial unit under a gate about to go red is how a range gets
+audited in a hurry.
+
+### The modified proofs, classified — and one of them is a WIDENING
+
+The column exists because *a loosened check looks like a corrected one*. Neither
+of these is loosened, and they are not loosened in two different ways, which is
+worth separating rather than reporting as one clean answer.
+
+`scripts/hooks/guardFiles.proof.mjs`: **+22, −0.** One case added, nothing
+altered. `scripts/proofs/contract.proof.mjs`: **+491, −11**, and the eleven
+deletions are structural — a widened `Case` typedef, a `spawnSync` gaining
+`--pretty false`, and a verdict branch replaced by a stricter one. **No
+expectation flipped, no case removed, no assertion dropped.** Read line by line,
+because "no loosening found" is worth nothing unless somebody looked.
+
+The guard itself is the interesting one. `byte < 0x09 && byte > 0x00` became
+`byte < 0x09` — the check now catches **more**, not less. A widening has the
+opposite risk profile from a loosening and needs the opposite evidence: not "does
+it still catch what it claimed", but **"does it now reject something legitimate"**.
+Two measurements say no. `guard:tree` passes over every tracked file, and the
+adjacent accept case — a long clean text file past the sniff window — still
+passes. A NUL in a file `looksBinary` classifies as text has no legitimate
+reading, so the widened set is exactly the set that should have been rejected all
+along.
+
+Recorded as *read and classified as a widening* rather than as *no loosening
+found*. Those are different records and only one of them says a human decided.
+
+### Finding T-1 — a verdict's GLOB has a positive control; its SYMBOL has none
+
+The advisory register is now this project's main expiry mechanism: five
+reachability verdicts over eighteen symbols, two of them guarding obligations
+that do not exist yet. Every one is a claim that something will fire **later**,
+and a trigger that never fires is the perfect silent failure — it reports the
+reassuring answer forever.
+
+So the register was audited as an instrument, per item 4b. It is search-shaped
+in the purest way: `git grep` for a symbol, and *not found* is both the healthy
+answer and the answer every broken configuration gives.
+
+`brokenReachabilityControls` already closes half of this, and closes it well. One
+control per distinct path glob, derived from the verdicts rather than listed, so
+a new verdict naming a new glob demands a control instead of inheriting one.
+Breaking a glob was confirmed red — and produced **two** independent failures,
+the control not finding its symbol and the glob becoming uncontrolled.
+
+**The other half is open. The symbol itself has no control.** Measured, not
+reasoned: `utilityProcess` and `MessageChannelMain` misspelt to `utilityProcesss`
+and `MessageChanellMain`, `check:advisories` exits **0**, and the summary line
+still reads *18 symbol(s) checked* — because the count counts declarations, not
+findings. Invariant 25's containment verdict is then green forever, and nothing
+anywhere would say otherwise.
+
+This is the file's own stated failure mode, in the file that states it. Its
+doc comment names *"a symbol misspelt in the register"* as one of the ways the
+walk breaks; the control it built catches the glob and not the symbol.
+
+**The OCR door set is exempt, and the exemption is the shape of the fix.** Its
+eleven symbols are *derived* from the compiled engine source by
+`scripts/security/ocrDoors.mjs` and cross-checked every run — misspelling one was
+confirmed red in both directions at once (*reaches OCR, not declared* and
+*declared, reaches nothing*). Derivation is why. The other seven symbols are
+hand-written with nothing checking them.
+
+Those seven were all made to fire by execution during this audit, so the register
+is **correct today**: `DocumentService` and `readFileIdentity` from
+`apps/*/src/**`, `utilityProcess` and `MessageChannelMain` and `pdf_subset_fonts`
+from `packages/*/src/**`, `Uint8Array` from the single-file glob, and `ByteImage`
+in the commit that added it. The twelfth, `fz_new_document_writer`, fired for
+real, unprompted, on a comment in `mupdfWriter.ts`.
+
+What is missing is not the state — it is the mechanism that keeps the state true.
+A symbol correct today has no more standing than a claim true today, which is
+what this register exists to stop.
+
+**Second hazard, same family, recorded with it: a correctly spelt list may be
+incomplete.** `utilityProcess` and `MessageChannelMain` are two names for
+"Electron spawns a document-parsing process", hand-picked. OCR's completeness is
+derived; this one is asserted. The fix shape below addresses spelling, not
+completeness, and saying so is part of the finding.
+
+**The fix has one judgement call and it is the owner's**, because the obvious
+mechanism has an escape hatch in it. Requiring each symbol to be **witnessed** —
+found somewhere outside the globs the verdict scans, checked every run — works
+for five of the seven: `DocumentService`, `readFileIdentity`, `ByteImage` and
+`Uint8Array` all live in `packages/kernel/src/**`, and `pdf_subset_fonts` in the
+provisioned engine source the OCR walk already reads. It does **not** work for
+`utilityProcess` and `MessageChannelMain`: Electron is not a dependency, so those
+two have no witness anywhere in the repository. A `witness: null` escape would be
+a workaround with a config flag on it unless the gap is *printed on every run*
+rather than merely permitted — which is the difference worth deciding before
+building, not after.
+
+### Finding T-2 — the retention test compares a proxy where the quantity is free
+
+`mupdfWriter.test.ts`'s *does not retain the image it was opened from* zeroes the
+source buffer between two serialises and asserts `again.length ===
+written.length`. Length is not content. The test has some resolution through the
+throw path — a session reading a zeroed buffer would most likely fail rather than
+return a same-length document — but the assertion itself cannot tell a corrupted
+serialisation from a clean one at equal length.
+
+Measured rather than argued: adding `expect(Array.from(again)).toStrictEqual(
+Array.from(written))` **passes**. The exact quantity was available, equal, and
+unused. That is the `0.01 MB` harness in miniature — an instrument reporting a
+rounder number than the one it had.
+
+Small, and open, and reverted rather than folded into this commit.
+
+### The rest of the checklist
+
+**1 — root cause or workaround?** No loosened check, no escape hatch, no
+special-cased input. The guard fix is the one to name: NUL was *delegated* to
+`looksBinary`, which reads 8000 bytes, so the repair was to stop delegating
+rather than to widen the sniff window — the class, not the byte.
+
+The honest headline for this range is a different one. **Four of the eight
+substantive commits correct something an earlier commit in the same range
+introduced or left incomplete**: `9fce274` corrects `1f5d0f9`'s scope, `15d9a40`
+corrects `9fce274`'s depth and replaces its hardcoded pairs with the full
+cross-product, `8650a35` gives `8c6bd2d`'s sweep the control it shipped without,
+and `b315e2c` corrects a comment `83607ca` had just written. None is a
+workaround. All four are the pattern this scoping exists to see: defects arriving
+inside the work done an hour earlier to close the previous defect. A tree-wide
+sweep would have found the end state clean and reported nothing.
+
+**2 — easy shape only?** Hard shape tested throughout: a NUL **past** the sniff
+window rather than inside it, a rejection for the **wrong** reason rather than a
+rejection, a **nested** type dump rather than a flat one, confusable reason pairs
+found by n² rather than by hand, and a byte-image adapter with **no adapter
+behind it** proven by a type-level fixture carrying no assertion. The one place
+the hard shape had not been tried is T-1: every symbol had been tested spelt
+correctly, none spelt wrongly.
+
+**3 — would CI have caught it?** For T-1, **no** — `check:advisories` runs in
+`guards.yml` and passes the misspelling. For the range's own two defects, also
+no, and that is the point of both fixes: `guardFiles.mjs --tree` runs in CI and
+passed a file carrying a literal NUL at byte 19204, and `proof:contract` runs in
+CI and printed green for a case rejecting for a reason it did not claim. Both
+gaps are now closed; T-1's is not.
+
+**4 — proofs non-vacuous?** **Six mutations**, each confirmed red against the
+case named for it. Two are worth more than the count. Reverting the guard
+widening reddens the new NUL case *and leaves the twelve neighbouring cases
+green* — the mutation separates. And flipping the seam's `Apply` conditional from
+`'byte-image'` to `'live-session'` reddens two seam cases, one of which **still
+rejected** and failed only because the reason no longer matched. Under the
+pre-`S-1` harness that case would have printed green. S-1's fix is therefore
+load-bearing rather than tidy, demonstrated instead of argued.
+
+**4a — resolution.** No new measuring instruments, so this would ordinarily be
+checked-and-empty. It is not. An **existing** instrument gained the resolution
+test it had been missing: `resolutionTest` in `contract.proof.mjs`, which
+cross-assigns every reject case's expected reason against every other reject
+case's actual diagnostic. It found a real defect on its first run — a confusable
+pair outside the two that had been hardcoded. Recorded as *added late and
+immediately productive* rather than as absent. T-2 is the one resolution failure
+found: an assertion coarser than the data it holds.
+
+**4b — search-shaped instruments.** None added. The register was audited as one
+instead, which is where T-1 came from. The delegation sweep from `8c6bd2d` is not
+a script — it was a hand-run grep with its scope and its limitation recorded in
+this file, and it gained its positive control in `8650a35` rather than shipping
+without one.
+
+**5 — executed or asserted?** Executed: every mutation above; all seven
+hand-written verdict symbols driven to expiry by naming them in a shipped file
+and then reverted; the misspelt-symbol measurement that produced T-1; the
+byte-equality measurement that produced T-2; `guard:tree` over the whole
+repository; 92 tests, 21 contract cases, 26 guard cases, 17 advisory-register
+cases, 8 document checks. Asserted and labelled: that `utilityProcess` and
+`MessageChannelMain` are the *complete* set of entry points invariant 25 cares
+about — hand-picked, unlike OCR's derived door set, and recorded inside T-1.
+Corrected on execution: a suspected eighth finding. `FEATURES.md`'s §6 row claims
+*"ten compile-fail cases, three of them controls"* and the group holds only two
+`allow` cases, which read as an off-by-one carried forward. It is not: the third
+control is a **reject** case, labelled as the control for `diagnose`'s atomic
+branch. The row is right and the count was checked rather than assumed.
+
+**6 — architecture before feature?** Clean. Nothing in this range amended
+`ARCHITECTURE.md` or an ADR, and nothing needed to. The seam was built to §8 **as
+written** after an over-reading of it was corrected from the review seat before
+any code existed — §8 asks for both shapes in the type, not for a second adapter
+and not for byte retention. `b315e2c` corrects a *comment* that claimed more than
+the code did; a comment asserting a guarantee is read as one, but correcting it
+is not an amendment because the ADR was never wrong. The obligation it left
+behind became a trigger and a `FEATURES.md` row, which is this project's standing
+answer to an owed-list line.
+
+**7 — documents match code?** `check:docs` passes its eight checks. Every commit
+updated its `FEATURES.md` row in the same commit, including the byte-retention
+row that exists to say what is **not** built. ADR-0009 §8 needs no dated
+correction: the ADR describes the design, the design is unchanged, and what moved
+was one comment's claim about how far the code had got.
+
+### The escape guard fired again, during this audit
+
+A `node -e` denied — reached for as a throwaway prefix while composing a `sed`,
+with no thought behind it at all. Fourth recorded unprompted fire after
+2026-08-18T06:45Z, the `node -p`, and the review seat's `echo`; third from the
+build seat.
+
+Nothing new about the mechanism. What it adds is one more instance of the only
+claim that matters here: the command was composed *while auditing the very file
+that records these fires*, which is about as high as context-priming gets, and
+the rule still was not in reach at the moment of composition. Limit 2's asymmetry
+governs it — a denial is self-certifying.
+
+---
+
 ## 2026-08-19 — Stage audit: `d9f01b0..8f097e3`
 
 **Audited through 8f097e3.** 8 commits, 14 files, 0 proofs added, **1 proof
