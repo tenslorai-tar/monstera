@@ -25,7 +25,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -173,6 +173,55 @@ export async function fileExists(path) {
     // Any stat failure — ENOENT, ENOTDIR, permission — means "cannot use this
     // file", which is the same answer the caller needs.
     return false;
+  }
+}
+
+/**
+ * @param {string} path
+ * @returns {Promise<string>} SHA-256 of the file's bytes, hex.
+ */
+async function digestOf(path) {
+  const hash = createHash('sha256');
+  await pipeline(createReadStream(path), hash);
+  return `${hash.digest('hex')}`;
+}
+
+/**
+ * Whether two files hold the same bytes — `same`, `different`, or `unreadable`.
+ *
+ * ## Why this is three states and not a boolean
+ *
+ * It exists to answer "does this destination already hold the binary I staged"
+ * for a caller that will DESTROY the destination if the answer is no. A boolean
+ * would have to fold "they differ" together with "I could not look", and those
+ * two license opposite actions: the first is a reason to replace, the second is
+ * a reason to touch nothing. Collapsing them is the defect this function was
+ * written to remove, one level up — see `publish` in
+ * `scripts/provision/gitleaks.mjs`.
+ *
+ * An unreadable file is therefore never reported as `different`. A failed read
+ * is not evidence about content (audit item 4b: an empty result is a broken
+ * lookup, not a clean one).
+ *
+ * ## Why content and not "does it run"
+ *
+ * Starting a process is a question about the machine at this instant; a virus
+ * scanner holding a newly written executable open makes `CreateProcess` fail on
+ * a file that is perfectly correct. Reading bytes is a question about the file.
+ * Only the second one may gate a destructive step.
+ *
+ * @param {string} left
+ * @param {string} right
+ * @returns {Promise<{ kind: 'same' | 'different' } | { kind: 'unreadable', cause: unknown }>}
+ */
+export async function compareContents(left, right) {
+  try {
+    const [leftStat, rightStat] = await Promise.all([stat(left), stat(right)]);
+    if (leftStat.size !== rightStat.size) return { kind: 'different' };
+    const [leftDigest, rightDigest] = await Promise.all([digestOf(left), digestOf(right)]);
+    return { kind: leftDigest === rightDigest ? 'same' : 'different' };
+  } catch (cause) {
+    return { kind: 'unreadable', cause };
   }
 }
 

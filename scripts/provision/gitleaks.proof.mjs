@@ -22,12 +22,13 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
-import { fileExists } from '../lib/fetchVerified.mjs';
+import { compareContents, fileExists } from '../lib/fetchVerified.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const RACERS = 3;
@@ -215,6 +216,83 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
+  // What decides the swap is content, and content is not runnability.
+  //
+  // `publish` used to decide by spawning the destination and asking its
+  // version. That question answers `false` for two unrelated facts — "this is
+  // the wrong binary" and "I could not start it just this instant" — and only
+  // the first is a reason to replace anything. A scanner holding a freshly
+  // published .exe open produces the second, and it was authorising a rename of
+  // a directory another racer may have mapped.
+  //
+  // The case below is the resolution test for exactly that conflation (audit
+  // item 4a): ONE input, TWO questions, and they must give DIFFERENT answers.
+  // A file that cannot be started but is byte-identical to what we staged is
+  // the input the old design could not represent.
+  // ---------------------------------------------------------------------------
+  const scratch = await mkdtemp(join(tmpdir(), 'monstera-publish-'));
+  const original = join(scratch, 'original');
+  const identical = join(scratch, 'identical');
+  const oneByteOff = join(scratch, 'one-byte-off');
+  const shorter = join(scratch, 'shorter');
+  await writeFile(original, 'gitleaks pretend payload');
+  await writeFile(identical, 'gitleaks pretend payload');
+  await writeFile(oneByteOff, 'gitleaks pretend payloaD');
+  await writeFile(shorter, 'gitleaks pretend');
+
+  // Positive control: the input really is unstartable, on this machine, now.
+  // Without it the case below could pass against a file the platform happened
+  // to run, and would then be comparing two questions that agree.
+  const startAttempt = spawnSync(original, ['version'], { encoding: 'utf8' });
+  const cannotStart = startAttempt.error !== undefined || startAttempt.status !== 0;
+
+  if (!cannotStart) {
+    failures.push(
+      `CONTROL: ${original} was expected to be unstartable and the platform ran it. The case ` +
+        `below then compares two questions that agree, which is the one shape that proves ` +
+        `nothing about separating them.`,
+    );
+  }
+
+  const sameVerdict = await compareContents(original, identical);
+  if (sameVerdict.kind !== 'same') {
+    failures.push(
+      `two byte-identical files compared ${sameVerdict.kind}, not same. This is the input the ` +
+        `old design could not represent: unstartable, and yet exactly the binary we staged. ` +
+        `Deciding by "does it run" answers no here and destroys a correct install.`,
+    );
+  }
+
+  // The smallest difference that changes a decision: same length, one byte.
+  // A size-only comparison passes every case above and fails this one.
+  const offVerdict = await compareContents(original, oneByteOff);
+  if (offVerdict.kind !== 'different') {
+    failures.push(
+      `two same-length files differing in one byte compared ${offVerdict.kind}, not different. ` +
+        `A truncated or tampered binary of the right size would then be kept.`,
+    );
+  }
+
+  const shorterVerdict = await compareContents(original, shorter);
+  if (shorterVerdict.kind !== 'different') {
+    failures.push(`files of different sizes compared ${shorterVerdict.kind}, not different.`);
+  }
+
+  // A failed read must not look like an answer (audit item 4b). `different`
+  // here would send publish down the destructive path on no evidence at all —
+  // which is the same defect one level along.
+  const missingVerdict = await compareContents(original, join(scratch, 'absent'));
+  if (missingVerdict.kind !== 'unreadable') {
+    failures.push(
+      `comparing against a missing file reported ${missingVerdict.kind}. "I could not look" and ` +
+        `"they differ" license opposite actions, so folding them together reintroduces the ` +
+        `defect this comparison exists to remove.`,
+    );
+  }
+
+  await rm(scratch, { recursive: true, force: true });
+
+  // ---------------------------------------------------------------------------
   // A publish failure names the errno, not merely the operation.
   //
   // `publish` attaches the failing rename as `cause`, and every top-level
@@ -282,8 +360,11 @@ async function main() {
   process.stdout.write('  ok  a corrupted install is repaired without --force\n');
   process.stdout.write('  ok  a healthy install is left untouched by a re-run\n');
   process.stdout.write('  ok  no quarantine directories survive the swap\n');
+  process.stdout.write('  ok  an unstartable file is still recognised as the staged bytes\n');
+  process.stdout.write('  ok  a one-byte difference at equal length is recognised as different\n');
+  process.stdout.write('  ok  an unreadable destination is neither same nor different\n');
   process.stdout.write(`  ok  a publish failure names the errno (${occupiedRenameCode}), not just the operation\n`);
-  process.stdout.write('\n7 provisioning cases passed.\n');
+  process.stdout.write('\n10 provisioning cases passed.\n');
   return 0;
 }
 

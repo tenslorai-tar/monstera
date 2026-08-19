@@ -18,11 +18,11 @@
 
 import { spawnSync } from 'node:child_process';
 import { mkdir, rename, rm } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { commandPath } from '../lib/commandPath.mjs';
-import { downloadVerified, fileExists } from '../lib/fetchVerified.mjs';
+import { compareContents, downloadVerified, fileExists } from '../lib/fetchVerified.mjs';
 // One extractor for every provisioned artefact. The copy that used to live in
 // this file resolved an absolute bsdtar on Windows and returned the bare string
 // 'tar' everywhere else, so PATH still decided the outcome on the platform CI
@@ -155,6 +155,24 @@ export function gitleaksBinaryPath(options = {}) {
  * exec() is not. Reporting "provisioned" for a binary nobody has run is the
  * green-check-that-verifies-nothing this project bans outright.
  *
+ * ## Where this may be asked, and where it may not
+ *
+ * `false` here means one of two unrelated things — the binary ran and is the
+ * wrong version, or it could not be started at this instant. Nothing in the
+ * return value separates them, so this must only gate steps that are safe under
+ * BOTH readings.
+ *
+ * Two callers qualify. The staged copy: a file this process just wrote, at a
+ * path no other process knows, where a spawn failure really is a bad download.
+ * And the fast path in `provisionGitleaks`: a wrong answer there costs a
+ * download, not an install.
+ *
+ * `publish` did NOT qualify, and it was the caller — a scanner holding a freshly
+ * published .exe open for a few milliseconds made this return `false`, which
+ * demoted "another process won the race" into "replace what it published". It
+ * now compares content instead, and takes no `version`, so the question is not
+ * available to it. See `publish`.
+ *
  * @param {string} binary
  * @param {string} [version]
  * @returns {boolean}
@@ -239,23 +257,55 @@ export async function resolveGitleaks() {
  * fatal: a locked executable leaves a directory the next run cleans up, which is
  * strictly better than an interrupted publish.
  *
+ * ## What decides the swap, and what must never decide it
+ *
+ * The destination is compared to the staged copy BY CONTENT. It used to be
+ * compared by spawning it and asking its version, and that question has two
+ * different false answers wearing one boolean: "this is the wrong binary", and
+ * "I could not start it just this instant". Only the first is a reason to
+ * replace anything. The second is what a virus scanner produces by holding a
+ * newly written executable open for a few milliseconds — and it was authorising
+ * `rename(versionDirectory, quarantine)` on a directory another process may have
+ * mapped, which is the open-handle-blocks-RENAME mechanism in Part K, reached
+ * through a question that was never meant to authorise anything.
+ *
+ * So `version` is deliberately NOT a parameter here. Removing it is what stops
+ * the check coming back: this function cannot ask whether the destination runs,
+ * because it has nothing to compare a version against. `reportsPinnedVersion`
+ * still guards the STAGED copy, where the file is this process's own, no other
+ * process knows its path, and a spawn failure really does mean a bad download.
+ *
  * @param {{
  *   staging: string,
  *   versionDirectory: string,
  *   binary: string,
  *   force: boolean,
- *   version: string,
  * }} options
  * @returns {Promise<void>}
  */
-async function publish({ staging, versionDirectory, binary, force, version }) {
+async function publish({ staging, versionDirectory, binary, force }) {
   await mkdir(dirname(versionDirectory), { recursive: true });
 
+  const staged = join(staging, basename(binary));
+
   if (await fileExists(binary)) {
-    if (!force && reportsPinnedVersion(binary, version)) {
-      // Another process published a working copy while this one was downloading.
-      // Theirs passes the only test that matters, so it stands.
-      return;
+    if (!force) {
+      const destination = await compareContents(binary, staged);
+      if (destination.kind === 'same') {
+        // Another process published this exact binary while this one was
+        // downloading. It is byte-for-byte what we staged and proved runnable,
+        // so there is nothing to replace and no reason to touch the path.
+        return;
+      }
+      if (destination.kind === 'unreadable') {
+        // Not evidence about the binary, so it may not authorise destroying it.
+        // Failing here leaves a working tool in place and says why; a re-run
+        // repairs it once whatever held the file has let go.
+        throw new Error(
+          `Could not read ${binary} to decide whether it needs replacing`,
+          { cause: destination.cause },
+        );
+      }
     }
 
     const quarantine = `${versionDirectory}.superseded-${process.pid}`;
@@ -277,9 +327,16 @@ async function publish({ staging, versionDirectory, binary, force, version }) {
   } catch (cause) {
     // rename onto an existing directory fails on Windows rather than replacing
     // it, which is what happens when another process published between the
-    // check above and here. Accept its copy — but only after confirming it runs,
-    // or a genuine failure is mistaken for a lost race.
-    if (!(await fileExists(binary)) || !reportsPinnedVersion(binary, version)) {
+    // check above and here. Accept its copy — but only after confirming it is
+    // the same binary, or a genuine failure is mistaken for a lost race.
+    //
+    // By content, for the reason in this function's header: a copy we cannot
+    // start right now is not the same thing as a copy that is wrong, and only
+    // the second justifies calling this a publish failure.
+    const winner = (await fileExists(binary))
+      ? await compareContents(binary, staged)
+      : /** @type {const} */ ({ kind: 'different' });
+    if (winner.kind !== 'same') {
       throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
     }
   }
@@ -361,7 +418,7 @@ export async function provisionGitleaks({
       );
     }
 
-    await publish({ staging, versionDirectory, binary, force, version });
+    await publish({ staging, versionDirectory, binary, force });
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
