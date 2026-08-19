@@ -1,0 +1,186 @@
+import type * as mupdf from 'mupdf';
+
+import { type CommandOfKind } from '@monstera/contract';
+
+import { type Apply, type MupdfSession } from './engineSeam.js';
+import { withDocument } from './mupdfWriter.js';
+
+/**
+ * The first command, and the one ADR-0009 §3 was derived from.
+ *
+ * ## Two functions, because the bus captures and the handler applies
+ *
+ * The 2026-08-19 decision on ADR-0009: prior state for an inverse is captured
+ * by the `CommandBus`, in a step of its own, before `apply` — never inside a
+ * handler. So {@link captureRotatePages} and {@link applyRotatePages} are
+ * separate exports rather than one function returning both.
+ *
+ * The bus does not exist yet. What matters before it does is that `apply`
+ * **does not consume what the inverse will need**: the prior `/Rotate`
+ * own-state is readable by a caller, and reading it is not entangled with
+ * mutating.
+ *
+ * ## Own-state, not effective state — and the two are different objects
+ *
+ * §3's finding: the inverse of rotating a page that **inherited** its rotation
+ * is `delete('Rotate')`, not writing back the value that was showing. Both
+ * render identically; only `delete` restores the same document, because a
+ * write-back leaves the leaf declaring what it used to inherit and it silently
+ * stops tracking its branch.
+ *
+ * MuPDF gives both readings and they are separate calls, verified by running
+ * them rather than by reading the declarations: on a leaf that inherits
+ * `/Rotate 90` from its `/Pages` node, `get('Rotate')` reports `null` and
+ * `getInheritable('Rotate')` reports `90`. Capture uses the first. The forward
+ * rotation uses the second, because the user is rotating what they can see.
+ */
+
+/**
+ * A page's own `/Rotate` before the command ran (ADR-0009 §3).
+ *
+ * Absence is a value here, not a missing one. `{ present: false }` is what
+ * makes the inverse a `delete` rather than a write-back — the distinction the
+ * whole log design turns on.
+ */
+export type PriorRotation =
+  | { readonly present: false }
+  | { readonly present: true; readonly raw: number };
+
+/** One page's prior own-state, in the order the command named its pages. */
+export interface PriorPageRotation {
+  readonly page: number;
+  readonly prior: PriorRotation;
+}
+
+/**
+ * The rotation the engine actually applies for a raw `/Rotate` value.
+ *
+ * A **port of MuPDF's own snap**, not a tidier rule of our own, and that
+ * distinction is the whole point: the forward command rotates by quarter turns
+ * from *what the user sees*, and what the user sees is whatever the renderer
+ * decided. A separate normalisation would make the page jump on the first
+ * rotate of any document carrying a non-quarter-turn value.
+ *
+ * From `pdf_page_transform_box`, MuPDF 1.28.0 `source/pdf/pdf-page.c`:
+ *
+ * ```c
+ * if (rotate < 0)    rotate = 360 - ((-rotate) % 360);
+ * if (rotate >= 360) rotate = rotate % 360;
+ * rotate = 90*((rotate + 45)/90);
+ * if (rotate >= 360) rotate = 0;
+ * ```
+ *
+ * Two details survive the port deliberately. The `+45` rounds a half-way value
+ * **up**, so `45` snaps to `90` and not to `0` — measured against the engine,
+ * where the page bounds swap. And the trailing `>= 360` guard exists because
+ * the rounding can overshoot: a raw `340` reaches `360`, which is `0`.
+ *
+ * `Math.trunc` stands in for `pdf_dict_get_inheritable_int`, which reads the
+ * object as an integer; a real-valued `/Rotate` is truncated toward zero before
+ * any of this runs.
+ */
+export function snapRotation(raw: number): number {
+  let rotate = Math.trunc(raw);
+  if (rotate < 0) rotate = 360 - ((-rotate) % 360);
+  if (rotate >= 360) rotate = rotate % 360;
+  rotate = 90 * Math.floor((rotate + 45) / 90);
+  if (rotate >= 360) rotate = 0;
+  return rotate;
+}
+
+/**
+ * A `/Rotate` this command refuses to act on.
+ *
+ * The PDF specification says `/Rotate` is an integer. A name or a string there
+ * is a malformed document, and §3's prior state is typed `raw: number` — so
+ * there is no honest capture for it. Coercing would record an inverse that is
+ * well-formed and wrong, which undoes to a document that renders correctly and
+ * is not the one that was there.
+ *
+ * Refusing is the conservative direction: nothing is written, so nothing is
+ * lost. It is stated as a **known limit** rather than presented as complete —
+ * whether such a document should instead be rotatable with a checkpoint is a
+ * decision for the log, not for this handler.
+ */
+export class MalformedRotationError extends Error {
+  override readonly name = 'MalformedRotationError';
+
+  constructor(page: number, found: string) {
+    super(
+      `Page ${String(page)} carries a non-numeric /Rotate (${found}). ` +
+        'It cannot be captured as prior state, so rotating it would produce an inverse that ' +
+        'restores a different document. Nothing was written.',
+    );
+  }
+}
+
+/** The page dictionary for a validated index, or a named refusal. */
+function pageObject(
+  document: mupdf.PDFDocument,
+  page: number,
+  total: number,
+): mupdf.PDFObject {
+  if (!Number.isInteger(page) || page < 0 || page >= total) {
+    throw new RangeError(
+      `Page ${String(page)} is outside this document, which has ${String(total)} page(s). ` +
+        'Page indices are zero-based.',
+    );
+  }
+  return document.loadPage(page).getObject();
+}
+
+/**
+ * Reads each named page's prior `/Rotate` **own-state**, before anything is
+ * mutated.
+ *
+ * Called by the bus, not by {@link applyRotatePages}. Every page is read before
+ * any is written, so a failure part-way through the command leaves no page
+ * captured-but-not-applied — and the whole set is validated first, so an
+ * out-of-range index refuses the command rather than half-rotating it.
+ */
+export function captureRotatePages(
+  session: MupdfSession,
+  command: CommandOfKind<'rotatePages'>,
+): Promise<PriorPageRotation[]> {
+  return withDocument(session, (document) => {
+    const total = document.countPages();
+    return command.pages.map((page) => {
+      const own = pageObject(document, page, total).get('Rotate');
+      if (own.isNull()) return { page, prior: { present: false } };
+      if (!own.isNumber()) throw new MalformedRotationError(page, own.toString());
+      return { page, prior: { present: true, raw: own.asNumber() } };
+    });
+  });
+}
+
+/**
+ * Rotates each named page by the command's quarter turns.
+ *
+ * Mutates the live session in place and returns nothing — `Apply` for a
+ * live-session writer is `=> Promise<void>` (§8). Returning the inverse from
+ * here was the rejected alternative in the ADR: it would change that signature
+ * one commit after it landed.
+ *
+ * The base is the **inheritable** value, snapped the way the engine snaps it,
+ * so one quarter turn moves the page one quarter turn from what was on screen.
+ * The result is written to the leaf, which is correct — the page now has a
+ * rotation of its own — and is exactly why the inverse has to be able to delete
+ * the key rather than write a value back.
+ *
+ * Validated in full before the first write, so a bad index cannot leave a
+ * partly rotated document behind.
+ */
+export const applyRotatePages: Apply<'mupdf', 'rotatePages'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'rotatePages'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const total = document.countPages();
+    const objects = command.pages.map((page) => pageObject(document, page, total));
+    const turn = command.quarterTurns * 90;
+    for (const object of objects) {
+      const inherited = object.getInheritable('Rotate');
+      const base = inherited.isNumber() ? snapRotation(inherited.asNumber()) : 0;
+      object.put('Rotate', (base + turn) % 360);
+    }
+  });

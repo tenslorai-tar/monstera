@@ -70,6 +70,28 @@ function documentFor(session: MupdfSession): mupdf.PDFDocument {
   return document;
 }
 
+/**
+ * Runs `work` against the native document behind a session.
+ *
+ * The single door between a session token and a `PDFDocument`, and the reason
+ * it is here rather than on the seam: `documentFor` is the provenance check, so
+ * routing every reader through this keeps *"only this adapter turns a token
+ * into a document"* true no matter how many command handlers exist. A getter
+ * returning the document would be the same thing with the check optional.
+ *
+ * Command handlers are the callers. They live in their own modules because a
+ * boundary adapter that also implements `rotatePages` is two concerns in one
+ * file, and the next command would make it three.
+ *
+ * @template T
+ */
+export function withDocument<T>(
+  session: MupdfSession,
+  work: (document: mupdf.PDFDocument) => T,
+): Promise<T> {
+  return promised(() => work(documentFor(session)));
+}
+
 export const mupdfWriter: EngineWriter<MupdfSession> = {
   /**
    * Parses `image` into a session.

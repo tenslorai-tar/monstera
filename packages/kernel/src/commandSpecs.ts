@@ -1,5 +1,8 @@
 import { type CommandKind } from '@monstera/contract';
 
+import { type Apply, type WriterSession } from './engineSeam.js';
+import { applyRotatePages } from './rotatePages.js';
+
 /**
  * What every command declares about itself, and the table that routes them.
  *
@@ -25,14 +28,34 @@ import { type CommandKind } from '@monstera/contract';
  * and for a document it is how one engine's idea of the page tree overwrites
  * another's.
  *
- * `apply` is not on the spec yet. §6 requires it to be **bound to the session
- * type of its declared writer**, so that a B3 violation is a type error at the
- * point of authoring rather than a review comment — and that binding needs the
- * engine seam (§8), which does not exist. Declaring the writer now and binding
- * `apply` to it when the seam lands extends this type; declaring `apply` first
- * against an untyped session would have to be rewritten.
+ * Derived from the seam rather than listed, so the set of writers has one
+ * declaration. A writer added to `WriterSession` without an adapter is a
+ * compile error at every spec that names it, which is the direction that fails
+ * safe.
  */
-export type WriterOfRecord = 'mupdf' | 'pdfium' | 'pdf-lib' | 'signpdf';
+export type WriterOfRecord = keyof WriterSession;
+
+/**
+ * The writer and its `apply`, as **one indivisible choice**.
+ *
+ * §6 requires `apply` to be bound to the session type of its declared writer,
+ * so a B3 violation is a type error where it is authored rather than a review
+ * comment. A plain `{ writer: WriterOfRecord; apply: ... }` cannot express that
+ * — the two fields would be independent, and a spec could declare `mupdf` and
+ * supply an `apply` taking a PDFium session.
+ *
+ * A distributed mapped type collapsed to its own union is what binds them: for
+ * each writer there is exactly one member, carrying that writer's literal type
+ * and the `Apply` derived from it. Choosing the `writer` therefore chooses the
+ * `apply` signature, including which **shape** it has — a byte-image writer's
+ * `apply` returns bytes, a live-session writer's returns void (§8).
+ */
+export type WriterBinding<K extends CommandKind> = {
+  readonly [W in WriterOfRecord]: {
+    readonly writer: W;
+    readonly apply: Apply<W, K>;
+  };
+}[WriterOfRecord];
 
 /**
  * Can this be undone, and what does undoing it cost?
@@ -70,11 +93,21 @@ export type Reproducibility =
   | { readonly reproducible: true; readonly replay: 'reapply-intent' }
   | { readonly reproducible: false; readonly replay: 'stored-effect' };
 
-/** Everything one command kind declares about itself. */
+/**
+ * Everything one command kind declares about itself.
+ *
+ * **`capture` is deliberately absent**, and its absence is a decision rather
+ * than an omission. ADR-0009's 2026-08-19 decision settles the *writer* — the
+ * bus captures prior state before `apply`, never a handler — and leaves the
+ * *type* to the log, because a capture's return shape is the inverse's shape
+ * and that is §4's two-shape union. `captureRotatePages` is exported from its
+ * own module for the bus to bind when it lands; a command added before then
+ * must export one too.
+ */
 export type CommandSpec<K extends CommandKind> = {
   readonly kind: K;
-  readonly writer: WriterOfRecord;
-} & Invertibility &
+} & WriterBinding<K> &
+  Invertibility &
   Reproducibility;
 
 /**
@@ -94,6 +127,9 @@ export const commandSpecs: CommandSpecs = {
     // PDFObject API. Rebuilding into a new document drops /AcroForm, /Outlines,
     // /Names and /OCProperties — measured, not assumed (ADR-0006).
     writer: 'mupdf',
+    // Bound to `mupdf` by WriterBinding, so this must take a MupdfSession and
+    // return void. Handing it a byte-image writer's apply does not compile.
+    apply: applyRotatePages,
     // §3: the inverse restores prior state verbatim, including ABSENCE. A page
     // that inherited its rotation is restored by DELETING the key, not by
     // writing back the value that was showing — both render identically and

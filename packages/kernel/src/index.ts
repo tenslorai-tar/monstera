@@ -9,12 +9,21 @@ export {
   type WriterShape,
   type WriterShapeOf,
 } from './engineSeam.js';
-export { mupdfWriter } from './mupdfWriter.js';
+export { mupdfWriter, withDocument } from './mupdfWriter.js';
+export {
+  MalformedRotationError,
+  type PriorPageRotation,
+  type PriorRotation,
+  applyRotatePages,
+  captureRotatePages,
+  snapRotation,
+} from './rotatePages.js';
 export {
   type CommandSpec,
   type CommandSpecs,
   type Invertibility,
   type Reproducibility,
+  type WriterBinding,
   type WriterOfRecord,
   commandSpecs,
 } from './commandSpecs.js';

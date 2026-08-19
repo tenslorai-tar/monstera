@@ -200,10 +200,12 @@ export const handle: FileHandle = asFileHandle('opaque-token');
     // which is this file's own stated failure mode.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
+    apply: applyRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -222,6 +224,7 @@ export const specs: CommandSpecs = {
     // table exhaustive by construction rather than by review.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {};
 `,
   },
@@ -233,10 +236,12 @@ export const specs: CommandSpecs = {};
     notBecause: /rotatePages/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
+    apply: applyRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -245,6 +250,7 @@ export const specs: CommandSpecs = {
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
+    apply: applyRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -267,10 +273,12 @@ export const specs: CommandSpecs = {
     // retrofit arriving one command at a time.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
+    apply: applyRotatePages,
     invertible: true,
     undo: 'inverse',
   },
@@ -285,10 +293,12 @@ export const specs: CommandSpecs = {
     notBecause: /reproducible/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
+    apply: applyRotatePages,
     reproducible: true,
     replay: 'reapply-intent',
   },
@@ -310,10 +320,12 @@ export const specs: CommandSpecs = {
     // forbids — signing, OCR and AI all land here.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
+    apply: applyRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: false,
@@ -333,10 +345,12 @@ export const specs: CommandSpecs = {
     // is how a checkpoint quietly becomes optional.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
+    apply: applyRotatePages,
     invertible: false,
     undo: 'inverse',
     reproducible: true,
@@ -353,9 +367,11 @@ export const specs: CommandSpecs = {
     // type would forbid the feature rather than the mistake.
     source: `
 import type { CommandSpec } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
+  apply: applyRotatePages,
   invertible: false,
   undo: 'checkpoint',
   reproducible: false,
@@ -378,6 +394,62 @@ export const spec: CommandSpec<'rotatePages'> = {
     source: `
 import type { Command } from '@monstera/contract';
 export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns: 45 };
+`,
+  },
+  {
+    name: 'a spec may not declare one writer and supply the apply of ANOTHER',
+    expect: 'reject',
+    code: 'TS2322',
+    // §6's binding, and the case that makes it real. `writer` and `apply` are
+    // one indivisible choice (`WriterBinding`), not two independent fields —
+    // otherwise a spec could declare `pdf-lib` and hand it MuPDF's handler, and
+    // the B3 violation would be a review comment instead of a compile error.
+    //
+    // The compiler bottoms out on the SESSION rather than the return type: a
+    // byte-image writer is handed bytes, MuPDF's handler demands a session, and
+    // that mismatch is reached first. Matching the deepest line rather than the
+    // summary is what makes this case name the binding it is about.
+    because: /Type 'ByteImage' is not assignable to type 'MupdfSession'/u,
+    // None, and the reason is worth stating rather than leaving as a bare null.
+    // The name you would expect to be confusable is the DECLARED writer,
+    // `pdf-lib` — and it does not appear at all, because it is a value whose
+    // literal type never enters the assignability chain. `rotatePages` does
+    // survive elision, via `CommandSpec<"rotatePages">`, but it is the command
+    // this spec is for rather than a name in reach of the wrong matcher; the
+    // cross-product check is what guards that, and it runs regardless.
+    notBecause: null,
+    source: `
+import type { CommandSpec } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'pdf-lib',
+  apply: applyRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same spec compiles when the apply matches the declared writer',
+    expect: 'allow',
+    // Without this, the case above is satisfied by a `CommandSpec` that rejects
+    // every byte-image writer for some unrelated reason — "declaring pdf-lib is
+    // impossible" and "declaring pdf-lib binds a byte-image apply" would look
+    // identical, and only one of them is §6.
+    source: `
+import type { ByteImage, CommandSpec } from '@monstera/kernel';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'pdf-lib',
+  apply: (image: ByteImage) => Promise.resolve(new Uint8Array(image)),
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
 `,
   },
   {
