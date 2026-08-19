@@ -200,13 +200,14 @@ export const handle: FileHandle = asFileHandle('opaque-token');
     // which is this file's own stated failure mode.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -225,7 +226,7 @@ export const specs: CommandSpecs = {
     // table exhaustive by construction rather than by review.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {};
 `,
   },
@@ -237,13 +238,14 @@ export const specs: CommandSpecs = {};
     notBecause: /rotatePages/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -254,6 +256,7 @@ export const specs: CommandSpecs = {
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -276,13 +279,14 @@ export const specs: CommandSpecs = {
     // retrofit arriving one command at a time.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     invertible: true,
     undo: 'inverse',
   },
@@ -297,13 +301,14 @@ export const specs: CommandSpecs = {
     notBecause: /reproducible/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     reproducible: true,
     replay: 'reapply-intent',
   },
@@ -325,13 +330,14 @@ export const specs: CommandSpecs = {
     // forbids — signing, OCR and AI all land here.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: false,
@@ -351,13 +357,14 @@ export const specs: CommandSpecs = {
     // is how a checkpoint quietly becomes optional.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
     capture: captureRotatePages,
+    invert: invertRotatePages,
     invertible: false,
     undo: 'inverse',
     reproducible: true,
@@ -374,12 +381,13 @@ export const specs: CommandSpecs = {
     // type would forbid the feature rather than the mistake.
     source: `
 import type { CommandSpec } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
   apply: applyRotatePages,
   capture: captureRotatePages,
+  invert: invertRotatePages,
   invertible: false,
   undo: 'checkpoint',
   reproducible: false,
@@ -438,6 +446,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   writer: 'pdf-lib',
   apply: applyRotatePages,
   capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
+  invert: (image: ByteImage) => Promise.resolve(image),
   invertible: true,
   undo: 'inverse',
   reproducible: true,
@@ -459,6 +468,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   writer: 'pdf-lib',
   apply: (image: ByteImage) => Promise.resolve(new Uint8Array(image)),
   capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
+  invert: (image: ByteImage) => Promise.resolve(image),
   invertible: true,
   undo: 'inverse',
   reproducible: true,
@@ -531,6 +541,41 @@ declare const command: { kind: 'rotatePages'; pages: number[]; quarterTurns: 1 }
 declare const own: MupdfSession;
 export const ok = apply(own, command);
 export const bad = apply(foreign, command);
+`,
+  },
+  {
+    name: 'AN INVERSE CANNOT SEE THE COMMAND, so it cannot be computed from intent',
+    expect: 'reject',
+    code: 'TS2554',
+    // §3's finding as a signature. An inverse that could read the command could
+    // reverse the intent — rotate back by the same quarter turns — and that is
+    // the one implementation §3 forbids: it cannot delete a key to restore an
+    // inheriting page, and it cannot restore a raw 45 unnormalised.
+    //
+    // The type does not merely omit the command; supplying one is an error, so
+    // the wrong shape is unwritable rather than undocumented.
+    because: /Expected 2 arguments, but got 3/u,
+    notBecause: null,
+    source: `
+import type { Invert } from '@monstera/kernel';
+declare const invert: Invert<'mupdf', 'rotatePages'>;
+declare const session: Parameters<typeof invert>[0];
+declare const prior: Parameters<typeof invert>[1];
+export const undone = invert(session, prior, { kind: 'rotatePages', pages: [0], quarterTurns: 1 });
+`,
+  },
+  {
+    name: 'CONTROL: the inverse takes prior state, and that compiles',
+    expect: 'allow',
+    // Without it the case above is satisfied by an `Invert` that takes no
+    // usable arguments at all — "cannot be called with a command" and "cannot
+    // be called" are different claims and only one of them is §3.
+    source: `
+import type { Invert, MupdfSession, PriorPageRotation } from '@monstera/kernel';
+export const invert: Invert<'mupdf', 'rotatePages'> = (
+  _session: MupdfSession,
+  _prior: readonly PriorPageRotation[],
+) => Promise.resolve();
 `,
   },
   {

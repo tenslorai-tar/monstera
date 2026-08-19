@@ -173,3 +173,23 @@ export type Apply<W extends keyof WriterSession, K extends CommandKind> =
   WriterShapeOf[W] extends 'byte-image'
     ? (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
     : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
+
+/**
+ * How a command is **undone** — the same shape asymmetry as {@link Apply}, and
+ * deliberately **not** given the command.
+ *
+ * §3's finding is that an inverse is defined entirely by prior state. Passing
+ * the command as well would make it possible — and eventually tempting — to
+ * compute a reversing operation from the intent instead: rotate back by the
+ * same quarter turns. That is the defect §3 exists to forbid. A page that
+ * inherited its rotation is restored by **deleting** the key, and no amount of
+ * rotating backwards reaches that state; a page carrying a raw `45` is restored
+ * to `45`, and a reversing rotation would leave a normalised value.
+ *
+ * So the signature carries exactly what §3 says the log stores, and nothing the
+ * defect needs. *An inverse that restores the rendering is not an inverse.*
+ */
+export type Invert<W extends keyof WriterSession, K extends CommandKind> =
+  WriterShapeOf[W] extends 'byte-image'
+    ? (image: WriterSession[W], inverse: CommandPrior[K]) => Promise<ByteImage>
+    : (session: WriterSession[W], inverse: CommandPrior[K]) => Promise<void>;

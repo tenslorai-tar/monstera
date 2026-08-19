@@ -3,6 +3,7 @@ export {
   type Apply,
   type ByteImage,
   type EngineWriter,
+  type Invert,
   type MupdfSession,
   type PdfiumSession,
   type WriterSession,
@@ -15,6 +16,7 @@ export {
   type PriorRotation,
   applyRotatePages,
   captureRotatePages,
+  invertRotatePages,
   snapRotation,
 } from './rotatePages.js';
 export {
@@ -26,8 +28,10 @@ export {
   type LogEntryFor,
 } from './commandLog.js';
 export {
+  CheckpointRestoreNotBuiltError,
   CommandBus,
   type Executed,
+  type Undone,
   UnregisteredWriterError,
   type WriterRegistry,
 } from './commandBus.js';

@@ -3,7 +3,7 @@ import type * as mupdf from 'mupdf';
 import { type CommandOfKind } from '@monstera/contract';
 
 import { type CaptureResult } from './commandLog.js';
-import { type Apply, type MupdfSession } from './engineSeam.js';
+import { type Apply, type Invert, type MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**
@@ -180,6 +180,46 @@ export function captureRotatePages(
  * Validated in full before the first write, so a bad index cannot leave a
  * partly rotated document behind.
  */
+/**
+ * Restores each page's prior `/Rotate` **own-state**, verbatim (ADR-0009 §3).
+ *
+ * ## The two branches are the whole finding
+ *
+ * - `{ present: false }` → **`delete('Rotate')`**. The page inherited before the
+ *   command and must inherit after it. Writing back the value that was showing
+ *   renders identically and leaves the leaf *declaring* what it used to inherit,
+ *   so it silently stops tracking its branch — spike R3, and the reason a test
+ *   comparing rendered output passes on the wrong implementation.
+ * - `{ present: true, raw }` → **`put('Rotate', raw)`**, unnormalised. MuPDF
+ *   keeps `45`, `450` and `-90` through a round trip and documents in the wild
+ *   carry them, so restoring a tidied quarter turn would silently rewrite the
+ *   document — R3's defect wearing different clothes.
+ *
+ * **Forward normalises; the inverse restores verbatim.** The asymmetry is
+ * deliberate and is §3's point.
+ *
+ * The command is not passed here, and {@link Invert} explains why: an inverse
+ * computed from intent — rotate back by the same quarter turns — cannot reach
+ * either branch.
+ */
+export const invertRotatePages: Invert<'mupdf', 'rotatePages'> = (
+  session: MupdfSession,
+  inverse: readonly PriorPageRotation[],
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const total = document.countPages();
+    // Validated in full before the first write, for the same reason as apply: a
+    // half-restored document is worse than a refused undo.
+    const restorations = inverse.map((entry) => ({
+      object: pageObject(document, entry.page, total),
+      prior: entry.prior,
+    }));
+    for (const { object, prior } of restorations) {
+      if (prior.present) object.put('Rotate', prior.raw);
+      else object.delete('Rotate');
+    }
+  });
+
 export const applyRotatePages: Apply<'mupdf', 'rotatePages'> = (
   session: MupdfSession,
   command: CommandOfKind<'rotatePages'>,

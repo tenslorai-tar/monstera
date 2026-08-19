@@ -170,6 +170,18 @@ export class CommandLog {
     return this.#entries[this.#applied];
   }
 
+  /**
+   * The entry redo would step forward over, **without moving the cursor**.
+   *
+   * The bus needs to know what it is about to re-apply before it commits to
+   * moving: a redo that refuses — a stored-effect command — must leave the
+   * cursor exactly where it was, and a `redo()` that moves first would have to
+   * move back on failure. Two mutations of one field is how a cursor drifts.
+   */
+  peekRedo(): LogEntry | undefined {
+    return this.canRedo ? this.#entries[this.#applied] : undefined;
+  }
+
   /** Steps the cursor forward and returns the entry to re-apply. */
   redo(): LogEntry | undefined {
     if (!this.canRedo) return undefined;

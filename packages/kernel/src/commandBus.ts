@@ -73,12 +73,35 @@ export class UnregisteredWriterError extends Error {
   }
 }
 
+/**
+ * Undo reached a terminal entry, whose reversal is a checkpoint restore.
+ *
+ * Named rather than attempted. §4's answer — restore the nearest checkpoint and
+ * replay forward minus the undone command — means **opening a new session from
+ * those bytes**, and who then owns the old session is `DocumentService`'s
+ * question, not this bus's. Returning a wrong document quietly would be the
+ * worse half of that choice.
+ */
+export class CheckpointRestoreNotBuiltError extends Error {
+  override readonly name = 'CheckpointRestoreNotBuiltError';
+
+  constructor(kind: string, reason: string) {
+    super(
+      `Undoing ${kind} needs a checkpoint restore, which is not built. The entry is terminal ` +
+        `because prior state could not be recorded: ${reason}. Nothing was changed.`,
+    );
+  }
+}
+
 /** What one execution did, for a caller that needs to know without reading the log. */
 export interface Executed {
   readonly entry: LogEntry;
   /** The version this command produced (ADR-0009 §5). */
   readonly version: DocumentContext['version'];
 }
+
+/** What one undo or redo did. */
+export type Undone = Executed;
 
 export class CommandBus {
   readonly #writers: WriterRegistry;
@@ -147,6 +170,93 @@ export class CommandBus {
     // covered. Revisit when a second command has an `apply` that can fail on
     // its own.
     this.#log.record(entry);
+    return { entry, version: context.bumpVersion() };
+  }
+
+  /**
+   * Steps the cursor back and **restores prior state** (ADR-0009 §3).
+   *
+   * Returns `undefined` at the start of the log — "nothing to undo" is what a
+   * UI asks constantly, not an error.
+   *
+   * Undo bumps the version (§5): it is an applied mutation like any other, and
+   * a document undone back to its saved bytes is still marked dirty. That is
+   * the conservative direction — `dirty` fails towards prompting rather than
+   * towards losing work.
+   *
+   * @template W
+   */
+  async undo(
+    session: WriterSession[keyof WriterSession],
+    context: DocumentContext,
+  ): Promise<Undone | undefined> {
+    const entry = this.#log.entries.at(-1);
+    if (entry === undefined) return undefined;
+
+    if (entry.kind === 'terminal') {
+      // Refused rather than half-done. §4's answer is to restore the nearest
+      // checkpoint and replay forward, and restoring means opening a NEW
+      // session from those bytes — which is a question about who owns the
+      // session, not about this bus. Named, so the gap is a message rather
+      // than a wrong document.
+      throw new CheckpointRestoreNotBuiltError(entry.command.kind, entry.reason);
+    }
+
+    const spec = declaredSpecs[entry.command.kind];
+    await spec.invert(session as WriterSession[WriterOf<typeof entry.command.kind>], entry.inverse);
+
+    this.#log.undo();
+    return { entry, version: context.bumpVersion() };
+  }
+
+  /**
+   * Steps the cursor forward and re-applies.
+   *
+   * **Which path this takes is §3a's declaration doing work**, for the first
+   * time. `replay: 'reapply-intent'` re-runs the command, which is only sound
+   * because re-running produces the same bytes. A command declaring
+   * `replay: 'stored-effect'` — signing, OCR, anything minting random object
+   * identifiers — must have its recorded effect re-applied instead, and that
+   * path is refused by name rather than silently taking the wrong one.
+   *
+   * No such command exists yet. The refusal is here because the alternative is
+   * a `redo` that quietly re-runs a signature and produces a different
+   * document, which is exactly the failure §3a was added ahead of any command
+   * to prevent.
+   */
+  async redo(
+    session: WriterSession[keyof WriterSession],
+    context: DocumentContext,
+  ): Promise<Undone | undefined> {
+    const entry = this.#log.peekRedo();
+    if (entry === undefined) return undefined;
+
+    const spec = declaredSpecs[entry.command.kind];
+
+    // §3a's declaration, enforced at COMPILE time rather than by a branch that
+    // cannot run. Every command declared today replays by re-running, so a
+    // runtime `if (spec.replay !== 'reapply-intent')` is a guard with no
+    // reachable caller — lint says so, and a check that cannot fail is the
+    // vacuous shape this project keeps deleting.
+    //
+    // This assignment is the trigger instead: the day any spec declares
+    // `replay: 'stored-effect'`, `spec.replay` widens and this line stops
+    // compiling. That is the prompt to build stored-effect replay, arriving at
+    // the moment the path becomes reachable and not before — the same shape as
+    // the advisory register's expiry triggers.
+    //
+    // It matters because the silent failure is severe: re-running a signature
+    // or an OCR pass produces different bytes, which is precisely what §3a was
+    // added ahead of any command to prevent.
+    const replay: 'reapply-intent' = spec.replay;
+    void replay;
+
+    await spec.apply(
+      session as WriterSession[WriterOf<typeof entry.command.kind>],
+      entry.command,
+    );
+
+    this.#log.redo();
     return { entry, version: context.bumpVersion() };
   }
 }

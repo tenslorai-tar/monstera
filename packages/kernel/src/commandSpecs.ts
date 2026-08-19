@@ -1,7 +1,7 @@
 import { type CommandKind } from '@monstera/contract';
 
-import { type Apply, type Capture, type WriterSession } from './engineSeam.js';
-import { applyRotatePages, captureRotatePages } from './rotatePages.js';
+import { type Apply, type Capture, type Invert, type WriterSession } from './engineSeam.js';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
  * What every command declares about itself, and the table that routes them.
@@ -55,6 +55,7 @@ export type WriterBinding<K extends CommandKind> = {
     readonly writer: W;
     readonly apply: Apply<W, K>;
     readonly capture: Capture<W, K>;
+    readonly invert: Invert<W, K>;
   };
 }[WriterOfRecord];
 
@@ -145,6 +146,10 @@ const declared = {
     // (ADR-0009, 2026-08-19). It reports own-state or states why it could not,
     // and the bus answers the second with a checkpoint.
     capture: captureRotatePages,
+    // Takes the prior state and nothing else — see `Invert`. An inverse that
+    // could see the command could compute a reversing rotation, which is the
+    // one implementation §3 forbids.
+    invert: invertRotatePages,
     // §3: the inverse restores prior state verbatim, including ABSENCE. A page
     // that inherited its rotation is restored by DELETING the key, not by
     // writing back the value that was showing — both render identically and

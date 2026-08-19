@@ -4,7 +4,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { type Command, type CommandOfKind } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
-import { CommandBus, UnregisteredWriterError } from './commandBus.js';
+import {
+  CheckpointRestoreNotBuiltError,
+  CommandBus,
+  UnregisteredWriterError,
+} from './commandBus.js';
 import { CommandLog, type LogEntry } from './commandLog.js';
 import { type DocumentContext } from './documentService.js';
 import { type ByteImage, type MupdfSession } from './engineSeam.js';
@@ -58,6 +62,23 @@ const rotateFirst: CommandOfKind<'rotatePages'> = {
   pages: [0],
   quarterTurns: 1,
 };
+
+/** A session whose pages inherit `/Rotate` from the `/Pages` node. */
+async function inheritingSession(value: number): Promise<MupdfSession> {
+  const session = await mupdfWriter.open(flat);
+  await withDocument(session, (document) => {
+    document.getTrailer().get('Root').get('Pages').put('Rotate', value);
+  });
+  return session;
+}
+
+/** The `/Rotate` a page declares itself, or `null` if it inherits. */
+function ownRotation(session: MupdfSession, page: number): Promise<number | null> {
+  return withDocument(session, (document) => {
+    const own = document.loadPage(page).getObject().get('Rotate');
+    return own.isNull() ? null : own.asNumber();
+  });
+}
 
 /** A session whose page 0 carries a `/Rotate` that is a name, not an integer. */
 async function malformedSession(): Promise<MupdfSession> {
@@ -283,6 +304,153 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         document.loadPage(0).getObject().get('Rotate').toString(),
       );
       expect(applied).toBe('/Landscape');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('UNDO RESTORES THE LEAF TO INHERITING, not to declaring what it inherited', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await inheritingSession(90);
+    const context = contextStub();
+    try {
+      await bus.execute(session, context, rotateFirst);
+      // Apply wrote to the leaf, so the page now declares 180 and no longer
+      // tracks its branch.
+      expect(await ownRotation(session, 0)).toBe(180);
+
+      const undone = await bus.undo(session, context);
+
+      // THE ASSERTION §3 EXISTS FOR, and it is STRUCTURAL. Restoring the value
+      // that was showing — writing 90 back — renders identically and leaves the
+      // leaf declaring what it used to inherit, so it silently stops tracking
+      // its branch. Only `delete` restores the same document, and only reading
+      // own-state can tell the two apart.
+      expect(await ownRotation(session, 0)).toBeNull();
+      expect(undone?.entry.kind).toBe('invertible');
+      // Undo is an applied mutation (§5), so it bumps.
+      expect(context.bumps()).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: and the page still SHOWS 90, so a rendering comparison would pass either way', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await inheritingSession(90);
+    const context = contextStub();
+    try {
+      await bus.execute(session, context, rotateFirst);
+      await bus.undo(session, context);
+
+      // The point of the control: the effective rotation after a correct undo
+      // and after the WRONG one are identical. A test comparing rendered output
+      // passes on the implementation §3 forbids — *an inverse that restores the
+      // rendering is not an inverse*.
+      const effective = await withDocument(session, (document) =>
+        document.loadPage(0).getObject().getInheritable('Rotate').asNumber(),
+      );
+      expect(effective).toBe(90);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('UNDO RESTORES A RAW VALUE VERBATIM — 45 and -90 come back unnormalised', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    try {
+      await withDocument(session, (document) => {
+        document.loadPage(0).getObject().put('Rotate', 45);
+        document.loadPage(1).getObject().put('Rotate', -90);
+      });
+      await bus.execute(session, context, { kind: 'rotatePages', pages: [0, 1], quarterTurns: 1 });
+      expect(await ownRotation(session, 0)).toBe(180);
+      expect(await ownRotation(session, 1)).toBe(0);
+
+      await bus.undo(session, context);
+
+      // Forward NORMALISES; the inverse restores VERBATIM. If prior state were
+      // typed as a quarter turn these would come back as 90 and 270 — silently
+      // rewriting a document that arrived carrying values MuPDF keeps and
+      // documents in the wild have.
+      expect(await ownRotation(session, 0)).toBe(45);
+      expect(await ownRotation(session, 1)).toBe(-90);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('survives a round trip after undo, read back by a DIFFERENT library', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await inheritingSession(90);
+    const context = contextStub();
+    try {
+      await bus.execute(session, context, rotateFirst);
+      await bus.undo(session, context);
+      const written = await mupdfWriter.serialise(session);
+
+      // pdf-lib resolves inheritance the way a reader does, so this asserts the
+      // restored document is the one that was there — not merely that MuPDF
+      // agrees with itself about it.
+      const reopened = await PDFDocument.load(written, { updateMetadata: false });
+      expect(reopened.getPage(0).getRotation().angle).toBe(90);
+      expect(reopened.getPage(1).getRotation().angle).toBe(90);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('redo re-applies, and undo then redo is a round trip through the cursor', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await inheritingSession(90);
+    const context = contextStub();
+    try {
+      await bus.execute(session, context, rotateFirst);
+      await bus.undo(session, context);
+      expect(bus.log.redoDepth).toBe(1);
+
+      await bus.redo(session, context);
+
+      expect(await ownRotation(session, 0)).toBe(180);
+      expect(bus.log.redoDepth).toBe(0);
+      expect(bus.log.entries).toHaveLength(1);
+      // Three applied mutations: the command, the undo, the redo.
+      expect(context.bumps()).toBe(3);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: undoing a TERMINAL entry is refused by name, and changes nothing', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await malformedSession();
+    const context = contextStub();
+    try {
+      await bus.execute(session, context, rotateFirst);
+      expect(await ownRotation(session, 0)).toBe(90);
+
+      await expect(bus.undo(session, context)).rejects.toThrow(CheckpointRestoreNotBuiltError);
+
+      // Refused rather than half-done: the cursor has not moved and the
+      // document is untouched. A checkpoint restore opens a NEW session from
+      // those bytes, which is a question about session ownership rather than
+      // about this bus.
+      expect(bus.log.entries).toHaveLength(1);
+      expect(await ownRotation(session, 0)).toBe(90);
+      expect(context.bumps()).toBe(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: undo at the start of the log is a state, not an error', async () => {
+    const bus = new CommandBus({ mupdf: mupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    try {
+      expect(await bus.undo(session, contextStub())).toBeUndefined();
+      expect(await bus.redo(session, contextStub())).toBeUndefined();
     } finally {
       await mupdfWriter.close(session);
     }
