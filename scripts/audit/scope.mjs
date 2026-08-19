@@ -72,6 +72,13 @@ function section(title, entries) {
  * thing to read: `git log -p <range> -- <path>` is, because the intermediate
  * states are where a loosening lived.
  *
+ * **The rendering is asserted, not only the data behind it** (finding V-2).
+ * `proof:auditscope` spawns this script against a fixture repository and matches
+ * the hidden-deletions line, because deleting that line passed every case while
+ * it only checked `auditScope`'s return value — and this line is the whole of
+ * U-2's value. Two figures with nothing joining them are a subtraction the
+ * reader has to do.
+ *
  * @param {import('../lib/auditWatermark.mjs').ProofChurn[]} entries
  * @returns {string}
  */

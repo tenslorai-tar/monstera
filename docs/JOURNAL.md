@@ -483,8 +483,20 @@ and every case still passes.
 That line is the whole of U-2's value — the figures without it are two numbers an
 auditor has to subtract in their head. The same class as V-1 one level out: the
 part that changes behaviour is the part being read, and it is the part nothing
-asserts. Open, and its fix belongs with V-1's since both are about the same
-instrument.
+asserts.
+
+**Both closed in the commit after this one.** V-1's control now uses a proof that
+existed **at** the watermark, so it reaches the modified column at all, and its
+guard is `!==` rather than `===` — not-found fails. V-2 is closed by spawning
+`scope.mjs` against the fixture repository and matching the rendered line, with a
+control that the warning stays **absent** for a file with nothing hidden, since a
+report that warns on everything is one nobody reads by the third range.
+
+**And the mutation V-1's analysis called for was run**: making the two figures
+always differ. It reddens both the resolution case and the append-only control —
+which the original mutation could not do, because moving both sides of the
+comparison together is a state the vacuous branch also passed. Deleting the
+rendered line reddens the V-2 case and nothing else.
 
 ### The modified-proof column, read
 

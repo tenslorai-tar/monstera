@@ -83,7 +83,13 @@ try {
   // edited within the range is new coverage the auditor reads whole, and git
   // correctly calls that A. The case that matters — and the one this fixture
   // has to create — is a check that was already audited and has since changed.
-  const base = commit('scripts.proof.mjs', 'export const a = 1;\n');
+  commit('scripts.proof.mjs', 'export const a = 1;\n');
+  // A SECOND proof that already existed at the watermark, so it too lands in the
+  // MODIFIED column when it changes. Finding V-1: the append-only control used a
+  // proof ADDED inside the range, which therefore never reached that column at
+  // all — the control looked up an entry that could not exist and passed on not
+  // finding it.
+  const base = commit('appended.proof.mjs', 'export const a = 1;\n');
   setWatermark(base);
 
   {
@@ -171,18 +177,58 @@ try {
     // above is satisfied by a report that always claims a difference, which
     // would send an auditor to `git log -p` on every clean range and get the
     // line ignored.
-    writeFileSync(join(scratch, 'scripts', 'proofs', 'fresh.proof.mjs'), 'export const a = 1;\nexport const c = 1;\n', 'utf8');
+    //
+    // The subject is `appended.proof.mjs`, which existed AT the watermark.
+    // Finding V-1 was that this used a proof added inside the range: added
+    // proofs never enter `proofChurn`, so the lookup returned `undefined` and
+    // the guard accepted that as agreement. Item 4b's corollary reaches tests
+    // too — an empty lookup is a broken fixture, not a clean result.
+    writeFileSync(join(scratch, 'appended.proof.mjs'), 'export const a = 2;\nexport const c = 1;\n', 'utf8');
     git(scratch, ['add', '-A']);
     git(scratch, ['commit', '--quiet', '-m', 'append only']);
 
     const after = auditScope({ root: scratch });
-    const appended = after.proofChurn.find((e) => e.path === 'scripts/proofs/fresh.proof.mjs');
+    const appended = after.proofChurn.find((e) => e.path === 'appended.proof.mjs');
     check(
       'CONTROL: an append-only proof reports the SAME figures both ways',
-      appended === undefined || appended.net.removed === appended.perCommit.removed,
-      `net -${String(appended?.net.removed ?? '?')} vs per-commit ` +
-        `-${String(appended?.perCommit.removed ?? '?')} — a report that always differs is a ` +
-        `warning nobody reads by the third range.`,
+      // `!==`, never `===`. Not-found must FAIL here: the whole finding was a
+      // control that could not locate its own subject and reported success.
+      appended !== undefined && appended.net.removed === appended.perCommit.removed,
+      `net -${String(appended?.net.removed ?? '(NOT IN THE COLUMN AT ALL)')} vs per-commit ` +
+        `-${String(appended?.perCommit.removed ?? '(NOT IN THE COLUMN AT ALL)')} — a report ` +
+        `that always differs is a warning nobody reads by the third range, and a control that ` +
+        `cannot find its subject is not a control.`,
+    );
+  }
+
+  // Finding V-2: everything above tests `auditScope`'s DATA, and nothing ran
+  // `scripts/audit/scope.mjs` — the report a human actually reads. Deleting the
+  // hidden-deletions line entirely passed every case, and that line is the whole
+  // of U-2's value: without it the figures are two numbers an auditor has to
+  // subtract in their head.
+  //
+  // The part that changes behaviour is the part being read, so it is the part
+  // that needs asserting.
+  {
+    const report = spawnSync(process.execPath, [join(repoRoot(), 'scripts', 'audit', 'scope.mjs')], {
+      cwd: scratch,
+      encoding: 'utf8',
+    });
+    const output = `${report.stdout ?? ''}${report.stderr ?? ''}`;
+
+    check(
+      'THE REPORT NAMES the deletions the range diff hides, and how to see them',
+      /\d+ deletion\(s\) DO NOT APPEAR/u.test(output) && /git log -p/u.test(output),
+      `The rewrite fixture above has a hidden deletion, so the report must say so and name the ` +
+        `command that shows it. Printing the two figures and leaving the reader to subtract is ` +
+        `the state U-2 was about.\n${output}`,
+    );
+
+    check(
+      'CONTROL: and it stays silent about a file with nothing hidden',
+      !new RegExp(`appended\\.proof\\.mjs\\n[^\\n]*\\n\\s+\\d+ deletion`, 'u').test(output),
+      `A report that prints the warning for every file is one nobody reads by the third range. ` +
+        `The append-only proof must get figures and no warning.\n${output}`,
     );
   }
 
