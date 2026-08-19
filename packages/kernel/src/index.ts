@@ -11,7 +11,6 @@ export {
 } from './engineSeam.js';
 export { mupdfWriter, withDocument } from './mupdfWriter.js';
 export {
-  MalformedRotationError,
   type PriorPageRotation,
   type PriorRotation,
   applyRotatePages,
@@ -19,13 +18,30 @@ export {
   snapRotation,
 } from './rotatePages.js';
 export {
+  type CaptureResult,
+  type Checkpoint,
+  CommandLog,
+  type CommandPrior,
+  type LogEntry,
+  type LogEntryFor,
+} from './commandLog.js';
+export {
+  CommandBus,
+  type Executed,
+  UnregisteredWriterError,
+  type WriterRegistry,
+} from './commandBus.js';
+export {
   type CommandSpec,
   type CommandSpecs,
+  type DeclaredSpecs,
   type Invertibility,
   type Reproducibility,
   type WriterBinding,
+  type WriterOf,
   type WriterOfRecord,
   commandSpecs,
+  declaredSpecs,
 } from './commandSpecs.js';
 export {
   type CanonicalPath,

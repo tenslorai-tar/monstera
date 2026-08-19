@@ -1,7 +1,7 @@
 import { type CommandKind } from '@monstera/contract';
 
-import { type Apply, type WriterSession } from './engineSeam.js';
-import { applyRotatePages } from './rotatePages.js';
+import { type Apply, type Capture, type WriterSession } from './engineSeam.js';
+import { applyRotatePages, captureRotatePages } from './rotatePages.js';
 
 /**
  * What every command declares about itself, and the table that routes them.
@@ -54,6 +54,7 @@ export type WriterBinding<K extends CommandKind> = {
   readonly [W in WriterOfRecord]: {
     readonly writer: W;
     readonly apply: Apply<W, K>;
+    readonly capture: Capture<W, K>;
   };
 }[WriterOfRecord];
 
@@ -120,7 +121,17 @@ export type CommandSpec<K extends CommandKind> = {
  */
 export type CommandSpecs = { readonly [K in CommandKind]: CommandSpec<K> };
 
-export const commandSpecs: CommandSpecs = {
+/**
+ * The declarations, typed **narrowly** — `satisfies` rather than an annotation.
+ *
+ * An annotation would widen every `writer` to the whole union, and then nothing
+ * downstream could tell which session a given command's `apply` wants: the
+ * routing table would type-check and the bus would need a cast to call through
+ * it. `satisfies` keeps `'mupdf'` as `'mupdf'` while still checking the table
+ * against `CommandSpecs`, so a missing kind and an unrouted kind stay compile
+ * errors.
+ */
+const declared = {
   rotatePages: {
     kind: 'rotatePages',
     // Invariant L6: page-tree work rewrites in place through MuPDF's own
@@ -130,6 +141,10 @@ export const commandSpecs: CommandSpecs = {
     // Bound to `mupdf` by WriterBinding, so this must take a MupdfSession and
     // return void. Handing it a byte-image writer's apply does not compile.
     apply: applyRotatePages,
+    // The bus calls this BEFORE apply, in one code path, never a handler
+    // (ADR-0009, 2026-08-19). It reports own-state or states why it could not,
+    // and the bus answers the second with a checkpoint.
+    capture: captureRotatePages,
     // §3: the inverse restores prior state verbatim, including ABSENCE. A page
     // that inherited its rotation is restored by DELETING the key, not by
     // writing back the value that was showing — both render identically and
@@ -141,4 +156,23 @@ export const commandSpecs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
   },
-};
+} satisfies CommandSpecs;
+
+/** The table as declared, with each writer's literal type intact. */
+export type DeclaredSpecs = typeof declared;
+
+/** Which writer of record a given command kind is routed to. */
+export type WriterOf<K extends CommandKind> = DeclaredSpecs[K]['writer'];
+
+export const commandSpecs: CommandSpecs = declared;
+
+/**
+ * The same table, narrowly typed, for callers that must reach a specific
+ * command's `apply` or `capture`.
+ *
+ * Both exports name one object. `commandSpecs` is the §6 view — the mapped type
+ * that makes the table exhaustive — and this is the view that keeps `'mupdf'`
+ * meaning `'mupdf'`. A second table would be a second declaration; a second
+ * *view* of one table is not.
+ */
+export const declaredSpecs: DeclaredSpecs = declared;

@@ -1,6 +1,8 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 import { type Brand } from '@monstera/shared';
 
+import { type CaptureResult, type CommandPrior } from './commandLog.js';
+
 /**
  * The seam between the kernel and the engines that write documents (ADR-0009
  * §8).
@@ -150,6 +152,23 @@ export interface EngineWriter<TSession> {
  * Conditional on the writer, so a spec cannot declare `pdf-lib` and then write
  * a mutate-in-place `apply`.
  */
+/**
+ * How the bus reads a command's prior state — **the same session binding as
+ * {@link Apply}, and the same shape for both writer kinds.**
+ *
+ * Capture only ever reads, so there is no live-session/byte-image asymmetry
+ * here: it takes whatever the writer's session is and returns a result. The
+ * binding to `WriterSession[W]` is what stops a spec declaring one writer and
+ * capturing through another's session.
+ *
+ * It cannot return a `Checkpoint`. That is one of the three doors ADR-0009 §4's
+ * "never by a handler" is held shut by.
+ */
+export type Capture<W extends keyof WriterSession, K extends CommandKind> = (
+  session: WriterSession[W],
+  command: CommandOfKind<K>,
+) => Promise<CaptureResult<CommandPrior[K]>>;
+
 export type Apply<W extends keyof WriterSession, K extends CommandKind> =
   WriterShapeOf[W] extends 'byte-image'
     ? (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>

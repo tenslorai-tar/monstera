@@ -5,12 +5,7 @@ import { type CommandOfKind } from '@monstera/contract';
 
 import { type ByteImage, type MupdfSession } from './engineSeam.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
-import {
-  MalformedRotationError,
-  applyRotatePages,
-  captureRotatePages,
-  snapRotation,
-} from './rotatePages.js';
+import { applyRotatePages, captureRotatePages, snapRotation } from './rotatePages.js';
 
 /**
  * The first command, exercised end to end against a real engine.
@@ -65,7 +60,10 @@ describe('rotatePages — capture reads OWN state (ADR-0009 §3)', () => {
       });
       // Not `{ present: true, raw: 90 }`. The page shows 90 and declares
       // nothing, and only the second fact makes the inverse a delete.
-      expect(prior).toStrictEqual([{ page: 0, prior: { present: false } }]);
+      expect(prior).toStrictEqual({
+        captured: true,
+        prior: [{ page: 0, prior: { present: false } }],
+      });
     } finally {
       await mupdfWriter.close(session);
     }
@@ -82,7 +80,10 @@ describe('rotatePages — capture reads OWN state (ADR-0009 §3)', () => {
         pages: [0],
         quarterTurns: 1,
       });
-      expect(prior).toStrictEqual([{ page: 0, prior: { present: true, raw: 180 } }]);
+      expect(prior).toStrictEqual({
+        captured: true,
+        prior: [{ page: 0, prior: { present: true, raw: 180 } }],
+      });
     } finally {
       await mupdfWriter.close(session);
     }
@@ -104,11 +105,14 @@ describe('rotatePages — capture reads OWN state (ADR-0009 §3)', () => {
       // 45 does not become 90 here even though the engine renders it as 90.
       // Forward normalises; the inverse restores verbatim, and this is the read
       // the inverse will be built from.
-      expect(prior.map((entry) => entry.prior)).toStrictEqual([
-        { present: true, raw: 45 },
-        { present: true, raw: -90 },
-        { present: true, raw: 450 },
-      ]);
+      expect(prior).toStrictEqual({
+        captured: true,
+        prior: [
+          { page: 0, prior: { present: true, raw: 45 } },
+          { page: 1, prior: { present: true, raw: -90 } },
+          { page: 2, prior: { present: true, raw: 450 } },
+        ],
+      });
     } finally {
       await mupdfWriter.close(session);
     }
@@ -129,8 +133,14 @@ describe('rotatePages — capture reads OWN state (ADR-0009 §3)', () => {
       // The whole reason capture is a separate step the bus runs before apply:
       // once apply has written to the leaf, the prior own-state is gone from
       // the document and no later read can recover it.
-      expect(before).toStrictEqual([{ page: 0, prior: { present: false } }]);
-      expect(after).toStrictEqual([{ page: 0, prior: { present: true, raw: 180 } }]);
+      expect(before).toStrictEqual({
+        captured: true,
+        prior: [{ page: 0, prior: { present: false } }],
+      });
+      expect(after).toStrictEqual({
+        captured: true,
+        prior: [{ page: 0, prior: { present: true, raw: 180 } }],
+      });
     } finally {
       await mupdfWriter.close(session);
     }
@@ -270,15 +280,37 @@ describe('rotatePages — refusals leave the document untouched', () => {
     }
   });
 
-  it('CONTROL: a non-numeric /Rotate refuses capture rather than coercing it', async () => {
+  it('a non-numeric /Rotate is NOT captured, and is not an exception either', async () => {
     const session = await mupdfWriter.open(flat);
     try {
       await withDocument(session, (document) => {
         document.loadPage(0).getObject().put('Rotate', document.newName('Landscape'));
       });
+      const result = await captureRotatePages(session, {
+        kind: 'rotatePages',
+        pages: [0],
+        quarterTurns: 1,
+      });
+
+      // An ordinary outcome the bus answers with a checkpoint (ADR-0009,
+      // 2026-08-19), not a refusal. It is a value in the type rather than a
+      // throw, so the caller cannot fail to consider it.
+      expect(result.captured).toBe(false);
+      expect(result).toMatchObject({ reason: /non-numeric \/Rotate/u });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: an invalid COMMAND still throws — it is not routed around', async () => {
+    const session = await mupdfWriter.open(flat);
+    try {
+      // A bad page index is the caller getting it wrong, not a document to
+      // work around. Turning this into a checkpoint would hide a bug behind a
+      // byte snapshot.
       await expect(
-        captureRotatePages(session, { kind: 'rotatePages', pages: [0], quarterTurns: 1 }),
-      ).rejects.toThrow(MalformedRotationError);
+        captureRotatePages(session, { kind: 'rotatePages', pages: [99], quarterTurns: 1 }),
+      ).rejects.toThrow(/outside this document/);
     } finally {
       await mupdfWriter.close(session);
     }

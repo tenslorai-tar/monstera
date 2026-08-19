@@ -200,12 +200,13 @@ export const handle: FileHandle = asFileHandle('opaque-token');
     // which is this file's own stated failure mode.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -224,7 +225,7 @@ export const specs: CommandSpecs = {
     // table exhaustive by construction rather than by review.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {};
 `,
   },
@@ -236,12 +237,13 @@ export const specs: CommandSpecs = {};
     notBecause: /rotatePages/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -251,6 +253,7 @@ export const specs: CommandSpecs = {
     kind: 'notDeclared',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -273,12 +276,13 @@ export const specs: CommandSpecs = {
     // retrofit arriving one command at a time.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     invertible: true,
     undo: 'inverse',
   },
@@ -293,12 +297,13 @@ export const specs: CommandSpecs = {
     notBecause: /reproducible/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     reproducible: true,
     replay: 'reapply-intent',
   },
@@ -320,12 +325,13 @@ export const specs: CommandSpecs = {
     // forbids — signing, OCR and AI all land here.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     invertible: true,
     undo: 'inverse',
     reproducible: false,
@@ -345,12 +351,13 @@ export const specs: CommandSpecs = {
     // is how a checkpoint quietly becomes optional.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
     writer: 'mupdf',
     apply: applyRotatePages,
+    capture: captureRotatePages,
     invertible: false,
     undo: 'inverse',
     reproducible: true,
@@ -367,11 +374,12 @@ export const specs: CommandSpecs = {
     // type would forbid the feature rather than the mistake.
     source: `
 import type { CommandSpec } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages } from '@monstera/kernel';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
   apply: applyRotatePages,
+  capture: captureRotatePages,
   invertible: false,
   undo: 'checkpoint',
   reproducible: false,
@@ -405,11 +413,12 @@ export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns:
     // otherwise a spec could declare `pdf-lib` and hand it MuPDF's handler, and
     // the B3 violation would be a review comment instead of a compile error.
     //
-    // The compiler bottoms out on the SESSION rather than the return type: a
-    // byte-image writer is handed bytes, MuPDF's handler demands a session, and
-    // that mismatch is reached first. Matching the deepest line rather than the
-    // summary is what makes this case name the binding it is about.
-    because: /Type 'ByteImage' is not assignable to type 'MupdfSession'/u,
+    // Anchored on the PROPERTY, not on the session mismatch beneath it. The
+    // deeper line — `ByteImage is not assignable to MupdfSession` — is
+    // identical for the capture case below, and the cross-product check caught
+    // exactly that when both were first written: one matcher accepting the
+    // other's diagnostic means neither verdict distinguishes them.
+    because: /Types of property 'apply' are incompatible/u,
     // None, and the reason is worth stating rather than leaving as a bare null.
     // The name you would expect to be confusable is the DECLARED writer,
     // `pdf-lib` — and it does not appear at all, because it is a value whose
@@ -418,13 +427,17 @@ export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns:
     // this spec is for rather than a name in reach of the wrong matcher; the
     // cross-product check is what guards that, and it runs regardless.
     notBecause: null,
+    // `capture` is CORRECT for pdf-lib here on purpose, so `apply` is the only
+    // thing wrong and the diagnostic is about the binding rather than about a
+    // missing field.
     source: `
-import type { CommandSpec } from '@monstera/kernel';
+import type { ByteImage, CommandSpec } from '@monstera/kernel';
 import { applyRotatePages } from '@monstera/kernel';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'pdf-lib',
   apply: applyRotatePages,
+  capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
   invertible: true,
   undo: 'inverse',
   reproducible: true,
@@ -445,6 +458,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'pdf-lib',
   apply: (image: ByteImage) => Promise.resolve(new Uint8Array(image)),
+  capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
   invertible: true,
   undo: 'inverse',
   reproducible: true,
@@ -517,6 +531,88 @@ declare const command: { kind: 'rotatePages'; pages: number[]; quarterTurns: 1 }
 declare const own: MupdfSession;
 export const ok = apply(own, command);
 export const bad = apply(foreign, command);
+`,
+  },
+  {
+    name: 'NOTHING OUTSIDE THE BUS CAN MINT A CHECKPOINT',
+    expect: 'reject',
+    code: 'TS2322',
+    // §4: the checkpoint is taken by the bus, in one code path, NEVER by a
+    // handler. That has to be structural — a rule survives exactly as long as
+    // everyone remembers it, and this one is remembered at the moment someone
+    // is writing a handler that would find a checkpoint convenient.
+    //
+    // The brand is the mechanism, and the mint is module-private to
+    // `commandBus.ts`. This is the door held shut, tested from outside.
+    because: /Type 'Uint8Array<ArrayBuffer>' is not assignable to type 'Checkpoint'/u,
+    notBecause: null,
+    source: `
+import type { Checkpoint } from '@monstera/kernel';
+export const forged: Checkpoint = new Uint8Array([1, 2, 3]);
+`,
+  },
+  {
+    name: 'a log entry may not be invertible AND carry a checkpoint',
+    expect: 'reject',
+    code: 'TS2353',
+    // §4's two shapes as a type: an entry is one or the other, never both. An
+    // invertible entry carrying a checkpoint is the memory behaviour §4
+    // rejected — a byte snapshot per command — arriving as an accident.
+    because: /'checkpoint' does not exist in type/u,
+    notBecause: null,
+    source: `
+import type { Checkpoint, LogEntry } from '@monstera/kernel';
+declare const checkpoint: Checkpoint;
+export const entry: LogEntry = {
+  kind: 'invertible',
+  command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+  inverse: [{ page: 0, prior: { present: false } }],
+  checkpoint,
+};
+`,
+  },
+  {
+    name: 'a TERMINAL entry may not be built without a checkpoint',
+    expect: 'reject',
+    code: 'TS2322',
+    // The other half, and the one §4 names: "a non-invertible command without a
+    // checkpoint is unrepresentable". Without this case the type above would be
+    // satisfied by an entry union that simply made every field optional.
+    because: /Property 'checkpoint' is missing in type '\{…\}' but required in type '\{…\}'/u,
+    notBecause: null,
+    source: `
+import type { LogEntry } from '@monstera/kernel';
+export const entry: LogEntry = {
+  kind: 'terminal',
+  command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+  reason: 'no prior state',
+};
+`,
+  },
+  {
+    name: 'a spec may not declare one writer and CAPTURE through another',
+    expect: 'reject',
+    code: 'TS2322',
+    // The capture half of §6's binding. `apply` already had this case; without
+    // its twin, a spec could declare `pdf-lib` and read prior state through a
+    // MuPDF session — the same B3 violation through the read path. Anchored on
+    // the property for the reason recorded on the `apply` case above.
+    because: /Types of property 'capture' are incompatible/u,
+    notBecause: null,
+    source: `
+import type { ByteImage, CommandSpec } from '@monstera/kernel';
+import { captureRotatePages } from '@monstera/kernel';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'pdf-lib',
+  apply: (image: ByteImage) => Promise.resolve(new Uint8Array(image)),
+  // Bound to MuPDF, declared pdf-lib. The read path's B3 violation.
+  capture: captureRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
 `,
   },
   {
@@ -693,6 +789,29 @@ function elideTypeDumps(text) {
     if (next === previous) break;
     previous = next;
   }
+
+  // A dump tsc TRUNCATED has no closing brace, so the balanced pass above
+  // cannot see it and leaves the whole thing standing as ordinary text. Found
+  // the day a spec type grew past the printer's limit: the diagnostic read
+  // `Type '{ kind: "rotatePages"; ... re...' is not assignable` and every
+  // property name in it became matchable evidence again — the exact defect the
+  // depth fix closed, in a shape it did not cover.
+  //
+  // The truncation always ends in `...` immediately before the closing quote,
+  // which is what makes this matchable without guessing at the content.
+  previous = previous.replace(/\{[^{}]*\.\.\.(?=')/gu, DUMP_SENTINEL);
+
+  // Anything still carrying a brace is a dump form neither pass understands,
+  // and treating it as evidence is the whole defect. REFUSE rather than
+  // degrade: an instrument that silently half-works is what S-1 was.
+  if (/[{}]/u.test(previous)) {
+    throw new Error(
+      'A type dump survived elision, so the diagnostic still carries printed type text that ' +
+        'a reason matcher could match on. This is a dump shape neither the balanced pass nor ' +
+        `the truncation pass recognises — widen them rather than trusting this text:\n${previous}`,
+    );
+  }
+
   return previous.replaceAll(DUMP_SENTINEL, '{…}');
 }
 

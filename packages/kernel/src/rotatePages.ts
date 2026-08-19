@@ -2,6 +2,7 @@ import type * as mupdf from 'mupdf';
 
 import { type CommandOfKind } from '@monstera/contract';
 
+import { type CaptureResult } from './commandLog.js';
 import { type Apply, type MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 
@@ -88,32 +89,6 @@ export function snapRotation(raw: number): number {
   return rotate;
 }
 
-/**
- * A `/Rotate` this command refuses to act on.
- *
- * The PDF specification says `/Rotate` is an integer. A name or a string there
- * is a malformed document, and §3's prior state is typed `raw: number` — so
- * there is no honest capture for it. Coercing would record an inverse that is
- * well-formed and wrong, which undoes to a document that renders correctly and
- * is not the one that was there.
- *
- * Refusing is the conservative direction: nothing is written, so nothing is
- * lost. It is stated as a **known limit** rather than presented as complete —
- * whether such a document should instead be rotatable with a checkpoint is a
- * decision for the log, not for this handler.
- */
-export class MalformedRotationError extends Error {
-  override readonly name = 'MalformedRotationError';
-
-  constructor(page: number, found: string) {
-    super(
-      `Page ${String(page)} carries a non-numeric /Rotate (${found}). ` +
-        'It cannot be captured as prior state, so rotating it would produce an inverse that ' +
-        'restores a different document. Nothing was written.',
-    );
-  }
-}
-
 /** The page dictionary for a validated index, or a named refusal. */
 function pageObject(
   document: mupdf.PDFDocument,
@@ -137,19 +112,54 @@ function pageObject(
  * any is written, so a failure part-way through the command leaves no page
  * captured-but-not-applied — and the whole set is validated first, so an
  * out-of-range index refuses the command rather than half-rotating it.
+ *
+ * ## Two failures, and only one of them is the log's business
+ *
+ * **A non-numeric `/Rotate` returns `{ captured: false }`, and does not throw.**
+ * The specification says `/Rotate` is an integer; a name or a string there is a
+ * malformed document, and one that every other reader opens. §3 types prior
+ * state `raw: number`, so there is no honest capture — but ADR-0009's
+ * 2026-08-19 decision is that invertibility is *declared per command and
+ * determined per entry*, so this is an ordinary outcome the bus answers with a
+ * checkpoint, not a reason to refuse the user their rotation.
+ *
+ * Two wrong answers were rejected, and both render correctly. Coercing records
+ * an inverse that is well-formed and wrong. Treating malformed as **absent** is
+ * worse: undo would then `delete` a key that was *present*.
+ *
+ * **An invalid command still throws.** An out-of-range page index or a forged
+ * session is the caller getting it wrong, not a document to route around, and
+ * converting those into checkpoints would hide a bug behind a byte snapshot.
  */
 export function captureRotatePages(
   session: MupdfSession,
   command: CommandOfKind<'rotatePages'>,
-): Promise<PriorPageRotation[]> {
+): Promise<CaptureResult<readonly PriorPageRotation[]>> {
   return withDocument(session, (document) => {
     const total = document.countPages();
-    return command.pages.map((page) => {
-      const own = pageObject(document, page, total).get('Rotate');
-      if (own.isNull()) return { page, prior: { present: false } };
-      if (!own.isNumber()) throw new MalformedRotationError(page, own.toString());
-      return { page, prior: { present: true, raw: own.asNumber() } };
-    });
+    const objects = command.pages.map((page) => ({
+      page,
+      own: pageObject(document, page, total).get('Rotate'),
+    }));
+
+    const malformed = objects.find(({ own }) => !own.isNull() && !own.isNumber());
+    if (malformed !== undefined) {
+      return {
+        captured: false,
+        reason:
+          `page ${String(malformed.page)} carries a non-numeric /Rotate ` +
+          `(${malformed.own.toString()}), which cannot be recorded as prior state`,
+      };
+    }
+
+    return {
+      captured: true,
+      prior: objects.map(({ page, own }) =>
+        own.isNull()
+          ? { page, prior: { present: false } }
+          : { page, prior: { present: true, raw: own.asNumber() } },
+      ),
+    };
   });
 }
 
