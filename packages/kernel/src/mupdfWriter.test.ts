@@ -48,7 +48,12 @@ describe('mupdfWriter — session lifecycle', () => {
       // through to it, this would corrupt the session.
       mutable.fill(0);
       const again = await mupdfWriter.serialise(session);
-      expect(again.length).toBe(written.length);
+      // Bytes, not length. Length is a proxy, and it cannot separate a clean
+      // serialisation from a corrupted one of the same size — the assertion
+      // would then rest entirely on the engine happening to throw. The exact
+      // quantity is right here and equal, so comparing anything coarser is the
+      // instrument reporting a rounder number than the one it holds.
+      expect(Array.from(again)).toStrictEqual(Array.from(written));
     } finally {
       await mupdfWriter.close(session);
     }
