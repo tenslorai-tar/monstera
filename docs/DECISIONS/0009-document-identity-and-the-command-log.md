@@ -901,6 +901,30 @@ the ordering and re-implementing neither side.** It lands with its first caller
 rather than ahead of one, because a composition point with nothing to compose is
 a shape nobody has tested.
 
+### Where it lives, and this is a constraint rather than a convenience
+
+**Under `apps/desktop/src`**, and a file there that imports no Electron is still
+transport-free — the repository map's rule is that `apps/desktop` is the *only*
+package that **may** import Electron, not that everything in it must.
+
+The reason is a trigger, not tidiness. `kernel-error-path-sanitisation` in
+`docs/security/engine-advisories.json` scans **`apps/*/src/**`** and fires the
+day a handler there names `DocumentService`. Put the handlers anywhere else —
+the kernel, a new package, because they happen to be transport-free — and the
+trigger watches a path the work never touches and **stays green through the
+entire unit it was armed for**. That is the shape this project has now corrected
+four times: a search reporting the reassuring answer because it was pointed
+somewhere the subject was not.
+
+So: handlers under `apps/desktop/src`, or the glob widens **in the same commit**
+that decides otherwise, with the reason recorded. Deciding the location and
+leaving the glob to be noticed later is the one option that is not available.
+
+And when it fires, the trigger's own text says what it does and does not mean: it
+catches *"a handler reached `DocumentService`"*, not *"and its errors were
+sanitised"*. Satisfying it means the handler returns the §9 failure type. It does
+not mean making the line go away.
+
 ### Where the log lives, and why the question dissolves
 
 Settling composition surfaces a question that looks like a preference and is not:
