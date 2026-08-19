@@ -57,6 +57,7 @@ export {
 export {
   DocumentBusyError,
   type DocumentContext,
+  DocumentNotOpenError,
   DocumentService,
   type DocumentTeardown,
   type IdentityReader,

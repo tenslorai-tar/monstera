@@ -155,6 +155,36 @@ export class DocumentBusyError extends Error {
 }
 
 /**
+ * Refusal because the document is not in the index.
+ *
+ * A named type for the same reason {@link DocumentBusyError} is one, and the
+ * argument is stronger here: this is the **ordinary** end of a document's life
+ * seen from outside. A renderer holds a `DocId` and a command can be in flight
+ * when the document closes, and §2's synchronous index removal is what turns
+ * that race into a lookup miss rather than work landing in a torn-down document.
+ * So the miss is expected, and the caller's correct response — report it as an
+ * outcome, not as a defect — differs from every other throw here.
+ *
+ * **A plain `Error` forced the caller to match on message text**, which is the
+ * shape that silently stops working when someone rewords a sentence. Everything
+ * else this class throws is a genuine defect — lane-ordering violations, lane
+ * reentry — and those stay plain `Error`s deliberately: the distinction a
+ * boundary needs is *"is this a named outcome or a bug"*, and the type is now
+ * what draws it.
+ */
+export class DocumentNotOpenError extends Error {
+  override readonly name = 'DocumentNotOpenError';
+
+  constructor(docId: DocId, attempted: string) {
+    super(
+      `Cannot ${attempted} for a document that is not open. Lookup is get-or-miss, never ` +
+        'get-or-create: a lazily created record would run this work against a torn-down ' +
+        `document. (document ${docId.slice(0, 8)}…)`,
+    );
+  }
+}
+
+/**
  * Proof that the holder is the `CommandBus` (rule B3).
  *
  * Declared here, beside the properties it guards, and **minted only inside
@@ -692,7 +722,7 @@ export class DocumentService {
     if (record === undefined) {
       // Get-or-miss. A lazily created lane would run this work against a
       // torn-down document, which is the resurrection L10 forbids.
-      throw new Error('Cannot run work for a document that is not open.');
+      throw new DocumentNotOpenError(docId, 'run work');
     }
 
     if (record.queued >= MAX_QUEUED) throw new DocumentBusyError(docId, record.queued);
@@ -806,7 +836,7 @@ export class DocumentService {
   async #checkWriteTargetNow(docId: DocId): Promise<WriteTargetVerdict> {
     const record = this.#records.get(docId);
     if (record === undefined) {
-      throw new Error('Cannot verify a write target for a document that is not open.');
+      throw new DocumentNotOpenError(docId, 'verify a write target');
     }
 
     const target = await this.#readIdentity(record.path);

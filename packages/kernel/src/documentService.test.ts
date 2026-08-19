@@ -11,6 +11,7 @@ import { type LogEntry } from './commandLog.js';
 import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
 import {
   DocumentBusyError,
+  DocumentNotOpenError,
   DocumentService,
   type IdentityReader,
   type OpenOutcome,
@@ -642,7 +643,12 @@ describe('DocumentService — the per-document lane', () => {
     // A lazily-filled Map<DocId, lane> would mint a lane here and run the work
     // against a torn-down document — the resurrection L10 forbids, arriving
     // through the structure meant to prevent it.
-    await expect(service.run(docId, () => Promise.resolve('x'))).rejects.toThrow(/not open/);
+    // On the CLASS, not the message. A boundary has to tell this outcome from a
+    // defect, and matching on wording is a check that stops working when
+    // somebody rewords a sentence.
+    await expect(service.run(docId, () => Promise.resolve('x'))).rejects.toThrow(
+      DocumentNotOpenError,
+    );
   });
 
   it('CLOSE SPLITS: removal is immediate, teardown waits for the lane to drain', async () => {
@@ -778,7 +784,9 @@ describe('DocumentService — the write-target check', () => {
 
   it('refuses to answer for a document that is not open', async () => {
     const service = new DocumentService(new CapabilityRegistry());
-    await expect(service.checkWriteTarget(asDocId('never-opened'))).rejects.toThrow(/not open/);
+    await expect(service.checkWriteTarget(asDocId('never-opened'))).rejects.toThrow(
+      DocumentNotOpenError,
+    );
   });
 
   // -------------------------------------------------------------------------
