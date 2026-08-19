@@ -252,11 +252,31 @@ function writeRecordIn(root, overrides) {
     return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
   };
 
+  /**
+   * Whether `check:docs` is complaining about THIS gate, as opposed to about
+   * anything else it checks.
+   *
+   * The three cases below used to assert `check:docs` exited 0, which couples a
+   * proof about the hook gate to every other consistency check in the
+   * repository. Measured: the stage-audit gate went red for an unrelated range
+   * being over budget, and this proof failed on both platforms — reporting the
+   * hook gate as broken when it was fine.
+   *
+   * Asserting on the gate's own message decouples them. **Absence is only
+   * meaningful because its sibling asserts presence in the same run**: if the
+   * checker printed nothing at all, the induced-failure case below fails. That
+   * pairing is what stops "the message is gone" from being satisfied by "the
+   * checker is broken".
+   *
+   * @param {string} output
+   */
+  const complainsAboutTheGate = (output) => /observed to fire|unrecorded/iu.test(output);
+
   try {
     const quiet = runDocs();
     check(
-      'with the gate unclaimed the check stays quiet',
-      quiet.ok,
+      'with the gate unclaimed the check does not complain about it',
+      !complainsAboutTheGate(quiet.output),
       `a gate that fails from the day it is written is a red build people learn to read past.\n${quiet.output.slice(-600)}`,
     );
 
@@ -283,7 +303,7 @@ function writeRecordIn(root, overrides) {
     const red = runDocs();
     check(
       'CONTROL: claiming the gate done with no evidence fails check:docs',
-      !red.ok && /observed to fire|unrecorded/iu.test(red.output),
+      !red.ok && complainsAboutTheGate(red.output),
       `exit ok=${red.ok}. If this passes, the gate is a sentence in a table that nothing reads.\n` +
         `${red.output.slice(-800)}`,
     );
@@ -291,8 +311,8 @@ function writeRecordIn(root, overrides) {
     if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
     const green = runDocs();
     check(
-      'and passes again once the evidence is back',
-      green.ok,
+      'and stops complaining once the evidence is back',
+      !complainsAboutTheGate(green.output),
       `The control must restore what it removed, or every later run of check:docs is measuring ` +
         `this proof's leftovers.\n${green.output.slice(-600)}`,
     );

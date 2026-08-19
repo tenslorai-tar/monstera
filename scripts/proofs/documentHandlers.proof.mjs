@@ -38,6 +38,7 @@ import koffi from 'koffi';
 
 import { PERMITTED_HANDLERS } from '../lib/documentHandlers.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { buildLargeFixture } from '../perf/largeFixture.mjs';
 
 const ROOT = repoRoot();
 const DLL = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
@@ -126,21 +127,25 @@ try {
   // CONTROL. Without this, a shim that refused everything would pass every case
   // above, and "refuses foreign formats" would be indistinguishable from
   // "cannot open anything".
-  const pdf = join(ROOT, 'packages', 'testing', 'fixtures', 'generated', 'perf-baseline.pdf');
-  if (existsSync(pdf)) {
-    const result = open(pdf);
-    check(
-      'CONTROL: a real PDF still opens',
-      result.ok,
-      `mz_open failed on ${pdf}: ${result.error}. Every refusal above is worthless if the shim ` +
-        `cannot open the one format it permits.`,
-    );
-  } else {
-    failures.push(
-      `CONTROL: no PDF fixture at ${pdf}\n      Without it, "refuses everything" passes this ` +
-        `proof, so the run is not evidence.`,
-    );
-  }
+  //
+  // BUILT HERE, not looked for. This used to read a fixture that another step —
+  // the perf gate — happens to leave in a GITIGNORED directory, so the control
+  // was present on a developer machine and absent on a runner, where the proof
+  // then correctly refused to be evidence and failed the build. That is the
+  // proof behaving well and the workflow depending on a leftover: item 4b says
+  // put the control IN the instrument, and a control that only exists after
+  // some other step ran is not in the instrument.
+  //
+  // The generator is content-addressed and reuses an identical fixture, so this
+  // costs nothing on a machine that already has one.
+  const pdf = buildLargeFixture({ root: ROOT, targetBytes: 64 * 1024, pages: 1 }).path;
+  const result = open(pdf);
+  check(
+    'CONTROL: a real PDF still opens',
+    result.ok,
+    `mz_open failed on ${pdf}: ${result.error}. Every refusal above is worthless if the shim ` +
+      `cannot open the one format it permits.`,
+  );
 } finally {
   mz_drop(ctx);
   rmSync(SCRATCH, { recursive: true, force: true });
