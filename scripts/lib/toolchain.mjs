@@ -41,6 +41,7 @@
  * Exact, not a major. A floating major means the runtime under every proof in
  * this repository can change between two runs of the same commit.
  */
+/** @type {string} */
 export const NODE_VERSION = '24.19.0';
 
 /**
@@ -52,3 +53,32 @@ export const NODE_VERSION = '24.19.0';
  * it is visible in a diff.
  */
 export const NPM_VERSION = '11.17.0';
+
+/**
+ * The oldest Node this repository claims to support, and now the oldest it
+ * TESTS.
+ *
+ * `package.json`'s `engines.node` promised `>=22.19.0` while every CI job ran
+ * 24.19.0, so the claim was made by a manifest and exercised by nothing — the
+ * shape this project calls a finding everywhere else. One job runs the JS-only
+ * half here: install, typecheck, lint, tests. No native build, because the shim
+ * is a Windows toolchain matter and not what the floor claim is about.
+ *
+ * **Not narrowed to what was already tested**, deliberately. Raising `engines`
+ * to 24 would shut out a contributor on Node 22 for no measured reason; the
+ * honest close is to test the claim, not to shrink it until it is trivially
+ * true. If the row is ever judged too expensive, narrow the claim in the same
+ * commit that deletes it — what must not survive is a manifest promising a
+ * version nothing runs.
+ *
+ * Kept in step with `engines.node` by `proof:toolchain`, so the two cannot
+ * drift.
+ *
+ * Typed `string` rather than left as a literal, like its neighbours: a checker
+ * comparing two of these constants is asking a question about what they hold
+ * TODAY, and TypeScript narrowing them to literals answers it statically and
+ * calls the comparison unintentional. The check exists precisely for the day
+ * someone makes them equal.
+ */
+/** @type {string} */
+export const NODE_FLOOR = '22.19.0';

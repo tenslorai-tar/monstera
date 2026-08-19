@@ -187,6 +187,55 @@ jobs:
   # directory that no longer exists, so the decision the whole document pipeline
   # rests on could not be re-checked. Evidence that lives outside the repository
   # is evidence that will be deleted.
+  # `package.json` promised `engines.node: ">=22.19.0"` while every job above ran
+  # 24.19.0, so the floor was declared by a manifest and exercised by nothing —
+  # the shape this project calls a finding everywhere else.
+  #
+  # The honest close is a check rather than a narrowing. Raising `engines` to 24
+  # would shut out a contributor on Node 22 for no measured reason; testing the
+  # claim costs one runner and a few minutes. If this row is ever judged too
+  # expensive, narrow the claim in the same commit that deletes it.
+  #
+  # The JS-only half deliberately: install, typecheck, lint, tests. No native
+  # build — the shim is a Windows toolchain matter and not what the floor claim
+  # is about — and no proofs that need a provisioned engine. ubuntu because the
+  # question is "does this Node run our JavaScript", which is not a platform
+  # question, and one runner is the price.
+  #
+  # `proof:toolchain` keeps this version and `engines.node` the same number, and
+  # fails if no job here runs the floor at all.
+  floor:
+    name: The declared Node floor actually runs (22.19.0)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # EXACT, and deliberately NOT the pinned runner version — this job
+          # exists to run something the others do not. Kept in step with
+          # engines.node by proof:toolchain.
+          node-version: 22.19.0
+
+      - name: Install
+        run: |
+          if ! npm ci --ignore-scripts 2>&1 | tee install.log; then
+            echo "::error title=npm ci failed at the Node floor::$(grep -E '^npm (error|warn)' install.log | grep -viE 'npm error +\[|^npm error +-|Run \"npm help|complete log of this run' | head -12 | tr '\n' '|')"
+            exit 1
+          fi
+
+      - name: Typecheck and build
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
   shim:
     name: Build the native MuPDF shim
     runs-on: windows-latest

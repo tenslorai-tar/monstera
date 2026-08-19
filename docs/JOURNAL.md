@@ -501,6 +501,51 @@ it constrains these components, so it does not gate them.
 > exercised — a decision about who can build this project, not a types question,
 > and deliberately not folded into commit 1.
 >
+> **CLOSED, 2026-08-20, with a check rather than a narrowing.** `ci.yml` gains a
+> `floor` job at 22.19.0 running the JS-only half — install, typecheck, lint,
+> tests; no native build, because the shim is a Windows toolchain matter and not
+> what the floor claim is about. Narrowing `engines` to 24 would have shut out a
+> contributor on Node 22 for no measured reason; the honest close is to test the
+> claim, not to shrink it until it is trivially true. `NODE_FLOOR` in
+> `toolchain.mjs` is the one declaration, and `proof:toolchain` fails if it
+> disagrees with `engines.node`, if it equals the pinned runner version (a floor
+> row testing nothing new), or if **no job runs the floor at all** — the last
+> being what stops deleting the row from leaving every other case green.
+>
+> #### THE THIRD RUNTIME — recorded with a firing condition, not acted on
+>
+> There are three Node versions here, not two, and the third arrives with
+> Electron:
+>
+> | surface | runtime | floor |
+> |---|---|---|
+> | `scripts/` and build tooling | the contributor's Node | `>=22.19.0`, now tested |
+> | `packages/kernel`, `apps/desktop` | **Electron's bundled Node 24.18.1** | one known version |
+>
+> One `@types/node@22.20.1` types both. For `scripts/` that is correct — types at
+> the supported floor. **For shipped code it is not a floor at all**: it
+> under-types a runtime pinned exactly, so a Node 24 API available at runtime is
+> a compile error, and the types describe a version the application never runs
+> on.
+>
+> **Not restructured now, deliberately.** Per-workspace `@types/node` with no
+> data point behind it is a premature abstraction, and today nothing in either
+> package wants an API the floor types lack — measured, since both typecheck
+> halves are green with Electron imported.
+>
+> **The firing condition, stated so it is recognised when it happens:** the day a
+> file under `packages/kernel/src` or `apps/desktop/src` wants an API newer than
+> the floor types. The answer then is a per-workspace `@types/node` matching
+> Electron's bundled Node, **not** raising the root one, which would re-break
+> `scripts/`.
+>
+> It is **not** a register entry, and that is a judgement rather than an
+> oversight: `engine-advisories.json`'s triggers are text searches over shipped
+> paths, and *"wants an API newer than the floor types"* is not a string. The
+> trigger is `tsc` itself — the condition announces itself as a compile error on
+> a Node global or method — so what this record owes is that whoever meets that
+> error finds the cause here instead of reaching for a cast.
+>
 > #### The Electron binary is a second supply chain, and its verification is switchable
 >
 > `install.js` fetches from GitHub releases through `@electron/get`, not the
