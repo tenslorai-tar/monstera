@@ -573,9 +573,47 @@ something known-present, on every run.**
 A search — a grep, a symbol scan, a reachability walk, a call-graph query — has
 one output for every way it can be broken: **"found nothing"**. A wrong pattern,
 an empty input set, a parse that silently ate the file, the wrong root, the wrong
-scope: all of them report the same clean result as a genuine absence. And in
-security and compliance work, "found nothing" is nearly always the answer you
-were hoping for, so nothing about it prompts a second look.
+scope, **the wrong window**: all of them report the same clean result as a
+genuine absence. And in security and compliance work, "found nothing" is nearly
+always the answer you were hoping for, so nothing about it prompts a second look.
+
+**The window is the sixth axis, and it is the one nobody writes down: a line is
+not a unit of meaning.** A line-scoped search silently inherits the text's
+wrapping, and then reports the absence it caused. Two on one day, from two
+different tools, neither pattern wrong:
+
+- `grep -A3` for `status` in a GitHub runs payload, where `status` sits **five**
+  lines below the field being anchored on. Structurally pinned at zero — for a
+  completed run, a queued run, a cancelled run, and a repository that does not
+  exist.
+- a plain `grep` for a phrase in `CLAUDE.md` that is **wrapped across a line
+  break**. The phrase is there; no line contains it.
+
+The remedy is not a wider window, which only moves the boundary. It is to search
+a unit the text actually has — a field, a record, a parsed node — or, for prose,
+to accept that any multi-word pattern may straddle a break and match on a
+fragment that cannot.
+
+**This project already paid for that lesson once and did not generalise it.**
+`withdrawnPhrases.mjs` lists the line break as its third false negative and
+states the mechanism in its own header: *this repository hard-wraps prose, so any
+declared phrase long enough to wrap escaped in silence — and the longer the
+phrase, the likelier it wraps, which is backwards.* Its conclusion is the remedy
+above, in the same words: **build the unit, normalise it, match against it.**
+
+So the two instances on 2026-08-20 are the third and fourth, and they landed in
+tools nobody thought of as searches — a `grep -A` window and an ad-hoc `grep`.
+The fix stayed inside the one check that had been bitten. That is Rule 0's *fix
+the class, not the instance*, where the instance was fixed properly and the class
+was never named, which is the version that leaves no trace to find later.
+
+**And "the answer sits where the pattern cannot reach" recurs after being written
+down.** The OCR list below already carries a parser that read prose as C and a
+pattern that could not match a definition at column 0. It happened again on
+2026-08-20: `grep "function checkWriteTarget"` reported nothing for a symbol that
+exists as a **class method**, and a finding was nearly filed against a correct
+cross-reference. Recorded because an axis that recurs *after* documentation tells
+you the documentation was not the mechanism — the positive control was.
 
 So a search-shaped instrument is not finished until it must **locate something it
 is known to be able to find**, every time it runs, or its silence is worthless.
@@ -586,8 +624,38 @@ This is 4a's sibling and it is not covered by it. 4a asks whether two values tha
 differ are reported as different; 4b asks whether the instrument can see anything
 at all. An empty result passes 4a vacuously.
 
-Five instruments in this project failed exactly this way, and every one of them
-returned the reassuring answer:
+**The one failure this rule cannot catch: a STALE answer.** A cached response
+contains the known-present anchor too. The positive control passes, the
+instrument is sound, and the answer is still wrong — so this is the single place
+where "locate something you know is there" is not enough, and knowing that is
+what stops it being trusted past its reach.
+
+Measured, twice on 2026-08-20, on the instrument that reports whether `main` is
+green: an HTTP response cached for fifteen minutes read exactly like a current
+board with the last two pushes not yet made.
+
+**Staleness is separated by FRESHNESS, not by presence**, and freshness means a
+marker that can only move one way and that **postdates your own action**:
+
+- anchor on something you *just did* — a sha you just pushed, a row you just
+  wrote. A payload older than the action cannot contain it, so requiring it is a
+  freshness test. An anchor that was already true before you acted is not.
+- assert monotonic progress. A run's status never goes backwards; `completed`
+  does not become `in_progress`. A reading that regresses against one you already
+  took is a stale copy, and must be reported as **stale** rather than as *not
+  yet* — those are the same output otherwise.
+
+`scripts/lib/boardStatus.mjs` does both, and its proof's load-bearing case is the
+regression one, because every other case there is caught by the anchor.
+
+**And the reassuring answer is not always "found nothing".** For a WAITER it is
+*"not yet"*; for a diff it is *"no change"*; for a comparison it is *"they
+agree"*. Ask what output you were hoping for, and put the control on that one —
+the shape generalises past searching, which is where it was first found.
+
+Back to the plain case — an instrument that **could not see**, as distinct from
+the stale one above, which saw an old answer. Five instruments in this project
+failed that way, and every one of them returned the reassuring answer:
 
 - the OCR reachability walk, **four times in a row** — direct-call edges only, a
   parser that read prose as C, a pattern that could not match a definition at
