@@ -112,8 +112,30 @@
  * bare `grep` are deliberately permitted, so only patterns containing a banned
  * form are affected.
  *
- * Neither is a narrowing candidate. The cost is one retry through a tool the
- * rule already mandates; the alternative is a matcher that reasons about intent.
+ * **3. A compound command where an `echo` and an unrelated redirect share the
+ * line.** Recorded verbatim, 2026-08-20:
+ *
+ * ```
+ * git merge-base --is-ancestor HEAD HEAD && echo "is-ancestor HEAD HEAD: TRUE"; echo -n "rev-list --count HEAD..HEAD: "; git rev-list --count HEAD..HEAD; for REF in main @ HEAD; do echo -n "$REF resolves: "; git rev-parse --verify --quiet "$REF" >/dev/null && echo yes || echo no; done
+ * ```
+ *
+ * Every `echo` here writes to stdout and the only redirect is `git rev-parse …
+ * >/dev/null`, whose writer is git and whose target is the null device. The rule
+ * is per COMMAND LINE, not per writer, so an `echo` anywhere on the line arms the
+ * redirect rule.
+ * *Route:* drop the `echo` labelling, or run the commands as separate calls.
+ *
+ * This one IS a narrowing candidate, unlike 1 and 2, because nothing about it
+ * involves a banned form appearing as text. It is not being narrowed today, and
+ * the constraint on any future attempt is absolute: **`printf` with a redirect
+ * must stay denied.** That is occurrence 7 — a one-line fixture written with
+ * `printf >`, which resolved its `\n` — and it is the reason the guard covers
+ * `printf` at all. A narrowing that pairs each writer with its own redirect has
+ * to keep that case red, which is what `proof:escapeguard` is for.
+ *
+ * Neither 1 nor 2 is a narrowing candidate. The cost is one retry through a tool
+ * the rule already mandates; the alternative is a matcher that reasons about
+ * intent.
  *
  * ## Failure behaviour
  *

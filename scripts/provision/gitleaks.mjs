@@ -17,7 +17,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -148,6 +149,22 @@ export function gitleaksBinaryPath(options = {}) {
 }
 
 /**
+ * Directories this process has started an executable out of.
+ *
+ * The defect this makes deterministic: on Windows the image section outlives the
+ * process, so renaming such a directory races kernel cleanup. That failure is
+ * INTERMITTENT and platform-specific — it passed CI many times, then took a job
+ * down at 93cd471 — which is the worst shape a defect can have, because every
+ * green run is evidence for the wrong conclusion.
+ *
+ * Recording the spawn converts it into a refusal on every platform: `publish`
+ * will not rename a tree this process has run something out of, so a
+ * reintroduction fails the same way on a Linux laptop as on a Windows runner,
+ * immediately, with the mechanism in the message.
+ */
+const spawnedFrom = new Set();
+
+/**
  * Spawns the binary and confirms it reports the expected version.
  *
  * Existence on disk is not evidence a binary works: a truncated download or a
@@ -162,25 +179,138 @@ export function gitleaksBinaryPath(options = {}) {
  * return value separates them, so this must only gate steps that are safe under
  * BOTH readings.
  *
- * Two callers qualify. The staged copy: a file this process just wrote, at a
- * path no other process knows, where a spawn failure really is a bad download.
- * And the fast path in `provisionGitleaks`: a wrong answer there costs a
- * download, not an install.
+ * Two questions decide whether a caller qualifies, and the SECOND one was not
+ * here until 93cd471 took a job down.
  *
- * `publish` did NOT qualify, and it was the caller — a scanner holding a freshly
- * published .exe open for a few milliseconds made this return `false`, which
- * demoted "another process won the race" into "replace what it published". It
- * now compares content instead, and takes no `version`, so the question is not
- * available to it. See `publish`.
+ * 1. Is a wrong answer safe? `publish` did NOT qualify and was the caller — a
+ *    scanner holding a freshly published .exe open for a few milliseconds made
+ *    this return `false`, which demoted "another process won the race" into
+ *    "replace what it published". It compares content instead, and takes no
+ *    `version`, so the question is not available to it.
+ * 2. **Is the directory about to be renamed?** Spawning leaves an image-section
+ *    handle on it, and on Windows that blocks RENAME. Every direct caller failed
+ *    this second question: the staged copy is renamed by `publish` five lines
+ *    later, and the fast path's binary sits in the very directory `publish`
+ *    moves aside to a quarantine.
+ *
+ * So there are now no direct callers in the provisioning path at all — both go
+ * through {@link probeOutsideStaging}, which runs a copy somewhere nothing
+ * renames. What remains here is the spawn itself, and the recording that makes
+ * a reintroduction refuse rather than race.
  *
  * @param {string} binary
  * @param {string} [version]
  * @returns {boolean}
  */
-function reportsPinnedVersion(binary, version = GITLEAKS_VERSION) {
+export function reportsPinnedVersion(binary, version = GITLEAKS_VERSION) {
+  spawnedFrom.add(resolve(dirname(binary)));
   const probe = spawnSync(binary, ['version'], { encoding: 'utf8' });
   if (probe.error !== undefined || probe.status !== 0) return false;
   return `${probe.stdout}`.includes(version);
+}
+
+/**
+ * Refuses to rename a directory this process has spawned an executable from.
+ *
+ * @param {string} directory
+ * @param {string} role What the directory is, for the message.
+ * @returns {void}
+ */
+function refuseIfSpawnedFrom(directory, role) {
+  if (!spawnedFrom.has(resolve(directory))) return;
+  throw new Error(
+    `Refusing to rename ${directory} (${role}): this process started an executable out of it. ` +
+      `On Windows the image section outlives the process and a directory holding a file with an ` +
+      `outstanding handle cannot be renamed, so this rename would fail with EPERM — sometimes, ` +
+      `on one platform, which is how it survived CI until 93cd471. Probe a COPY instead: see ` +
+      `probeOutsideStaging.`,
+  );
+}
+
+/**
+ * Errnos that mean *something is holding this*, as distinct from *the
+ * filesystem is in a state waiting will not change*.
+ *
+ * `ENOTEMPTY` and `EEXIST` are deliberately absent: a directory does not become
+ * empty because you waited.
+ */
+const HELD_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'ETXTBSY']);
+
+/**
+ * The first held-looking errno in a cause chain, or `null`.
+ *
+ * @param {unknown} thrown
+ * @returns {string | null}
+ */
+function heldCodeIn(thrown) {
+  const seen = new Set();
+  let current = thrown;
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    const code = /** @type {NodeJS.ErrnoException} */ (current).code;
+    if (code !== undefined && HELD_CODES.has(code)) return code;
+    current = current.cause;
+  }
+  return null;
+}
+
+/**
+ * Runs the staged binary from a COPY, outside the tree that is about to move.
+ *
+ * ## The mechanism, which is Part K's own and was reintroduced here
+ *
+ * Windows keeps an image section on an executable after the process exits;
+ * teardown is asynchronous, and **a directory containing a file with an
+ * outstanding handle cannot be renamed**. `provisionGitleaks` spawned the staged
+ * binary out of `staging` and then handed `staging` to `publish`, which renames
+ * it five lines later. So the probe left a lock on the tree the next step had to
+ * move, and the publish raced kernel cleanup.
+ *
+ * Measured on a `windows-latest` runner at 93cd471: `EPERM` on the rename into
+ * an **absent** destination — so "renaming onto an existing directory" is
+ * excluded — while `rm` of the same tree in the `finally` immediately after
+ * succeeded. Linux renames a running binary happily, which is why only one of
+ * the two jobs ever went red.
+ *
+ * ## Why this is the fix and a retry is not
+ *
+ * Rule 0 permits a workaround only when the root cause is proven to lie outside
+ * this repository. **The handle is ours**, so a retry with backoff is the banned
+ * reflex — and it would have looked like it worked, which is the expensive part.
+ *
+ * The probe is not dropped. Publishing a binary nobody started is the
+ * `available: true` sin: a truncated download exists, has the right name, and
+ * cannot run.
+ *
+ * ## The falsification control, written down so a retry cannot arrive as a guess
+ *
+ * One candidate is NOT eliminated by this: Microsoft Defender scanning a
+ * freshly extracted `.exe` holds a handle too, and it is consistent with every
+ * observation above. The image-section candidate is inside this repository and
+ * removable without measuring anything, which is why it goes first.
+ *
+ * **If `EPERM` recurs on the publish rename after this change, the remaining
+ * cause is external** — nothing this process started is inside the renamed tree
+ * any more — and only then does a bounded retry become legal under Rule 0. The
+ * measurement that will say so is in `provisionGitleaks`'s `finally`.
+ *
+ * @param {string} staged The extracted binary, inside the staging tree.
+ * @param {string} version
+ * @returns {Promise<{ ok: boolean, ranFrom: string }>} `ranFrom` is the
+ *   directory the copy was executed from, so a proof can assert it is not the
+ *   one that gets renamed.
+ */
+export async function probeOutsideStaging(staged, version) {
+  const isolated = await mkdtemp(join(tmpdir(), 'monstera-gitleaks-probe-'));
+  try {
+    const copy = join(isolated, basename(staged));
+    await copyFile(staged, copy);
+    return { ok: reportsPinnedVersion(copy, version), ranFrom: isolated };
+  } finally {
+    // Best effort, and it is THIS directory that may now be locked. That is the
+    // point: the lock lands where nothing renames anything.
+    await rm(isolated, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 /**
@@ -370,7 +500,7 @@ export async function sweepAbandonedQuarantines(versionDirectory) {
  * }} options
  * @returns {Promise<void>}
  */
-async function publish({ staging, versionDirectory, binary, force }) {
+export async function publish({ staging, versionDirectory, binary, force }) {
   await mkdir(dirname(versionDirectory), { recursive: true });
 
   // Before anything else, and not only this process's own name — see
@@ -378,6 +508,10 @@ async function publish({ staging, versionDirectory, binary, force }) {
   await sweepAbandonedQuarantines(versionDirectory);
 
   const staged = join(staging, basename(binary));
+
+  // Both trees this function can rename, checked before either is touched.
+  refuseIfSpawnedFrom(staging, 'the staged copy');
+  refuseIfSpawnedFrom(versionDirectory, 'the published install');
 
   if (await fileExists(binary)) {
     if (!force) {
@@ -406,8 +540,24 @@ async function publish({ staging, versionDirectory, binary, force }) {
       await rename(staging, versionDirectory);
     } catch (cause) {
       // Put the original back rather than leaving no tool at all.
-      await rename(quarantine, versionDirectory).catch(() => undefined);
-      throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
+      const restored = await rename(quarantine, versionDirectory).then(
+        () => true,
+        () => false,
+      );
+      // Both throw sites used to say exactly `Could not publish gitleaks to
+      // <dir>`. Two unrelated failures reading identically in a log nobody can
+      // attach a debugger to cost a diagnosis: the 93cd471 failure was placed on
+      // this branch or the other one only by reading a line number out of the
+      // stack.
+      throw new Error(
+        `Could not publish gitleaks to ${versionDirectory}: the existing install was moved aside ` +
+          `to ${quarantine} and the staged copy could not be renamed into the hole. ` +
+          (restored
+            ? `The original was put back, so the path still holds a working tool.`
+            : `THE ORIGINAL COULD NOT BE PUT BACK — ${versionDirectory} is now absent and the ` +
+              `previous install is at ${quarantine}.`),
+        { cause },
+      );
     }
     await rm(quarantine, { recursive: true, force: true }).catch(() => undefined);
     return;
@@ -424,11 +574,27 @@ async function publish({ staging, versionDirectory, binary, force }) {
     // By content, for the reason in this function's header: a copy we cannot
     // start right now is not the same thing as a copy that is wrong, and only
     // the second justifies calling this a publish failure.
-    const winner = (await fileExists(binary))
+    const rivalAppeared = await fileExists(binary);
+    const winner = rivalAppeared
       ? await compareContents(binary, staged)
       : /** @type {const} */ ({ kind: 'different' });
     if (winner.kind !== 'same') {
-      throw new Error(`Could not publish gitleaks to ${versionDirectory}`, { cause });
+      // Which branch of `winner` was taken is the whole diagnosis, and it used
+      // to be absent: "no rival appeared" means the rename failed on its own
+      // terms, while "a rival appeared and differs" means a real race with a
+      // different build. Reporting them as one string sent the reader to the
+      // wrong mechanism.
+      throw new Error(
+        `Could not publish gitleaks to ${versionDirectory}: the destination did not exist and ` +
+          `the staged copy could not be renamed into it. ` +
+          (!rivalAppeared
+            ? `No rival copy appeared, so this was not a lost race — the rename itself failed.`
+            : winner.kind === 'unreadable'
+              ? `A rival copy appeared but could not be read, so whether it is the same binary ` +
+                `is unknown and this refuses rather than guessing.`
+              : `A rival copy appeared and is a DIFFERENT binary.`),
+        { cause },
+      );
     }
   }
 }
@@ -467,7 +633,14 @@ export async function provisionGitleaks({
   }
 
   const binary = gitleaksBinaryPath({ version, builds });
-  if (!force && (await fileExists(binary)) && reportsPinnedVersion(binary, version)) {
+  // THE SECOND SPAWN SITE, and it has the same mechanism as the staging one. If
+  // this probe says no, the very next thing that can happen is `publish`
+  // renaming `versionDirectory` aside to a quarantine — an unguarded rename of
+  // the directory this line just started an executable out of. Narrower than the
+  // staging site (it needs an existing binary of the wrong version, so the spawn
+  // has to have succeeded to return false) and the same repair, which is the
+  // point: fixing one site and leaving the other is the half-fix Rule 0 names.
+  if (!force && (await fileExists(binary)) && (await probeOutsideStaging(binary, version)).ok) {
     return binary;
   }
 
@@ -484,6 +657,8 @@ export async function provisionGitleaks({
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true });
 
+  /** @type {unknown} */
+  let failure = null;
   try {
     const archive = join(staging, build.asset);
     process.stderr.write(`Provisioning gitleaks ${version} for ${key}…\n`);
@@ -503,15 +678,52 @@ export async function provisionGitleaks({
     if (!(await fileExists(staged))) {
       throw new Error(`${build.asset} did not contain ${build.binary}`);
     }
-    if (!reportsPinnedVersion(staged, version)) {
+    // NOT `reportsPinnedVersion(staged, …)`. Spawning the staged file leaves an
+    // image-section handle on `staging`, and `publish` renames `staging` five
+    // lines below — see probeOutsideStaging for the mechanism and for the one
+    // candidate it deliberately does not eliminate.
+    const probe = await probeOutsideStaging(staged, version);
+    if (!probe.ok) {
       throw new Error(
         `${staged} was extracted but does not report version ${version} when run.`,
       );
     }
 
     await publish({ staging, versionDirectory, binary, force });
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
-    await rm(staging, { recursive: true, force: true });
+    // THE TRANSIENCE MEASUREMENT, and it costs nothing because this removal
+    // happens either way. If the publish rename failed because something held
+    // the tree, whether the SAME tree can be deleted a moment later answers
+    // whether the block was transient — and that is how the 93cd471 failure was
+    // diagnosed, from a log that happened to contain both facts and said neither.
+    //
+    // It lives HERE, at the operation, rather than in one caller's proof. The
+    // rename behaviour belongs to a function three callers reach — the
+    // provisioning proof, the concurrency proof and the canary — and an
+    // instrument scoped to one of them measures a call site instead of a
+    // mechanism.
+    const startedAt = Date.now();
+    const removed = await rm(staging, { recursive: true, force: true }).then(
+      () => true,
+      () => false,
+    );
+    const code = heldCodeIn(failure);
+    if (code !== null) {
+      process.stderr.write(
+        removed
+          ? `MEASUREMENT: the publish above failed with ${code}, and ${staging} was then removed ` +
+              `successfully ${Date.now() - startedAt} ms later. The block CLEARED between the two ` +
+              `operations, so it was a handle rather than a permission. Nothing this process ` +
+              `started is inside that tree any more, so the remaining holder is external — see ` +
+              `the falsification control in probeOutsideStaging before adding any retry.\n`
+          : `MEASUREMENT: the publish above failed with ${code} and ${staging} could not be ` +
+              `removed either. The block PERSISTED, so waiting would not have helped and this is ` +
+              `not the transient-handle mechanism.\n`,
+      );
+    }
   }
 
   process.stderr.write(`gitleaks ${version} ready at ${binary}\n`);

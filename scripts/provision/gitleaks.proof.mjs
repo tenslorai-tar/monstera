@@ -22,13 +22,19 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
+import {
+  GITLEAKS_VERSION,
+  gitleaksBinaryPath,
+  probeOutsideStaging,
+  publish,
+  reportsPinnedVersion,
+} from './gitleaks.mjs';
 import { compareContents, fileExists } from '../lib/fetchVerified.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -339,6 +345,134 @@ async function main() {
     failures.push(`quarantine director${leftovers.length === 1 ? 'y' : 'ies'} survived: ${leftovers.join(', ')}`);
   }
   roster.record(mark, 'no quarantine directories survive the swap');
+
+  // ---------------------------------------------------------------------------
+  // Nothing spawns an executable out of a directory that is about to be renamed.
+  //
+  // The defect these cases guard took Guards down at 93cd471 and had passed CI
+  // many times before that. `provisionGitleaks` ran the STAGED binary to check
+  // its version and handed the same tree to `publish` five lines later; on
+  // Windows the image section outlives the process, and a directory holding a
+  // file with an outstanding handle cannot be renamed. Measured from the log:
+  // EPERM renaming into an ABSENT destination, and the identical tree removed
+  // successfully milliseconds afterwards.
+  //
+  // These are deterministic on every platform, which is the point of the guard
+  // — the bug they replace was intermittent and Windows-only, so every green run
+  // was evidence for the wrong conclusion.
+  // ---------------------------------------------------------------------------
+  const binaryName = basename(binary);
+  const scratchRoot = await mkdtemp(join(tmpdir(), 'monstera-spawnsite-'));
+
+  mark = roster.mark();
+  {
+    const pretendStaging = join(scratchRoot, 'staging-a');
+    await mkdir(pretendStaging, { recursive: true });
+    await copyFile(binary, join(pretendStaging, binaryName));
+
+    const probe = await probeOutsideStaging(join(pretendStaging, binaryName), GITLEAKS_VERSION);
+
+    // The POSITIVE control comes first: without it, "ran from somewhere else" is
+    // satisfied by a probe that ran nothing at all, which is the reassuring
+    // answer a broken probe also gives.
+    if (!probe.ok) {
+      failures.push(
+        `the version probe said no for a copy of the binary this proof just published and ran. ` +
+          `Every claim below about WHERE it ran is worthless if it did not run.`,
+      );
+    }
+    if (resolve(probe.ranFrom).startsWith(resolve(pretendStaging))) {
+      failures.push(
+        `the probe executed from ${probe.ranFrom}, which is inside the tree publish renames. ` +
+          `That is the 93cd471 defect exactly: the spawn leaves an image-section handle on the ` +
+          `directory the next step has to move.`,
+      );
+    }
+  }
+  roster.record(mark, 'the version probe runs from OUTSIDE the tree that gets renamed');
+
+  mark = roster.mark();
+  {
+    // RESOLUTION for the case above. A probe that answered yes unconditionally
+    // would satisfy it, and would also publish a truncated download.
+    const notABinary = join(scratchRoot, 'decoy');
+    await mkdir(notABinary, { recursive: true });
+    await writeFile(join(notABinary, binaryName), 'this is not an executable');
+    const decoy = await probeOutsideStaging(join(notABinary, binaryName), GITLEAKS_VERSION);
+    if (decoy.ok) {
+      failures.push(
+        `the probe said yes for a file that is not an executable, so it is not measuring ` +
+          `runnability and the staged-copy check is decoration.`,
+      );
+    }
+  }
+  roster.record(mark, 'RESOLUTION: the probe still says no for something that cannot run');
+
+  mark = roster.mark();
+  {
+    // The guard itself, armed through the SAME function the product uses, so
+    // this exercises the recording and the refusal rather than a test double.
+    const armed = join(scratchRoot, 'armed');
+    await mkdir(armed, { recursive: true });
+    await copyFile(binary, join(armed, binaryName));
+    reportsPinnedVersion(join(armed, binaryName), GITLEAKS_VERSION);
+
+    const destination = join(scratchRoot, 'armed-destination');
+    let refused = '';
+    try {
+      await publish({
+        staging: armed,
+        versionDirectory: destination,
+        binary: join(destination, binaryName),
+        force: false,
+      });
+    } catch (error) {
+      refused = `${error instanceof Error ? error.message : String(error)}`;
+    }
+    if (!refused.includes('started an executable out of it')) {
+      failures.push(
+        `publish renamed a directory this process had spawned from, or refused it for some other ` +
+          `reason: ${refused || '(it did not refuse at all)'}. The guard exists to make an ` +
+          `intermittent, Windows-only EPERM into a deterministic refusal everywhere — a bug that ` +
+          `only sometimes appears on one platform is one that CI reports as fine.`,
+      );
+    }
+    await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+  }
+  roster.record(mark, 'publish REFUSES to rename a tree this process spawned from');
+
+  mark = roster.mark();
+  {
+    // CONTROL: the refusal is about the spawn, not about publishing in general.
+    // Without this the case above passes for a publish that never works.
+    const clean = join(scratchRoot, 'clean');
+    await mkdir(clean, { recursive: true });
+    await copyFile(binary, join(clean, binaryName));
+
+    const destination = join(scratchRoot, 'clean-destination');
+    let published = true;
+    try {
+      await publish({
+        staging: clean,
+        versionDirectory: destination,
+        binary: join(destination, binaryName),
+        force: false,
+      });
+    } catch (error) {
+      published = false;
+      failures.push(
+        `CONTROL: publishing a tree nothing was spawned from failed:\n${formatError(error)}\n` +
+          `The case above then proves only that publish always refuses.`,
+      );
+    }
+    if (published && !(await fileExists(join(destination, binaryName)))) {
+      failures.push(`CONTROL: publish reported success but ${destination} holds no binary.`);
+    }
+    await rm(destination, { recursive: true, force: true }).catch(() => undefined);
+  }
+  roster.record(mark, 'CONTROL: publish still works on a tree nothing was spawned from');
+
+  await rm(scratchRoot, { recursive: true, force: true }).catch(() => undefined);
 
   // ---------------------------------------------------------------------------
   // What decides the swap is content, and content is not runnability.
