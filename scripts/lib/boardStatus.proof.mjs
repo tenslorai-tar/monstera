@@ -38,7 +38,7 @@ import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 15 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -201,6 +201,70 @@ check(
   ).verdict === 'blind',
   'ranking an unknown status as "not finished" waits forever and looks like a slow run. If ' +
     'GitHub adds a state, this says so on the first poll instead of on the tenth minute.',
+);
+
+// -----------------------------------------------------------------------------
+// GREENNESS, and these cases exist because the first version got it wrong in the
+// one way this instrument was built to prevent.
+//
+// `board.mjs` decided greenness by substring-matching its own rendered summary:
+// `reason.includes('=success') && !reason.includes('=failure')`. Measured on the
+// real strings, that called `CI=cancelled, Guards=success` GREEN — 9292d1f's
+// exact state, and the reason this module exists. `timed_out` and `skipped`
+// passed too; only the literal `failure` did not.
+//
+// The first case below is therefore not a hypothetical: it is a regression test
+// for a defect that shipped.
+// -----------------------------------------------------------------------------
+check(
+  'a CANCELLED run is not green, even beside a successful one',
+  boardVerdict(
+    payload([
+      run({ name: 'CI', runNumber: 155, conclusion: 'cancelled' }),
+      run({ name: 'Guards', runNumber: 161, conclusion: 'success' }),
+    ]),
+    { sha: MINE },
+  ).green === false,
+  'This is 9292d1f: CI cancelled by the next push, Guards green. The predicate this replaces ' +
+    'reported GREEN for it — the concurrency-group cancellation this whole module was written ' +
+    'after, passed off as an answer.',
+);
+
+// `success` BESIDE the bad conclusion, deliberately. The first draft of this
+// case paired `timed_out` with `skipped`, and the replaced predicate answers
+// that one correctly — no `=success` anywhere, so it reports not-green for the
+// wrong reason. A case that agrees with the bug it is guarding against
+// separates nothing, which is audit item 4's direction rule applied to a
+// FIXTURE rather than to a mutation.
+check(
+  'nor is a timed-out one beside a success',
+  boardVerdict(
+    payload([
+      run({ name: 'CI', runNumber: 155, conclusion: 'timed_out' }),
+      run({ name: 'Guards', runNumber: 161, conclusion: 'success' }),
+    ]),
+    { sha: MINE },
+  ).green === false,
+  'Greenness is equality against ONE conclusion, not absence of a bad one. An allowlist of ' +
+    'one cannot acquire a hole when GitHub adds a conclusion; a denylist acquires one silently.',
+);
+
+check(
+  'CONTROL: two successes ARE green',
+  boardVerdict(bothDone, { sha: MINE }).green === true,
+  'without this the cases above are satisfied by a predicate that reports nothing green, ' +
+    'which is the direction rule from audit item 4 — mutate towards the answer the bug also ' +
+    'produces, and check the other one too.',
+);
+
+check(
+  'a verdict that could not be read is never green',
+  boardVerdict(payload([run({ sha: OTHER }), run({ sha: OTHER, name: 'CI' })]), { sha: MINE })
+    .green === false &&
+    boardVerdict(halfDone, { sha: MINE }).green === false,
+  'BLIND and PENDING must both report green:false. An answer nobody could read is not a ' +
+    'passing one, and a caller that checks `green` without checking `verdict` must not be ' +
+    'handed `true` by a board it never saw.',
 );
 
 check(

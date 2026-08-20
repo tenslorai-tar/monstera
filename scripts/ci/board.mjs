@@ -82,11 +82,21 @@ async function main() {
       continue;
     }
 
-    const { verdict, reason } = boardVerdict(body, { sha, seen });
+    const { verdict, reason, green } = boardVerdict(body, { sha, seen });
     process.stdout.write(`  poll ${String(attempt)}: ${verdict.toUpperCase()} — ${reason}\n`);
 
     if (verdict === 'complete') {
-      const green = reason.includes('=success') && !reason.includes('=failure');
+      // `green` is DERIVED IN THE DECIDER, and this line is the whole reason.
+      // It used to be computed here, from the rendered `reason` string:
+      // `reason.includes('=success') && !reason.includes('=failure')`. That
+      // called `CI=cancelled, Guards=success` GREEN — the exact state 9292d1f
+      // was in, and the state this instrument exists to make visible. It also
+      // passed `timed_out` and `skipped`.
+      //
+      // Two things were wrong and only one of them was the predicate: greenness
+      // was read off a HUMAN-READABLE SUMMARY rather than off the data, and it
+      // lived in this shell, which has no proof, rather than in the module that
+      // does. The shell prints what it is handed.
       process.stdout.write(`\n${green ? 'GREEN' : 'NOT GREEN'} at ${sha}: ${reason}\n`);
       return green ? 0 : 1;
     }

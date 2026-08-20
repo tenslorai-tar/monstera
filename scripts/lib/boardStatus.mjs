@@ -64,6 +64,37 @@
  */
 
 /**
+ * The only conclusion that means the board answered YES.
+ *
+ * Every other value GitHub can report — `cancelled`, `timed_out`, `skipped`,
+ * `action_required`, `neutral`, `stale`, and whatever it adds next — is not a
+ * pass, and the list is deliberately not enumerated: an allowlist of one cannot
+ * acquire a hole when the set of conclusions grows.
+ *
+ * This exists because the first version did NOT do it this way, and the defect
+ * is the exact one this instrument was built to prevent. `board.mjs` decided
+ * greenness by substring-matching its own human-readable summary —
+ * `reason.includes('=success') && !reason.includes('=failure')` — so any
+ * conclusion other than the literal `failure` counted as harmless. Measured on
+ * the real strings:
+ *
+ * ```
+ * GREEN      CI=cancelled, Guards=success   <- 9292d1f's exact shape
+ * GREEN      CI=timed_out, Guards=success
+ * GREEN      CI=skipped,   Guards=success
+ * NOT GREEN  CI=failure,   Guards=success
+ * ```
+ *
+ * A cancelled CI run is what this whole module was written after. The instrument
+ * would have called it green.
+ *
+ * Two mechanisms, and the second is why it is here rather than in the shell:
+ * greenness is now DERIVED FROM THE DATA rather than from a rendering of it, and
+ * it lives in the module that has a proof. The shell prints what it is handed.
+ */
+const PASSING_CONCLUSION = 'success';
+
+/**
  * How far along a run is. Ranked so a REGRESSION is detectable; the numbers
  * carry no meaning beyond their order.
  *
@@ -153,7 +184,10 @@ export function parseRuns(payload) {
  *   is how many runs that push should produce (one per workflow). `seen` is this
  *   caller's high-water mark per run, carried across polls; it is MUTATED, so a
  *   caller keeps one Map for the whole wait.
- * @returns {{ verdict: Verdict, reason: string, runs: BoardRun[] }}
+ * @returns {{ verdict: Verdict, reason: string, runs: BoardRun[], green: boolean }}
+ *   `green` is true only for a `complete` verdict in which EVERY run concluded
+ *   `success`. It is false for every other verdict, including `stale` and
+ *   `blind` — an answer that could not be read is not a passing one.
  */
 export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
   if (sha === '') throw new Error('boardVerdict needs a sha to anchor on; "" matches everything.');
@@ -173,6 +207,7 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
         `the field, or a page that does not reach far enough all produce it, and every one of ` +
         `them otherwise reads as "the runs have not started".`,
       runs: mine,
+      green: false,
     };
   }
 
@@ -184,6 +219,7 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
         `Status ${unknown.map((run) => `"${run.status}"`).join(', ')} is not one this understands. ` +
         `Treating it as unfinished would wait forever and look like a slow run.`,
       runs: mine,
+      green: false,
     };
   }
 
@@ -202,6 +238,7 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
           `is older than one already read — a cached board, which passes every check that asks ` +
           `whether the anchor is PRESENT.`,
         runs: mine,
+        green: false,
       };
     }
     seen.set(run.runNumber, rank);
@@ -215,6 +252,7 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
         .map((run) => `${run.workflow}=${run.status}`)
         .join(', ')}`,
       runs: mine,
+      green: false,
     };
   }
 
@@ -222,5 +260,9 @@ export function boardVerdict(payload, { sha, expect = 2, seen = new Map() }) {
     verdict: 'complete',
     reason: mine.map((run) => `${run.workflow}=${String(run.conclusion)}`).join(', '),
     runs: mine,
+    // EVERY run, and equality against one value. See PASSING_CONCLUSION: the
+    // predicate this replaces asked whether the rendered summary contained
+    // "=success" and not "=failure", which called a cancelled run green.
+    green: mine.every((run) => run.conclusion === PASSING_CONCLUSION),
   };
 }
