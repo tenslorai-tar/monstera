@@ -43,12 +43,14 @@
  * six lines; a route around the pin costs the pin.
  */
 
+import { readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
+import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -148,6 +150,121 @@ export function electronRoot(root = REPO_ROOT) {
 /** The executable this platform would run, provisioned or not. */
 export function electronBinaryPath(root = REPO_ROOT, key = platformKey()) {
   return join(electronRoot(root), buildFor(key).executable);
+}
+
+/**
+ * THE RULE: no plain-Node code in this repository may `require('electron')`.
+ * Spawn the binary this module provisions, by its explicit path.
+ *
+ * ## Why, measured rather than argued
+ *
+ * `node_modules/electron/index.js` ends with `module.exports =
+ * getElectronPath()`, and that function calls `downloadElectron()` when the
+ * binary is absent. So the import itself is the download trigger — lazily, at
+ * first use, on a machine that installed cleanly. `--ignore-scripts` moves that
+ * from install time to run time; it does not remove it. And `install.js` reads
+ * `electron_use_remote_checksums`, which repoints verification at a remote
+ * source, so the pin recorded above is bypassed by the very act of importing.
+ *
+ * Naming the provisioned path instead makes `getElectronPath()` unreachable —
+ * B5, not a discouragement. There is no code path from a spawn to a download.
+ *
+ * ## Two routes that were rejected, and why, so they are not re-proposed
+ *
+ * - **`ELECTRON_OVERRIDE_DIST_PATH`.** It is read before both `downloadElectron`
+ *   call sites, so it does short-circuit them. But `index.js:31` joins it with
+ *   `executablePath || 'electron'`, where `executablePath` is read from
+ *   `path.join(__dirname, 'path.txt')` — `__dirname` being *the dependency's*
+ *   directory, not the override's. With no `path.txt` it yields `<dir>/electron`
+ *   and drops the `.exe` on Windows, turning a loud "downloading" into a
+ *   confusing "file not found". Making it work would mean writing inside
+ *   `node_modules/`, which `npm ci` erases. **Setting it is worse than not.**
+ * - **`.npmrc` with `ignore-scripts=true`.** It would also disable this
+ *   repository's own `prepare` script, which installs the git hooks — silently
+ *   disarming the secret scan and the escape-resolving-write guard.
+ *
+ * ## The rule covers what we control; the guard below catches the rest
+ *
+ * `apps/desktop/src/preload.ts` imports `electron` and is not a violation: it
+ * runs *inside* the Electron runtime, where the specifier resolves to the API
+ * surface rather than to `index.js`. The rule is about **plain Node** — the
+ * launcher, and everything under `scripts/`.
+ *
+ * Promoting this to an `ARCHITECTURE.md` §9 invariant is a **B4 amendment owed**,
+ * in its own commit. It is enforced here first because the enforcement is free
+ * today and the amendment is not urgent; the ordering is deliberate and stated
+ * rather than skipped.
+ *
+ * @param {string} [root]
+ * @returns {Promise<boolean>} whether an unpinned runtime is present
+ */
+export async function unpinnedRuntimeExists(root = REPO_ROOT) {
+  return fileExists(join(root, 'node_modules', 'electron', 'dist'));
+}
+
+/**
+ * Plain-Node files that import a given specifier.
+ *
+ * **Parsed, never grepped**, and `electron.proof.mjs` is the reason: it holds
+ * four fixture STRINGS that read `import { … } from 'electron'`. A text scan
+ * flags its own proof, and a scan that cries wolf gets relaxed until it flags
+ * nothing. That is item 4b's window axis arriving as a false positive rather
+ * than a false negative — the same failure, more likely to be "fixed" wrongly.
+ *
+ * Scoped to `scripts/`, which is this repository's plain-Node surface.
+ * `apps/desktop/src/` is deliberately excluded: it runs inside the Electron
+ * runtime, where `electron` is the API surface and not `index.js`.
+ *
+ * @param {string} specifier
+ * @param {string} [root]
+ * @returns {Promise<string[]>} repo-relative paths, empty when none
+ */
+export async function scriptsImporting(specifier, root = REPO_ROOT) {
+  const ts = await loadTypeScript(
+    `plain-Node imports cannot be DERIVED, and a text scan is not a substitute: this ` +
+      `repository's own proof fixtures contain the exact string being searched for.`,
+  );
+  const scripts = join(root, 'scripts');
+  /** @type {string[]} */
+  const files = [];
+  /** @param {string} directory */
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.mjs')) files.push(full);
+    }
+  };
+  walk(scripts);
+
+  if (files.length === 0) {
+    throw new Error(
+      `No .mjs files were found under ${scripts}. An empty file set reports "nothing imports ` +
+        `${specifier}" for every specifier, which is the reassuring answer (audit item 4b).`,
+    );
+  }
+
+  const program = ts.createProgram({
+    rootNames: files,
+    options: { allowJs: true, noLib: true, noResolve: true, skipLibCheck: true },
+  });
+
+  /** @type {string[]} */
+  const found = [];
+  for (const file of files) {
+    const source = program.getSourceFile(file);
+    if (source === undefined) {
+      throw new Error(`${file} was listed but the compiler produced no source file for it.`);
+    }
+    for (const statement of source.statements) {
+      if (!ts.isImportDeclaration(statement)) continue;
+      const moduleSpecifier = statement.moduleSpecifier;
+      if (ts.isStringLiteral(moduleSpecifier) && moduleSpecifier.text === specifier) {
+        found.push(relative(root, file).replaceAll('\\', '/'));
+      }
+    }
+  }
+  return found;
 }
 
 /**
