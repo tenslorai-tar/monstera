@@ -2,7 +2,7 @@
   "name": "@monstera/testing",
   "version": "0.0.0",
   "private": true,
-  "description": "Fixture corpus and proof harness. Will hold the browser shim; that is not built yet.",
+  "description": "Browser shim (the fourth contract surface), fixture corpus and proof harness.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
