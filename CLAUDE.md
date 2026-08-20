@@ -186,6 +186,15 @@ is wrong** — fix the boundary, not the test.
   was handed. Policy before mechanism, because the hosts are `DocumentService`'s
   to create (invariant 25).
 
+- **Plain Node never loads Electron — it spawns the pinned binary by name.** The
+  import IS the download: `index.js` ends with
+  `module.exports = getElectronPath()`, which fetches when the binary is absent,
+  through an `install.js` that reads `electron_use_remote_checksums` and so
+  bypasses our pin. `--ignore-scripts` defers that to first use rather than
+  closing it. **The launcher lives in `scripts/`** — under `apps/desktop/` it is
+  invisible to both enforcers at once, since ESLint's boundary is per-package and
+  exempts `desktop` while the scan's root stops at `scripts/` (invariant 26).
+
 - **Distribution is the Microsoft Store only.** No direct download. The
   two-flavour seam is kept deliberately — flavour switch, `WebUpdateProvider`
   registered with nothing behind it, signing certificate as an empty config
@@ -194,7 +203,7 @@ is wrong** — fix the boundary, not the test.
   apps; the app never installs its own package and never overrides a user who
   disabled automatic updates.
 
-The full invariant list (L1–L25) is in `docs/ARCHITECTURE.md`. A regression
+The full invariant list (L1–L26) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.
 
 ---

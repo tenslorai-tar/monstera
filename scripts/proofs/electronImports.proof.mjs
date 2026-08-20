@@ -189,6 +189,27 @@ try {
   // NOT keyed on `path:line`: a line number moves whenever anything above it is
   // edited, and a suppression that reddens on unrelated edits is one that gets
   // loosened.
+  //
+  // WHAT THIS STILL DOES NOT CATCH, stated rather than implied. **The count is
+  // quantity, not identity.** If `nativeAddon.proof.mjs`'s koffi
+  // `require.resolve` were deleted and a different computed load written in its
+  // place, the count stays 1, this case stays green, and the recorded reason
+  // describes a call that no longer exists — a justification vouching for a
+  // site it has never seen. That is this same granularity axis one notch finer,
+  // and it is AA-1's family.
+  //
+  // Deliberately not fixed by keying on identity: a content hash of the call
+  // site reddens on reformatting, and a suppression that reddens on unrelated
+  // edits is the one that gets loosened — the same reason `path:line` was
+  // rejected above. The remedy that would work is a reader, not a checker.
+  //
+  // So this is `passRoster.mjs`'s limit in a different object. That header says
+  // the declared count protects a roster from disagreeing with ITSELF and
+  // cannot fire when the wrong roster is formatted; here the count protects the
+  // list from disagreeing with the tree's SHAPE and cannot fire when a site is
+  // swapped. Naming it is what stops the mechanism being read as more than it
+  // is — and both limits are the same sentence: a count sees how many, never
+  // which.
   const ACCOUNTED_COMPUTED = new Map([
     [
       'scripts/lib/loadTypeScript.mjs',

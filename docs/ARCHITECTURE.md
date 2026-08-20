@@ -732,6 +732,63 @@ say**.
     scheduled row in `docs/FEATURES.md`, not an intention.
     ([Threat model §4.4](security/THREAT-MODEL.md))
 
+26. **Plain Node never loads Electron; it spawns the pinned binary by name.**
+    No file that `node` starts — everything under `scripts/`, the launcher
+    included — may reach the `electron` specifier by any route: static import,
+    `export … from`, `import()`, `require()`, or `require.resolve`.
+    `apps/desktop/src/` is out of scope and is not an exception: it runs *inside*
+    the Electron runtime, where the specifier is the API surface.
+
+    The mechanism is that the import IS the download.
+    `node_modules/electron/index.js` ends with
+    `module.exports = getElectronPath()`, and that function calls
+    `downloadElectron()` when the binary is absent. `--ignore-scripts` moves the
+    fetch from install time to first use; it does not remove it. `install.js`
+    then reads `electron_use_remote_checksums`, which repoints verification at a
+    remote source — so the pin recorded in `scripts/provision/electron.mjs` is
+    bypassed by the act of importing. Naming the provisioned path makes
+    `getElectronPath()` **unreachable**: B5, not a discouragement.
+
+    **Two enforcers, split by node type, because one authority does not claim
+    both halves.** `no-restricted-imports` owns the four static shapes and is
+    registered against `scripts/`; `scriptsLoadingAtRuntime` owns the runtime
+    residue. That split is measured, not assumed — in ESLint 10.8.1,
+    `ImportExpression` appears nowhere in `no-restricted-imports.js` and its
+    visitor object has no `CallExpression`, so `import('electron')` and
+    `require('electron')` pass it. Neither enforcer is a second opinion about
+    what the other says (B3a).
+
+    **The launcher lives in `scripts/`, and that placement is load-bearing.**
+    Under `apps/desktop/` it would be invisible to both enforcers at once:
+    ESLint's boundary is per-package and exempts `desktop` by design, and the
+    scan's root stops at `scripts/`. A `.ts` launcher there would be *permitted*;
+    a `.mjs` one would match no package glob — they end `.ts,.tsx` — and no
+    `scripts/` glob either, so no rule would apply to it at all. Both mechanisms
+    would return the reassuring answer. Moving it is a B4 amendment, not a
+    refactor.
+
+    **Two alternatives rejected on measurement, recorded so neither returns.**
+    `ELECTRON_OVERRIDE_DIST_PATH` does short-circuit both `downloadElectron`
+    sites, but `index.js:31` joins it with `executablePath || 'electron'`, where
+    `executablePath` comes from `path.join(__dirname, 'path.txt')` — `__dirname`
+    being *the dependency's* directory, not the override's. With no `path.txt`
+    it yields `<dir>/electron` and drops the `.exe` on Windows, turning a loud
+    "downloading" into a confusing "file not found"; making it work means
+    writing inside `node_modules/`, which `npm ci` erases. Setting it is worse
+    than not setting it. And an `.npmrc` carrying `ignore-scripts=true` would
+    disable this repository's own `prepare` script, silently disarming the
+    secret scan and the escape-resolving-write guard — worse than the problem it
+    solves.
+
+    **Two stated limits, because a green result here means less than it looks.**
+    A computed specifier — `import(name)` — cannot be read by a parse, so the
+    scan reports it as a third state, *unreadable*, rather than as absent; each
+    site is listed with a reason in `ACCOUNTED_COMPUTED`. And that list's
+    declared count is **quantity, not identity**: a site swapped for a different
+    computed load keeps the count and leaves the recorded reason describing a
+    call that no longer exists. Neither is fixed by a checker; both are stated so
+    the mechanism is not read as more than it is.
+
 ---
 
 ## 10. Design law
