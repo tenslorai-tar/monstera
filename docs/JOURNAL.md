@@ -644,6 +644,193 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `90d9b6e..HEAD` — a range of instruments, audited before feature code joins it
+
+**Audited through `d4c01c1`.** 9 commits, 14 files, **1 proof added, 1 modified**,
+1 new source file — figures taken from `npm run audit:scope`, because a
+hand-count disagreed with it three times in this range and the instrument was
+right every time.
+
+**Why this range is audited now rather than after the window unit.** It is made
+almost entirely of instruments and proofs written to close the previous finding
+— the composition `CLAUDE.md` names as producing most of this project's defects.
+The window unit would have put instruments and the first feature code into one
+range, and an audit reading two kinds of change at once reads neither well. The
+batch threshold was reached at the same time, which is a coincidence rather than
+the reason.
+
+The range's substance: `require('electron')` became unreachable from plain Node,
+enforced by two mechanisms split along the line ESLint actually draws, and
+promoted to **invariant 26** in its own B4 commit before the launcher it governs
+exists.
+
+### FF-1 — a shared list with two consumers had a proof on one of them
+
+`PLAIN_NODE_EXTENSIONS` exists so that widening it moves **both** the lint glob
+and the runtime scan. Only the scan could demonstrate it moved: its `.cjs`
+fixture in the shapes case. ESLint's half was asserted.
+
+The fact that made the gap invisible is the fact that will change — **there is no
+`.js` or `.cjs` under `scripts/` today**, so no run ever put ESLint in front of
+one, and a glob that had quietly stopped matching them would look exactly like a
+glob that works. That is the general shape worth carrying: *a shared definition
+whose whole purpose is to move two things needs a control on each, and the
+consumer with no live inputs is the one that will be missing it.*
+
+Closed in `d4c01c1`: a `.js` probe under `scripts/` must report
+`no-restricted-imports`. Narrowing the globs back to `.mjs` alone reddens it and
+nothing else.
+
+Measured while writing it, and kept: a `.cjs` doing `require('electron')` is
+caught by `@typescript-eslint/no-require-imports`, **not** by
+`no-restricted-imports` — invariant 26's two-mechanism split seen from the other
+side.
+
+### FF-2 — a single-element brace glob is not expanded, so it matches nothing
+
+`PLAIN_NODE_GLOB` built `scripts/**` + `/*.{mjs,js,cjs}` by joining the list.
+Measured by swapping only the braces: the one-element form `/*.{mjs}` matches
+**nothing**, while `/*.mjs` matches everything. With three extensions the brace
+form works, so the defect was invisible — and it fires the day someone narrows
+the list to one, which is what removing an extension eventually means.
+
+**It fails loudly and still fails badly.** 103 errors, all of them `Parsing
+error: … not found by the project service`, because `projectService` then
+type-checks the files the `disableTypeChecked` block no longer covers. Nothing in
+that output says a glob stopped matching. **A failure that is impossible to miss
+and impossible to attribute is not much better than a silent one** — the reader
+goes and edits `tsconfig.json`.
+
+So the fix has two halves. The glob is now an **array, one entry per extension**,
+which makes the length-one case unrepresentable rather than checked (B5, chosen
+over a `length === 1` conditional). And the attribution went into the new case's
+own diagnostic: *if the message is a parsing error rather than a rule id, the
+config block stopped matching this file.* That is the half that is still useful
+in six months.
+
+### Item 2a — the coverage moved to a job that can only look after `npm ci` succeeds
+
+Paid explicitly, because this range moved coverage in two directions and every
+commit message treated both as pure improvement.
+
+A **first draft of this entry said** the static-shape check "used to run in both
+workflows and now runs in one." That is not the history, and it was corrected on
+measurement: `d66143a` put the scan in `proof:electronprovision`, registered in
+`guards.yml` only, where it was red from its first run; `f0aedc2` moved it to
+`proof:electronimports` in `ci.yml` only. **One workflow throughout — what
+changed is which one.** Platform coverage is unreduced: both jobs are
+`os: [windows-latest, ubuntu-latest]`.
+
+The real reduction is a different axis. In `guards.yml` the check ran with
+**nothing installed** — that job has no install step at all. In `ci.yml` it runs
+after `npm ci --ignore-scripts`, and so does `lint`, which is where the static
+shapes now live. **Both halves of this range's coverage now share one
+provisioning condition where there was none.**
+
+That is invariant 25's shape exactly — symbols moving from witnesses to a
+derivation — and it is correct by the register's own philosophy while still being
+a reduction: a failed install does not mean the checks report *no violations*, it
+means they **do not report at all**. This is not theoretical here. This
+repository has a 138-commit precedent in which every run died at `npm ci` and
+both seats answered "would CI have caught it?" from the workflow file rather than
+from a run.
+
+Not a defect, and not fixed here. Stated, because every unverifiable-shaped
+output reads as rigour, including the ones that used to be failures.
+
+### AA-1 again — third range in which the granularity half hid something
+
+The instrument column lists **one** new source file, `plainNodeScope.mjs`, which
+is a constants module. The three things in this range that actually needed
+resolution-testing arrived as **functions inside a module that already existed**
+— `scriptsLoadingAtRuntime`, `isModuleLoad`, `unpinnedRuntimeExists` — and
+appeared in no column at all.
+
+Both findings above came from reading the modified-proof diffs, which is what the
+report's own note instructs and what no column does for you. AA-1's granularity
+half remains **open**, and this is the third consecutive range where it is the
+axis that hid something. Pattern (W-1), root (X-1) and state (Z-1) were each
+fixed and each left the next standing; granularity is the one still standing.
+
+### The net-diff caveat earned its keep
+
+`electron.proof.mjs` reads **+8 −0** across the range while its roster went
+**8 → 11 → 8** inside it. A rule check was added in `d66143a` and removed in
+`f0aedc2`; the net diff shows neither. Without the per-commit column and its
+warning, the range's most consequential proof change — the one that turned Guards
+red on both platforms — would have appeared as an eight-line comment.
+
+### Findings raised and closed inside the range
+
+Nine, all by the reviewing seat, all closed here:
+
+- **EE-1** the unpinned-runtime probe had never returned true anywhere and could
+  not — and its prescribed control caught a real defect on its first run:
+  `unpinnedRuntimeExists` was built on `fileExists`, which ends in `.isFile()`,
+  and `dist` is a directory.
+- **EE-2/EE-3/EE-5/EE-6** the hand-rolled scan was a second opinion about static
+  imports; measured against ESLint 10.8.1, `ImportExpression` appears **zero**
+  times in `no-restricted-imports.js` and its visitor has no `CallExpression`, so
+  the residue is real and is now implemented once. The launcher's home in
+  `scripts/` closes EE-6 by B5 rather than a fourth rule.
+- **EE-4** the sentence offered as the demonstration was false about the file it
+  named — a checked claim with an unchecked detail attached, where the checked
+  half makes the other read as checked.
+- **EE-8** `ts.isStringLiteral` rejects a backtick specifier, and a computed one
+  was reported as absent; the scan now returns a **third state**.
+- **EE-9** the corrected reason lived sixty lines from the point of use, in a
+  compound claim whose surviving clause vouched for the dead one — item 7,
+  created by the commit that recorded the measurement.
+- **EE-10** the suppression list was keyed on a file while its recorded reason
+  described a line, so a new site inside a listed file reached no diff — the
+  property `.gitleaksignore` is banned for, reproduced by a list whose comment
+  cited that ban.
+
+### EE-7 — a process finding: an over-generalised sentence bought a wrong ruling
+
+`passRoster.mjs` and `docs/JOURNAL.md` both said "ESLint does not reach
+`scripts/`". `eslint.config.js:348` globs every `.mjs` under `scripts/`; the true
+claim is the narrower one the *proof* had carried all along — no `no-shadow`
+reaches it.
+
+Asked whether `no-restricted-imports` should own the rule (B3a), the reviewing
+seat read the two over-generalised sentences and ruled it B4-sized work not to be
+started while `main` was red. **It is three lines in a block that already
+exists.** "Does not reach" and "reaches with one rule enabled" are not the same
+claim at any scale, and the gap between them is a whole conversation about
+architecture.
+
+The correction is to **the reason, not the finding** — AA-2 is untouched and
+still correct. That is why the false premise survived: everything it was offered
+in support of stayed true, so nothing went red and no reader had cause to check
+it. Recorded as a dated correction above the original wording.
+
+### Executed rather than asserted
+
+Every mutation in this range was run and restored, not reasoned about: the rule
+disabled (2 lint cases red, clean-lint control green) · recursion removed (3 red
+including the real-tree control) · callee-blind (the rule case red, on this
+repository's own proofs) · extension refusal removed · `isStringLiteralLike` →
+`isStringLiteral` (4 red) · unreadable swallowed · `sites` up and down · the
+glob narrowed. `ELECTRON_SPECIFIERS` narrowed reddened **nothing**, which is how
+a case that separated nothing was found.
+
+Also executed: `no-restricted-imports.js:334` builds `matcher: ignore({…})` and
+line 802 calls `group.matcher.ignores(importSource)`, so `patterns.group` uses
+gitignore semantics and every `/**` entry in this repository's three groups is
+redundant.
+
+### Carried forward, still open
+
+**AA-1** (granularity), **AA-3**, **CC-3**, **DD-2**, **BB-6** (ruled not-now),
+**Y-3** (17 handlers). **DD-1 is closed in substance** — the rule, both
+enforcers and invariant 26 exist — with its last consumer, a launcher that spawns
+the pinned binary, being the window unit's first job.
+
+Next: the window unit, on a range that starts clean.
+
+---
+
 ## 2026-08-20 — Stage audit: `598b50e..90d9b6e`
 
 **Audited through 90d9b6e.** 6 commits, 23 files, **4 proofs added, 1 modified**,
