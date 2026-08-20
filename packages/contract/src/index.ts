@@ -22,6 +22,7 @@ export {
   channels,
 } from './channels.js';
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
+export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
 export { type Incident, IncidentLog, type IncidentSink } from './incident.js';
 export {
   type Command,

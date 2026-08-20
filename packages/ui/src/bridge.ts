@@ -1,4 +1,10 @@
-import { type ContractClient, channels, createClient } from '@monstera/contract';
+import {
+  BRIDGE_KEY,
+  type ContractClient,
+  type MonsteraBridge,
+  channels,
+  createClient,
+} from '@monstera/contract';
 
 /**
  * The renderer's side of the contract, and the shape the preload must expose.
@@ -29,15 +35,28 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
  * derives the rest from the contract it already imports.
  */
 
-/** What `contextBridge` must expose on `window`, and the whole of it. */
-export interface MonsteraBridge {
-  readonly invoke: (channel: string, params: unknown) => Promise<unknown>;
-}
+// `MonsteraBridge` MOVED to `@monstera/contract`, and it was not there first
+// because nothing had needed it on two sides yet.
+//
+// The preload defines it and the renderer consumes it, and neither package may
+// import the other — `apps/desktop` may not import `packages/ui`, and
+// `packages/ui` may import only `shared` and `contract`. Declaring it here meant
+// the preload would have to restate it: one shape, two declarations, drifting in
+// silence until a renderer called a method the preload had stopped exposing.
+// B3a, found by building the second side, which is the only way a missing shared
+// definition announces itself.
 
 declare global {
   // `var`, because that is how a global is declared to TypeScript — `let` and
-  // `const` do not attach to `globalThis`. Declared here rather than in a
-  // `.d.ts` so it sits beside the interface it names and cannot drift from it.
+  // `const` do not attach to `globalThis`.
+  //
+  // The NAME here cannot be computed: a declaration's identifier is syntax, so
+  // this is unavoidably a second place `monstera` is written. What closes it is
+  // the lookup below going through `BRIDGE_KEY` — if that constant changed,
+  // `globalThis[BRIDGE_KEY]` would name a key this declaration does not have and
+  // the build would fail. The duplication is therefore checked by the compiler
+  // rather than by anyone remembering, which is the difference between a second
+  // copy and a second SOURCE.
   var monstera: MonsteraBridge | undefined;
 }
 
@@ -75,7 +94,9 @@ export class BridgeUnavailableError extends Error {
  *
  * @param bridge the transport, defaulting to the one the preload exposes
  */
-export function createRendererClient(bridge: MonsteraBridge | undefined = globalThis.monstera): ContractClient {
+export function createRendererClient(
+  bridge: MonsteraBridge | undefined = globalThis[BRIDGE_KEY],
+): ContractClient {
   if (bridge === undefined) throw new BridgeUnavailableError();
   return createClient(channels, async (id, params) => bridge.invoke(id, params));
 }

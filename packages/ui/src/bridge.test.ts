@@ -1,7 +1,7 @@
-import { channelIds } from '@monstera/contract';
+import { type MonsteraBridge, channelIds } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
-import { BridgeUnavailableError, type MonsteraBridge, createRendererClient } from './bridge.js';
+import { BridgeUnavailableError, createRendererClient } from './bridge.js';
 
 /**
  * The renderer client, over a recording transport.

@@ -78,6 +78,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadTypeScript as loadCompiler } from '../lib/loadTypeScript.mjs';
+
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
@@ -145,16 +147,15 @@ const PROSE_SENTINEL = 'Deprecated';
  * @returns {Promise<typeof import('typescript')>}
  */
 async function loadTypeScript() {
-  const entry = join(REPO_ROOT, 'node_modules', 'typescript', 'lib', 'typescript.js');
-  if (!existsSync(entry)) {
-    throw new Error(
-      `TypeScript is not installed at ${entry}, so electron.d.ts cannot be PARSED. Falling back ` +
-        `to a text search is what this module exists to refuse: the file is 56% comments and a ` +
-        `text match witnesses symbols that have been removed.`,
-    );
-  }
-  return /** @type {typeof import('typescript')} */ (
-    (await import(`file://${entry.replaceAll('\\', '/')}`)).default
+  // MOVED to scripts/lib/loadTypeScript.mjs, because a second instrument now
+  // parses source with the compiler and two copies of "where does it live and
+  // how is it imported" is B3a. The `file://` URL and the backslash replacement
+  // are the half a second copy would eventually get wrong, and only the Windows
+  // job would notice.
+  return loadCompiler(
+    `electron.d.ts cannot be PARSED. Falling back to a text search is what this module exists ` +
+      `to refuse: the file is 56% comments and a text match witnesses symbols that have been ` +
+      `removed.`,
   );
 }
 

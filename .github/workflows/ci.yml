@@ -154,6 +154,24 @@ jobs:
       - name: Prove the Electron surface is parsed, not searched
         run: npm run proof:electronsurface
 
+      # Invariant 1's IMPORT half, and the only half of the preload that can be
+      # proven at all today: every workflow installs Electron with
+      # --ignore-scripts, so electron.d.ts arrives and no binary does. A test that
+      # launched a window and read the exposed object is unavailable, and one
+      # asserting on the arguments handed to contextBridge would prove the call
+      # was made rather than that the exposure is confined — a flag SET, not a
+      # flag ENFORCED, which invariant 25 already refuses one layer down.
+      #
+      # HERE for the same reason as the step above: it parses a tracked source
+      # file with the TypeScript compiler, and the Guards job runs no `npm ci`,
+      # so it has none. It needs neither the Electron binary nor electron.d.ts.
+      #
+      # The allowlist is READ from ARCHITECTURE §9 invariant 1 rather than
+      # restated, so amending the invariant changes what the preload may import
+      # in the same commit (ADR-0012's rule, applied to names instead of numbers).
+      - name: Prove the preload cannot import its way out of invariant 1
+        run: npm run proof:preload
+
       # C5 claims an unhandled contract entry is a compile error. That cannot be
       # tested at runtime — a missing handler is just a channel that hangs — so
       # it is proven by compiling code that must not compile.

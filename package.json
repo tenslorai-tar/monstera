@@ -48,6 +48,7 @@
     "proof:errorreport": "node scripts/lib/reportError.proof.mjs",
     "proof:passroster": "node scripts/lib/passRoster.proof.mjs",
     "proof:board": "node scripts/lib/boardStatus.proof.mjs",
+    "proof:preload": "node scripts/proofs/preloadSurface.proof.mjs",
     "board": "node scripts/ci/board.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
