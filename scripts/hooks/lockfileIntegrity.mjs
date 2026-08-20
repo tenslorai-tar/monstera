@@ -52,8 +52,25 @@
  * would answer about a version nobody installs with. A floor keeps the guard
  * and the eventual install on the same tool.
  *
- * It runs only when a manifest or the lockfile is staged, because it costs a
- * few seconds and nothing else can cause the failure.
+ * ## When it runs — necessary is not sufficient
+ *
+ * This sentence used to end at "it runs only when a manifest or the lockfile is
+ * staged, because it costs a few seconds and nothing else can cause the
+ * failure", and every word of that is still *true*. It is the sufficiency a
+ * reader takes from it that stopped being true, which is why nobody flagged it
+ * for the range in which it was wrong: staging a manifest is necessary and no
+ * longer enough. {@link touchesDependencies} reads what changed *inside* the
+ * manifest, so a `scripts`-only edit stages `package.json` and does not arm this
+ * check.
+ *
+ * The one path that arms it with no manifest staged at all is an index this
+ * cannot read — which arms every gate in the hook rather than reporting nothing
+ * to check.
+ *
+ * The conditionality itself is unchanged and is what both halves are for: this
+ * costs a few seconds, and nothing but a manifest or the lockfile can cause the
+ * failure. {@link touchesDependencies} states the rule in full and is the only
+ * place that does.
  *
  * Usage: node scripts/hooks/lockfileIntegrity.mjs
  */

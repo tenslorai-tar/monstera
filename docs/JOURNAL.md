@@ -838,6 +838,81 @@ working tree to differ from the index, which on a runner it never does. Z-3 is
 prose. A defect CI cannot see is waiting for a contributor, which is why each
 fix above carries a case rather than a note.
 
+### CORRECTION 2026-08-20 — review of the entry above, before any of it was fixed
+
+All four findings confirmed against the source. Four things in the entry above
+were narrow, misleading, or wrong, and they are corrected here rather than edited
+away, because the fix each one licenses is different from the fix the original
+text licenses.
+
+**Z-1's fix is not "teach `buildScope` about `R`".** There are exactly two
+`--name-status` parsers in this repository and one of them is already right:
+`lockfileIntegrity.mjs` passes `-z` and consumes three fields for `/^[RC]\d*$/`;
+`auditWatermark.mjs` passes neither and splits on tab. **Two opinions about the
+same porcelain in two files is the finding**, and patching the wrong one in place
+leaves the third caller to repeat it. `gitScope.mjs` already owns `git()`,
+`filesInCommit()` and `readStagedBlob()`; the shared parser belongs there and
+both callers take it. Three things follow that the narrow fix would have missed:
+
+- **`D` is unclassified too**, and unlike rename it can fire today. A deleted
+  proof lands in no column and shows up as an ordinary line in `files`. The
+  modified-proofs column exists because a check whose meaning changed must be
+  visible; a check that *vanished* is the limit case of that.
+- **`-z` closes a defect unrelated to rename.** Without it git C-quotes any path
+  with a non-ASCII or special character (`core.quotePath` defaults true), so
+  `files` would carry `"\303\251…"`. No such path exists today — which is the
+  expiry shape, not a reason to skip it. One flag closes rename, copy, delete
+  alignment and quoting together.
+- **A trap inside the fix:** `churnFor` runs `git log --numstat` with no
+  `--follow`, so per-commit churn for a renamed proof stops at the rename and
+  everything before the move is missing. The resolution test is the churn
+  figures on an `R090` fixture, not merely that the path reaches a column.
+
+And the sequencing above is wrong. `git log --diff-filter=R` is empty, so **the
+queued split of `reportError.proof.mjs` is the first rename this repository will
+ever have.** Z-1 is not the last item; it is a blocker on that queued unit.
+
+**Z-2's exemption is not what fires.** With an unstaged advance `recorded ===
+pending`, so `recordsAudit` is `false` — the gate passes because the range
+*collapsed*, not because the exemption granted anything. Hardening the exemption
+would not touch it. Said explicitly because "an unstaged watermark buys the
+exemption" is the reading a later fixer would act on. The rule to name in the
+comment is the general one: **a gate's inputs all come from the scope its
+decision is about.** `pendingAuditScope` models "the index applied to HEAD", and
+the `readFileSync` is the one input that is not. The fix is half-written already
+— `pending` is the index sha; pass it down.
+
+The proof case for it **must stage nothing.** Every existing case calls
+`git add -A`, which moves index and working tree together, and moving together is
+what the absence of this bug also produces. That is why the fixture could never
+diverge, and it is item 4's direction rule again.
+
+Blast radius, which is smaller than the entry above implies:
+`documentConsistency.mjs` computes the range too, and in CI the working tree
+equals HEAD, so an over-budget range still reddens the board. Z-2 degrades the
+gate to exactly pre-Y-2 behaviour — red one push later — rather than losing the
+range. That is what makes taking Z-3 first defensible rather than a delay.
+
+**Z-3 is 127 lines, not 130** (line 55, correction at 182); immaterial, recorded
+for the same reason as everything else here. The material point is how to rewrite
+it: "runs only when a manifest or the lockfile is staged" is **still true as a
+necessary condition**, which is precisely why no reader flagged it. It is false
+as the *sufficiency* a reader takes from it. So it is corrected as insufficient,
+not as wrong — a rewrite treating it as simply false overshoots in the other
+direction and installs a new false sentence in the same position.
+
+**Z-4 does not reopen Y-1.** Y-1 was "a line outlives its case", and that is
+genuinely closed: the label is an argument to the call that concludes the
+section. Z-4 is the next gap out, and saying so matters — a later reader who
+concludes Y-1's fix failed reverts toward the thing it replaced.
+
+And **the obvious fix for Z-4 is the regression.** A hand-written list of
+expected labels per proof is exactly the second list Y-1 deleted; any roster
+someone maintains by hand is the original defect wearing a control's clothes. The
+property to pin is "the case count did not silently drop", and the only honest
+source for what it was before is **the tracked previous value — the diff**, not
+an expectation somebody keeps in step.
+
 ---
 
 ## 2026-08-20 — Stage audit: `81b9b2b..9303bb5`
