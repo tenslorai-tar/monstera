@@ -644,6 +644,150 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-20 — Stage audit: `8519e64..418bcea`
+
+**Audited through 418bcea.** 8 commits, 17 files, **0 proofs added, 4 modified**,
+0 new instrument *files* — and that last figure is the first finding, because the
+range added three instruments.
+
+The range is the four Z findings closed, plus the Windows EPERM that took Guards
+down at `93cd471` and its diagnosability follow-up. **It contains this session's
+first defect that CI caught rather than an audit**, which is worth recording: the
+board found the one failure that was intermittent and platform-specific, and the
+audit found the ones that were deterministic and quiet. Those are different nets
+and this range shows both working.
+
+Audited a unit earlier than planned. The next unit is Electron, whose honest file
+count is seven against a remaining budget of seven — it fits only by folding a new
+derivation into `engineAdvisories.mjs` instead of giving it its own module the way
+`ocrDoors.mjs` has. That is the file ceiling dictating the architecture, so the
+audit went first and Electron gets a full budget.
+
+### AA-1 — the instrument column reports files, and this range's instruments were not files
+
+`npm run audit:scope` printed, for this range:
+
+```
+new scripts — instruments to resolution-test (items 4a, 4b): none
+```
+
+The range added `transienceNote`, `probeOutsideStaging`, and the shared
+`parseNameStatus` / `changedPaths` reader. All three are instruments in the
+plainest sense — one decides whether a retry is legal, one decides whether a
+binary may be published, one decides what every audit looks at — and all three
+landed inside **modified** files. `newScripts` filters `state === 'A'`, so it saw
+none of them.
+
+Fourteen function declarations were added or changed inside modified files in this
+range. The column that exists to say *resolution-test this* named zero of them.
+
+**This is the fourth axis of one classifier, and the pattern is now the finding
+rather than any instance.** W-1 fixed its *pattern* (`*.proof.mjs` only, blind to
+`*.test.ts`). X-1 fixed its *root* (`scripts/` only, blind to `packages/*/src/`).
+Z-1 fixed its *states* (`A` and `M` only, blind to renames and deletes). This is
+its *granularity*: file-level, blind to anything added inside a file that already
+existed. Each fix was correct and each left the next axis standing, and every
+version of the failure prints the same reassuring word.
+
+Fix: for modified source files, report added function declarations from the diff.
+It will name ordinary functions too, and the column's own comment already settles
+that trade — *"a column that misses the instrument is worse than one that also
+names its neighbours."* **Open.**
+
+### AA-2 — the roster's contract paragraph says there is no second thing to keep in step
+
+`scripts/lib/passRoster.mjs`, in the "## The shape" section a reader treats as the
+contract:
+
+> Deleting a section takes its label with it, because the label is an argument to
+> the call that concludes it — **there is no second list to keep in step.**
+
+`418bcea` added a declared case count that must be kept in step. The sentence
+survives on a technicality — a count is not a list — and that is precisely item
+7's half-true compound claim: the clause a reader checks is still true, so nothing
+about reading it feels wrong, while the thing they take from it (*delete a case
+and nothing else needs touching*) is now false. The correction is thirty lines
+below, in a section added by the same commit.
+
+Fourth occurrence of this shape, and the second found by applying item 7 to my own
+change in the commit that created it. It is **fail-closed** — the build stops and
+says exactly what to do — so it costs a reader one confused minute rather than a
+wrong belief. Recorded at that severity. **Open.**
+
+### AA-3 — the spawn guard's Set is keyed on a case-sensitive path
+
+`spawnedFrom` holds `resolve(dirname(binary))` and `refuseIfSpawnedFrom` looks up
+`resolve(directory)`. Windows paths are case-insensitive, so two spellings of one
+directory are two entries.
+
+**No live defect**, and the reason is worth stating precisely: both sides derive
+from the same `gitleaksBinaryPath` computation, so the strings are identical
+today. That is a property of the current callers, not of the guard — which is the
+X-2 shape exactly, where a case-folding guard read the whole path instead of the
+basename and was measuring the wrong thing while nothing failed.
+
+It is a regression guard rather than a runtime net, so a miss costs the
+determinism, not the fix. Fix: normalise case on Windows at both ends. **Open,
+lowest priority of the three.**
+
+### Classification of this range's fixes
+
+Every one is root-cause, and the range contains no workaround. Two are worth
+their own line:
+
+| commit | note |
+|---|---|
+| `20f1ffe` spawn/rename | root cause, and the retry was explicitly refused. Rule 0 permits a workaround only when the cause is outside the repository; the handle was ours, and a retry *would have looked like it worked* |
+| `98c31b1` Z-2 gate | root cause with a hole, found by review three commits later and closed in `7fbc7e4` — the injected watermark bypassed the only validator |
+
+`98c31b1` is the one to learn from: a correct fix for a scope bug created a
+fail-open by routing around a check it did not know it was routing around. Same
+shape as AA-1 — each repair correct, each leaving one axis standing.
+
+### Item 4 — every fix in this range was mutation-tested, and one mutation mattered more than its fix
+
+Thirteen mutations across eight commits, each reddening its own case or set:
+
+- Z-1: five, including `-z` removal reddening **ten audit cases and six hook
+  cases at once**, which is the shared parser demonstrating that it is shared;
+- the spawn fix: reintroducing the exact `93cd471` defect reddens the proof
+  **deterministically on the first attempt**, where the original was intermittent
+  and Windows-only;
+- the watermark validator: two, and **the second is the one that matters** —
+  keeping the regex and restoring a swallowing `catch` around it reddens the same
+  three cases. That proves the cases test the *path*, not the *predicate*. Most
+  proofs here test the predicate only.
+- Z-4: run against a live caller, not only the unit proof. Removing one `record`
+  from `documentConsistency.mjs` now fails the run; before, it printed seven `ok`
+  lines and exited 0.
+
+### Executed, or asserted
+
+**Executed:** the rename probe at `R100` and `R090` · the gate bypass live at
+`EXIT=0` with nothing staged · the ref-watermark defect, all three refs, before
+the fix · the EPERM regression reintroduced and caught · `proof:canary` — the
+step that was red — green locally on Windows · **the `copyFile` mode assumption,
+by the ubuntu leg of Guards at `20f1ffe`**, which runs the probe against a real
+binary and requires `ok` · `mupdf.proof` (5) and `cffOobProof` (2) with their
+declared counts, in CI's native job at `418bcea`.
+
+**Asserted:** that a roster's declared count is stable on a machine where a case
+*skips*. The reasoning holds by construction — `record` is called either way and
+`passed + skipped` is what is compared — but every runner that has executed
+`mupdf.proof` has `System32`, so the skipping variant has never run. Same
+unexercised branch as `transienceNote`'s PERSISTED half, which its own header
+already declares.
+
+### Would CI have caught these?
+
+AA-1 and AA-2 are invisible to CI by construction — one is a report a human reads,
+the other is a paragraph. AA-3 needs a caller that spells a path differently, and
+there is none. That is three findings CI cannot see, in a range where CI caught
+the one thing an audit would have struggled to find. Neither net replaces the
+other, and this range is the clearest evidence of that so far.
+
+---
+
 ## 2026-08-20 — Stage audit: `9303bb5..8519e64`
 
 **Audited through 8519e64.** 9 commits, 17 files, **0 proofs added, 5 modified**,
