@@ -478,6 +478,75 @@ try {
   }
 
   // ---------------------------------------------------------------------------
+  // Two opinions about what a valid watermark IS, and the Z-2 fix routed through
+  // the one without the check.
+  //
+  // `readWatermark` has always required /^[0-9a-f]{7,40}$/. `watermarkAt`
+  // accepted any string that parsed as JSON with a string `commit`. Injecting
+  // the watermark skipped `readWatermark` entirely — so a staged
+  // `{"commit":"HEAD"}` resolved, passed `merge-base --is-ancestor HEAD HEAD`,
+  // and yielded a 0-commit range. Before Z-2 the same content threw and the hook
+  // failed closed. A fail-closed became a fail-open on the path the fix created.
+  //
+  // It is Z-1's shape one level up, which is why the regex now lives in ONE
+  // place that both readers take.
+  // ---------------------------------------------------------------------------
+  {
+    const watermarkFile = join(scratch, 'docs', 'audit-watermark.json');
+    const good = git(scratch, ['rev-parse', '--short', 'HEAD~2']);
+
+    for (const ref of ['HEAD', 'main', '@']) {
+      writeFileSync(
+        watermarkFile,
+        `${JSON.stringify({ commit: ref, audited: 'a ref, not a sha' }, null, 2)}\n`,
+        'utf8',
+      );
+      git(scratch, ['add', 'docs/audit-watermark.json']);
+
+      let refused = '';
+      try {
+        pendingAuditScope({ root: scratch });
+      } catch (error) {
+        refused = error instanceof Error ? error.message : String(error);
+      }
+      check(
+        `a staged watermark naming "${ref}" is refused rather than resolved`,
+        refused.includes('does not name a commit'),
+        `pendingAuditScope ${refused === '' ? 'returned normally' : `threw: ${refused}`}. Every ` +
+          `one of these resolves as a git revision, so the ancestor check passes and the range ` +
+          `collapses to zero — the gate then permits any commit at all, quietly.`,
+      );
+    }
+
+    // CONTROL: the refusal is about the VALUE, not about staging a watermark.
+    // Without it, "a bogus watermark is refused" is satisfied by a gate that
+    // refuses the audit-recording commit too, which is the one it must not.
+    writeFileSync(
+      watermarkFile,
+      `${JSON.stringify({ commit: good, audited: 'proof' }, null, 2)}\n`,
+      'utf8',
+    );
+    git(scratch, ['add', 'docs/audit-watermark.json']);
+
+    let accepted = null;
+    let threw = '';
+    try {
+      accepted = pendingAuditScope({ root: scratch });
+    } catch (error) {
+      threw = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'CONTROL: a staged watermark naming a real sha is still accepted and still exempt',
+      accepted !== null && accepted.recordsAudit && accepted.watermark === good,
+      `${threw === '' ? `watermark=${String(accepted?.watermark)}, recordsAudit=${String(accepted?.recordsAudit)}` : `it threw: ${threw}`}. ` +
+        `A validator that rejects the audit-recording commit blocks the only commit this gate ` +
+        `must always let through.`,
+    );
+
+    git(scratch, ['checkout', 'HEAD', '--', 'docs/audit-watermark.json']);
+  }
+
+  // ---------------------------------------------------------------------------
   // Z-1: the classifier recognised A and M, and this report had a SECOND
   // opinion about `--name-status` from the one in lockfileIntegrity.mjs.
   //

@@ -61,13 +61,47 @@ export const BATCH = { commits: 9, files: 24 };
  * @returns {Watermark}
  */
 export function readWatermark(root = repoRoot()) {
-  /** @type {{ commit?: unknown, audited?: unknown }} */
-  const parsed = JSON.parse(readFileSync(join(root, WATERMARK_PATH), 'utf8'));
+  return parseWatermark(readFileSync(join(root, WATERMARK_PATH), 'utf8'), WATERMARK_PATH);
+}
 
-  if (typeof parsed.commit !== 'string' || !/^[0-9a-f]{7,40}$/u.test(parsed.commit)) {
+/**
+ * An immutable commit id — never a ref.
+ *
+ * `HEAD`, `main` and `@` all resolve as git revisions, so a watermark holding
+ * one passes `merge-base --is-ancestor` and reports a zero-commit range: an
+ * audit gate that permits everything, quietly. Measured on all three.
+ */
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/u;
+
+/**
+ * The ONE definition of a valid watermark, taken by both readers.
+ *
+ * There were two, and only one checked. `readWatermark` has always required
+ * {@link COMMIT_SHA}; `watermarkAt` accepted any string that parsed as JSON with
+ * a string `commit`. That did not matter while every path went through
+ * `readWatermark` — and then {@link pendingAuditScope} began injecting the
+ * watermark to fix a scope bug, which routed the gate through the reader without
+ * the check. **A fail-closed became a fail-open on the path the fix created**,
+ * and the two readers disagreeing is the finding rather than either one.
+ *
+ * @param {string} text
+ * @param {string} source For the message — a path, or a `git show` argument.
+ * @returns {Watermark}
+ */
+function parseWatermark(text, source) {
+  /** @type {{ commit?: unknown, audited?: unknown }} */
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (cause) {
+    throw new Error(`${source} does not name a commit: it is not readable JSON.`, { cause });
+  }
+
+  if (typeof parsed.commit !== 'string' || !COMMIT_SHA.test(parsed.commit)) {
     throw new Error(
-      `${WATERMARK_PATH} does not name a commit. An unreadable watermark makes the unaudited ` +
-        `range unknowable, and "unknown" must never be allowed to read as "empty".`,
+      `${source} does not name a commit (found ${JSON.stringify(parsed.commit)}). An unreadable ` +
+        `watermark makes the unaudited range unknowable, and "unknown" must never be allowed to ` +
+        `read as "empty" — nor may a REF, which resolves and reports a range of zero.`,
     );
   }
   return { commit: parsed.commit, audited: `${parsed.audited ?? ''}` };
@@ -136,13 +170,18 @@ export function auditScope({ root = repoRoot(), head = 'HEAD', churn = true, wat
  * @returns {string | null}
  */
 function watermarkAt(root, ref) {
+  /** @type {string} */
+  let text;
   try {
-    const text = `${git(['show', `${ref}${WATERMARK_PATH}`], { cwd: root }).stdout}`;
-    const parsed = /** @type {{ commit?: unknown }} */ (JSON.parse(text));
-    return typeof parsed.commit === 'string' ? parsed.commit : null;
+    text = `${git(['show', `${ref}${WATERMARK_PATH}`], { cwd: root }).stdout}`;
   } catch {
+    // NOT TRACKED IN THIS SCOPE, which is the only thing `null` may mean. The
+    // bare catch here used to cover the parse as well, so a watermark that was
+    // present and invalid was indistinguishable from one that was absent —
+    // "absent is not broken" applied to a case that was broken.
     return null;
   }
+  return parseWatermark(text, `${ref}${WATERMARK_PATH}`).commit;
 }
 
 /**
