@@ -35,6 +35,38 @@
  * nothing to check has not verified anything, and saying so is the whole point:
  * "no problems found" and "did not look" are the same output otherwise, which
  * is audit item 4b one level up.
+ *
+ * ## The declared count, and why it is not the list this replaced (finding Z-4)
+ *
+ * The shape above makes a deleted case SILENT rather than false: its line goes
+ * with it, the derived total drops to match, and the output is entirely honest
+ * about a proof that now checks less than it did. Both figures moving together
+ * is also what absence produces — audit item 4's direction rule, one level up
+ * from where it was applied.
+ *
+ * So a roster declares how many cases it has, and `format` refuses to print a
+ * roster that disagrees. **This is deliberately not a list of expected labels.**
+ * Such a list is exactly the second thing-to-keep-in-step that Y-1 deleted, and
+ * it would be the original defect wearing a control's clothes: nothing would
+ * force it to match, and the labels would rot the way the `ok` block did.
+ *
+ * What makes one number honest where a list is not:
+ *
+ *   - it is ENFORCED. Y-1's roster checked nothing; this fails the run, so it
+ *     cannot silently disagree with reality even for one commit;
+ *   - it lives beside the cases, in the file whose diff an auditor is already
+ *     told to read by the modified-proofs column;
+ *   - **there is no `--update` flag, on purpose.** A regenerate-to-fix switch is
+ *     how a check becomes a formality — audit item 1's "a repair that could
+ *     regenerate". Lowering it is a keystroke somebody has to type and defend.
+ *
+ * Both directions fail. An increase must be recorded or the number rots; a
+ * decrease has to appear in a diff with a reason beside it.
+ *
+ * What this still does not catch, stated rather than implied: `record` remains
+ * separable from its case body, so deleting a body and leaving its `record` call
+ * prints the label for work that did not happen. The count is unchanged, and no
+ * API that takes a label can prevent it.
  */
 
 /**
@@ -53,9 +85,21 @@
  *   a failure is reported by that failure and must not also get a line saying
  *   it passed, and comparing lengths is how the roster knows without every
  *   caller having to remember to say so.
+ * @param {{ cases: number }} declared
+ *   How many cases this roster has. REQUIRED, so that a roster cannot be created
+ *   without the drop-detection — an optional count is one every future caller
+ *   omits, and the omission looks like every other roster.
  * @returns {Roster}
  */
-export function createRoster(failures) {
+export function createRoster(failures, declared) {
+  const expected = declared?.cases;
+  if (!Number.isInteger(expected) || Number(expected) < 0) {
+    throw new Error(
+      `createRoster needs a case count, got ${JSON.stringify(expected)}. Without one a deleted ` +
+        `case is silent: its line goes with it and the total drops to match.`,
+    );
+  }
+
   /** @type {string[]} */
   const passed = [];
   /** @type {string[]} */
@@ -73,6 +117,28 @@ export function createRoster(failures) {
     skipped,
 
     format(noun) {
+      // THROWS rather than pushing a failure, and that is the seam this needs.
+      // `format` is the one call every roster user already makes, on the success
+      // path, exactly once — so the check costs no caller cooperation. Pushing
+      // to `failures` here would be too late: every caller reads that list
+      // BEFORE formatting, so the run would report success and then print a
+      // complaint nobody's exit code reflects. A second method to remember is
+      // how Y-1's roster drifted in the first place.
+      const recorded = passed.length + skipped.length;
+      if (recorded !== expected) {
+        throw new Error(
+          recorded < Number(expected)
+            ? `This proof declares ${String(expected)} ${noun}s and recorded ${String(recorded)}. ` +
+              `${String(Number(expected) - recorded)} case(s) STOPPED RUNNING. If that is ` +
+              `deliberate, lower the number in the same commit and say why — a case that ` +
+              `disappears takes its line and the total with it, which is why nothing noticed ` +
+              `before (finding Z-4).`
+            : `This proof declares ${String(expected)} ${noun}s and recorded ${String(recorded)}. ` +
+              `Raise the number in the same commit: a count that lags reality stops being ` +
+              `evidence the moment it is wrong in either direction.`,
+        );
+      }
+
       return (
         `${passed.map((label) => `  ok  ${label}`).join('\n')}\n` +
         skipped.map((label) => `  --  ${label} — nothing to check\n`).join('') +

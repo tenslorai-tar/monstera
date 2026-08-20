@@ -100,7 +100,7 @@ async function main() {
   // Each label is recorded by the case that earns it, rather than printed from
   // a fixed block that a deleted case would outlive — see
   // scripts/lib/passRoster.mjs.
-  const roster = createRoster(failures);
+  const roster = createRoster(failures, { cases: 2 });
   let mark = roster.mark();
 
   try {

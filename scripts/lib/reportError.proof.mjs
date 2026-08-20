@@ -210,7 +210,11 @@ async function main() {
   {
     /** @type {string[]} */
     const failures = [];
-    const roster = createRoster(failures);
+    // TWO, not three. A case that pushed a failure earns no label at all, so it
+    // lands in neither list — and no real caller reaches `format` with a
+    // non-empty failure list anyway. The declared count is what a CLEAN run
+    // records.
+    const roster = createRoster(failures, { cases: 2 });
 
     const passedMark = roster.mark();
     roster.record(passedMark, 'a case that ran and passed');
@@ -264,13 +268,68 @@ async function main() {
     check(
       'CONTROL: the total is not a constant that happens to match',
       (() => {
-        roster.record(roster.mark(), 'one more case');
-        const grown = roster.format('widget case');
+        // A SECOND roster rather than growing the first, because a roster now
+        // declares its size and refuses to print a different one. Same control:
+        // a different number of passing cases must move the lines and the total
+        // together, so the case above is not satisfied by a constant that
+        // happens to agree for one input.
+        /** @type {string[]} */
+        const otherFailures = [];
+        const bigger = createRoster(otherFailures, { cases: 3 });
+        bigger.record(bigger.mark(), 'one');
+        bigger.record(bigger.mark(), 'two');
+        bigger.record(bigger.mark(), 'three', false);
+        const grown = bigger.format('widget case');
         const grownOk = grown.split('\n').filter((line) => line.startsWith('  ok  ')).length;
         return grownOk === okLines + 1 && grown.includes(`\n${String(grownOk)} widget case`);
       })(),
-      `adding a case did not move both the roster and the total together, so the case above is ` +
-        `satisfied by a number that agrees with the lines only for this one input.`,
+      `a roster with one more passing case did not move both its lines and its total, so the ` +
+        `case above is satisfied by a number that agrees with the lines only for this one input.`,
+    );
+
+    // Z-4. The two directions say different things and both must fail: an
+    // increase that is not recorded makes the number rot, and a DECREASE is a
+    // proof that quietly checks less than it did. Before this, a deleted case
+    // took its line and the total with it and nothing anywhere noticed.
+    for (const [declared, expectWord] of /** @type {const} */ ([
+      [3, 'STOPPED RUNNING'],
+      [1, 'Raise the number'],
+    ])) {
+      /** @type {string[]} */
+      const noFailures = [];
+      const drifted = createRoster(noFailures, { cases: declared });
+      drifted.record(drifted.mark(), 'only one case here');
+      drifted.record(drifted.mark(), 'and one more', false);
+
+      let refused = '';
+      try {
+        drifted.format('widget case');
+      } catch (error) {
+        refused = error instanceof Error ? error.message : String(error);
+      }
+      check(
+        `a roster declaring ${String(declared)} while recording 2 refuses to print`,
+        refused.includes(expectWord),
+        `it ${refused === '' ? 'printed anyway' : `said: ${refused}`}. A count that disagrees ` +
+          `with the run is not evidence in either direction — and the decrease is the one that ` +
+          `matters, because both the lines and the total drop together and absence is what that ` +
+          `looks like.`,
+      );
+    }
+
+    check(
+      'a roster cannot be created without declaring how many cases it has',
+      (() => {
+        try {
+          // @ts-expect-error — the point of the case is that this is refused.
+          createRoster([], undefined);
+          return false;
+        } catch {
+          return true;
+        }
+      })(),
+      `an optional count is one every future caller omits, and the omission looks exactly like ` +
+        `every other roster. Requiring it is what stops the check being opt-in.`,
     );
   }
 

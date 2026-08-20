@@ -150,7 +150,7 @@ async function main() {
   // fixed block printed at the end: deleting a case left its line, and the
   // staging-survivor case below had no line at all, so the same block both
   // over- and under-reported. See scripts/lib/passRoster.mjs.
-  const roster = createRoster(failures);
+  const roster = createRoster(failures, { cases: 21 });
 
   let mark = roster.mark();
   results.forEach((result, index) => {

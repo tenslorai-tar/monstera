@@ -64,7 +64,7 @@ async function main() {
   // Each label is recorded by the case that earns it. The fixed block this
   // replaces printed `ok` for the ntdll case on a machine where that case had
   // swallowed its own error and read nothing — see scripts/lib/passRoster.mjs.
-  const roster = createRoster(failures);
+  const roster = createRoster(failures, { cases: 5 });
 
   let mark = roster.mark();
   // Case 1 — the real DLL verifies.

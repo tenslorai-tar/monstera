@@ -98,7 +98,7 @@ const failures = [];
 
 // Section 7 applies only when a threat model exists, and the fixed block of
 // `ok` lines this replaces claimed it either way — see scripts/lib/passRoster.mjs.
-const roster = createRoster(failures);
+const roster = createRoster(failures, { cases: 8 });
 const { record } = roster;
 
 // ---------------------------------------------------------------------------

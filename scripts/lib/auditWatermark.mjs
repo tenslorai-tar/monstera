@@ -84,6 +84,23 @@ const COMMIT_SHA = /^[0-9a-f]{7,40}$/u;
  * the check. **A fail-closed became a fail-open on the path the fix created**,
  * and the two readers disagreeing is the finding rather than either one.
  *
+ * Both entry points go through {@link asCommitSha}: the file readers via
+ * `parseWatermark`, and the injected `watermark` parameter at its own seam.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function asCommitSha(value) {
+  if (!COMMIT_SHA.test(value)) {
+    throw new Error(
+      `${JSON.stringify(value)} is not a commit id. A REF resolves and reports a range of zero, ` +
+        `so an audit gate handed one permits every commit while looking like it measured.`,
+    );
+  }
+  return value;
+}
+
+/**
  * @param {string} text
  * @param {string} source For the message — a path, or a `git show` argument.
  * @returns {Watermark}
@@ -97,14 +114,18 @@ function parseWatermark(text, source) {
     throw new Error(`${source} does not name a commit: it is not readable JSON.`, { cause });
   }
 
-  if (typeof parsed.commit !== 'string' || !COMMIT_SHA.test(parsed.commit)) {
+  if (typeof parsed.commit !== 'string') {
     throw new Error(
       `${source} does not name a commit (found ${JSON.stringify(parsed.commit)}). An unreadable ` +
         `watermark makes the unaudited range unknowable, and "unknown" must never be allowed to ` +
-        `read as "empty" — nor may a REF, which resolves and reports a range of zero.`,
+        `read as "empty".`,
     );
   }
-  return { commit: parsed.commit, audited: `${parsed.audited ?? ''}` };
+  try {
+    return { commit: asCommitSha(parsed.commit), audited: `${parsed.audited ?? ''}` };
+  } catch (cause) {
+    throw new Error(`${source} does not name a commit.`, { cause });
+  }
 }
 
 /**
@@ -137,7 +158,13 @@ function parseWatermark(text, source) {
  * }}
  */
 export function auditScope({ root = repoRoot(), head = 'HEAD', churn = true, watermark } = {}) {
-  const commit = watermark ?? readWatermark(root).commit;
+  // Validated AT THE SEAM, not only by whoever injects it. There is no live
+  // defect — `pendingAuditScope` is the only injector and it validates upstream
+  // — and that is exactly the state this parameter's own finding started in: a
+  // definition existed, and the path that bypassed it did not consult it. The
+  // next injector repeats it, and on this repository's record it will be
+  // introduced by a fix.
+  const commit = watermark === undefined ? readWatermark(root).commit : asCommitSha(watermark);
 
   // An unreachable watermark is a rewritten history or a bad sha, and reporting
   // an empty range for it would say "nothing to audit" — the reassuring answer.
