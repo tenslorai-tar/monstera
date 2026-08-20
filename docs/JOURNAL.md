@@ -644,6 +644,146 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-20 — Stage audit: `81b9b2b..9303bb5`
+
+**Audited through 9303bb5.** 9 commits, 32 files, **1 proof added, 11 modified**,
+1 new instrument. The range is almost entirely instruments — a floor job, a
+reporter, a comparison, and the proofs around them — which is the shape this
+project's record says produces most defects, and it produced two.
+
+The gate bit on the **file axis only**. `commits: 9 (one batch is 9)` is exactly
+one batch and the comparison is `>`, so it does not trip; `check:docs` names
+files alone. Recorded because "over on both" would misdescribe where the
+threshold actually bit, and because the commit-count threshold has now been shown
+to be the looser of the two.
+
+### Y-1 — four proofs print a roster of `ok` lines that no longer has to be true
+
+`scripts/provision/gitleaks.proof.mjs`, `scripts/provision/mupdf.proof.mjs`,
+`scripts/security/cffOobProof.mjs` and `scripts/hooks/documentConsistency.mjs`
+accumulate failures, and then — if the failure list is empty — print a **fixed
+block of `ok` lines and a hand-written total**. Neither the lines nor the number
+is derived from the checks that ran.
+
+So a deleted case leaves its `ok` line printing. Measured, not reasoned:
+replacing the missing-file comparison in `gitleaks.proof.mjs` with `if (false)`
+so the check cannot execute at all still printed
+
+```
+  ok  an unreadable destination is neither same nor different
+
+10 provisioning cases passed.
+```
+
+and exited 0. That is the display-only sin wearing a green check, inside the
+proofs.
+
+**It is a half-fix, and the range contains both halves.** `preCommit.proof.mjs`
+was converted to a counted total in `01b32ca` — inside this range — with a
+comment recording that it had "carried a stale one twice". Four siblings with the
+same shape were left, and the worse half was not addressed anywhere: converting
+the *total* to a count still leaves a roster of labels that no case has to
+justify.
+
+The instrument pointed straight at it and nobody read the finger. The two
+deletions the scope report flags as **invisible in the net diff** — in this
+range's largest modified proof — are exactly this counter being rewritten by
+hand, `6` → `7` → `10`.
+
+Fix: emit each label at the moment its case passes, from the same `check()` that
+records failures, and count. Nineteen proofs in `scripts/` already do this; the
+four are the remainder, not the pattern.
+
+### Y-2 — the pre-commit gate cannot see the commit that crosses the threshold
+
+`check:docs` measures `watermark..HEAD`. At pre-commit, **HEAD is the parent** —
+the commit being made is not in it — so the commit that takes a range over one
+batch is invisible to the gate by construction, and the board goes red one push
+later. That is exactly what happened here: `check:docs` reported 8/8 immediately
+before `8130551`, and CI reported the gate red at `8130551`.
+
+"Run `audit:scope` before pushing" is **not** the fix. By this project's own
+doctrine a rule you must recall at the moment of composing a command is not a
+defence — that is the whole argument for the escape-resolving-write hook, and it
+has been demonstrated seven times.
+
+Specification: measure `watermark..HEAD` **plus the staged change** — commits +
+1, files unioned with the staged list — and refuse the commit that crosses, the
+same move `contractDrift.mjs` makes. It converts a red board nobody reads into a
+blocked commit. Two things it needs, and neither is optional:
+
+- **A control in both directions.** A staged change that takes the range from
+  under to over must be refused, and one that leaves it under must pass.
+  Without the first the gate is vacuous; without the second it is always-red,
+  and an always-red gate is one somebody turns off.
+- **A check that it cannot block the audit-recording commit.** That commit
+  advances the watermark, and is by construction made while the range is at its
+  largest — so a naive gate makes the one commit that closes the finding the one
+  commit that can never be made.
+
+### Y-3 — the reporter closed sixteen sites by hand and nothing stops the seventeenth
+
+`8130551` replaced `error instanceof Error ? error.stack : String(error)` in all
+sixteen top-level handlers under `scripts/`, and `packages/shared`'s
+`toStructuredError` already covered the renderer-facing path. The class is closed
+**as of today**, by enumeration.
+
+Nothing prevents the next script from being written with `.stack`. This is a
+claim with an unstated expiry, and the mechanism that would fix it is a check
+that no top-level handler prints a bare `stack` — search-shaped, so it needs a
+positive control that finds a known-present conforming site on every run, or its
+silence is worthless (item 4b).
+
+Recorded rather than built: the sixteen are correct now, and a search-shaped
+guard written in the same hour as the fix it guards is precisely the fix-induced
+shape this range already produced two of.
+
+### Y-4 — one thing 9303bb5 called unproven is in fact enforced
+
+That commit removed `version` from `publish`'s parameters so the function cannot
+ask whether the destination runs, and its message said the branch's correctness
+rests on cases and the removed parameter "not on an integration test".
+
+Executed during this audit: re-adding `if (!force && reportsPinnedVersion(binary,
+version)) return;` to `publish` fails `npm run typecheck` with **TS2304, `Cannot
+find name 'version'`**, on the line itself. CI runs `typecheck` on both
+platforms, so the regression is caught mechanically rather than by review. The
+commit message understated its own guarantee; this entry is the correction.
+
+### What was executed, and what is only asserted
+
+Executed: the deletion demonstration for Y-1; the TS2304 regression for Y-4; two
+mutations on `compareContents` (size-only comparison reddens the one-byte case,
+folding `unreadable` into `different` reddens the missing-file case); the
+`.stack` mutation on `gitleaks.mjs`, which reproduced the CI text frame for
+frame; the full diff of all six `+2 −1` proofs, confirming they carry the
+reporter swap and nothing else.
+
+Asserted, and named as such: that the intermittent windows-latest provisioning
+failure at `f0a2090` was a held handle. It **did not reproduce** at `8130551` —
+the step passed on both platforms — so no errno was captured and no explanation
+is established. One non-reproduction is not evidence for either reading. Chasing
+it with repeat runs was considered and rejected: the proof makes four release
+downloads per run, which is the live-fetch exposure already on the register, and
+multiplying a known cost to chase a maybe is the wrong trade.
+
+### Carried forward
+
+- The new guards step invokes `node scripts/lib/reportError.proof.mjs` directly
+  rather than through an npm script, because registering it means staging
+  `package.json` and the lockfile guard correctly refuses that below npm 11.6.3.
+  Owed a conversion at the first commit that stages `package.json`.
+- The quarantine sweep — nothing ever removes another process's
+  `.superseded-<pid>` directory, so the code's stated justification for
+  tolerating one is false — is specified and unbuilt. Deliberately audited
+  before it lands, so the fix is not folded into the audit of the instrument
+  that produced it.
+- `proof:provision` fetches from github.com four times per run and nothing
+  caches it. Second instance of a check depending on a live third-party fetch,
+  after `check:advisories` and the OSV query.
+
+---
+
 ## 2026-08-19 — Stage audit: `f144768..81b9b2b`
 
 **Audited through 81b9b2b.** 9 commits, 29 files, **2 proofs added, 9 modified**,
