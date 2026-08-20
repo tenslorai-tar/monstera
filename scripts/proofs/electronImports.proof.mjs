@@ -64,9 +64,21 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  */
 const PROBE = join(REPO_ROOT, 'scripts', '__import_probe__.mjs');
 
+/**
+ * The same probe as a `.js`, which is the extension half of the shared list
+ * that nothing executed.
+ *
+ * `PLAIN_NODE_EXTENSIONS` widened the scan and the lint glob together, and only
+ * the scan gained a case — the `.cjs` fixture in the shapes test. ESLint's side
+ * was asserted: there is no `.js` or `.cjs` under `scripts/` today, so no run
+ * touched it, and a glob that had quietly stopped matching them would have
+ * looked exactly like this one.
+ */
+const PROBE_JS = join(REPO_ROOT, 'scripts', '__import_probe__.js');
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 14 });
+const roster = createRoster(failures, { cases: 15 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -81,10 +93,10 @@ function check(label, condition, detail) {
  * @param {string} source
  * @returns {Promise<string[]>} rule ids reported
  */
-async function lintProbe(source) {
-  await writeFile(PROBE, source, 'utf8');
+async function lintProbe(source, path = PROBE) {
+  await writeFile(path, source, 'utf8');
   const eslint = new ESLint({ cwd: REPO_ROOT, ignore: false, warnIgnored: false });
-  const [result] = await eslint.lintFiles([PROBE]);
+  const [result] = await eslint.lintFiles([path]);
   return (result?.messages ?? []).map((message) => message.ruleId ?? 'fatal');
 }
 
@@ -129,8 +141,24 @@ try {
         `mutation that narrowed the list to one element, while its neighbours would have ` +
         `fallen. A case whose only variable changes nothing separates nothing.`,
     );
+    check(
+      'the rule reaches a NON-.mjs plain-Node file, not only the extension that exists today',
+      (
+        await lintProbe("import { app } from 'electron';\nexport default app;\n", PROBE_JS)
+      ).includes('no-restricted-imports'),
+      `a .js file under scripts/ did not report no-restricted-imports. PLAIN_NODE_EXTENSIONS ` +
+        `widens the scan and this glob TOGETHER, and until this case only the scan half was ` +
+        `executed — there is no .js or .cjs under scripts/ today, so a glob that had stopped ` +
+        `matching them would look exactly like a glob that works. Measured while adding this: ` +
+        `ESLint does not expand a single-element brace, so the earlier \`{mjs}\` form matched ` +
+        `NOTHING — the reason the glob is now one entry per extension.\n      ` +
+        `If the message is a parsing error rather than a rule id, the config block stopped ` +
+        `matching this file and projectService tried to type-check it. That is the failure ` +
+        `mode, and it does not name the glob.`,
+    );
   } finally {
     await rm(PROBE, { force: true });
+    await rm(PROBE_JS, { force: true });
   }
 
   // ---------------------------------------------------------------------------

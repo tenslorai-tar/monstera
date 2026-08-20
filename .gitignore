@@ -149,6 +149,7 @@ __boundary_probe__.ts
 # it. Ignored here so a proof killed mid-run cannot redden a later lint or reach
 # a commit; the proof lints it with `ignore: false` so it still sees the file.
 __import_probe__.mjs
+__import_probe__.js
 
 # ─── Agent settings ──────────────────────────────────────────────────────────
 # `.claude/settings.json` IS tracked: it registers the PreToolUse guard that

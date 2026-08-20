@@ -39,5 +39,26 @@ export const PLAIN_NODE_EXTENSIONS = ['mjs', 'js', 'cjs'];
  */
 export const SCAN_DATA_EXTENSIONS = ['json'];
 
-/** The ESLint glob those code extensions make. */
-export const PLAIN_NODE_GLOB = `scripts/**/*.{${PLAIN_NODE_EXTENSIONS.join(',')}}`;
+/**
+ * One glob per extension, never a brace list.
+ *
+ * MEASURED, and it is a trap this module shipped with: ESLint's matcher does
+ * not expand a SINGLE-element brace. `scripts/**` + `/*.{mjs}` matches nothing,
+ * while `scripts/**` + `/*.mjs` matches everything — verified by swapping only
+ * that one pair of braces. With three extensions the brace form works, so the
+ * defect was invisible; the day someone narrows the list to one, the config
+ * block silently stops matching every file under `scripts/`.
+ *
+ * It fails loudly — 103 `Parsing error: … not found by the project service`,
+ * because `projectService` then tries to type-check files the
+ * `disableTypeChecked` block no longer covers — but loud in the wrong language:
+ * nothing in that output says a glob stopped matching, so the person reading it
+ * goes and edits `tsconfig.json`.
+ *
+ * An array removes the brace entirely, so the length-one case cannot arise
+ * (B5). A conditional on `length === 1` would have been the check-for-it
+ * version of the same fix.
+ */
+export const PLAIN_NODE_GLOBS = PLAIN_NODE_EXTENSIONS.map(
+  (extension) => `scripts/**/*.${extension}`,
+);

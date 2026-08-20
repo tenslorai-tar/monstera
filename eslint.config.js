@@ -12,7 +12,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-import { PLAIN_NODE_GLOB } from './scripts/lib/plainNodeScope.mjs';
+import { PLAIN_NODE_GLOBS } from './scripts/lib/plainNodeScope.mjs';
 
 /**
  * The C1 module graph, declared once and projected into lint rules below.
@@ -392,7 +392,7 @@ export default tseslint.config(
     // `node`, where importing `electron` resolves to `index.js`, whose
     // `module.exports` IS `getElectronPath()` — so the import downloads an
     // unpinned binary through `install.js`. Spawn the provisioned path instead.
-    files: [PLAIN_NODE_GLOB, 'eslint.config.js', 'vitest.config.mjs'],
+    files: [...PLAIN_NODE_GLOBS, 'eslint.config.js', 'vitest.config.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { ...globals.node },
