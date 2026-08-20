@@ -217,9 +217,20 @@ jobs:
       #
       # The shim job in ci.yml has the MuPDF source AND installs, so it passes
       # the flag and both derivations are mandatory exactly where something can
-      # look. That job is also the only one that runs proof:electronsurface,
-      # because parsing electron.d.ts needs the TypeScript compiler and this job
-      # has no node_modules to load it from.
+      # look.
+      #
+      # proof:electronsurface runs in ci.yml's BUILD job, not the shim job and
+      # not here. It needs the TypeScript compiler, which this job has no
+      # node_modules to load from — and the build job installs on both platforms,
+      # where the shim job is ubuntu-only. That matters because the parse is
+      # platform-independent but LOCATING THE COMPILER IS NOT: `file://` plus
+      # backslash replacement is Windows-specific code no other job would
+      # execute.
+      #
+      # This sentence previously said the shim job was the only one that runs it,
+      # which stopped being true in the commit that moved it — and the half
+      # explaining WHY this job cannot run it stayed true, which is what made the
+      # dead half invisible.
       #
       # Adding the flag here would turn every Guards run red on both platforms,
       # which is what happened for two days when the witness rule treated "could
