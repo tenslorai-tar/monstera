@@ -712,7 +712,31 @@ below, in a section added by the same commit.
 Fourth occurrence of this shape, and the second found by applying item 7 to my own
 change in the commit that created it. It is **fail-closed** — the build stops and
 says exactly what to do — so it costs a reader one confused minute rather than a
-wrong belief. Recorded at that severity. **Open.**
+wrong belief. Recorded at that severity.
+
+**Closed by** naming what the sentence is about — no second list *of labels* —
+and pointing forward from it to the section that added the number, rather than
+leaving the reader to reach a correction thirty lines down.
+
+> **And Z-4 gained a stated limit in the same commit, from a live reproduction
+> rather than from reasoning.** While `passRoster.proof.mjs` was being split out,
+> a fixture roster inside `main()` was also named `roster` and shadowed the
+> file's own. Eight cases executed and recorded into one roster; the OTHER was
+> formatted. The run printed `1 pass-roster case passed, 1 not applicable` under
+> this proof's heading and **exited 0** — the pre-Z-4 failure mode, inside the
+> proof for the mechanism built to prevent it, minutes after the paragraph about
+> it was written.
+>
+> The declared count did not catch it and **could not**: both rosters were
+> internally consistent, each agreeing with its own declaration. So the count
+> protects a roster from disagreeing with ITSELF; it does not protect against the
+> wrong roster being formatted.
+>
+> `no-shadow` is the instance — ESLint's config does not reach `scripts/` — and
+> the class is **consistent with the wrong object**, which no count of a single
+> object can see. Written into the module header under what it does not catch.
+> Not fixed here: a fix is a lint-config change with its own proof, and naming
+> the limit is what stops the count being read as more than it is.
 
 ### AA-3 — the spawn guard's Set is keyed on a case-sensitive path
 
@@ -1022,10 +1046,22 @@ ever have.** Z-1 is not the last item; it is a blocker on that queued unit.
 > `--name-status` with no flags, with `-M`, and with `-C50`, `-C40`, `-C30`,
 > `-C20` and `-C10 --find-copies-harder` — every one reports `A`.
 >
-> The mechanism makes it impossible rather than unlikely: **git pairs an
-> addition with a DELETION to call it a rename**, and the old path survives the
-> split because part one still belongs to it. Similarity never enters into it.
-> `buildScope` asks for no `-C` at all, so a copy could not be reported either.
+> **The two halves have different standing, and the first draft of this
+> correction ran them together.**
+>
+> - **`R` is structurally impossible here.** Git pairs an addition with a
+>   DELETION to call it a rename, and the old path survives a split because part
+>   one still belongs to it. No pairing is available, so similarity never enters
+>   into it. Permanent, for every split.
+> - **`C` is merely not requested.** `-C` pairs an addition with a source that
+>   still exists, and similarity DOES enter — none appears here only because the
+>   moved content left the source's post-image. A duplicate-then-trim refactor
+>   would produce a live `C`. It is irrelevant today solely because `buildScope`
+>   passes no `-C`, and Z-1's parser already handles `C` states, so someone may
+>   one day add the flag.
+>
+> Saying "impossible" of both would claim more than was measured — the flag is a
+> decision, not a law.
 >
 > So Z-1's rename parsing still has only its synthetic fixture cases, and this
 > repository still has no live rename. The sentence above was written from the

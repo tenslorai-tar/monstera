@@ -28,8 +28,15 @@
  * A label is recorded by the section that earns it, against a mark taken when
  * that section started. Deleting a section takes its label with it, because the
  * label is an argument to the call that concludes it — there is no second list
- * to keep in step. That is the difference between a roster that is true and one
- * that is true so far.
+ * OF LABELS to keep in step. That is the difference between a roster that is
+ * true and one that is true so far.
+ *
+ * There IS a second number, added later by Z-4, and the section below is about
+ * why a number is honest where a list is not. This sentence said "no second
+ * list to keep in step" flat, thirty lines above the thing that has to be kept
+ * in step, and the clause carrying it — a label being an argument to the call
+ * that concludes it — stayed true throughout. Item 7's compound-claim shape,
+ * found by audit rather than by anyone reading this file (finding AA-2).
  *
  * `ran` is what separates *passed* from *not applicable*. A section with
  * nothing to check has not verified anything, and saying so is the whole point:
@@ -63,10 +70,34 @@
  * Both directions fail. An increase must be recorded or the number rots; a
  * decrease has to appear in a diff with a reason beside it.
  *
- * What this still does not catch, stated rather than implied: `record` remains
- * separable from its case body, so deleting a body and leaving its `record` call
- * prints the label for work that did not happen. The count is unchanged, and no
- * API that takes a label can prevent it.
+ * ## What this still does not catch, stated rather than implied
+ *
+ * `record` remains separable from its case body, so deleting a body and leaving
+ * its `record` call prints the label for work that did not happen. The count is
+ * unchanged, and no API that takes a label can prevent it.
+ *
+ * **And the count checks a roster against ITSELF, not against the run.** It
+ * fires when one roster's recorded total disagrees with that roster's own
+ * declaration. It cannot fire when the wrong roster is the one formatted, since
+ * each is internally consistent and each agrees with its own number.
+ *
+ * Measured, in `passRoster.proof.mjs`, while it was being written. A fixture
+ * roster inside `main()` was also named `roster` and shadowed the file's own.
+ * Eight cases executed and recorded into one roster; the other was formatted.
+ * The run printed
+ *
+ * ```
+ *   ok  a case that ran and passed
+ *   --  a case with nothing to check — nothing to check
+ *
+ * 1 pass-roster case passed, 1 not applicable.
+ * ```
+ *
+ * and exited 0 — the pre-Z-4 failure mode, reproduced inside the proof for the
+ * mechanism built to prevent it. `no-shadow` is the INSTANCE and ESLint does not
+ * reach `scripts/`; the CLASS is **consistent with the wrong object**, which no
+ * count of a single object can see. Running it is what caught this, not review
+ * and not the guard.
  */
 
 /**
