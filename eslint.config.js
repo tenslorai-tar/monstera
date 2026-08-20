@@ -12,6 +12,8 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import { PLAIN_NODE_GLOB } from './scripts/lib/plainNodeScope.mjs';
+
 /**
  * The C1 module graph, declared once and projected into lint rules below.
  *
@@ -126,6 +128,26 @@ function patternsFor(target) {
 const MAY_IMPORT_ELECTRON = 'desktop';
 const MAY_IMPORT_REACT = 'ui';
 
+/**
+ * Electron's specifier and its subpaths, in ONE place because two consumers now
+ * restrict it: the per-package boundary below, and the plain-Node block at the
+ * bottom of this file.
+ *
+ * Exported so `electronImports.proof.mjs` reads the list rather than restating
+ * it — ADR-0012's rule applied to specifiers.
+ *
+ * MEASURED, because a proof case was written on the opposite assumption and
+ * survived its own mutation: under `patterns.group`, ESLint matches
+ * gitignore-style, so the bare `electron` ALREADY restricts `electron/main`.
+ * The second entry is redundant and is kept only as documentation of intent —
+ * do not read it as the thing that makes subpaths work, and do not write a
+ * check whose only variable is its presence, because there is nothing there to
+ * separate. (The exactness warning below is about `paths`, a different option,
+ * and it remains true of `paths`.)
+ */
+export const ELECTRON_SPECIFIERS = ['electron', 'electron/**'];
+
+
 /** Node built-ins the renderer must never import, with and without the prefix. */
 const NODE_BUILTINS = [
   'fs',
@@ -167,7 +189,7 @@ function boundaryConfigFor(pkg) {
   // actually imported.
   if (pkg !== MAY_IMPORT_ELECTRON) {
     patterns.push({
-      group: ['electron', 'electron/**'],
+      group: ELECTRON_SPECIFIERS,
       message:
         pkg === 'ui'
           ? 'The renderer is sandboxed and reaches main only through the generated contract bridge (invariant L1).'
@@ -345,7 +367,16 @@ export default tseslint.config(
   {
     // The bootstrap layer: plain .mjs, type-checked through JSDoc rather than
     // compiled, because it runs before dependencies exist (ARCHITECTURE §1.1).
-    files: ['scripts/**/*.mjs', 'eslint.config.js', 'vitest.config.mjs'],
+    //
+    // THE BOUNDARY ABOVE IS PER-PACKAGE; THIS ONE IS PER-RUNTIME, and the two
+    // are not the same axis. `boundaryConfigFor` exempts `desktop` because
+    // apps/desktop is where Electron may be imported — but "may import Electron"
+    // is a property of code that RUNS INSIDE Electron, and package membership is
+    // only a proxy for that. Everything under `scripts/` is started by plain
+    // `node`, where importing `electron` resolves to `index.js`, whose
+    // `module.exports` IS `getElectronPath()` — so the import downloads an
+    // unpinned binary through `install.js`. Spawn the provisioned path instead.
+    files: [PLAIN_NODE_GLOB, 'eslint.config.js', 'vitest.config.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { ...globals.node },
@@ -355,6 +386,29 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      // ESLint owns the four STATIC shapes and only those. Measured against
+      // 10.8.1: the rule's visitor object is `ImportDeclaration`,
+      // `ExportNamedDeclaration`, `ExportAllDeclaration`,
+      // `TSImportEqualsDeclaration` — `ImportExpression` appears nowhere in the
+      // file, so `import('electron')` is NOT covered, and no `CallExpression`
+      // visitor means `require('electron')` is not either.
+      //
+      // Those two are covered by `scriptsLoadingAtRuntime`, and the split is
+      // deliberate: this half is the authority's own answer (B3a), the other
+      // half is the residue the authority does not claim. Neither is a second
+      // opinion about what the first one says.
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ELECTRON_SPECIFIERS,
+              message:
+                'Plain Node must never import Electron: the import itself resolves to index.js, whose module.exports is getElectronPath(), which downloads an unpinned binary. Spawn electronBinaryPath() from scripts/provision/electron.mjs instead.',
+            },
+          ],
+        },
       ],
     },
   },

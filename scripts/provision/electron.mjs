@@ -51,6 +51,7 @@ import { fileURLToPath } from 'node:url';
 
 import { extract } from '../lib/extract.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
+import { PLAIN_NODE_EXTENSIONS, SCAN_DATA_EXTENSIONS } from '../lib/plainNodeScope.mjs';
 import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -219,11 +220,50 @@ export async function unpinnedRuntimeExists(root = REPO_ROOT) {
 }
 
 /**
- * Plain-Node files that import a given specifier.
+ * Plain-Node files that load a given specifier **at runtime** — the shapes
+ * ESLint's `no-restricted-imports` cannot see.
  *
- * **Parsed, never grepped**, and this repository's own proofs are the reason.
- * Measured, and the count matters because the first version of this paragraph
- * got it wrong: six lines under `scripts/` hold a fixture STRING reading
+ * ## What this does NOT cover, and why that is correct
+ *
+ * Static `import`, `export … from` and `import x = require(…)` are ESLint's,
+ * restricted for `scripts/` in `eslint.config.js` against the same
+ * `ELECTRON_SPECIFIERS` list. **B3a: the authority already defines that answer,
+ * so exactly one thing implements it.** This function used to be a second
+ * opinion about static imports; it is now the residue and nothing else.
+ *
+ * The residue is real and was measured rather than assumed. In ESLint 10.8.1,
+ * `no-restricted-imports.js` is 891 lines with a single visitor object at line
+ * 857 — `ImportDeclaration`, `ExportNamedDeclaration`, `ExportAllDeclaration`,
+ * `TSImportEqualsDeclaration`. `ImportExpression` occurs **zero** times in the
+ * file, and there is no `CallExpression` visitor. `eslint-plugin-import-x` is
+ * installed and adds nothing: the only rules that visit `ImportExpression` are
+ * `no-cycle`, `no-dynamic-require`, `dynamic-import-chunkname` and
+ * `no-unused-modules`, none of which restricts a specifier.
+ *
+ * So two shapes reach `getElectronPath()` with no rule in their way, and both
+ * are `CallExpression`s, which is why one walk covers both:
+ *
+ * ```
+ *   await import('electron')
+ *   createRequire(import.meta.url)('electron')
+ * ```
+ *
+ * Aliased `createRequire` is covered too — `const require = createRequire(…)`
+ * then `require('electron')` — because that binding is not hypothetical: it is
+ * how `proofs/nativeAddon.proof.mjs` loads koffi.
+ *
+ * ## Nested, not top-level
+ *
+ * The static version read `source.statements` only, which is sound for imports
+ * because they are always top-level. A runtime load is not: every one of this
+ * repository's real `await import(…)` calls sits inside a function. Reading
+ * statements would have reported "nothing" for a file that loads on every run.
+ *
+ * ## Why a parse rather than a grep
+ *
+ * This repository's own proofs are the reason. Measured, and the count matters
+ * because the first version of this paragraph got it wrong: six lines under
+ * `scripts/` hold a fixture STRING reading
  * `import … from 'electron'` — four in `proofs/preloadSurface.proof.mjs`, one in
  * `proofs/boundaries.proof.mjs`, one in `security/preloadSurface.mjs` — and
  * every one of them is inside this scan's own root. A text scan flags three
@@ -238,17 +278,29 @@ export async function unpinnedRuntimeExists(root = REPO_ROOT) {
  * survives review best — a checked claim with an unchecked detail attached,
  * where the checked half makes the other read as checked.
  *
- * Scoped to `scripts/`, which is this repository's plain-Node surface.
+ * ## Scope, and the one place it is load-bearing
+ *
+ * `scripts/` is this repository's plain-Node surface, and **the launcher belongs
+ * here for that reason** rather than as a filing preference.
  * `apps/desktop/src/` is deliberately excluded: it runs inside the Electron
  * runtime, where `electron` is the API surface and not `index.js`.
+ *
+ * A launcher under `apps/desktop/` would be invisible to **both** mechanisms at
+ * once, and neither could say so. ESLint's boundary is per-package and exempts
+ * `desktop` by design, so `apps/desktop/src/launch.ts` is *permitted*; a
+ * `apps/desktop/dev.mjs` matches no package glob at all — they end `.ts,.tsx` —
+ * and no `scripts/` glob either, so no rule applies to it whatsoever. Keeping
+ * the launcher in `scripts/` makes that state unrepresentable instead of
+ * policed, which is B5 rather than a fourth rule. Moving it is a **B4
+ * conversation**, not a refactor.
  *
  * @param {string} specifier
  * @param {string} [root]
  * @returns {Promise<string[]>} repo-relative paths, empty when none
  */
-export async function scriptsImporting(specifier, root = REPO_ROOT) {
+export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
   const ts = await loadTypeScript(
-    `plain-Node imports cannot be DERIVED, and a text scan is not a substitute: this ` +
+    `runtime module loads cannot be DERIVED, and a text scan is not a substitute: this ` +
       `repository's own proof fixtures contain the exact string being searched for.`,
   );
   const scripts = join(root, 'scripts');
@@ -258,16 +310,35 @@ export async function scriptsImporting(specifier, root = REPO_ROOT) {
   const walk = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const full = join(directory, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith('.mjs')) files.push(full);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      const extension = entry.name.slice(entry.name.lastIndexOf('.') + 1);
+      if (PLAIN_NODE_EXTENSIONS.includes(extension)) files.push(full);
+      else if (!SCAN_DATA_EXTENSIONS.includes(extension)) {
+        // REFUSE an unrecognised extension rather than skip it. Skipping is how
+        // both mechanisms came to glob `.mjs` alone: a `.js` or `.cjs` here was
+        // invisible to this walk AND to ESLint, each reporting the reassuring
+        // answer with no way to say it had not looked. A file the classifier
+        // does not recognise is a decision someone has to make, so it stops
+        // here instead of being silently dropped into the safe pile.
+        throw new Error(
+          `${relative(root, full).replaceAll('\\', '/')} has an extension this scan does not ` +
+            `classify. Add it to PLAIN_NODE_EXTENSIONS in eslint.config.js if it is code that ` +
+            `runs — which also brings it under the lint rule — or to SCAN_DATA_EXTENSIONS if ` +
+            `it is not. Skipping it would report "nothing loads ${specifier}" without ever ` +
+            `having read it.`,
+        );
+      }
     }
   };
   walk(scripts);
 
   if (files.length === 0) {
     throw new Error(
-      `No .mjs files were found under ${scripts}. An empty file set reports "nothing imports ` +
-        `${specifier}" for every specifier, which is the reassuring answer (audit item 4b).`,
+      `No plain-Node files were found under ${scripts}. An empty file set reports "nothing ` +
+        `loads ${specifier}" for every specifier, which is the reassuring answer (item 4b).`,
     );
   }
 
@@ -283,15 +354,104 @@ export async function scriptsImporting(specifier, root = REPO_ROOT) {
     if (source === undefined) {
       throw new Error(`${file} was listed but the compiler produced no source file for it.`);
     }
-    for (const statement of source.statements) {
-      if (!ts.isImportDeclaration(statement)) continue;
-      const moduleSpecifier = statement.moduleSpecifier;
-      if (ts.isStringLiteral(moduleSpecifier) && moduleSpecifier.text === specifier) {
+
+    // `createRequire` bindings first, because a call is only a module load if
+    // its callee is one — and the whole file has to be read before the calls
+    // are judged, since a binding may be declared after a function that uses it.
+    /** @type {Set<string>} */
+    const requireAliases = new Set(['require']);
+    /** @param {import('typescript').Node} node */
+    const collectAliases = (node) => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer !== undefined &&
+        isCreateRequireCall(ts, node.initializer)
+      ) {
+        requireAliases.add(node.name.text);
+      }
+      ts.forEachChild(node, collectAliases);
+    };
+    collectAliases(source);
+
+    /** @param {import('typescript').Node} node */
+    const inspect = (node) => {
+      if (ts.isCallExpression(node) && loadsSpecifier(ts, node, specifier, requireAliases)) {
         found.push(relative(root, file).replaceAll('\\', '/'));
       }
-    }
+      // RECURSE. Every real `await import(…)` in this repository sits inside a
+      // function, so a top-level-only visit reports nothing for a file that
+      // loads on every run.
+      ts.forEachChild(node, inspect);
+    };
+    inspect(source);
   }
-  return found;
+  return [...new Set(found)];
+}
+
+/**
+ * Whether an expression is a `createRequire(…)` call.
+ *
+ * Matches the bare identifier and the namespaced form (`module.createRequire`),
+ * because both are how it is reached.
+ *
+ * @param {typeof import('typescript')} ts
+ * @param {import('typescript').Node} node
+ * @returns {boolean}
+ */
+function isCreateRequireCall(ts, node) {
+  if (!ts.isCallExpression(node)) return false;
+  const callee = node.expression;
+  if (ts.isIdentifier(callee)) return callee.text === 'createRequire';
+  return ts.isPropertyAccessExpression(callee) && callee.name.text === 'createRequire';
+}
+
+/**
+ * Whether a call expression loads `specifier` at runtime.
+ *
+ * Three callee shapes count, and the argument must be a STRING LITERAL equal to
+ * the specifier. That last condition is what keeps the scan from crying wolf at
+ * its own proofs, which pass `'electron'` as an ordinary argument all over the
+ * place — `scriptsLoadingAtRuntime('electron', root)` is a call with that exact
+ * string in it, and a callee-blind check would flag every one.
+ *
+ * @param {typeof import('typescript')} ts
+ * @param {import('typescript').CallExpression} node
+ * @param {string} specifier
+ * @param {Set<string>} requireAliases
+ * @returns {boolean}
+ */
+function loadsSpecifier(ts, node, specifier, requireAliases) {
+  const [argument] = node.arguments;
+  if (argument === undefined || !ts.isStringLiteral(argument) || argument.text !== specifier) {
+    return false;
+  }
+  const callee = node.expression;
+
+  // `import('x')` — a CallExpression whose callee is the `import` keyword.
+  if (callee.kind === ts.SyntaxKind.ImportKeyword) return true;
+
+  // `require('x')`, or any identifier bound to a `createRequire(…)` result.
+  if (ts.isIdentifier(callee) && requireAliases.has(callee.text)) return true;
+
+  // `require.resolve('x')` and the aliased equivalent. Stated precisely,
+  // because the first draft of this comment overstated it: `resolve` returns a
+  // path and does NOT execute the module, so on its own it triggers no
+  // download. It is flagged because resolving `electron` from plain Node has no
+  // legitimate use here — the pinned binary is named directly — and because the
+  // resolved path is one `require` away from the thing this rule exists to
+  // prevent. Detection of a precursor, not of the act.
+  if (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    requireAliases.has(callee.expression.text) &&
+    callee.name.text === 'resolve'
+  ) {
+    return true;
+  }
+
+  // `createRequire(import.meta.url)('x')` — invoked without ever being bound.
+  return isCreateRequireCall(ts, callee);
 }
 
 /**

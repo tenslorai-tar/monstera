@@ -144,6 +144,12 @@ install.log
 # proof killed before its cleanup cannot reach a commit or redden a later lint.
 __boundary_probe__.ts
 
+# Same reason, for the plain-Node rule: a probe proving `scripts/` may not import
+# Electron has to live UNDER `scripts/` to match the config block that restricts
+# it. Ignored here so a proof killed mid-run cannot redden a later lint or reach
+# a commit; the proof lints it with `ignore: false` so it still sees the file.
+__import_probe__.mjs
+
 # ─── Agent settings ──────────────────────────────────────────────────────────
 # `.claude/settings.json` IS tracked: it registers the PreToolUse guard that
 # makes escape-resolving file writes unavailable, and a guard that lives on one
