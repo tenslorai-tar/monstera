@@ -113,6 +113,15 @@ jobs:
       # result — `downloadVerified` is the primitive proof:provision exercises
       # against a real server, and the Electron provisioner is its third
       # consumer rather than a third copy.
+      #
+      # "Reads tracked files only" is a CONSTRAINT ON WHAT MAY BE ADDED HERE, not
+      # a description of what the file happens to contain today. A parse-based
+      # case was added to it and turned this job red on both platforms, skipping
+      # nineteen later steps including the full-history secret scan: the scan
+      # loads the TypeScript compiler and this job runs no `npm ci`. That case
+      # now lives in ci.yml's build job as proof:electronimports, beside the two
+      # other loadTypeScript consumers. A case needing node_modules does not
+      # belong in this job however much it belongs with these ones.
       - name: Prove the Electron pin cannot drift or be bypassed
         run: npm run proof:electronprovision
 

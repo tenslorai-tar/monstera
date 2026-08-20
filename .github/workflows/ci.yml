@@ -172,6 +172,25 @@ jobs:
       - name: Prove the preload cannot import its way out of invariant 1
         run: npm run proof:preload
 
+      # `require('electron')` from plain Node IS the download trigger:
+      # node_modules/electron/index.js ends with `module.exports =
+      # getElectronPath()`, which downloads when the binary is absent. So the pin
+      # the Guards job checks is a record until nothing can route around it.
+      #
+      # HERE, and not with the pin's other eight cases, for the same reason as
+      # the two steps above: the scan parses every .mjs under scripts/ with the
+      # TypeScript compiler. It cannot grep — six lines under that root hold a
+      # fixture string reading `import … from 'electron'`, three of them inside
+      # proofs that enforce this very rule, and a scan that cries wolf is a scan
+      # someone relaxes.
+      #
+      # It also asserts node_modules/electron/dist is absent, which is only
+      # meaningful where a node_modules EXISTS — it is the check that
+      # `--ignore-scripts` on line 89 actually prevented the install script from
+      # unpacking a second, unpinned runtime.
+      - name: Prove nothing can trigger the unpinned Electron download
+        run: npm run proof:electronimports
+
       # C5 claims an unhandled contract entry is a compile error. That cannot be
       # tested at runtime — a missing handler is just a channel that hangs — so
       # it is proven by compiling code that must not compile.

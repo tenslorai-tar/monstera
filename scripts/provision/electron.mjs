@@ -44,7 +44,7 @@
  */
 
 import { readdirSync } from 'node:fs';
-import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -195,21 +195,48 @@ export function electronBinaryPath(root = REPO_ROOT, key = platformKey()) {
  * today and the amendment is not urgent; the ordering is deliberate and stated
  * rather than skipped.
  *
+ * `stat` rather than `fileExists`, and that distinction is the whole function.
+ * `fileExists` answers "is there a usable FILE here" — it ends in `.isFile()` —
+ * and `dist` is a DIRECTORY, so the first version of this could not return true
+ * for the only thing it looks at. It was written against a checkout where the
+ * directory was absent, so it gave the right answer for the wrong reason and
+ * every caller agreed with it. Its positive control is what separated the two.
+ *
+ * Any entry counts, not only a directory: a symlinked or file-shaped `dist` is
+ * still an unpinned runtime arriving, and "present but not the shape I expected"
+ * must not read as absent.
+ *
  * @param {string} [root]
  * @returns {Promise<boolean>} whether an unpinned runtime is present
  */
 export async function unpinnedRuntimeExists(root = REPO_ROOT) {
-  return fileExists(join(root, 'node_modules', 'electron', 'dist'));
+  try {
+    await stat(join(root, 'node_modules', 'electron', 'dist'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Plain-Node files that import a given specifier.
  *
- * **Parsed, never grepped**, and `electron.proof.mjs` is the reason: it holds
- * four fixture STRINGS that read `import { … } from 'electron'`. A text scan
- * flags its own proof, and a scan that cries wolf gets relaxed until it flags
- * nothing. That is item 4b's window axis arriving as a false positive rather
- * than a false negative — the same failure, more likely to be "fixed" wrongly.
+ * **Parsed, never grepped**, and this repository's own proofs are the reason.
+ * Measured, and the count matters because the first version of this paragraph
+ * got it wrong: six lines under `scripts/` hold a fixture STRING reading
+ * `import … from 'electron'` — four in `proofs/preloadSurface.proof.mjs`, one in
+ * `proofs/boundaries.proof.mjs`, one in `security/preloadSurface.mjs` — and
+ * every one of them is inside this scan's own root. A text scan flags three
+ * files that are enforcing the rule, and a scan that cries wolf gets relaxed
+ * until it flags nothing. That is item 4b's window axis arriving as a FALSE
+ * POSITIVE rather than a false negative — the same failure, and more likely to
+ * be "fixed" the wrong way.
+ *
+ * That paragraph previously named `electron.proof.mjs` as the file holding the
+ * four, which contains exactly one occurrence: the sentence claiming there were
+ * four. The argument was sound and the evidence was not, which is the shape that
+ * survives review best — a checked claim with an unchecked detail attached,
+ * where the checked half makes the other read as checked.
  *
  * Scoped to `scripts/`, which is this repository's plain-Node surface.
  * `apps/desktop/src/` is deliberately excluded: it runs inside the Electron

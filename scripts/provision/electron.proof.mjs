@@ -35,20 +35,13 @@ import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import {
-  BUILDS,
-  ELECTRON_VERSION,
-  buildFor,
-  electronBinaryPath,
-  scriptsImporting,
-  unpinnedRuntimeExists,
-} from './electron.mjs';
+import { BUILDS, ELECTRON_VERSION, buildFor, electronBinaryPath } from './electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 8 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -158,44 +151,13 @@ check(
     `fixture half of item 4's direction rule.`,
 );
 
-// -----------------------------------------------------------------------------
-// THE RULE: no plain-Node code may `require('electron')`, because the import
-// itself is the download trigger — index.js ends with `module.exports =
-// getElectronPath()`, which calls downloadElectron() when the binary is absent.
-//
-// PARSED, NOT GREPPED, and this file is the reason: it contains four fixture
-// STRINGS that read `import { … } from 'electron'`. A text scan flags its own
-// proof and then gets relaxed until it flags nothing. The window axis of item
-// 4b, arriving as a false positive instead of a false negative.
-// -----------------------------------------------------------------------------
-const nodeSide = await scriptsImporting('electron', REPO_ROOT);
-check(
-  'no plain-Node file imports `electron`',
-  nodeSide.length === 0,
-  `${nodeSide.join(', ')} import(s) electron from plain Node. That import resolves to index.js, ` +
-    `whose module.exports IS getElectronPath() — so requiring it downloads an unpinned binary ` +
-    `through install.js, which reads electron_use_remote_checksums. Spawn ` +
-    `electronBinaryPath() instead. apps/desktop/src/preload.ts is not in scope: it runs inside ` +
-    `the Electron runtime, where the specifier is the API surface.`,
-);
-
-check(
-  'CONTROL: the scan finds a real import when one exists',
-  (await scriptsImporting('node:path', REPO_ROOT)).length > 0,
-  `the scan reported no plain-Node file importing "node:path", which every provisioning script ` +
-    `does. A scan that finds nothing reports the same clean result whether the rule holds or ` +
-    `the parse is broken (audit item 4b), and this file's own fixture strings are exactly what ` +
-    `a text scan would trip over.`,
-);
-
-check(
-  'an unpinned runtime under node_modules is detectable',
-  (await unpinnedRuntimeExists(REPO_ROOT)) === false,
-  `node_modules/electron/dist exists. The rule stops the route this repository controls; this ` +
-    `catches a binary that arrived by any other — a contributor's plain \`npm install\`, or a ` +
-    `lazy download that already fired. Prevention and detection, neither substituting for the ` +
-    `other.`,
-);
+// THE RULE — no plain-Node file may import `electron` — and the unpinned-runtime
+// probe both live in scripts/proofs/electronImports.proof.mjs, which runs in
+// ci.yml's build job. They arrived here and turned Guards red on both platforms:
+// the scan calls loadTypeScript, and this job runs no `npm ci`, so there is no
+// compiler to load. SPLIT BY WHAT A CASE NEEDS, not by what it is about — every
+// case in this file reads a tracked file and nothing else, which is why it can
+// run in a job that installs nothing.
 
 try {
   process.stdout.write(
