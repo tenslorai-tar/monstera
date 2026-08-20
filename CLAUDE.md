@@ -403,7 +403,14 @@ point: these are the failures that do not announce themselves.
 
 **Audit `watermark..HEAD`, not the tree.** `npm run audit:scope` prints the
 range: commits, files, proofs added, **proofs modified**, proofs removed, and new
-scripts.
+instrument files — across `scripts/` **and** `packages/*/src/`, since a
+filesystem probe once landed under the latter and appeared in no column (X-1).
+
+That last column reports **added files only**, and says so in its own output. An
+instrument arriving as a function inside a module that already existed is
+invisible to it; read the modified-proofs diffs for those. The granularity fix is
+open (AA-1). Stated here because the digest is what an auditor reads before
+starting, and a column's blind spot is not something to learn from the column.
 
 The scoping is not a convenience. A tree-wide audit run at the end of a stage was
 right for the 43-finding audit, which caught things that had sat for weeks. It is

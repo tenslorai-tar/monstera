@@ -367,18 +367,34 @@ try {
   // the eleven OCR doors, and `--require-derivation` is what makes it mandatory
   // where something can look.
   const derivable = electronIsInstalled();
+
+  // FINDING BB-5. This branch used to assert /utilityProcesss/ and /UNVERIFIABLE/
+  // as two INDEPENDENT searches of the whole output, which is weaker than the
+  // sentence above it claims. `UNVERIFIABLE` is printed in this world for the
+  // correctly spelt symbols regardless of the mutation, so that half was
+  // satisfied by the background — and the case would then pass if the misspelt
+  // name were echoed anywhere at all: a verdict summary, a count line, a
+  // diagnostic. Passed over in silence is the one outcome that must not happen,
+  // and two presence tests cannot tell it from being named as unverifiable.
+  //
+  // Bound to one fact instead: the misspelt symbol must appear as an ENTRY in
+  // the unverifiable list, under its own verdict, in the format
+  // `${verdict}: ${symbol} — ${reason}` that `engineAdvisories.mjs` emits.
+  const listedUnverifiable = /^\s+engine-host-containment: utilityProcesss —/mu;
   check(
     derivable
       ? 'THE T-1 CASE: a symbol misspelt in the register FAILS'
-      : 'THE T-1 CASE: with no derivation, a misspelt symbol is UNVERIFIABLE, never silent',
+      : 'THE T-1 CASE: with no derivation, a misspelt symbol is LISTED as unverifiable, never silent',
     derivable
       ? !misspeltUnwitnessed.ok &&
           /has no witness and no derivation/.test(misspeltUnwitnessed.output)
-      : /utilityProcesss/.test(misspeltUnwitnessed.output) &&
-          /UNVERIFIABLE/.test(misspeltUnwitnessed.output),
+      : /UNVERIFIABLE/u.test(misspeltUnwitnessed.output) &&
+          listedUnverifiable.test(misspeltUnwitnessed.output),
     'This exact mutation exited 0 before the witness rule, printing "18 symbol(s) checked" ' +
       "with invariant 25's containment verdict green forever. " +
-      `Derivation available here: ${String(derivable)}.\n` +
+      `Derivation available here: ${String(derivable)}. Where no derivation can run the ` +
+      `misspelling is not a failure — it is unverifiable — but it must be NAMED as such on ` +
+      `its own line, not merely present somewhere in the output.\n` +
       misspeltUnwitnessed.output,
   );
 
