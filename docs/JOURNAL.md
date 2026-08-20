@@ -644,6 +644,206 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-20 — Stage audit: `418bcea..6827c1d`
+
+**Audited through 6827c1d.** 9 commits, 23 files, **2 proofs added, 3 modified**,
+1 new instrument file. The range is Electron landing, the Guards red it caused,
+the npm resolution defect found underneath it, the doctrine pair, and the
+honest-output split.
+
+Most of the audit went to one file, because the report pointed at it and four
+properties compound there: `advisoryRegister.proof.mjs` carries 15 deletions
+invisible to the range diff (U-2's shape, and the only file in the range with
+it), was rewritten twice inside the range, changed a case's posture from failure
+to unverifiable — a coverage reduction, not a correction — and holds the controls
+for the derivation invariant 25 now rests on. **Read per-commit, not net.**
+
+The two rewrites reconcile: `+52 −5` then `+77 −19` against a net of `+114 −9`.
+The invisible deletions are the `shortList` block added in `a0ebd81` and
+re-wrapped in `f890716`; its assertion text is byte-identical across the move, so
+that half is a re-indent rather than a loosening. The T-1 rewrite **is** a
+meaning change and says so in its own comment.
+
+### Executed, not asserted
+
+Everything below was run. Kept separate from the reasoning deliberately, because
+the range's own headline correction was a sentence that read as a measurement
+while sitting beside three that were.
+
+- **The hard-member mutation on the Electron derivation.** A copy of
+  `electron.d.ts` with all three `const utilityProcess: typeof UtilityProcess;`
+  declarations deleted by whole-line filter and the `[!NOTE]` prose at line 15693
+  left intact. The instrument **throws**, by the anchor control, naming
+  `utilityProcess`. A text-based fallback stays green on that file, which is the
+  whole reason the derivation is a parse. Declarations 437 → 436, consistent with
+  three same-named declarations collapsing to one `Set` entry. Byte delta 144
+  reconciles only under CRLF (145 removed, one LF appended by the filter), and
+  the source file has no trailing newline; checked rather than waved past.
+- **Both worlds on `proof:advisories`**, by hiding `node_modules/electron`: **29
+  passed** with it, **28 passed + 1 printed skip** without. Restored and
+  re-verified.
+- **The split's control, both directions.** Same mutation (`if (false)` on the
+  depth-cap case): pre-split prints `17 honest-output cases passed.` and exits 0;
+  post-split exits 1 with `1 case(s) STOPPED RUNNING`.
+- **The `npm_execpath` harness fix, reverted.** See BB-4. 22/22 still green.
+- **The board waiter, both directions.** Known-present sha → two rows; absent sha
+  → `BLIND`, not "not yet".
+
+### BB-1 — the advisory proof reimplements the roster, and its total was already invariant
+
+`advisoryRegister.proof.mjs` collects `passed`, `failures` and — added in
+`f890716` — a `skipped` array, then prints `${passed.length} advisory-register
+cases passed.` All of that is `passRoster.mjs`'s job, including the `--` channel,
+which this range hand-wrote a second copy of one file over from the module that
+owns it. **B3a: the finding is the second opinion, not the wrong one.**
+
+It has no declared count, so a case that stops running takes its line and the
+total with it — Z-4 exactly, in the proof that guards invariant 25.
+
+And the measurement that makes it easy: **the total is invariant across both
+worlds.** 29 + 0 and 28 + 1 both record 29, and `format` checks
+`passed + skipped`. A single `{ cases: 29 }` is correct in both. The reason to
+record it as a finding rather than fold it in silently is Rule 0's *fix the class,
+not the instance*: `a3f4225` converted two siblings for precisely this reason and
+left this one, which is the classic half-fix, one range after the doctrine
+commit that named the shape.
+
+### BB-2 — the derivation's own module still documents the limit this range removed
+
+`scripts/security/engineAdvisories.mjs`, in the section headed **"## What this
+still does not do"** — the paragraph a reader consults to decide what is *not*
+covered:
+
+> It checks spelling, not **completeness**. `utilityProcess` and
+> `MessageChannelMain` are two hand-picked names … **Only derivation fixes that,
+> and derivation needs the same dependency the condition above watches for.**
+
+All three halves moved this range. The completeness check exists (it prints
+`does not name: …` and has a case); the register names **three** symbols, derived
+rather than hand-picked; and the dependency arrived on 2026-08-20.
+
+**Item 7's compound-claim signature, sixth occurrence, and the sharpest instance
+yet** — because the surviving clause is not merely true, it is *scope*-true. The
+completeness check is a sibling of `unwitnessedSymbols` rather than part of it,
+so "it checks spelling, not completeness" is literally correct **of this
+function**, and that is the clause a reader verifies. It then vouches for the two
+beside it that are simply false. A reader deciding whether to build completeness
+checking reads this and concludes nothing has.
+
+Fail-open in the way that matters here: the wrong belief it produces is *add a
+second mechanism*, which is a B3 violation with a documentation comment
+authorising it.
+
+### BB-3 — CLAUDE.md describes the instrument column as it was before two of its fixes
+
+Line 405: the report prints *"commits, files, proofs added, **proofs modified**,
+proofs removed, and new scripts."*
+
+**"new scripts"** is stale twice. X-1 widened that column's root beyond
+`scripts/` after a filesystem probe landed under `packages/kernel/src`, and AA-1
+established it sees **added files only** — a disclosure the report itself now
+prints and the digest does not carry. So an auditor following CLAUDE.md expects
+exactly the pre-X-1 behaviour, in the operational digest whose job is to tell
+them where to look.
+
+The column has needed fixing on four axes — pattern (W-1), root (X-1), state
+(Z-1), granularity (AA-1, open) — and the digest describing it has tracked none
+of them.
+
+### BB-4 — the harness fix that closed item 2's newest axis has no control
+
+`9e185ec` deleted `npm_execpath` from the environment `preCommit.proof.mjs` hands
+its child, because `npm run` exports it, a child inherits it, and every hook case
+was therefore short-circuiting `npmCliPath`'s first branch while a real `git
+commit` takes the second.
+
+**Measured: with the deletion removed, `preCommit.proof.mjs` prints `22 hook
+cases passed.` and exits 0.** Nothing fails. The three `globalPrefixOverride`
+cases test that function directly and in isolation; no case ties *the hook, run
+as git runs it,* to the branch a committer takes.
+
+So the fix is correct and unguarded — audit item 4 applied to a **harness**
+change rather than a check. The general form is worth more than the instance:
+when the defect is *what the test inherited*, the repair is invisible to every
+assertion in the file, because assertions look at outputs and this changed an
+input. A control has to assert on the environment itself, or spawn the hook with
+a deliberately poisoned `npm_execpath` and require the hook to ignore it.
+
+### BB-5 — T-1's no-derivation branch asserts two presences, not one fact
+
+In the world where the derivation cannot run, the T-1 case asserts
+`/utilityProcesss/.test(output) && /UNVERIFIABLE/.test(output)` — two independent
+searches of the whole output. The intent, stated one comment above, is that *the
+misspelt symbol must appear in the unverifiable list, by name*.
+
+`UNVERIFIABLE` appears in that world for the correctly spelt symbols regardless
+of the mutation, so the second test is satisfied by the background. The case
+therefore passes if the misspelt name is echoed **anywhere** — a verdict summary,
+a count line — without ever being classified. The unverifiable symbols are
+printed on their own indented lines under the header, so an assertion that binds
+the two is available and cheap.
+
+Not a regression: before `f890716` there was no branch, the case simply failed in
+that world. It is a new assertion weaker than its own stated intent, which is the
+harder thing to see and is exactly where a rewritten file hides one.
+
+### The waiter: fixed, and fixed nowhere that keeps it
+
+Recorded as a decision rather than left implied, because *"we fixed it"* and
+*"we fixed it somewhere nothing keeps"* read identically in an entry like this
+one.
+
+The instrument that decides whether `main` is green failed **twice in one day**,
+differently each time — matching short shas against a field that carries full
+ones, then a three-line `grep` window against a field five lines down — and both
+times printed the answer that was hoped for, which for a waiter is *"not yet"*
+exactly as *"found nothing"* is for a search. It was rebuilt correctly, with the
+positive control inside the loop and a resolution test in both directions, and
+**none of that is in the repository.** It lives in a shell history that ends with
+this session; the next one writes a third version and can be blind a third way.
+
+**Decision: it earns a tracked file, in the range after this one.** Three
+reasons, and the third decides it: it decides whether `main` is green; item 4b
+says the control belongs *in the instrument*, and an untracked instrument has no
+"in" to put one in; and nothing in this repository reads the Actions API, so the
+moment a second thing does, two hand-written parsers of one payload is **B3a
+before there is even a second caller** — a parser this session has now hand-rolled
+three times.
+
+**Condition: its proof must not touch the network**, or it is the third instance
+of the open four-live-fetches item, landing in CI. So the instrument splits — a
+pure decider (`payload, sha → rows, completed, verdict`) with the control inside
+it, and a thin fetch shell — and the proof runs the decider over recorded
+fixtures: known-present sha yields two rows, absent sha yields `BLIND`, and a
+payload with `status` removed yields `BLIND` rather than "not yet".
+
+### Item 2a, and one process note
+
+The coverage reduction this range made — a misspelt symbol moving from *fails
+everywhere* to *unverifiable where nothing can look* — was stated in `f890716`
+and written into `CLAUDE.md` as item 2a in `71e7bd9`. That is the rule working in
+the range that produced it.
+
+The process note is smaller and is the same shape as a guard this project already
+mechanised. `proof:provision` was run against a diff containing **zero
+non-comment lines**, spending four live github.com fetches on a change no
+consumer could observe. `touchesDependencies` was narrowed from *which file was
+staged* to *what changed inside the manifest*; "which proofs does this diff's
+blast radius reach" is the identical question, and the difference is that one is
+mechanised and the other is a judgement made fresh each time — which is why the
+unmechanised one is the one that slipped.
+
+### Status
+
+**BB-1 through BB-5 open.** BB-2 and BB-3 are documentation and fail-quiet;
+BB-1 and BB-4 are missing mechanism; BB-5 is a weak assertion in a file that
+should be read again when it is next touched. AA-1's granularity half and AA-3
+remain open from the previous range; AA-2 closed in `6827c1d`, which also
+recorded Z-4's stated limit — the declared count checks a roster against itself
+and cannot see the wrong roster being formatted.
+
+---
+
 ## 2026-08-20 — Stage audit: `8519e64..418bcea`
 
 **Audited through 418bcea.** 8 commits, 17 files, **0 proofs added, 4 modified**,
