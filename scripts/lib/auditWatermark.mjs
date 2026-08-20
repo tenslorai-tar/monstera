@@ -81,6 +81,11 @@ export function readWatermark(root = repoRoot()) {
  * @param {string} [options.head]
  * @param {boolean} [options.churn] False skips the per-proof churn figures, which
  *   cost two git invocations each and are read by the report, not by a gate.
+ * @param {string} [options.watermark] The commit to measure from, when the caller
+ *   already knows it from the scope its decision is about. Omitted, this reads
+ *   the working tree — correct for the report, which describes the tree a human
+ *   is looking at, and wrong for a gate reasoning about the index. See
+ *   {@link pendingAuditScope}.
  * @returns {{
  *   watermark: string,
  *   commits: number,
@@ -96,8 +101,8 @@ export function readWatermark(root = repoRoot()) {
  *   overBudget: string[],
  * }}
  */
-export function auditScope({ root = repoRoot(), head = 'HEAD', churn = true } = {}) {
-  const { commit } = readWatermark(root);
+export function auditScope({ root = repoRoot(), head = 'HEAD', churn = true, watermark } = {}) {
+  const commit = watermark ?? readWatermark(root).commit;
 
   // An unreachable watermark is a rewritten history or a bad sha, and reporting
   // an empty range for it would say "nothing to audit" — the reassuring answer.
@@ -183,6 +188,30 @@ function watermarkAt(root, ref) {
  * either — dropping the journal requirement, or widening this to any watermark
  * touch — re-opens the hatch that neither has on its own.
  *
+ * ## One decision, one scope
+ *
+ * **A gate's inputs all come from the scope its decision is about.** This
+ * function models *the index applied to HEAD*, so every input is read from the
+ * index or from HEAD — which is why `auditScope` is handed `pending` rather than
+ * left to read the file.
+ *
+ * It used to read three scopes for one decision: `recordsAudit` from HEAD and
+ * the index, and the RANGE from the **working tree**, because `auditScope` falls
+ * back to `readFileSync`. Measured with nothing staged at all — index
+ * `9303bb5`, working tree `8519e64` — the hook exited 0, where the identical
+ * invocation minutes earlier had refused. Editing the watermark and forgetting
+ * to `git add` it did not fail loudly; it collapsed the measured range and waved
+ * the commit through.
+ *
+ * **The exemption is not what fired, and that matters for whoever fixes this
+ * next.** With an unstaged advance `recorded === pending`, so `recordsAudit` is
+ * `false` — the gate passed because the range vanished. Hardening the exemption
+ * would not have touched it.
+ *
+ * `pending ?? recorded` rather than `pending`: a staged *deletion* of the
+ * watermark leaves no index blob, and the last recorded audit is still the
+ * honest place to measure from. `check:docs` turns red on the deletion itself.
+ *
  * @param {{ root?: string }} [options]
  * @returns {{
  *   watermark: string,
@@ -210,7 +239,7 @@ export function pendingAuditScope({ root = repoRoot() } = {}) {
     return { watermark: '', commits: 0, files: [], recordsAudit: false, overBudget: [] };
   }
 
-  const committed = auditScope({ root, churn: false });
+  const committed = auditScope({ root, churn: false, watermark: pending ?? recorded ?? undefined });
 
   const staged = `${git(['diff', '--cached', '--name-only', '-z'], { cwd: root }).stdout}`
     .split('\0')

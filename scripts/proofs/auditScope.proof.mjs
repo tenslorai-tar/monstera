@@ -407,6 +407,76 @@ try {
     git(scratch, ['commit', '--quiet', '-m', 'record the audit']);
   }
 
+  // ---------------------------------------------------------------------------
+  // Z-2: every input comes from the scope the decision is about.
+  //
+  // `pendingAuditScope` models "the index applied to HEAD". It used to read
+  // THREE scopes for one decision — `recordsAudit` from HEAD and the index, and
+  // the range from the WORKING TREE, because `auditScope` falls back to
+  // `readFileSync`. Measured on this repository with nothing staged at all:
+  // index 9303bb5, working tree 8519e64, hook exit 0, where the identical
+  // invocation minutes earlier had refused.
+  //
+  // THIS CASE STAGES NOTHING, and that is the whole point of it. Every case
+  // above calls `git add -A`, which moves index and working tree together — and
+  // moving together is exactly what the ABSENCE of this bug also produces, so no
+  // fixture built that way can separate the two. Item 4's direction rule.
+  // ---------------------------------------------------------------------------
+  {
+    const watermarkFile = join(scratch, 'docs', 'audit-watermark.json');
+    const committedRange = pendingAuditScope({ root: scratch });
+
+    check(
+      'CONTROL: the range is over budget before the working tree is touched',
+      committedRange.overBudget.length > 0,
+      `${String(committedRange.commits)} commits reported no problem. The case below asks ` +
+        `whether an unstaged edit can make an over-budget range look clean, and it can prove ` +
+        `nothing if the range was already clean.`,
+    );
+
+    // Edit the file and DO NOT stage it. `checkout --` restores it below.
+    const head = git(scratch, ['rev-parse', '--short', 'HEAD']);
+    writeFileSync(
+      watermarkFile,
+      `${JSON.stringify({ commit: head, audited: 'never staged' }, null, 2)}\n`,
+      'utf8',
+    );
+
+    // RESOLUTION: the two scopes must give OPPOSITE answers here, or the case
+    // below passes without separating them. This is also the report's own
+    // reading, and it stays the working tree deliberately — `audit:scope`
+    // describes the tree a human is looking at.
+    const fromWorkingTree = auditScope({ root: scratch });
+    check(
+      'RESOLUTION: the working tree and the index disagree about the range',
+      fromWorkingTree.overBudget.length === 0 && committedRange.overBudget.length > 0,
+      `working tree reported ${fromWorkingTree.overBudget.join('; ') || 'no problem'} at ` +
+        `${String(fromWorkingTree.commits)} commits, index reported ` +
+        `${committedRange.overBudget.join('; ') || 'no problem'}. If both scopes agree here the ` +
+        `case below is satisfied by a gate reading either one.`,
+    );
+
+    const gated = pendingAuditScope({ root: scratch });
+    check(
+      'an UNSTAGED watermark advance does not shrink the range the gate measures',
+      gated.overBudget.length > 0,
+      `the gate reported no problem for a tree whose INDEX still carries the old watermark. ` +
+        `Editing the file and forgetting to \`git add\` it must not collapse the range — that ` +
+        `is the pre-Y-2 failure arriving through the working tree instead of through HEAD.`,
+    );
+
+    check(
+      'CONTROL: and it earns no exemption either — the exemption is not what fires',
+      !gated.recordsAudit,
+      `an unstaged edit claimed the audit-recording exemption. It must not, and the reason ` +
+        `matters for whoever fixes this next: with an unstaged advance the committed and index ` +
+        `watermarks are EQUAL, so the bug above was the range collapsing, not the exemption ` +
+        `granting anything. A fix that hardens the exemption does not touch it.`,
+    );
+
+    git(scratch, ['checkout', '--', 'docs/audit-watermark.json']);
+  }
+
   // An unreachable watermark must throw rather than report an empty range.
   {
     setWatermark('deadbee');
