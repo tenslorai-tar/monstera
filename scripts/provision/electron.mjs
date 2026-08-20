@@ -294,9 +294,20 @@ export async function unpinnedRuntimeExists(root = REPO_ROOT) {
  * policed, which is B5 rather than a fourth rule. Moving it is a **B4
  * conversation**, not a refactor.
  *
+ * ## Three states, not two
+ *
+ * A specifier is matched, provably not matched, or **could not be read** —
+ * `import(name)`, `require(pkg)`. The third is returned separately rather than
+ * folded into the second, because "I looked and it was something else" and "I
+ * could not look" are the distinction this whole file exists to keep. Every
+ * caller has to decide what an unreadable site means; none of them can decide
+ * it if the scan has already called it absent.
+ *
  * @param {string} specifier
  * @param {string} [root]
- * @returns {Promise<string[]>} repo-relative paths, empty when none
+ * @returns {Promise<{ matched: string[], unreadable: string[] }>} repo-relative
+ *   paths that load the specifier, and `path:line` for every module load whose
+ *   specifier is computed
  */
 export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
   const ts = await loadTypeScript(
@@ -349,6 +360,8 @@ export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
 
   /** @type {string[]} */
   const found = [];
+  /** @type {string[]} */
+  const unreadable = [];
   for (const file of files) {
     const source = program.getSourceFile(file);
     if (source === undefined) {
@@ -374,10 +387,26 @@ export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
     };
     collectAliases(source);
 
+    const relativePath = relative(root, file).replaceAll('\\', '/');
     /** @param {import('typescript').Node} node */
     const inspect = (node) => {
-      if (ts.isCallExpression(node) && loadsSpecifier(ts, node, specifier, requireAliases)) {
-        found.push(relative(root, file).replaceAll('\\', '/'));
+      if (ts.isCallExpression(node) && isModuleLoad(ts, node, requireAliases)) {
+        const [argument] = node.arguments;
+        if (argument !== undefined && ts.isStringLiteralLike(argument)) {
+          // READABLE. `isStringLiteralLike`, not `isStringLiteral`: the latter
+          // rejects a NoSubstitutionTemplateLiteral, so `require(`electron`)`
+          // read as "no specifier here" — and backtick specifiers are in use in
+          // this repository, in loadTypeScript.mjs, which this scan depends on.
+          if (argument.text === specifier) found.push(relativePath);
+        } else {
+          // COULD NOT BE READ — the third state, kept separate from "not
+          // matched". A computed specifier is a decision someone has to make,
+          // and reporting it as absent is the reassuring answer to a question
+          // nobody asked. Same principle the extension classifier above
+          // applies; this axis had been left without it.
+          const { line } = source.getLineAndCharacterOfPosition(node.getStart(source));
+          unreadable.push(`${relativePath}:${line + 1}`);
+        }
       }
       // RECURSE. Every real `await import(…)` in this repository sits inside a
       // function, so a top-level-only visit reports nothing for a file that
@@ -386,7 +415,7 @@ export async function scriptsLoadingAtRuntime(specifier, root = REPO_ROOT) {
     };
     inspect(source);
   }
-  return [...new Set(found)];
+  return { matched: [...new Set(found)], unreadable };
 }
 
 /**
@@ -407,25 +436,24 @@ function isCreateRequireCall(ts, node) {
 }
 
 /**
- * Whether a call expression loads `specifier` at runtime.
+ * Whether a call expression loads a module at all — **regardless of which one**.
  *
- * Three callee shapes count, and the argument must be a STRING LITERAL equal to
- * the specifier. That last condition is what keeps the scan from crying wolf at
- * its own proofs, which pass `'electron'` as an ordinary argument all over the
- * place — `scriptsLoadingAtRuntime('electron', root)` is a call with that exact
- * string in it, and a callee-blind check would flag every one.
+ * The callee decides this and the argument decides nothing, which is why the
+ * two questions are separate functions now. They were one, argument first, and
+ * that ordering silently merged "this is not a module load" with "this is a
+ * module load whose specifier I could not read": both returned `false`.
+ *
+ * Callee-only is also what keeps the scan from crying wolf at its own proofs,
+ * which pass `'electron'` as an ordinary argument in several places —
+ * `scriptsLoadingAtRuntime('electron', root)` is a call carrying that exact
+ * string, and a callee-blind check flags every one.
  *
  * @param {typeof import('typescript')} ts
  * @param {import('typescript').CallExpression} node
- * @param {string} specifier
  * @param {Set<string>} requireAliases
  * @returns {boolean}
  */
-function loadsSpecifier(ts, node, specifier, requireAliases) {
-  const [argument] = node.arguments;
-  if (argument === undefined || !ts.isStringLiteral(argument) || argument.text !== specifier) {
-    return false;
-  }
+function isModuleLoad(ts, node, requireAliases) {
   const callee = node.expression;
 
   // `import('x')` — a CallExpression whose callee is the `import` keyword.

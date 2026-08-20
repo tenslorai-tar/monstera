@@ -136,14 +136,11 @@ const MAY_IMPORT_REACT = 'ui';
  * Exported so `electronImports.proof.mjs` reads the list rather than restating
  * it — ADR-0012's rule applied to specifiers.
  *
- * MEASURED, because a proof case was written on the opposite assumption and
- * survived its own mutation: under `patterns.group`, ESLint matches
- * gitignore-style, so the bare `electron` ALREADY restricts `electron/main`.
- * The second entry is redundant and is kept only as documentation of intent —
- * do not read it as the thing that makes subpaths work, and do not write a
- * check whose only variable is its presence, because there is nothing there to
- * separate. (The exactness warning below is about `paths`, a different option,
- * and it remains true of `paths`.)
+ * The `electron/**` entry is redundant under `patterns.group`, along with every
+ * other `/**` entry in this file. The measurement and the mechanism are stated
+ * once, in `boundaryConfigFor` beside the pushes they govern — that is where a
+ * reader asking "is the subpath covered?" is standing, and it governs the React
+ * groups too, so it does not belong on this constant.
  */
 export const ELECTRON_SPECIFIERS = ['electron', 'electron/**'];
 
@@ -182,11 +179,30 @@ function boundaryConfigFor(pkg) {
     message: BOUNDARY_MESSAGE,
   }));
 
-  // Subpaths, not just bare specifiers. `no-restricted-imports` `paths` matches
-  // the import string exactly, so the previous form blocked `electron` while
-  // `electron/main`, `electron/renderer`, `react/jsx-runtime` and
-  // `react-dom/client` all passed — every one of which is how those packages are
-  // actually imported.
+  // `patterns`, not `paths`, and the difference is the whole reason these lists
+  // look the way they do.
+  //
+  // `paths` matches the import string EXACTLY. Under it the original form
+  // blocked `electron` while `electron/main`, `electron/renderer`,
+  // `react/jsx-runtime` and `react-dom/client` all passed — every one of which
+  // is how those packages are actually imported. That is why the restriction
+  // moved to `patterns`, and it stays true of `paths` today.
+  //
+  // `patterns.group` does NOT match exactly. MEASURED against ESLint 10.8.1:
+  // `no-restricted-imports.js:334` builds `matcher: ignore({…})` and
+  // `isRestrictedPattern` calls `group.matcher.ignores(importSource)` — so the
+  // semantics are gitignore's, and a bare `electron` already covers
+  // `electron/main`.
+  //
+  // **So every `/**` entry in the three groups below is redundant**, not only
+  // Electron's. They are kept as documentation of intent, and this note lives
+  // here — at the point of use — because that is the claim's real address: a
+  // reader deciding whether a subpath is covered is standing on these lines,
+  // and the previous version of this comment told them the `/**` entries were
+  // what covered it. A proof case was written on that reading and survived the
+  // mutation that should have killed it.
+  //
+  // Do not write a check whose only variable is a `/**` entry's presence.
   if (pkg !== MAY_IMPORT_ELECTRON) {
     patterns.push({
       group: ELECTRON_SPECIFIERS,

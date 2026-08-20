@@ -66,7 +66,7 @@ const PROBE = join(REPO_ROOT, 'scripts', '__import_probe__.mjs');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -139,8 +139,8 @@ try {
   const nodeSide = await scriptsLoadingAtRuntime('electron', REPO_ROOT);
   check(
     'no plain-Node file loads `electron` at runtime',
-    nodeSide.length === 0,
-    `${nodeSide.join(', ')} reach(es) electron through import() or require(). That resolves to ` +
+    nodeSide.matched.length === 0,
+    `${nodeSide.matched.join(', ')} reach(es) electron through import() or require(). That resolves to ` +
       `index.js, whose module.exports IS getElectronPath() — so it downloads an unpinned ` +
       `binary through install.js, which reads electron_use_remote_checksums. Spawn ` +
       `electronBinaryPath() instead. apps/desktop/src/ is out of scope: it runs inside the ` +
@@ -149,12 +149,45 @@ try {
 
   check(
     'CONTROL: the walk finds a real runtime load in the REAL tree',
-    (await scriptsLoadingAtRuntime('node:fs/promises', REPO_ROOT)).length > 0,
+    (await scriptsLoadingAtRuntime('node:fs/promises', REPO_ROOT)).matched.length > 0,
     `the walk reported no plain-Node file loading "node:fs/promises" at runtime, which ` +
       `provision/mupdf.mjs and two proofs do with \`await import(…)\`. This anchor is a ` +
       `CallExpression on purpose: the previous control used node:path, a STATIC import, which ` +
       `the narrowed walk no longer looks at — a control has to exercise the node type the ` +
       `check depends on, or it proves the compiler loaded and nothing more (item 4b).`,
+  );
+
+  // Every computed specifier in the real tree, named and justified. The one
+  // sanctioned suppression channel for this scan, and it is a tracked list in
+  // the proof rather than a flag on the scan — the same shape .gitleaks.toml's
+  // [allowlist] has, and for the same reason: a suppression that never appears
+  // in a diff is a suppression nobody reviews.
+  const ACCOUNTED_COMPUTED = new Map([
+    [
+      'scripts/lib/loadTypeScript.mjs',
+      'loads the TypeScript compiler by absolute path through a file:// URL. It cannot be a ' +
+        'literal — the path is resolved at run time and needs Windows backslash conversion — ' +
+        'and it is the module this very scan loads its compiler with.',
+    ],
+    [
+      'scripts/proofs/nativeAddon.proof.mjs',
+      'require.resolve of `@koromix/koffi-${platform}-${arch}/package.json` — the specifier ' +
+        'names the running platform, so it cannot be a literal. Found by this case on its ' +
+        'first run: the site became visible only once require.resolve and createRequire ' +
+        'aliases were covered, which is what a widened check is supposed to do.',
+    ],
+  ]);
+  const unaccounted = nodeSide.unreadable.filter(
+    (site) => !ACCOUNTED_COMPUTED.has(site.slice(0, site.lastIndexOf(':'))),
+  );
+  check(
+    'every computed specifier in the real tree is individually accounted for',
+    unaccounted.length === 0,
+    `${unaccounted.join(', ')} load(s) a module through a specifier this scan cannot read, and ` +
+      `is not in ACCOUNTED_COMPUTED. A computed specifier is not a violation — it is a site ` +
+      `where the rule cannot answer, so someone has to. Read it, and either add it with a ` +
+      `reason or make the specifier a literal. Currently accounted: ` +
+      `${[...ACCOUNTED_COMPUTED.keys()].join(', ')}.`,
   );
 
   const fixture = await mkdtemp(join(tmpdir(), 'monstera-loadshapes-'));
@@ -182,17 +215,36 @@ try {
           'module.exports = d;\n',
         'utf8',
       ),
+      // Backticks. `isStringLiteral` rejects a NoSubstitutionTemplateLiteral, so
+      // this read as "no specifier here" — and the form is in use in this
+      // repository, at loadTypeScript.mjs:47, inside the module this scan loads
+      // the compiler with.
+      writeFile(
+        join(shapes, 'backtick.mjs'),
+        'import { createRequire } from \'node:module\';\nconst r = createRequire(import.meta.url);\nexport const e = r(`target`);\n',
+        'utf8',
+      ),
     ]);
 
     const detected = await scriptsLoadingAtRuntime('target', fixture);
     check(
-      'every runtime shape is detected: import(), createRequire()(), an alias, and nested',
-      detected.length === 4,
-      `detected ${detected.length} of 4: ${detected.join(', ') || 'none'}. A rule that covers ` +
-        `everything except the shape nobody tested reads exactly like a rule that covers ` +
-        `everything. \`nested.cjs\` carries two properties at once — a call inside a function ` +
-        `body, which a statements-only visit misses, and a .cjs extension, which the walk ` +
-        `globbed past while it looked for .mjs alone.`,
+      'the five READABLE load shapes: import(), createRequire()(), an alias, nested, backtick',
+      detected.matched.length === 5,
+      `detected ${detected.matched.length} of 5: ${detected.matched.join(', ') || 'none'}. The ` +
+        `name lists what is covered rather than saying "every shape": this case cannot know ` +
+        `about a shape nobody has thought of, and "every" is the word that stops the next ` +
+        `person adding the sixth. \`nested.cjs\` carries two properties at once — a call inside ` +
+        `a function body, which a statements-only visit misses, and a .cjs extension, which ` +
+        `the walk globbed past while it looked for .mjs alone.`,
+    );
+
+    check(
+      'CONTROL: no readable shape was miscounted as unreadable',
+      detected.unreadable.length === 0,
+      `${detected.unreadable.join(', ')} was reported as an unreadable specifier in a fixture ` +
+        `where every argument is a literal. Without this, the count above can be satisfied ` +
+        `while shapes quietly migrate into the third state — and the third state is the one ` +
+        `nobody reads.`,
     );
 
     await writeFile(
@@ -203,13 +255,31 @@ try {
     const afterInnocent = await scriptsLoadingAtRuntime('target', fixture);
     check(
       'CONTROL: the specifier as an ordinary argument is NOT flagged',
-      afterInnocent.length === 4,
+      afterInnocent.matched.length === 5,
       `adding a file that merely PASSES "target" to an unrelated function took the count from ` +
-        `4 to ${afterInnocent.length}. A callee-blind walk flags this repository's own proofs, ` +
+        `5 to ${afterInnocent.matched.length}. A callee-blind walk flags this repository's own proofs, ` +
         `which pass 'electron' as an argument in several places — and a scan that cries wolf ` +
         `gets relaxed until it flags nothing. That is item 4b's window axis arriving as a ` +
         `FALSE POSITIVE, which is the more dangerous direction because the fix feels like ` +
         `tuning.`,
+    );
+
+    await writeFile(
+      join(shapes, 'computed.mjs'),
+      'export async function g(name) { return import(name); }\n',
+      'utf8',
+    );
+    const afterComputed = await scriptsLoadingAtRuntime('target', fixture);
+    check(
+      'a COMPUTED specifier is reported as unreadable, not counted as absent',
+      afterComputed.unreadable.length === 1 &&
+        afterComputed.unreadable[0]?.endsWith('computed.mjs:1') === true &&
+        afterComputed.matched.length === 5,
+      `unreadable: [${afterComputed.unreadable.join(', ')}], matched: ` +
+        `${afterComputed.matched.length}. \`import(name)\` cannot be resolved by a parse, and ` +
+        `returning false for it merges "looked and it was something else" with "could not ` +
+        `look" — the distinction this entire file exists to keep. The line number is asserted ` +
+        `because a report nobody can act on is the same as no report.`,
     );
 
     await writeFile(join(shapes, 'mystery.mts'), 'export const f = 1;\n', 'utf8');
