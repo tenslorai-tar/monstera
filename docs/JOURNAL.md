@@ -644,6 +644,202 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-20 — Stage audit: `9303bb5..8519e64`
+
+**Audited through 8519e64.** 9 commits, 17 files, **0 proofs added, 5 modified**,
+1 new instrument. Almost nothing in this range is product code: it is a roster
+module, a pre-commit gate, a quarantine sweep, a trigger narrowing, and the
+proofs around them. That is the shape the watermark exists for, and three of the
+four findings below are inside fixes written in this range to close findings from
+the last one.
+
+**The exemption was exercised before the audit was written, not after.** The gate
+this range added refuses every ordinary commit at 10 > 9, so the only commit that
+can be made is this one — and `recordsAudit` had been exercised in a fixture and
+never live. Running it at the end of a long audit is how you discover that the
+single commit which closes the finding is the single commit that cannot be made.
+Both directions, live: nothing staged → refused on the budget; the watermark
+advance staged → exit 0. Then `check:docs` red on the journal requirement until
+this entry named the sha, which is the coupling that makes the exemption safe
+rather than an escape hatch.
+
+**`142a2d6` carries no board verdict, and that is worth stating rather than
+glossing.** Both of its runs were cancelled by the `cancel-in-progress`
+concurrency group when `8519e64` was pushed. A cancelled run is not a weaker
+green; it is no verdict at all. So "the range is green" is a fact about the tip
+and about nothing else — which is the ordinary consequence of rapid pushes under
+a concurrency group, and it means a bisect through this range lands on commits CI
+never evaluated.
+
+### Z-1 — the audit report's classifier drops every rename, and a moved proof lands in no column
+
+`buildScope` parses `git diff --name-status <range>` with `line.split('\t')` and
+keeps states `A` and `M`. A rename is `R100\told\tnew`. So the state is `R`, the
+"path" becomes the two paths joined by a tab, and the entry matches neither
+column.
+
+Measured in a scratch repository, both shapes:
+
+```
+R100  <a>.proof.mjs -> <b>.proof.mjs        (a plain move)
+  proofsAdded: []   proofsModified: []   newScripts: []
+R090  <a>.proof.mjs -> <b>.proof.mjs        (moved AND edited)
+  proofsAdded: []   proofsModified: []   newScripts: []
+```
+
+`R090` is the case that matters: a proof moved *and* rewritten — a control
+loosened inside a file that changed address — is reported nowhere, and `files`
+carries a path that does not exist. The blind window is exactly similarity ≥ 50%;
+below that git emits `D` + `A` and the new file at least reaches `proofsAdded`.
+So the instrument is blind precisely when the file is *mostly the same*, which is
+the case its "read each diff" instruction is written for.
+
+**This is the same defect as the one fixed in this range, in the other
+instrument.** `142a2d6` rewrote `touchesDependencies` to consume three fields for
+`R`/`C` and two otherwise, with a control proving a rename earlier in the list
+cannot hide a later dependency change. The identical field-alignment bug was
+sitting in `auditWatermark.mjs` and was not looked for. Rule 0's "fix the class,
+not the instance" — the half-fix here is not a forgotten sibling handler, it is
+the sibling I was reading the diff of at the time.
+
+It has never fired: `git log --diff-filter=R` over the whole history is empty.
+That is why it survived, and it stops being true at the first move — the split of
+`reportError.proof.mjs` into two files is already queued.
+
+Fix: parse the rename states, report the destination path, and give the proof a
+case that renames a proof within the range and requires it in `proofsModified`.
+**Open.**
+
+### Z-2 — the gate reads the watermark from the index for the exemption and from the working tree for the range
+
+`pendingAuditScope` decides `recordsAudit` by comparing `git show HEAD:` against
+`git show :` — the commit and the index. It then calls `auditScope`, which reads
+the watermark with `readFileSync` — the **working tree**. Two scopes, one
+decision, which is the defect `proof:docscope` already exists to prevent in
+`documentConsistency.mjs`.
+
+Measured live, with **nothing staged at all**:
+
+```
+index:     "commit": "9303bb5"
+worktree:  "commit": "8519e64"
+node scripts/hooks/preCommit.mjs  →  EXIT=0
+```
+
+The identical invocation minutes earlier, with the working tree unedited, was
+refused on the budget. So editing the watermark and forgetting to `git add` it
+does not fail loudly — it silently shrinks the measured range to nothing and
+waves the commit through, while `recordsAudit` stays `false`. The board then goes
+red one push later on the size threshold, which is precisely the failure Y-2
+existed to remove.
+
+Every case in `auditScope.proof.mjs` writes the watermark and then stages it with
+`git add -A`, so index and working tree never diverge in the fixture. That is
+audit item 2 exactly: verified against the easy shape only.
+
+The two scopes are visible inside a single check. Writing this entry and running
+`check:docs` before staging it reported the watermark as having no journal
+record — because the document checker reads the journal from the **commit**, by
+the `proof:docscope` fix, while the `auditScope` call in the same check reads the
+watermark from the working tree. One check, two scopes, and only one of them was
+ever aligned.
+
+Fix: compute the range from the index watermark (`pending ?? recorded`), so the
+gate reasons about the tree the commit will contain, with a case where the two
+scopes disagree. **Open.**
+
+### Z-3 — the lockfile guard's contract sentence still states the trigger this range removed
+
+`scripts/hooks/lockfileIntegrity.mjs` line 55, in the file header:
+
+> It runs only when a manifest or the lockfile is staged, because it costs a few
+> seconds and nothing else can cause the failure.
+
+`142a2d6` removed that. It now runs when a manifest's *resolution-relevant
+content* changed; a `scripts`-only edit stages a manifest and does not arm it.
+The correction is 130 lines further down, on `touchesDependencies` itself, where
+a reader deciding what may arm this guard does not necessarily go.
+
+This is the third occurrence of item 7's shape and the first with an aggravating
+circumstance: **the signal for detecting it was added to `CLAUDE.md` in
+`9ff2dec`, the commit immediately before the one that created this instance.**
+And it is the half-true compound claim that rule names — "because it costs a few
+seconds and nothing else can cause the failure" is still exactly true, so the
+live clause vouches for the dead one and nothing about reading the sentence feels
+wrong.
+
+Writing the detection rule down did not put it in reach at the moment of
+composing the change. That is the same argument the escape-resolving-write hook
+makes, arriving in a second place, and it is the argument for a mechanism rather
+than a sharper sentence.
+
+Fix: correct the header. **Open**, and cheap.
+
+### Z-4 — the roster makes a deleted case silent instead of false, and nothing counts
+
+Y-1's fix is real: a label is now an argument to the call that concludes its
+case, so there is no second list to keep in step, and the mutation confirms it —
+forcing `record` to ignore `ran` reddens `a case with nothing to check is NOT
+counted as passing`.
+
+What it does not do is notice that *less ran*. Delete a case and its line goes
+with it, the derived total drops to match, and the output is entirely honest
+about a proof that now checks less than it did. The old defect was a number that
+disagreed with the lines; the new residual is that both move together — and
+moving together is also what absence produces, which is item 4's direction rule
+one level up from where it was applied.
+
+Nothing anywhere pins how many cases a proof must execute. `record` also remains
+a separable statement: deleting a case's *body* and leaving its `record` call
+still prints the label. That was stated in `93656f6`'s commit message rather than
+hidden, and it is the part of Y-1 that is still open.
+
+Fix, when taken: a declared floor per proof, checked by the proof itself, so a
+count that drops has to be a diff somebody wrote. **Open.**
+
+### Classification of this range's fixes
+
+| commit | root cause or workaround |
+|---|---|
+| `93656f6` roster | root cause, partial — the second list is gone; the separable `record` call is Z-4 |
+| `ef92b2e` setup crash | root cause — the rename is inside the case with `try`/`finally`, so a throw cannot end the run before the roster speaks |
+| `fe512f0` quarantine sweep | root cause — the old removal named one path built from the current pid, a name no later run computes |
+| `739fae4` audit gate | root cause with a hole — Z-2 |
+| `142a2d6` trigger narrowing | narrowing, not loosening — but taken while blocked by it, which is the circumstance under which a loosening is most likely to be self-serving |
+
+`142a2d6` deserves its own line because item 1 names exactly this shape. The test
+recorded in its commit message is the one that settles it: would the narrowing be
+correct if the npm here were already 11.17.0? Yes — the trigger would still be
+over-broad, merely harmlessly so. The blockage is what made someone look; it is
+not what makes the over-breadth a defect. The npm floor was not lowered, the
+allowlist is one measured key, and every state that is not provably inert trips.
+
+### Executed, or asserted
+
+**Executed:** the rename probe, both shapes, in a scratch repository · the gate
+bypass, live, `EXIT=0` with nothing staged · the exemption, live, both
+directions · `check:docs` refusing the advanced watermark until this entry named
+it · two proof mutations (`commits + 1` → `+ 0` reddens two `auditScope` cases;
+`ran` ignored reddens the roster's skip case) · CI at `8519e64`, both workflows
+green, with `proof:shim` and `proof:cff` — the two roster conversions no local
+machine here can run — succeeding in the native job · `142a2d6`'s two runs
+cancelled rather than green.
+
+**Asserted:** that `mupdf.proof.mjs`'s new *skip* branch behaves — it is
+unreachable in practice, because the proof exits early without a built shim and a
+Windows runner always has `System32`. The mechanism is proven generically in
+`reportError.proof.mjs`; this site is not exercised anywhere.
+
+### Would CI have caught these?
+
+No, and the reason is the same for all three of the mechanical ones. Z-1 needs a
+rename inside an audited range and there has never been one. Z-2 needs the
+working tree to differ from the index, which on a runner it never does. Z-3 is
+prose. A defect CI cannot see is waiting for a contributor, which is why each
+fix above carries a case rather than a note.
+
+---
+
 ## 2026-08-20 — Stage audit: `81b9b2b..9303bb5`
 
 **Audited through 9303bb5.** 9 commits, 32 files, **1 proof added, 11 modified**,
