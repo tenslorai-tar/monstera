@@ -44,7 +44,7 @@
  */
 
 import { readdirSync } from 'node:fs';
-import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +52,12 @@ import { fileURLToPath } from 'node:url';
 import { extract } from '../lib/extract.mjs';
 import { loadTypeScript } from '../lib/loadTypeScript.mjs';
 import { PLAIN_NODE_EXTENSIONS, SCAN_DATA_EXTENSIONS } from '../lib/plainNodeScope.mjs';
-import { downloadVerified, fileExists, toolPath } from '../lib/fetchVerified.mjs';
+import {
+  downloadVerified,
+  fileExists,
+  toolPath,
+  verifyFileDigest,
+} from '../lib/fetchVerified.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -495,11 +500,38 @@ function isModuleLoad(ts, node, requireAliases) {
 export async function provisionElectron({ root = REPO_ROOT, key = platformKey() } = {}) {
   const build = buildFor(key);
   const binary = join(electronRoot(root), build.executable);
-  if (await fileExists(binary)) return binary;
 
-  const staging = await mkdtemp(join(tmpdir(), 'monstera-electron-'));
-  const archive = join(staging, build.asset);
-  try {
+  // THE ARCHIVE IS VERIFIED ON EVERY RUN, cache hit or not, and the extracted
+  // tree is always rebuilt from it.
+  //
+  // The previous version returned early when the binary was already on disk.
+  // That is correct for a tree this process extracted a moment ago and WRONG the
+  // instant a CI cache can populate it: a restored tree skips downloadVerified
+  // and therefore skips the digest check, which turns a hash-pinned artifact
+  // into an unpinned one delivered by a store that any run on this repository
+  // can write to. A supply-chain path with a green check on it, and exactly the
+  // class `fetchVerified` exists to close.
+  //
+  // So the cache is an optimisation of the DOWNLOAD, never of the verification.
+  // The pin lives in this tracked file; the archive lives in a cache; the
+  // archive is checked against the pin before anything is extracted from it.
+  // Re-extraction costs seconds and removes the need to reason about where a
+  // tree came from — which is the reasoning that goes wrong.
+  const archiveDirectory = toolPath(root, 'electron-archives');
+  const archive = join(archiveDirectory, build.asset);
+  await mkdir(archiveDirectory, { recursive: true });
+
+  if (await fileExists(archive)) {
+    // Throws rather than silently re-downloading. A corrupted cache and a
+    // POISONED one are indistinguishable here, and quietly repairing the first
+    // would quietly launder the second — the run would go green with no record
+    // that the store served the wrong bytes.
+    await verifyFileDigest({
+      path: archive,
+      sha256: build.sha256,
+      context: `the cached Electron archive ${build.asset}`,
+    });
+  } else {
     await downloadVerified({
       url: `https://github.com/electron/electron/releases/download/v${ELECTRON_VERSION}/${build.asset}`,
       allowedHosts: ALLOWED_HOSTS,
@@ -507,9 +539,13 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
       maxBytes: MAX_ARCHIVE_BYTES,
       destination: archive,
     });
+  }
 
+  const staging = await mkdtemp(join(tmpdir(), 'monstera-electron-'));
+  try {
+    await copyFile(archive, join(staging, build.asset));
     extract(staging, build.asset);
-    await rm(archive, { force: true });
+    await rm(join(staging, build.asset), { force: true });
 
     await mkdir(dirname(electronRoot(root)), { recursive: true });
     await rm(electronRoot(root), { recursive: true, force: true });
@@ -528,7 +564,30 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
   return binary;
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll('\\', '/') ?? ''}`) {
+/**
+ * Whether this module was run directly, as opposed to imported.
+ *
+ * `resolve` + `fileURLToPath`, which is what `gitleaks.mjs:852`, `mupdf.mjs:346`
+ * and `electronSurface.mjs:351` already do. This file had invented a fourth
+ * answer — comparing `import.meta.url` against a hand-built `file://` + path —
+ * and it is wrong on exactly one platform: `import.meta.url` is
+ * `file:///C:/…` with THREE slashes, while concatenation yields `file://C:/…`
+ * with two. On Linux the leading `/` of an absolute path makes the two forms
+ * coincide, so it worked there and silently did nothing on Windows.
+ *
+ * **It exited 0 while provisioning nothing**, which is why nothing found it: the
+ * first run of `npm run provision:electron` in this repository's history
+ * produced no output, no archive and no runtime, and reported success.
+ *
+ * B3a — three modules already answered this question and a fourth opinion was
+ * written anyway. The remaining hand-rolled variants (`endsWith` in four
+ * `security/` modules) are looser than this but not wrong; that they are a
+ * fifth shape of one question is recorded rather than fixed here.
+ */
+const RUN_DIRECTLY =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (RUN_DIRECTLY) {
   provisionElectron().then(
     (binary) => {
       process.stdout.write(`Electron ${ELECTRON_VERSION} at ${binary}\n`);

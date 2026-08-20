@@ -180,6 +180,42 @@ export async function fileExists(path) {
  * @param {string} path
  * @returns {Promise<string>} SHA-256 of the file's bytes, hex.
  */
+/**
+ * Throws unless a file already on disk matches a pinned digest.
+ *
+ * ## Why this exists beside `downloadVerified` rather than inside it
+ *
+ * They answer the same question at different times, and only this one can be
+ * asked of a file that arrived by some route other than a download — **a
+ * restored CI cache being the case it was written for.** `downloadVerified`
+ * hashes the stream as it writes, which is what keeps unverified bytes out of
+ * the destination; it cannot be reused for a file that is already there.
+ *
+ * What must not be duplicated is the *rule*, so the comparison and the message
+ * live here and the caller supplies only the context. A provisioner that
+ * open-codes `digest === pin` is the second opinion B3a is about.
+ *
+ * **The file is deleted on mismatch, unread.** A file that fails its pin is not
+ * a diagnostic to inspect later; leaving it invites the next run to find it and
+ * a human to wonder whether it is fine.
+ *
+ * @param {{ path: string, sha256: string, context: string }} options
+ * @returns {Promise<void>}
+ */
+export async function verifyFileDigest({ path, sha256, context }) {
+  const actual = await digestOf(path);
+  if (actual === sha256) return;
+  await rm(path, { force: true });
+  throw new Error(
+    `SHA-256 mismatch for ${context}\n  at       ${path}\n  expected ${sha256}\n` +
+      `  received ${actual}\nThe file was deleted unread.`,
+  );
+}
+
+/**
+ * @param {string} path
+ * @returns {Promise<string>}
+ */
 async function digestOf(path) {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);

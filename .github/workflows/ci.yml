@@ -91,6 +91,38 @@ jobs:
             exit 1
           fi
 
+      # The ARCHIVE is cached, not the extracted tree, and the key is the pinned
+      # digest itself. Two consequences worth stating, because both are the
+      # reason this is shaped the way it is:
+      #
+      # - The cache invalidates exactly when the content must change and never
+      #   otherwise, so there is no staleness question to reason about.
+      # - A restored archive is RE-VERIFIED against the pin before anything is
+      #   extracted from it. A cache hit that skipped the digest check would turn
+      #   a hash-pinned artifact into an unpinned one delivered by a store any
+      #   run on this repository can write to — a supply-chain path with a green
+      #   check on it. The cache optimises the DOWNLOAD, never the verification,
+      #   and `proof:electronimports` covers the refusal with a control.
+      - name: Cache the pinned Electron archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/electron-archives
+          key: electron-archive-${{ runner.os }}-${{ hashFiles('scripts/provision/electron.mjs') }}
+
+      # Fetches the pinned build, verifies it against the recorded SHA-256, and
+      # extracts it under .tools/. Nothing imports the `electron` package to get
+      # here — that import IS the download, which invariant 26 forbids.
+      #
+      # DISPLAY REQUIREMENT, stated before the first step that starts the
+      # binary rather than after it fails: Electron needs an X display on Linux,
+      # and `xvfb-run -a` is the answer. Without it the process does not error —
+      # it HANGS, a hang reads as a flake, and a flake invites a timeout bump,
+      # which is a banned reflex that arrives wearing a plausible story. Windows
+      # needs nothing. Provisioning itself starts no process; the step that does
+      # is the renderer read-back.
+      - name: Provision the pinned Electron runtime
+        run: npm run provision:electron
+
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
       # package's exports map to dist.

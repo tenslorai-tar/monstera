@@ -41,6 +41,7 @@
  * Usage: node scripts/proofs/electronImports.proof.mjs
  */
 
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -49,10 +50,11 @@ import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 
 import { ELECTRON_SPECIFIERS } from '../../eslint.config.js';
+import { fileExists, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { PLAIN_NODE_EXTENSIONS } from '../lib/plainNodeScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { scriptsLoadingAtRuntime, unpinnedRuntimeExists } from '../provision/electron.mjs';
+import { BUILDS, scriptsLoadingAtRuntime, unpinnedRuntimeExists } from '../provision/electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -78,7 +80,7 @@ const PROBE_JS = join(REPO_ROOT, 'scripts', '__import_probe__.js');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+const roster = createRoster(failures, { cases: 18 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -445,6 +447,67 @@ try {
     );
   } finally {
     await rm(runtimeRoot, { recursive: true, force: true });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A RESTORED CACHE IS RE-VERIFIED. A cache hit that skipped the digest check
+  // would convert a hash-pinned artifact into an unpinned one delivered by a
+  // store any workflow run on this repository can write to.
+  //
+  // Exercised against `verifyFileDigest` directly rather than by running the
+  // provisioner, which would download ~100 MB. That is the same reasoning the
+  // eight pin cases use, and the seam is real: the provisioner has exactly one
+  // path from a pre-existing archive to an extraction, and it goes through this
+  // function.
+  // ---------------------------------------------------------------------------
+  const cacheRoot = await mkdtemp(join(tmpdir(), 'monstera-cache-'));
+  try {
+    const poisoned = join(cacheRoot, 'electron-vX-poisoned.zip');
+    await writeFile(poisoned, 'not the pinned archive', 'utf8');
+    const anyPin = Object.values(BUILDS)[0]?.sha256 ?? '';
+
+    let refused = false;
+    try {
+      await verifyFileDigest({ path: poisoned, sha256: anyPin, context: 'a poisoned cache entry' });
+    } catch (error) {
+      refused = error instanceof Error && error.message.includes('SHA-256 mismatch');
+    }
+    check(
+      'a cached archive whose bytes do not match the pin is REFUSED',
+      refused,
+      `verifyFileDigest accepted a file that is not the pinned archive. A poisoned cache and a ` +
+        `clean one look identical at the point of use, so the digest check is the only thing ` +
+        `between the two — and a cache hit that skips it is a supply-chain path with a green ` +
+        `check on it.`,
+    );
+
+    check(
+      'and the refused file is deleted unread, not left for the next run to find',
+      (await fileExists(poisoned)) === false,
+      `${poisoned} survived a failed verification. A file that fails its pin is not a ` +
+        `diagnostic to inspect later: leaving it invites the next run to find it and a human to ` +
+        `decide it is probably fine.`,
+    );
+
+    const honest = join(cacheRoot, 'honest.txt');
+    await writeFile(honest, 'pinned bytes', 'utf8');
+    const honestDigest = createHash('sha256').update('pinned bytes').digest('hex');
+    let accepted = true;
+    try {
+      await verifyFileDigest({ path: honest, sha256: honestDigest, context: 'a clean entry' });
+    } catch {
+      accepted = false;
+    }
+    check(
+      'CONTROL: an archive that DOES match its pin is accepted and kept',
+      accepted && (await fileExists(honest)),
+      `a file whose digest equals its pin was rejected or deleted. Without this, both cases ` +
+        `above are satisfied by a verifier that refuses everything — which is the reassuring ` +
+        `direction for a security check and would make provisioning impossible rather than ` +
+        `safe.`,
+    );
+  } finally {
+    await rm(cacheRoot, { recursive: true, force: true });
   }
 
   process.stdout.write(
