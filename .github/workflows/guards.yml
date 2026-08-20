@@ -105,6 +105,17 @@ jobs:
       - name: Prove the board reader knows "not yet" from "cannot see"
         run: npm run proof:board
 
+      # The Electron pin cannot drift from the dependency and cannot be routed
+      # around. Reads tracked files only and downloads NOTHING: proof:provision
+      # already makes four live github.com fetches per run and is a recorded open
+      # finding for it, so a second proof pulling ~100 MB would be the third
+      # instance and by far the largest. The download path is not unproven as a
+      # result — `downloadVerified` is the primitive proof:provision exercises
+      # against a real server, and the Electron provisioner is its third
+      # consumer rather than a third copy.
+      - name: Prove the Electron pin cannot drift or be bypassed
+        run: npm run proof:electronprovision
+
       - name: Prove provisioning is safe under concurrency
         run: npm run proof:provision
 
