@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import { type DocumentCommands } from './documentCommands.js';
-import { type IpcHandleTarget, registerContractHandlers } from './registerHandlers.js';
+import {
+  type IpcHandleTarget,
+  type IpcSenderCheck,
+  UntrustedSenderError,
+  registerContractHandlers,
+} from './registerHandlers.js';
 
 /**
  * Registration, and the assembly it registers.
@@ -45,6 +50,14 @@ const appInfo: AppInfo = { version: '9.9.9', installChannel: 'web' };
  */
 const unusedCommands = {} as unknown as DocumentCommands;
 
+/**
+ * The cases about registration and the boundary are not about the sender check,
+ * so they say so rather than passing a check that happens to accept `{}`.
+ *
+ * The sender check has its own describe block below, with both directions.
+ */
+const trustAll: IpcSenderCheck = () => true;
+
 function handlers() {
   return createContractHandlers({ commands: unusedCommands, appInfo });
 }
@@ -52,7 +65,7 @@ function handlers() {
 describe('main-process contract registration', () => {
   it('registers EVERY declared channel, and each exactly once', () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined);
+    registerContractHandlers(ipc, handlers(), () => undefined, trustAll);
 
     // Compared against the registry, not against a list written here. A literal
     // list would be the second place a channel is written down, which is the
@@ -62,7 +75,7 @@ describe('main-process contract registration', () => {
 
   it('answers app.info with the values it was built with', async () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined);
+    registerContractHandlers(ipc, handlers(), () => undefined, trustAll);
 
     const listener = ipc.seen.get('app.info');
     expect(listener).toBeDefined();
@@ -85,9 +98,14 @@ describe('main-process contract registration', () => {
   it('hands the boundary what the renderer sent, from args[0]', async () => {
     const seen: Incident[] = [];
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), (incident) => {
-      seen.push(incident);
-    });
+    registerContractHandlers(
+      ipc,
+      handlers(),
+      (incident) => {
+        seen.push(incident);
+      },
+      trustAll,
+    );
 
     const listener = ipc.seen.get('app.info');
     const envelope = (await listener?.({}, 'not an object')) as { ok: boolean };
@@ -103,9 +121,14 @@ describe('main-process contract registration', () => {
   it('records a malformed call as an incident instead of rejecting', async () => {
     const seen: Incident[] = [];
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), (incident) => {
-      seen.push(incident);
-    });
+    registerContractHandlers(
+      ipc,
+      handlers(),
+      (incident) => {
+        seen.push(incident);
+      },
+      trustAll,
+    );
 
     const listener = ipc.seen.get('document.execute');
     const envelope = (await listener?.({}, { docId: '', command: null })) as {
@@ -127,11 +150,70 @@ describe('main-process contract registration', () => {
 
   it('CONTROL: a well-formed call is not refused by the same path', async () => {
     const ipc = recorder();
-    registerContractHandlers(ipc, handlers(), () => undefined);
+    registerContractHandlers(ipc, handlers(), () => undefined, trustAll);
 
     // Without this, every case above is satisfied by a registration that refuses
     // everything — the failure mode a "does it reject?" assertion cannot see.
     const envelope = (await ipc.seen.get('app.info')?.({}, {})) as { ok: boolean };
     expect(envelope.ok).toBe(true);
+  });
+});
+
+describe('sender check', () => {
+  const trusted = { senderId: 1 };
+  const check: IpcSenderCheck = (event) => event === trusted;
+
+  it('refuses EVERY channel when the sender is not the shell’s own frame', () => {
+    const ipc = recorder();
+    registerContractHandlers(ipc, handlers(), () => undefined, check);
+
+    // Every channel, from the registry. A check applied to one channel and
+    // forgotten on the next is exactly the "loop that already looks finished"
+    // trap, and a single-channel case cannot see it.
+    for (const id of channelIds) {
+      expect(() => ipc.seen.get(id)?.({ senderId: 2 }, {})).toThrow(UntrustedSenderError);
+    }
+  });
+
+  it('CONTROL: the trusted sender is not refused on any channel', async () => {
+    const ipc = recorder();
+    registerContractHandlers(ipc, handlers(), () => undefined, check);
+
+    // Without this, the case above is satisfied by a listener that throws for
+    // every event — "it rejected" and "it rejects everything" are the same
+    // observation otherwise, and the second is a shell that cannot work at all.
+    const envelope = (await ipc.seen.get('app.info')?.(trusted, {})) as { ok: boolean };
+    expect(envelope.ok).toBe(true);
+  });
+
+  it('refuses BEFORE the arguments are parsed, so an untrusted sender never reaches the schema', () => {
+    const seen: Incident[] = [];
+    const ipc = recorder();
+    registerContractHandlers(
+      ipc,
+      handlers(),
+      (incident) => {
+        seen.push(incident);
+      },
+      check,
+    );
+
+    // `'not an object'` is the payload that produces a schema incident on the
+    // trusted path — proven one describe block up. From an untrusted sender it
+    // must produce NO incident, which is what distinguishes "refused early" from
+    // "refused after being parsed and logged".
+    expect(() => ipc.seen.get('app.info')?.({ senderId: 2 }, 'not an object')).toThrow(
+      UntrustedSenderError,
+    );
+    expect(seen).toHaveLength(0);
+  });
+
+  it('names the channel it refused, and discloses nothing else', () => {
+    const error = new UntrustedSenderError('document.execute');
+
+    expect(error.message).toContain('document.execute');
+    // No incident id: IncidentLog.record is documented as the only place a
+    // thrown value becomes an id, and a second counter means two `i1`s.
+    expect(error.message).not.toMatch(/\bi\d+\b/u);
   });
 });

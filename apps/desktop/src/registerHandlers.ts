@@ -18,6 +18,35 @@ export interface IpcHandleTarget {
 }
 
 /**
+ * Decides whether an IPC event came from the frame this shell created.
+ *
+ * Structural, like `IpcHandleTarget`, so the refusal path is exercised with a
+ * plain object rather than a running window.
+ */
+export type IpcSenderCheck = (event: unknown) => boolean;
+
+/**
+ * Thrown when a channel is invoked by a sender the shell did not create.
+ *
+ * **It carries no incident id, and that is deliberate.** `IncidentLog.record` is
+ * documented as the only place a thrown value becomes an id, so minting one here
+ * would be a second opinion about a question the boundary already owns — and two
+ * counters mean two `i1`s, which is precisely the ambiguity the single log
+ * exists to prevent.
+ *
+ * There is also nothing to withhold. An incident id exists so a diagnostic can
+ * be recorded where the path is already known while the renderer gets an opaque
+ * reference. A refusal generates no diagnostic: the message is fixed, names no
+ * path, and says only that the sender was not the one this shell created.
+ */
+export class UntrustedSenderError extends Error {
+  constructor(channel: string) {
+    super(`refused: ${channel} was invoked by a sender this shell did not create`);
+    this.name = 'UntrustedSenderError';
+  }
+}
+
+/**
  * Registers every declared channel with the IPC layer, exactly once.
  *
  * ## Derived from the registry, so a channel cannot be forgotten
@@ -36,24 +65,37 @@ export interface IpcHandleTarget {
  * Everything a handler throws is recorded here — where the path is already known
  * and discloses nothing — and the renderer gets `internal` plus the id.
  *
- * ## What the listener does NOT do
+ * ## The sender check, which this used to only describe
  *
- * It does not inspect the event. That is deliberate and it is **not** finished:
- * `ipcMain.handle` accepts a call from any frame in any renderer, so a sender
- * check belongs here the moment more than one window or any remote content
- * exists. Today the shell has neither, and the hardening that keeps it that way
- * — navigation locked, popups denied, `sandbox: true` — lives with the window.
- * Stated rather than implied, because a sender check added later has to be added
- * to a loop that already looks finished.
+ * `ipcMain.handle` accepts a call from **any frame in any renderer**, so a
+ * channel with no sender check is reachable by anything that gets script into
+ * the process. The previous version of this comment said so, called itself "not
+ * finished", and explained that the hardening keeping the shell single-window
+ * lives elsewhere.
+ *
+ * That note was right about the trap and wrong to leave it open: it warned that
+ * "a sender check added later has to be added to a loop that already looks
+ * finished", which is an argument for adding it *before* the loop looks
+ * finished, not for writing the warning down. It lands with the window that
+ * creates the only legitimate sender, because that is the first commit in which
+ * the check has something true to compare against.
+ *
+ * **`senderCheck` is required, not optional.** An optional one defaults to
+ * trusting everything, and a default that matters is what nobody revisits (B5).
+ * A refusal throws `UntrustedSenderError` and the handler never runs — the
+ * arguments are not parsed, so an untrusted sender cannot reach the schema layer
+ * either.
  *
  * @param target `ipcMain`, or a double in a test
  * @param handlers the assembled main-process side
  * @param sink receives every diagnostic that did not cross
+ * @param senderCheck decides whether an event came from the shell's own frame
  */
 export function registerContractHandlers(
   target: IpcHandleTarget,
   handlers: ContractHandlers,
   sink: IncidentSink,
+  senderCheck: IpcSenderCheck,
 ): void {
   const wrapped = wrapHandlers(channels, handlers, sink);
 
@@ -62,6 +104,12 @@ export function registerContractHandlers(
     // against the channel's schema before the handler sees them, which is the
     // one place validation happens (C5). Casting or defaulting the value here
     // would be a second opinion about a shape the boundary already owns.
-    target.handle(id, (_event, ...args) => wrapped[id](args[0]));
+    //
+    // The sender is checked BEFORE the wrapped call, so a refused event reaches
+    // neither the handler nor the parse.
+    target.handle(id, (event, ...args) => {
+      if (!senderCheck(event)) throw new UntrustedSenderError(id);
+      return wrapped[id](args[0]);
+    });
   }
 }

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Monstera</title>
+  </head>
+  <body>
+    <!--
+      DELIBERATELY EMPTY, and it is not a placeholder in the banned sense.
+
+      ARCHITECTURE §2 requires the window to exist with its hardening applied,
+      and a window needs a document to apply that hardening to. What it must NOT
+      have yet is chrome: the wired-tools rule makes a control that renders and
+      does nothing a defect, not a stepping stone, so there is no toolbar here
+      and no button waiting to be connected.
+
+      The Content-Security-Policy is served as a response HEADER by
+      `applyContentSecurityPolicy`, not written here. Two writers for one policy
+      is how the effective value becomes something nobody can state, and this one
+      is about to be pinned as an invariant.
+
+      The Vite/React renderer replaces this file's contents; it does not add a
+      second entry point.
+    -->
+    <div id="root"></div>
+  </body>
+</html>
