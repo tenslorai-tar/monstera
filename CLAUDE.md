@@ -59,6 +59,28 @@ patching around. Add to it; do not re-pay for it.
   component permitted to write it (the writer-of-record matrix). Many readers
   are fine. Two writers is how a codebase acquires sidecar hacks and
   cross-parser identity joins.
+- **B3a One resolver per authority.** Many readers are fine; **many opinions
+  about what an external authority said are not.** Where a tool, format or
+  service already defines how a question is answered, exactly one module here
+  implements that answer and everything else calls it.
+
+  Three instances in one day, and none of them looked like a bug from inside the
+  file that had it:
+
+  | authority | the second opinion | what it cost |
+  |---|---|---|
+  | `git diff --name-status` | one parser used `-z` and consumed 3 fields for `R`; the other split on tab | a proof moved *and edited* appeared in no audit column |
+  | the watermark's own validity rule | `readWatermark` required a sha; `watermarkAt` accepted any string | a fail-closed became a fail-open on the path a fix created |
+  | npm's shim resolution | we implemented "npm beside node" and not "then follow the global prefix" | `npm --version` said 11.17.0 while the guard resolved 11.6.2 |
+
+  Each half was correct in isolation, which is why review passed over all three.
+  **The finding is the second opinion, not the wrong one** — patching whichever
+  half is currently failing leaves the next caller free to write a third.
+
+  The tell: you are about to reimplement a rule that something else already owns.
+  Ask what that thing does, implement *its* rule in one place, and have the other
+  callers take it. A partial reimplementation is the dangerous shape, because it
+  agrees with the authority most of the time.
 - **B4 Architecture change control.** If a feature cannot be built by
   registering into an existing seam — **STOP**. Do not bend the seam in place.
   Amend `docs/ARCHITECTURE.md` first, in its own commit, with the rationale and
@@ -439,6 +461,39 @@ false confidence. Ask what the *hard* shape is and test that too:
 - one platform's lockfile → **every** platform (`npm ci` validates the whole file)
 - an already-provisioned tool → a **cold** machine (the proof needed a scanner)
 - a flat object → one with **inherited** attributes, rotation, or a CropBox origin
+- a **rich ambient environment** → the bare one the real caller gets
+
+That last one is a distinct axis and it is the quietest, because the difference
+is invisible in the diff and in the fixture: **any variable a test inherits from
+its runner is a variable the thing under test may be silently depending on.**
+
+Measured. `preCommit.proof.mjs` spawned the hook with the ambient environment,
+and it runs under `npm run`, which exports `npm_execpath` pointing at the npm
+that started it. A child inherits it. So every hook case took `npmCliPath`'s
+FIRST branch — while a real `git commit`, which git runs from an environment
+with no such variable, takes the second. The branch a committer actually uses was
+exercised by nothing, and the guard and its proof disagreed about which npm
+exists without either of them being able to say so. `npm --version` reported
+11.17.0 while the hook resolved 11.6.2, in one repository at one moment.
+
+The fix is one line — the proof deletes the variable before spawning — and the
+question to carry is the general one: **what else does the harness hand its child
+that the real caller does not?**
+
+**2a. Has a change to HOW something is proven moved the coverage?**
+Turning an asserted claim into a **derived** one is a strengthening where the
+derivation can run and a weakening everywhere else, because a derivation has a
+provisioning condition and an assertion does not.
+
+Measured: invariant 25's symbols moved from `in: null` witnesses to a derivation
+from `electron.d.ts`. A misspelt symbol used to fail *everywhere*; it is now
+reported as UNVERIFIABLE on the one job that installs nothing. That is correct by
+the register's own philosophy — "could not look" is not "looked and found
+nothing" — and it is still a reduction, and the commit that made it said nothing.
+
+Not a defect. But a change that has to be **stated**, or the distinction between
+*could not look* and *looked and found nothing* gets quietly spent: every
+unverifiable line reads as rigour, including the ones that used to be failures.
 
 **3. Would CI have caught it?**
 If not, say so and close the gap. A defect CI cannot see is waiting for a
