@@ -480,6 +480,22 @@ The fix is one line — the proof deletes the variable before spawning — and t
 question to carry is the general one: **what else does the harness hand its child
 that the real caller does not?**
 
+**And the remedy has its own rule, because the fix above shipped without one and
+nothing noticed for a range.** When a HARNESS is corrected, the control asserts
+what the harness *passes*, not what the run produces. Measured: with that one
+line reverted, all 22 cases still passed and the proof exited 0 — every
+assertion reads the hook's output, and the hook succeeds either way, so the
+repair was invisible to the entire file. The commit that made it was also one CI
+never evaluated, so its whole evidence was a single machine on a single platform.
+
+The reason is general and worth stating as the rule: **a harness fix changes an
+input, and assertions look at outputs.** There is nothing downstream to catch it,
+so the only case that can is one that reads the harness — here, two lines
+requiring the spawned child's environment to carry no `npm_execpath`, with the
+variable *set by the case* so it proves the deletion rather than the runner's
+luck. Give that case its own vacuity guard too: an empty environment satisfies
+"no `npm_execpath`" without proving anything.
+
 **2a. Has a change to HOW something is proven moved the coverage?**
 Turning an asserted claim into a **derived** one is a strengthening where the
 derivation can run and a weakening everywhere else, because a derivation has a

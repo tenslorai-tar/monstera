@@ -87,33 +87,54 @@ function makeRepo() {
 }
 
 /**
+ * The environment a spawned hook receives.
+ *
+ * `npm_execpath` is DELETED, and that is the difference between exercising the
+ * hook and exercising this proof's own launcher.
+ *
+ * git sets no such variable — a real `git commit` runs the hook from a bare
+ * environment. This proof runs under `npm run`, which exports `npm_execpath`
+ * pointing at the npm that started it, and a spawned child inherits it. So every
+ * hook case has been running with the resolution SHORT-CIRCUITED by the first
+ * branch of `npmCliPath`, and the branch a committer actually takes — find npm
+ * beside node, then follow it to the global prefix — was exercised by nothing.
+ *
+ * Measured: with the prefix redirect removed, this proof stayed green while the
+ * real hook refused every commit on this machine. Item 2's "verified against the
+ * easy shape only", where the easy shape was an environment variable production
+ * does not have.
+ *
+ * ## Why this is a named function and not four lines inside `runHook`
+ *
+ * So that a case can assert on it. The correction above was to the HARNESS — it
+ * changed what this file hands its child — and **no assertion downstream can see
+ * that**, because every case reads the hook's output and the hook succeeds
+ * either way. Measured on 2026-08-20: with the `delete` removed, all 22 cases
+ * still passed and the proof exited 0.
+ *
+ * That is the general remedy for item 2's ambient-environment axis. When the
+ * defect is what the harness passes, the control asserts what the harness
+ * passes; asserting on results tests a path that was never wrong.
+ *
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {NodeJS.ProcessEnv}
+ */
+function childEnvironment(env = {}) {
+  const inherited = { ...process.env, ...env };
+  delete inherited['npm_execpath'];
+  return inherited;
+}
+
+/**
  * @param {string} root
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {{ ok: boolean, output: string }}
  */
 function runHook(root, env = {}) {
-  // `npm_execpath` is DELETED, and that is the difference between exercising the
-  // hook and exercising this proof's own launcher.
-  //
-  // git sets no such variable — a real `git commit` runs the hook from a bare
-  // environment. This proof runs under `npm run`, which exports `npm_execpath`
-  // pointing at the npm that started it, and a spawned child inherits it. So
-  // every hook case has been running with the resolution SHORT-CIRCUITED by the
-  // first branch of npmCliPath, and the branch a committer actually takes — find
-  // npm beside node, then follow it to the global prefix — was exercised by
-  // nothing.
-  //
-  // Measured: with the prefix redirect removed, this proof stayed green while
-  // the real hook refused every commit on this machine. Item 2's "verified
-  // against the easy shape only", where the easy shape was an environment
-  // variable production does not have.
-  const inherited = { ...process.env, ...env };
-  delete inherited['npm_execpath'];
-
   const result = spawnSync(process.execPath, [HOOK], {
     cwd: root,
     encoding: 'utf8',
-    env: inherited,
+    env: childEnvironment(env),
   });
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
@@ -554,6 +575,51 @@ check('a prefix that cannot be read leaves the candidate in place', () => {
     );
   }
   return null;
+});
+
+// FINDING BB-4's CONTROL, and it asserts an INPUT because the defect was one.
+//
+// The three cases above exercise `globalPrefixOverride` in isolation, which is
+// the function the fix added. None of them exercises the thing the fix actually
+// changed: that this file spawns the hook the way git does, from an environment
+// with no `npm_execpath`. Measured on 2026-08-20 — with the `delete` removed,
+// every case above still passed and the proof exited 0.
+//
+// So `9e185ec` shipped a change to which npm a guard resolves with no control,
+// on a commit CI never evaluated (total_count 0 — it went out behind a0ebd81 and
+// the concurrency group ran only the head). Its whole evidence was one Windows
+// machine, and following the global prefix is exactly what differs on POSIX.
+// B2: a fix without a control case is not finished.
+//
+// The case sets the variable rather than trusting the runner to have set it, so
+// it proves the deletion happens rather than that the ambient environment
+// happened to lack it — the same distinction the fix is about, one level up.
+check('CONTROL: the environment a spawned hook receives carries no npm_execpath', () => {
+  const previous = process.env['npm_execpath'];
+  process.env['npm_execpath'] = join('nowhere', 'npm', 'bin', 'npm-cli.js');
+  try {
+    const bare = childEnvironment();
+    const withExtra = childEnvironment({ MONSTERA_PROOF_MARKER: 'set' });
+    if (bare['npm_execpath'] !== undefined || withExtra['npm_execpath'] !== undefined) {
+      return (
+        `the child would inherit npm_execpath=${String(bare['npm_execpath'])}, so every hook ` +
+        `case below takes npmCliPath's FIRST branch and the branch a real \`git commit\` takes ` +
+        `is exercised by nothing. This assertion is on the harness, not the hook, because the ` +
+        `hook succeeds either way — which is why 22 cases passed with the fix reverted.`
+      );
+    }
+    if (withExtra['MONSTERA_PROOF_MARKER'] !== 'set') {
+      return (
+        `the per-case overrides stopped reaching the child, so this control would pass by ` +
+        `handing the hook nothing at all. An empty environment satisfies "no npm_execpath" ` +
+        `vacuously (audit item 4b).`
+      );
+    }
+    return null;
+  } finally {
+    if (previous === undefined) delete process.env['npm_execpath'];
+    else process.env['npm_execpath'] = previous;
+  }
 });
 
 if (failures.length > 0) {
