@@ -66,7 +66,7 @@ const PROBE = join(REPO_ROOT, 'scripts', '__import_probe__.mjs');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 14 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -157,37 +157,103 @@ try {
       `check depends on, or it proves the compiler loaded and nothing more (item 4b).`,
   );
 
-  // Every computed specifier in the real tree, named and justified. The one
-  // sanctioned suppression channel for this scan, and it is a tracked list in
-  // the proof rather than a flag on the scan — the same shape .gitleaks.toml's
-  // [allowlist] has, and for the same reason: a suppression that never appears
-  // in a diff is a suppression nobody reviews.
+  // Every computed specifier in the real tree, named, justified, and COUNTED.
+  //
+  // The one sanctioned suppression channel for this scan: a tracked list here
+  // rather than a flag on the scan, so a suppression cannot exist without
+  // appearing in a diff. That is `.gitleaks.toml`'s `[allowlist]` shape — but
+  // only the tracked-and-reviewed half of it, and the half it originally
+  // omitted is exactly what got `.gitleaksignore` closed.
+  //
+  // KEYED ON THE FILE, JUSTIFIED BY A LINE. Without `sites`, one entry granted
+  // its whole file standing amnesty: a second computed specifier appearing
+  // anywhere in `nativeAddon.proof.mjs` would be accounted for by a sentence
+  // describing a different call, producing NO CHANGE TO THIS MAP and therefore
+  // no diff. That is the property this repository banned fingerprint files
+  // for, reproduced by a list that reads as if it had learned the lesson.
+  //
+  // ENFORCED IN BOTH DIRECTIONS, which is what makes it more than a floor:
+  //   more sites than declared -> a new, unreviewed suppression
+  //   fewer                    -> a STALE entry, pre-authorising whatever
+  //                               computed load lands in that file next
+  // Both red, with the number visible in the diff. `createRoster`'s declared
+  // count exactly, and for the same reason it has no `--update`: lowering one
+  // should be a keystroke someone types and defends.
+  //
+  // The downward direction is also this check's vacuity guard, and it is worth
+  // knowing which one it is. If the scan broke and returned nothing, `unlisted`
+  // would be empty and pass — absence and correctness produce the same answer
+  // there. Every entry would then read `found 0` and redden. The comparison is
+  // mutated towards disagreement by the failure itself.
+  //
+  // NOT keyed on `path:line`: a line number moves whenever anything above it is
+  // edited, and a suppression that reddens on unrelated edits is one that gets
+  // loosened.
   const ACCOUNTED_COMPUTED = new Map([
     [
       'scripts/lib/loadTypeScript.mjs',
-      'loads the TypeScript compiler by absolute path through a file:// URL. It cannot be a ' +
-        'literal — the path is resolved at run time and needs Windows backslash conversion — ' +
-        'and it is the module this very scan loads its compiler with.',
+      {
+        sites: 1,
+        reason:
+          'loads the TypeScript compiler by absolute path through a file:// URL. It cannot be ' +
+          'a literal — the path is resolved at run time and needs Windows backslash ' +
+          'conversion — and it is the module this very scan loads its compiler with.',
+      },
     ],
     [
       'scripts/proofs/nativeAddon.proof.mjs',
-      'require.resolve of `@koromix/koffi-${platform}-${arch}/package.json` — the specifier ' +
-        'names the running platform, so it cannot be a literal. Found by this case on its ' +
-        'first run: the site became visible only once require.resolve and createRequire ' +
-        'aliases were covered, which is what a widened check is supposed to do.',
+      {
+        sites: 1,
+        reason:
+          'require.resolve of `@koromix/koffi-${platform}-${arch}/package.json` — the ' +
+          'specifier names the running platform, so it cannot be a literal. Found by this ' +
+          'case on its first run: the site became visible only once require.resolve and ' +
+          'createRequire aliases were covered, which is what a widened check is for.',
+      },
     ],
   ]);
-  const unaccounted = nodeSide.unreadable.filter(
+
+  /** @type {Map<string, number>} */
+  const observedComputed = new Map();
+  for (const site of nodeSide.unreadable) {
+    const file = site.slice(0, site.lastIndexOf(':'));
+    observedComputed.set(file, (observedComputed.get(file) ?? 0) + 1);
+  }
+
+  const unlisted = nodeSide.unreadable.filter(
     (site) => !ACCOUNTED_COMPUTED.has(site.slice(0, site.lastIndexOf(':'))),
   );
   check(
-    'every computed specifier in the real tree is individually accounted for',
-    unaccounted.length === 0,
-    `${unaccounted.join(', ')} load(s) a module through a specifier this scan cannot read, and ` +
-      `is not in ACCOUNTED_COMPUTED. A computed specifier is not a violation — it is a site ` +
-      `where the rule cannot answer, so someone has to. Read it, and either add it with a ` +
-      `reason or make the specifier a literal. Currently accounted: ` +
+    'every file with a computed specifier is listed in ACCOUNTED_COMPUTED',
+    unlisted.length === 0,
+    `${unlisted.join(', ')} load(s) a module through a specifier this scan cannot read, in a ` +
+      `file that is not listed. A computed specifier is not a violation — it is a site where ` +
+      `the rule cannot answer, so someone has to. Read it, then add the file with a reason and ` +
+      `a site count, or make the specifier a literal. Listed: ` +
       `${[...ACCOUNTED_COMPUTED.keys()].join(', ')}.`,
+  );
+
+  const miscounted = [...ACCOUNTED_COMPUTED]
+    .map(([file, entry]) => {
+      const actual = observedComputed.get(file) ?? 0;
+      if (actual === entry.sites) return undefined;
+      return actual > entry.sites
+        ? `${file}: declared ${entry.sites}, found ${actual} — a NEW computed load in an ` +
+            `already-listed file. The recorded reason covers a different call: "${entry.reason}"`
+        : `${file}: declared ${entry.sites}, found ${actual} — STALE. ${
+            actual === 0
+              ? 'No computed specifier remains here, so the entry now pre-authorises whatever ' +
+                'lands in this file next. Delete it.'
+              : 'Lower the count in the same commit that removed the site.'
+          }`;
+    })
+    .filter((line) => line !== undefined);
+  check(
+    'every listed entry matches its live site count, in BOTH directions',
+    miscounted.length === 0,
+    `${miscounted.join('\n      ')}\n      A file-keyed list with no count is standing amnesty: ` +
+      `a second computed load inside a listed file changes nothing here, so it reaches no diff ` +
+      `— which is precisely why .gitleaksignore is closed in this repository.`,
   );
 
   const fixture = await mkdtemp(join(tmpdir(), 'monstera-loadshapes-'));
