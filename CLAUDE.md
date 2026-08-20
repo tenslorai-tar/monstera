@@ -564,6 +564,32 @@ evidence has since changed. An ADR is corrected by a **dated correction
 section**, never by editing it to look right — what was believed at the time is
 part of the record.
 
+**Ask it of the changed function's own comment first, and ask it precisely:
+when a commit removes a behaviour, does that comment still assert the behaviour
+EARLIER IN ITS OWN TEXT?** This is where the answer has hidden twice, and it is
+checkable in the diff you are already reading.
+
+The shape is always the same, and it is not carelessness — it is what writing a
+good explanation does to you. The author adds a new section saying what changed
+and why, and leaves the original paragraph standing. The stale half then sits in
+the position a reader treats as **the contract** — the "what this function does"
+paragraph — while the correction lives in a later section a skimmer never
+reaches. And the person who reads that contract is precisely the one deciding
+whether the removed behaviour may come back.
+
+Both occurrences were inside the range being audited, in the file the range's
+headline change rewrote, and item 7 passed over both:
+
+- `publish` said the swap was decided by "a destination that runs and reports
+  the pinned version" **eighteen lines above** the new section explaining that
+  it no longer spawns the destination at all — and cannot, since the parameter
+  is gone.
+- the same comment excused a surviving quarantine directory as one "the next run
+  cleans up", when no run had ever cleaned one up.
+
+A sentence that is half true survives hardest: `--force` still meant what that
+first sentence said it meant, so the clause beside it read as current.
+
 ## Commands
 
 ```bash

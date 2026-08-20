@@ -318,9 +318,19 @@ export async function sweepAbandonedQuarantines(versionDirectory) {
  * So the published path is only ever changed by a rename, never by a delete: an
  * occupied destination is moved aside and the staged copy renamed in, so the
  * path holds a working tool at every instant. Whether to swap at all is then a
- * measurement — a destination that runs and reports the pinned version is kept —
- * except when the caller explicitly asked to replace it, which is the one thing
- * `--force` still means.
+ * measurement **of the destination's CONTENT, and of nothing else** — the rule
+ * and its reason are below, under "What decides the swap". The one exception is
+ * a caller that explicitly asked to replace it, which is all `--force` still
+ * means.
+ *
+ * That sentence used to end differently: it said the measurement was "a
+ * destination that runs and reports the pinned version". It stopped being true
+ * when the spawn was removed, and it survived the audit of the very range that
+ * removed it. The new section below explained the change, while the paragraph a
+ * reader treats as the contract went on stating the old rule eighteen lines
+ * above it — and someone deciding what this function may ask reads the contract,
+ * not the correction. **A removed behaviour has to leave the FIRST place the
+ * function describes itself, not merely be answered in a later one.**
  *
  * The quarantined copy is deleted afterwards, and failing to delete it is not
  * fatal — but the reason given for that used to be false. It said "a locked

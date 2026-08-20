@@ -166,6 +166,23 @@ function watermarkAt(root, ref) {
  * what it does rather than by anything it says: the staged watermark names a
  * different sha from the committed one.
  *
+ * ## Why that is not an escape hatch
+ *
+ * It looks like one. Any staged change to the watermark earns the exemption, so
+ * a bogus advance would buy a commit through this gate — and nothing here
+ * checks that an audit was performed.
+ *
+ * Nothing here has to. `check:docs` requires the watermark's sha to appear in
+ * `docs/JOURNAL.md`, so a watermark advanced without a record turns the board
+ * red on the next run. The cheat costs one commit and buys nothing: it does not
+ * clear the finding, it converts a blocked commit into a red build with the
+ * cheater's name on it.
+ *
+ * **The coupling is what makes the exemption safe**, which means the two gates
+ * are one mechanism in two places rather than two independent checks. Weakening
+ * either — dropping the journal requirement, or widening this to any watermark
+ * touch — re-opens the hatch that neither has on its own.
+ *
  * @param {{ root?: string }} [options]
  * @returns {{
  *   watermark: string,

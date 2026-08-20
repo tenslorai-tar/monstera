@@ -782,6 +782,32 @@ multiplying a known cost to chase a maybe is the wrong trade.
   caches it. Second instance of a check depending on a live third-party fetch,
   after `check:advisories` and the OSV query.
 
+> ## Correction — 2026-08-20
+>
+> **Item 7 was reported clean for `scripts/provision/gitleaks.mjs` and was not.**
+> `publish`'s doc comment states the rule `9303bb5` removed, and states it
+> *first*: "a destination that runs and reports the pinned version is kept",
+> eighteen lines above the new section explaining that the function no longer
+> spawns the destination at all and cannot, because the parameter is gone. That
+> commit is inside the audited range, and it is the range's headline change.
+>
+> Two occurrences now, both in this file and both inside their own audit range —
+> this one, and the quarantine comment that excused a leftover with a cleanup
+> that never existed. The mechanism is the same and it is not carelessness: a
+> fix that removes a behaviour gets a new section explaining the change, and the
+> original paragraph stays. The stale half then occupies the position a reader
+> treats as the contract, and the correction sits in a section a skimmer never
+> reaches — while the reader of that contract is exactly the person deciding
+> whether the removed behaviour may return.
+>
+> A half-true sentence survives hardest. `--force` still meant what that
+> sentence said it meant, so the false clause beside it read as current.
+>
+> Corrected in the comment, and item 7 in `CLAUDE.md` now carries the specific
+> question rather than the general one: **when a commit removes a behaviour,
+> does the changed function's own comment still assert it earlier in its own
+> text?** That is answerable from the diff already open.
+
 ---
 
 ## 2026-08-19 — Stage audit: `f144768..81b9b2b`
