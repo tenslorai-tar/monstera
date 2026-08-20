@@ -417,9 +417,12 @@ const REGISTER_PATH = 'docs/security/engine-advisories.json';
  *
  * `brokenReachabilityControls` proves each path glob resolves. It says nothing
  * about the symbol searched for inside it. Misspell `utilityProcess` to
- * `utilityProcesss` and this whole check exits **0**, printing the same
+ * `utilityProcesss` and this whole check exited **0**, printing the same
  * `18 symbol(s) checked` — because a count of declarations is not a count of
- * findings. Invariant 25's containment verdict would then read green forever,
+ * findings. (Past tense, and the figure is what was measured the day T-1 was
+ * found. The register has since gained a symbol and the walk reports 19; a
+ * reader comparing 18 against a live run should not conclude the account is
+ * wrong.) Invariant 25's containment verdict would then read green forever,
  * and nothing anywhere would say otherwise. That is finding T-1, and it is this
  * file's own stated failure mode occurring inside it: the comment on
  * `brokenReachabilityControls` names *"a symbol misspelt in the register"* as a
@@ -462,13 +465,44 @@ const REGISTER_PATH = 'docs/security/engine-advisories.json';
  * list can stop being hand-picked, because it can then be derived from
  * Electron's own API surface. One condition, three consequences.
  *
- * ## What this still does not do
+ * **That day was 2026-08-20 and all three happened.** The paragraph above is
+ * kept in the future tense it was written in, because it is a prediction the
+ * register made and met; everything below describes what is now in place.
  *
- * It checks spelling, not **completeness**. `utilityProcess` and
- * `MessageChannelMain` are two hand-picked names for "Electron spawns a
- * document-parsing process", and a correctly spelt list can still be short.
- * Only derivation fixes that, and derivation needs the same dependency the
- * condition above watches for.
+ * ## Completeness, and where it lives
+ *
+ * This function checks **spelling**. Completeness is checked too, by a separate
+ * pass further down this file: it derives Electron's spawn surface BY TYPE from
+ * `electron.d.ts` — every declaration whose type is the utility-process factory
+ * — and fails when the register's `symbols` does not name one, printing
+ * `does not name: …`. It proved the hand-picked list short on its first run, and
+ * `symbols` now names three: `utilityProcess`, `UtilityProcess` and
+ * `MessageChannelMain`.
+ *
+ * **This section used to say the opposite, and that is finding BB-2.** It read:
+ * *"It checks spelling, not completeness. `utilityProcess` and
+ * `MessageChannelMain` are two hand-picked names … Only derivation fixes that,
+ * and derivation needs the same dependency the condition above watches for."*
+ * All three halves moved when Electron landed — the derivation exists, the pair
+ * became a derived triple, and the dependency arrived — and the paragraph stood
+ * for a range under the heading *"what this still does not do"*, which is where
+ * a reader looks to find out what is **not** covered.
+ *
+ * The mechanism that made it survive is worth more than the correction. The
+ * completeness pass is a SIBLING of this function rather than part of it, so
+ * *"it checks spelling, not completeness"* was literally true **of this
+ * function** — and that is the clause a reader verifies. It then vouched for the
+ * two beside it that were simply false. Item 7's compound-claim shape, and the
+ * only instance so far where the surviving clause is true by SCOPE rather than
+ * by luck.
+ *
+ * It is also the only one of the six that **authorises** rather than
+ * misdescribes. `publish`, the lockfile header, `guards.yml:220` and
+ * `passRoster` all told a reader something untrue about behaviour. This one told
+ * a reader that a mechanism was absent when it exists, and the action it invites
+ * is to build a second one — a **B3 violation with a comment vouching for it**,
+ * one range after B3a became law. Hence the pointer above naming where the check
+ * lives, rather than a bare deletion of the stale claim.
  *
  * ## "COULD NOT DERIVE" IS NOT "WAS NOT DERIVED", and this rule broke on that
  *
