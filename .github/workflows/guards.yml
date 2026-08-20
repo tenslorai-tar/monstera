@@ -207,11 +207,19 @@ jobs:
       # a known-vulnerable parser for a year. This fails when an advisory has no
       # recorded verdict; it does not invent one, because the available data is
       # keyed to distribution packages whose versions do not map onto upstream.
-      # DELIBERATELY WITHOUT --require-derivation. This job does not provision
-      # MuPDF, so the OCR door derivation cannot run here and its symbols report
-      # as unverifiable — counted apart, printed, never folded into verified.
-      # The shim job in ci.yml has the source and passes the flag, so the
-      # derivation is mandatory exactly where something can look.
+      # DELIBERATELY WITHOUT --require-derivation, and there are now TWO
+      # derivations this applies to, not one. This job provisions no MuPDF, so
+      # the OCR door derivation cannot run — and it runs no `npm ci` at all, so
+      # the Electron surface derivation cannot run either: `node_modules` is
+      # absent, which is this job's normal state rather than a fault. Both report
+      # their symbols as unverifiable — counted apart, printed, never folded into
+      # verified.
+      #
+      # The shim job in ci.yml has the MuPDF source AND installs, so it passes
+      # the flag and both derivations are mandatory exactly where something can
+      # look. That job is also the only one that runs proof:electronsurface,
+      # because parsing electron.d.ts needs the TypeScript compiler and this job
+      # has no node_modules to load it from.
       #
       # Adding the flag here would turn every Guards run red on both platforms,
       # which is what happened for two days when the witness rule treated "could

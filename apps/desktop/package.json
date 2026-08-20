@@ -15,5 +15,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "clean": "node ../../scripts/clean.mjs dist"
+  },
+  "devDependencies": {
+    "electron": "43.4.1"
   }
 }

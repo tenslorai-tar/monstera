@@ -122,34 +122,10 @@
       ],
       "symbols": [
         "utilityProcess",
+        "UtilityProcess",
         "MessageChannelMain"
       ],
-      "witness": {
-        "utilityProcess": {
-          "in": null,
-          "acceptedWhile": {
-            "absent": "electron",
-            "from": [
-              "package.json",
-              "packages/*/package.json",
-              "apps/*/package.json"
-            ]
-          },
-          "why": "No witness exists for this symbol anywhere in the repository, because Electron is not a dependency — so there is nothing to find it in, and its spelling cannot be checked. That is recorded as UNVERIFIABLE and printed on every run, never folded into the verified count: 'could not look' must not read as 'looked and found nothing', which is the same distinction target-absent draws from sole-writer. The null is NOT an author's assertion. It is accepted only while the stated condition resolves — electron named in no package.json — and the register checks that itself on every run. The day Electron lands, the condition fails, the null stops being accepted, and this build goes red saying so. That is also the day the fix becomes possible: a witness appears, and the symbol list stops being hand-picked because it can then be DERIVED from Electron's own API surface, the way the OCR doors are derived from the engine source. One condition, three consequences."
-        },
-        "MessageChannelMain": {
-          "in": null,
-          "acceptedWhile": {
-            "absent": "electron",
-            "from": [
-              "package.json",
-              "packages/*/package.json",
-              "apps/*/package.json"
-            ]
-          },
-          "why": "Same condition and same three consequences as utilityProcess. Stated per symbol rather than per verdict because the unit that can be misspelt is the symbol, and a verdict-level condition would let a second symbol join an existing null without anyone restating why it cannot be witnessed."
-        }
-      }
+      "symbolsWhy": "NO witness entry, deliberately: these are DERIVED from electron.d.ts by the TypeScript compiler (scripts/security/electronSurface.mjs), and a derivation is stronger than a witness — the same reason the OCR doors carry none. The three consequences the old in: null predicted all landed together on 2026-08-20: electron became a dependency, the condition failed, and the list stopped being hand-picked. THE DERIVATION IMMEDIATELY PROVED THE LIST SHORT. It reports the spawn surface by TYPE — every declaration typed as the utility-process factory — and that is utilityProcess AND UtilityProcess. The class was missing from a pair picked by hand, exactly as this verdict's own why warned: a correctly spelt list can still be short. WHY NOT A WITNESS, since one is now possible: the witness shape digests a file, and a digest of a 1.1 MB .d.ts says the file changed rather than that the symbol is still declared in it — finding T-1, which cost a verdict that stayed green with a misspelt symbol. WHY A PARSE AND NOT A SEARCH: electron.d.ts is 56% comments, and on electron@43.4.1 utilityProcess occurs once in prose and MessagePortMain ten times. A text search would witness a symbol that had been REMOVED, which is worse than missing one, and is the reassuring answer. WHAT IT WITNESSES: declarations, and nothing else. Every workflow installs with --ignore-scripts, which fetches electron.d.ts at 1,125,720 bytes and NO BINARY — no dist/, nothing spawnable. Nothing here may be read as evidence that an Electron process can start. MessageChannelMain remains witnessed as a declaration but is NOT part of the derived spawn surface: it is the messaging trigger, picked by hand, and deriving it would need a name pattern rather than a type — a hand-picked rule wearing a derivation's clothes. That limit is stated rather than papered over."
     },
     "renderer-facing-errors-carry-no-text": {
       "guards": [

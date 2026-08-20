@@ -72,6 +72,7 @@ import { formatError } from '../lib/reportError.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
 import { declaredNativeComponents } from '../release/generateNotice.mjs';
 import { deriveOcrDoors } from './ocrDoors.mjs';
+import { readElectronSurface } from './electronSurface.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -491,11 +492,18 @@ const REGISTER_PATH = 'docs/security/engine-advisories.json';
  * could look, mandatory where something can.
  *
  * @param {Baseline} baseline
- * @param {{ verified: readonly string[], checked: boolean, claim: string }} derivation
+ * @param {ReadonlyArray<{
+ *   verified: readonly string[],
+ *   checked: boolean,
+ *   claim: string,
+ *   reason: string,
+ * }>} derivations One per verdict that declares its symbols derived rather than
+ *   witnessed. `reason` is printed when a derivation could not run, so the
+ *   unverifiable line says WHY rather than naming one derivation's condition for
+ *   all of them.
  * @returns {{ failures: string[], verified: number, unverifiable: string[] }}
  */
-function unwitnessedSymbols(baseline, derivation) {
-  const derived = derivation.verified;
+function unwitnessedSymbols(baseline, derivations) {
   /** @type {string[]} */
   const failures = [];
   /** @type {string[]} */
@@ -503,25 +511,35 @@ function unwitnessedSymbols(baseline, derivation) {
   let verified = 0;
 
   for (const [name, claim] of Object.entries(baseline.reachability)) {
+    // A LIST, because there are now two derivations with different provisioning
+    // conditions: the OCR doors need the MuPDF source, the Electron surface needs
+    // node_modules. A single derivation slot would have forced the second to
+    // arrive as a witness, and a witness for these symbols is a 1.1 MB file
+    // digest that says the file changed rather than that the symbol is declared
+    // — finding T-1 exactly.
+    const derivation = derivations.find((entry) => entry.claim === name);
+
     for (const symbol of claim.symbols ?? [name]) {
-      if (derived.includes(symbol)) {
+      // SCOPED TO THIS VERDICT'S OWN DERIVATION. Asking whether ANY derivation
+      // verified the symbol lets one verdict's evidence stand in for another's —
+      // an Electron declaration confirming an OCR door because the two sets
+      // happen to share a name. Nothing collides today; the point is that the
+      // collision would report as a clean verification.
+      if (derivation?.verified.includes(symbol) === true) {
         verified += 1;
         continue;
       }
 
       const witness = claim.witness?.[symbol];
       if (witness === undefined) {
-        if (!derivation.checked && name === derivation.claim) {
+        if (derivation !== undefined && !derivation.checked) {
           // The derivation could not RUN. That is not the same as its having
           // run and confirmed nothing, and collapsing the two is the exact
           // failure this rule exists to prevent — arriving inside the rule.
           // These symbols are declared as derived, so they carry no witness by
           // design; reporting them as unwitnessed would be a true-sounding
           // sentence about the wrong thing.
-          unverifiable.push(
-            `${name}: ${symbol} — the engine source is not provisioned, so the derivation ` +
-              `could not run`,
-          );
+          unverifiable.push(`${name}: ${symbol} — ${derivation.reason}`);
           continue;
         }
         // A symbol the engine source did not confirm and the register does not
@@ -861,6 +879,22 @@ async function main() {
   // unprovisioned source is a failure exactly where something could have looked.
   // Without it, "unverifiable everywhere" would be a stable, quiet state — which
   // is what the unverifiable bucket exists to make visible, not to permit.
+  // The Electron API surface, derived from electron.d.ts by the TypeScript
+  // compiler. Read here so both derivations are resolved before any verdict is
+  // reported, and so --require-derivation can speak for both.
+  const electron = await readElectronSurface({ root: ROOT });
+
+  if (requireDerivation && !electron.checked) {
+    process.stderr.write(
+      `\nThe Electron surface derivation could not run: ${electron.reason}.\n\n` +
+        `This invocation passed --require-derivation, which is used where node_modules IS ` +
+        `expected — so "could not look" is a failure here rather than a count. Elsewhere the ` +
+        `same absence reports invariant 25's symbols as unverifiable.\n\n` +
+        `  Run:  npm ci --ignore-scripts\n\n`,
+    );
+    return 1;
+  }
+
   if (requireDerivation && !drift.checked) {
     process.stderr.write(
       `\nThe OCR door derivation could not run: the MuPDF source is not provisioned.\n\n` +
@@ -925,11 +959,24 @@ async function main() {
   // check, for the third time and the same reason: an instrument that cannot
   // find what it is looking for reports "no references" for every symbol, and
   // that is the answer every verdict below wants to hear.
-  const witnesses = unwitnessedSymbols(baseline, {
-    verified: drift.verified,
-    checked: drift.checked,
-    claim: 'ocr',
-  });
+  const witnesses = unwitnessedSymbols(baseline, [
+    {
+      verified: drift.verified,
+      checked: drift.checked,
+      claim: 'ocr',
+      reason: 'the engine source is not provisioned, so the derivation could not run',
+    },
+    {
+      // DECLARATIONS, parsed. Not a file digest: a digest of electron.d.ts says
+      // the file changed, not that the symbol is still declared in it, and the
+      // file is 56% comments so a text search would witness a symbol that had
+      // been REMOVED. See scripts/security/electronSurface.mjs.
+      verified: electron.checked ? electron.declared : [],
+      checked: electron.checked,
+      claim: 'engine-host-containment',
+      reason: electron.reason,
+    },
+  ]);
   if (witnesses.failures.length > 0) {
     process.stderr.write(
       `\n${witnesses.failures.length} reachability symbol(s) cannot be shown to be findable:\n\n` +
@@ -939,6 +986,36 @@ async function main() {
         `produces "no references" on every run, forever, which is the verdict's passing answer.\n\n`,
     );
     return 1;
+  }
+
+  // Completeness, which is what a DERIVATION buys over a witness. The register's
+  // symbol list was hand-picked and its own `why` said so — "a correctly spelt
+  // list can still be short". Every name Electron declares as the utility-process
+  // factory must be on it, so a new spawning API turns this red instead of
+  // silently escaping the invariant.
+  //
+  // AFTER the witness check, not before, and the ordering is the same one
+  // `ocrDoorDrift` follows: "your list is wrong" is reported before "your list is
+  // short". A misspelt symbol is ALSO an uncovered one, so running this first
+  // answered a spelling mistake with a coverage message — the less specific of
+  // the two, for a defect the other check names exactly.
+  if (electron.checked) {
+    const claim = baseline.reachability['engine-host-containment'];
+    const named = new Set(claim?.symbols ?? []);
+    const uncovered = electron.spawnSurface.filter((symbol) => !named.has(symbol));
+    if (uncovered.length > 0) {
+      process.stderr.write(
+        `\nElectron declares process-spawning entry point(s) that invariant 25's symbol list ` +
+          `does not name: ${uncovered.join(', ')}\n\n` +
+          `Derived from electron ${electron.version} by TYPE — every declaration whose type is ` +
+          `the utility-process factory — rather than by name, so this grows when Electron adds ` +
+          `one. The list was hand-picked and the register's own why predicted this: a correctly ` +
+          `spelt list can still be short.\n\n` +
+          `Add them to symbols[] in ${BASELINE}, or say in why[] which is not an entry point ` +
+          `and how that was established.\n\n`,
+      );
+      return 1;
+    }
   }
 
   // Two numbers, never one. A single count covering both is how T-1 stayed

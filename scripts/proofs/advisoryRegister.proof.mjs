@@ -366,11 +366,25 @@ try {
   // -------------------------------------------------------------------------
   // `in: null` is a DERIVED state, not a declared one. These two cases are the
   // whole difference between it and a config flag.
+  //
+  // SYNTHETIC FIXTURES, and they had to become synthetic. They used to mutate
+  // `engine-host-containment`, which was the register's only live `in: null` —
+  // and on 2026-08-20 that verdict's nulls expired exactly as designed, Electron
+  // became a dependency, and its symbols moved to a derivation. Three cases then
+  // crashed on `witness` being undefined.
+  //
+  // That is finding V-1's shape: a control whose subject can disappear is a
+  // control that stops testing without failing. The mechanism it guards is still
+  // in the code and still reachable by any future verdict, so the fixture is now
+  // built rather than borrowed.
   // -------------------------------------------------------------------------
   const bareNull = runAgainst(
     'bare-null',
     register((value) => {
-      delete value.reachability['engine-host-containment'].witness['utilityProcess'].acceptedWhile;
+      value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
+        in: null,
+        why: 'a null with no condition at all',
+      };
     }),
   );
   check(
@@ -383,9 +397,14 @@ try {
   const staleNull = runAgainst(
     'stale-null',
     register((value) => {
-      value.reachability['engine-host-containment'].witness[
-        'utilityProcess'
-      ].acceptedWhile.absent = 'devDependencies';
+      // `typescript` IS named in package.json, so this condition is false the
+      // moment it is resolved — which is exactly what happened to the real one
+      // when Electron landed.
+      value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
+        in: null,
+        acceptedWhile: { absent: 'typescript', from: ['package.json'] },
+        why: 'a condition that does not hold',
+      };
     }),
   );
   check(
@@ -394,6 +413,29 @@ try {
     'The null is accepted only while nothing could witness the symbol. When that stops being ' +
       'true the exemption expires by itself — the day Electron becomes a dependency, with no ' +
       `second mechanism needed.\n${staleNull.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // COMPLETENESS, which is what a derivation buys over a witness. A witness can
+  // only say "the name you wrote is real"; it cannot say the list is whole. The
+  // register's own why predicted this — "a correctly spelt list can still be
+  // short" — and the derivation proved it on its first run, finding
+  // `UtilityProcess` missing from a pair picked by hand.
+  // -------------------------------------------------------------------------
+  const shortList = runAgainst(
+    'short-symbol-list',
+    register((value) => {
+      value.reachability['engine-host-containment'].symbols = value.reachability[
+        'engine-host-containment'
+      ].symbols.filter((/** @type {string} */ symbol) => symbol !== 'utilityProcess');
+    }),
+  );
+  check(
+    'a symbol list SHORT of Electron’s spawn surface FAILS',
+    !shortList.ok && /does not name: utilityProcess/.test(shortList.output),
+    'The spawn surface is derived from electron.d.ts by TYPE, so a name dropped from the ' +
+      'register — or an entry point Electron adds later — must turn this red. A hand-picked ' +
+      `list that nothing checks is the state invariant 25 was in until Electron landed.\n${shortList.output}`,
   );
 
   // -------------------------------------------------------------------------
@@ -421,7 +463,12 @@ try {
     register((value) => {
       value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
         in: null,
-        acceptedWhile: { absent: 'electron', from: ['package.json'] },
+        // A condition that genuinely HOLDS, so this symbol becomes unverifiable
+        // rather than a failure. It used to say `absent: 'electron'`, which was
+        // true until 2026-08-20 and is now false — the fixture would have moved
+        // the counts by zero and reported a failure instead, which is the same
+        // silent-expiry hazard the cases above were rebuilt for.
+        acceptedWhile: { absent: 'monstera-not-a-dependency', from: ['package.json'] },
         why: 'resolution fixture',
       };
     }),

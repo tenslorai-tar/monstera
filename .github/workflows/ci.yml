@@ -333,6 +333,16 @@ jobs:
       - name: Prove the OCR door derivation can tell a call path from none
         run: npm run proof:ocrdoors
 
+      # electron.d.ts is 56% comments, and a text search for a symbol matches
+      # prose as readily as a declaration — so it would witness a symbol that had
+      # been REMOVED, which is the reassuring answer and is what invariant 25
+      # rests on. Measured on 43.4.1: utilityProcess occurs once in prose,
+      # MessagePortMain ten times. This proves the derivation parses rather than
+      # searches, that it refuses an empty result in four different ways, and
+      # that its spawn surface is derived from TYPES rather than from names.
+      - name: Prove the Electron surface is parsed, not searched
+        run: npm run proof:electronsurface
+
       # The register runs in Guards too, and there it CANNOT derive the door set:
       # that job does not provision MuPDF, so the doors report as unverifiable
       # and are counted apart rather than failing. This is the other half of that
