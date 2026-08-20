@@ -644,6 +644,177 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-20 — Stage audit: `6827c1d..598b50e`
+
+**Audited through 598b50e.** 9 commits, 16 files, **2 proofs added, 2 modified**,
+3 new instrument files. Five open findings closed (BB-1 to BB-5), the board
+instrument given a file and a proof, item 4b given a sixth axis — and, in the
+last three commits, **the first renderer-side code in this repository**.
+
+### The range that changed what the ranges are for
+
+The reviewer's observation is the most useful thing in this entry, and it is not
+a defect: **the audit's input had become its own output.** BB-6 is a finding
+about a roster about proofs. AA-1 is a finding about the report that scopes
+audits. Every one of them was real, found by a real mechanism — and the audit is
+range-scoped precisely because defects arrive inside the fixes for the previous
+defect, which reliably produces a range consisting of the previous range's
+instrument fixes, which produces instrument findings. Nothing in the process
+measures whether the machinery still buys more than it costs, and the mechanism
+has no stopping condition of its own. Only something outside the loop can notice.
+
+Measured, and the cost was already on the board: **seven Stage 0 rows are
+renderer-side and all seven read `—`.** `packages/ui/src/index.ts` is
+`export {};`. The CSP invariant is deferred with its reason given as *"once a
+renderer exists to read it from"* — a security invariant blocked on the missing
+half. The exit criterion is *open → render → rotatePages + undo → save → one
+registered dialog, setting and shortcut*, and `render` is the only verb in it
+with nothing behind it. There is no pending ADR and no owner decision. The reason
+was that the tooling queue kept producing work.
+
+The audit was also deliberately **deferred by one commit** so it would land on a
+range containing feature work rather than on a pure tooling range — auditing at
+commit 8 would have fed the loop one more time.
+
+### CC-1 — the board instrument called a cancelled run GREEN
+
+`scripts/ci/board.mjs`, found by auditing the range that added it, one commit
+later. Greenness was decided by substring-matching the instrument's own
+human-readable summary:
+
+```js
+const green = reason.includes('=success') && !reason.includes('=failure');
+```
+
+Measured on the real strings rather than reasoned about:
+
+```
+GREEN      CI=cancelled, Guards=success    <- 9292d1f's exact state
+GREEN      CI=timed_out, Guards=success
+GREEN      CI=skipped,   Guards=success
+NOT GREEN  CI=failure,   Guards=success
+```
+
+`9292d1f` is the commit whose CI run was cancelled by the next push. **It is the
+reason the module exists, and the module would have called it green.**
+
+Two things were wrong and only one was the predicate. Greenness was read off a
+*rendering* of the data rather than the data, so every conclusion but the literal
+`failure` counted as harmless. And it lived in the **fetch shell, which has no
+proof** — the split was made so the decider could be proven without a network,
+and then the one piece of judgement in the whole instrument went on the untested
+side. **A split that leaves logic on the untested side has not been made.**
+
+**Closed in `598b50e`:** `green` is derived in `boardStatus.mjs` as equality
+against one conclusion, and is false for every non-complete verdict including
+`blind` and `stale` — an answer nobody could read is not a passing one. An
+allowlist of one cannot acquire a hole when GitHub adds a conclusion.
+
+CI would not have caught it and still would not: `board.mjs` is a development
+instrument CI never runs. What changed is that the judgement now lives where CI
+does prove it. **Moving logic out of the unproven shell is the fix; adding a test
+for the shell would have been the workaround.**
+
+### CC-2 — a declared channel with no handler, in the file that forbids exactly that
+
+`packages/contract/src/channels.ts` states: *"A channel is added here only when a
+real handler for it exists… a declared channel with nothing behind it is a call
+that hangs, which is worse than a call that is absent."*
+
+**False for `app.info`, and since it was declared.** Its only implementations are
+test fixtures and `contract.proof.mjs`; `apps/desktop` has none, and no
+`ContractHandlers` map is registered with `ipcMain` at all. `2b9153c` gave it a
+shim-side handler, which does not discharge the claim.
+
+Found by asking item 7 of the shim's own diff. **Open**, and the next unit — the
+assembled handler map plus the preload bridge — is what closes it.
+
+### CC-3 — the digest describes a live override in the past tense
+
+`CLAUDE.md`'s item 1 gives `MONSTERA_GITLEAKS` as its example of *"an override or
+escape hatch standing in for missing coverage"*, in the past tense: *"existed so
+contributors on unpinned platforms had a route; the fix was to pin all ten."* A
+reader concludes it was removed. It is live at `gitleaks.mjs:464` and takes
+precedence over the provisioned binary.
+
+**And the finding is narrower than it first looked, which is why it is recorded
+with the correction rather than as written.** The mechanism is sound: both
+callers — `preCommit.mjs` and `scanSecrets.mjs` — run `verifyScannerCapability`
+immediately after resolution, checked rather than taken from the comment that
+says so, and the canary makes the binary find real secret shapes and match the
+pinned version. So this is a documentation mismatch, not an open door.
+
+Low severity, and it is in the **checklist an auditor reads to decide what to
+look for**, which is the only reason it is worth a finding at all. **Open**: it
+needs an owner ruling on whether the override should go, not a unilateral
+removal of a route a contributor may use.
+
+### Stated limits, not findings
+
+- **The shim's outbound structured clone covers nothing a test can see.**
+  `wrapHandler` returns `parsedResult.data`, an object zod's parse just built, so
+  results are fresh either way; removing the clone reddens no case. It stays as
+  wire fidelity, with the reason written as an **expiry**: the moment a channel
+  declares a result schema that can return its input by reference, zod stops
+  supplying the property and that line becomes the only thing supplying it.
+- **A test of mine had the wrong attribution and is kept with it corrected.** The
+  copy-independence case was written to cover that clone and passes without it.
+  It guards a real property; it now says the property comes from the boundary's
+  schema parse. A case that passes for a different reason than its name claims is
+  the vacuous shape with a green check on it.
+
+### A new place for item 4's direction rule
+
+CC-1's own cases produced it. Restoring the old predicate reddened only **one** of
+four new cases, because the second paired `timed_out` with `skipped` — no
+`=success` anywhere, so the **old** predicate answers that fixture correctly, for
+the wrong reason.
+
+Item 4 says mutate towards disagreement, because agreement is also what absence
+produces. The sibling: **do not build a fixture the bug also handles correctly.**
+Same rule, applied to the fixture rather than to the mutation. One instance, so
+it is recorded here rather than written into `CLAUDE.md` — an axis earns a place
+in the law when it recurs, and this one has not yet.
+
+### Executed, not asserted
+
+- the green predicate, on the six real conclusion strings — the table above;
+- `proof:board` 15 cases, mutation red on **two** after the fixture correction;
+- `node scripts/ci/board.mjs 2b9153c --once` → GREEN live; `9292d1f` → BLIND,
+  correctly, because `per_page=8` no longer reaches that far back;
+- both worlds on `proof:advisories`, 29 and 28 + 1 skip, after the BB-1 and BB-5
+  changes;
+- the shim's inbound clone removed → the non-serialisable-param case goes green;
+- `childEnvironment`'s siblings: the other two `spawnSync` sites in
+  `preCommit.proof.mjs` are `git` calls, which do not consult `npm_execpath`;
+- twelve proofs spawn a Node script with `process.execPath`; the six scripts that
+  read `process.env[...]` read `PATH`, `PATHEXT`, `SystemRoot`,
+  `ProgramFiles(x86)`, `CL` and `MONSTERA_GITLEAKS`. Only the last is not a
+  variable the real caller also has, and it is CC-3;
+- the canary running after `resolveGitleaks` in both callers, read rather than
+  taken from the comment asserting it.
+
+### Status
+
+**CC-1 closed** in the recording range. **CC-2 and CC-3 open.** From earlier
+ranges: AA-1's granularity half, AA-3, BB-6 (**ruled not-now**, with the shape
+recorded — convert-on-touch gated on the staged set, because a declared count's
+value scales with how often a proof is edited and universal adoption would spend
+31 files of churn on files carrying no risk) and Y-3, now at 17 handlers.
+
+**Y-1 is fully closed**, verified this range: all 32 proofs that print a total
+derive it — 30 from `passed.length`, and `contract.proof.mjs` and
+`guardFiles.proof.mjs` from `CASES.length`, which counts *declared* cases and is
+stronger. Limit stated: a total assembled from a named constant would evade both
+patterns used.
+
+**Next is the skeleton, not the queue.** The assembled `ContractHandlers` map
+with `app.info`, registered with `ipcMain`, and the preload bridge — which closes
+CC-2 — then per-document stores, registries, design substrate, i18n, in the order
+the exit criterion needs them.
+
+---
+
 ## 2026-08-20 — Stage audit: `418bcea..6827c1d`
 
 **Audited through 6827c1d.** 9 commits, 23 files, **2 proofs added, 3 modified**,
