@@ -44,6 +44,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
+import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
 const CHECKER = join(ROOT, 'scripts', 'security', 'engineAdvisories.mjs');
@@ -51,25 +53,49 @@ const TRACKED = join(ROOT, 'docs', 'security', 'engine-advisories.json');
 
 /** @type {string[]} */
 const failures = [];
-/** @type {string[]} */
-const passed = [];
+
+/**
+ * The roster, with its case count declared (finding BB-1).
+ *
+ * This file used to hand-write all of this: a `passed` array, a `skipped` array
+ * added when the derivation gained two worlds, and a total derived from
+ * `passed.length`. Every part of that is `passRoster.mjs`'s job, including the
+ * `--` channel — a second copy written one file over from the module that owns
+ * it, which is **B3a**: the finding is the second opinion, not the wrong one.
+ *
+ * It carried no declared count, so a case that stopped running took its line and
+ * the total with it and nothing anywhere noticed — finding Z-4, in the proof
+ * that guards invariant 25.
+ *
+ * **TWENTY-NINE, and it is correct in both worlds, which is what made this one
+ * line rather than an argument.** With `node_modules/electron` present, 29 cases
+ * pass and none skip. With it hidden — the Guards job's normal state, since it
+ * runs no `npm ci` — 28 pass and the completeness case prints as a skip.
+ * `format` checks `passed + skipped`, so 29 + 0 and 28 + 1 both record 29.
+ * Measured both ways before this number was written down.
+ */
+const roster = createRoster(failures, { cases: 29 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
-  if (condition) passed.push(label);
-  else failures.push(`${label}\n      ${detail}`);
+  const mark = roster.mark();
+  if (!condition) failures.push(`${label}\n      ${detail}`);
+  roster.record(mark, label);
 }
 
 /**
- * Cases that could not run, printed as such.
+ * Records a case that could not run, printed as such.
  *
- * A skipped case reported as a pass is the defect `passRoster.mjs` exists for,
- * one file over: "found no problems" and "did not look" are the same output
- * otherwise.
+ * A skipped case reported as a pass is the defect `passRoster.mjs` exists for:
+ * "found no problems" and "did not look" are the same output otherwise. It
+ * counts toward the declared total, because a case that could not run is still a
+ * case this proof has — the thing that must never happen is it vanishing.
  *
- * @type {string[]}
+ * @param {string} label
  */
-const skipped = [];
+function skip(label) {
+  roster.record(roster.mark(), label, false);
+}
 
 /**
  * Whether the Electron surface derivation can run here.
@@ -473,7 +499,7 @@ try {
     // completeness check cannot run without electron.d.ts, so a case here would
     // be measuring its own absence. Reported rather than omitted — "did not
     // look" and "looked and found nothing" are the same output otherwise.
-    skipped.push(
+    skip(
       'a symbol list SHORT of Electron’s spawn surface FAILS — no node_modules, so the ' +
         'derivation that computes the spawn surface cannot run',
     );
@@ -591,11 +617,37 @@ try {
   rmSync(scratch, { recursive: true, force: true });
 }
 
-process.stdout.write(
-  `${passed.map((label) => `  ok  ${label}`).join('\n')}\n` +
-    skipped.map((label) => `  --  ${label}\n`).join('') +
-    (failures.length > 0
-      ? `\n${failures.length} case(s) FAILED:\n\n${failures.map((entry) => `  -  ${entry}`).join('\n\n')}\n\n`
-      : `\n${passed.length} advisory-register cases passed.\n`),
-);
-process.exitCode = failures.length > 0 ? 1 : 0;
+// `format` THROWS on a count mismatch — that is the seam Z-4 chose, because it
+// is the one call every roster user already makes on the success path. This file
+// had no top-level handler, so the throw escaped as a raw stack with the message
+// buried at line 5.
+//
+// This is the SEVENTEENTH hand-written handler, and finding Y-3 is precisely that
+// sixteen were closed by enumeration with nothing stopping the next one. Adding
+// it is the instance fix Y-3 warns about, and it is still right today: the
+// sibling proofs one directory over (`reportError.proof.mjs`,
+// `passRoster.proof.mjs`) already end this way, so the alternative is not "no
+// seventeenth handler" but "one file that prints stacks while its siblings print
+// diagnoses". Recorded rather than quietly done — the count Y-3 is about now
+// reads 17, which is an argument for the class fix, not against this one.
+// ONE writer for the exit code, and the first draft of this block had two. The
+// catch set `process.exitCode = 1` and the pre-existing final line — still
+// reading only `failures` — then overwrote it with 0. A roster mismatch printed
+// its diagnosis and exited SUCCESSFULLY, which is the display-only defect this
+// project bans, inside the guard against it.
+//
+// The mechanism is worth the sentence: a new failure path was added beside a
+// check that already existed, and the check did not cover the new path. Caught by
+// running the mutation rather than by reading the diff.
+let reportFailed = false;
+try {
+  process.stdout.write(
+    failures.length > 0
+      ? `${failures.length} case(s) FAILED:\n\n${failures.map((entry) => `  -  ${entry}`).join('\n\n')}\n\n`
+      : roster.format('advisory-register case'),
+  );
+} catch (error) {
+  process.stderr.write(`\n${formatError(error)}\n`);
+  reportFailed = true;
+}
+process.exitCode = failures.length > 0 || reportFailed ? 1 : 0;
