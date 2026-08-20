@@ -68,18 +68,42 @@ async function refusal(run) {
   }
 }
 
-// A minimal but REAL declaration file: the anchors, the sentinel in a comment,
-// and a utility-process factory. Cases below vary one thing at a time from this.
-const ANCHORS = `
+/**
+ * A minimal but REAL declaration file. Cases below vary one thing at a time.
+ *
+ * `utilityProcess` is declared as a namespaced `const` rather than a top-level
+ * class ON PURPOSE: it is an anchor, and it is the anchor whose SHAPE differs
+ * from the other four. A walk that handled classes and missed namespaced
+ * variable declarations would satisfy every other anchor.
+ *
+ * @param {string} spawnerType What `utilityProcess` is typed as. `'UtilityProcess'`
+ *   for the ordinary case; anything else to build a file with an anchor present
+ *   and no spawn surface, which is otherwise unreachable now that the anchor
+ *   guarantees the name exists.
+ * @returns {string}
+ */
+function anchors(spawnerType = 'UtilityProcess') {
+  return `
 declare class app {}
 declare class BrowserWindow {}
 declare class ipcMain {}
 declare class WebContents {}
+${spawnerType === 'UtilityProcess' ? 'declare class UtilityProcess {}' : ''}
+declare namespace Electron {
+  const utilityProcess: typeof ${spawnerType};
+}
 `;
+}
+
+// `ghostOnlyInProse` is the prose subject rather than `utilityProcess`, because
+// `utilityProcess` is now an anchor and a fixture that only mentions it in a
+// comment would be refused for the anchor's absence before reaching the
+// assertion. The property under test is unchanged: a name that exists only in
+// a comment must not be reported as declared.
 const SENTINEL_COMMENT = `
 /**
  * @deprecated Deprecated in favour of something else. This comment mentions
- * Deprecated and utilityProcess in PROSE and declares neither.
+ * Deprecated and ghostOnlyInProse in PROSE and declares neither.
  */
 `;
 
@@ -124,12 +148,12 @@ async function main() {
       const path = await fixture(
         scratch,
         'prose-only.d.ts',
-        `${ANCHORS}${SENTINEL_COMMENT}declare const somethingReal: typeof UtilityProcess;\ndeclare class UtilityProcess {}\n`,
+        `${anchors()}${SENTINEL_COMMENT}declare const somethingReal: typeof UtilityProcess;\n`,
       );
       const parsed = await parseElectronDeclarations({ path, describe: 'a prose fixture' });
 
-      // `utilityProcess` appears in the comment and is declared nowhere.
-      if (parsed.declared.includes('utilityProcess')) {
+      // `ghostOnlyInProse` appears in the comment and is declared nowhere.
+      if (parsed.declared.includes('ghostOnlyInProse')) {
         failures.push(
           `a symbol that appears ONLY in a doc comment was reported as declared. This is the ` +
             `defect the whole module exists to prevent, and its consequence is inverted from the ` +
@@ -154,7 +178,7 @@ async function main() {
       const path = await fixture(
         scratch,
         'by-type.d.ts',
-        `${ANCHORS}${SENTINEL_COMMENT}declare class UtilityProcess {}\ndeclare const spawnerWithAnUnrelatedName: typeof UtilityProcess;\ndeclare const notASpawner: typeof BrowserWindow;\n`,
+        `${anchors()}${SENTINEL_COMMENT}declare const spawnerWithAnUnrelatedName: typeof UtilityProcess;\ndeclare const notASpawner: typeof BrowserWindow;\n`,
       );
       const parsed = await parseElectronDeclarations({ path, describe: 'a type fixture' });
 
@@ -222,7 +246,7 @@ async function main() {
       const path = await fixture(
         scratch,
         'no-sentinel.d.ts',
-        `${ANCHORS}declare class UtilityProcess {}\ndeclare const utilityProcess: typeof UtilityProcess;\n`,
+        anchors(),
       );
       const message = await refusal(() =>
         parseElectronDeclarations({ path, describe: 'a sentinel-less fixture' }),
@@ -242,7 +266,11 @@ async function main() {
       const path = await fixture(
         scratch,
         'no-spawner.d.ts',
-        `${ANCHORS}${SENTINEL_COMMENT}declare class Something {}\n`,
+        // Anchors all present — `utilityProcess` included — but typed as
+        // something that is not the factory, so the spawn surface is empty. That
+        // combination is the only way to reach the spawn check now that the
+        // anchor guarantees the NAME exists.
+        `${anchors('BrowserWindow')}${SENTINEL_COMMENT}declare class Something {}\n`,
       );
       const message = await refusal(() =>
         parseElectronDeclarations({ path, describe: 'a spawnerless fixture' }),

@@ -39,7 +39,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -58,6 +58,30 @@ const passed = [];
 function check(label, condition, detail) {
   if (condition) passed.push(label);
   else failures.push(`${label}\n      ${detail}`);
+}
+
+/**
+ * Cases that could not run, printed as such.
+ *
+ * A skipped case reported as a pass is the defect `passRoster.mjs` exists for,
+ * one file over: "found no problems" and "did not look" are the same output
+ * otherwise.
+ *
+ * @type {string[]}
+ */
+const skipped = [];
+
+/**
+ * Whether the Electron surface derivation can run here.
+ *
+ * Read as a FILE rather than by importing the deriver, because importing it
+ * would make this proof depend on a module whose whole job is to refuse when
+ * that file is missing.
+ *
+ * @returns {boolean}
+ */
+function electronIsInstalled() {
+  return existsSync(join(ROOT, 'node_modules', 'electron', 'electron.d.ts'));
 }
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-advisory-'));
@@ -302,11 +326,33 @@ try {
       value.reachability['engine-host-containment'].symbols[0] = 'utilityProcesss';
     }),
   );
+  // BOTH WORLDS, because this verdict's symbols became DERIVED when Electron
+  // landed and a derivation has a provisioning condition. Where node_modules
+  // exists the misspelling is a failure; where it does not — the Guards job,
+  // which runs no `npm ci` at all — the honest answer is UNVERIFIABLE, and the
+  // one thing that must never happen is the misspelt symbol being passed over in
+  // silence.
+  //
+  // Asserted in both directions rather than skipped, because a case that skips
+  // where the derivation is absent is a case that stops testing on exactly the
+  // job it was added to protect. The coverage change is real and is stated
+  // rather than hidden: before this verdict was derived, its `in: null` witness
+  // made this misspelling a failure EVERYWHERE. It is now the same posture as
+  // the eleven OCR doors, and `--require-derivation` is what makes it mandatory
+  // where something can look.
+  const derivable = electronIsInstalled();
   check(
-    'THE T-1 CASE: a symbol misspelt in the register FAILS',
-    !misspeltUnwitnessed.ok && /has no witness and no derivation/.test(misspeltUnwitnessed.output),
+    derivable
+      ? 'THE T-1 CASE: a symbol misspelt in the register FAILS'
+      : 'THE T-1 CASE: with no derivation, a misspelt symbol is UNVERIFIABLE, never silent',
+    derivable
+      ? !misspeltUnwitnessed.ok &&
+          /has no witness and no derivation/.test(misspeltUnwitnessed.output)
+      : /utilityProcesss/.test(misspeltUnwitnessed.output) &&
+          /UNVERIFIABLE/.test(misspeltUnwitnessed.output),
     'This exact mutation exited 0 before the witness rule, printing "18 symbol(s) checked" ' +
-      'with invariant 25\'s containment verdict green forever.\n' +
+      "with invariant 25's containment verdict green forever. " +
+      `Derivation available here: ${String(derivable)}.\n` +
       misspeltUnwitnessed.output,
   );
 
@@ -422,21 +468,32 @@ try {
   // short" — and the derivation proved it on its first run, finding
   // `UtilityProcess` missing from a pair picked by hand.
   // -------------------------------------------------------------------------
-  const shortList = runAgainst(
-    'short-symbol-list',
-    register((value) => {
-      value.reachability['engine-host-containment'].symbols = value.reachability[
-        'engine-host-containment'
-      ].symbols.filter((/** @type {string} */ symbol) => symbol !== 'utilityProcess');
-    }),
-  );
-  check(
-    'a symbol list SHORT of Electron’s spawn surface FAILS',
-    !shortList.ok && /does not name: utilityProcess/.test(shortList.output),
-    'The spawn surface is derived from electron.d.ts by TYPE, so a name dropped from the ' +
-      'register — or an entry point Electron adds later — must turn this red. A hand-picked ' +
-      `list that nothing checks is the state invariant 25 was in until Electron landed.\n${shortList.output}`,
-  );
+  if (!derivable) {
+    // A GENUINE skip, printed as one. There is nothing to assert: the
+    // completeness check cannot run without electron.d.ts, so a case here would
+    // be measuring its own absence. Reported rather than omitted — "did not
+    // look" and "looked and found nothing" are the same output otherwise.
+    skipped.push(
+      'a symbol list SHORT of Electron’s spawn surface FAILS — no node_modules, so the ' +
+        'derivation that computes the spawn surface cannot run',
+    );
+  } else {
+    const shortList = runAgainst(
+      'short-symbol-list',
+      register((value) => {
+        value.reachability['engine-host-containment'].symbols = value.reachability[
+          'engine-host-containment'
+        ].symbols.filter((/** @type {string} */ symbol) => symbol !== 'utilityProcess');
+      }),
+    );
+    check(
+      'a symbol list SHORT of Electron’s spawn surface FAILS',
+      !shortList.ok && /does not name: utilityProcess/.test(shortList.output),
+      'The spawn surface is derived from electron.d.ts by TYPE, so a name dropped from the ' +
+        'register — or an entry point Electron adds later — must turn this red. A hand-picked ' +
+        `list that nothing checks is the state invariant 25 was in until Electron landed.\n${shortList.output}`,
+    );
+  }
 
   // -------------------------------------------------------------------------
   // ITEM 4b's CONTROL FOR THIS RULE, and it is not optional.
@@ -536,6 +593,7 @@ try {
 
 process.stdout.write(
   `${passed.map((label) => `  ok  ${label}`).join('\n')}\n` +
+    skipped.map((label) => `  --  ${label}\n`).join('') +
     (failures.length > 0
       ? `\n${failures.length} case(s) FAILED:\n\n${failures.map((entry) => `  -  ${entry}`).join('\n\n')}\n\n`
       : `\n${passed.length} advisory-register cases passed.\n`),

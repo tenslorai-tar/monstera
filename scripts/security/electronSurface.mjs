@@ -86,12 +86,32 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  *
  * The control goes in the instrument rather than only in its proof, because the
  * proof runs in CI and the instrument gets run by hand on the day somebody needs
- * an answer. These are core main-process names; Electron removing all three
- * without anyone noticing is not the failure mode being guarded against — a
- * broken parse, a moved file or a changed layout is, and any of those takes all
- * three with it.
+ * an answer.
+ *
+ * ## The anchor set must contain the HARD member, not any member
+ *
+ * `utilityProcess` is an anchor and not only a subject, because **a positive
+ * control has to include the HARD member of the set, not any member.** The axis
+ * that makes it hard is prose, measured on 43.4.1:
+ *
+ * | symbol | occurrences in prose |
+ * |---|---|
+ * | `utilityProcess` | **1** |
+ * | `MessageChannelMain` | **0** |
+ *
+ * A naive text search is wrong for `utilityProcess` and would have looked
+ * perfectly correct for `MessageChannelMain`. An instrument validated against
+ * the second alone certifies the case that was never at risk, cleanly, forever.
+ *
+ * **What this anchor does NOT buy, stated because the obvious story is wrong.**
+ * It is tempting to say the first four are top-level classes and this one is a
+ * namespaced `const`, so it covers a node kind the others do not. Measured, by
+ * disabling the variable-declaration branch: the walk drops from 437
+ * declarations to 404 and loses `app`, `ipcMain` *and* `utilityProcess`. Two of
+ * the original four are variable declarations already, so that mutation was
+ * always caught. The prose axis is what this addition actually adds.
  */
-const ANCHORS = ['app', 'BrowserWindow', 'ipcMain', 'WebContents'];
+const ANCHORS = ['app', 'BrowserWindow', 'ipcMain', 'WebContents', 'utilityProcess'];
 
 /**
  * A token that appears in the file's TEXT but is not a declaration.
