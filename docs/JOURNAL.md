@@ -1250,6 +1250,32 @@ leaving the reader to reach a correction thirty lines down.
 > Not fixed here: a fix is a lint-config change with its own proof, and naming
 > the limit is what stops the count being read as more than it is.
 
+> **Correction, 2026-08-20 — "ESLint's config does not reach `scripts/`" is
+> false, and the over-generalisation produced a wrong ruling.** Measured:
+> `eslint.config.js:348` globs every `.mjs` under `scripts/`, in a block that
+> extends `disableTypeChecked` and enables one rule. What is true is the narrower
+> claim `passRoster.proof.mjs` had all along — ESLint has **no `no-shadow`**
+> reaching `scripts/`.
+>
+> Nothing about the AA-2 finding changes: the class is still *consistent with the
+> wrong object*, the count still cannot see it, and running the proof is still
+> what caught it. **The correction is to the reason, not the finding**, which is
+> the case where an inaccurate premise survives longest — everything it was
+> offered in support of stayed true.
+>
+> **The cost was paid on 2026-08-20.** Three places said it: this entry,
+> `passRoster.mjs`'s header, and — correctly — the proof. Asked whether to bring
+> `scripts/` under lint so `no-restricted-imports` could own the
+> plain-Node-imports-Electron rule (B3a), the reviewer read the two
+> over-generalised ones and ruled it a B4-sized piece of work not to be started
+> while `main` was red. It is three lines in a block that already exists.
+>
+> **"Does not reach" and "reaches with one rule enabled" are not the same claim
+> at any scale, and the gap between them is a whole conversation about
+> architecture.** The module header is corrected in the same commit; this entry
+> keeps its original wording above, because what was believed at the time is part
+> of the record.
+
 ### AA-3 — the spawn guard's Set is keyed on a case-sensitive path
 
 `spawnedFrom` holds `resolve(dirname(binary))` and `refuseIfSpawnedFrom` looks up

@@ -94,10 +94,20 @@
  * ```
  *
  * and exited 0 — the pre-Z-4 failure mode, reproduced inside the proof for the
- * mechanism built to prevent it. `no-shadow` is the INSTANCE and ESLint does not
- * reach `scripts/`; the CLASS is **consistent with the wrong object**, which no
- * count of a single object can see. Running it is what caught this, not review
- * and not the guard.
+ * mechanism built to prevent it. `no-shadow` is the INSTANCE and ESLint has no
+ * `no-shadow` reaching `scripts/`; the CLASS is **consistent with the wrong
+ * object**, which no count of a single object can see. Running it is what caught
+ * this, not review and not the guard.
+ *
+ * That sentence used to read "ESLint does not reach `scripts/`", which is a
+ * different claim and a false one: `eslint.config.js:348` globs every `.mjs`
+ * under `scripts/`, with one rule enabled. The over-generalisation is the
+ * expensive kind — "does not reach" costs a B4 conversation about bringing a
+ * root under lint, where "reaches with one rule enabled" costs three lines in a
+ * block that already exists. It was read as the former and produced exactly that
+ * wrong ruling. This file's own proof had the precise wording the whole time,
+ * which is why a claim gets narrowed to what was measured rather than widened to
+ * what it felt like.
  */
 
 /**
