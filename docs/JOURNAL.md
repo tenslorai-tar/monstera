@@ -644,6 +644,147 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-20 — Stage audit: `598b50e..90d9b6e`
+
+**Audited through 90d9b6e.** 6 commits, 23 files, **4 proofs added, 1 modified**,
+6 new source files. The range Stage 0 has been waiting for: **all four contract
+surfaces exist**, `packages/ui` stopped being `export {}`, and the Electron
+runtime is provisioned against a pin this repository records.
+
+Two findings, and the first is against the range's own headline unit — which is
+the shape a range-scoped audit exists to catch.
+
+### DD-1 — the pin is a record, not an enforcement, and `--ignore-scripts` defers the hatch rather than closing it
+
+`90d9b6e` provisions Electron against a recorded SHA-256 precisely so the
+installer's own check — which `electron_use_remote_checksums` can repoint at a
+remote source — is never trusted. The reasoning holds. The **premise underneath
+it does not**, and it was measured rather than argued:
+
+`node_modules/electron/index.js` ends with `module.exports = getElectronPath()`,
+and `getElectronPath` calls `downloadElectron()` when the binary is absent. So
+**`require('electron')` runs the install path lazily, at first use.**
+`--ignore-scripts` moves the hatch from install time to run time, where nobody is
+watching, on a machine that installed cleanly.
+
+Three consequences, each checked:
+
+1. **Nothing consumes the pinned binary.** `git grep` finds no caller of
+   `electronBinaryPath` or `provisionElectron` outside the module and its own
+   proof. The pin records a value; it enforces nothing — the same *recorded
+   versus enforced* distinction this project's own journal draws about a hash,
+   recurring one commit later **inside the module that drew it**.
+2. **`require('electron')` resolves to `node_modules/electron/dist`, not
+   `.tools/`.** The default spawn path is the unpinned binary; the pinned one is
+   reached only by code that explicitly asks. The window unit is where that
+   becomes a decision rather than a default.
+3. **There is no `.npmrc`,** so `ignore-scripts` lives only on CI's command
+   lines. A contributor running `npm install` gets the install-script path at
+   install time as well.
+
+**The obvious fix is a trap, and it is worth writing down before anyone reaches
+for it.** An `.npmrc` carrying `ignore-scripts=true` also disables this
+repository's own `prepare` script — `package.json:22`, `node
+scripts/bootstrapHooks.mjs` — which is what sets `core.hooksPath` and installs
+the secret scan and the escape-resolving-write guard. `CLAUDE.md` states hooks
+are enabled automatically by it. The naive fix **silently disarms the hook
+chain**, which is far worse than the problem it closes.
+
+The remedy instead, and it is B5 rather than a discouragement:
+
+- **`ELECTRON_OVERRIDE_DIST_PATH`**, read at `index.js:30` — *before* both
+  `downloadElectron()` call sites. Pointing it at the provisioned tree makes
+  `require('electron')` return the pinned binary and **never reach the download
+  at all**: the path becomes unreachable rather than deprecated.
+- **plus a guard that fails when `node_modules/electron/dist` exists**, so a
+  second binary arriving is loud rather than silent — the `.gitleaksignore`
+  refusal shape.
+
+Neither touches `prepare`.
+
+**One measured wrinkle in that remedy**, found by reading the line rather than
+trusting the name: `index.js:31` joins the override with
+`executablePath || 'electron'`, and `executablePath` comes from `path.txt`,
+which exists only after a successful install. It is **absent here**. So the
+override yields `<dir>/electron` — with no `.exe` — on Windows. The provisioned
+tree needs a `path.txt`, or the override names a file that is not there. Verify
+that before relying on it.
+
+**Open.** The pin, the six platforms and the refusal-with-no-override are all
+correct and stay; what is owed is the consumer that makes them bite.
+
+### DD-2 — the thing not read was the record, and it produced a contradiction rather than a gap
+
+While designing the provisioner I asked the owner to rule on a question
+`docs/JOURNAL.md` had already settled at `132c2e7` — the pin, the `install.js`
+hatch, the decision and even the *"chain is recorded rather than trusted at each
+link"* framing, all recorded that morning. Then I filed a correction stating
+**"there is no recorded Electron pin in this repository."**
+
+Had that been accepted, the journal would hold two entries disagreeing about one
+fact. That is **B3a arriving in the record rather than the code** — two opinions
+about one authority, where the authority is this project's own journal, eleven
+commits after B3a became law. `CLAUDE.md` names `docs/JOURNAL.md` as where
+project state lives.
+
+**Two failures, and they need separating because their remedies differ.**
+
+- **The root axis.** The digest search was `Grep(pattern, path: 'scripts')`. It
+  never looked at `docs/`. That is **X-1 exactly** — a classifier fixed on
+  pattern, root, state and window, failing on root again, in a search I ran by
+  hand.
+- **A hit list is not a result.** `git grep -il electron -- docs/ scripts/`
+  then printed `docs/JOURNAL.md`, and I read the **filename list** as the answer
+  without opening it. This one is not 4b's shape: **the search worked.** It
+  returned the right file. No positive control catches it, because the control
+  passes — the instrument was correct and the reader stopped early. It is the
+  staleness lesson's sibling, one level up: a sound instrument whose output was
+  not consumed.
+
+The remedy for the first is scope discipline; for the second there is no
+instrument, only the rule that a list of places to look is not a finding.
+**Recorded as a process finding rather than a code one**, and left open because
+whether it earns a mechanism is not obvious from one instance.
+
+### Executed, not asserted
+
+- `index.js:20-52` and `install.js:71,84` read directly — the lazy download, and
+  `ELECTRON_OVERRIDE_DIST_PATH` preceding both fallbacks;
+- no `.npmrc`; `prepare` at `package.json:22`; `path.txt` absent;
+- `git grep` for consumers of the pinned binary — only its own proof;
+- all six Electron digests, from the release `SHASUMS256.txt` **and** the
+  package's `checksums.json`, agreeing on every one;
+- `proof:electronprovision` 8, with **both** mutations red — the version bump,
+  and a hand-typed asset version, the second run only because the first did not
+  redden that case;
+- `proof:preload` 10, including amending invariant 1 in `ARCHITECTURE.md` to
+  permit `app` and watching two cases go red, then reverting;
+- `proof:electronsurface` 8 unchanged after `loadTypeScript` moved out of it;
+- 178 tests; `check:advisories` 19/19.
+
+### A correction made inside the range
+
+*"Two independent sources agreeing byte for byte"* was wrong and is now
+**"two channels, one publisher"** in the module's own words. The release
+`SHASUMS256.txt` and the package's `checksums.json` both come from the Electron
+project's single pipeline: agreement defeats a compromise of one distribution
+path and is not two attestations. The distinction matters because
+*"independently corroborated"* is what a future reader would lean on when
+deciding how hard to check a version bump.
+
+### Status
+
+**DD-1 and DD-2 open.** From earlier ranges: CC-2 **closed** in `35632fe`; CC-3,
+AA-1's granularity half, AA-3, BB-6 (ruled not-now) and Y-3 (17 handlers) remain.
+
+Stage 0's four-surfaces row is now three-quarters green in substance: all four
+exist, and what is owed is **enforcement rather than existence** — nothing calls
+`registerContractHandlers`, no window loads the preload, and invariant 1's
+*sandbox on* clause is unmet by absence. That is the window unit, and DD-1 is now
+part of its scope.
+
+---
+
 ## 2026-08-20 — Stage audit: `6827c1d..598b50e`
 
 **Audited through 598b50e.** 9 commits, 16 files, **2 proofs added, 2 modified**,
