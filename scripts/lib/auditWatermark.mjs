@@ -79,6 +79,8 @@ export function readWatermark(root = repoRoot()) {
  * @param {object} [options]
  * @param {string} [options.root]
  * @param {string} [options.head]
+ * @param {boolean} [options.churn] False skips the per-proof churn figures, which
+ *   cost two git invocations each and are read by the report, not by a gate.
  * @returns {{
  *   watermark: string,
  *   commits: number,
@@ -94,7 +96,7 @@ export function readWatermark(root = repoRoot()) {
  *   overBudget: string[],
  * }}
  */
-export function auditScope({ root = repoRoot(), head = 'HEAD' } = {}) {
+export function auditScope({ root = repoRoot(), head = 'HEAD', churn = true } = {}) {
   const { commit } = readWatermark(root);
 
   // An unreachable watermark is a rewritten history or a bad sha, and reporting
@@ -112,7 +114,123 @@ export function auditScope({ root = repoRoot(), head = 'HEAD' } = {}) {
   const range = `${commit}..${head}`;
   const commits = Number(`${git(['rev-list', '--count', range], { cwd: root }).stdout}`.trim());
 
-  return buildScope({ commit, range, commits, root });
+  return buildScope({ commit, range, commits, root, churn });
+}
+
+/**
+ * The watermark recorded in one tree-ish, or `null` if it cannot be read there.
+ *
+ * `:path` is the index entry, which exists for any tracked file whether or not
+ * this commit changes it — so the two calls below compare "what this commit will
+ * record" against "what is recorded now".
+ *
+ * @param {string} root
+ * @param {'HEAD:' | ':'} ref The `git show` prefix, colon included — `HEAD:` for
+ *   the last commit, `:` for the index.
+ * @returns {string | null}
+ */
+function watermarkAt(root, ref) {
+  try {
+    const text = `${git(['show', `${ref}${WATERMARK_PATH}`], { cwd: root }).stdout}`;
+    const parsed = /** @type {{ commit?: unknown }} */ (JSON.parse(text));
+    return typeof parsed.commit === 'string' ? parsed.commit : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The audit range **as this commit will leave it**, for a gate that runs before
+ * the commit exists.
+ *
+ * ## Why the committed range is the wrong number at pre-commit
+ *
+ * `auditScope` measures `watermark..HEAD`, and at pre-commit **HEAD is the
+ * parent** — the commit being made is not in it. So the commit that takes a
+ * range past one batch is invisible to the gate by construction, and the board
+ * goes red one push later. Measured: `check:docs` reported 8/8 immediately
+ * before `8130551`, and CI reported the gate red at `8130551`.
+ *
+ * "Run `audit:scope` before pushing" is not a repair. A rule you must recall at
+ * the moment of composing a command is not a defence — that is the argument the
+ * escape-resolving-write hook exists to make, demonstrated seven times.
+ *
+ * So: commits + 1, and the file set unioned with what is staged. A path already
+ * in the range and staged again counts once, which is why this is a set.
+ *
+ * ## The one commit it must never block
+ *
+ * The commit that records an audit advances the watermark, and it is made while
+ * the range is at its largest — so a naive budget makes the single commit that
+ * closes the finding the one commit that can never be made. It is recognised by
+ * what it does rather than by anything it says: the staged watermark names a
+ * different sha from the committed one.
+ *
+ * @param {{ root?: string }} [options]
+ * @returns {{
+ *   watermark: string,
+ *   commits: number,
+ *   files: string[],
+ *   recordsAudit: boolean,
+ *   overBudget: string[],
+ * }}
+ */
+export function pendingAuditScope({ root = repoRoot() } = {}) {
+  const recorded = watermarkAt(root, 'HEAD:');
+  const pending = watermarkAt(root, ':');
+
+  // A repository that tracks no watermark is not running this mechanism at all
+  // — the pre-commit proof's scratch fixtures, or a fresh repository before the
+  // first audit. There is nothing to measure and nothing to block.
+  //
+  // ABSENT IS NOT BROKEN, and the difference decides which way to fail. If the
+  // file IS tracked and cannot be read, `auditScope` throws below and the hook
+  // reports a guard that failed, which is what tampering should look like.
+  // Deleting the watermark to escape the gate therefore does not quietly work:
+  // it stops being tracked only by a deletion that `check:docs` turns red, and
+  // an unreadable one blocks here.
+  if (recorded === null && pending === null) {
+    return { watermark: '', commits: 0, files: [], recordsAudit: false, overBudget: [] };
+  }
+
+  const committed = auditScope({ root, churn: false });
+
+  const staged = `${git(['diff', '--cached', '--name-only', '-z'], { cwd: root }).stdout}`
+    .split('\0')
+    .filter((path) => path !== '');
+
+  const files = new Set([...committed.files, ...staged]);
+  const commits = committed.commits + 1;
+
+  return {
+    watermark: committed.watermark,
+    commits,
+    files: [...files],
+    recordsAudit: recorded !== null && pending !== null && recorded !== pending,
+    overBudget: [
+      ...(commits > BATCH.commits ? [`${commits} commits (one batch is ${BATCH.commits})`] : []),
+      ...(files.size > BATCH.files ? [`${files.size} files (one batch is ${BATCH.files})`] : []),
+    ],
+  };
+}
+
+/**
+ * @param {{ watermark: string, commits: number, files: string[], overBudget: string[] }} scope
+ * @returns {string}
+ */
+export function explainAuditBudget(scope) {
+  return (
+    `\nCommit blocked — this commit takes the unaudited range past one batch.\n\n` +
+    `  ${scope.watermark}..HEAD plus this commit: ${scope.overBudget.join('; ')}\n\n` +
+    `Run \`npm run audit:scope\` and apply CLAUDE.md's stage audit to that range, then record ` +
+    `the findings in docs/JOURNAL.md and advance docs/audit-watermark.json in the SAME commit. ` +
+    `That commit is exempt from this gate, because it is the one that closes the finding.\n\n` +
+    `Blocked here rather than reported later on purpose. check:docs measures the range against ` +
+    `HEAD, and at this moment HEAD is the parent — so the commit that crosses is invisible to ` +
+    `it and the board goes red one push after the fact.\n\n` +
+    `The threshold is the MEDIAN of batches 4-7, not the maximum: the maximum was batch 7, the ` +
+    `one stretch that was plainly too large to audit as a unit.\n\n`
+  );
 }
 
 /**
@@ -179,10 +297,10 @@ function churnFor(range, path, root) {
 }
 
 /**
- * @param {{ commit: string, range: string, commits: number, root: string }} input
+ * @param {{ commit: string, range: string, commits: number, root: string, churn?: boolean }} input
  * @returns {ReturnType<typeof auditScope>}
  */
-function buildScope({ commit, range, commits, root }) {
+function buildScope({ commit, range, commits, root, churn = true }) {
 
   // Added and modified are reported apart because they mean opposite things for
   // a proof. A NEW proof is coverage arriving. A MODIFIED one is a check whose
@@ -228,7 +346,12 @@ function buildScope({ commit, range, commits, root }) {
     files: status.map((entry) => entry.path),
     proofsAdded: status.filter((e) => e.state === 'A' && isProof(e.path)).map((e) => e.path),
     proofsModified: modified,
-    proofChurn: modified.map((path) => ({ path, ...churnFor(range, path, root) })),
+    // Two git invocations per modified proof, which is the expensive half of
+    // this function and the half a budget gate does not read. Skipped for the
+    // pre-commit path so the hook stays fast enough not to be worked around —
+    // and skipped by OPTION rather than by a second implementation, because the
+    // gate and the report must not drift about what counts as a file.
+    proofChurn: churn ? modified.map((path) => ({ path, ...churnFor(range, path, root) })) : [],
     // Instruments are not a directory, and scoping this to `scripts/` was W-1's
     // blind spot one folder over. Measured on the range that found it: a new
     // filesystem probe landed in `packages/kernel/src/`, doing exactly what

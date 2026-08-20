@@ -13,6 +13,7 @@
  * repository's permanent history cannot be undone at any price.
  */
 
+import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import {
@@ -68,6 +69,17 @@ async function main() {
       process.stderr.write(explainContractDrift(proof.output));
       return 1;
     }
+  }
+
+  // The audit budget, counted WITH the commit being made. `check:docs` measures
+  // watermark..HEAD, where HEAD is the parent at this moment, so the commit that
+  // crosses one batch is invisible to it and the board goes red a push later.
+  // Blocking here is the same move the contract-drift gate makes: a red board
+  // nobody reads becomes a commit that does not happen.
+  const budget = pendingAuditScope();
+  if (!budget.recordsAudit && budget.overBudget.length > 0) {
+    process.stderr.write(explainAuditBudget(budget));
+    return 1;
   }
 
   const binary = await resolveGitleaks();

@@ -29,7 +29,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { auditScope, BATCH, readWatermark } from '../lib/auditWatermark.mjs';
+import { auditScope, BATCH, pendingAuditScope, readWatermark } from '../lib/auditWatermark.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
@@ -291,6 +291,120 @@ try {
       `A report that prints the warning for every file is one nobody reads by the third range. ` +
         `The append-only proof must get figures and no warning.\n${output}`,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Y-2: the gate must count the commit being made.
+  //
+  // `auditScope` measures watermark..HEAD, and at pre-commit HEAD is the PARENT.
+  // So the commit that takes a range past one batch is invisible to the gate by
+  // construction, and the board goes red a push later — measured: check:docs
+  // reported 8/8 immediately before 8130551, and CI reported the gate red at
+  // 8130551.
+  //
+  // The two cases that make this checkable are the two directions. Only the
+  // refusal, and the gate can be always-red — which is a gate somebody switches
+  // off. Only the pass, and it can be vacuous.
+  // ---------------------------------------------------------------------------
+  {
+    setWatermark(git(scratch, ['rev-parse', '--short', 'HEAD']));
+
+    writeFileSync(join(scratch, 'staged-under.txt'), 'x\n', 'utf8');
+    git(scratch, ['add', '-A']);
+
+    const committedNow = auditScope({ root: scratch });
+    const under = pendingAuditScope({ root: scratch });
+
+    // Without this, "a small change is allowed" is satisfied by a gate that
+    // ignores the staged change entirely — which is the defect, passing.
+    check(
+      'RESOLUTION: the pending commit is counted, not the committed range alone',
+      under.commits === committedNow.commits + 1 && under.files.includes('staged-under.txt'),
+      `committed ${String(committedNow.commits)} commits / ${String(committedNow.files.length)} ` +
+        `files, pending ${String(under.commits)} / ${String(under.files.length)}. The pending ` +
+        `scope must be the committed range PLUS this commit, or it is the number that was ` +
+        `already too late.`,
+    );
+
+    check(
+      'a staged change that leaves the range under one batch is allowed',
+      under.overBudget.length === 0,
+      `tripped on ${under.overBudget.join('; ')} at ${String(under.commits)} commits. An ` +
+        `always-red gate is one somebody switches off, and then neither direction protects ` +
+        `anything.`,
+    );
+
+    git(scratch, ['commit', '--quiet', '-m', 'staged-under']);
+
+    // Take the COMMITTED range to exactly one batch, so the crossing below is
+    // caused by the staged change and by nothing else.
+    let pad = 0;
+    while (auditScope({ root: scratch }).commits < BATCH.commits) {
+      commit(`pad${String(pad)}.txt`, 'x\n');
+      pad += 1;
+    }
+
+    const atLimit = auditScope({ root: scratch });
+    check(
+      'CONTROL: exactly one batch does not trip, so the crossing is the staged change',
+      atLimit.commits === BATCH.commits && atLimit.overBudget.length === 0,
+      `${String(atLimit.commits)} committed commits reported ${atLimit.overBudget.length} ` +
+        `problem(s). The comparison is \`>\`, so the threshold itself must be allowed — ` +
+        `otherwise the case below fires on the range rather than on the pending commit.`,
+    );
+
+    writeFileSync(join(scratch, 'crossing.txt'), 'x\n', 'utf8');
+    git(scratch, ['add', '-A']);
+    const crossing = pendingAuditScope({ root: scratch });
+
+    check(
+      'a staged change that takes the range OVER one batch is refused',
+      crossing.overBudget.length > 0,
+      `the same tree passed as a committed range and must fail as a pending one: ` +
+        `${String(crossing.commits)} commits against a threshold of ${String(BATCH.commits)}, ` +
+        `and the gate reported nothing.`,
+    );
+
+    check(
+      'CONTROL: an ordinary commit is not exempt',
+      !crossing.recordsAudit,
+      `a commit that does not advance the watermark claimed the audit exemption, which switches ` +
+        `the gate off for everything.`,
+    );
+
+    // The recording commit, and the fixture has to be built with care: advancing
+    // the watermark all the way to HEAD empties the range, so the exemption
+    // would pass for the wrong reason — the gate simply would not fire. Measured
+    // by getting it wrong first.
+    //
+    // A PARTIAL advance is the case that needs the exemption, and it is not
+    // hypothetical: this repository's own watermark records one batch closed in
+    // four ranges. The rest of the range stays over budget while the commit that
+    // records the audited part is being made.
+    git(scratch, ['commit', '--quiet', '-m', 'crossing']);
+    const audited = git(scratch, ['rev-parse', '--short', 'HEAD']);
+    for (let grown = 0; grown < BATCH.commits + 2; grown += 1) {
+      commit(`grow${String(grown)}.txt`, 'x\n');
+    }
+
+    writeFileSync(
+      join(scratch, 'docs', 'audit-watermark.json'),
+      `${JSON.stringify({ commit: audited, audited: 'proof' }, null, 2)}\n`,
+      'utf8',
+    );
+    git(scratch, ['add', '-A']);
+    const recording = pendingAuditScope({ root: scratch });
+
+    check(
+      'the commit that advances the watermark is exempt, while still over budget',
+      recording.recordsAudit && recording.overBudget.length > 0,
+      `recordsAudit=${String(recording.recordsAudit)}, overBudget=` +
+        `${recording.overBudget.join('; ') || '(none)'}. Both halves matter: the exemption must ` +
+        `apply, and it must apply to a tree that WOULD otherwise be refused — otherwise this ` +
+        `case passes because the range shrank.`,
+    );
+
+    git(scratch, ['commit', '--quiet', '-m', 'record the audit']);
   }
 
   // An unreachable watermark must throw rather than report an empty range.
