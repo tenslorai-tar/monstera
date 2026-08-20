@@ -17,7 +17,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, readdir, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -229,6 +229,75 @@ export async function resolveGitleaks() {
 }
 
 /**
+ * Whether a process id currently belongs to a running process.
+ *
+ * Signal 0 performs the permission and existence checks without delivering
+ * anything. `ESRCH` is the only code that means "nobody is there": `EPERM` says
+ * the process exists and belongs to someone else, which is still alive.
+ *
+ * @param {number} pid
+ * @returns {boolean}
+ */
+function pidIsRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return /** @type {NodeJS.ErrnoException} */ (error).code !== 'ESRCH';
+  }
+}
+
+/**
+ * Removes quarantine directories left by processes that are no longer running.
+ *
+ * ## Why the pid in the name is load-bearing, and which way to be wrong
+ *
+ * `publish` rolls back through its quarantine: if the second rename fails it
+ * renames the quarantined directory back, so between those two moments that
+ * directory is the ONLY copy of a working tool. Sweeping one that belongs to a
+ * live racer would delete the thing it is about to restore — turning a cleanup
+ * into the outage it exists to prevent.
+ *
+ * A pid is a slot the operating system hands back out, exactly like an inode,
+ * so "this name says pid 4812" does not establish that pid 4812 is the owner.
+ * The asymmetry runs in our favour here, which is why this is safe without
+ * anything stronger:
+ *
+ *   - a pid that is **dead** cannot be a running owner, whoever it was, so the
+ *     directory is abandoned and sweeping it is unconditionally correct;
+ *   - a pid that is **alive** may be an unrelated process that inherited the
+ *     slot — and skipping it costs exactly one leftover directory, which the
+ *     next run reconsiders.
+ *
+ * So the reuse hazard can only produce the harmless outcome. Nothing here needs
+ * to distinguish the owner from a stranger, and a stronger identity — a lock
+ * file, a recorded start time — would buy only the leftover back.
+ *
+ * Best-effort throughout: a directory that cannot be removed is left for the
+ * next run, which is now a statement that is true.
+ *
+ * @param {string} versionDirectory
+ * @returns {Promise<void>}
+ */
+export async function sweepAbandonedQuarantines(versionDirectory) {
+  const parent = dirname(versionDirectory);
+  const prefix = `${basename(versionDirectory)}.superseded-`;
+
+  const entries = await readdir(parent, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(prefix)) continue;
+
+    // A suffix this cannot read is not evidence of abandonment, so it is left
+    // alone rather than swept on a guess.
+    const pid = Number.parseInt(entry.name.slice(prefix.length), 10);
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    if (pidIsRunning(pid)) continue;
+
+    await rm(join(parent, entry.name), { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
  * Publishes the staged copy, deciding from the destination's MEASURED state.
  *
  * The previous shape deleted the destination whenever `--force` was passed, then
@@ -254,8 +323,16 @@ export async function resolveGitleaks() {
  * `--force` still means.
  *
  * The quarantined copy is deleted afterwards, and failing to delete it is not
- * fatal: a locked executable leaves a directory the next run cleans up, which is
- * strictly better than an interrupted publish.
+ * fatal — but the reason given for that used to be false. It said "a locked
+ * executable leaves a directory the next run cleans up". Nothing cleaned it up.
+ * The name is `${versionDirectory}.superseded-${process.pid}` and the only
+ * removal named that exact path, so a later run computed a different pid, looked
+ * for a directory that had never existed, and left the real one where it was.
+ * Leftovers accumulated forever, and the proof's last case asserted a property
+ * the implementation merely hoped for.
+ *
+ * `sweepAbandonedQuarantines` makes the claim true: every `.superseded-*`
+ * sibling is considered, not only this process's own.
  *
  * ## What decides the swap, and what must never decide it
  *
@@ -285,6 +362,10 @@ export async function resolveGitleaks() {
  */
 async function publish({ staging, versionDirectory, binary, force }) {
   await mkdir(dirname(versionDirectory), { recursive: true });
+
+  // Before anything else, and not only this process's own name — see
+  // sweepAbandonedQuarantines for why a live pid is skipped rather than raced.
+  await sweepAbandonedQuarantines(versionDirectory);
 
   const staged = join(staging, basename(binary));
 

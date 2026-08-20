@@ -22,7 +22,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
@@ -250,6 +250,30 @@ async function main() {
 
   // Corrupt the published binary the way a killed download does: the file is
   // present, so every existence check is satisfied, and it cannot run.
+  // ---------------------------------------------------------------------------
+  // Abandoned quarantines are swept; a live owner's is not.
+  //
+  // `publish` names its quarantine `<version>.superseded-<pid>` and removed only
+  // that exact path, so a later run computed a different pid and never touched
+  // the real one. The implementation's comment claimed "the next run cleans it
+  // up"; nothing did, and the leftovers case below asserted a property the code
+  // merely hoped for.
+  //
+  // Planted BEFORE the repair case so the sweep is exercised by a publish that
+  // was going to happen anyway — this costs no extra download.
+  // ---------------------------------------------------------------------------
+  // Certainly not running: a process started and waited for. Pid reuse between
+  // reaping and the check would make the case FAIL rather than pass quietly,
+  // which is the direction an unreliable fixture is allowed to be wrong in.
+  const deadPid = spawnSync(process.execPath, ['--version']).pid;
+  const abandoned = `${versionDirectory}.superseded-${String(deadPid)}`;
+  const liveOwned = `${versionDirectory}.superseded-${String(process.pid)}`;
+  for (const planted of [abandoned, liveOwned]) {
+    await rm(planted, { recursive: true, force: true });
+    await mkdir(planted, { recursive: true });
+    await writeFile(join(planted, 'placeholder'), 'x');
+  }
+
   mark = roster.mark();
   await writeFile(binary, Buffer.from('not an executable'));
   const repair = await raceOne();
@@ -262,6 +286,33 @@ async function main() {
     );
   }
   roster.record(mark, 'a corrupted install is repaired without --force');
+
+  mark = roster.mark();
+  if (await directoryExists(abandoned)) {
+    failures.push(
+      `${abandoned} survived a publish. Its owning process is gone, so nothing will ever ` +
+        `reclaim it: the old removal named one exact path built from the CURRENT pid, which is ` +
+        `a name no later run computes. Leftovers accumulate forever and the case below asserts ` +
+        `a property the implementation only hoped for.`,
+    );
+  }
+  roster.record(mark, "a quarantine abandoned by a dead process is swept by the next publish");
+
+  // The control, and it is the hazard rather than a formality: `publish` rolls
+  // back THROUGH its quarantine, so between its two renames that directory is
+  // the only copy of a working tool. A sweep that took a live racer's would
+  // turn a cleanup into the outage it exists to prevent.
+  mark = roster.mark();
+  if (!(await directoryExists(liveOwned))) {
+    failures.push(
+      `CONTROL: ${liveOwned} was swept while its owning process is still running. Sweeping by ` +
+        `name alone deletes the directory a racer is about to restore from. A dead pid cannot ` +
+        `be a running owner; a live one may be an unrelated process, and skipping it costs one ` +
+        `leftover — that is the safe direction and this case is what holds it.`,
+    );
+  }
+  await rm(liveOwned, { recursive: true, force: true });
+  roster.record(mark, 'CONTROL: a quarantine owned by a LIVE process is left alone');
 
   mark = roster.mark();
 
@@ -512,6 +563,20 @@ async function main() {
 
   process.stdout.write(roster.format('provisioning case'));
   return 0;
+}
+
+/**
+ * `fileExists` is `stat().isFile()` and so answers false for a directory, which
+ * is exactly the mistake that once made the staging-survivor case false by
+ * construction. This asks the question the quarantine cases need.
+ *
+ * @param {string} path
+ * @returns {Promise<boolean>}
+ */
+function directoryExists(path) {
+  return stat(path)
+    .then((entry) => entry.isDirectory())
+    .catch(() => false);
 }
 
 /** @param {string} binary @returns {string} */
