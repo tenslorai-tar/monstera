@@ -35,6 +35,7 @@ import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { THREAT_MODEL_TOPICS, unraisedTopics } from '../lib/threatModelTopics.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
 
 // The root is asked of git, in one place, for the same reason the scope is:
@@ -95,10 +96,16 @@ function trackedFiles() {
 /** @type {string[]} */
 const failures = [];
 
+// Section 7 applies only when a threat model exists, and the fixed block of
+// `ok` lines this replaces claimed it either way — see scripts/lib/passRoster.mjs.
+const roster = createRoster(failures);
+const { record } = roster;
+
 // ---------------------------------------------------------------------------
 // 1. The invariant count in the digest matches the law.
 // ---------------------------------------------------------------------------
 {
+  const mark = roster.mark();
   const architecture = read('docs/ARCHITECTURE.md');
   const start = architecture.indexOf('\n## 9. Invariants');
   const end = architecture.indexOf('\n## 10.', start + 1);
@@ -132,6 +139,7 @@ const failures = [];
       }
     }
   }
+  record(mark, 'CLAUDE.md cites the invariant count ARCHITECTURE §9 defines');
 }
 
 // ---------------------------------------------------------------------------
@@ -139,6 +147,7 @@ const failures = [];
 //    contradicts.
 // ---------------------------------------------------------------------------
 {
+  const mark = roster.mark();
   const index = read('docs/DECISIONS/README.md');
   const adrFiles = trackedFiles()
     .filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path))
@@ -186,12 +195,14 @@ const failures = [];
       );
     }
   }
+  record(mark, 'every ADR is indexed, and no index row contradicts its file');
 }
 
 // ---------------------------------------------------------------------------
 // 3. Every scripts/ path named in a tracked text document actually resolves.
 // ---------------------------------------------------------------------------
 {
+  const mark = roster.mark();
   const documents = trackedFiles().filter((path) =>
     /\.(md|ya?ml|json|gitattributes)$|^\.gitattributes$/.test(path),
   );
@@ -228,6 +239,7 @@ const failures = [];
       }
     }
   }
+  record(mark, 'every scripts/ path named in a tracked document resolves');
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +247,7 @@ const failures = [];
 //    withdrew.
 // ---------------------------------------------------------------------------
 {
+  const mark = roster.mark();
   // An ADR's `Amends:` field names the documents it changes, and a correction to
   // that ADR has to reach all of them. ADR-0007's correction reached
   // docs/ARCHITECTURE.md §9 and did not reach the Stage 0 exit gate in
@@ -274,6 +287,7 @@ const failures = [];
         `survives in a second document is the one people find.`,
     );
   }
+  record(mark, 'no document states a claim an ADR correction withdrew');
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +295,7 @@ const failures = [];
 //    has actually been observed to fire.
 // ---------------------------------------------------------------------------
 {
+  const mark = roster.mark();
   // Deliberately quiet until someone claims the gate. Failing from the moment
   // the row exists would put the build permanently red for work that is
   // correctly outstanding, and a red build nobody caused is a red build people
@@ -310,12 +325,14 @@ const failures = [];
       );
     }
   }
+  record(mark, 'the tool-use guard gate is not claimed before the guard was seen to fire');
 }
 
 // ---------------------------------------------------------------------------
 // 6. §9.17 states each budget's numbers exactly once — in the declared line.
 // ---------------------------------------------------------------------------
 {
+  const mark = roster.mark();
   // ADR-0012's first condition, enforced rather than trusted. The whole value of
   // machine-reading the budgets is that a reader of the invariant sees the
   // number the build enforces; a second copy in the surrounding prose destroys
@@ -358,6 +375,7 @@ const failures = [];
       }
     }
   }
+  record(mark, '§9.17 states each budget value once, in the machine-read line');
 }
 
 // ---------------------------------------------------------------------------
@@ -373,10 +391,19 @@ const failures = [];
 // Applied only when a threat model EXISTS. It is its own scheduled work, and a
 // check that fails until then is one somebody disables.
 {
+  const mark = roster.mark();
   const threatModel = trackedFiles().find((path) => /docs\/security\/.*THREAT.*\.md$/iu.test(path));
   if (threatModel !== undefined) {
     for (const problem of unraisedTopics(read(threatModel), threatModel)) failures.push(problem);
   }
+  // The condition IS the third argument. This is the section that made the old
+  // roster false by construction: with no threat model there is nothing to
+  // read, and the fixed block printed `ok` for it anyway.
+  record(
+    mark,
+    `the threat model raises all ${THREAT_MODEL_TOPICS.length} carried questions`,
+    threatModel !== undefined,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +423,7 @@ const failures = [];
 // median of batches 4 to 7 measured from this repository's own history. Past
 // that, the checklist stops being applicable to a diff anybody reads.
 {
+  const mark = roster.mark();
   const scope = auditScope({ root: ROOT });
   const journal = read('docs/JOURNAL.md');
 
@@ -416,6 +444,7 @@ const failures = [];
         `maximum was batch 7, the one stretch that was plainly too large to audit as a unit.`,
     );
   }
+  record(mark, 'the audit watermark is recorded in the journal and within one batch');
 }
 
 if (failures.length > 0) {
@@ -428,14 +457,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-process.stdout.write('  ok  CLAUDE.md cites the invariant count ARCHITECTURE §9 defines\n');
-process.stdout.write('  ok  every ADR is indexed, and no index row contradicts its file\n');
-process.stdout.write('  ok  every scripts/ path named in a tracked document resolves\n');
-process.stdout.write('  ok  no document states a claim an ADR correction withdrew\n');
-process.stdout.write('  ok  the tool-use guard gate is not claimed before the guard was seen to fire\n');
-process.stdout.write('  ok  §9.17 states each budget value once, in the machine-read line\n');
-process.stdout.write(
-  `  ok  the threat model, if written, raises all ${THREAT_MODEL_TOPICS.length} carried questions\n`,
-);
-process.stdout.write('  ok  the audit watermark is recorded in the journal and within one batch\n');
-process.stdout.write('\n8 document consistency checks passed.\n');
+process.stdout.write(roster.format('document consistency check'));

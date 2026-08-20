@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { fileExists } from '../lib/fetchVerified.mjs';
 import { readPeHardening } from '../lib/peHardening.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { shimLibraryPath, verifyExports } from './mupdf.mjs';
 
@@ -60,6 +61,12 @@ async function main() {
   /** @type {string[]} */
   const failures = [];
 
+  // Each label is recorded by the case that earns it. The fixed block this
+  // replaces printed `ok` for the ntdll case on a machine where that case had
+  // swallowed its own error and read nothing — see scripts/lib/passRoster.mjs.
+  const roster = createRoster(failures);
+
+  let mark = roster.mark();
   // Case 1 — the real DLL verifies.
   try {
     const result = await verifyExports(root, dll);
@@ -72,7 +79,9 @@ async function main() {
   } catch (error) {
     failures.push(`the freshly built shim failed its own export check: ${String(error)}`);
   }
+  roster.record(mark, 'the built shim exports every MZ_EXPORT symbol its source declares');
 
+  mark = roster.mark();
   // Case 2 — the control. A source that declares one more export than the DLL
   // carries is precisely the state a skipped build leaves, and it must be
   // rejected. The source is copied to a scratch tree and edited there; the
@@ -116,6 +125,7 @@ async function main() {
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
+  roster.record(mark, 'a DLL missing a declared export is rejected');
 
   // Case 3 — the exploit mitigations are in the IMAGE, not merely in the
   // project file. This library parses the most attacker-controlled input the
@@ -125,6 +135,7 @@ async function main() {
   // that way here (LNK1246, x86-only), which is the whole argument for reading
   // the artefact rather than trusting the request.
   const required = ['HIGH_ENTROPY_VA', 'DYNAMIC_BASE', 'NX_COMPAT', 'GUARD_CF'];
+  mark = roster.mark();
   try {
     const shim = readPeHardening(dll);
     const { mitigations, dllCharacteristics } = shim;
@@ -147,6 +158,9 @@ async function main() {
     if (!shim.cetCompat) {
       failures.push(`the shim is not CET-compatible: /CETCOMPAT did not reach the binary.`);
     }
+    roster.record(mark, `the image carries ${required.join(', ')}, /GS and CET compatibility`);
+
+    mark = roster.mark();
 
     // RESOLUTION TEST, and it is not decoration. The first version of this reader
     // computed the data directory 8 bytes too far into the optional header and
@@ -155,9 +169,15 @@ async function main() {
     // Windows system libraries are known to carry all three, so they are the
     // known-different input this instrument is measured against before it is
     // believed. Per CLAUDE.md stage-audit item 4a.
+    // Whether the reader was ever pointed at a known-good image. The fixed
+    // roster printed `ok` for this case on a machine where every reference was
+    // absent and the catch below swallowed it — a resolution test claiming to
+    // have run against nothing at all.
+    let referenceRead = false;
     for (const reference of ['C:/Windows/System32/ntdll.dll', 'C:/Windows/System32/kernel32.dll']) {
       try {
         const known = readPeHardening(reference);
+        referenceRead = true;
         if (!known.stackCookie || !known.cetCompat || !known.mitigations['GUARD_CF']) {
           failures.push(
             `the PE reader reports ${reference} as lacking ` +
@@ -170,7 +190,13 @@ async function main() {
         // Absent on a non-Windows runner; the shim cases above already skipped.
       }
     }
+    roster.record(
+      mark,
+      'the PE reader reports all three present in a Windows system library',
+      referenceRead,
+    );
 
+    mark = roster.mark();
     // Case 4 — the control. Clearing the bits in a copy must be detected;
     // otherwise case 3 proves only that the reader returns something.
     const scratch = await mkdtemp(join(tmpdir(), 'monstera-pe-'));
@@ -194,6 +220,7 @@ async function main() {
     } finally {
       await rm(scratch, { recursive: true, force: true });
     }
+    roster.record(mark, 'clearing the DllCharacteristics bits is detected');
   } catch (error) {
     failures.push(`could not read the shim's PE header: ${String(error)}`);
   }
@@ -203,13 +230,7 @@ async function main() {
     return 1;
   }
 
-  process.stdout.write('  ok  the built shim exports every MZ_EXPORT symbol its source declares\n');
-  process.stdout.write('  ok  a DLL missing a declared export is rejected\n');
-  process.stdout.write(`  ok  the image carries ${required.join(', ')}\n`);
-  process.stdout.write('  ok  the image carries /GS (stack cookie) and CET compatibility\n');
-  process.stdout.write('  ok  the PE reader reports those same three present in ntdll.dll\n');
-  process.stdout.write('  ok  clearing the DllCharacteristics bits is detected\n');
-  process.stdout.write('\n6 shim cases passed.\n');
+  process.stdout.write(roster.format('shim case'));
   return 0;
 }
 

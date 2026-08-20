@@ -93,7 +93,7 @@ jobs:
       # this proof exists to enable behind a global install this commit does not
       # need. THIS LINE IS OWED A CONVERSION in the first commit that stages
       # package.json again; the entry is written and ready.
-      - name: Prove a reported failure names its cause
+      - name: Prove a script's report of its own run is true
         run: node scripts/lib/reportError.proof.mjs
 
       - name: Prove provisioning is safe under concurrency

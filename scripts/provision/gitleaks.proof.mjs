@@ -29,6 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
 import { compareContents, fileExists } from '../lib/fetchVerified.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const RACERS = 3;
@@ -89,12 +90,21 @@ async function main() {
   /** @type {string[]} */
   const failures = [];
 
+  // Each label is recorded by the case that earns it. The roster used to be a
+  // fixed block printed at the end: deleting a case left its line, and the
+  // staging-survivor case below had no line at all, so the same block both
+  // over- and under-reported. See scripts/lib/passRoster.mjs.
+  const roster = createRoster(failures);
+
+  let mark = roster.mark();
   results.forEach((result, index) => {
     if (result.status !== 0) {
       failures.push(`racer ${index + 1} exited ${result.status}:\n${result.output}`);
     }
   });
+  roster.record(mark, `${RACERS} concurrent provisioners all succeeded`);
 
+  mark = roster.mark();
   const binary = gitleaksBinaryPath();
   if (!(await fileExists(binary))) {
     failures.push(`no binary at ${binary} after ${RACERS} concurrent provisions.`);
@@ -116,7 +126,9 @@ async function main() {
       );
     }
   }
+  roster.record(mark, `published binary runs and reports ${GITLEAKS_VERSION}`);
 
+  mark = roster.mark();
   // Leaves nothing behind: a staging directory that survives means the publish
   // path exited without cleaning up.
   //
@@ -142,6 +154,9 @@ async function main() {
         `${dirname(versionDirectory)}: ${survivors.join(', ')}`,
     );
   }
+  // This case had no line in the old fixed roster at all — the same block that
+  // could outlive a deleted case also silently omitted a live one.
+  roster.record(mark, 'no staging directories survive a completed provision');
 
   // ---------------------------------------------------------------------------
   // Publishing decides from the destination's measured state, not from a flag.
@@ -157,6 +172,7 @@ async function main() {
   // Control first: confirm rename-onto-an-occupied-directory really does fail,
   // because that is what made the old code throw instead of repairing. If this
   // ever stops being true, the case below passes for the wrong reason.
+  mark = roster.mark();
   const occupied = `${versionDirectory}.control-occupied`;
   await rm(occupied, { recursive: true, force: true });
   await mkdir(occupied, { recursive: true });
@@ -181,9 +197,11 @@ async function main() {
         'a plain rename would have worked all along.',
     );
   }
+  roster.record(mark, 'CONTROL: renaming a directory onto an occupied path fails');
 
   // Corrupt the published binary the way a killed download does: the file is
   // present, so every existence check is satisfied, and it cannot run.
+  mark = roster.mark();
   await writeFile(binary, Buffer.from('not an executable'));
   const repair = await raceOne();
   const repaired = (await fileExists(binary)) && spawnedVersion(binary).includes(GITLEAKS_VERSION);
@@ -194,6 +212,9 @@ async function main() {
         repair.output,
     );
   }
+  roster.record(mark, 'a corrupted install is repaired without --force');
+
+  mark = roster.mark();
 
   // A good install is left alone, so the fast path stays fast and the check
   // above is not passing merely because everything is always replaced.
@@ -206,6 +227,9 @@ async function main() {
         `${before.join(',')} became ${after.join(',')}`,
     );
   }
+  roster.record(mark, 'a healthy install is left untouched by a re-run');
+
+  mark = roster.mark();
 
   // Quarantine directories are cleaned up, like staging ones.
   const leftovers = (await readdir(dirname(versionDirectory), { withFileTypes: true }).catch(() => []))
@@ -214,6 +238,7 @@ async function main() {
   if (leftovers.length > 0) {
     failures.push(`quarantine director${leftovers.length === 1 ? 'y' : 'ies'} survived: ${leftovers.join(', ')}`);
   }
+  roster.record(mark, 'no quarantine directories survive the swap');
 
   // ---------------------------------------------------------------------------
   // What decides the swap is content, and content is not runnability.
@@ -253,7 +278,9 @@ async function main() {
         `nothing about separating them.`,
     );
   }
+  roster.record(mark, 'CONTROL: the comparison fixture really cannot be started here');
 
+  mark = roster.mark();
   const sameVerdict = await compareContents(original, identical);
   if (sameVerdict.kind !== 'same') {
     failures.push(
@@ -262,6 +289,9 @@ async function main() {
         `Deciding by "does it run" answers no here and destroys a correct install.`,
     );
   }
+  roster.record(mark, 'an unstartable file is still recognised as the staged bytes');
+
+  mark = roster.mark();
 
   // The smallest difference that changes a decision: same length, one byte.
   // A size-only comparison passes every case above and fails this one.
@@ -272,11 +302,16 @@ async function main() {
         `A truncated or tampered binary of the right size would then be kept.`,
     );
   }
+  roster.record(mark, 'a one-byte difference at equal length is recognised as different');
 
+  mark = roster.mark();
   const shorterVerdict = await compareContents(original, shorter);
   if (shorterVerdict.kind !== 'different') {
     failures.push(`files of different sizes compared ${shorterVerdict.kind}, not different.`);
   }
+  roster.record(mark, 'files of different sizes are recognised as different');
+
+  mark = roster.mark();
 
   // A failed read must not look like an answer (audit item 4b). `different`
   // here would send publish down the destructive path on no evidence at all —
@@ -289,6 +324,7 @@ async function main() {
         `defect this comparison exists to remove.`,
     );
   }
+  roster.record(mark, 'an unreadable destination is neither same nor different');
 
   await rm(scratch, { recursive: true, force: true });
 
@@ -311,6 +347,7 @@ async function main() {
   // never prints an error, so nothing else in this repository would notice the
   // reporter regressing.
   // ---------------------------------------------------------------------------
+  mark = roster.mark();
   const preserved = `${versionDirectory}.preserved`;
   await rm(preserved, { recursive: true, force: true });
   await rename(versionDirectory, preserved);
@@ -348,23 +385,17 @@ async function main() {
         `how a red board produced an argument instead of a measurement.`,
     );
   }
+  roster.record(
+    mark,
+    `a publish failure names the errno (${occupiedRenameCode}), not just the operation`,
+  );
 
   if (failures.length > 0) {
     process.stderr.write(`\n${failures.length} provisioning proof failure(s):\n\n${failures.join('\n\n')}\n`);
     return 1;
   }
 
-  process.stdout.write(`  ok  ${RACERS} concurrent provisioners all succeeded\n`);
-  process.stdout.write(`  ok  published binary runs and reports ${GITLEAKS_VERSION}\n`);
-  process.stdout.write('  ok  control renaming onto an occupied directory fails\n');
-  process.stdout.write('  ok  a corrupted install is repaired without --force\n');
-  process.stdout.write('  ok  a healthy install is left untouched by a re-run\n');
-  process.stdout.write('  ok  no quarantine directories survive the swap\n');
-  process.stdout.write('  ok  an unstartable file is still recognised as the staged bytes\n');
-  process.stdout.write('  ok  a one-byte difference at equal length is recognised as different\n');
-  process.stdout.write('  ok  an unreadable destination is neither same nor different\n');
-  process.stdout.write(`  ok  a publish failure names the errno (${occupiedRenameCode}), not just the operation\n`);
-  process.stdout.write('\n10 provisioning cases passed.\n');
+  process.stdout.write(roster.format('provisioning case'));
   return 0;
 }
 

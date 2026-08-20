@@ -32,6 +32,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { build } from '../lib/msvc.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
 import { malformedCff } from './makeCffFixture.mjs';
@@ -96,6 +97,11 @@ async function main() {
   mkdirSync(scratch, { recursive: true });
   /** @type {string[]} */
   const failures = [];
+  // Each label is recorded by the case that earns it, rather than printed from
+  // a fixed block that a deleted case would outlive — see
+  // scripts/lib/passRoster.mjs.
+  const roster = createRoster(failures);
+  let mark = roster.mark();
 
   try {
     const fixture = writeFixture(join(scratch, 'fixtures'));
@@ -115,7 +121,9 @@ async function main() {
           `built engine.`,
       );
     }
+    roster.record(mark, 'the pinned engine rejects the malformed CFF without over-reading');
 
+    mark = roster.mark();
     // --- Case 2: the control. Remove the checks in a copy and confirm a crash.
     const patchedSource = join(scratch, 'mupdf-src');
     cpSync(source, patchedSource, { recursive: true });
@@ -143,6 +151,7 @@ async function main() {
           `reaches them — either way case 1 proves nothing until this control crashes.`,
       );
     }
+    roster.record(mark, 'removing the bounds checks makes the same input crash');
   } finally {
     // Rebuild the exe against the real tree so no artifact linked to the patched
     // libmupdf is left behind, then drop the scratch tree.
@@ -163,9 +172,7 @@ async function main() {
     return 1;
   }
 
-  process.stdout.write('\n  ok  the pinned engine rejects the malformed CFF without over-reading\n');
-  process.stdout.write('  ok  removing the bounds checks makes the same input crash\n');
-  process.stdout.write('\n2 CFF cases passed.\n');
+  process.stdout.write(`\n${roster.format('CFF case')}`);
   return 0;
 }
 
