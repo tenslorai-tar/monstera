@@ -28,7 +28,12 @@ import { CONFIG_FILE, configPathFor } from '../lib/secretScan.mjs';
 import { provisionGitleaks } from '../provision/gitleaks.mjs';
 import { NPM_VERSION } from '../lib/toolchain.mjs';
 import { pathsTouchContractTypes, touchesContractTypes } from './contractDrift.mjs';
-import { LOCKFILE_VALIDATING_NPM, compareVersions, explain } from './lockfileIntegrity.mjs';
+import {
+  LOCKFILE_VALIDATING_NPM,
+  compareVersions,
+  explain,
+  touchesDependencies,
+} from './lockfileIntegrity.mjs';
 
 const HOOK = resolve(dirname(fileURLToPath(import.meta.url)), 'preCommit.mjs');
 
@@ -287,6 +292,145 @@ check('a refusal explains that nothing was checked, not that the lockfile is wro
   if (!/npm install -g npm/u.test(text)) return `the refusal does not name the remedy:\n${text}`;
   return null;
 });
+
+// -----------------------------------------------------------------------------
+// The trigger asks what CHANGED, not what the file is called.
+//
+// `touchesDependencies` was `path.endsWith('package.json')`, which asks nothing
+// about the contents — the same filename-as-a-check shape corrected twice in the
+// audit-scope classifier. A `scripts`-only edit cannot invalidate a lockfile,
+// and it was arming a fifty-second validation whose whole subject is whether the
+// recorded tree is still satisfiable.
+//
+// Five directions, because an allowlist is only as good as its worst entry and
+// the failure is silent in the direction that matters: a key wrongly called
+// inert switches this guard off for the change that needed it.
+// -----------------------------------------------------------------------------
+{
+  const repo = mkdtempSync(join(tmpdir(), 'monstera-trigger-'));
+  const manifest = (/** @type {Record<string, unknown>} */ value) =>
+    `${JSON.stringify(value, null, 2)}\n`;
+
+  git(repo, ['init', '--quiet']);
+  git(repo, ['config', 'user.email', 'proof@example.invalid']);
+  git(repo, ['config', 'user.name', 'Hook Proof']);
+  writeFileSync(
+    join(repo, 'package.json'),
+    manifest({ name: 'x', version: '1.0.0', scripts: { a: 'echo a' }, dependencies: { left: '^1' } }),
+  );
+  git(repo, ['add', '-A']);
+  git(repo, ['commit', '--quiet', '--no-verify', '-m', 'base']);
+
+  /** @param {Record<string, unknown>} value */
+  const stage = (value) => {
+    writeFileSync(join(repo, 'package.json'), manifest(value));
+    git(repo, ['add', '-A']);
+  };
+  const reset = () => git(repo, ['reset', '--quiet', '--hard', 'HEAD']);
+
+  const base = { name: 'x', version: '1.0.0', scripts: { a: 'echo a' }, dependencies: { left: '^1' } };
+
+  check('a scripts-only edit does NOT arm the lockfile check', () => {
+    stage({ ...base, scripts: { a: 'echo a', b: 'node scripts/thing.mjs' } });
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    return armed
+      ? 'a scripts edit armed a check whose subject is whether the lockfile can satisfy ' +
+          'package.json. The lockfile root entry records name, version, license, workspaces and ' +
+          'the dependency blocks — and not scripts, which is why this one key is on the list.'
+      : null;
+  });
+
+  check('CONTROL: a dependency edit still arms it', () => {
+    stage({ ...base, dependencies: { left: '^2' } });
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    return armed
+      ? null
+      : 'the narrowing switched the guard off for the change it exists for. Without this the ' +
+          'case above is satisfied by a trigger that never fires.';
+  });
+
+  check('an UNRECOGNISED top-level key arms it, rather than being assumed inert', () => {
+    // `license` is the reason the allowlist has one entry and not seven: it
+    // reads as inert and npm copies it into the lock. Everything not
+    // demonstrated inert must trip, so being wrong costs fifty seconds.
+    stage({ ...base, license: 'MIT' });
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    return armed
+      ? null
+      : 'a key nobody has classified was treated as inert. The trip set is deliberately NOT ' +
+          'derived from the lockfile root keys either — `overrides` never appears there and ' +
+          'unquestionably changes resolution, so derivation under-triggers on the key most ' +
+          'likely to matter.';
+  });
+
+  check('an ADDED manifest arms it, having no pair of blobs to compare', () => {
+    mkdirSync(join(repo, 'packages', 'new'), { recursive: true });
+    writeFileSync(join(repo, 'packages', 'new', 'package.json'), manifest({ name: 'new' }));
+    git(repo, ['add', '-A']);
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    rmSync(join(repo, 'packages'), { recursive: true, force: true });
+    return armed
+      ? null
+      : 'a new workspace manifest is the most resolution-relevant change there is, and there is ' +
+          'no before-blob to compare it against.';
+  });
+
+  check('a RENAMED manifest arms it', () => {
+    mkdirSync(join(repo, 'packages', 'moved'), { recursive: true });
+    writeFileSync(join(repo, 'packages', 'moved', 'package.json'), manifest({ name: 'moved' }));
+    // Sorts before `package.json`, so the rename below lands EARLIER in the
+    // --name-status list than the root manifest. That ordering is what the
+    // desync control needs.
+    writeFileSync(join(repo, 'notes.md'), 'notes\n');
+    git(repo, ['add', '-A']);
+    git(repo, ['commit', '--quiet', '--no-verify', '-m', 'a second manifest and a document']);
+    git(repo, ['mv', 'packages/moved/package.json', 'packages/moved/renamed.json']);
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    return armed
+      ? null
+      : 'a manifest that moved was treated as unchanged. There is no pair of blobs at one path ' +
+          'to compare, and where a workspace manifest lives is itself resolution input.';
+  });
+
+  check('CONTROL: a rename earlier in the list does not hide a later dependency change', () => {
+    // With -z a rename is `R100\0old\0new` and everything else is `X\0path`.
+    // Consuming one field instead of two shifts every entry after it, and the
+    // symptom is a wrong answer for a path the walk never properly reached.
+    //
+    // THE DIRECTION IS THE WHOLE CASE. Pairing the rename with a scripts-only
+    // edit would prove nothing: a desync that loses the manifest entirely
+    // returns false, which is exactly what an inert change returns. So the
+    // later change must be one that MUST arm, and the rename is of an unrelated
+    // document that sorts ahead of it.
+    git(repo, ['mv', 'notes.md', 'notes-renamed.md']);
+    stage({ ...base, dependencies: { left: '^3' } });
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    return armed
+      ? null
+      : 'a rename ahead of it swallowed a dependency change. That is what a misaligned field ' +
+          'walk looks like from the outside — not a crash, a quiet no.';
+  });
+
+  check('an UNPARSEABLE manifest arms it rather than being read as unchanged', () => {
+    writeFileSync(join(repo, 'package.json'), '{ this is not json\n');
+    git(repo, ['add', '-A']);
+    const armed = touchesDependencies({ root: repo });
+    reset();
+    return armed
+      ? null
+      : 'a manifest that could not be parsed was reported as an inert change. "Cannot say" must ' +
+          'never read as "no" — the same reason an unreadable staged list arms the ' +
+          'contract-drift gate.';
+  });
+
+  rmSync(repo, { recursive: true, force: true });
+}
 
 check('the remedy names the PINNED npm, never a floating tag', () => {
   // The defect this case exists for: the first draft advised `npm@latest`,

@@ -106,17 +106,140 @@ function npmCliPath() {
   );
 }
 
-/** True when this commit touches dependency resolution at all. */
-export function touchesDependencies() {
-  const staged = spawnSync('git', ['diff', '--cached', '--name-only', '-z'], {
-    cwd: REPO_ROOT,
+/**
+ * The top-level `package.json` keys that cannot affect dependency resolution.
+ *
+ * **Exactly one, and it stays exactly one until something demonstrates a
+ * second.** An allowlist is only as good as its worst entry: a key wrongly
+ * called inert silently switches this guard off for the change that needed it,
+ * and nothing later says so.
+ *
+ * `scripts` is here because it is measured rather than assumed. The root
+ * `package` entry `package-lock.json` records carries `name`, `version`,
+ * `license`, `workspaces`, `devDependencies` and the dependency blocks — and
+ * does **not** carry `scripts`. So editing `scripts` cannot change what the
+ * lockfile has to satisfy.
+ *
+ * `license` looked equally inert and is not: npm copies it into the lock. That
+ * is one wrong entry found in a seven-key draft, which is the entire argument
+ * for starting at one.
+ *
+ * The trip set is **not derived** from the lockfile's root keys, which is the
+ * obvious-looking shortcut and is wrong: `overrides` never appears there and
+ * unquestionably changes resolution, so derivation would under-trigger on the
+ * key most likely to matter. Enumerate the inert side; fail closed on
+ * everything else. Being wrong that way costs fifty seconds.
+ */
+const INERT_MANIFEST_KEYS = new Set(['scripts']);
+
+/**
+ * The blob at `ref` as parsed JSON, or `null` if it cannot be read or parsed.
+ *
+ * @param {string} root
+ * @param {string} ref A `git show` argument, e.g. `:package.json` or `HEAD:x`.
+ * @returns {Record<string, unknown> | null}
+ */
+function manifestAt(root, ref) {
+  const shown = spawnSync('git', ['show', ref], { cwd: root, encoding: 'utf8' });
+  if (shown.status !== 0) return null;
+  try {
+    const parsed = JSON.parse(`${shown.stdout ?? ''}`);
+    return typeof parsed === 'object' && parsed !== null
+      ? /** @type {Record<string, unknown>} */ (parsed)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a modified manifest changed anything that can affect resolution.
+ *
+ * Values are compared by serialisation, so a reordering counts as a change and
+ * trips. That is the safe direction: the cost is a check that did not need to
+ * run.
+ *
+ * @param {string} root
+ * @param {string} path
+ * @returns {boolean}
+ */
+function manifestChangeMatters(root, path) {
+  const before = manifestAt(root, `HEAD:${path}`);
+  const after = manifestAt(root, `:${path}`);
+
+  // Unreadable or unparseable on either side: this function cannot say the
+  // change is inert, and "cannot say" must never read as "no". Same reason an
+  // unreadable staged list arms the contract-drift gate.
+  if (before === null || after === null) return true;
+
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
+    if (!INERT_MANIFEST_KEYS.has(key)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when this commit touches dependency resolution at all.
+ *
+ * ## Why this reads the diff rather than the file names
+ *
+ * It used to be `path.endsWith('package.json')`, which asks nothing about what
+ * changed inside — the same filename-as-a-check shape corrected twice in the
+ * audit-scope classifier. A `scripts`-only edit cannot invalidate a lockfile,
+ * and it was triggering a fifty-second validation whose entire subject is
+ * whether the recorded tree is still satisfiable.
+ *
+ * **This narrowing is correct independently of anything blocking anyone.** Ask
+ * whether it would be right if the npm here were already 11.17.0: yes — the
+ * trigger would still be over-broad, merely harmlessly so. Being blocked by it
+ * is what made someone look; it is not what makes the over-breadth a defect.
+ *
+ * Everything that is not provably inert trips: an added, deleted or renamed
+ * manifest (there is no pair of blobs to compare, and a new workspace manifest
+ * is the most resolution-relevant change there is), any top-level key outside
+ * {@link INERT_MANIFEST_KEYS}, an unparseable blob, and any change to
+ * `package-lock.json` itself.
+ *
+ * @param {{ root?: string }} [options] The repository to inspect. A parameter so
+ *   the proof can build the five states in a scratch tree and exercise the git
+ *   plumbing — the `-z` rename parsing especially — rather than only the
+ *   decision it feeds.
+ * @returns {boolean}
+ */
+export function touchesDependencies({ root = REPO_ROOT } = {}) {
+  const staged = spawnSync('git', ['diff', '--cached', '--name-status', '-z'], {
+    cwd: root,
     encoding: 'utf8',
   });
-  if (staged.status !== 0) return false;
+  // This used to `return false` — a guard that could not read the index
+  // reported that there was nothing to check.
+  if (staged.status !== 0) return true;
 
-  return `${staged.stdout ?? ''}`
-    .split('\0')
-    .some((path) => path === 'package-lock.json' || path.endsWith('package.json'));
+  const fields = `${staged.stdout ?? ''}`.split('\0').filter((field) => field !== '');
+
+  for (let index = 0; index < fields.length; index += 1) {
+    const state = `${fields[index]}`;
+    // With -z, a rename or copy is `R100\0old\0new`; everything else is
+    // `X\0path`. Consuming the right number of fields is what keeps the states
+    // and the paths aligned for the rest of the list.
+    const renamed = /^[RC]\d*$/u.test(state);
+    const path = `${fields[index + 1] ?? ''}`;
+    const destination = renamed ? `${fields[index + 2] ?? ''}` : path;
+    index += renamed ? 2 : 1;
+
+    if (path === 'package-lock.json' || destination === 'package-lock.json') return true;
+
+    const isManifest = path.endsWith('package.json') || destination.endsWith('package.json');
+    if (!isManifest) continue;
+
+    // Only a modification has two blobs to compare. Anything else — added,
+    // deleted, renamed, or a state this does not recognise — trips.
+    if (state !== 'M') return true;
+    if (manifestChangeMatters(root, destination)) return true;
+  }
+
+  return false;
 }
 
 /**
