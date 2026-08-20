@@ -25,6 +25,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { GITLEAKS_VERSION, gitleaksBinaryPath } from './gitleaks.mjs';
@@ -76,6 +77,54 @@ function raceOne() {
       resolveRun({ status: status ?? 1, output: Buffer.concat(chunks).toString('utf8') }),
     );
   });
+}
+
+/**
+ * Errnos that mean "something is holding this", as distinct from "the
+ * destination is in the way". ENOTEMPTY and EEXIST are deliberately absent:
+ * those are states of the filesystem, and waiting does not change them.
+ */
+const HELD_CODES = new Set(['EPERM', 'EACCES', 'EBUSY', 'ETXTBSY']);
+
+/** Long enough for a scanner to finish with a small file; arbitrary otherwise. */
+const RETRY_AFTER_MS = 500;
+
+/**
+ * Renames, and if the platform refuses with a held-looking errno, waits and
+ * tries once more — reporting which of those happened.
+ *
+ * **This is an instrument, not a retry policy, and the difference is the whole
+ * point.** The caller fails its case either way; the second attempt buys
+ * evidence and nothing else. A retry that SUCCEEDS is direct evidence of a
+ * transient handle on something inside the directory — an open handle blocking
+ * RENAME, this project's Part K mechanism. A retry that fails identically says
+ * the cause is something else, and that a copy-then-spawn repair would not have
+ * helped.
+ *
+ * Nothing in `gitleaks.mjs` does this. Accommodating the state is a decision
+ * that has not been taken; measuring whether the state is transient is not the
+ * same act, and this one goes red either way.
+ *
+ * @param {string} from
+ * @param {string} to
+ * @returns {Promise<{ ok: true, held: null } | { ok: true, held: string } | { ok: false, first: string, second: string }>}
+ */
+async function renameMeasuringTransience(from, to) {
+  try {
+    await rename(from, to);
+    return { ok: true, held: null };
+  } catch (error) {
+    const first = /** @type {NodeJS.ErrnoException} */ (error).code ?? '';
+    if (!HELD_CODES.has(first)) return { ok: false, first, second: first };
+
+    await setTimeout(RETRY_AFTER_MS);
+    try {
+      await rename(from, to);
+      return { ok: true, held: first };
+    } catch (again) {
+      return { ok: false, first, second: /** @type {NodeJS.ErrnoException} */ (again).code ?? '' };
+    }
+  }
 }
 
 async function main() {
@@ -350,22 +399,88 @@ async function main() {
   mark = roster.mark();
   const preserved = `${versionDirectory}.preserved`;
   await rm(preserved, { recursive: true, force: true });
-  await rename(versionDirectory, preserved);
-  // Occupied, but holding no binary — so `publish` measures fileExists(binary)
-  // as false and takes the plain-rename path at the bottom, which fails onto an
-  // occupied destination. Deterministic on both platforms, and it is the same
-  // syscall the control above just measured.
-  await mkdir(versionDirectory, { recursive: true });
-  await writeFile(join(versionDirectory, 'decoy'), 'x');
 
-  const reported = await raceOne();
+  // The setup is INSIDE the case now. It used to be three bare statements at
+  // the top level of main(), and when this first rename threw EPERM on a
+  // Windows runner the whole proof died before a single roster line printed:
+  // thirteen cases, no output, exit 1. Y-1 made the roster true about the run;
+  // this is the same property failing through the other door, where the run
+  // ends before the roster can speak at all.
+  //
+  // Note what this rename follows: the previous case ran the provisioner, which
+  // spawned gitleaks.exe from inside this very directory. Every site that has
+  // failed here is a rename of a directory that held an executable started
+  // moments earlier.
+  const moved = await renameMeasuringTransience(versionDirectory, preserved);
 
-  // Restored before anything is asserted, so a failure here cannot leave later
-  // steps in this job without a scanner.
-  await rm(versionDirectory, { recursive: true, force: true });
-  await rename(preserved, versionDirectory);
+  /** @type {{ status: number, output: string }} */
+  let reported = { status: 0, output: '' };
+  let induced = false;
 
-  if (reported.status === 0) {
+  if (!moved.ok) {
+    failures.push(
+      `could not move the install aside to induce a publish failure: ${moved.first} first, ` +
+        `${moved.second === moved.first ? 'the same after' : `${moved.second} after`} ` +
+        `${RETRY_AFTER_MS} ms.\n` +
+        `MEASUREMENT: the retry did NOT succeed, so this is not a handle that clears on its ` +
+        `own, and copy-then-spawn would not have prevented it.`,
+    );
+  } else {
+    try {
+      if (moved.held !== null) {
+        failures.push(
+          `MEASUREMENT: renaming ${versionDirectory} failed with ${moved.held} and SUCCEEDED ` +
+            `${RETRY_AFTER_MS} ms later, with nothing else changed. That is a transient handle ` +
+            `on something inside a directory whose executable was spawned moments earlier — an ` +
+            `open handle blocking RENAME. The case fails deliberately: this is evidence, not a ` +
+            `retry policy, and the repair is to spawn from somewhere the binary is not about to ` +
+            `move from.`,
+        );
+      }
+
+      // Occupied, but holding no binary — so `publish` measures
+      // fileExists(binary) as false and takes the plain-rename path at the
+      // bottom, which fails onto an occupied destination. Deterministic on both
+      // platforms, and it is the same syscall the control above just measured.
+      await mkdir(versionDirectory, { recursive: true });
+      await writeFile(join(versionDirectory, 'decoy'), 'x');
+
+      reported = await raceOne();
+      induced = true;
+    } catch (error) {
+      // A throw anywhere in this body would otherwise end main() before the
+      // roster prints, which is the defect above wearing different clothes: the
+      // report is not false, it simply never happens. Recorded as a failure so
+      // the run still says what it did.
+      failures.push(`the errno case threw instead of reporting:\n${formatError(error)}`);
+    } finally {
+      // try/finally, not two statements in sequence. The comment here used to
+      // say that restoring before asserting meant a failure could not leave
+      // later steps without a scanner — true for a failure AFTER the restore,
+      // and nothing at all protected a throw between the rename above and this
+      // point. Had the EPERM landed one line later, .tools/gitleaks/<version>
+      // would have been renamed away and every later step in that job would
+      // have run without a scanner.
+      await rm(versionDirectory, { recursive: true, force: true });
+      const back = await renameMeasuringTransience(preserved, versionDirectory);
+      if (!back.ok) {
+        failures.push(
+          `could not restore ${versionDirectory} from ${preserved}: ${back.first} first, ` +
+            `${back.second} after ${RETRY_AFTER_MS} ms. Later steps in this job have no ` +
+            `scanner, and that is a fact about the job rather than about this case.`,
+        );
+      } else if (back.held !== null) {
+        failures.push(
+          `MEASUREMENT: restoring ${versionDirectory} failed with ${back.held} and succeeded ` +
+            `${RETRY_AFTER_MS} ms later — a second observation of the same transient handle.`,
+        );
+      }
+    }
+  }
+
+  if (!induced) {
+    // Nothing was measured, so nothing below may report on the reporter.
+  } else if (reported.status === 0) {
     failures.push(
       'publishing onto an occupied destination was expected to fail and did not, so the errno ' +
         'case measured nothing. An empty induced failure passes every check below by having ' +
