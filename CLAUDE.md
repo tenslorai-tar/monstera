@@ -545,6 +545,27 @@ to always **differ** reddened it immediately.
 So for a comparison, ask which mutation the *bug* would be indistinguishable
 from, and run the other one.
 
+**And the same rule applies to the FIXTURE, not only to the mutation: never
+build a fixture the bug also handles correctly.** A case whose expected output
+the defect would produce anyway separates nothing, and — unlike a vacuous proof —
+it fails no mutation test unless you happen to run the one it is blind to. Its
+name tells you it is covered.
+
+Twice on 2026-08-20, in different files, on different mechanisms, hours apart:
+
+| the case | the fixture | why it separated nothing |
+|---|---|---|
+| "a timed-out run is not green" | `CI=timed_out, Guards=skipped` | the predicate under test asked whether the summary contained `=success`. With no success anywhere it answered correctly, for the wrong reason. |
+| "the listener passes `args[0]`" | `'not an object'`, asserting the call is refused | a listener that drops the argument passes `undefined`, which the schema also refuses. The case survived the exact mutation it existed to catch, while two unrelated cases went red. |
+
+Both were fixed the same way: **assert something only the correct path
+produces** — a success beside the bad conclusion, and a diagnostic naming the
+value that actually reached the parse.
+
+The tell is that the fixture contains none of the thing the defect keys on. Ask
+what the broken version would print for *this input*, before writing the
+assertion.
+
 **4a. Has every instrument passed a resolution test — BEFORE it measured
 anything real?**
 Not after, and not "it looked plausible". Feed it two values you know differ by
