@@ -135,7 +135,24 @@ process.stdout.write(
     // proof appeared in no column and read as an ordinary line in the file
     // count — the limit case of the modified column's own argument.
     section('proofs REMOVED — coverage leaving; say why in the entry', scope.proofsRemoved) +
-    section('new scripts — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
+    section('new source FILES — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
+    `    ^ NEW FILES ONLY. An instrument added as a function inside a module that\n` +
+    `      already existed does not appear above — read the modified-proofs diffs\n` +
+    `      for those. Four axes of this classifier have needed fixing so far:\n` +
+    `      pattern (W-1), root (X-1), state (Z-1), granularity (AA-1, open).\n` +
+    // NO SILENT CAPS (finding AA-1). This column filters ADDED FILES, so an
+    // instrument that arrives as a function inside a module that already existed
+    // is invisible to it — and the column then prints `none`, which is item 4b's
+    // exact output: "found nothing", indistinguishable from "nothing to find",
+    // in the one column whose whole job is to say RESOLUTION-TEST THESE.
+    //
+    // Measured on the range that found it: `transienceNote`, `probeOutsideStaging`
+    // and the shared `--name-status` reader all landed inside modified files, and
+    // this column reported none of them.
+    //
+    // The bound is printed rather than fixed because surfacing per-function
+    // instruments is real work and will be noisy, and a deferral nobody can see
+    // is the same defect one level up.
     `\n`,
 );
 

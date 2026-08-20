@@ -285,6 +285,22 @@ try {
         `the state U-2 was about.\n${output}`,
     );
 
+    // AA-1's honesty half. The column filters ADDED FILES, so an instrument
+    // arriving as a function inside an existing module is invisible to it — and
+    // it then prints `none`, which is item 4b's output exactly: "found nothing",
+    // indistinguishable from "nothing to find", in the column whose whole job is
+    // to say resolution-test these. The granularity fix is open; the disclosure
+    // is not optional, because a deferral nobody can see is the same defect one
+    // level up.
+    check(
+      'THE REPORT DECLARES what the instrument column cannot see',
+      /NEW FILES ONLY/u.test(output) && /granularity/u.test(output),
+      `the instrument column printed its result without saying it filters added files only. ` +
+        `Measured on the range that found this: three instruments — a transience note, a ` +
+        `publish probe and the shared --name-status reader — all landed inside modified files ` +
+        `and the column reported none of them.\n${output}`,
+    );
+
     check(
       'CONTROL: and it stays silent about a file with nothing hidden',
       !new RegExp(`appended\\.proof\\.mjs\\n[^\\n]*\\n\\s+\\d+ deletion`, 'u').test(output),

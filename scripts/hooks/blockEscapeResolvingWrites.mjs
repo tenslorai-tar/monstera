@@ -125,13 +125,36 @@
  * redirect rule.
  * *Route:* drop the `echo` labelling, or run the commands as separate calls.
  *
- * This one IS a narrowing candidate, unlike 1 and 2, because nothing about it
- * involves a banned form appearing as text. It is not being narrowed today, and
- * the constraint on any future attempt is absolute: **`printf` with a redirect
- * must stay denied.** That is occurrence 7 — a one-line fixture written with
- * `printf >`, which resolved its `\n` — and it is the reason the guard covers
- * `printf` at all. A narrowing that pairs each writer with its own redirect has
- * to keep that case red, which is what `proof:escapeguard` is for.
+ * **4. A read-only interpreter expression that writes nothing.** Recorded
+ * verbatim, 2026-08-20, by a second agent in a different session:
+ *
+ * ```
+ * node -p "require('./docs/audit-watermark.json').commit"
+ * ```
+ *
+ * No redirect, no write, in a compound command that produced only stdout. The
+ * rule fires on the INTERPRETER FLAG rather than on a write — deliberately, since
+ * `node -e` is occurrence 6 and the flag is the only thing common to every shape
+ * of it. *Route:* `git show` and `grep`, which answer the same question.
+ *
+ * ## The narrowing candidate, measured twice
+ *
+ * Denials 3 and 4 are the same class from two different agents in two different
+ * sessions, both on commands that could not have resolved an escape into a file:
+ * one redirect belonging to a different writer, one expression with no redirect
+ * at all. That is no longer a candidate someone noticed once.
+ *
+ * Neither is being narrowed today, and the constraint on any future attempt is
+ * absolute: **`printf` with a redirect must stay denied.** That is occurrence 7
+ * — a one-line fixture written with `printf >`, which resolved its `\n` — and it
+ * is the reason the guard covers `printf` at all. A narrowing that pairs each
+ * writer with its own redirect, or that distinguishes `-p` from `-e`, has to keep
+ * that case red, which is what `proof:escapeguard` is for.
+ *
+ * **What both observations also measure is the cost of the false positive**, and
+ * it is the reason to be slow here: in each case the same answer was obtained one
+ * command later through a permitted tool. A guard whose false positives cost a
+ * retry is not the guard people turn off — the one that costs a wrong file is.
  *
  * Neither 1 nor 2 is a narrowing candidate. The cost is one retry through a tool
  * the rule already mandates; the alternative is a matcher that reasons about
