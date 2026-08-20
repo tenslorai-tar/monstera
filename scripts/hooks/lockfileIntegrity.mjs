@@ -86,6 +86,57 @@ import { NPM_VERSION } from '../lib/toolchain.mjs';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
+ * npm's own last resolution step, which this used to omit.
+ *
+ * ## The half-reimplementation, measured
+ *
+ * `npm --version` reported **11.17.0** on the machine where this hook resolved
+ * **11.6.2**, at the same moment, in the same repository: `npm run
+ * check:lockfile` validated the lockfile and the pre-commit hook refused to look
+ * at it. Two answers to one question, from two paths that both believed they
+ * were asking "which npm does this developer have".
+ *
+ * The cause is that npm's shim does not stop at the npm beside the node binary.
+ * It asks that npm for the global prefix and re-points at the npm installed
+ * there, if one exists:
+ *
+ * ```sh
+ * NPM_PREFIX=`"$NODE_EXE" "$NPM_CLI_JS" prefix -g`
+ * if [ -f "$NPM_PREFIX/node_modules/npm/bin/npm-cli.js" ]; then NPM_CLI_JS=… ; fi
+ * ```
+ *
+ * So `npm install -g npm@11.17.0` leaves the bundled 11.6.2 in place beside
+ * `node` and installs the newer one under the prefix — and this function
+ * implemented the first half of the rule and not the second. **A second opinion
+ * about a resolution that already had an authority**, which is the shape this
+ * repository has now corrected in three other places today.
+ *
+ * The repair is to follow the authority's own rule rather than invent one. Not
+ * by spawning `npm`: that needs a shell on Windows, which is the hazard the
+ * header below is about. The candidate npm is asked with the current `node`,
+ * exactly as the shim does.
+ *
+ * @param {string} candidate An `npm-cli.js` that exists.
+ * @returns {string}
+ */
+export function globalPrefixOverride(candidate) {
+  const asked = spawnSync(process.execPath, [candidate, 'prefix', '-g'], {
+    encoding: 'utf8',
+    cwd: REPO_ROOT,
+  });
+  // A prefix this cannot read is not evidence that none exists, so the candidate
+  // stands. Failing closed here would block every commit on a machine where
+  // `prefix -g` is slow or sandboxed, for a redirect that is usually a no-op.
+  if (asked.status !== 0) return candidate;
+
+  const prefix = `${asked.stdout ?? ''}`.trim();
+  if (prefix === '') return candidate;
+
+  const installed = join(prefix, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  return existsSync(installed) ? installed : candidate;
+}
+
+/**
  * Locates npm's JavaScript entry point so it can be run with the current node
  * binary.
  *
@@ -104,7 +155,7 @@ function npmCliPath() {
 
   // npm ships beside the node binary in every standard distribution.
   const beside = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  if (existsSync(beside)) return beside;
+  if (existsSync(beside)) return globalPrefixOverride(beside);
 
   // Unix installs commonly put node in bin/ with npm one level up in lib/.
   const unix = join(
@@ -115,7 +166,7 @@ function npmCliPath() {
     'bin',
     'npm-cli.js',
   );
-  if (existsSync(unix)) return unix;
+  if (existsSync(unix)) return globalPrefixOverride(unix);
 
   throw new Error(
     "Could not locate npm's CLI entry point. Looked beside the node binary and in " +

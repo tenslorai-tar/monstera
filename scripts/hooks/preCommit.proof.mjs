@@ -32,6 +32,7 @@ import {
   LOCKFILE_VALIDATING_NPM,
   compareVersions,
   explain,
+  globalPrefixOverride,
   touchesDependencies,
 } from './lockfileIntegrity.mjs';
 
@@ -91,10 +92,28 @@ function makeRepo() {
  * @returns {{ ok: boolean, output: string }}
  */
 function runHook(root, env = {}) {
+  // `npm_execpath` is DELETED, and that is the difference between exercising the
+  // hook and exercising this proof's own launcher.
+  //
+  // git sets no such variable — a real `git commit` runs the hook from a bare
+  // environment. This proof runs under `npm run`, which exports `npm_execpath`
+  // pointing at the npm that started it, and a spawned child inherits it. So
+  // every hook case has been running with the resolution SHORT-CIRCUITED by the
+  // first branch of npmCliPath, and the branch a committer actually takes — find
+  // npm beside node, then follow it to the global prefix — was exercised by
+  // nothing.
+  //
+  // Measured: with the prefix redirect removed, this proof stayed green while
+  // the real hook refused every commit on this machine. Item 2's "verified
+  // against the easy shape only", where the easy shape was an environment
+  // variable production does not have.
+  const inherited = { ...process.env, ...env };
+  delete inherited['npm_execpath'];
+
   const result = spawnSync(process.execPath, [HOOK], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: inherited,
   });
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
@@ -461,6 +480,79 @@ check('CONTROL: a real lockfile failure still reads as one', () => {
   if (/could not be run/u.test(text)) return `a genuine failure was reported as a refusal:\n${text}`;
   if (!/cannot satisfy package\.json/u.test(text)) return `the failure lost its message:\n${text}`;
   if (!/rm -rf node_modules/u.test(text)) return `the failure does not name the repair:\n${text}`;
+  return null;
+});
+
+// ---------------------------------------------------------------------------
+// npm's OWN resolution has a second step, and this guard implemented only the
+// first. Measured: `npm --version` reported 11.17.0 while the pre-commit hook
+// resolved 11.6.2, in the same repository at the same moment — `npm run
+// check:lockfile` validated the lockfile and the hook refused to look at it.
+//
+// npm's shim asks the npm beside `node` for the GLOBAL PREFIX and re-points at
+// the npm installed there. `npm install -g npm@x` leaves the bundled copy in
+// place, so a guard that stops at the bundled one asks a different npm than the
+// developer does.
+//
+// The fixture is a candidate script that PRINTS a prefix, so no real npm is
+// involved and the rule is tested rather than the environment.
+// ---------------------------------------------------------------------------
+/**
+ * @param {string} prefix What the fake npm reports for `prefix -g`.
+ * @param {boolean} installThere Whether an npm exists under that prefix.
+ * @returns {{ candidate: string, installed: string, resolved: string }}
+ */
+function resolveWithFakeNpm(prefix, installThere) {
+  const scratch = mkdtempSync(join(tmpdir(), 'monstera-npmpath-'));
+  const candidate = join(scratch, 'npm-cli.js');
+  writeFileSync(candidate, `process.stdout.write(${JSON.stringify(prefix)});\n`, 'utf8');
+
+  const installed = join(prefix, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (installThere) {
+    mkdirSync(dirname(installed), { recursive: true });
+    writeFileSync(installed, 'process.stdout.write("11.99.0");\n', 'utf8');
+  }
+  return { candidate, installed, resolved: globalPrefixOverride(candidate) };
+}
+
+check('a globally installed npm WINS over the one bundled beside node', () => {
+  const prefix = mkdtempSync(join(tmpdir(), 'monstera-npmprefix-'));
+  const { installed, resolved } = resolveWithFakeNpm(prefix, true);
+  if (resolved !== installed) {
+    return (
+      `resolved ${resolved}, expected ${installed}. npm's own shim re-points at the prefix, so ` +
+      `stopping at the bundled copy asks a DIFFERENT npm than the developer does — measured at ` +
+      `11.6.2 against a reported 11.17.0, with check:lockfile and the hook disagreeing.`
+    );
+  }
+  return null;
+});
+
+check('CONTROL: with no npm under the prefix, the candidate stands', () => {
+  const prefix = mkdtempSync(join(tmpdir(), 'monstera-npmprefix-'));
+  const { candidate, resolved } = resolveWithFakeNpm(prefix, false);
+  if (resolved !== candidate) {
+    return (
+      `resolved ${resolved}, expected the candidate ${candidate}. Without this the case above is ` +
+      `satisfied by a rule that always redirects, which would break every machine that has no ` +
+      `global npm install — which is every CI runner here.`
+    );
+  }
+  return null;
+});
+
+check('a prefix that cannot be read leaves the candidate in place', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'monstera-npmpath-'));
+  const candidate = join(scratch, 'npm-cli.js');
+  writeFileSync(candidate, 'process.exit(3);\n', 'utf8');
+  const resolved = globalPrefixOverride(candidate);
+  if (resolved !== candidate) {
+    return (
+      `resolved ${resolved} from an npm that exits non-zero. A prefix this cannot read is not ` +
+      `evidence that none exists — and failing closed here would block every commit on a machine ` +
+      `where \`prefix -g\` is sandboxed, for a redirect that is usually a no-op.`
+    );
+  }
   return null;
 });
 
