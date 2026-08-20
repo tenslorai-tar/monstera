@@ -34,6 +34,7 @@ import {
   probeOutsideStaging,
   publish,
   reportsPinnedVersion,
+  transienceNote,
 } from './gitleaks.mjs';
 import { compareContents, fileExists } from '../lib/fetchVerified.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -405,8 +406,81 @@ async function main() {
           `runnability and the staged-copy check is decoration.`,
       );
     }
+    // The three ways `false` happens are three different repairs, and the
+    // caller's message used to assert the first of them while naming a file it
+    // had not executed. `could not start` is what a lost executable bit looks
+    // like on POSIX — the assumption this whole design rests on.
+    if (decoy.why !== 'could not start') {
+      failures.push(
+        `a file that cannot be executed was reported as "${decoy.why}". Copy failure, a binary ` +
+          `that will not start, and a binary that starts and reports the wrong version send a ` +
+          `reader to three different places; collapsing them sends everyone to the pin table.`,
+      );
+    }
+    if (!decoy.detail.trim()) {
+      failures.push(
+        `the probe reported no detail for a failed spawn. The errno IS the diagnosis — that is ` +
+          `why 8130551 exists, and why today's EPERM was solvable from a log at all.`,
+      );
+    }
   }
-  roster.record(mark, 'RESOLUTION: the probe still says no for something that cannot run');
+  roster.record(mark, 'RESOLUTION: the probe says no, and says WHICH of the three ways');
+
+  mark = roster.mark();
+  {
+    // A copy that cannot happen at all: the source does not exist. Separated
+    // from the case above because "I could not make a copy" and "the copy will
+    // not run" are the two the old single message conflated.
+    const absent = await probeOutsideStaging(join(scratchRoot, 'nope', binaryName), GITLEAKS_VERSION);
+    if (absent.ok || absent.why !== 'copy failed') {
+      failures.push(
+        `probing a source that does not exist reported ok=${String(absent.ok)}, ` +
+          `why="${absent.why}". It must name the copy step, or the failure is attributed to a ` +
+          `binary nothing ever tried to run.`,
+      );
+    }
+  }
+  roster.record(mark, 'a copy that cannot be made is reported as the copy step');
+
+  mark = roster.mark();
+  {
+    // ITEM 4a on the transience instrument. Only the CLEARED branch has ever
+    // run — the PERSISTED branch is the one that says a retry would not have
+    // helped, and an instrument that decides whether a retry is legal and has
+    // never been shown to say NO is exactly the blind instrument this checklist
+    // is about. Both branches, fed values differing only by the thing that
+    // changes the verdict.
+    const cleared = transienceNote({ code: 'EPERM', removed: true, elapsedMs: 3, tree: '/x' });
+    const persisted = transienceNote({ code: 'EPERM', removed: false, elapsedMs: 3, tree: '/x' });
+    const quiet = transienceNote({ code: null, removed: true, elapsedMs: 3, tree: '/x' });
+
+    if (!cleared.includes('CLEARED') || !persisted.includes('PERSISTED')) {
+      failures.push(
+        `the instrument did not separate a block that cleared from one that did not:\n` +
+          `  removed=true  -> ${cleared || '(nothing)'}\n  removed=false -> ${persisted || '(nothing)'}`,
+      );
+    }
+    if (cleared === persisted) {
+      failures.push(
+        `both outcomes printed the same sentence, so the measurement distinguishes nothing — ` +
+          `which is the failure mode of every blind instrument in this project's record.`,
+      );
+    }
+    if (persisted.includes('external') || !persisted.includes('not the answer')) {
+      failures.push(
+        `the PERSISTED branch pointed at the falsification control or failed to say a retry is ` +
+          `not the answer. That branch exists to STOP a retry, and it is the one nothing has ` +
+          `ever executed in anger:\n  ${persisted}`,
+      );
+    }
+    if (quiet !== '') {
+      failures.push(
+        `a run where nothing held anything still printed a measurement: ${quiet}. Then every ` +
+          `successful provision carries a line about a block that did not happen.`,
+      );
+    }
+  }
+  roster.record(mark, 'RESOLUTION: the transience instrument says PERSISTED, not only CLEARED');
 
   mark = roster.mark();
   {

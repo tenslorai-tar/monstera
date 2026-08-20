@@ -203,14 +203,41 @@ const spawnedFrom = new Set();
  * @returns {boolean}
  */
 export function reportsPinnedVersion(binary, version = GITLEAKS_VERSION) {
-  spawnedFrom.add(resolve(dirname(binary)));
-  const probe = spawnSync(binary, ['version'], { encoding: 'utf8' });
+  const probe = spawnVersion(binary);
   if (probe.error !== undefined || probe.status !== 0) return false;
   return `${probe.stdout}`.includes(version);
 }
 
 /**
+ * The ONE place this module starts a gitleaks binary, and therefore the one
+ * place the spawn is recorded.
+ *
+ * Two recording sites would be the same defect the rest of this commit is
+ * about, one level up: a guard that is armed in one path and not the other
+ * fails exactly where nobody looks.
+ *
+ * @param {string} binary
+ * @returns {import('node:child_process').SpawnSyncReturns<string>}
+ */
+function spawnVersion(binary) {
+  spawnedFrom.add(resolve(dirname(binary)));
+  return spawnSync(binary, ['version'], { encoding: 'utf8' });
+}
+
+/**
  * Refuses to rename a directory this process has spawned an executable from.
+ *
+ * **THIS CANNOT FIRE IN THE LIVE PATH, and that is correct.** Both callers that
+ * start a binary go through {@link probeOutsideStaging}, which runs a copy in a
+ * temp directory, so no tree `publish` renames is ever recorded. What this
+ * protects is the SOURCE FILE against a future edit — it is a regression guard,
+ * not a runtime safety net, and a reader who takes it for the latter will
+ * conclude the rename is protected at run time when nothing about it is.
+ *
+ * Its value is turning an intermittent, one-platform failure into a
+ * deterministic refusal everywhere. `proof:provision` arms it through the real
+ * {@link reportsPinnedVersion} and asserts the reason, not merely that something
+ * threw.
  *
  * @param {string} directory
  * @param {string} role What the directory is, for the message.
@@ -255,6 +282,40 @@ function heldCodeIn(thrown) {
 }
 
 /**
+ * What the cleanup observed about a block, as a sentence.
+ *
+ * ## Why this is a function rather than a ternary at the call site
+ *
+ * It has two branches and only one of them had ever run. The CLEARED branch is
+ * the one that fires on the failure already seen; the PERSISTED branch is the
+ * one that says *waiting would not have helped*, and it is the branch that
+ * exists to stop a wrong retry being added later. An instrument that decides
+ * whether a retry is legal, and has never been shown to say no, is audit item 4a
+ * — so both branches are fed values that differ by exactly the thing that
+ * changes the verdict, in `proof:provision`.
+ *
+ * Reaching the PERSISTED branch end to end needs a block that survives both the
+ * rename and the removal, which no fixture here produces. What is exercised is
+ * the reporting; the input is one boolean from a call that happens anyway.
+ *
+ * @param {{ code: string | null, removed: boolean, elapsedMs: number, tree: string }} observed
+ * @returns {string} Empty when nothing held anything — there is no measurement
+ *   to report and a line saying so would be noise on every successful run.
+ */
+export function transienceNote({ code, removed, elapsedMs, tree }) {
+  if (code === null) return '';
+  return removed
+    ? `MEASUREMENT: the publish above failed with ${code}, and ${tree} was then removed ` +
+        `successfully ${String(elapsedMs)} ms later. The block CLEARED between the two ` +
+        `operations, so it was a handle rather than a permission. Nothing this process started ` +
+        `is inside that tree any more, so the remaining holder is external — see the ` +
+        `falsification control in probeOutsideStaging before adding any retry.\n`
+    : `MEASUREMENT: the publish above failed with ${code} and ${tree} could not be removed ` +
+        `either, ${String(elapsedMs)} ms later. The block PERSISTED, so waiting would not have ` +
+        `helped and this is NOT the transient-handle mechanism. A retry is not the answer here.\n`;
+}
+
+/**
  * Runs the staged binary from a COPY, outside the tree that is about to move.
  *
  * ## The mechanism, which is Part K's own and was reintroduced here
@@ -294,18 +355,71 @@ function heldCodeIn(thrown) {
  * any more — and only then does a bounded retry become legal under Rule 0. The
  * measurement that will say so is in `provisionGitleaks`'s `finally`.
  *
+ * ## `why`, because this function ADDED a failure the caller's message denied
+ *
+ * `reportsPinnedVersion`'s own header says `false` means one of two unrelated
+ * things and that nothing in the return value separates them. Copying first adds
+ * a third — the copy can fail, or arrive without its executable bit — and the
+ * caller's message asserted the *first* of the three, naming a file that was
+ * never executed. On a red runner that sends a reader to the pin table for a
+ * problem in the copy step.
+ *
+ * The spawn's own evidence was being discarded at the same time, which is
+ * `8130551` exactly: the errno is the diagnosis, and the whole reason today's
+ * EPERM was solvable from a log is that it stopped being thrown away. So `why`
+ * separates the three, and carries what the platform said.
+ *
  * @param {string} staged The extracted binary, inside the staging tree.
  * @param {string} version
- * @returns {Promise<{ ok: boolean, ranFrom: string }>} `ranFrom` is the
- *   directory the copy was executed from, so a proof can assert it is not the
- *   one that gets renamed.
+ * @returns {Promise<{
+ *   ok: boolean,
+ *   ranFrom: string,
+ *   why: 'ran and matched' | 'copy failed' | 'could not start' | 'wrong version',
+ *   detail: string,
+ * }>} `ranFrom` is the directory the copy was executed from, so a proof can
+ *   assert it is not the one that gets renamed.
  */
 export async function probeOutsideStaging(staged, version) {
   const isolated = await mkdtemp(join(tmpdir(), 'monstera-gitleaks-probe-'));
   try {
     const copy = join(isolated, basename(staged));
-    await copyFile(staged, copy);
-    return { ok: reportsPinnedVersion(copy, version), ranFrom: isolated };
+    try {
+      // Mode travels with the copy, which is the POSIX-only assumption this
+      // function rests on: without the executable bit the spawn below fails
+      // EACCES and, before `why` existed, that read as "the binary reports the
+      // wrong version". Exercised by the ubuntu leg of Guards, which runs this
+      // against a real binary and requires `ok`.
+      await copyFile(staged, copy);
+    } catch (cause) {
+      return {
+        ok: false,
+        ranFrom: isolated,
+        why: 'copy failed',
+        detail: formatError(cause),
+      };
+    }
+
+    const probe = spawnVersion(copy);
+    if (probe.error !== undefined || probe.status !== 0) {
+      return {
+        ok: false,
+        ranFrom: isolated,
+        why: 'could not start',
+        detail: probe.error !== undefined
+          ? formatError(probe.error)
+          : `exit ${String(probe.status)}: ${`${probe.stderr ?? ''}`.trim() || '(no output)'}`,
+      };
+    }
+
+    const reported = `${probe.stdout}`;
+    return reported.includes(version)
+      ? { ok: true, ranFrom: isolated, why: 'ran and matched', detail: reported.trim() }
+      : {
+          ok: false,
+          ranFrom: isolated,
+          why: 'wrong version',
+          detail: `it ran and reported: ${reported.trim() || '(nothing)'}`,
+        };
   } finally {
     // Best effort, and it is THIS directory that may now be locked. That is the
     // point: the lock lands where nothing renames anything.
@@ -684,8 +798,15 @@ export async function provisionGitleaks({
     // candidate it deliberately does not eliminate.
     const probe = await probeOutsideStaging(staged, version);
     if (!probe.ok) {
+      // This used to say `${staged} … does not report version ${version} when
+      // run`, which asserted ONE of three causes and named a file that was not
+      // executed — the copy was. A failed copy or a lost executable bit read as
+      // a wrong build, sending a reader to the pin table. Two paths, one string:
+      // the same defect as the two `Could not publish` sites, arriving in the
+      // commit that fixed those.
       throw new Error(
-        `${staged} was extracted but does not report version ${version} when run.`,
+        `${staged} was extracted and could not be verified by running a copy of it ` +
+          `(${probe.why}): ${probe.detail}`,
       );
     }
 
@@ -710,20 +831,14 @@ export async function provisionGitleaks({
       () => true,
       () => false,
     );
-    const code = heldCodeIn(failure);
-    if (code !== null) {
-      process.stderr.write(
-        removed
-          ? `MEASUREMENT: the publish above failed with ${code}, and ${staging} was then removed ` +
-              `successfully ${Date.now() - startedAt} ms later. The block CLEARED between the two ` +
-              `operations, so it was a handle rather than a permission. Nothing this process ` +
-              `started is inside that tree any more, so the remaining holder is external — see ` +
-              `the falsification control in probeOutsideStaging before adding any retry.\n`
-          : `MEASUREMENT: the publish above failed with ${code} and ${staging} could not be ` +
-              `removed either. The block PERSISTED, so waiting would not have helped and this is ` +
-              `not the transient-handle mechanism.\n`,
-      );
-    }
+    process.stderr.write(
+      transienceNote({
+        code: heldCodeIn(failure),
+        removed,
+        elapsedMs: Date.now() - startedAt,
+        tree: staging,
+      }),
+    );
   }
 
   process.stderr.write(`gitleaks ${version} ready at ${binary}\n`);
