@@ -7,10 +7,9 @@
  * Both had the same defect — output that reads as a fact and was not derived
  * from one.
  *
- * (They would be two proofs if they could be. Registering a second npm script
- * means staging `package.json`, which the lockfile guard correctly refuses below
- * npm 11.6.3; the guards workflow invokes this file directly for the same
- * reason. Both are owed a split at the first commit that stages `package.json`.)
+ * (They share a file rather than a theme by accident. Splitting them is cheap
+ * now that a `scripts`-only edit no longer arms the lockfile guard, and worth
+ * doing on its own rather than folded into this one.)
  *
  * ---
  *

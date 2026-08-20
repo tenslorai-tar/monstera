@@ -45,6 +45,7 @@
     "perf:gate": "node scripts/perf/budgetGate.mjs",
     "probe:hook": "node scripts/hooks/recordHookProbe.mjs",
     "proof:canary": "node scripts/lib/scannerCanary.proof.mjs",
+    "proof:honestoutput": "node scripts/lib/reportError.proof.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "proof:testresolution": "node scripts/proofs/testResolution.proof.mjs",
