@@ -95,6 +95,16 @@ jobs:
       - name: Prove an ok line cannot outlive the case that earned it
         run: npm run proof:passroster
 
+      # The same property a third time, about the instrument that decides whether
+      # THIS board is green. It failed twice in one day and both times printed
+      # "not yet", which for a waiter is the reassuring answer exactly as "found
+      # nothing" is for a search. Runs over recorded payloads and makes NO
+      # request: a check that reached github.com from here would be a third
+      # instance of the live-third-party dependency this repository already has
+      # twice, and the only one of the three inside CI.
+      - name: Prove the board reader knows "not yet" from "cannot see"
+        run: npm run proof:board
+
       - name: Prove provisioning is safe under concurrency
         run: npm run proof:provision
 
