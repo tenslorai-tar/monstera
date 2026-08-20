@@ -1016,6 +1016,23 @@ And the sequencing above is wrong. `git log --diff-filter=R` is empty, so **the
 queued split of `reportError.proof.mjs` is the first rename this repository will
 ever have.** Z-1 is not the last item; it is a blocker on that queued unit.
 
+> **Correction, 2026-08-20 — the split is not a rename, and the claim above was
+> never executed.** The split landed and git reports `A` + `M`: a new
+> `passRoster.proof.mjs`, a modified `reportError.proof.mjs`. Measured across
+> `--name-status` with no flags, with `-M`, and with `-C50`, `-C40`, `-C30`,
+> `-C20` and `-C10 --find-copies-harder` — every one reports `A`.
+>
+> The mechanism makes it impossible rather than unlikely: **git pairs an
+> addition with a DELETION to call it a rename**, and the old path survives the
+> split because part one still belongs to it. Similarity never enters into it.
+> `buildScope` asks for no `-C` at all, so a copy could not be reported either.
+>
+> So Z-1's rename parsing still has only its synthetic fixture cases, and this
+> repository still has no live rename. The sentence above was written from the
+> shape of the queued work rather than from git's rule, and it read as a
+> measurement because it sat beside three that were. **That is the "asserted,
+> not executed" column, inside the entry that names the column.**
+
 **Z-2's exemption is not what fires.** With an unstaged advance `recorded ===
 pending`, so `recordsAudit` is `false` — the gate passes because the range
 *collapsed*, not because the exemption granted anything. Hardening the exemption

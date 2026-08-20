@@ -84,9 +84,16 @@ jobs:
       # every red step below it into a message nobody can act on. Both platforms
       # run it deliberately: the errno a failed rename produces is exactly what
       # differs between them.
-      #
-      - name: Prove a script's report of its own run is true
-        run: npm run proof:honestoutput
+      - name: Prove a failure report carries its diagnosis
+        run: npm run proof:errorreport
+
+      # The other half of the same property — what a PASS says — and it needs no
+      # platform argument at all. The two ran under one step name while they
+      # shared a file, so the sentence above, which is only true of the reporter,
+      # stood as the reason for both. Split so each step's reason is true of the
+      # step it is attached to.
+      - name: Prove an ok line cannot outlive the case that earned it
+        run: npm run proof:passroster
 
       - name: Prove provisioning is safe under concurrency
         run: npm run proof:provision
