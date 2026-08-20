@@ -131,6 +131,10 @@ process.stdout.write(
     `  files:   ${scope.files.length} (one batch is ${BATCH.files})\n\n` +
     section('proofs ADDED — new coverage', scope.proofsAdded) +
     proofChurnSection(scope.proofChurn) +
+    // Coverage LEAVING. The classifier recognised A and M only, so a deleted
+    // proof appeared in no column and read as an ordinary line in the file
+    // count — the limit case of the modified column's own argument.
+    section('proofs REMOVED — coverage leaving; say why in the entry', scope.proofsRemoved) +
     section('new scripts — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
     `\n`,
 );

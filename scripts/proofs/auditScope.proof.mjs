@@ -30,7 +30,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { auditScope, BATCH, pendingAuditScope, readWatermark } from '../lib/auditWatermark.mjs';
-import { repoRoot } from '../lib/gitScope.mjs';
+import { git as gitAt, parseNameStatus, repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
 const failures = [];
@@ -475,6 +475,155 @@ try {
     );
 
     git(scratch, ['checkout', '--', 'docs/audit-watermark.json']);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Z-1: the classifier recognised A and M, and this report had a SECOND
+  // opinion about `--name-status` from the one in lockfileIntegrity.mjs.
+  //
+  // The parser is now shared (gitScope.parseNameStatus). These cases are its
+  // contract, stated without a repository so a fixture cannot make them pass by
+  // accident.
+  // ---------------------------------------------------------------------------
+  {
+    const renamed = parseNameStatus('R090\0old.proof.mjs\0new.proof.mjs\0');
+    check(
+      'a rename is one entry, reported at its DESTINATION, carrying its source',
+      renamed.length === 1 &&
+        renamed[0]?.state === 'R' &&
+        renamed[0]?.path === 'new.proof.mjs' &&
+        renamed[0]?.from === 'old.proof.mjs',
+      `parsed ${JSON.stringify(renamed)}. Splitting on tab with no -z made this one entry whose ` +
+        `path was two paths joined by a tab, matching no state the classifier recognised.`,
+    );
+
+    // The alignment control. A misparse here is not a crash — it is a quiet
+    // wrong answer about a DIFFERENT file, which is what makes it worth a case.
+    const after = parseNameStatus('R100\0a\0b\0M\0later.proof.mjs\0D\0gone.proof.mjs\0');
+    check(
+      'CONTROL: entries AFTER a rename stay aligned with their states',
+      after.length === 3 &&
+        after[1]?.state === 'M' &&
+        after[1]?.path === 'later.proof.mjs' &&
+        after[2]?.state === 'D' &&
+        after[2]?.path === 'gone.proof.mjs',
+      `parsed ${JSON.stringify(after)}. Consuming one field for a rename shifts every state onto ` +
+        `the wrong path for the rest of the list, and the report still prints figures.`,
+    );
+
+    check(
+      'a state with no similarity score consumes one path, not two',
+      parseNameStatus('M\0a\0M\0b\0').map((entry) => entry.path).join(',') === 'a,b',
+      `parsed ${JSON.stringify(parseNameStatus('M\0a\0M\0b\0'))}`,
+    );
+  }
+
+  // The same three states through the real porcelain, because the parse being
+  // right is not the same as the report asking git the right question.
+  {
+    const churned = Array.from({ length: 30 }, (_, line) => `// line ${String(line)}`).join('\n');
+    commit('travelling.proof.mjs', `${churned}\n`);
+    // Content distinct from every other fixture file on purpose. An earlier
+    // draft gave this and the accented file below the same one line, and git
+    // paired them as R100 — so the DELETE case failed while the code was right.
+    // Rename detection is content-based; a fixture that wants a delete has to
+    // leave nothing for the deleted file to be mistaken for.
+    commit('doomed.proof.mjs', 'export const doomed = "removed in this range";\n');
+    const mark = git(scratch, ['rev-parse', '--short', 'HEAD']);
+    setWatermark(mark);
+
+    // Churn BEFORE the move — this is what a pathspec walk cannot see once the
+    // file changes address.
+    const beforeMove = 12;
+    writeFileSync(
+      join(scratch, 'travelling.proof.mjs'),
+      `${churned}\n${Array.from({ length: beforeMove }, (_, n) => `// pre ${String(n)}`).join('\n')}\n`,
+      'utf8',
+    );
+    git(scratch, ['add', '-A']);
+    git(scratch, ['commit', '--quiet', '-m', 'edit before the move']);
+
+    git(scratch, ['mv', 'travelling.proof.mjs', 'arrived.proof.mjs']);
+    writeFileSync(
+      join(scratch, 'arrived.proof.mjs'),
+      `${churned}\n${Array.from({ length: beforeMove }, (_, n) => `// pre ${String(n)}`).join('\n')}\n// the control was loosened here\n`,
+      'utf8',
+    );
+    git(scratch, ['add', '-A']);
+    git(scratch, ['commit', '--quiet', '-m', 'move it and change what it asserts']);
+
+    git(scratch, ['rm', '--quiet', 'doomed.proof.mjs']);
+    git(scratch, ['commit', '--quiet', '-m', 'delete a proof']);
+
+    // core.quotePath defaults true, so without -z this arrives as
+    // "caf\303\251.proof.mjs" — a path that matches no glob and resolves to
+    // nothing. No such path exists in this repository today, which is an expiry
+    // to hold a case against rather than a reason to leave the flag off.
+    const accented = 'café.proof.mjs';
+    commit(accented, 'export const accented = "a path git would C-quote";\n');
+
+    const scope = auditScope({ root: scratch });
+
+    check(
+      'a proof MOVED AND EDITED lands in the modified column, at its destination',
+      scope.proofsModified.includes('arrived.proof.mjs') &&
+        !scope.proofsModified.includes('travelling.proof.mjs'),
+      `proofsModified = ${JSON.stringify(scope.proofsModified)}. A check that changed address AND ` +
+        `meaning is exactly what this column's "read each diff" instruction is written for, and ` +
+        `it used to appear in no column at all.`,
+    );
+
+    check(
+      'a DELETED proof is reported as coverage leaving, not as an ordinary file',
+      scope.proofsRemoved.includes('doomed.proof.mjs'),
+      `proofsRemoved = ${JSON.stringify(scope.proofsRemoved)}. Unlike rename this can fire today: ` +
+        `the classifier recognised A and M only, so a deleted proof showed up as one more line in ` +
+        `the file count.`,
+    );
+
+    check(
+      'a non-ASCII path is reported raw, not C-quoted',
+      scope.files.includes(accented) && !scope.files.some((path) => path.startsWith('"')),
+      `files = ${JSON.stringify(scope.files)}. Without -z git quotes it, and the report names a ` +
+        `path that does not exist.`,
+    );
+
+    // RESOLUTION, and this is the trap inside the fix rather than a formality.
+    //
+    // The failure is not the one it looks like from the outside. A pathspec walk
+    // does not report the TAIL of the churn — `git log` does no rename detection
+    // for pathspec limiting, so the rename commit reports the destination as a
+    // NEW FILE and the whole body counts as inserted. Measured on this fixture:
+    // 43 insertions against the 13 the range actually made, most of them lines
+    // that existed before the watermark. A figure that is too large reads as a
+    // big change worth attention, which is a plausible number rather than an
+    // obviously broken one — the exact shape item 4a is about.
+    //
+    // So the case pins the RIGHT number and requires the naive walk to disagree
+    // with it. Asserting only "they differ" would pass if `--follow` were wrong
+    // in some other way.
+    const followed = scope.proofChurn.find((entry) => entry.path === 'arrived.proof.mjs');
+    const pathspecOnly = `${
+      gitAt(['log', '--numstat', '--format=', `${mark}..HEAD`, '--', 'arrived.proof.mjs'], {
+        cwd: scratch,
+      }).stdout
+    }`
+      .split('\n')
+      .reduce((total, line) => {
+        const [added = ''] = line.trim().split('\t');
+        return added === '' || added === '-' ? total : total + Number(added);
+      }, 0);
+
+    const churnInRange = beforeMove + 1;
+    check(
+      'RESOLUTION: per-commit churn follows the rename and counts only the range',
+      followed?.perCommit.added === churnInRange && pathspecOnly !== churnInRange,
+      `--follow reported ${String(followed?.perCommit.added ?? -1)} insertions where this range ` +
+        `made ${String(churnInRange)}; a pathspec-only walk reported ${String(pathspecOnly)}. ` +
+        `Both halves are required: the first pins the right number, and the second proves the ` +
+        `naive walk gives a different one — without it this case passes for a column that never ` +
+        `followed anything.`,
+    );
   }
 
   // An unreachable watermark must throw rather than report an empty range.

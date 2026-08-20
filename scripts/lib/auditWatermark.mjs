@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { git, repoRoot } from './gitScope.mjs';
+import { changedPaths, git, repoRoot } from './gitScope.mjs';
 
 const WATERMARK_PATH = 'docs/audit-watermark.json';
 
@@ -92,6 +92,7 @@ export function readWatermark(root = repoRoot()) {
  *   files: string[],
  *   proofsAdded: string[],
  *   proofsModified: string[],
+ *   proofsRemoved: string[],
  *   proofChurn: Array<{
  *     path: string,
  *     net: { added: number, removed: number },
@@ -312,17 +313,34 @@ export function explainAuditBudget(scope) {
  * `+191 −0` net and `+72 −0` then `+133 −14` per commit, so fourteen deletions —
  * including a `because` matcher being re-anchored — appeared nowhere.
  *
+ * ## A rename hides churn from a pathspec, which is a trap inside this fix
+ *
+ * `git log --numstat <range> -- <path>` stops at the rename: every commit before
+ * the move touched a different path and is not matched. So the column that told
+ * an auditor to read a proof's whole diff would have handed them the tail of it,
+ * with everything before the move silently missing — and the figures would still
+ * look like figures.
+ *
+ * The per-commit walk uses `--follow`, which is why it takes exactly one
+ * pathspec, and the net diff is asked about both endpoints. `--follow` also
+ * carries a chain (a → b → c) that naming two endpoints would miss, since the
+ * range diff reports only the ends.
+ *
  * @param {string} range
  * @param {string} path
  * @param {string} root
+ * @param {string | null} [from] The pre-rename path, when the entry is a rename
+ *   or a copy.
  * @returns {{ net: { added: number, removed: number }, perCommit: { added: number, removed: number } }}
  */
-function churnFor(range, path, root) {
-  /** @param {readonly string[]} args */
-  const sum = (args) => {
+function churnFor(range, path, root, from = null) {
+  const endpoints = from === null || from === path ? [path] : [from, path];
+
+  /** @param {readonly string[]} args @param {readonly string[]} pathspec */
+  const sum = (args, pathspec) => {
     let added = 0;
     let removed = 0;
-    for (const line of `${git([...args, '--', path], { cwd: root }).stdout}`.split('\n')) {
+    for (const line of `${git([...args, '--', ...pathspec], { cwd: root }).stdout}`.split('\n')) {
       const [a = '', r = ''] = line.trim().split('\t');
       // A binary file reports `-`, which is not zero and must not be counted as
       // zero — Number('-') is NaN, and a NaN total would print as a churn of
@@ -335,10 +353,10 @@ function churnFor(range, path, root) {
   };
 
   return {
-    net: sum(['diff', '--numstat', range]),
+    net: sum(['diff', '--numstat', range], endpoints),
     // `log --numstat` walks each commit, so a line added then rewritten counts
     // in both directions rather than cancelling.
-    perCommit: sum(['log', '--numstat', '--format=', range]),
+    perCommit: sum(['log', '--follow', '--numstat', '--format=', range], [path]),
   };
 }
 
@@ -353,14 +371,11 @@ function buildScope({ commit, range, commits, root, churn = true }) {
   // meaning changed, and a fix that quietly loosened it looks exactly like one
   // that corrected it — only the diff tells them apart. That column is the
   // reason this report exists in this shape.
-  const status = `${git(['diff', '--name-status', range], { cwd: root }).stdout}`
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => {
-      const [state = '', ...rest] = line.split('\t');
-      return { state: `${state}`.charAt(0), path: rest.join('\t') };
-    });
+  // Parsed by the shared reader in gitScope.mjs, which is the fix for this
+  // function having had a SECOND opinion about `--name-status`: it split on tab
+  // with no `-z`, so a rename became one entry whose path was two paths joined
+  // by a tab, and a proof moved and edited landed in no column at all.
+  const status = changedPaths([range], { cwd: root });
 
   // A CHECK, not a file naming convention — and the distinction cost a whole
   // range. This matched `*.proof.mjs` and `proofs/` only, so it was blind to
@@ -384,20 +399,37 @@ function buildScope({ commit, range, commits, root, churn = true }) {
   const isSource = (/** @type {string} */ path) =>
     /^scripts\/|^packages\/[^/]+\/src\/|^apps\/[^/]+\/src\//u.test(path);
 
-  const modified = status.filter((e) => e.state === 'M' && isProof(e.path)).map((e) => e.path);
+  // A rename belongs in the MODIFIED column, not outside every column. `R090`
+  // is a check that changed address AND meaning, which is the exact case the
+  // column's "read each diff" instruction is written for; `R100` is a move,
+  // which an auditor still wants told about. The source path is carried so the
+  // churn figures can span the rename.
+  const modified = status.filter(
+    (e) => (e.state === 'M' || e.state === 'R' || e.state === 'C') && isProof(e.path),
+  );
 
   return {
     watermark: commit,
     commits,
     files: status.map((entry) => entry.path),
     proofsAdded: status.filter((e) => e.state === 'A' && isProof(e.path)).map((e) => e.path),
-    proofsModified: modified,
+    proofsModified: modified.map((e) => e.path),
+    // Coverage LEAVING, which the classifier used to drop with every other state
+    // it did not name. The modified column exists because a check whose meaning
+    // changed must be visible to an auditor; a check that vanished is the limit
+    // case of that, and unlike rename it can fire today.
+    proofsRemoved: status.filter((e) => e.state === 'D' && isProof(e.path)).map((e) => e.path),
     // Two git invocations per modified proof, which is the expensive half of
     // this function and the half a budget gate does not read. Skipped for the
     // pre-commit path so the hook stays fast enough not to be worked around —
     // and skipped by OPTION rather than by a second implementation, because the
     // gate and the report must not drift about what counts as a file.
-    proofChurn: churn ? modified.map((path) => ({ path, ...churnFor(range, path, root) })) : [],
+    proofChurn: churn
+      ? modified.map((entry) => ({
+          path: entry.path,
+          ...churnFor(range, entry.path, root, entry.from),
+        }))
+      : [],
     // Instruments are not a directory, and scoping this to `scripts/` was W-1's
     // blind spot one folder over. Measured on the range that found it: a new
     // filesystem probe landed in `packages/kernel/src/`, doing exactly what

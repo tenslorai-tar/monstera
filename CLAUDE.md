@@ -380,7 +380,8 @@ and each was found by auditing rather than by a failing test — which is the
 point: these are the failures that do not announce themselves.
 
 **Audit `watermark..HEAD`, not the tree.** `npm run audit:scope` prints the
-range: commits, files, proofs added, **proofs modified**, and new scripts.
+range: commits, files, proofs added, **proofs modified**, proofs removed, and new
+scripts.
 
 The scoping is not a convenience. A tree-wide audit run at the end of a stage was
 right for the 43-finding audit, which caught things that had sat for weeks. It is
@@ -541,6 +542,23 @@ returned the reassuring answer:
   probe — an instrument in the plainest sense — landed under `packages/*/src/`.
   Fixing a classifier's *pattern* and leaving its *root* is half a fix, and both
   halves report "found nothing" identically.
+  **And a third time, one range later again, by STATE.** The same report parsed
+  `git diff --name-status` with no `-z` and recognised `A` and `M`, so a renamed
+  proof arrived as one entry whose path was two paths joined by a tab and landed
+  in *no* column — measured at `R100` and at `R090`, the second being a check
+  that changed address *and* meaning. A deleted proof was dropped the same way,
+  and that one can fire today. **A classifier has three axes and they fail
+  independently: what it matches, where it looks, and which states it
+  understands.** Pattern, root, state — fixing any one and stopping is a half
+  fix, and every version reports "found nothing" in the same voice.
+  The general form is worth more than the three instances: **when two files hold
+  two opinions about the same porcelain, the finding is the second opinion, not
+  the wrong one.** Both parsers here had been written by hand; one was correct
+  and had a control, and patching the other in place would have left the next
+  caller free to write a third. The parser now lives once, in
+  `scripts/lib/gitScope.mjs`, which already exists because two guards
+  independently asked git a question whose answer was not the thing they
+  guarded.
 
 Corollary, and it is where three of the four hid: **an empty intermediate result
 is a broken parse, not a clean input.** Throw. A seed set, a symbol table, a file

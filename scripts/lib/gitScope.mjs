@@ -120,6 +120,93 @@ export function filesInCommit(options = {}) {
 }
 
 /**
+ * @typedef {{
+ *   state: string,
+ *   path: string,
+ *   from: string | null,
+ * }} ChangedPath
+ *   `state` is the single status letter with its similarity score stripped.
+ *   `path` is the path the entry is ABOUT after the change — the destination for
+ *   a rename or copy, the deleted path for a delete. `from` is the source of a
+ *   rename or copy and `null` otherwise.
+ */
+
+/**
+ * Parses `--name-status -z` output.
+ *
+ * ## Why this is shared rather than written twice
+ *
+ * It was written twice, and only one of them was right. `lockfileIntegrity.mjs`
+ * passed `-z` and consumed three fields for `/^[RC]\d*$/`, with a control
+ * proving a rename earlier in the list cannot hide a later dependency change.
+ * `auditWatermark.mjs` passed neither flag and split on tab — so a rename became
+ * one entry whose "path" was two paths joined by a tab, matching no state the
+ * classifier recognised. Measured: a proof moved and edited (`R090`) reported in
+ * NO column of the audit report, and `files` carried a path that does not exist.
+ *
+ * **Two opinions about the same porcelain is the finding**, not either bug.
+ * Patching one in place leaves the third caller to repeat it, which is how this
+ * module came to exist for git *scopes* in the first place.
+ *
+ * Three things `-z` settles at once, and only one of them is about renames:
+ *
+ *   - **rename and copy carry two paths.** A parser consuming one field falls
+ *     out of alignment with the rest of the list and answers "no" quietly.
+ *   - **delete is a state too.** A classifier recognising only `A` and `M`
+ *     drops it, and unlike rename that can fire today.
+ *   - **paths are C-quoted without it.** `core.quotePath` defaults true, so a
+ *     path with any non-ASCII byte arrives as `"\303\251…"` — a real path that
+ *     matches no glob and resolves to nothing. No such path exists in this
+ *     repository today, which is an expiry to write down rather than a reason to
+ *     leave the flag off.
+ *
+ * @param {string} stdout
+ * @returns {ChangedPath[]}
+ */
+export function parseNameStatus(stdout) {
+  const fields = stdout.split('\0').filter((field) => field !== '');
+
+  /** @type {ChangedPath[]} */
+  const entries = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const raw = `${fields[index]}`;
+    // R and C are the only states that carry a similarity score, and the only
+    // ones followed by two paths. Consuming the right number of fields is what
+    // keeps every LATER entry aligned — a misparse here is not a crash, it is a
+    // quiet wrong answer about a different file.
+    const pair = /^[RC]\d*$/u.test(raw);
+    const first = `${fields[index + 1] ?? ''}`;
+    const second = pair ? `${fields[index + 2] ?? ''}` : '';
+    index += pair ? 2 : 1;
+
+    entries.push({
+      state: raw.charAt(0),
+      path: pair ? second : first,
+      from: pair ? first : null,
+    });
+  }
+  return entries;
+}
+
+/**
+ * `git diff --name-status -z <args>`, parsed.
+ *
+ * `-z` is added here rather than left to the caller: it is not a formatting
+ * preference, it is the difference between a parser that can see a rename, a
+ * delete and a non-ASCII path and one that cannot. See {@link parseNameStatus}.
+ *
+ * @param {readonly string[]} args Everything after `diff` — a range, `--cached`,
+ *   a pathspec.
+ * @param {{ cwd?: string }} [options]
+ * @returns {ChangedPath[]}
+ */
+export function changedPaths(args, options = {}) {
+  return parseNameStatus(
+    `${git(['diff', '--name-status', '-z', ...args], options).stdout}`,
+  );
+}
+
+/**
  * The bytes of a path AS STAGED — from the index, never from disk.
  *
  * Returns null when the path is not in the index at all, which a caller must

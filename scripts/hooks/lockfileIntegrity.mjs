@@ -80,6 +80,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { changedPaths } from '../lib/gitScope.mjs';
 import { NPM_VERSION } from '../lib/toolchain.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -225,35 +226,29 @@ function manifestChangeMatters(root, path) {
  * @returns {boolean}
  */
 export function touchesDependencies({ root = REPO_ROOT } = {}) {
-  const staged = spawnSync('git', ['diff', '--cached', '--name-status', '-z'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-  // This used to `return false` — a guard that could not read the index
-  // reported that there was nothing to check.
-  if (staged.status !== 0) return true;
+  /** @type {import('../lib/gitScope.mjs').ChangedPath[]} */
+  let staged;
+  try {
+    // The `-z` rename/copy field walk used to live here. It was correct here and
+    // wrong in auditWatermark.mjs, which is what made "two opinions about the
+    // same porcelain" the finding rather than either parser.
+    staged = changedPaths(['--cached'], { cwd: root });
+  } catch {
+    // This used to `return false` — a guard that could not read the index
+    // reported that there was nothing to check.
+    return true;
+  }
 
-  const fields = `${staged.stdout ?? ''}`.split('\0').filter((field) => field !== '');
+  for (const { state, path, from } of staged) {
+    if (path === 'package-lock.json' || from === 'package-lock.json') return true;
 
-  for (let index = 0; index < fields.length; index += 1) {
-    const state = `${fields[index]}`;
-    // With -z, a rename or copy is `R100\0old\0new`; everything else is
-    // `X\0path`. Consuming the right number of fields is what keeps the states
-    // and the paths aligned for the rest of the list.
-    const renamed = /^[RC]\d*$/u.test(state);
-    const path = `${fields[index + 1] ?? ''}`;
-    const destination = renamed ? `${fields[index + 2] ?? ''}` : path;
-    index += renamed ? 2 : 1;
-
-    if (path === 'package-lock.json' || destination === 'package-lock.json') return true;
-
-    const isManifest = path.endsWith('package.json') || destination.endsWith('package.json');
+    const isManifest = path.endsWith('package.json') || from?.endsWith('package.json') === true;
     if (!isManifest) continue;
 
     // Only a modification has two blobs to compare. Anything else — added,
     // deleted, renamed, or a state this does not recognise — trips.
     if (state !== 'M') return true;
-    if (manifestChangeMatters(root, destination)) return true;
+    if (manifestChangeMatters(root, path)) return true;
   }
 
   return false;
