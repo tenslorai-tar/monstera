@@ -587,8 +587,16 @@ headline change rewrote, and item 7 passed over both:
 - the same comment excused a surviving quarantine directory as one "the next run
   cleans up", when no run had ever cleaned one up.
 
-A sentence that is half true survives hardest: `--force` still meant what that
-first sentence said it meant, so the clause beside it read as current.
+**And this is the detectable signal, sharper than "re-read the first
+paragraph": look for a sentence where the change invalidated ONE CLAUSE OF A
+COMPOUND CLAIM.** Those are the ones no reader flags. `--force` still meant
+exactly what that sentence said it meant, so the live clause vouched for the
+dead one beside it — nothing about reading it feels wrong, because the part you
+check is the part that is still true.
+
+A wholly false sentence is caught by the next person who reads it. A half-true
+one is not caught by anybody, which is why it is the shape worth searching for
+by hand.
 
 ## Commands
 
