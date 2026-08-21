@@ -309,6 +309,15 @@ jobs:
       - name: Prove DocumentService does not load the native shim
         run: npm run proof:kernelload
 
+      - name: Prove the composition root's ceiling is ADR-0007's
+        run: npm run proof:composition
+
+      # Needs the display installed above, for the same reason the renderer
+      # read-back does. A composition root known only to compile is one nobody
+      # has run, which is the defect this repository found twice in a week.
+      - name: Prove the shell runs and the renderer uses the contract
+        run: npm run proof:shell
+
       - name: Prove the IPC contract is exhaustive
         run: npm run proof:contract
 

@@ -1,5 +1,7 @@
+export { MAIN_DOCUMENT_BYTES_CEILING } from './budget.js';
 export { executeCommandHandler } from './commandHandlers.js';
-export { startShell } from './main.js';
+export { createShellDependencies } from './composition.js';
+export { type ShellDependencies, startShell } from './main.js';
 export {
   CONTENT_SECURITY_POLICY,
   PERMITTED_PERMISSIONS,

@@ -64,6 +64,8 @@
     "brand:generate": "node scripts/brand/generateAssets.mjs",
     "brand:check": "node scripts/brand/generateAssets.mjs --check",
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
+    "proof:composition": "node scripts/proofs/composition.proof.mjs",
+    "proof:shell": "node scripts/proofs/shell.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
     "audit:scope": "node scripts/audit/scope.mjs",

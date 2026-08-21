@@ -1,0 +1,176 @@
+// @ts-check
+/**
+ * Proves the composition root RUNS: the renderer uses the contract end to end.
+ *
+ * ## Why a typecheck is not evidence here
+ *
+ * A composition root that is only known to compile is one nobody has run, and
+ * this repository has found that exact defect twice in a week — a preload that
+ * had never executed, and a failure channel nobody subscribed to. Both passed
+ * every static check written about them, correctly, because the defect was not
+ * in the file being read.
+ *
+ * So this spawns Electron on a harness that calls the same two functions
+ * `entry.ts` calls, and then makes the **page** invoke `app.info` across the
+ * real `contextBridge`, through the real `ipcMain` registration, into the real
+ * handler. Nothing is rebuilt for the test: a rebuilt graph proves a copy works.
+ *
+ * ## The unhappy channel is asserted too, and it is the interesting one
+ *
+ * `document.execute` must return a **declared** failure rather than `internal`.
+ * There is no engine host — invariant 20 forbids the native parser in `main` —
+ * so the session lookup misses by design; the question is whether the renderer
+ * can reach that miss. It cannot: opening a document is not a channel, so every
+ * input the renderer can construct stops at `document-not-open` first. Asserting
+ * it is what turns that from an argument into a fact.
+ *
+ * ## UNVERIFIABLE, never passed, when the runtime is absent
+ *
+ * Same rule as `proof:rendererpolicy`: *could not look* is not *looked and found
+ * nothing*, and this proof's entire content needs the process.
+ *
+ * Usage: node scripts/proofs/shell.proof.mjs
+ */
+
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { createRoster } from '../lib/passRoster.mjs';
+import { formatError } from '../lib/reportError.mjs';
+import { electronBinaryPath } from '../provision/electron.mjs';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const HARNESS = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'shellHarness.js');
+const MARKER = 'MONSTERA_SHELL_READBACK ';
+
+const ELECTRON_BINARY = electronBinaryPath(REPO_ROOT);
+const RUNTIME_PRESENT = existsSync(ELECTRON_BINARY) && existsSync(HARNESS);
+
+/** The cases that need the runtime, named once so the count derives from them. */
+const RUNTIME_CASES = [
+  'the page can see the bridge, so it could call anything at all',
+  'app.info answers OVER THE REAL CONTRACT, with the value the shell supplied',
+  'document.execute returns a DECLARED failure, not internal',
+];
+
+/** @type {string[]} */
+const failures = [];
+const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? RUNTIME_CASES.length : 0 });
+
+/** @param {string} label @param {boolean} condition @param {string} detail */
+function check(label, condition, detail) {
+  const mark = roster.mark();
+  if (!condition) failures.push(`${label}\n      ${detail}`);
+  roster.record(mark, label);
+}
+
+/**
+ * Runs the harness under a display and returns what the renderer saw.
+ *
+ * `xvfb-run -a` on Linux for the reason `proof:rendererpolicy` records: without
+ * a display Electron does not error, it HANGS, and a hang reads as a flake.
+ *
+ * @param {string} binary
+ * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean }}
+ */
+function readback(binary) {
+  const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
+  const XVFB = ['/usr/bin/xvfb-run', '/bin/xvfb-run', '/usr/local/bin/xvfb-run'];
+  let wrapper;
+  if (needsDisplay) {
+    wrapper = XVFB.find((path) => existsSync(path));
+    if (wrapper === undefined) {
+      throw new Error(
+        `Electron needs an X display on Linux and no xvfb-run was found. Tried:\n  ` +
+          `${XVFB.join('\n  ')}\nRunning without one does not error — it HANGS.`,
+      );
+    }
+  }
+
+  const [command, args] =
+    wrapper === undefined ? [binary, [HARNESS]] : [wrapper, ['-a', binary, HARNESS]];
+  const result = spawnSync(command, args, {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: 120_000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error !== undefined) {
+    throw new Error(`Could not run the shell harness via ${command}`, { cause: result.error });
+  }
+
+  const line = `${result.stdout}`.split(/\r?\n/).find((entry) => entry.startsWith(MARKER));
+  if (line === undefined) {
+    const spoke = `${result.stderr}`
+      .split(/\r?\n/)
+      .filter((entry) => entry.startsWith('MONSTERA_SHELL_HARNESS_FAILED'))
+      .join('\n');
+    throw new Error(
+      `The shell harness produced no ${MARKER.trim()} line (exit ${String(result.status)}).\n` +
+        (spoke === ''
+          ? `It reported no failure of its own either, so it was killed or never started.\n`
+          : `${spoke}\n`) +
+        `stderr: ${result.stderr.slice(-2400)}`,
+    );
+  }
+  return JSON.parse(line.slice(MARKER.length));
+}
+
+try {
+  if (!RUNTIME_PRESENT) {
+    process.stdout.write(
+      `UNVERIFIABLE — ${String(RUNTIME_CASES.length)} case(s) could not be evaluated here:\n` +
+        `${RUNTIME_CASES.map((label) => `  ??  ${label}\n`).join('')}\n` +
+        `  ${existsSync(ELECTRON_BINARY) ? 'The harness' : 'The Electron runtime'} is missing.\n` +
+        `  Run \`npm run provision:electron\` and \`npm run build\`.\n\n` +
+        `  This is COULD NOT LOOK. These cases are the only evidence that the composition root ` +
+        `has ever been executed, so a run without them proves that it compiles and nothing ` +
+        `more.\n`,
+    );
+  } else {
+    const seen = readback(ELECTRON_BINARY);
+
+    check(
+      'the page can see the bridge, so it could call anything at all',
+      seen.bridgePresent,
+      `the renderer found no bridge, so both readings below are absences produced by a page ` +
+        `that could not call rather than by a contract that did not answer.`,
+    );
+
+    const info = /** @type {{ ok?: unknown, value?: { installChannel?: unknown } }} */ (
+      seen.appInfo
+    );
+    check(
+      'app.info answers OVER THE REAL CONTRACT, with the value the shell supplied',
+      info?.ok === true && info.value?.installChannel === 'development',
+      `app.info returned ${JSON.stringify(seen.appInfo)}. ` +
+        `\`installChannel\` is asserted rather than \`version\` because it comes from THIS ` +
+        `repository's code, so it proves the composition root's AppInfo reached the page — ` +
+        `whereas \`app.getVersion()\` reports whatever package.json Electron was started from, ` +
+        `and this harness is spawned as a file rather than as the app directory.`,
+    );
+
+    const executed = /** @type {{ ok?: unknown, error?: { code?: unknown } }} */ (seen.execute);
+    check(
+      'document.execute returns a DECLARED failure, not internal',
+      executed?.ok === false && executed.error?.code === 'document-not-open',
+      `document.execute returned ${JSON.stringify(seen.execute)}. There is no engine host, so ` +
+        `the session lookup misses by design — but opening a document is NOT a channel, so the ` +
+        `renderer cannot construct an input that reaches the miss and every input it can ` +
+        `construct stops at document-not-open first. An \`internal\` here would mean that ` +
+        `reasoning is wrong and the channel is answering with a defect.`,
+    );
+
+    process.stdout.write(
+      failures.length > 0
+        ? `${failures.length} shell failure(s):\n\n  - ${failures.join('\n\n  - ')}\n\n`
+        : roster.format('shell case'),
+    );
+  }
+} catch (error) {
+  process.stderr.write(`\n${formatError(error)}\n`);
+  process.exitCode = 1;
+}
+if (failures.length > 0) process.exitCode = 1;

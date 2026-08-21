@@ -44,11 +44,14 @@ import { createMainWindow, senderCheckFor } from './window.js';
  * architecture makes unrepresentable *within* a process and cannot make
  * unrepresentable across two.
  */
-export function startShell(deps: {
+/** Everything the shell needs, built by the composition root. */
+export interface ShellDependencies {
   readonly handlers: ContractHandlers;
   readonly incidents: IncidentSink;
   readonly failures: ShellFailureSink;
-}): void {
+}
+
+export function startShell(deps: ShellDependencies): void {
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;

@@ -275,6 +275,19 @@ try {
           'the first genuinely new computed site it ever met, which is what it is for.',
       },
     ],
+    [
+      'scripts/proofs/composition.proof.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports apps/desktop/dist/budget.js by absolute path through a file:// URL, for the ' +
+          'same reason and with the same constraint as the entry above: the ceiling is read ' +
+          'from the BUILD so that the number compared against ADR-0007 is the one the shell ' +
+          'ships, and a static import would compare the constant with itself. The path is ' +
+          'resolved at run time and needs Windows backslash conversion, so it cannot be a ' +
+          'literal.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */
