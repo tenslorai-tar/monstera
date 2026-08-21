@@ -15,7 +15,7 @@ import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
-import { type LogEntry } from './commandLog.js';
+import { type Checkpoint, type LogEntry } from './commandLog.js';
 import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
 import { foldsCase } from './filesystemProbe.js';
 import {
@@ -31,7 +31,7 @@ import {
 /**
  * A service with a ceiling large enough not to be the thing under test.
  *
- * `residentImageCeiling` has no default in production, on purpose — a number in
+ * `documentBytesCeiling` has no default in production, on purpose — a number in
  * the kernel would be a second opinion about ADR-0007's budget. Tests still need
  * one, and every test that is not *about* capacity needs it to be irrelevant, so
  * it is generous and named. The capacity tests pass their own.
@@ -57,7 +57,7 @@ function newService(
 ): DocumentService {
   const synthetic = options.readIdentity !== undefined && options.readBytes === undefined;
   return new DocumentService(capabilities, {
-    residentImageCeiling: AMPLE_CEILING,
+    documentBytesCeiling: AMPLE_CEILING,
     ...(synthetic ? { readBytes: () => Promise.resolve(new Uint8Array(0)) } : {}),
     ...options,
   });
@@ -1070,20 +1070,37 @@ describe('DocumentService — the write-target check', () => {
   });
 });
 
+/**
+ * A terminal log entry holding a checkpoint of `size` bytes.
+ *
+ * The brand is cast, for the reason the file header already gives about
+ * `CommandWriter`: the only production mint is module-private to `commandBus.ts`
+ * (B3), and these are `DocumentService` tests, so this is a collaborator's
+ * capability being stubbed rather than a guard being bypassed.
+ */
+function terminalEntry(size: number): LogEntry {
+  return {
+    kind: 'terminal',
+    command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+    checkpoint: new Uint8Array(size) as unknown as Checkpoint,
+    reason: 'a checkpoint whose only property under test is its size',
+  };
+}
+
 describe('the canonical image', () => {
   it('holds exactly one copy of an opened document, and its real bytes', async () => {
     const registry = new CapabilityRegistry();
     const service = newService(registry);
     const size = statSync(original()).size;
 
-    expect(service.residentImageBytes()).toBe(0);
+    expect(service.residentDocumentBytes()).toBe(0);
     const outcome = await service.open(registry.mint(original()));
 
     expect(outcome.kind).toBe('opened');
     // Equal to the file, not merely non-zero. A reader that returned an empty
     // buffer, or one that read a different path, satisfies "something is held"
     // — which is the reassuring answer produced by a broken read.
-    expect(service.residentImageBytes()).toBe(size);
+    expect(service.residentDocumentBytes()).toBe(size);
   });
 
   it('releases it on close, so a closed document costs nothing', async () => {
@@ -1092,13 +1109,13 @@ describe('the canonical image', () => {
     const outcome = await service.open(registry.mint(original()));
     if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
 
-    expect(service.residentImageBytes()).toBeGreaterThan(0);
+    expect(service.residentDocumentBytes()).toBeGreaterThan(0);
     await service.close(outcome.docId);
 
     // The record's lifetime IS the image's. This asserts the consequence rather
     // than the mechanism, because the mechanism is "there is no second place
     // holding it" and that is what a leak would disprove.
-    expect(service.residentImageBytes()).toBe(0);
+    expect(service.residentDocumentBytes()).toBe(0);
   });
 
   it('counts each open document separately', async () => {
@@ -1106,19 +1123,19 @@ describe('the canonical image', () => {
     const service = newService(registry);
 
     await service.open(registry.mint(original()));
-    const oneDocument = service.residentImageBytes();
+    const oneDocument = service.residentDocumentBytes();
     await service.open(registry.mint(other()));
 
     // `other()` is a different document with a different length, so the total
     // could not be produced by counting one file twice — which a naive
     // implementation keyed on the wrong thing would do.
-    expect(service.residentImageBytes()).toBe(oneDocument + statSync(other()).size);
+    expect(service.residentDocumentBytes()).toBe(oneDocument + statSync(other()).size);
   });
 
   it('refuses a document that would cross the ceiling, and says by how much', async () => {
     const registry = new CapabilityRegistry();
     const size = statSync(original()).size;
-    const service = newService(registry, { residentImageCeiling: size - 1 });
+    const service = newService(registry, { documentBytesCeiling: size - 1 });
 
     const outcome = await service.open(registry.mint(original()));
 
@@ -1127,14 +1144,14 @@ describe('the canonical image', () => {
     expect(outcome.wouldHold).toBe(size);
     expect(outcome.ceiling).toBe(size - 1);
     // Refused means refused: no record, no image, nothing to close.
-    expect(service.residentImageBytes()).toBe(0);
+    expect(service.residentDocumentBytes()).toBe(0);
   });
 
   it('refuses an over-large document WITHOUT reading it', async () => {
     const registry = new CapabilityRegistry();
     let reads = 0;
     const service = newService(registry, {
-      residentImageCeiling: 1,
+      documentBytesCeiling: 1,
       readBytes: (path) => {
         reads += 1;
         return Promise.resolve(new Uint8Array(statSync(path).size));
@@ -1154,7 +1171,7 @@ describe('the canonical image', () => {
   it('admits a document that exactly fills the ceiling', async () => {
     const registry = new CapabilityRegistry();
     const size = statSync(original()).size;
-    const service = newService(registry, { residentImageCeiling: size });
+    const service = newService(registry, { documentBytesCeiling: size });
 
     const outcome = await service.open(registry.mint(original()));
 
@@ -1163,7 +1180,70 @@ describe('the canonical image', () => {
     // `at-capacity` for this too — and "the guard works" and "nothing opens"
     // would be the same observation.
     expect(outcome.kind).toBe('opened');
-    expect(service.residentImageBytes()).toBe(size);
+    expect(service.residentDocumentBytes()).toBe(size);
+  });
+
+  it('counts a checkpoint, because a checkpoint is a whole byte image', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const imageOnly = service.residentDocumentBytes();
+    await service.run(docId, (context) => {
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record(terminalEntry(4096));
+      return Promise.resolve();
+    });
+
+    // The whole point of JJ-2: with a 1.5x budget and a 1.00x image, the FIRST
+    // checkpoint puts main over budget. A count that saw only images would
+    // report capacity while the budget was already breached — a guard satisfied
+    // while the thing it guards is not.
+    expect(service.residentDocumentBytes()).toBe(imageOnly + 4096);
+  });
+
+  it('counts a checkpoint the cursor has stepped back over', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const docId = mustOpen(await service.open(registry.mint(original())));
+
+    const imageOnly = service.residentDocumentBytes();
+    await service.run(docId, (context) => {
+      const log = context.commandLog(COMMAND_WRITER_FOR_TEST);
+      log.record(terminalEntry(2048));
+      log.undo();
+      return Promise.resolve();
+    });
+
+    // `entries` is the APPLIED view and undo moves a cursor rather than popping,
+    // so summing what the log SHOWS would drop this checkpoint the instant a
+    // user pressed undo — under-reporting by exactly the amount that just became
+    // invisible. Memory does not care about the cursor.
+    expect(service.residentDocumentBytes()).toBe(imageOnly + 2048);
+  });
+
+  it('refuses a reader that returns a view it does not own', async () => {
+    const registry = new CapabilityRegistry();
+    const backing = new Uint8Array(1024);
+    const service = newService(registry, {
+      // The dangerous shape: a small view retaining a large allocation.
+      readBytes: () => Promise.resolve(backing.subarray(0, 8)),
+    });
+
+    await expect(service.open(registry.mint(original()))).rejects.toThrow(
+      /returned a VIEW rather than a buffer it owns/,
+    );
+  });
+
+  it('CONTROL: an exactly-owned buffer is accepted, and so is the real reader', async () => {
+    const owned = new CapabilityRegistry();
+    const exact = newService(owned, { readBytes: () => Promise.resolve(new Uint8Array(8)) });
+    expect((await exact.open(owned.mint(original()))).kind).toBe('opened');
+
+    // And the DEFAULT reader satisfies it, which is the half that matters: a
+    // requirement the production path cannot meet is a requirement that gets
+    // relaxed. Measured — Node's readFile allocates exactly, no pool slice.
+    const real = new CapabilityRegistry();
+    expect((await newService(real).open(real.mint(original()))).kind).toBe('opened');
   });
 
   it('refuses to be constructed without a ceiling at run time as well as at compile time', () => {
@@ -1174,7 +1254,7 @@ describe('the canonical image', () => {
     expect(
       () =>
         new DocumentService(new CapabilityRegistry(), {
-          residentImageCeiling: Number.NaN,
+          documentBytesCeiling: Number.NaN,
         }),
     ).toThrow(/finite, non-negative/);
   });

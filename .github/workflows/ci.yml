@@ -301,6 +301,14 @@ jobs:
       # C5 claims an unhandled contract entry is a compile error. That cannot be
       # tested at runtime — a missing handler is just a channel that hangs — so
       # it is proven by compiling code that must not compile.
+      # Reads the EMITTED JavaScript, because the source cannot answer it:
+      # `import { type X } from './y.js'` keeps the specifier and runs, while
+      # `import type { X }` is erased, and the two are indistinguishable to a
+      # reader. Measured cost of getting it wrong: 38.1 MB of native MuPDF
+      # binding loaded by importing the module that must never parse.
+      - name: Prove DocumentService does not load the native shim
+        run: npm run proof:kernelload
+
       - name: Prove the IPC contract is exhaustive
         run: npm run proof:contract
 

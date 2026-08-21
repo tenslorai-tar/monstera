@@ -450,7 +450,7 @@ export type OpenOutcome =
   | { readonly kind: 'already-open'; readonly docId: DocId }
   | { readonly kind: 'absent' }
   /**
-   * The canonical image would not fit under {@link DocumentServiceOptions.residentImageCeiling}.
+   * The canonical image would not fit under {@link DocumentServiceOptions.documentBytesCeiling}.
    *
    * **An outcome, not a defect.** Opening a document larger than main may hold,
    * or one more document than main may hold, is a thing a user can do and be
@@ -591,8 +591,44 @@ function replacementVerdict(opened: FileIdentity, now: FileIdentity): WriteTarge
  */
 export type IdentityReader = (path: string) => Promise<FileIdentity | null>;
 
-/** Reads a document's canonical image. Injected so tests need no filesystem. */
+/**
+ * Reads a document's canonical image. Injected so tests need no filesystem.
+ *
+ * **It must return a buffer it solely owns**: `byteOffset` zero, spanning its
+ * whole `ArrayBuffer`. Not a style preference — the accounting depends on it.
+ * A reader returning `big.subarray(0, n)` retains all of `big` while reporting
+ * `n`, so `residentDocumentBytes` under-reports **in the unsafe direction** and
+ * the ceiling is satisfied by a service holding far more than it says.
+ *
+ * The obvious alternative — counting `buffer.byteLength` — trades one wrong
+ * direction for another, because a pooled allocation would then over-report.
+ * Requiring sole ownership keeps the exact figure and makes the ambiguous case
+ * unrepresentable instead of estimated (B5).
+ *
+ * Measured, so the requirement is known to be satisfiable: Node's `readFile`
+ * returns an exactly-sized, offset-zero buffer for both a 14-byte and a
+ * 9,000-byte file — it does not hand out pool slices. A reader that cannot meet
+ * this copies, which is a decision made where the buffer's provenance is known.
+ */
 export type BytesReader = (path: string) => Promise<Uint8Array>;
+
+/**
+ * Refuses a buffer the reader does not solely own.
+ *
+ * Thrown rather than reported as an outcome: `at-capacity` is something a user
+ * did, and this is a caller supplying a reader that breaks its contract.
+ */
+function requireSoleOwnership(bytes: Uint8Array, path: string): void {
+  if (bytes.byteOffset === 0 && bytes.buffer.byteLength === bytes.byteLength) return;
+  throw new TypeError(
+    `The BytesReader returned a VIEW rather than a buffer it owns for ${path}: ` +
+      `byteOffset ${String(bytes.byteOffset)}, view ${String(bytes.byteLength)} bytes of a ` +
+      `${String(bytes.buffer.byteLength)}-byte allocation. The whole allocation stays reachable ` +
+      `while only the view is counted, so the resident total would under-report by ` +
+      `${String(bytes.buffer.byteLength - bytes.byteLength)} bytes — in the direction that ` +
+      `satisfies the ceiling while breaching it. Copy the slice before returning it.`,
+  );
+}
 
 /** The default: the file, whole, once. */
 const readFileBytes: BytesReader = (path) => readFile(path);
@@ -618,7 +654,7 @@ export interface DocumentServiceOptions {
    * So the composition root supplies it, derived from the invariant, and a
    * service constructed without it does not compile.
    */
-  readonly residentImageCeiling: number;
+  readonly documentBytesCeiling: number;
   readonly teardown?: DocumentTeardown;
   readonly randomBytesSource?: TokenBytesSource;
   readonly readIdentity?: IdentityReader;
@@ -632,7 +668,7 @@ export class DocumentService {
   readonly #teardown: DocumentTeardown;
   readonly #readIdentity: IdentityReader;
   readonly #readBytes: BytesReader;
-  readonly #residentImageCeiling: number;
+  readonly #documentBytesCeiling: number;
 
   /**
    * Serialises everything that reads the index and then writes it.
@@ -678,25 +714,52 @@ export class DocumentService {
   readonly #executingDocument = new AsyncLocalStorage<DocId>();
 
   constructor(capabilities: CapabilityRegistry, options: DocumentServiceOptions) {
-    if (!Number.isFinite(options.residentImageCeiling) || options.residentImageCeiling < 0) {
+    if (!Number.isFinite(options.documentBytesCeiling) || options.documentBytesCeiling < 0) {
       throw new TypeError(
-        `residentImageCeiling must be a finite, non-negative byte count; received ` +
-          `${String(options.residentImageCeiling)}. There is no default, deliberately — see ` +
+        `documentBytesCeiling must be a finite, non-negative byte count; received ` +
+          `${String(options.documentBytesCeiling)}. There is no default, deliberately — see ` +
           `DocumentServiceOptions.`,
       );
     }
     this.#capabilities = capabilities;
-    this.#residentImageCeiling = options.residentImageCeiling;
+    this.#documentBytesCeiling = options.documentBytesCeiling;
     this.#teardown = options.teardown ?? noTeardown;
     this.#randomBytes = options.randomBytesSource ?? cryptoBytes;
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
     this.#readBytes = options.readBytes ?? readFileBytes;
   }
 
-  /** Canonical image bytes currently held across every open document. */
-  residentImageBytes(): number {
+  /**
+   * **Every document-scaled byte this service is holding**, across every open
+   * document — the one place that answers it.
+   *
+   * ## Two terms, because two things scale with the document
+   *
+   * The canonical image is one. **Checkpoints are the other**, and an earlier
+   * version of this method counted only the first. `Checkpoint` is
+   * `Brand<ByteImage, …>` — a whole byte image per terminal entry, uncapped —
+   * so with a 1.5× budget and a 1.00× image, *the first checkpoint written puts
+   * `main` over budget while `open` still reports capacity*. A guard that can be
+   * satisfied while the thing it guards is breached is not a guard.
+   *
+   * The checkpoint term is asked of the log rather than computed here, so it
+   * moves on its own the day checkpoint policy changes. A comment naming the
+   * exclusion would have been the weaker form of the same fix, with the failure
+   * mode that the note and the code drift — which is what deriving the roster
+   * count removed one commit earlier.
+   *
+   * **This is accounting, not policy.** How many checkpoints may exist, and what
+   * spills when, is deferred to the Stage 0 performance gate by ADR-0009's
+   * *Left open* and is deliberately not settled here
+   * ([ADR-0021](../../../docs/DECISIONS/0021-the-canonical-image-is-retained.md)).
+   * What this fixes is that the number the ceiling compares against is the whole
+   * number.
+   */
+  residentDocumentBytes(): number {
     let total = 0;
-    for (const record of this.#records.values()) total += record.bytes.byteLength;
+    for (const record of this.#records.values()) {
+      total += record.bytes.byteLength + record.log.retainedBytes();
+    }
     return total;
   }
 
@@ -706,9 +769,9 @@ export class DocumentService {
    * @param incoming bytes the service would additionally hold
    */
   #refuseIfOverCeiling(incoming: number): OpenOutcome | null {
-    const wouldHold = this.residentImageBytes() + incoming;
-    if (wouldHold <= this.#residentImageCeiling) return null;
-    return { kind: 'at-capacity', wouldHold, ceiling: this.#residentImageCeiling };
+    const wouldHold = this.residentDocumentBytes() + incoming;
+    if (wouldHold <= this.#documentBytesCeiling) return null;
+    return { kind: 'at-capacity', wouldHold, ceiling: this.#documentBytesCeiling };
   }
 
   /**
@@ -746,6 +809,7 @@ export class DocumentService {
     if (refusal !== null) return refusal;
 
     const bytes = await this.#readBytes(path);
+    requireSoleOwnership(bytes, path);
 
     // The second check is the CORRECT one, and it is not redundant. `stat` and
     // the read are two observations of a file that anything may write between

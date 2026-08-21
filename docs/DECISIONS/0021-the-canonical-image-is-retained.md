@@ -58,9 +58,59 @@ shapes. The second row is also this instrument's resolution test — it separate
 the two quantities that would change the decision, run before the decision was
 taken rather than after.
 
+**What was measured, stated precisely, because "sized by measurement" invites a
+larger reading than the evidence supports.** The process measured is
+`scripts/perf/roleMain.mjs`, which is a **model** of main: it reads the file,
+hashes it, holds the buffer across a save-shaped operation, and reports. It does
+not construct a `DocumentService` and does not call `open`. So the figures above
+are arithmetic about **bytes**, and they are sound as that — they are not
+evidence about this retention **implementation**.
+
+The gap is not theoretical: a retention path that copied the buffer, held a
+second live reference across a save, or stored a view of a larger allocation
+would breach the budget and be invisible to a harness that never executes it.
+That is the harness axis this project has already paid for once — *what does the
+harness hand its child that the real caller does not* — and here the harness does
+the retaining itself, so the real caller's version is exercised by nothing.
+
+**Owed, and named rather than left implicit:** a `perf:gate` role that opens
+through `DocumentService`. It was blocked until this commit for a reason worth
+recording — importing `DocumentService` loaded the native MuPDF shim, 38.1 MB,
+through a type-only import that survived compilation, so a role built on it
+could not have measured `main` without the parser in it. That is fixed and
+`proof:kernelload` holds it fixed; the role itself is the next unit.
+(Finding JJ-1.)
+
+### 1a. The count is of every document-scaled byte, not only the image
+
+*(Added 2026-08-21, finding JJ-2. The first version of this ADR shipped a count
+that summed canonical images alone.)*
+
+`Checkpoint` is `Brand<ByteImage, …>` — a whole byte image per terminal log
+entry, uncapped. With a 1.00× image against a 1.5× budget, **the first
+checkpoint written puts `main` over budget while `open` still reports
+capacity**. A ceiling derived from §9.17's `main` budget that enforces one of the
+two terms consuming it, and says so nowhere, is a guard that can be satisfied
+while the thing it guards is breached.
+
+So `residentDocumentBytes()` is the one place that answers *how much
+document-scaled memory is main holding*, and it asks the log for the checkpoint
+term rather than computing it — so the number moves on its own the day
+checkpoint policy changes, instead of depending on someone remembering this
+document. A comment naming the exclusion would have been the weaker form of the
+same fix, with the failure mode that the note and the code drift.
+
+**The log reports what it physically retains, not what `entries` shows.** Undo
+moves a cursor and never pops, so a checkpoint in the redo tail is invisible to
+the applied view and still in the process; summing what the log shows would
+under-report by exactly the amount an undo just made invisible.
+
+This is **accounting, not policy**. How many checkpoints may exist and what
+spills when is still deferred, exactly as stated above.
+
 ### 2. The ceiling is supplied and has no default
 
-`DocumentServiceOptions.residentImageCeiling` is required. ADR-0007 states
+`DocumentServiceOptions.documentBytesCeiling` is required. ADR-0007 states
 `main`'s budget, §9.17 carries it as the one machine-read line, and
 `scripts/lib/memoryBudgets.mjs` is its single reader. The kernel cannot reach
 that module — it is plain Node under `scripts/` and the boundary is deliberate —

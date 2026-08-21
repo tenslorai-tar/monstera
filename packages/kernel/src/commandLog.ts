@@ -1,8 +1,20 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 import { type Brand } from '@monstera/shared';
 
-import { type ByteImage } from './engineSeam.js';
-import { type PriorPageRotation } from './rotatePages.js';
+// `import type`, NOT `import { type … }`. The second form keeps the specifier
+// in the emitted JavaScript as `import {} from './rotatePages.js'`, which RUNS —
+// and `rotatePages.js` imports `withDocument` from `mupdfWriter.js` as a value,
+// which loads the native MuPDF binding.
+//
+// Measured: importing `documentService.js` cost **38.1 MB of RSS** before this
+// line was corrected, for a module that must never parse a document. `main`
+// holds bytes and hands work to a host (ARCHITECTURE §2); pulling the parser
+// into it is the creep §9.17's base term exists to catch, and it arrived
+// through a type-only import of a type.
+//
+// Same mechanism as the Electron download one file over, with a different bill.
+import type { ByteImage } from './engineSeam.js';
+import type { PriorPageRotation } from './rotatePages.js';
 
 /**
  * The command log: a cursor over entries, not a stack (ADR-0009 §4).
@@ -122,6 +134,8 @@ export type LogEntry = { readonly [K in CommandKind]: LogEntryFor<K> }[CommandKi
 export interface ReadonlyCommandLog {
   readonly entries: readonly LogEntry[];
   readonly redoDepth: number;
+  /** Document-scaled bytes retained, cursor position irrelevant. */
+  retainedBytes(): number;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   peekRedo(): LogEntry | undefined;
@@ -149,6 +163,32 @@ export class CommandLog implements ReadonlyCommandLog {
   /** How many entries could be redone — the tail the cursor has stepped back over. */
   get redoDepth(): number {
     return this.#entries.length - this.#applied;
+  }
+
+  /**
+   * Document-scaled bytes this log is holding, checkpoints included.
+   *
+   * ## Why the log answers this rather than the caller summing `entries`
+   *
+   * **`entries` is the APPLIED view, and memory does not care about the
+   * cursor.** Undo steps the cursor back and never pops, so a checkpoint in the
+   * redo tail is invisible to `entries` and is still in the process. A caller
+   * summing what it can see would under-report by exactly the amount an undo
+   * just made invisible — the wrong direction, and undetectable from outside.
+   *
+   * So the log reports what it physically retains, which is the only question
+   * `DocumentService`'s ceiling is asking.
+   *
+   * Only checkpoints are document-scaled. An invertible entry's `inverse` is a
+   * `CommandPrior` — for `rotatePages`, one small record per page — and counting
+   * it would put a rounding error into a figure compared against a budget.
+   */
+  retainedBytes(): number {
+    let total = 0;
+    for (const entry of this.#entries) {
+      if (entry.kind === 'terminal') total += entry.checkpoint.byteLength;
+    }
+    return total;
   }
 
   get canUndo(): boolean {
