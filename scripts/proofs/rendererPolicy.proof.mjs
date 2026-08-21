@@ -112,9 +112,32 @@ async function declaredPolicy() {
  */
 function readback(binary) {
   const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
-  const [command, args] = needsDisplay
-    ? ['xvfb-run', ['-a', binary, HARNESS]]
-    : [binary, [HARNESS]];
+
+  // Resolved by absolute path, and its ABSENCE is reported as itself.
+  //
+  // Measured: this step failed on ubuntu-latest after ONE SECOND. Nothing that
+  // starts Electron and waits for a window fails that fast, so the spawn itself
+  // was what failed — and a bare `spawnSync('xvfb-run', …)` reports ENOENT in a
+  // way that reads like the harness misbehaving rather than like a missing
+  // program. Checking first turns "the read-back failed" into "there is no
+  // display server on this machine", which are different problems with
+  // different fixes.
+  const XVFB = ['/usr/bin/xvfb-run', '/bin/xvfb-run', '/usr/local/bin/xvfb-run'];
+  let wrapper;
+  if (needsDisplay) {
+    wrapper = XVFB.find((path) => existsSync(path));
+    if (wrapper === undefined) {
+      throw new Error(
+        `Electron needs an X display on Linux and no xvfb-run was found. Tried:\n  ` +
+          `${XVFB.join('\n  ')}\nInstall it (\`xvfb\` on Debian/Ubuntu) or export DISPLAY. ` +
+          `Running without one does not error — it HANGS, which is why this refuses up front ` +
+          `rather than discovering it after a two-minute timeout.`,
+      );
+    }
+  }
+
+  const [command, args] =
+    wrapper === undefined ? [binary, [HARNESS]] : [wrapper, ['-a', binary, HARNESS]];
 
   const result = spawnSync(command, args, {
     cwd: REPO_ROOT,

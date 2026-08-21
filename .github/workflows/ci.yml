@@ -237,6 +237,18 @@ jobs:
       #
       # The proof applies `xvfb-run -a` itself on Linux rather than relying on a
       # wrapper here, so running it by hand behaves the same as running it in CI.
+      # Electron needs an X display on Linux and the runner image provides none.
+      # This is provisioning a platform capability, not working around our own
+      # code — the same category as provisioning MuPDF or Electron itself.
+      #
+      # Note what is NOT done here: `--no-sandbox`. That is the usual advice for
+      # Chromium on a CI box, and it would disable one of the protections the
+      # very next step exists to verify. A proof that weakens the thing it
+      # measures is worse than no proof.
+      - name: Install a display server for the renderer read-back
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Prove the renderer receives and obeys the declared CSP
         run: npm run proof:rendererpolicy
 
