@@ -644,6 +644,144 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `03fcf9b..7223851` — the shell learns to report its own failures, and a unit test was downloading Electron
+
+**Audited through `7223851`.** 6 commits, 24 files, **1 proof added, 4
+modified**, 1 new source file — from `npm run audit:scope`. Owed on the file
+threshold again, 24 of 24.
+
+The range: the three HH closures, the owner's rulings recorded, `DocumentService`
+gaining the canonical image, and the shipped app learning to hear the failures
+Electron announces.
+
+### KK-1 — a unit test was downloading Electron, and the invariant that forbids it could not see the route
+
+```
+import { type App, type WebContents } from 'electron';
+```
+
+emits `import {} from 'electron'` — the braces keep the specifier, so a
+**side-effect import survives**. `shellFailure.test.ts` imports that module and
+vitest runs it in plain Node, where importing `electron` *is* the download.
+`node_modules/electron/dist` appeared at 11:30, the minute the new test first
+ran. Invariant 26, tripped by the commit that closed II-1.
+
+Neither enforcer can reach it: ESLint's boundary exempts `desktop`, the runtime
+scan's root stops at `scripts/`. And invariant 26's own rationale is what made
+the import look safe — *"`apps/desktop/src/` runs inside the Electron
+runtime"* is true of the app and false of its tests. Corrected in the same
+commit.
+
+### KK-2 — and CI was structurally blind to it, which is the general half
+
+`ci.yml` asserted `node_modules/electron/dist` absent **90 lines before**
+`npm test`. The same download would have happened inside the run that went
+green.
+
+**An assertion about what a job has not yet done is only true at the point it
+runs. Its position in the file is part of the claim.** Fixed by running the
+proof again after the suite — and the class is every other order-dependent
+assertion in both workflows, so the pass was made rather than a rule written:
+
+| assertion | position-dependent? |
+|---|---|
+| `proof:electronimports` — dist absent | **yes**, and it was wrong. Now runs early *and* late |
+| `guard:tree`, `scan:secrets`, `proof:lintignores` | no — tracked files, history and `.gitignore` do not change mid-job |
+| `proof:testresolution` | yes, and already correct: it runs after the suite *by explicit comment*, because it poisons build output |
+| `proof:rendererpolicy`, `proof:kernelload` | read `dist/`, and both are protected — the first by HH-6's staleness comparison, the second by running immediately after the build |
+
+One instance, and it was the one already found. The others are static inputs or
+already position-aware with a stated reason.
+
+### KK-3 — II-1's probe was vacuous, and its first fix was still half vacuous
+
+Counting listeners on the shipped window and requiring `count > 0` **passed with
+the subscription deleted**: Electron attaches one listener to each of those
+events itself, so the reassuring reading was produced by something other than
+the thing under test. HH-2's class, an hour after HH-2's rule was written into
+`CLAUDE.md`, by the author who wrote it.
+
+Made differential against a bare window — and *that was still half vacuous*,
+because the harness kept its own `preload-error` listener, so a probe about the
+shell's subscription was satisfied by the test's own. The harness now reads the
+preload's failure out of the shell's sink. All three components read 0 under the
+mutation.
+
+**No proof catches this class.** Only mutating the thing the case guards
+separates a vacuous case from a real one, and that is the second range running
+where the mutation step was the only thing that found the defect.
+
+### KK-4 — the window's background was a raw hex that had never been true
+
+`'#00000000'` reads back from a running window as `#000000`: Electron honours an
+alpha channel only for a `transparent` window. The window painted opaque black
+for its whole life while the source said fully transparent.
+
+Worse than the raw hex it was raised as. A reader checking what the window paints
+got an answer that had never been true, and the next person wanting transparency
+would have found it already "set". Now read back, with the original value as the
+mutation that proves the case.
+
+### KK-5 — a number's cause inferred from a document rather than from the instrument
+
+`perf:gate` reads `main` at 1.00×, and that was taken to mean *main holds
+nothing* — from a `docs/FEATURES.md` row, without opening `roleMain.mjs:35`,
+which does `readFileSync`. 1.00× has always meant **one resident image**.
+
+Acting on it would have produced a false *"the gate is blind"* when it was not.
+Recorded because the shape is general and this project has it on record already:
+**a document explains a number; only the instrument produces it.** The
+replacement test — one image against two, 1.00× against 2.00× — separates the
+quantities that change the decision, which is what item 4a asks for.
+
+### Raised by the reviewing seat inside this range
+
+**II-1** (closed) — `preload-error` was subscribed in exactly one place in this
+repository, the test harness, so the shipped app had HH-1's property: if the
+bridge stops loading the window comes up looking correct and nothing says
+otherwise. Closing the one broken preload and leaving the channel unsubscribed
+in production is *fix the class* with the class untouched.
+
+**II-2** (open, with a hard trigger — **before Stage 0 exit**) — the independent
+evidence offered for `sandbox: true` was Chromium refusing to start without a
+SUID helper, which is evidence for a *different* proposition: the helper backs
+the browser's OS-level sandbox and would be required with the flag off. The
+wrong attribution was removed rather than defended; the probe that attributes to
+the flag alone is owed. **Five of §2's seven items verified reads as complete to
+a skimmer, and the two that are not are the two nobody will re-check.**
+
+**II-3** (closed) — KK-4 above.
+
+**JJ-1, JJ-2, JJ-3** (raised at the end of this range, fixed in the next
+commit) — the perf measurement is of a *model* of main and not of
+`DocumentService`; the ceiling counted images and not checkpoints, so the first
+checkpoint written puts `main` over budget while `open` still reports capacity;
+and `byteLength` is the view's length, so a reader returning a subarray
+under-reports in the unsafe direction.
+
+### Item 2a — three movements, two of them reductions
+
+The advisory register lost a verdict and two symbols (5/19 → 4/17) when
+`kernel-holds-canonical-bytes` was retired. Deliberate, and it should not read as
+tidying. `proof:rendererpolicy` grew from 13 cases to 16. And
+`proof:electronimports` now runs **twice** in CI, which is not duplication: the
+early run is fast feedback on the static shapes and the late run is the only one
+whose absence assertion means anything.
+
+### Items 4a and 7
+
+`shellFailure.ts` is the range's one new instrument: its messages are
+unit-tested, its subscription is read back off the shipped window, and its
+delivery is proven by killing a renderer. Documents corrected in the commits that
+invalidated them — invariant 26's rationale, invariant 27's predicted trip,
+`preload.ts`'s "that window does not exist yet", the FEATURES contract row's "no
+binary exists to run a window with", and `window.ts`'s sibling `preload.js`.
+
+**Open:** II-2 (before Stage 0 exit), JJ-1's owed `perf:gate` role, GG-8, AA-1,
+AA-3, CC-3, DD-2, BB-6, Y-3, and the MuPDF cache's restore-without-reverify.
+
+---
+
 ## 2026-08-21 — Stage audit: `a66e1e6..03fcf9b` — the CSP becomes law, and the preload turns out never to have run
 
 **Audited through `03fcf9b`.** 5 commits, 24 files, **0 proofs added, 2
