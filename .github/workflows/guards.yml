@@ -257,6 +257,14 @@ jobs:
       - name: No workflow names a path inside the provisioned Electron tree
         run: npm run check:workflowpins
 
+      # Runs HERE, on Linux, with no native library involved: the check is pure
+      # arithmetic on what koffi returns, and the value it must reject was
+      # measured once on Windows and is pinned in the proof. A defect that lived
+      # in three files at once should not need a Windows runner to catch
+      # (finding TT-2).
+      - name: Prove the invalid-handle check catches what four spellings missed
+        run: npm run proof:win32handle
+
       # The pin these very jobs run on is one declaration, not three copies. A
       # workflow left on a floating major keeps working and keeps passing while
       # changing the npm that validates this project's lockfile — which is how

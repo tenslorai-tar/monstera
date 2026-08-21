@@ -58,6 +58,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { electronBinaryPath } from '../provision/electron.mjs';
+import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-native-'));
 
@@ -120,12 +121,13 @@ if (koffi === null) {
     const GENERIC_READ = 0x80000000;
     const FILE_SHARE_READ = 0x00000001;
     const OPEN_EXISTING = 3;
-    const INVALID = -1;
-
     const nativeRead = (path) => {
       const handle = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, null, OPEN_EXISTING, 0, null);
-      const asNumber = koffi.address(handle);
-      if (!handle || asNumber === 0 || asNumber === INVALID || asNumber === 0xffffffffffffffff) {
+      // FOUR SPELLINGS OF INVALID_HANDLE_VALUE USED TO LIVE HERE AND ALL FOUR
+      // WERE FALSE for the value koffi returns (finding TT-2), so this branch
+      // was unreachable and a refused open reported ERROR_INVALID_HANDLE from
+      // ReadFile instead. Win32 owns the rule; one module here implements it.
+      if (isInvalidHandle(koffi, handle)) {
         return 'CreateFileW refused: error ' + GetLastError();
       }
       try {
@@ -256,7 +258,11 @@ setTimeout(() => {
 
 try {
   const koffiPath = JSON.stringify(join(process.cwd(), 'node_modules', 'koffi'));
-  writeFileSync(join(scratch, 'host.js'), `const KOFFI_PATH = ${koffiPath};\n${HOST}`, 'utf8');
+  writeFileSync(
+    join(scratch, 'host.js'),
+    `const KOFFI_PATH = ${koffiPath};\n${INVALID_HANDLE_SOURCE}\n${HOST}`,
+    'utf8',
+  );
   writeFileSync(
     join(scratch, 'main.js'),
     `const KOFFI_DIR = ${JSON.stringify(join(process.cwd(), 'node_modules', 'koffi'))};\n` +

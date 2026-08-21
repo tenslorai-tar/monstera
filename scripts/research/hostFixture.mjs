@@ -60,6 +60,7 @@ import { join } from 'node:path';
 
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
+import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
 
 const ROOT = repoRoot();
 const SHIM = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
@@ -156,8 +157,13 @@ process.parentPort.on('message', (event) => {
       const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
       const GetLastError = kernel.func('uint32 GetLastError()');
       const handle = CreateFileW(process.execPath, 0x80000000, 0x00000001, null, 3, 0, null);
-      const addr = koffi.address(handle);
-      if (!handle || addr === 0 || addr === -1 || addr === 0xffffffffffffffff) {
+      // FOUR SPELLINGS OF INVALID_HANDLE_VALUE USED TO LIVE HERE AND ALL FOUR
+      // WERE FALSE for the value koffi returns (finding TT-2). The branch was
+      // unreachable, so a refused open fell through to ReadFile and reported
+      // ERROR_INVALID_HANDLE — the wrong call, the wrong error, and only ever on
+      // a path this probe had never taken. Win32 owns this rule; one module here
+      // implements it (B3a).
+      if (isInvalidHandle(koffi, handle)) {
         report.nativeReadUnhanded = refused('CreateFileW: error ' + GetLastError());
       } else {
         const buffer = Buffer.alloc(4096);
@@ -371,7 +377,8 @@ try {
   const koffiPath = JSON.stringify(join(ROOT, 'node_modules', 'koffi'));
   writeFileSync(
     join(scratch, 'host.js'),
-    `const KOFFI_PATH = ${koffiPath};\nconst SHIM_PATH = ${JSON.stringify(SHIM)};\n${HOST}`,
+    `const KOFFI_PATH = ${koffiPath};\nconst SHIM_PATH = ${JSON.stringify(SHIM)};\n` +
+      `${INVALID_HANDLE_SOURCE}\n${HOST}`,
     'utf8',
   );
   writeFileSync(join(scratch, 'main.js'), `const KOFFI_PATH = ${koffiPath};\n${MAIN}`, 'utf8');
