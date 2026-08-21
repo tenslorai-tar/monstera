@@ -118,6 +118,15 @@ interface Readback {
    * reported.
    */
   readonly failuresReceived: readonly string[];
+  /**
+   * Whether the crash reached the sink within the liveness bound.
+   *
+   * Separate from {@link failuresReceived} being empty, because those are two
+   * different findings and only one of them is a defect: `false` here means the
+   * event never arrived at all, where an empty list alone used to mean *either*
+   * that or that the harness looked too early.
+   */
+  readonly crashObserved: boolean;
   /** What Chromium made of the declared `backgroundColor`. */
   readonly backgroundColor: string;
   /**
@@ -147,6 +156,16 @@ function settle(ms: number): Promise<void> {
     setTimeout(resolve, ms);
   });
 }
+
+/**
+ * How long to wait for a crash to reach the sink before calling it absent.
+ *
+ * Deliberately far above anything observed, because it decides nothing when the
+ * mechanism works: the wait ends the moment the event arrives. It exists only so
+ * a sink that is never reached fails rather than hanging, which is the one thing
+ * a pure event-wait cannot do.
+ */
+const CRASH_BOUND_MS = 15_000;
 
 /**
  * Runs `source` in the page and narrows the result, or throws saying what came
@@ -268,10 +287,60 @@ export async function reportRendererPolicy(): Promise<void> {
   // subscribing to. Reading the preload's failure out of the SHELL's sink
   // instead tests the shipped path end to end and leaves nothing to subtract.
   const received: ShellFailure[] = [];
+
+  /**
+   * One waiter, so the harness can block on an EVENT rather than on a duration.
+   *
+   * `render-process-gone` is asynchronous, and reading the sink after a fixed
+   * settle is a race the runner decides: it passed here and on ubuntu and failed
+   * on windows-latest, reporting that the sink was never reached when what
+   * happened is that it had not been reached YET. A false negative about a
+   * working guard, produced by the clock.
+   *
+   * Raising the settle is the banned reflex — it moves the boundary and keeps
+   * the race. Waiting for the thing removes it.
+   */
+  let waiter: { event: ShellFailure['event']; resolve: () => void } | null = null;
+
   const window = createMainWindow(session.defaultSession, (failure) => {
     received.push(failure);
+    if (waiter !== null && failure.event === waiter.event) {
+      const { resolve } = waiter;
+      waiter = null;
+      resolve();
+    }
   });
   const { webContents } = window;
+
+  /**
+   * Resolves when the SINK receives `event`, or `false` at the bound.
+   *
+   * Checks what has already arrived first: an event delivered before the wait
+   * begins would otherwise wait for a second one that never comes, which is the
+   * classic way an event-wait reintroduces the race it replaced.
+   *
+   * @param event the failure the sink must receive
+   * @param boundMs liveness only — see {@link CRASH_BOUND_MS}
+   */
+  const sinkReceives = async (
+    event: ShellFailure['event'],
+    boundMs: number,
+  ): Promise<boolean> => {
+    if (received.some((failure) => failure.event === event)) return true;
+    return await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        waiter = null;
+        resolve(false);
+      }, boundMs);
+      waiter = {
+        event,
+        resolve: () => {
+          clearTimeout(timer);
+          resolve(true);
+        },
+      };
+    });
+  };
 
   let delivered: string | null = null;
   let url: string | null = null;
@@ -523,14 +592,23 @@ export async function reportRendererPolicy(): Promise<void> {
   // listener attached to a function that drops what it is given produces the
   // same silence one step along, which is the finding this closes wearing a
   // different hat.
+  //
+  // WAITED FOR BY EVENT, not by duration. `SETTLE_MS` here was a race the
+  // runner decided — green locally and on ubuntu, red on windows-latest with
+  // "the sink held: (nothing)", which is what a working sink looks like when it
+  // is read too early. `CRASH_BOUND_MS` is a LIVENESS bound and not the
+  // correctness mechanism: reaching it means the event genuinely never arrived,
+  // and the readback carries that apart from "arrived and was empty" so the
+  // case can say which happened.
   webContents.forcefullyCrashRenderer();
-  await settle(SETTLE_MS);
+  const crashObserved = await sinkReceives('render-process-gone', CRASH_BOUND_MS);
 
   const readback: Readback = {
     delivered,
     url,
     failureListeners,
     failuresReceived: received.map((failure) => failure.event),
+    crashObserved,
     backgroundColor,
     preloadNodeReach,
     connectBlocked,

@@ -319,6 +319,7 @@ function pinnedPolicy(markdown) {
  *   preloadError: string | null,
  *   failureListeners: Record<string, number>,
  *   failuresReceived: string[],
+ *   crashObserved: boolean,
  *   backgroundColor: string,
  *   preloadNodeReach: string,
  *   popupReturnedNull: boolean,
@@ -624,10 +625,18 @@ try {
       "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
       seen.failuresReceived.includes('render-process-gone'),
       `after forcefullyCrashRenderer the sink held: ` +
-        `${seen.failuresReceived.length === 0 ? '(nothing)' : seen.failuresReceived.join(', ')}. ` +
+        `${seen.failuresReceived.length === 0 ? '(nothing)' : seen.failuresReceived.join(', ')}, ` +
+        `and the harness ${seen.crashObserved ? 'DID' : 'did NOT'} observe the crash arrive ` +
+        `within its liveness bound.\n      ` +
         `The count above proves something is attached; it does not prove the sink is reached, ` +
         `and a listener attached to a function that drops its argument produces the same ` +
-        `silence one step along. So the renderer is genuinely killed and the sink is read.`,
+        `silence one step along. So the renderer is genuinely killed and the sink is read.\n      ` +
+        `WHICH OF THE TWO IT IS matters: \`crashObserved: false\` means the event never arrived ` +
+        `at all, and an empty list with \`true\` would mean it arrived carrying nothing. Those ` +
+        `were one observation until this case failed on windows-latest and on no other runner — ` +
+        `the harness waited a fixed 400 ms after the kill and read a sink that had not been ` +
+        `reached YET, which is a working guard reported as a broken one. It now waits for the ` +
+        `EVENT; the bound decides nothing while the mechanism works.`,
     );
 
     check(
