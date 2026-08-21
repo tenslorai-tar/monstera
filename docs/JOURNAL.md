@@ -644,6 +644,175 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `d4c01c1..a66e1e6` — the shell starts, and `main` is red at the end of it
+
+**Audited through `a66e1e6`.** 9 commits, 20 files, **2 proofs added, 2 modified**,
+6 new source files — from `npm run audit:scope`.
+
+**Recorded while `main` is RED.** The audit is owed because this commit would
+otherwise cross a batch, and the gate is right to hold: Y-2's design counts
+`commits + 1`, so it catches the commit that *crosses* rather than the one after.
+The pending fix is written, proven locally, and waiting behind this entry. Saying
+so is part of the record — an audit entry that reads as though the range ended
+tidily would be the first false thing in it.
+
+The range's substance: **Electron is provisioned in CI and the shell starts.** A
+hardened `BrowserWindow`, both permission handlers, the sender check, a launcher
+that names the pinned binary through `electronBinaryPath()`, and — on
+windows-latest — **the first security property this repository has ever verified
+against a running Chromium** rather than against the source that configures it.
+
+### The headline, stated plainly because it is easy to lose in the red
+
+`windows-latest` passes the renderer read-back. The CSP is read from the response
+as Chromium received it, compared to what the shell declares, and the renderer is
+observed refusing a `connect-src` fetch and an `eval`. Delivered *and* enforced,
+on a real runner. Linux fails for a reason that has nothing to do with the
+policy, which is the next entry's problem and not this claim's.
+
+### GG-1 — a commit added a file under `scripts/` and did not run the proof that scans `scripts/`
+
+`20c7789`'s Executed line lists `proof:rendererpolicy`, 228 tests, typecheck,
+lint, `check:docs`, `guard:staged` — and not `proof:electronimports`. The new
+file contains a computed specifier, `EE-10`'s unlisted branch fired in CI, and
+`main` went red on a check that runs in under a second locally.
+
+**G-1's shape exactly**: the checks that were run were the ones the change *felt*
+like it was about. The rule that follows is narrow and worth keeping: **when a
+commit adds a file to a directory some proof scans, that proof is in the
+pre-commit set for that commit, whatever the change is about.**
+
+The mechanism itself worked. `EE-10`'s branch was built for a new site appearing;
+the previous two entries were found by widening the check, and this is the first
+one found by a commit *adding* a site. Closed in `446a37a` with the reason
+recorded — the path is a build output resolved at run time, and a literal would
+compare the declared policy against a copy of itself.
+
+### GG-2 — the premise under four hypotheses was asserted, and cost two pushes
+
+"Only the read-back step fails" was never read. Every hypothesis built on it —
+`xvfb`, the Chromium sandbox, `debugger.attach`, `did-finish-load` — was about a
+step that **had not run**. Step 17 failed; step 18 was `skipped`.
+
+**Step conclusions are on the public API. Only raw logs are behind the 403.** One
+unauthenticated `GET /actions/jobs/<id>` lists every step with its conclusion,
+and this project's own notes record the 403 as the thing only the owner can pass
+— a fact about logs, applied to a question it does not cover.
+
+Two mechanisms came out of it, both used later in the same range and both worth
+keeping:
+
+- **Read the step list before forming a hypothesis about which step is at
+  fault.** Ask for a log only once you know whose log you want.
+- **Step *durations* are public too, and they discriminate.** The Linux failure
+  lasted **one second**, which eliminated every hang hypothesis at once —
+  nothing that starts Electron and waits for a window fails that fast.
+
+### GG-3 — the harness could only fail by hanging
+
+`void reportDeliveredPolicy()` discarded the rejection, and Electron does not
+exit on an unhandled rejection in the main process. Any throw left the app idling
+until the proof's 120 s timeout, and the proof then reported "no marker line" —
+identical to the output of a harness that never started. **FF-2's shape**:
+impossible to miss, impossible to attribute. Closed in `2cbf658`, along with a
+real race where `app.exit()` could truncate the report on the very path that
+produces it.
+
+**And `2cbf658` is itself a finding.** Both fixes are correct on their merits and
+neither changed the outcome, because the code was never reached — they were
+written in response to a symptom that had not been confirmed. *The banned reflex
+with good engineering attached* is the version that does not feel like one.
+
+### GG-4 — three second opinions in one module, all B3a, all found by running it
+
+`scripts/provision/electron.mjs` had written its own answer to three questions
+siblings had already settled, and **each second opinion agreed with the authority
+on every input anyone had tried** — which is the shape B3a describes and the
+reason review passed over all three.
+
+| question | the authority | what the second opinion did |
+|---|---|---|
+| "am I run directly?" | `gitleaks.mjs:852`, `mupdf.mjs:346`, `electronSurface.mjs:351` | built `file://` + path, giving `file://C:/…` against `import.meta.url`'s `file:///C:/…`. **Exit 0, provisioning nothing**, on Windows only |
+| "where do I stage a published tree?" | `gitleaks.mjs:770` | `mkdtemp(tmpdir())`, which `rename` cannot leave: the runner's workspace is `D:` and `TEMP` is `C:` → EXDEV |
+| "which program extracts this?" | — | the extractor's own comment claimed "bsdtar first"; the Linux list held three GNU-tar paths, and GNU tar cannot read a zip |
+
+The third is the sharpest. That comment is **true on macOS and false on Linux**,
+and the list was used on both. Every earlier caller escaped by accident —
+gitleaks ships `.tar.gz` for Linux and zip only for Windows, MuPDF is a source
+tarball. Electron ships *every* platform as zip, so it was the first caller to
+reach the case.
+
+None of the three could have been found by reading. The first produced a green
+step that did nothing; the other two required a runner whose filesystem layout
+and toolset differ from a developer machine's.
+
+### GG-5 — the enforcement probe was a fixture the defect handles correctly
+
+The CSP read-back's first enforcement probe asked whether `fetch` rejected and
+whether `new Function` threw. Measured: loosening `connect-src` to `'self'
+https:` left **both answers unchanged**, because `https://example.invalid/` fails
+DNS whatever the policy says. The probe reported "blocked" for a request CSP had
+just been loosened to *permit*, and survived the exact mutation it existed to
+catch.
+
+**Item 4's fixture rule, caught by running the mutation rather than by reading
+the code.** Now read from `securitypolicyviolation`, which only the CSP
+implementation fires — an event that cannot be produced by a network failure, a
+hostname typo, or an offline runner. The difference between measuring the policy
+and measuring the weather.
+
+### GG-6 — nothing established that the published binary could be executed
+
+`extract.mjs` performs no `chmod` and no mode assertion, and the provisioner
+deliberately never spawns what it publishes — correctly, after the gitleaks
+EPERM, because "does it run" is a question about the machine at this instant and
+must not gate a publish.
+
+The consequence went unstated: on POSIX **nothing checked that the published
+binary was runnable at all.** The `available: true` shape — a green provisioning
+step for a file that may not execute. Reading the mode is a question about the
+*file*, so it is safe to gate on, and it is a check rather than a guess since
+nothing in the extractor sets it. **Raised by the reviewing seat; the fix is in
+the commit this entry unblocks.**
+
+### Item 2a — coverage moved in both directions again
+
+- **The CSP read-back is a strengthening where the runtime is provisioned and a
+  new "could not look" everywhere else.** The policy used to be asserted from a
+  constant, unconditionally. The meaningful half now has a provisioning
+  condition, and prints `UNVERIFIABLE` — never "nothing to check", which would be
+  false — when it cannot look.
+- **`securitypolicyviolation` replaced two behavioural questions with one
+  precise one.** Strictly stronger, and it narrows what the probe can see: it
+  now reports only violations CSP itself raises, so a *non*-CSP failure of the
+  same operation is no longer visible to it at all. Correct, and a change in what
+  green means.
+
+### Executed rather than asserted
+
+Provisioning was run end to end on real bytes: a 150,154,788-byte archive
+downloaded and verified, extracted, published, and `electron.exe --version`
+printing `v43.4.1`; a cache hit verified in 7.3 s with no download; **100 random
+bytes appended to the cached archive → refused, expected/received digests named,
+file deleted unread**; and recovery by re-download on the next run.
+
+The read-back's mutations were run against the live runtime: `connect-src`
+loosened → red on `connectBlocked` (and *green* before the probe was fixed, which
+is GG-5's whole evidence); `applyContentSecurityPolicy` no-opped → two red; the
+runtime hidden → `UNVERIFIABLE` printed with the string half still green.
+
+### Carried forward, still open
+
+**AA-1** (granularity), **AA-3**, **CC-3**, **DD-2**, **BB-6** (ruled not-now),
+**Y-3**. **The MuPDF cache has the same restore-without-reverify property the
+Electron cache was given** (`ci.yml:313`) — raised in `55cfe69`, not fixed, and
+not the same shape: it caches a *built tree*, which has no pin to check against.
+
+Next: the Linux sandbox helper, then the §9 CSP amendment, then the composition
+root.
+
+---
+
 ## 2026-08-21 — Stage audit: `90d9b6e..HEAD` — a range of instruments, audited before feature code joins it
 
 **Audited through `d4c01c1`.** 9 commits, 14 files, **1 proof added, 1 modified**,
