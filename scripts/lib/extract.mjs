@@ -49,7 +49,26 @@ function candidates() {
     '/usr/bin/tar',
     '/bin/tar',
     '/usr/local/bin/tar',
+    // `unzip` reads zip and nothing else, which is why it comes last: it is
+    // only ever selected for a zip, and only when no libarchive tar is present.
+    // That is the ubuntu runner exactly — GNU tar and no bsdtar — and it is the
+    // canonical zip tool on the platform rather than a package someone might
+    // have installed, so supporting it is the fix and `apt-get install` in a
+    // workflow would be the workaround.
+    '/usr/bin/unzip',
+    '/bin/unzip',
+    '/usr/local/bin/unzip',
   ];
+}
+
+/**
+ * Whether a candidate is `unzip`, which takes different arguments from tar.
+ *
+ * @param {string} path
+ * @returns {boolean}
+ */
+function isUnzip(path) {
+  return /(^|[\\/])unzip(\.exe)?$/iu.test(path);
 }
 
 /**
@@ -64,6 +83,10 @@ function candidates() {
  * @returns {boolean}
  */
 function readsZip(extractor) {
+  // `unzip` reads zip by definition and does not answer `--version` the way tar
+  // does — `unzip --version` exits non-zero on the common build — so probing it
+  // would report "cannot read zip" about the one program that only reads zip.
+  if (isUnzip(extractor)) return true;
   const result = spawnSync(extractor, ['--version'], { encoding: 'utf8' });
   if (result.error !== undefined || result.status !== 0) return false;
   return /bsdtar|libarchive/iu.test(`${result.stdout}`);
@@ -126,6 +149,15 @@ export function extractorPath(archiveName = '') {
  */
 export function archiveSymlinks(directory, archiveName) {
   const tar = extractorPath(archiveName);
+  if (isUnzip(tar)) {
+    // The listing below parses bsdtar's long format. unzip's differs, and this
+    // function exists for a Windows-only hazard, so the pairing is refused
+    // rather than given a second parser nothing exercises.
+    throw new Error(
+      `archiveSymlinks cannot read ${archiveName} with ${tar}: it parses bsdtar's -tvf format. ` +
+        `The symlink exclusion exists for Windows, where bsdtar is the extractor.`,
+    );
+  }
   const result = spawnSync(tar, ['-tvf', archiveName], {
     cwd: directory,
     encoding: 'utf8',
@@ -175,7 +207,27 @@ export function extract(directory, archiveName, extraArgs = []) {
   }
 
   const tar = extractorPath(archiveName);
-  const result = spawnSync(tar, ['-xf', archiveName, ...extraArgs], {
+
+  // `unzip` does not take tar's flags, and it has no `--exclude`. Refusing the
+  // combination is better than translating it: the only caller that passes
+  // exclusions is the MuPDF provisioner, whose archive is a `.tar.gz`, so this
+  // pairing cannot arise today and a silent translation would be untested code
+  // waiting for the first caller that needs it to be right.
+  if (isUnzip(tar) && extraArgs.length > 0) {
+    throw new Error(
+      `${tar} cannot honour extra arguments (${extraArgs.join(' ')}). unzip has no --exclude, ` +
+        `and dropping them would extract MORE than the caller asked for.`,
+    );
+  }
+
+  const argv = isUnzip(tar)
+    ? // `-o` overwrites without prompting: unzip is interactive by default and
+      // would otherwise WAIT for input on a re-extraction, which in CI is a hang
+      // rather than an error. `-q` keeps 200 MB of file names out of the log.
+      ['-o', '-q', archiveName]
+    : ['-xf', archiveName, ...extraArgs];
+
+  const result = spawnSync(tar, argv, {
     cwd: directory,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
