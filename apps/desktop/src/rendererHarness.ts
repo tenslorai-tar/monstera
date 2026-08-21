@@ -1,8 +1,16 @@
 import { BRIDGE_KEY } from '@monstera/contract';
 import { BrowserWindow, app, session } from 'electron';
 
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { SANDBOX_PROBE_KEY } from './sandboxProbeKey.js';
 import { type ShellFailure } from './shellFailure.js';
 import { createMainWindow } from './window.js';
+import { RENDERER_WEB_PREFERENCES } from './windowPolicy.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const RENDERER_HTML = join(HERE, '..', 'renderer', 'index.html');
 
 /**
  * Reports what the renderer ACTUALLY does, for `proof:rendererpolicy`.
@@ -48,20 +56,21 @@ import { createMainWindow } from './window.js';
  * `contextIsolation` and `nodeIntegration: false` — it cannot attribute the
  * absence to one of the three.
  *
- * **And there is no independent evidence for it either.** This paragraph
- * previously offered one: that Chromium refuses to start without a
- * correctly-owned SUID helper on Linux. That is a true observation and it is
- * evidence for a **different proposition** — the helper backs the browser's
- * OS-level sandbox, which the zygote and the GPU and utility processes need
- * whatever one window's `webPreferences.sandbox` says, so it would be required
- * with the flag off too. Offering it here committed the same attribution error
- * the paragraph above correctly refuses in the page-side union, one line later
- * (finding II-2). Neither reading is measured, so neither is relied on.
+ * **A PRELOAD is what attributes, and the probe below is it.** This paragraph
+ * once offered different evidence — that Chromium refuses to start without a
+ * correctly-owned SUID helper on Linux — which is a true observation about a
+ * *different proposition*: the helper backs the browser's OS-level sandbox,
+ * which the zygote and the GPU and utility processes need whatever one window's
+ * `webPreferences.sandbox` says. Offering it here committed the same attribution
+ * error the paragraph above refuses, one line later (finding II-2).
  *
- * The probe that *would* attribute to the flag alone is a harness-only window
- * and a harness-only preload attempting a Node require, with the mutation being
- * `sandbox` flipped by itself: that case must go red while the page-side
- * node-surface case stays green. It is its own unit, and it is owed.
+ * A preload separates the three flags and nothing else does. `nodeIntegration`
+ * governs the page; `contextIsolation` governs which world globals land in;
+ * neither decides what a preload may `require`. Measured against the pinned
+ * Electron before the case was written: a sandboxed preload gets
+ * `threw: module not found: node:fs`, and with `sandbox` flipped **by itself**
+ * it gets a usable `fs` while the page-side reading stays empty. That is the
+ * attribution, and the mutation is what establishes it.
  *
  * Output is a single JSON line on stdout, prefixed so it cannot be confused with
  * Chromium's own chatter, which is copious and goes to stderr.
@@ -111,6 +120,17 @@ interface Readback {
   readonly failuresReceived: readonly string[];
   /** What Chromium made of the declared `backgroundColor`. */
   readonly backgroundColor: string;
+  /**
+   * What a preload under the SAME web preferences got from `require('node:fs')`.
+   *
+   * The page-side `nodeSurface` reading is the union consequence of three flags.
+   * This one is about `sandbox` alone: `nodeIntegration` governs the page and
+   * not the preload, and `contextIsolation` governs which world globals land in
+   * and not what may be required. The mutation that proves the attribution is
+   * flipping `sandbox` by itself — this must go red while `nodeSurface` stays
+   * green (finding II-2).
+   */
+  readonly preloadNodeReach: string;
   readonly popupReturnedNull: boolean;
   readonly windowCount: number;
   readonly permissions: Readonly<Record<string, string>>;
@@ -161,6 +181,63 @@ async function evaluate<T>(
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+/**
+ * Loads a window under the shipped web preferences with the probe preload, and
+ * returns what that preload got from `require('node:fs')`.
+ *
+ * @param target the session the shipped window uses, so the policy is the same
+ */
+async function probeSandboxThroughPreload(target: Electron.Session): Promise<string> {
+  const probe = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      ...RENDERER_WEB_PREFERENCES,
+      preload: join(HERE, 'sandboxProbePreload.cjs'),
+      session: target,
+    },
+  });
+
+  // A holder rather than a `let`, because TypeScript narrows a `let` assigned
+  // only inside a callback to its initialiser and then reports every later `??`
+  // as unnecessary — which would make the diagnostic below unreachable by lint's
+  // own reasoning while remaining reachable at run time.
+  const failed: { reason: string | null } = { reason: null };
+  probe.webContents.on('preload-error', (_event, path, error) => {
+    failed.reason = `${path}: ${error.name}: ${error.message}`;
+  });
+
+  // BOUNDED, because a probe that can only fail by hanging is the shape this
+  // harness already has a rule about. A window that never finishes loading is a
+  // reportable fact; a proof that times out after two minutes is not.
+  const loaded = await Promise.race([
+    new Promise<'loaded'>((resolve) => {
+      probe.webContents.once('did-finish-load', () => {
+        resolve('loaded');
+      });
+      void probe.loadFile(RENDERER_HTML);
+    }),
+    settle(15_000).then(() => 'timed-out' as const),
+  ]);
+
+  if (loaded === 'timed-out') {
+    probe.destroy();
+    return (
+      `the probe window never finished loading ${RENDERER_HTML} within 15s ` +
+      `(preload-error: ${failed.reason ?? 'none'})`
+    );
+  }
+
+  const reported: unknown = await probe.webContents.executeJavaScript(
+    `globalThis[${JSON.stringify(SANDBOX_PROBE_KEY)}]?.requireNodeBuiltin ?? null`,
+  );
+  probe.destroy();
+
+  if (typeof reported === 'string') return reported;
+  // An absent report is NOT "the preload could not reach Node". It is a preload
+  // that did not run, which is HH-1's class and produces the reassuring answer.
+  return `the probe preload reported nothing (preload-error: ${failed.reason ?? 'none'})`;
 }
 
 export async function reportRendererPolicy(): Promise<void> {
@@ -403,6 +480,19 @@ export async function reportRendererPolicy(): Promise<void> {
   );
   bare.destroy();
 
+  // ---------------------------------------------------------------------------
+  // The sandbox, attributed rather than inferred.
+  // ---------------------------------------------------------------------------
+  //
+  // A SECOND WINDOW, built from the same RENDERER_WEB_PREFERENCES, with a
+  // harness-only preload. It cannot be the product window: the product preload
+  // is 233 bytes and exposes one function, and putting a Node probe in it would
+  // widen the surface invariant 1 exists to keep narrow.
+  //
+  // Created after `windowCount` is sampled so it cannot disturb the popup probe,
+  // and destroyed immediately.
+  const preloadNodeReach = await probeSandboxThroughPreload(session.defaultSession);
+
   // The URL is read before the kill, because a dead renderer reports none and
   // that would look like a navigation failure rather than like a crash.
   const finalUrl = webContents.getURL();
@@ -426,6 +516,7 @@ export async function reportRendererPolicy(): Promise<void> {
     failureListeners,
     failuresReceived: received.map((failure) => failure.event),
     backgroundColor,
+    preloadNodeReach,
     connectBlocked,
     evalBlocked,
     nodeSurface: surface.visible,

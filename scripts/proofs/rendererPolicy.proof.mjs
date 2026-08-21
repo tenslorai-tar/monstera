@@ -95,6 +95,7 @@ const RUNTIME_CASES = [
   'the SHIPPED window subscribes to every failure Electron announces',
   "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
   'the window PAINTS the background the shell declares',
+  'a preload under these preferences cannot reach Node, which attributes to sandbox alone',
 ];
 
 /** Cases decidable from strings alone. These run on every machine. */
@@ -315,6 +316,7 @@ function pinnedPolicy(markdown) {
  *   failureListeners: Record<string, number>,
  *   failuresReceived: string[],
  *   backgroundColor: string,
+ *   preloadNodeReach: string,
  *   popupReturnedNull: boolean,
  *   windowCount: number,
  *   permissions: Record<string, string>,
@@ -632,6 +634,21 @@ try {
         `otherwise — this constant said "#00000000" for its whole life and the window was opaque ` +
         `black the entire time. A value that has never been true reads exactly like one that is, ` +
         `so it is read back rather than trusted.`,
+    );
+
+    check(
+      'a preload under these preferences cannot reach Node, which attributes to sandbox alone',
+      seen.preloadNodeReach.startsWith('threw:'),
+      `a preload built from the same RENDERER_WEB_PREFERENCES reported: ` +
+        `"${seen.preloadNodeReach}".\n` +
+        `      THIS IS THE ONLY CASE HERE THAT ATTRIBUTES. The page-side node-surface case is ` +
+        `the union consequence of sandbox, contextIsolation and nodeIntegration and cannot name ` +
+        `one of them; a preload can, because nodeIntegration governs the PAGE and ` +
+        `contextIsolation governs which world globals land in — neither decides what a preload ` +
+        `may require.\n      Measured against the pinned Electron before this case was written: ` +
+        `a sandboxed preload gets "threw: module not found: node:fs". The mutation that proves ` +
+        `the attribution is flipping sandbox BY ITSELF, which must redden this case while the ` +
+        `node-surface case stays green; if both move, the union has been measured again.`,
     );
 
     // The list and the branch, compared rather than trusted to match.

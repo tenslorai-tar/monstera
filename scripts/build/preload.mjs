@@ -57,26 +57,57 @@ import { build } from 'vite';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DESKTOP = join(REPO_ROOT, 'apps', 'desktop');
 
-await build({
-  configFile: false,
-  logLevel: 'warn',
-  build: {
-    // NOT emptied. `tsc --build` has already written the shell into this
-    // directory, and a bundler that clears its output directory would delete
-    // the main process on its way past.
-    emptyOutDir: false,
-    outDir: join(DESKTOP, 'dist'),
-    minify: false,
-    lib: {
-      entry: join(DESKTOP, 'src', 'preload.ts'),
-      formats: ['cjs'],
-      fileName: () => 'preload.cjs',
-    },
-    rollupOptions: {
-      // The one module a sandboxed preload may reach at run time. Anything else
-      // left external here would become a `require` the renderer cannot
-      // resolve — the same silent absence, one layer along.
-      external: ['electron'],
-    },
+/**
+ * Every preload that has to be CommonJS.
+ *
+ * The second is **harness-only** and never loaded by the app: it exists so
+ * `proof:rendererpolicy` can attribute the absence of a Node surface to
+ * `sandbox: true` specifically rather than to the union of three flags. It is
+ * built here rather than hand-written as a `.cjs` beside the app, because a
+ * `.cjs` under `apps/desktop/` would match no lint configuration at all — the
+ * package globs end `.ts,.tsx` and the plain-Node globs stop at `scripts/`,
+ * which is precisely the hole invariant 26 names.
+ */
+const ENTRIES = [
+  { source: 'preload.ts', output: 'preload.cjs', external: ['electron'] },
+  {
+    source: 'sandboxProbePreload.ts',
+    output: 'sandboxProbePreload.cjs',
+    // `node:fs` MUST be external here, and this is not a preference.
+    //
+    // Measured: without it, Rolldown replaced `require('node:fs')` with its own
+    // browser-compatibility stub — `require___vite_browser_external()` — and the
+    // probe would have reported the STUB's behaviour while claiming to report
+    // Electron's. A bundler rewriting the exact call under test is the reason
+    // the instruction is to measure before writing the case rather than after.
+    external: ['electron', 'node:fs'],
   },
-});
+];
+
+for (const { source, output, external } of ENTRIES) {
+  await build({
+    configFile: false,
+    logLevel: 'warn',
+    build: {
+      // NOT emptied. `tsc --build` has already written the shell into this
+      // directory, and a bundler that clears its output directory would delete
+      // the main process on its way past — and the second entry would delete the
+      // first.
+      emptyOutDir: false,
+      outDir: join(DESKTOP, 'dist'),
+      minify: false,
+      lib: {
+        entry: join(DESKTOP, 'src', source),
+        formats: ['cjs'],
+        fileName: () => output,
+      },
+      rollupOptions: {
+        // `electron` is the one module a sandboxed preload may reach at run
+        // time. Anything else left external becomes a `require` the renderer may
+        // not resolve — the same silent absence, one layer along — which is
+        // exactly what the probe entry is built to observe.
+        external,
+      },
+    },
+  });
+}
