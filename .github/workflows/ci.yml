@@ -480,6 +480,21 @@ jobs:
       - name: Provision MuPDF and build the shim
         run: npm run provision:mupdf
 
+      # THIS JOB NOW NEEDS COMPILED TYPESCRIPT, and it did not before.
+      #
+      # `proof:perfbudget` runs the performance gate, and the gate measures
+      # `main` twice: once through a model and once through the real
+      # `DocumentService`, which is compiled kernel code. This job installs with
+      # `--ignore-scripts` and builds only native sources, so `packages/kernel/
+      # dist/` did not exist here and the new role died three seconds in.
+      #
+      # `typecheck` and not `build`: the preload bundle is the other half of
+      # `build` and nothing in this job loads a preload. The role itself refuses
+      # a missing or stale build by name, so a job that forgets this step fails
+      # with the remedy rather than with ERR_MODULE_NOT_FOUND.
+      - name: Compile TypeScript, which the performance gate now measures
+        run: npm run typecheck
+
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous

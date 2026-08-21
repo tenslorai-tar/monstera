@@ -39,18 +39,79 @@
  * Usage: node scripts/perf/roleMainService.mjs <document-path>
  */
 
-import { statSync } from 'node:fs';
-
-// THE SPECIFIC MODULES, NOT THE BARREL. `packages/kernel/dist/index.js`
-// re-exports the MuPDF adapter, and a re-export loads the module exactly as an
-// import does — `proof:kernelload` establishes that the barrel reaches
-// `mupdfWriter.js` and uses it as its known-present control. Importing it here
-// would put the native parser in the process whose budget exists to detect
-// exactly that, and the role would measure the thing it is meant to refuse.
-import { CapabilityRegistry } from '../../packages/kernel/dist/capabilityRegistry.js';
-import { DocumentService } from '../../packages/kernel/dist/documentService.js';
+import { existsSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { reportPeak } from './peakRss.mjs';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/**
+ * Refuses a missing or stale kernel build, and says which.
+ *
+ * **Measured, on a runner rather than here.** The job that builds the native
+ * shim runs `npm ci --ignore-scripts` and never compiles TypeScript, so
+ * `packages/kernel/dist/` did not exist there and this role died on
+ * `ERR_MODULE_NOT_FOUND` three seconds in. That is item 2's quietest axis — a
+ * rich ambient environment locally against the bare one the real caller gets —
+ * and the diff showed nothing, because the dependency is on a directory.
+ *
+ * Staleness is refused for the same reason `proof:rendererpolicy` refuses it
+ * (HH-6): this role measures **compiled** kernel code, and an old build answers
+ * every question confidently about the previous retention path. Source must not
+ * be strictly newer; ties pass, because a build finishing inside one filesystem
+ * tick is not evidence of anything.
+ *
+ * @param {string} relativeSource @param {string} relativeBuilt
+ */
+function requireFreshBuild(relativeSource, relativeBuilt) {
+  const built = join(REPO_ROOT, relativeBuilt);
+  if (!existsSync(built)) {
+    process.stderr.write(
+      `roleMainService: ${relativeBuilt} does not exist. This role measures the REAL ` +
+        `DocumentService, so the kernel has to be compiled — run \`npm run typecheck\`. A job ` +
+        `that runs the performance gate must build TypeScript even if nothing else in it does.\n`,
+    );
+    process.exit(1);
+  }
+  const sourceAt = statSync(join(REPO_ROOT, relativeSource)).mtimeMs;
+  if (sourceAt > statSync(built).mtimeMs) {
+    process.stderr.write(
+      `roleMainService: ${relativeBuilt} is older than ${relativeSource}, so this role would ` +
+        `measure the previous retention path and report it as current. Run ` +
+        `\`npm run typecheck\`.\n` +
+        `If that reports nothing to do, the source's timestamp moved without its CONTENT ` +
+        `changing — a touch, or a tool rewriting it identically — and tsc's incremental build ` +
+        `correctly considers the output current while this check does not. Force it with ` +
+        `\`npx tsc --build --force\`. Stated because a guard that can sit red through the ` +
+        `command it names is a guard someone switches off.\n`,
+    );
+    process.exit(1);
+  }
+}
+
+requireFreshBuild(
+  'packages/kernel/src/documentService.ts',
+  'packages/kernel/dist/documentService.js',
+);
+
+// THE SPECIFIC MODULES, NOT THE BARREL, and imported DYNAMICALLY.
+//
+// `packages/kernel/dist/index.js` re-exports the MuPDF adapter, and a re-export
+// loads the module exactly as an import does — `proof:kernelload` establishes
+// that the barrel reaches `mupdfWriter.js` and uses it as its known-present
+// control. Importing the barrel here would put the native parser in the process
+// whose budget exists to detect exactly that, so the role would measure the
+// thing it is meant to refuse.
+//
+// Dynamic because **static imports are hoisted**: written as `import … from`,
+// they run before every statement in this file, and the freshness check above
+// would have been dead code that read like a guard. Caught by reasoning about
+// module evaluation order rather than by running it, which is the only reason it
+// is not still there.
+const { CapabilityRegistry } = await import('../../packages/kernel/dist/capabilityRegistry.js');
+const { DocumentService } = await import('../../packages/kernel/dist/documentService.js');
 
 const documentPath = process.argv[2];
 if (documentPath === undefined) {

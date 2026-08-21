@@ -186,7 +186,11 @@ function refuseStaleBuild(pairs) {
           `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
           `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
           `Run \`npm run build\`. If you ran \`npm run typecheck\`, that does not produce the ` +
-          `preload bundle — which is the pair this check exists for.`,
+          `preload bundle — which is the pair this check exists for.\n` +
+          `And if \`build\` reports nothing to do for a \`tsc\` pair, the source's timestamp ` +
+          `moved without its CONTENT changing, so the incremental build correctly considers the ` +
+          `output current while this check does not: \`npx tsc --build --force\`. The bundled ` +
+          `preload has no such state — Vite rebuilds it every time.`,
       );
     }
   }
