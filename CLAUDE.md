@@ -812,9 +812,28 @@ it never announces itself: it arrives as one reasonable-looking exception.
 
 **7. Do the documents still match the code?**
 `docs/FEATURES.md` rows, `docs/ARCHITECTURE.md`, `CLAUDE.md`, and any ADR whose
-evidence has since changed. An ADR is corrected by a **dated correction
-section**, never by editing it to look right — what was believed at the time is
-part of the record.
+evidence has since changed.
+
+**How you correct one depends on what kind of document it is, and getting this
+backwards damages the thing you were trying to protect.**
+
+| document | a correction |
+|---|---|
+| `docs/JOURNAL.md` entries, ADRs, recorded findings, the watermark's `audited` text | **appends a dated correction. Never edits.** What was believed at the time is the record, and editing it destroys evidence. |
+| `docs/FEATURES.md` rows, `docs/ARCHITECTURE.md` | **edits the body to be currently true.** History goes in a correction note below, or the amendment log. |
+
+The difference is what the document *is*. A journal entry records a moment. A
+FEATURES row is a **live specification of what is owed**, and a false body means
+the specification is lying — a correction underneath does not repair that,
+because a reader takes the body as the contract and may never reach a note three
+paragraphs down. **That is item 7 at document scale**, and row 283 nearly became
+its worst instance: a body asserting a property obtained, one correction
+retracting a withdrawal, and a second retracting the retraction, with the stale
+claim still holding the contract position.
+
+Both halves have been got wrong in one day, in opposite directions — an edit to
+already-recorded audit text that had to be reverted, and a false FEATURES body
+left standing under two corrections. Ask which kind of document it is first.
 
 **Ask it of the changed function's own comment first, and ask it precisely:
 when a commit removes a behaviour, does that comment still assert the behaviour
