@@ -240,6 +240,23 @@ jobs:
       - name: Prove the stage-audit watermark gate can fail
         run: npm run proof:auditscope
 
+      # A workflow naming a path inside the provisioned Electron tree embeds the
+      # pin where nothing checks it against ELECTRON_VERSION: when the pin moves,
+      # the step names a directory that no longer exists and the failure arrives
+      # as a missing file on a runner rather than as a diff anybody can read.
+      #
+      # The scan's reassuring answer is "found nothing", so it carries a positive
+      # control and REFUSES to report a clean result when that control is not
+      # located — a blinded search here would otherwise certify the property it
+      # can no longer see. The proof runs first because it is what establishes
+      # the scan can also refuse, and can tolerate the commented occurrences that
+      # explain why the path is dangerous (finding GG-8).
+      - name: Prove the workflow-path scan can see, refuse and tolerate
+        run: npm run proof:workflowpins
+
+      - name: No workflow names a path inside the provisioned Electron tree
+        run: npm run check:workflowpins
+
       # The pin these very jobs run on is one declaration, not three copies. A
       # workflow left on a floating major keeps working and keeps passing while
       # changing the npm that validates this project's lockfile — which is how

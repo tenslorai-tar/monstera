@@ -471,8 +471,40 @@ jobs:
           path: .tools/mupdf
           key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
 
+      # THIS JOB IS THE ONLY PLACE THE ENGINE HOST CAN BE PROVEN, and until now
+      # it could not run one (finding RR-1).
+      #
+      # Invariant 25's containment assertions need a utility process — Electron —
+      # with koffi and the MuPDF shim loaded inside it. No job had both: the
+      # matrix job provisions Electron and never builds MuPDF; this job builds
+      # MuPDF and had no Electron. A fixture written against neither would have
+      # been discovered on a runner, three seconds into a step, which is how
+      # NN-1 was found.
+      #
+      # Extended HERE rather than adding MuPDF to the matrix job because every
+      # property invariant 25 names is a Windows kernel object — job objects,
+      # integrity levels, AppContainer — and this job is already windows-latest
+      # and already carries the expensive artifact.
+      #
+      # Same cache key as the matrix job's, deliberately: one pinned archive, one
+      # key, so the two jobs share a store entry rather than racing two spellings
+      # of the same thing. The archive is RE-VERIFIED against the pin after
+      # restore — the cache optimises the download, never the verification.
+      - name: Cache the pinned Electron archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/electron-archives
+          key: electron-archive-${{ runner.os }}-${{ hashFiles('scripts/provision/electron.mjs') }}
+
       - name: Install
         run: npm ci --ignore-scripts
+
+      # Fetches the pinned build and extracts it under .tools/. Nothing imports
+      # the `electron` package to get here — that import IS the download, which
+      # invariant 26 forbids. No display concern: this runner is Windows, and
+      # provisioning starts no process in any case.
+      - name: Provision the pinned Electron runtime
+        run: npm run provision:electron
 
       # Builds MuPDF from source against a pinned SHA-256, links the shim, and
       # fails if the DLL does not export every MZ_EXPORT symbol the source
