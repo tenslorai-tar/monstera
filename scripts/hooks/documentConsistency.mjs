@@ -30,7 +30,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { auditScope, stagedWatermark } from '../lib/auditWatermark.mjs';
+import { auditRecordDisagreement, auditScope, stagedWatermark } from '../lib/auditWatermark.mjs';
 import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
@@ -413,11 +413,16 @@ const { record } = roster;
 //
 // Two properties, and each fails differently.
 //
-// The watermark's commit must appear in docs/JOURNAL.md. That is what makes an
-// audit claimable only with evidence — the same shape as a FEATURES.md row that
-// turns this check red when marked done without one. Advancing the file alone
-// would otherwise record an audit nobody performed, and there is no later moment
-// at which that becomes visible.
+// The watermark and the newest audit the journal records must be the SAME
+// STRING. That is what makes an audit claimable only with evidence — the same
+// shape as a FEATURES.md row that turns this check red when marked done without
+// one.
+//
+// This used to ask whether the watermark's sha appeared anywhere in the journal,
+// which is a search whose reassuring answer any previously recorded sha also
+// produces. Comparing two structured values closes both directions instead: a
+// watermark advanced with no findings, and findings written without the
+// watermark advancing (OO-3b, and see `auditRecordDisagreement`).
 //
 // And HEAD must be within one batch of the watermark, where "one batch" is the
 // median of batches 4 to 7 measured from this repository's own history. Past
@@ -430,9 +435,6 @@ const { record } = roster;
   // beside a watermark from an unstaged edit. It failed that way, which is how
   // it was found (OO-3a).
   //
-  // This does not make the check able to notice a journal entry written without
-  // an advance; the sha it compares then is the old one, which the journal still
-  // names from its own older entry (OO-3b, open).
   const staged = stagedWatermark(ROOT);
   if (staged === null) {
     throw new Error(
@@ -444,14 +446,8 @@ const { record } = roster;
   const scope = auditScope({ root: ROOT, watermark: staged });
   const journal = read('docs/JOURNAL.md');
 
-  if (!journal.includes(scope.watermark)) {
-    failures.push(
-      `docs/audit-watermark.json names ${scope.watermark}, but docs/JOURNAL.md does not mention ` +
-        `it. The watermark advances only in the commit that writes the findings; a watermark with ` +
-        `no journal entry is an audit claimed without a record, and nothing later makes that ` +
-        `visible. Write the findings, and include the sha.`,
-    );
-  }
+  const disagreement = auditRecordDisagreement({ journalText: journal, watermark: scope.watermark });
+  if (disagreement !== null) failures.push(disagreement);
 
   if (scope.overBudget.length > 0) {
     failures.push(
@@ -461,7 +457,10 @@ const { record } = roster;
         `maximum was batch 7, the one stretch that was plainly too large to audit as a unit.`,
     );
   }
-  record(mark, 'the audit watermark is recorded in the journal and within one batch');
+  record(
+    mark,
+    "the watermark and the journal's newest audit are the same string, and the range is within one batch",
+  );
 }
 
 if (failures.length > 0) {

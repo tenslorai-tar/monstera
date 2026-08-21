@@ -25,13 +25,15 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  auditRecordDisagreement,
   auditScope,
   BATCH,
+  newestRecordedAudit,
   pendingAuditScope,
   readWatermark,
   stagedWatermark,
@@ -777,6 +779,87 @@ try {
   rmSync(scratch, { recursive: true, force: true });
 }
 
+// ---------------------------------------------------------------------------
+// OO-3b: the record requirement is a COMPARISON, not a search.
+//
+// "Does this sha appear in the journal" answers yes for any sha the journal has
+// ever named, and it names every one of them forever. So the property was
+// satisfied by history: it caught a watermark advanced with no entry only while
+// the sha happened to be new, and it could never catch an entry written with no
+// advance.
+// ---------------------------------------------------------------------------
+{
+  const FIXTURE = [
+    '# Build journal',
+    '',
+    '## 2026-08-21 — Stage audit: `bbbbbbb..ccccccc` — the newest',
+    '',
+    'prose',
+    '',
+    '## 2026-08-20 — Stage audit: `aaaaaaa..bbbbbbb` — an older one',
+    '',
+    'prose',
+    '',
+  ].join('\n');
+
+  check(
+    'CONTROL: the separating fixture is one the ABSENT guard lets through',
+    FIXTURE.includes('bbbbbbb'),
+    `The case below sets the watermark to bbbbbbb, and its whole value is that the OLD property — ` +
+      `"the sha appears in the journal" — is satisfied by this input. If the sha were absent the ` +
+      `case would go red against the old check too and separate nothing, which is the ` +
+      `negative-probe rule: build the input from something that would SUCCEED without the guard.`,
+  );
+
+  check(
+    'a watermark naming an OLDER entry is refused, though its sha is in the journal',
+    auditRecordDisagreement({ journalText: FIXTURE, watermark: 'bbbbbbb' }) !== null,
+    `This is findings-written-without-an-advance: the newest audit ends at ccccccc while the ` +
+      `watermark still says bbbbbbb. It passed for as long as the check was a search.`,
+  );
+
+  check(
+    'a watermark naming no entry at all is refused',
+    auditRecordDisagreement({ journalText: FIXTURE, watermark: 'ddddddd' }) !== null,
+    `The other direction — a watermark advanced with no findings written — which the search did ` +
+      `catch, and which must not be lost in the replacement.`,
+  );
+
+  check(
+    'and an agreeing pair is accepted',
+    auditRecordDisagreement({ journalText: FIXTURE, watermark: 'ccccccc' }) === null,
+    `Without this the three cases above are satisfied by a check that refuses everything, which ` +
+      `is the always-red gate somebody switches off.`,
+  );
+
+  // Asserting the MESSAGE, because the verdict is not this branch's to make. A
+  // watermark is always a commit id, so `HEAD` is refused by the mismatch branch
+  // whatever the ref check says — the first version of this case asserted
+  // `!== null` and survived the mutation that deletes the branch entirely, which
+  // is the fixture rule again: the defect produced the expected output.
+  const refMessage = auditRecordDisagreement({
+    journalText: '## 2026-08-21 — Stage audit: `bbbbbbb..HEAD` — a ref\n',
+    watermark: 'ccccccc',
+  });
+  check(
+    'a newest entry naming a REF says so, rather than reporting a puzzling inequality',
+    refMessage !== null && /not a commit id/u.test(refMessage),
+    `Got: ${JSON.stringify(refMessage)}. Two 2026-08-18 entries name \`..HEAD\`, so this shape is ` +
+      `in the document's own history and a maintainer will meet it.`,
+  );
+
+  // VACUITY. Every way this parser can break — a renamed section, a changed
+  // dash, a heading that wrapped — reports "no audit recorded", and that is the
+  // answer the check would most like to give.
+  check(
+    'a journal the parser cannot read is a PROBLEM, never a pass',
+    auditRecordDisagreement({ journalText: '# Build journal\n\nno headings here\n', watermark: 'ccccccc' }) !==
+      null && newestRecordedAudit('# Build journal\n') === null,
+    `An empty result from a search is a broken lookup, not a clean one. If this returns null the ` +
+      `check goes green the moment the heading format changes, and stays green.`,
+  );
+}
+
 // The real watermark, and the record requirement it rests on.
 {
   const watermark = readWatermark(repoRoot());
@@ -784,6 +867,31 @@ try {
     'this repository has a watermark naming a real commit',
     /^[0-9a-f]{7,40}$/u.test(watermark.commit),
     `commit was ${JSON.stringify(watermark.commit)}`,
+  );
+
+  // POSITIVE CONTROL, in the instrument's real input rather than in a fixture:
+  // the parser must locate something known-present in the document it actually
+  // reads, every run. 23 stage-audit headings exist; finding none is a broken
+  // parse reporting the reassuring answer.
+  const realJournal = readFileSync(join(repoRoot(), 'docs', 'JOURNAL.md'), 'utf8');
+  const newest = newestRecordedAudit(realJournal);
+  check(
+    "the parser finds this repository's own newest audit heading",
+    newest !== null && /^[0-9a-f]{7,40}$/u.test(newest.to),
+    `newestRecordedAudit returned ${JSON.stringify(newest)} for a journal that carries ` +
+      `${String(realJournal.split('\n').filter((line) => /^##.*\bStage audit\b/u.test(line)).length)} ` +
+      `stage-audit headings. A parse that finds none reports exactly what a clean document would.`,
+  );
+
+  check(
+    'and it is the FIRST heading in the file, not merely some heading',
+    newest !== null &&
+      realJournal.indexOf(newest.heading) ===
+        realJournal.search(/^##[^\n]*?\bStage audit\b/mu),
+    `matched at ${String(newest === null ? -1 : realJournal.indexOf(newest.heading))}, first ` +
+      `heading at ${String(realJournal.search(/^##[^\n]*?\bStage audit\b/mu))}. Entries are ` +
+      `prepended, so "newest" is a position claim — a parser that found the last one would agree ` +
+      `with the watermark only by accident.`,
   );
 }
 

@@ -250,6 +250,102 @@ export function stagedWatermark(root = repoRoot()) {
 }
 
 /**
+ * The newest stage audit `docs/JOURNAL.md` records, or `null` if it records
+ * none.
+ *
+ * Entries are prepended, so the first heading in file order is the newest. The
+ * range end is captured loosely and validated by the caller, because a heading
+ * that names a **ref** rather than a commit has to be distinguishable from a
+ * heading that is absent — two entries from 2026-08-18 name `..HEAD`, and
+ * silently skipping them would make an older entry answer for a newer one.
+ *
+ * @param {string} journalText
+ * @returns {{ from: string, to: string, heading: string } | null}
+ */
+export function newestRecordedAudit(journalText) {
+  const match = /^##[^\n]*?\bStage audit\b[^`\n]*`([0-9a-f]{7,40})\.\.([^`\n]+)`/mu.exec(journalText);
+  if (match === null) return null;
+  return {
+    from: `${match[1] ?? ''}`,
+    to: `${match[2] ?? ''}`.trim(),
+    heading: `${match[0] ?? ''}`.trim(),
+  };
+}
+
+/**
+ * Whether the journal's newest recorded audit and the watermark agree, as one
+ * message or `null`.
+ *
+ * ## Why this replaced "does the sha appear in the journal"
+ *
+ * That was a **search**, and its reassuring answer — found it — is what *any
+ * previously recorded sha* produces. Every sha the journal has ever named stays
+ * in it forever, so the property was satisfied by history rather than by
+ * evidence: it caught a watermark advanced with no entry only while the sha
+ * happened to be new, and it could never catch an entry written with no advance
+ * (OO-3b).
+ *
+ * Two structured values compared exactly closes both directions at once. It is
+ * the pattern invariant 27 uses for the CSP one level out — two forms of one
+ * fact, one comparison between them, so divergence becomes an edit somebody has
+ * to defend.
+ *
+ * **Exactly** means the same string. A heading naming 40 hex characters against
+ * a 7-character watermark is a disagreement here, and deliberately: one form in
+ * one place is the whole point, and a normalising comparison is the second
+ * opinion B3a exists to forbid.
+ *
+ * @param {{ journalText: string, watermark: string }} input
+ * @returns {string | null}
+ */
+export function auditRecordDisagreement({ journalText, watermark }) {
+  const newest = newestRecordedAudit(journalText);
+
+  // ABSENT IS NOT AGREEMENT. A heading that wrapped, a renamed section or a
+  // changed dash all report "no audit recorded", and that is the answer this
+  // check is hoping for — so it must be the loudest outcome, never the quiet
+  // one (item 4b).
+  if (newest === null) {
+    return (
+      `docs/JOURNAL.md records no stage audit at all: nothing matched a ` +
+      `\`## <date> — Stage audit: \\\`A..B\\\`\` heading. That is almost certainly this parser and ` +
+      `not the document — a renamed section, a changed dash, a heading that wrapped. An empty ` +
+      `result from a search is a broken lookup, not a clean one, and this one's empty result is ` +
+      `the answer it would most like to give.`
+    );
+  }
+
+  // DIAGNOSTIC, not a guard, and the distinction is worth stating because the
+  // case for it was written as a guard first and was vacuous: a watermark is
+  // always a commit id, so `HEAD` reaches the mismatch branch below and is
+  // refused there whatever this says. What this decides is the MESSAGE — that a
+  // maintainer reads "names a ref" rather than a puzzling inequality — so its
+  // case asserts the text, which is the only thing this branch produces.
+  if (!COMMIT_SHA.test(newest.to)) {
+    return (
+      `docs/JOURNAL.md's newest stage audit names \`${newest.to}\` as its range end, which is not ` +
+      `a commit id. A ref resolves to whatever HEAD happens to be and so agrees with any ` +
+      `watermark, which is the failure the watermark's own validity rule already closed.\n` +
+      `  ${newest.heading}`
+    );
+  }
+
+  if (newest.to !== watermark) {
+    return (
+      `docs/audit-watermark.json names ${watermark}, but the newest stage audit in ` +
+      `docs/JOURNAL.md ends at ${newest.to}. These are two forms of one fact and they must be the ` +
+      `same string.\n` +
+      `  ${newest.heading}\n` +
+      `  If the watermark advanced, the findings for ${watermark} have not been written. If the ` +
+      `findings were written, the watermark did not advance with them — and that direction used ` +
+      `to pass, because the old sha still appears in its own older entry.`
+    );
+  }
+
+  return null;
+}
+
+/**
  * The audit range **as this commit will leave it**, for a gate that runs before
  * the commit exists.
  *

@@ -174,194 +174,250 @@ function generousEntriesExcept(results, underTest) {
   );
 }
 
+/**
+ * Runs a section and RETURNS its failure text rather than letting a throw
+ * escape.
+ *
+ * A throw in the measured section used to end the process before `failures` was
+ * printed, so every case already found was discarded — a proof reporting fewer
+ * failures than it had found (OO-2). Measured during a mutation run: two pure
+ * controls had recorded failures and neither reached the output, because the
+ * measured section threw afterwards. The stack was informative and the two
+ * findings were gone.
+ *
+ * Returning the text rather than pushing it is what keeps this testable: the
+ * two cases below call it directly, in both directions, which is the only way
+ * to exercise a wrapper whose whole job is to change what reaches the report.
+ *
+ * @param {() => void} section
+ * @returns {string | null}
+ */
+function guarded(section) {
+  try {
+    section();
+    return null;
+  } catch (error) {
+    return (
+      `the measured section THREW, so every case after the throw is UNRUN and this list is ` +
+      `INCOMPLETE\n      ` +
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}`
+    );
+  }
+}
+
+check(
+  'a throw inside a guarded section becomes a reported failure, not a lost one',
+  /deliberate/u.test(
+    `${guarded(() => {
+      throw new Error('deliberate');
+    })}`,
+  ),
+  `A throw used to end the process with \`failures\` unprinted, discarding cases that had already ` +
+    `been found. The text must also say the remaining cases are UNRUN, or a shortened list reads ` +
+    `as a complete one.`,
+);
+
+check(
+  'and a section that completes reports nothing',
+  guarded(() => undefined) === null,
+  `Without this the case above is satisfied by a wrapper that reports a failure every time, which ` +
+    `would make the whole measured section permanently red.`,
+);
+
 // ---------------------------------------------------------------------------
 // The control: against the real invariant, the gate passes and reports the
 // renderer as deliberately unasserted.
 // ---------------------------------------------------------------------------
-const shapes = runAllShapes();
-const baseline = shapes[0] ?? runBudgetGate();
+const thrown = guarded(() => {
+  const shapes = runAllShapes();
+  const baseline = shapes[0] ?? runBudgetGate();
 
-for (const run of shapes) {
+  for (const run of shapes) {
+    check(
+      `${run.shape}: the gate passes against the budgets the invariant actually declares`,
+      run.results.every((result) => result.withinMultiplier && result.withinAbsolute),
+      run.results
+        .map((r) => `${r.role}: ${formatBytes(r.peakBytes)} - ${formatBytes(r.baselineBytes)} = ${r.ratio.toFixed(2)}x of ${formatBytes(run.fixture.bytes)}`)
+        .join('; '),
+    );
+  }
+
   check(
-    `${run.shape}: the gate passes against the budgets the invariant actually declares`,
-    run.results.every((result) => result.withinMultiplier && result.withinAbsolute),
-    run.results
-      .map((r) => `${r.role}: ${formatBytes(r.peakBytes)} - ${formatBytes(r.baselineBytes)} = ${r.ratio.toFixed(2)}x of ${formatBytes(run.fixture.bytes)}`)
-      .join('; '),
+    'both content shapes were measured, not just the easy one',
+    shapes.length === 2 && shapes.some((run) => run.shape === 'object-dense'),
+    `shapes run: ${shapes.map((run) => run.shape).join(', ')}. The two shapes give different ` +
+      `figures for the same role, so one is not evidence about the other.`,
   );
-}
 
-check(
-  'both content shapes were measured, not just the easy one',
-  shapes.length === 2 && shapes.some((run) => run.shape === 'object-dense'),
-  `shapes run: ${shapes.map((run) => run.shape).join(', ')}. The two shapes give different ` +
-    `figures for the same role, so one is not evidence about the other.`,
-);
-
-check(
-  'the dense shape costs the host measurably more per byte than the image shape',
-  (() => {
-    /** @param {string} shape @returns {number} */
-    const host = (shape) =>
-      shapes.find((run) => run.shape === shape)?.results.find((r) => r.role === 'mupdf-host')?.ratio ?? 0;
-    return host('object-dense') > host('image-heavy');
-  })(),
-  `If these came back equal the two fixtures are not actually different shapes, and running both ` +
-    `proves nothing beyond running one.`,
-);
-
-check(
-  'every asserted role was actually measured, INCLUDING main through the real service',
-  baseline.results.length === 3 &&
-    baseline.results.some((result) => result.role === 'main-service') &&
-    baseline.results.every((result) => result.peakBytes > 0),
-  `measured: ${baseline.results.map((r) => r.role).join(', ')}\n      ` +
-    `The count is pinned so a role that stopped being measured is loud rather than absent. ` +
-    `\`main-service\` is named as well as counted because it is the only role that exercises ` +
-    `the retention IMPLEMENTATION — \`main\` is a model of what main should cost, and a second ` +
-    `live reference inside DocumentService is invisible to it (finding LL-4). Verified by ` +
-    `leaking one copy inside the service: this role doubled and breached on both content ` +
-    `shapes while the model role was unmoved and passed. The figures are in the commit that ` +
-    `added this role, not here — this file states no limits of its own, and its own guard ` +
-    `rejects a literal shaped like one.`,
-);
-
-check(
-  'the renderer is reported unasserted rather than silently passed',
-  baseline.unasserted.some((entry) => entry.role === 'renderer' && /provisional/iu.test(entry.reason)),
-  `unasserted: ${JSON.stringify(baseline.unasserted)}. A gate that skips a declared budget while ` +
-    `printing success is the failure this whole path exists to avoid.`,
-);
-
-// ---------------------------------------------------------------------------
-// The gate follows the line. For each asserted role, a limit derived from what
-// that role actually used must flip the verdict in both directions.
-// ---------------------------------------------------------------------------
-for (const measured of baseline.results) {
-  // BUDGET NAMES, not role labels — `main` is measured twice and a declaration
-  // line naming it twice is not a line the parser accepts. This built one for
-  // `main-service` when the two were assumed identical, and the parser refused
-  // it as a process nobody had declared, which is that check working.
-  const others = generousEntriesExcept(baseline.results, measured.budget);
-
-  const tooTight = (measured.ratio - 0.05).toFixed(2);
-  const justEnough = (measured.ratio + 0.05).toFixed(2);
-
-  {
-    const gate = runBudgetGate({
-      budgetsText: withEntries([`${measured.budget} = ${tooTight}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
-    });
-    const role = gate.results.find((result) => result.role === measured.role);
-    check(
-      `${measured.role}: a multiplier just below what it used turns the gate red`,
-      role?.withinMultiplier === false,
-      `declared ${tooTight}x against a measured ${measured.ratio.toFixed(2)}x, and the gate still ` +
-        `passed. The gate is not reading the line.`,
-    );
-  }
-
-  {
-    const gate = runBudgetGate({
-      budgetsText: withEntries([`${measured.budget} = ${justEnough}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
-    });
-    const role = gate.results.find((result) => result.role === measured.role);
-    check(
-      `${measured.role}: and a multiplier just above it passes`,
-      role?.withinMultiplier === true,
-      `declared ${justEnough}x against a measured ${measured.ratio.toFixed(2)}x and the gate failed. ` +
-        `Without this the case above is satisfied by a gate that always fails.`,
-    );
-  }
-
-  {
-    // The baseline term. Its whole reason for existing is that the other two
-    // cannot see a regression in it — the multiple is taken above the baseline,
-    // so an inflated fixed cost raises numerator and subtrahend together and
-    // the ratio does not move. Both directions, because a gate that always
-    // failed on the baseline would satisfy the tightening case alone.
-    const belowBaselineMB = Math.max(1, Math.floor(measured.baselineBytes / MB) - 4);
-    const aboveBaselineMB = Math.ceil(measured.baselineBytes / MB) + 4;
-    const generousOthers = [...others, 'renderer = provisional'];
-
-    const tight = runBudgetGate({
-      documentPath: baseline.fixture.path,
-      documentBytes: baseline.fixture.bytes,
-      budgetsText: withEntries([
-        `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(belowBaselineMB)} MB`,
-        ...generousOthers,
-      ]),
-    });
-    const tightRole = tight.results.find((result) => result.role === measured.role);
-    check(
-      `${measured.role}: a baseline budget below its measured fixed cost turns the gate red`,
-      tightRole?.withinBaseline === false && tightRole.withinMultiplier === true,
-      `declared base ${String(belowBaselineMB)} MB against a measured ` +
-        `${formatBytes(measured.baselineBytes)}; withinBaseline=${String(tightRole?.withinBaseline)}. ` +
-        `Without this the baseline is measured, subtracted and asserted by nothing — a number in a ` +
-        `detail string, which is the H2 defect.`,
-    );
-
-    const loose = runBudgetGate({
-      documentPath: baseline.fixture.path,
-      documentBytes: baseline.fixture.bytes,
-      budgetsText: withEntries([
-        `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(aboveBaselineMB)} MB`,
-        ...generousOthers,
-      ]),
-    });
-    check(
-      `${measured.role}: and a baseline budget just above it passes`,
-      loose.results.find((result) => result.role === measured.role)?.withinBaseline === true,
-      `declared base ${String(aboveBaselineMB)} MB against a measured ` +
-        `${formatBytes(measured.baselineBytes)} and the gate still failed.`,
-    );
-  }
-
-  {
-    // The absolute term is a separate limit and needs its own case: a gate that
-    // only ever consulted the multiplier would pass every case above.
-    const belowPeakMB = Math.max(1, Math.floor(measured.peakBytes / MB) - 8);
-    const gate = runBudgetGate({
-      budgetsText: withEntries([
-        `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB, ` +
-          `base ${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
-        ...others,
-        'renderer = provisional',
-      ]),
-    });
-    const role = gate.results.find((result) => result.role === measured.role);
-    check(
-      `${measured.role}: an absolute ceiling below its peak turns the gate red, with the multiplier generous`,
-      role?.withinAbsolute === false && role.withinMultiplier === true,
-      `declared ${String(belowPeakMB)} MB against a measured ${formatBytes(measured.peakBytes)}; ` +
-        `withinAbsolute=${String(role?.withinAbsolute)} withinMultiplier=${String(role?.withinMultiplier)}. ` +
-        `The absolute term must be consulted independently of the ratio.`,
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// A budget the invariant stops declaring is not a budget that stops applying.
-// ---------------------------------------------------------------------------
-{
-  const main = baseline.results.find((result) => result.role === 'main');
-  const generous = `main = ${String(Math.ceil(main?.ratio ?? 1) + 10)}x, 64 GB, base 32 GB`;
-
-  let threw = false;
-  let message = '';
-  try {
-    runBudgetGate({ budgetsText: withEntries([generous, 'renderer = provisional']) });
-  } catch (error) {
-    threw = true;
-    message = error instanceof Error ? error.message : String(error);
-  }
   check(
-    'dropping mupdf-host from the line fails rather than measuring one role',
-    threw && /no budget declared for mupdf-host/u.test(message),
-    `Got: ${message.slice(0, 200)}. Silently measuring fewer processes than the invariant names is ` +
-      `how a process stops being budgeted.`,
+    'the dense shape costs the host measurably more per byte than the image shape',
+    (() => {
+      /** @param {string} shape @returns {number} */
+      const host = (shape) =>
+        shapes.find((run) => run.shape === shape)?.results.find((r) => r.role === 'mupdf-host')?.ratio ?? 0;
+      return host('object-dense') > host('image-heavy');
+    })(),
+    `If these came back equal the two fixtures are not actually different shapes, and running both ` +
+      `proves nothing beyond running one.`,
   );
-}
+
+  check(
+    'every asserted role was actually measured, INCLUDING main through the real service',
+    baseline.results.length === 3 &&
+      baseline.results.some((result) => result.role === 'main-service') &&
+      baseline.results.every((result) => result.peakBytes > 0),
+    `measured: ${baseline.results.map((r) => r.role).join(', ')}\n      ` +
+      `The count is pinned so a role that stopped being measured is loud rather than absent. ` +
+      `\`main-service\` is named as well as counted because it is the only role that exercises ` +
+      `the retention IMPLEMENTATION — \`main\` is a model of what main should cost, and a second ` +
+      `live reference inside DocumentService is invisible to it (finding LL-4). Verified by ` +
+      `leaking one copy inside the service: this role doubled and breached on both content ` +
+      `shapes while the model role was unmoved and passed. The figures are in the commit that ` +
+      `added this role, not here — this file states no limits of its own, and its own guard ` +
+      `rejects a literal shaped like one.`,
+  );
+
+  check(
+    'the renderer is reported unasserted rather than silently passed',
+    baseline.unasserted.some((entry) => entry.role === 'renderer' && /provisional/iu.test(entry.reason)),
+    `unasserted: ${JSON.stringify(baseline.unasserted)}. A gate that skips a declared budget while ` +
+      `printing success is the failure this whole path exists to avoid.`,
+  );
+
+  // -------------------------------------------------------------------------
+  // The gate follows the line. For each asserted role, a limit derived from
+  // what that role actually used must flip the verdict in both directions.
+  // -------------------------------------------------------------------------
+  for (const measured of baseline.results) {
+    // BUDGET NAMES, not role labels — `main` is measured twice and a
+    // declaration line naming it twice is not a line the parser accepts. This
+    // built one for `main-service` when the two were assumed identical, and the
+    // parser refused it as a process nobody had declared, which is that check
+    // working.
+    const others = generousEntriesExcept(baseline.results, measured.budget);
+
+    const tooTight = (measured.ratio - 0.05).toFixed(2);
+    const justEnough = (measured.ratio + 0.05).toFixed(2);
+
+    {
+      const gate = runBudgetGate({
+        budgetsText: withEntries([`${measured.budget} = ${tooTight}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
+      });
+      const role = gate.results.find((result) => result.role === measured.role);
+      check(
+        `${measured.role}: a multiplier just below what it used turns the gate red`,
+        role?.withinMultiplier === false,
+        `declared ${tooTight}x against a measured ${measured.ratio.toFixed(2)}x, and the gate still ` +
+          `passed. The gate is not reading the line.`,
+      );
+    }
+
+    {
+      const gate = runBudgetGate({
+        budgetsText: withEntries([`${measured.budget} = ${justEnough}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
+      });
+      const role = gate.results.find((result) => result.role === measured.role);
+      check(
+        `${measured.role}: and a multiplier just above it passes`,
+        role?.withinMultiplier === true,
+        `declared ${justEnough}x against a measured ${measured.ratio.toFixed(2)}x and the gate failed. ` +
+          `Without this the case above is satisfied by a gate that always fails.`,
+      );
+    }
+
+    {
+      // The baseline term. Its whole reason for existing is that the other two
+      // cannot see a regression in it — the multiple is taken above the
+      // baseline, so an inflated fixed cost raises numerator and subtrahend
+      // together and the ratio does not move. Both directions, because a gate
+      // that always failed on the baseline would satisfy the tightening case
+      // alone.
+      const belowBaselineMB = Math.max(1, Math.floor(measured.baselineBytes / MB) - 4);
+      const aboveBaselineMB = Math.ceil(measured.baselineBytes / MB) + 4;
+      const generousOthers = [...others, 'renderer = provisional'];
+
+      const tight = runBudgetGate({
+        documentPath: baseline.fixture.path,
+        documentBytes: baseline.fixture.bytes,
+        budgetsText: withEntries([
+          `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(belowBaselineMB)} MB`,
+          ...generousOthers,
+        ]),
+      });
+      const tightRole = tight.results.find((result) => result.role === measured.role);
+      check(
+        `${measured.role}: a baseline budget below its measured fixed cost turns the gate red`,
+        tightRole?.withinBaseline === false && tightRole.withinMultiplier === true,
+        `declared base ${String(belowBaselineMB)} MB against a measured ` +
+          `${formatBytes(measured.baselineBytes)}; withinBaseline=${String(tightRole?.withinBaseline)}. ` +
+          `Without this the baseline is measured, subtracted and asserted by nothing — a number in a ` +
+          `detail string, which is the H2 defect.`,
+      );
+
+      const loose = runBudgetGate({
+        documentPath: baseline.fixture.path,
+        documentBytes: baseline.fixture.bytes,
+        budgetsText: withEntries([
+          `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(aboveBaselineMB)} MB`,
+          ...generousOthers,
+        ]),
+      });
+      check(
+        `${measured.role}: and a baseline budget just above it passes`,
+        loose.results.find((result) => result.role === measured.role)?.withinBaseline === true,
+        `declared base ${String(aboveBaselineMB)} MB against a measured ` +
+          `${formatBytes(measured.baselineBytes)} and the gate still failed.`,
+      );
+    }
+
+    {
+      // The absolute term is a separate limit and needs its own case: a gate
+      // that only ever consulted the multiplier would pass every case above.
+      const belowPeakMB = Math.max(1, Math.floor(measured.peakBytes / MB) - 8);
+      const gate = runBudgetGate({
+        budgetsText: withEntries([
+          `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB, ` +
+            `base ${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
+          ...others,
+          'renderer = provisional',
+        ]),
+      });
+      const role = gate.results.find((result) => result.role === measured.role);
+      check(
+        `${measured.role}: an absolute ceiling below its peak turns the gate red, with the multiplier generous`,
+        role?.withinAbsolute === false && role.withinMultiplier === true,
+        `declared ${String(belowPeakMB)} MB against a measured ${formatBytes(measured.peakBytes)}; ` +
+          `withinAbsolute=${String(role?.withinAbsolute)} withinMultiplier=${String(role?.withinMultiplier)}. ` +
+          `The absolute term must be consulted independently of the ratio.`,
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // A budget the invariant stops declaring is not a budget that stops applying.
+  // -------------------------------------------------------------------------
+  {
+    const main = baseline.results.find((result) => result.role === 'main');
+    const generous = `main = ${String(Math.ceil(main?.ratio ?? 1) + 10)}x, 64 GB, base 32 GB`;
+
+    let threw = false;
+    let message = '';
+    try {
+      runBudgetGate({ budgetsText: withEntries([generous, 'renderer = provisional']) });
+    } catch (error) {
+      threw = true;
+      message = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'dropping mupdf-host from the line fails rather than measuring one role',
+      threw && /no budget declared for mupdf-host/u.test(message),
+      `Got: ${message.slice(0, 200)}. Silently measuring fewer processes than the invariant names is ` +
+        `how a process stops being budgeted.`,
+    );
+  }
+});
+
+if (thrown !== null) failures.push(thrown);
 
 // ---------------------------------------------------------------------------
 // The proof states no limits of its own.
