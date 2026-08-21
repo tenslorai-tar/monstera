@@ -296,7 +296,12 @@ jobs:
           ls -l "$helper"
 
       - name: Prove the renderer receives and obeys the declared CSP
-        run: npm run proof:rendererpolicy
+        # Through the annotation wrapper, because this is the step whose failure
+        # was public as `Process completed with exit code 1` and nothing else.
+        # Logs need a token; annotations do not. The two proofs below run the
+        # same way for the same reason — they are the ones that need a runtime,
+        # so they are the ones whose failures are hardest to reproduce.
+        run: node scripts/ci/annotate.mjs scripts/proofs/rendererPolicy.proof.mjs
 
       # C5 claims an unhandled contract entry is a compile error. That cannot be
       # tested at runtime — a missing handler is just a channel that hangs — so
@@ -316,7 +321,7 @@ jobs:
       # read-back does. A composition root known only to compile is one nobody
       # has run, which is the defect this repository found twice in a week.
       - name: Prove the shell runs and the renderer uses the contract
-        run: npm run proof:shell
+        run: node scripts/ci/annotate.mjs scripts/proofs/shell.proof.mjs
 
       - name: Prove the IPC contract is exhaustive
         run: npm run proof:contract

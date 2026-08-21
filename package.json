@@ -66,6 +66,7 @@
     "proof:contract": "node scripts/proofs/contract.proof.mjs",
     "proof:composition": "node scripts/proofs/composition.proof.mjs",
     "proof:shell": "node scripts/proofs/shell.proof.mjs",
+    "proof:annotate": "node scripts/proofs/annotate.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
     "audit:scope": "node scripts/audit/scope.mjs",
