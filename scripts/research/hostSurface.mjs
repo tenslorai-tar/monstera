@@ -65,7 +65,7 @@ for (const name of ['net', 'dgram', 'fs', 'child_process', 'os', 'worker_threads
 }
 
 // Node's permission model is the candidate mechanism for the filesystem
-// property. Whether it is even queryable tells us if execArgv could carry it.
+// property. Whether it is even queryable tells us if the flag reached bootstrap.
 report.hasPermission = typeof process.permission === 'object' && process.permission !== null;
 if (report.hasPermission) {
   try {
@@ -73,6 +73,31 @@ if (report.hasPermission) {
     report.permissionNet = process.permission.has('net');
   } catch (error) {
     report.permissionQuery = 'threw: ' + String(error && error.message);
+  }
+}
+
+// THE MODEL BEING ACTIVE IS NOT ANYTHING BEING DENIED, and has_fs above says
+// only that the module loads — it loads under the permission model too, because
+// the model throws per CALL and not per require. So: read a file outside the
+// allow-list, and one inside it.
+//
+// The inside read is the control and it is not optional. A refusal outside
+// proves containment only if the same operation SUCCEEDS where it is permitted;
+// otherwise a host that cannot read anything at all — a wrong path, a missing
+// file, a broken fd — produces the identical reassuring output.
+{
+  const fs = require('node:fs');
+  try {
+    const bytes = fs.readFileSync(process.execPath).length;
+    report.readOUTSIDEAllowList = 'read ' + bytes + ' bytes';
+  } catch (error) {
+    report.readOUTSIDEAllowList = 'refused: ' + String(error && error.code) + ' ' + String(error && error.message).slice(0, 120);
+  }
+  try {
+    const bytes = fs.readFileSync(__filename).length;
+    report.readINSIDEAllowList = 'read ' + bytes + ' bytes';
+  } catch (error) {
+    report.readINSIDEAllowList = 'refused: ' + String(error && error.code) + ' ' + String(error && error.message).slice(0, 120);
   }
 }
 
@@ -124,6 +149,22 @@ const VARIANTS = [
   { label: 'default', execArgv: [] },
   { label: 'permission + fs-read scoped', execArgv: ['--permission', '--allow-fs-read=' + __dirname] },
   { label: 'permission alone', execArgv: ['--permission'] },
+  // THE ENV ROUTE. execArgv arrives in the host and is applied too late for the
+  // permission model's initialisation, but Electron's own Node HAS that model
+  // (PP-3), so the failure is the route rather than the feature. NODE_OPTIONS is
+  // read during Node's bootstrap rather than after it, and plain node honours
+  // the flag there — so this is the one remaining route that needs no change to
+  // how the host is created.
+  //
+  // NO BACKTICKS IN THIS COMMENT. It lives inside a template literal, and the
+  // pair that used to sit around the flag name closed that literal early. The
+  // error named the two dashes — "Invalid left-hand side expression in postfix
+  // operation" — and not the delimiter that caused it.
+  {
+    label: 'permission through NODE_OPTIONS',
+    execArgv: [],
+    env: { NODE_OPTIONS: '--permission --allow-fs-read=' + __dirname },
+  },
 ];
 
 const results = [];
@@ -150,6 +191,7 @@ function runVariant(index) {
       serviceName: 'monstera-research-host',
       stdio: 'inherit',
       execArgv: variant.execArgv,
+      env: variant.env ? { ...process.env, ...variant.env } : process.env,
     });
   } catch (error) {
     // A REFUSAL IS A RESULT. If the fork itself rejects these flags that is the
