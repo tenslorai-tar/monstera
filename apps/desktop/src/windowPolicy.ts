@@ -75,12 +75,18 @@ export function isPermittedPermission(permission: string): boolean {
 /**
  * The Content-Security-Policy served to the renderer.
  *
- * ARCHITECTURE §2 lists "CSP set" among the non-negotiables, so the header is
- * owed by the unit that creates the window. **Pinning the exact directive list
- * as an invariant is a separate obligation** — a `docs/FEATURES.md` row requires
- * it once a renderer exists to read it back from, and that row also requires the
- * comparison to read the policy *as delivered* rather than from this constant.
- * Two obligations; this is the one due now.
+ * **This constant is DERIVED. `docs/ARCHITECTURE.md` §9 invariant 27 is the
+ * writer of record**, and `proof:rendererpolicy` extracts the pinned list from
+ * that section and fails when the two differ. A change here that is not a change
+ * there is a red build, and the section is the side to change first.
+ *
+ * That direction is the *opposite* of the memory budgets, on purpose.
+ * `check:docs` fails when §9.17 restates a budget number, because there the code
+ * is the writer and prose would be a second copy. Here the whole value of
+ * pinning is that loosening the policy becomes an ARCHITECTURE diff someone has
+ * to justify — which only works if the document holds the pen. One writer per
+ * concern (B3); *which* side holds it is decided per concern rather than by
+ * house style.
  *
  * `default-src 'none'` and then grant, so a directive nobody thought of is
  * denied rather than inherited. `connect-src 'none'` because the renderer talks
@@ -91,15 +97,24 @@ export function isPermittedPermission(permission: string): boolean {
  * arrive as blobs, and a policy that forbids them fails the first time a
  * document is opened rather than at review.
  *
- * **Unverified against a running renderer.** No Electron binary has ever been
- * provisioned in this repository, so nothing here has been observed to load. The
- * read-back check is what converts this from a stated policy into an enforced
- * one.
+ * **`style-src` grants `'self'` and nothing else**, and this list carried
+ * `'unsafe-inline'` until the moment it was pinned. Nothing in this repository
+ * needs it — the renderer document is empty — so pinning it would have made an
+ * unproven grant into law by arriving early, which is the one thing the pin
+ * exists to prevent
+ * ([ADR-0019](../../../docs/DECISIONS/0019-the-renderers-csp-is-pinned.md)).
+ * The predicted trip is named there so it is recognised rather than debugged:
+ * Vite's dev server injects `<style>` elements for HMR.
+ *
+ * Verified against a running renderer by `proof:rendererpolicy` — read from the
+ * response as Chromium received it, with two directives observed being obeyed.
+ * That covers *delivery* completely and *enforcement* for `connect-src` and
+ * `script-src` only; the other nine are pinned and delivered, not exercised.
  */
 export const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
+  "style-src 'self'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "media-src 'self' blob:",

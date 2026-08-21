@@ -121,8 +121,9 @@ substance, only from its build step.
 ```
 
 **Renderer hardening (non-negotiable).** `sandbox: true`,
-`contextIsolation: true`, `nodeIntegration: false`, CSP set, deny-all
-permissions except media, navigation locked, popups denied.
+`contextIsolation: true`, `nodeIntegration: false`, CSP set — **the exact
+directive list is invariant 27**, not a note — deny-all permissions except
+media, navigation locked, popups denied.
 
 **Main owns the document.** The renderer holds an opaque branded `DocId` and a
 monotonic `DocVersion`. Per document, `DocumentService` owns: canonical bytes,
@@ -789,6 +790,70 @@ say**.
     call that no longer exists. Neither is fixed by a checker; both are stated so
     the mechanism is not read as more than it is.
 
+27. **The renderer's Content-Security-Policy is exactly this list.** One
+    directive per line; the header is these lines joined with `; `.
+
+    ```csp
+    default-src 'none'
+    script-src 'self'
+    style-src 'self'
+    img-src 'self' data: blob:
+    font-src 'self'
+    media-src 'self' blob:
+    connect-src 'none'
+    object-src 'none'
+    base-uri 'none'
+    form-action 'none'
+    frame-ancestors 'none'
+    ```
+
+    **This document is the writer of record, and that is the opposite of the
+    memory budgets.** §9.17's numbers live in `scripts/lib/memoryBudgets.mjs` and
+    `check:docs` fails if this section restates them, because there the code
+    holds the pen and prose would be a second copy. Here the direction is
+    reversed deliberately: the entire value of pinning a CSP is that loosening it
+    becomes a diff in *this file* that someone has to justify, and that only
+    works if this file is the authority.
+    `CONTENT_SECURITY_POLICY` in `apps/desktop/src/windowPolicy.ts` is the
+    derived form. Both directions are B3 — one writer per concern — and which
+    side holds the pen is a decision per concern, not a house style.
+
+    **Four links, and each one is checked** (`proof:rendererpolicy`): the block
+    above equals the constant; the constant equals the header **as Chromium
+    received it**, read from the response and never from the constant that set
+    it; the renderer is observed *refusing* a `connect-src` fetch and an `eval`;
+    and a control asserts that a policy we do not serve is not reported as
+    delivered. Delivery is covered for all eleven directives. **Enforcement is
+    covered for two of them** — `connect-src` and `script-src` — because a header
+    can arrive and be ignored, and Chromium drops a directive list it cannot
+    parse. The other nine are pinned and delivered rather than exercised.
+
+    **Order is part of the pin, and Chromium does not care about it.** The
+    comparison is string equality, so a reordering fails it. That is a
+    legibility choice: a set comparison would let the list be shuffled with no
+    diff to read. Stated here because the tempting repair for a failing
+    comparison is to sort both sides, which would spend the property to silence
+    the check.
+
+    **`style-src` grants `'self'` and nothing else, and this list carried
+    `'unsafe-inline'` up to the moment it was pinned.** Nothing in this
+    repository needs it: the renderer document is empty. Pinning it would have
+    turned an unproven grant into law by arriving early — the precise failure the
+    pin exists to prevent, since after this every relaxation must be argued and
+    an inherited one never would be. The asymmetry decided it: keeping an
+    unneeded grant fails **silently** — an injected `<style>` simply works —
+    while dropping a needed one fails **loudly**, at development time, with a
+    violation naming `style-src`. The most likely trip is named so it is
+    recognised rather than debugged: Vite's dev server injects `<style>` elements
+    for HMR. The response is a measured amendment, possibly scoped to
+    development, and not an edit to the constant
+    ([ADR-0019](DECISIONS/0019-the-renderers-csp-is-pinned.md)).
+
+    **One stated limit.** Where no Electron runtime is provisioned, the three
+    runtime cases print UNVERIFIABLE and never pass — *could not look* is not
+    *looked and found nothing*. The two string-level cases, including the
+    agreement with this block, run everywhere.
+
 ---
 
 ## 10. Design law
@@ -1018,4 +1083,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.19). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
 | 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn; §8 now separates native code we build and statically link from prebuilt binaries we download, and the AGPL source offer covers the MuPDF version, our build configuration and the shim source (§2, §3, §8, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |
 | 2026-08-18 | Opening a document runs none of its content, and an engine host contains a compromise rather than only a crash (§9.24, §9.25). Both land before the components they constrain, per the sequencing resolved the same day. | Nothing in the founding record — Part K is silent on active content, and Part C3's process split addresses faults rather than containment | [ADR-0017](DECISIONS/0017-the-security-substrate.md) |
+| 2026-08-21 | **The renderer's Content-Security-Policy is pinned as invariant 27** — the exact eleven-directive list, with this document as the writer of record and `apps/desktop/src/windowPolicy.ts` as the derived form, checked in both directions by `proof:rendererpolicy` against a running Chromium (§2, §9.27). `style-src`'s `'unsafe-inline'` is dropped in the same commit rather than pinned, because nothing needs it and an unproven grant that arrives before the pin is never argued for afterwards. | `BUILD-PROMPT.md` Part C2's "CSP set" as one item in a configuration list, and §2's own line which repeated it | [ADR-0019](DECISIONS/0019-the-renderers-csp-is-pinned.md) |
 | 2026-08-18 | **Distribution is the Microsoft Store only.** No direct download exists; the website's download button links to the Store listing. The two-flavour seam is kept — flavour switch, `WebUpdateProvider` registered with no implementation, signing certificate as an empty config value — so a signed direct download is later a config change rather than an amendment. Updates are Windows'; `StoreUpdateProvider` adds a static-manifest version check that sends nothing, an in-app indicator linking to the Store, and a settings toggle (§8). | `BUILD-PROMPT.md` Part J's two-flavour distribution with a direct download, and its self-update path | [ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md) |

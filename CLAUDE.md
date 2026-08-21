@@ -203,7 +203,16 @@ is wrong** — fix the boundary, not the test.
   apps; the app never installs its own package and never overrides a user who
   disabled automatic updates.
 
-The full invariant list (L1–L26) is in `docs/ARCHITECTURE.md`. A regression
+- **The renderer's CSP is pinned in `docs/ARCHITECTURE.md` §9.27, and that
+  document is the writer of record.** `apps/desktop/src/windowPolicy.ts` holds
+  the derived form and `proof:rendererpolicy` fails when the two differ — so
+  loosening the policy is an amendment, which is the whole point of pinning it.
+  **This direction is the opposite of the memory budgets on purpose**, where the
+  code holds the pen and `check:docs` rejects prose that restates a number. Both
+  are B3; which side holds the pen is decided per concern (invariant 27,
+  [ADR-0019](docs/DECISIONS/0019-the-renderers-csp-is-pinned.md)).
+
+The full invariant list (L1–L27) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.
 
 ---

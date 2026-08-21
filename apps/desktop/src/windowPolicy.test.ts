@@ -122,8 +122,14 @@ describe('content security policy', () => {
     expect(CONTENT_SECURITY_POLICY).toContain("media-src 'self' blob:");
   });
 
-  it('never permits unsafe-eval, and never a wildcard source', () => {
+  it('permits no unsafe source and no wildcard', () => {
     expect(CONTENT_SECURITY_POLICY).not.toContain('unsafe-eval');
     expect(CONTENT_SECURITY_POLICY).not.toContain('*');
+    // `'unsafe-inline'` on style-src was in this list until it was pinned, and
+    // nothing needed it. These are properties rather than a copy of the pinned
+    // list — invariant 27 owns the list, and `proof:rendererpolicy` compares
+    // against it. What this adds is that re-granting one has to be an edit HERE
+    // too, so it cannot arrive as a one-word change to a constant.
+    expect(CONTENT_SECURITY_POLICY).not.toContain('unsafe-inline');
   });
 });

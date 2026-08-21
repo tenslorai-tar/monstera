@@ -59,3 +59,4 @@ Each contains:
 | [0016](0016-the-document-handler-set-is-named.md) | The document handler set is named, not inherited | Accepted |
 | [0017](0017-the-security-substrate.md) | The security substrate: invariants 24 and 25 | Accepted |
 | [0018](0018-distribution-is-the-microsoft-store.md) | Distribution is the Microsoft Store | Accepted |
+| [0019](0019-the-renderers-csp-is-pinned.md) | The renderer's CSP is pinned as invariant 27, and `'unsafe-inline'` is dropped rather than pinned | Accepted |

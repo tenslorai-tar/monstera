@@ -299,10 +299,18 @@ one of them rots.
 
 **Reason:** §2.
 
-### 4.13 The exact CSP, pinned as an invariant — OWED at Stage 0
+### 4.13 The exact CSP, pinned as an invariant — DONE
 
 Not "a CSP is set" — the **exact policy**, pinned, so a later relaxation is a
 diff someone has to justify rather than a default nobody re-reads.
+
+`docs/ARCHITECTURE.md` §9 invariant 27 pins eleven directives and is the writer
+of record; `apps/desktop/src/windowPolicy.ts` is derived from it and
+`proof:rendererpolicy` fails when the two disagree. The policy is read back from
+a running Chromium as it received it, and the renderer is observed refusing a
+`connect-src` fetch and an `eval` — **enforcement evidence covers two directives
+of eleven**, which the invariant states rather than implies
+([ADR-0019](../DECISIONS/0019-the-renderers-csp-is-pinned.md)).
 
 **Reason:** §3 row 10.
 

@@ -17,8 +17,10 @@
 
       The Content-Security-Policy is served as a response HEADER by
       `applyContentSecurityPolicy`, not written here. Two writers for one policy
-      is how the effective value becomes something nobody can state, and this one
-      is about to be pinned as an invariant.
+      is how the effective value becomes something nobody can state. A <meta> tag
+      here would also be unable to express `frame-ancestors`, and would live in
+      the file the renderer bundle rewrites. The policy is pinned as invariant 27
+      and this file is not one of its writers.
 
       The Vite/React renderer replaces this file's contents; it does not add a
       second entry point.

@@ -5,8 +5,13 @@
  *
  * ## Two claims, split so a provisioning failure costs the cheap half nothing
  *
- * **(i) The directive list is well-formed** — decidable from the string, so it
- * runs everywhere and is in the roster below.
+ * **(i) The declared list is the one ARCHITECTURE §9.27 pins, and it is
+ * well-formed** — decidable from two strings, so it runs everywhere and is in
+ * the roster below. The pin is the reason the rest of this file is worth
+ * running: without it, the read-back compares the constant against its own
+ * delivery, and a policy loosened to `default-src *` passes every case here.
+ * The document is the **writer of record** and the constant is derived; the
+ * failure message says so, because the tempting repair is the wrong direction.
  *
  * **(ii) Electron serves that list, and the renderer obeys it** — needs the
  * process. `docs/FEATURES.md` requires the policy "read back from the running
@@ -40,7 +45,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,6 +56,12 @@ import { electronBinaryPath } from '../provision/electron.mjs';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HARNESS = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'cspHarnessMain.js');
 const MARKER = 'MONSTERA_CSP_READBACK ';
+
+/** The law. Invariant 27 pins the directive list; the constant is derived. */
+const ARCHITECTURE = join(REPO_ROOT, 'docs', 'ARCHITECTURE.md');
+
+/** The info string on the fenced block invariant 27 pins the list in. */
+const PIN_FENCE = 'csp';
 
 /** A policy the renderer demonstrably does not have, for the control. */
 const A_POLICY_WE_DO_NOT_SERVE = "default-src *; script-src 'unsafe-eval'";
@@ -71,7 +82,7 @@ const failures = [];
  * number is the branch that also prints UNVERIFIABLE, so nobody can read `2
  * cases passed` as coverage.
  */
-const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? 5 : 2 });
+const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? 7 : 4 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -96,6 +107,90 @@ async function declaredPolicy() {
   }
   const module = await import(`file://${built.replaceAll('\\', '/')}`);
   return module.CONTENT_SECURITY_POLICY;
+}
+
+/**
+ * The policy `docs/ARCHITECTURE.md` §9 invariant 27 pins, as a header string.
+ *
+ * ## This is a SEARCH, so its silence has to be worth something
+ *
+ * Every way of breaking it produces the same output — a wrong fence name, a
+ * renamed section, a block someone reflowed, a parse that ate the file — and
+ * that output is "no directives", which compared against a real constant would
+ * simply fail. A failure is survivable; the danger is the other direction, where
+ * an empty extraction is read as a clean input. **So this throws rather than
+ * returning empty**, and the throw names what it could not find. Audit item 4b's
+ * corollary: an empty intermediate result is a broken parse, not a clean one.
+ *
+ * The positive control lives HERE and not only in the proof, because the proof
+ * runs in CI and this function gets called by hand on the day someone needs the
+ * answer: it must find exactly one block, that block must close, and it must
+ * carry at least two directives.
+ *
+ * ## The unit is a fenced block, not a line window
+ *
+ * Anchoring on `\`\`\`csp` rather than on prose around it is deliberate. This
+ * repository hard-wraps prose, and `withdrawnPhrases.mjs` records the resulting
+ * false negative in its own header: a pattern long enough to wrap escapes in
+ * silence. A fence is a unit the document actually has, so nothing here depends
+ * on where a line happens to break.
+ *
+ * @param {string} markdown
+ * @returns {string}
+ */
+function pinnedPolicy(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const isFence = (/** @type {string} */ line) => line.trim() === `\`\`\`${PIN_FENCE}`;
+  const opened = lines.filter(isFence).length;
+  const openIndex = lines.findIndex(isFence);
+
+  if (opened !== 1) {
+    throw new Error(
+      `docs/ARCHITECTURE.md has ${String(opened)} \`\`\`${PIN_FENCE} blocks; invariant 27 ` +
+        `is pinned in exactly one. ${
+          opened === 0
+            ? 'None was found — the fence was renamed, or the invariant was removed. Either is a ' +
+              'change to the law and must be made there first.'
+            : 'Two blocks are two opinions about one policy (B3a); the extractor refuses to ' +
+              'choose between them.'
+        }`,
+    );
+  }
+
+  /** @type {string[]} */
+  const directives = [];
+  let closed = false;
+  for (const raw of lines.slice(openIndex + 1)) {
+    const line = raw.trim();
+    if (line === '```') {
+      closed = true;
+      break;
+    }
+    if (line === '') continue;
+    if (line.includes(';')) {
+      throw new Error(
+        `The pinned block contains a ";" on the line "${line}". The block is one directive per ` +
+          `line and this file joins them; a semicolon there means the joined form was pasted in, ` +
+          `and the comparison would then be against a double-separated string.`,
+      );
+    }
+    directives.push(line);
+  }
+
+  if (!closed) {
+    throw new Error(
+      `The \`\`\`${PIN_FENCE} block in docs/ARCHITECTURE.md is never closed. Everything after it ` +
+        `was read as a directive, which is a broken parse and not a policy.`,
+    );
+  }
+  if (directives.length < 2) {
+    throw new Error(
+      `The \`\`\`${PIN_FENCE} block yielded ${String(directives.length)} directive(s). The fence ` +
+        `was found and its body was not, so this is the shape where a search reports the ` +
+        `reassuring answer because it could not look.`,
+    );
+  }
+  return directives.join('; ');
 }
 
 /**
@@ -178,8 +273,66 @@ try {
   const declared = await declaredPolicy();
 
   // ---------------------------------------------------------------------------
-  // (i) The string. Runs everywhere.
+  // (i) The string, and its agreement with the law. Runs everywhere.
   // ---------------------------------------------------------------------------
+  const architecture = readFileSync(ARCHITECTURE, 'utf8');
+  const pinned = pinnedPolicy(architecture);
+
+  check(
+    'the shell declares exactly the policy ARCHITECTURE §9.27 pins',
+    pinned === declared,
+    `pinned in docs/ARCHITECTURE.md §9.27:\n        ${pinned}\n` +
+      `      declared by apps/desktop/src/windowPolicy.ts:\n        ${declared}\n` +
+      `      **The document is the writer of record here** — the opposite direction from the ` +
+      `memory budgets, and deliberately so: pinning a CSP is only worth anything if loosening ` +
+      `it is a diff in the law that someone has to justify. So the fix for this failure is to ` +
+      `amend §9.27 first, per B4, and derive the constant from it — not the reverse.`,
+  );
+
+  {
+    // CONTROL, and the DIRECTION is what makes it one.
+    //
+    // The property under test is "these two agree", and agreement is also what
+    // absence produces — so a mutation that moves both sides together proves
+    // nothing. This one moves the pin ALONE, towards disagreement, in the
+    // direction a real drift would take it: a `connect-src` quietly widened
+    // from `'none'` to `'self'` is the whole shape this invariant exists to
+    // catch.
+    //
+    // Mutating the real document rather than hand-writing a near-copy, because
+    // a hand-written fixture drifts from the block it imitates and then passes
+    // for the wrong reason. The replacement is asserted to have CHANGED
+    // something: an unmatched pattern would leave the fixture identical to the
+    // law, and the case would then assert that the law disagrees with itself —
+    // vacuous, and green.
+    // Scoped to the block rather than to the whole document: a plain `replace`
+    // takes the FIRST occurrence, and §9.27's own prose discusses these
+    // directives. That it currently discusses them only *below* the block is
+    // true today and is not a property anyone is maintaining — the kind of
+    // unstated dependency that turns into a mystery failure a month later.
+    // `pinnedPolicy` has already thrown above if the fence is missing, so this
+    // index is real.
+    const LOOSENED = { from: "connect-src 'none'", to: "connect-src 'self'" };
+    const fence = architecture.indexOf(`\`\`\`${PIN_FENCE}`);
+    const fixture =
+      architecture.slice(0, fence) + architecture.slice(fence).replace(LOOSENED.from, LOOSENED.to);
+    if (fixture === architecture) {
+      throw new Error(
+        `The control could not loosen the pinned block: "${LOOSENED.from}" does not appear in ` +
+          `docs/ARCHITECTURE.md. Without a real mutation this case compares the law with ` +
+          `itself and passes whatever the comparison does.`,
+      );
+    }
+    check(
+      'CONTROL: a pinned list loosened by one source no longer matches the shell',
+      pinnedPolicy(fixture) !== declared,
+      `the extractor returned a policy equal to the shell's after "${LOOSENED.from}" was widened ` +
+        `to "${LOOSENED.to}". The agreement case above would then pass for any pinned list at ` +
+        `all, which is the shape where a policy nobody pinned and a policy everybody pinned are ` +
+        `the same observation.`,
+    );
+  }
+
   const directives = declared.split(';').map((entry) => entry.trim());
   const names = directives.map((entry) => entry.split(/\s+/u)[0]);
 
