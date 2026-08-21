@@ -30,7 +30,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { auditScope } from '../lib/auditWatermark.mjs';
+import { auditScope, stagedWatermark } from '../lib/auditWatermark.mjs';
 import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
@@ -424,7 +424,24 @@ const { record } = roster;
 // that, the checklist stops being applicable to a diff anybody reads.
 {
   const mark = roster.mark();
-  const scope = auditScope({ root: ROOT });
+  // FROM THE INDEX, like every other document this file compares. Left to read
+  // the file, `auditScope` answers from the working tree, so this check would
+  // decide about a pair no commit ever contains — a journal from the index
+  // beside a watermark from an unstaged edit. It failed that way, which is how
+  // it was found (OO-3a).
+  //
+  // This does not make the check able to notice a journal entry written without
+  // an advance; the sha it compares then is the old one, which the journal still
+  // names from its own older entry (OO-3b, open).
+  const staged = stagedWatermark(ROOT);
+  if (staged === null) {
+    throw new Error(
+      'docs/audit-watermark.json is not tracked in the index, so the audit gate has nothing to ' +
+        'measure from. Absent is not the same as zero: an unreadable watermark makes the ' +
+        'unaudited range unknowable, and "unknown" must never be allowed to read as "empty".',
+    );
+  }
+  const scope = auditScope({ root: ROOT, watermark: staged });
   const journal = read('docs/JOURNAL.md');
 
   if (!journal.includes(scope.watermark)) {

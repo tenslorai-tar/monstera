@@ -212,6 +212,44 @@ function watermarkAt(root, ref) {
 }
 
 /**
+ * The watermark **as recorded in the index**, or `null` if it is not tracked
+ * there.
+ *
+ * For a check whose other inputs come from the index, and there is one:
+ * `documentConsistency.mjs` reads every document it compares through
+ * `readStagedBlob`, then used to ask `auditScope` for the range with no
+ * watermark — which falls back to `readFileSync` and answers from the **working
+ * tree**. Two documents, two scopes, one decision.
+ *
+ * That is finding OO-3a, and it is Z-2's mechanism in the sibling caller: Z-2
+ * converted `pendingAuditScope` to hand `auditScope` a watermark it had read
+ * from the right scope, and left this one reading the file. The rule the header
+ * of this module already states — *a gate's inputs all come from the scope its
+ * decision is about* — was written for that fix and applied to one of its two
+ * callers.
+ *
+ * **Its symptom is a false POSITIVE, and that is how it was found:** the check
+ * failed on a pair no commit would ever contain — a journal read from the index
+ * beside a watermark read from an unstaged edit.
+ *
+ * **What this does NOT fix, because the first draft of this comment said it
+ * did.** A journal entry staged beside an unstaged advance exits 0 both before
+ * and after — measured both ways. The check's only property is that the
+ * watermark's sha appears *somewhere* in the journal, and with the advance
+ * unstaged the index carries the old sha, which appears in its own older entry.
+ * Reading both documents from one scope changes which sha is compared; it does
+ * not let the comparison tell the two cases apart. That is OO-3b, open: the gate
+ * is one-directional, catching an advance without a record and never a record
+ * without an advance, since every sha the journal has ever named stays in it.
+ *
+ * @param {string} [root]
+ * @returns {string | null}
+ */
+export function stagedWatermark(root = repoRoot()) {
+  return watermarkAt(root, ':');
+}
+
+/**
  * The audit range **as this commit will leave it**, for a gate that runs before
  * the commit exists.
  *

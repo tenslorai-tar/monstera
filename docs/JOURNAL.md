@@ -805,6 +805,43 @@ one line plus a control that must be built from the failing shape — a staged
 journal beside an unstaged watermark, which is the input the absent guard lets
 through.
 
+> **CORRECTION, 2026-08-21, written the same day and after building the fix.**
+>
+> **The measurement above is right and the attribution is wrong.** The scope
+> split is real and the exit 0 is real; the split is not what caused it, and
+> this entry read one as the explanation of the other.
+>
+> Measured with the split closed: the same shape — a journal entry staged beside
+> an unstaged advance — **still exits 0**. It has to. The check's only property
+> is that the watermark's sha appears somewhere in the journal, and with the
+> advance unstaged the index carries the *old* sha, which appears in its own
+> older entry. Reading both documents from one scope changes which sha is
+> compared; it does not make the comparison able to tell the two cases apart.
+>
+> So this was two findings written as one, and they separate cleanly:
+>
+> **OO-3a — the scope split. Fixed.** `documentConsistency.mjs` read the journal
+> through the index and the watermark through the working tree. `check:docs` now
+> takes both from the index via `stagedWatermark`, which is Z-2's rule applied to
+> the caller Z-2 did not convert. Its own symptom was a false **positive** — the
+> check failing on an unstaged pair that no commit would ever contain, which is
+> how it was found.
+>
+> **OO-3b — the gate is one-directional. Open.** It catches *a watermark
+> advanced without a record*. It cannot catch *a record written without the
+> watermark advancing*, because every sha the journal has ever named stays in it
+> forever, so the property is satisfied by history. The batch budget does catch
+> it, later, and with a message demanding an audit that was in fact performed —
+> which is the confusing shape, not a silent one. Closing it means asserting
+> something about the **newest** entry rather than about the document, and that
+> is a design decision rather than a line.
+>
+> Recorded rather than tidied because the error is item 5's, in the sentence
+> where I was most confident: the exit 0 was executed, the *chain from it to the
+> split* was reasoned, and I wrote the reasoned half in the executed half's
+> voice. The tell available at the time was that I never ran the fix against the
+> shape I said it closed.
+
 **MM-1 stays open, and correctly.** The bound was not raised — the probe loads
 in 205 ms against a 15,000 ms bound, so a runner that hit 15 s was structurally
 different and a bump would have hidden it. The load duration is now reported on

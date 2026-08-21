@@ -29,7 +29,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { auditScope, BATCH, pendingAuditScope, readWatermark } from '../lib/auditWatermark.mjs';
+import {
+  auditScope,
+  BATCH,
+  pendingAuditScope,
+  readWatermark,
+  stagedWatermark,
+} from '../lib/auditWatermark.mjs';
 import { git as gitAt, parseNameStatus, repoRoot } from '../lib/gitScope.mjs';
 
 /** @type {string[]} */
@@ -450,6 +456,10 @@ try {
         `nothing if the range was already clean.`,
     );
 
+    // Read BEFORE the unstaged edit, so the case below is a before/after rather
+    // than a comparison of two calls to the same reader (OO-3).
+    const indexBeforeEdit = stagedWatermark(scratch);
+
     // Edit the file and DO NOT stage it. `checkout --` restores it below.
     const head = git(scratch, ['rev-parse', '--short', 'HEAD']);
     writeFileSync(
@@ -488,6 +498,42 @@ try {
         `matters for whoever fixes this next: with an unstaged advance the committed and index ` +
         `watermarks are EQUAL, so the bug above was the range collapsing, not the exemption ` +
         `granting anything. A fix that hardens the exemption does not touch it.`,
+    );
+
+    // OO-3a: the SAME rule, for the other caller.
+    //
+    // Z-2 was closed by converting `pendingAuditScope` to read the watermark
+    // from the scope its decision is about. `documentConsistency.mjs` reads
+    // every document it compares through the index and then asked `auditScope`
+    // for the range with no watermark — so the range came from the working
+    // tree. One caller was converted and the other was not.
+    //
+    // The symptom is a false POSITIVE: `check:docs` failed on a pair no commit
+    // would ever contain. It does NOT close the case of a journal entry written
+    // without an advance — that exits 0 both before and after, measured both
+    // ways, because the sha compared is then the old one and the journal still
+    // names it from its own older entry. That is OO-3b and it is open.
+    //
+    // This case rides the fixture above precisely because that fixture has
+    // already been made to disagree across the two scopes.
+    const fromIndex = stagedWatermark(scratch);
+    check(
+      'the STAGED watermark reader answers from the index, not the working tree',
+      fromIndex !== null && fromIndex === indexBeforeEdit && fromIndex !== head,
+      `stagedWatermark returned ${String(fromIndex)}. It read ${String(indexBeforeEdit)} before ` +
+        `the unstaged edit, and the working tree now carries ${head}. An unstaged edit must not ` +
+        `move this reader, and returning the tree's value is the defect: a check whose every ` +
+        `other input comes from the index would then compare a pair that never co-exists in any ` +
+        `single scope.`,
+    );
+
+    check(
+      'CONTROL: the edit this case rides is genuinely visible to a tree-scoped reader',
+      readWatermark(scratch).commit === head && head !== indexBeforeEdit,
+      `the working tree reads ${readWatermark(scratch).commit} and the index read ` +
+        `${String(indexBeforeEdit)}. If the unstaged write did not actually change what a ` +
+        `tree-scoped reader sees, the case above passes against a reader that consults either ` +
+        `scope — which is the shape it exists to separate.`,
     );
 
     git(scratch, ['checkout', '--', 'docs/audit-watermark.json']);
