@@ -584,6 +584,39 @@ The tell is that the fixture contains none of the thing the defect keys on. Ask
 what the broken version would print for *this input*, before writing the
 assertion.
 
+**For a NEGATIVE probe the rule has a sharper form, and it is the transferable
+one: build the input from something that would SUCCEED if the guard were
+absent.** A probe that asserts "this was refused" is worthless when its input
+would have failed anyway — refusal and impossibility produce the same
+observation, and the case then passes on a machine where the guard has been
+deleted.
+
+Three occurrences, and the third is why this is stated as a rule about *inputs*
+rather than as advice about URLs:
+
+| the probe | the input | what it could not tell apart |
+|---|---|---|
+| "CSP blocks the fetch" | `https://example.invalid/` | blocked by policy · DNS failure |
+| "navigation off the document is refused" | `https://example.org/` | refused by the guard · no network on the runner |
+| — | any unreachable target | the guard working · the guard deleted |
+
+The second was written **four commits after** the first was found, in the same
+file, by an author who had the first one's comment on screen. "Do not use a
+remote URL" was the instance and did not transfer; *the input must be one the
+absent guard would let through* is the form that does. Both were fixed the same
+way — the loaded document plus a query string: on disk so it loads with no
+network, different href so the guard refuses it.
+
+**And an artefact whose failure is announced on a channel nobody subscribes to
+is unproven, however many checks read it.** Two proofs passed *correctly* about
+a preload that had never executed, because the defect was not in the file they
+read — a sandboxed preload is loaded as CommonJS and the ESM one was refused on
+Electron's `preload-error` event, which nothing was listening to. *Configured is
+not run*, arriving at the artefact level. So when a runtime announces a failure
+class, subscribing to it is part of shipping the thing that can fail — and the
+diagnostic that catches it in a harness has not been shipped until the product
+subscribes too.
+
 **4a. Has every instrument passed a resolution test — BEFORE it measured
 anything real?**
 Not after, and not "it looked plausible". Feed it two values you know differ by

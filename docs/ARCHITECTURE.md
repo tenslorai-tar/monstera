@@ -843,10 +843,29 @@ say**.
     an inherited one never would be. The asymmetry decided it: keeping an
     unneeded grant fails **silently** — an injected `<style>` simply works —
     while dropping a needed one fails **loudly**, at development time, with a
-    violation naming `style-src`. The most likely trip is named so it is
-    recognised rather than debugged: Vite's dev server injects `<style>` elements
-    for HMR. The response is a measured amendment, possibly scoped to
-    development, and not an edit to the constant
+    violation naming `style-src`.
+
+    **What can actually trip it, corrected 2026-08-21.** This paragraph first
+    named Vite's dev-server HMR, which **cannot** reach this directive: the
+    window loads `RENDERER_HTML` as a `file://` URL, `lockNavigation` pins
+    navigation to exactly that href, `connect-src 'none'` forbids the HMR
+    socket and `script-src 'self'` forbids the dev-server origin. A
+    dev-server renderer is a whole-policy question across four directives, and
+    it must not be reachable by an argument about inline styles.
+
+    The real exposure is narrower. `style-src` governs `<style>` elements and
+    `style=` attributes; it does **not** intercept CSSOM writes, so React's
+    `style` prop — which goes through `node.style.setProperty` — and
+    `onColor()` computed at the point of use are unaffected. What can trip is a
+    library that injects a `<style>` element or sets a style attribute at run
+    time. **PDF.js's text and annotation layers are the first candidate**, and
+    `pdfjs-dist` is not a dependency yet, so the measurement belongs to the
+    commit that adds it.
+
+    **The policy is never split between development and production.** A
+    dev-only CSP means the policy `proof:rendererpolicy` verifies is not the
+    policy that ships — the exact set-versus-enforced gap the read-back exists
+    to close. Prefer changing the build, or a hash, over a blanket grant
     ([ADR-0019](DECISIONS/0019-the-renderers-csp-is-pinned.md)).
 
     **One stated limit.** Where no Electron runtime is provisioned, the three

@@ -69,11 +69,40 @@ Rule 0 and B5 both prefer the loud one, and this project's standing rule is that
 a limit must be **proven to exist** before anything is designed around it.
 "React or PDF.js will need inline styles" is a model, not a measurement.
 
-**The most likely trip is named here so it is recognised rather than debugged:
-Vite's dev server injects `<style>` elements for HMR.** When that happens the
-response is a measured amendment — possibly one scoped to development, which is
-its own architecture question — and not an edit to the constant, which the proof
-would reject anyway.
+**The most likely trip is named here so it is recognised rather than debugged**
+— see the dated correction below, which replaces the candidate this paragraph
+originally named. When it happens the response is a measured amendment, not an
+edit to the constant, which the proof would reject anyway.
+
+### Correction, 2026-08-21 — the predicted trip was the wrong one
+
+This section first named **Vite's dev-server HMR** as the likeliest thing to
+need `'unsafe-inline'`. It cannot be: the window loads `RENDERER_HTML` as a
+`file://` URL and `lockNavigation` pins navigation to exactly that href, so a
+dev-server renderer is already excluded — and excluded twice more by
+`connect-src 'none'`, which forbids the HMR socket, and `script-src 'self'`,
+which forbids the dev-server origin. HMR could therefore never arrive as a
+*style-src* amendment; it would be a whole-policy question across four
+directives, and it must not be reachable by an argument about inline styles.
+
+**The real exposure is narrower.** `style-src` governs `<style>` elements and
+`style=` attributes and does **not** intercept CSSOM writes. React applies its
+`style` prop through `node.style.setProperty`, so React inline styles and
+`onColor()` computed at the point of use are unaffected by this drop. What can
+trip is a library that injects a `<style>` element or sets a style attribute at
+run time. **PDF.js's text and annotation layers are the first candidate**, and
+`pdfjs-dist` is not a dependency of `packages/ui` yet — so the measurement
+belongs to the commit that adds it, not to a note here.
+
+**And one rule for when it does trip: do not split the policy between
+development and production.** A dev-only CSP means the policy
+`proof:rendererpolicy` verifies is not the policy that ships, which is the
+set-versus-enforced gap the read-back exists to close. Prefer changing the build
+— emit a linked stylesheet — or a hash, over a blanket grant.
+
+Recorded as a correction rather than an edit because the decision is unchanged
+and only its supporting prediction was wrong; a mis-aimed prediction left
+standing would point the future amendment at the wrong directive.
 
 ## Rejected alternatives
 
