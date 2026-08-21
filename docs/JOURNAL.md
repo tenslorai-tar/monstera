@@ -644,6 +644,106 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `7223851..9a951d6` — the app runs, and the kernel was loading the parser to hold bytes
+
+**Audited through `9a951d6`.** 3 commits, 21 files, **3 proofs added, 3
+modified**, 4 new source files — from `npm run audit:scope`.
+
+The range: the accounting findings closed, and **the composition root — the
+first commit in which this application runs.**
+
+### LL-1 — importing `DocumentService` loaded the native MuPDF shim
+
+```
+commandLog.ts: import { type PriorPageRotation } from './rotatePages.js';
+```
+
+emits `import {} from './rotatePages.js'` — the specifier survives and runs — and
+`rotatePages.js` imports `withDocument` from `mupdfWriter.js` as a **value**.
+Measured: importing `documentService.js` took RSS from **54.5 MB to 92.6 MB**.
+38.1 MB of native parser pulled into the module whose entire argument is that it
+holds bytes and never parses them (§2, and §9.17's base term).
+
+`import type` erases the statement: **38.1 MB → 9.0 MB.**
+
+**Second instance in two days of one mechanism, with a different bill.** The
+first made a unit test download Electron. The tell is identical and it is the
+reason the fix ships with a proof that reads the **emitted** JavaScript: the
+source cannot distinguish `import type { X }` from `import { type X }`, and one
+of them runs.
+
+**Item 3: CI could not have caught it.** Nothing measured what importing the
+kernel costs. `proof:kernelload` now walks the emitted import graph.
+
+### LL-2 and LL-3 — the ceiling counted one of two terms, and `byteLength` is the view's
+
+Raised by the reviewing seat, closed in-range. `Checkpoint` is a whole byte image
+per terminal entry and uncapped, so with a 1.00× image against a 1.5× budget
+**the first checkpoint written puts `main` over budget while `open` still reports
+capacity**. And a `BytesReader` returning `big.subarray(0, n)` retains all of
+`big` while reporting `n` — under-reporting in the unsafe direction.
+
+The log now reports what it **physically retains**, redo tail included: `entries`
+is the applied view, undo moves a cursor rather than popping, and summing what
+the log shows would drop a checkpoint the instant a user pressed undo. Mutation:
+count `this.entries` and the redo-tail case reddens *alone*.
+
+### LL-4 — "sized by measurement" was arithmetic about bytes, not evidence about the code
+
+`roleMain.mjs` is a **model** of main — read, hash, hold, report — and never
+constructs a `DocumentService`. ADR-0021 and the FEATURES row both read as though
+main-with-the-implementation had measured 1.00×. Corrected in both to say which
+process ran.
+
+The gap is the harness axis this project paid for at BB-4: *what does the harness
+hand its child that the real caller does not* — here the harness does the
+retaining itself, so the real caller's version is exercised by nothing. The
+`perf:gate` role that closes it was **blocked by LL-1** until this range and is
+now owed rather than blocked.
+
+### LL-5 — the new proof's own control fired on its first run
+
+`kernelLoad.proof.mjs` matched `import … from` and `index.js` **re-exports** the
+adapter, so the walk reported `mupdfWriter.js` unreachable from the one module
+that certainly reaches it — a wrong pattern producing this proof's *passing*
+answer. Caught by the known-present control, not by luck, and the fix widened the
+pattern to cover re-exports and bare side-effect imports, matched on `from '…'`
+anywhere rather than anchored to a statement start because `tsc` wraps long
+import lists.
+
+### LL-6 — a claim about the code's behaviour, written before running it
+
+`composition.ts`'s first draft said `document.execute` "is registered and
+reachable and fails with `internal`" — the CC-2 shape, argued as a cost to
+accept. Run through the real bridge it returns **`document-not-open`**, a
+declared failure: `DocumentNotOpenError` fires before the session is looked up,
+and the missing-session path needs an *open* document, which is not a channel.
+
+Item 5, on my own comment, in the same file that argues for measuring. The
+paragraph now states the measured answer and `proof:shell` asserts it.
+
+### Item 2a — coverage added, and one amnesty list grew
+
+Three proofs added and none removed. Worth naming because it is the one
+loosening: `ACCOUNTED_COMPUTED` in `proof:electronimports` grew from three
+entries to four, for `composition.proof.mjs`'s `file://` import of the built
+budget. That list is a standing amnesty and EE-10 is the finding that gave it a
+declared site count in both directions; the new entry carries one.
+
+### Item 4a — the four new source files
+
+`budget.ts` is a constant whose correctness is a **derivation**, checked by
+`proof:composition` against §9.17 with a control rejecting a ceiling that forgot
+the baseline. `composition.ts` and `entry.ts` are proven **to run**, not to
+compile — `proof:shell` makes the page invoke `app.info` across the real bridge,
+mutation-tested by changing the handler's value. `shellHarness.ts` is that
+proof's instrument.
+
+**Open:** II-2 (before Stage 0 exit), LL-4's owed `perf:gate` role, GG-8, AA-1,
+AA-3, CC-3, DD-2, BB-6, Y-3, and the MuPDF cache's restore-without-reverify.
+
+---
+
 ## 2026-08-21 — Stage audit: `03fcf9b..7223851` — the shell learns to report its own failures, and a unit test was downloading Electron
 
 **Audited through `7223851`.** 6 commits, 24 files, **1 proof added, 4
