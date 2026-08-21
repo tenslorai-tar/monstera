@@ -575,6 +575,33 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
         `${build.asset}; either its layout changed or the wrong executable name is recorded.`,
     );
   }
+
+  // THE MODE, not just the presence — on POSIX, where a mode exists.
+  //
+  // This module deliberately never spawns what it publishes (the gitleaks EPERM:
+  // a virus scanner holding a newly written binary makes CreateProcess fail on a
+  // file that is perfectly correct, so "does it run" is a question about the
+  // machine at this instant and must not gate a publish). The consequence was
+  // that NOTHING established the published binary could be executed at all —
+  // the `available: true` shape, a green provisioning step for a file that may
+  // not be runnable.
+  //
+  // Reading the mode bit is a question about the FILE, so it is safe to gate on,
+  // and it is a check rather than a guess: `extract.mjs` performs no chmod, so
+  // the bit is whatever the archive carried. Asserting rather than repairing —
+  // a provisioner that chmods what it extracts would mask an archive whose
+  // layout changed.
+  if (process.platform !== 'win32') {
+    const mode = (await stat(binary)).mode;
+    if ((mode & 0o111) === 0) {
+      throw new Error(
+        `${binary} extracted without an executable bit (mode ${mode.toString(8)}). The archive ` +
+          `carries Unix permissions and the extractor performs no chmod, so this means the ` +
+          `archive layout changed or the extractor dropped them. Spawning it would fail with ` +
+          `EACCES at first use, far from here.`,
+      );
+    }
+  }
   return binary;
 }
 

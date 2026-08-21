@@ -249,6 +249,27 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
+      # Chromium's SUID sandbox helper must be owned by root with mode 4755, and
+      # a ZIP CANNOT CARRY EITHER — the format has no ownership, and extraction
+      # runs as `runner`. So Electron found the helper, found it misconfigured,
+      # and ABORTED rather than run unsandboxed. That refusal is Chromium being
+      # right, and the whole reason this step exists rather than `--no-sandbox`.
+      #
+      # `--no-sandbox` is the answer every search result gives, and here it would
+      # disable a protection the very next step is verifying — `sandbox: true` is
+      # the first item in ARCHITECTURE §2's non-negotiable list. A read-back that
+      # switched off the sandbox to observe the CSP would be measuring a
+      # configuration the product never runs in.
+      #
+      # Scoped to the one helper binary, not the tree, and only on the runner.
+      - name: Configure Chromium's sandbox helper
+        if: runner.os == 'Linux'
+        run: |
+          helper=".tools/electron/43.4.1/chrome-sandbox"
+          sudo chown root:root "$helper"
+          sudo chmod 4755 "$helper"
+          ls -l "$helper"
+
       - name: Prove the renderer receives and obeys the declared CSP
         run: npm run proof:rendererpolicy
 
