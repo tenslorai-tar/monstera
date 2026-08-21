@@ -7,6 +7,7 @@ import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js
 import {
   CONTENT_SECURITY_POLICY,
   RENDERER_WEB_PREFERENCES,
+  WINDOW_BACKGROUND,
   isPermittedNavigation,
   isPermittedPermission,
 } from './windowPolicy.js';
@@ -124,7 +125,7 @@ export function createMainWindow(target: Session, failures: ShellFailureSink): B
 
   const window = new BrowserWindow({
     show: false,
-    backgroundColor: '#00000000',
+    backgroundColor: WINDOW_BACKGROUND,
     webPreferences: { ...RENDERER_WEB_PREFERENCES, preload: PRELOAD, session: target },
   });
 

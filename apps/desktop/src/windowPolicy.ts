@@ -43,6 +43,34 @@ export const RENDERER_WEB_PREFERENCES = {
 } as const;
 
 /**
+ * What the window paints before the renderer's first frame, and during resize.
+ *
+ * ## A raw hex, and it is a violation of §10 rather than an exception to it
+ *
+ * `CLAUDE.md` says design tokens only, no raw hex anywhere. There is no token
+ * to use: the design substrate is an unstarted `docs/FEATURES.md` row, and
+ * `apps/desktop` cannot import `packages/ui` in any case — the module graph
+ * allows it `shared`, `contract` and `kernel` only. So this is recorded as owed
+ * rather than dressed up as outside the rule, and the row that lands tokens is
+ * the one that must replace it.
+ *
+ * ## It said `#00000000` and that was not what it did
+ *
+ * Measured through `window.getBackgroundColor()` on a running window: the
+ * declared `#00000000` came back as **`#000000`**. Electron honours the alpha
+ * channel only for a `transparent: true` window, and this one is not — so the
+ * value in force was opaque black while the source said fully transparent.
+ *
+ * That is worse than a raw hex. A reader checking what the window paints got an
+ * answer that had never been true, and the next person to want transparency
+ * would have found it already "set". The constant now states what is actually
+ * in force, and `proof:rendererpolicy` reads the value back off the window and
+ * fails when the two differ — so an alpha added here in future is caught the
+ * moment it is silently dropped rather than believed.
+ */
+export const WINDOW_BACKGROUND = '#000000';
+
+/**
  * The only permission the app may be granted, per ARCHITECTURE §2.
  *
  * A single-element set rather than a boolean check against a name, so widening

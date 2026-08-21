@@ -94,6 +94,7 @@ const RUNTIME_CASES = [
   'navigation off the loaded document is refused, and a permitted one completes',
   'the SHIPPED window subscribes to every failure Electron announces',
   "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
+  'the window PAINTS the background the shell declares',
 ];
 
 /** Cases decidable from strings alone. These run on every machine. */
@@ -191,21 +192,23 @@ function refuseStaleBuild(pairs) {
 }
 
 /**
- * The declared policy, read from the BUILT shell rather than restated here.
+ * What the shell declares, read from the BUILT shell rather than restated here.
  *
- * @returns {Promise<string>}
+ * Restating any of it would compare a copy with itself.
+ *
+ * @returns {Promise<{ policy: string, background: string }>}
  */
-async function declaredPolicy() {
+async function declared() {
   const built = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'windowPolicy.js');
   if (!existsSync(built)) {
     throw new Error(
       `${built} does not exist. This proof compares what the renderer received against what ` +
         `the shell declares, and it reads the declaration from the BUILD — run \`npm run ` +
-        `typecheck\` first. Restating the policy here would compare a copy with itself.`,
+        `build\` first.`,
     );
   }
   const module = await import(`file://${built.replaceAll('\\', '/')}`);
-  return module.CONTENT_SECURITY_POLICY;
+  return { policy: module.CONTENT_SECURITY_POLICY, background: module.WINDOW_BACKGROUND };
 }
 
 /**
@@ -311,6 +314,7 @@ function pinnedPolicy(markdown) {
  *   preloadError: string | null,
  *   failureListeners: Record<string, number>,
  *   failuresReceived: string[],
+ *   backgroundColor: string,
  *   popupReturnedNull: boolean,
  *   windowCount: number,
  *   permissions: Record<string, string>,
@@ -388,7 +392,7 @@ try {
   // checked in every world.
   refuseStaleBuild([['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js']]);
 
-  const declared = await declaredPolicy();
+  const { policy: declaredPolicy, background: declaredBackground } = await declared();
 
   // ---------------------------------------------------------------------------
   // (i) The string, and its agreement with the law. Runs everywhere.
@@ -398,9 +402,9 @@ try {
 
   check(
     'the shell declares exactly the policy ARCHITECTURE §9.27 pins',
-    pinned === declared,
+    pinned === declaredPolicy,
     `pinned in docs/ARCHITECTURE.md §9.27:\n        ${pinned}\n` +
-      `      declared by apps/desktop/src/windowPolicy.ts:\n        ${declared}\n` +
+      `      declared by apps/desktop/src/windowPolicy.ts:\n        ${declaredPolicy}\n` +
       `      **The document is the writer of record here** — the opposite direction from the ` +
       `memory budgets, and deliberately so: pinning a CSP is only worth anything if loosening ` +
       `it is a diff in the law that someone has to justify. So the fix for this failure is to ` +
@@ -443,7 +447,7 @@ try {
     }
     check(
       'CONTROL: a pinned list loosened by one source no longer matches the shell',
-      pinnedPolicy(fixture) !== declared,
+      pinnedPolicy(fixture) !== declaredPolicy,
       `the extractor returned a policy equal to the shell's after "${LOOSENED.from}" was widened ` +
         `to "${LOOSENED.to}". The agreement case above would then pass for any pinned list at ` +
         `all, which is the shape where a policy nobody pinned and a policy everybody pinned are ` +
@@ -451,7 +455,7 @@ try {
     );
   }
 
-  const directives = declared.split(';').map((entry) => entry.trim());
+  const directives = declaredPolicy.split(';').map((entry) => entry.trim());
   const names = directives.map((entry) => entry.split(/\s+/u)[0]);
 
   check(
@@ -501,9 +505,9 @@ try {
 
     check(
       'the renderer RECEIVES the policy the shell declares',
-      seen.delivered === declared,
+      seen.delivered === declaredPolicy,
       `delivered:\n        ${seen.delivered ?? '(no Content-Security-Policy header at all)'}\n` +
-        `      declared:\n        ${declared}\n` +
+        `      declared:\n        ${declaredPolicy}\n` +
         `      Read from the response as Chromium received it, never from the constant that ` +
         `sets it — those differ exactly when something between them is broken.`,
     );
@@ -618,6 +622,16 @@ try {
         `The count above proves something is attached; it does not prove the sink is reached, ` +
         `and a listener attached to a function that drops its argument produces the same ` +
         `silence one step along. So the renderer is genuinely killed and the sink is read.`,
+    );
+
+    check(
+      'the window PAINTS the background the shell declares',
+      seen.backgroundColor.toLowerCase() === declaredBackground.toLowerCase(),
+      `declared ${declaredBackground}, window reports ${seen.backgroundColor}. ` +
+        `Electron honours an alpha channel only for a transparent window, and silently drops it ` +
+        `otherwise — this constant said "#00000000" for its whole life and the window was opaque ` +
+        `black the entire time. A value that has never been true reads exactly like one that is, ` +
+        `so it is read back rather than trusted.`,
     );
 
     // The list and the branch, compared rather than trusted to match.

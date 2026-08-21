@@ -284,7 +284,7 @@ Not user-facing features, but the exit gate for everything above.
 | **Active content runs on no open path** (invariant 24). A fixture PDF carrying embedded JavaScript, an `/OpenAction`, an external reference and an embedded file, opened through the real shim: nothing executes, nothing is fetched, nothing reaches disk. Needs a fixture whose active content is *observable when it fires* — a proof that the JS did not run is worthless if the same result appears when the JS is absent, so the control is the same document opened by something that DOES run it. | — |
 | Per-document stores | — |
 | Command / dialog / settings registries | — |
-| Design substrate: tokens, lint rules, `docs/UI-GUIDE.md`, 4 primitives | — |
+| Design substrate: tokens, lint rules, `docs/UI-GUIDE.md`, 4 primitives. **Carries one debt already incurred:** `WINDOW_BACKGROUND` in `apps/desktop/src/windowPolicy.ts` is a raw hex, which §10 forbids anywhere. It is owed rather than exempt — there is no token to use yet, and `apps/desktop` could not import one from `packages/ui` in any case (the module graph allows it `shared`, `contract` and `kernel` only), so **this row is what replaces it**, and the hex-ban lint rule this row adds must not ship with an exemption for it. Its value was `#00000000` until measured: Electron honours an alpha channel only for a `transparent` window, so the window painted opaque black while the source claimed full transparency. `proof:rendererpolicy` now reads the colour back off the running window, and the mutation that proves that case is the original value. | — |
 | i18n scaffold + literal-string lint rule | — |
 | Logging + crash reporter consent | — |
 | CI: typecheck, lint, unit, proofs (Windows + Linux) | **done** |

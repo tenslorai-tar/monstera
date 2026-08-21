@@ -4,6 +4,7 @@ export {
   CONTENT_SECURITY_POLICY,
   PERMITTED_PERMISSIONS,
   RENDERER_WEB_PREFERENCES,
+  WINDOW_BACKGROUND,
   isPermittedNavigation,
   isPermittedPermission,
 } from './windowPolicy.js';

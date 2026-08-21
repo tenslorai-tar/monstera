@@ -109,6 +109,8 @@ interface Readback {
    * reported.
    */
   readonly failuresReceived: readonly string[];
+  /** What Chromium made of the declared `backgroundColor`. */
+  readonly backgroundColor: string;
   readonly popupReturnedNull: boolean;
   readonly windowCount: number;
   readonly permissions: Readonly<Record<string, string>>;
@@ -404,6 +406,7 @@ export async function reportRendererPolicy(): Promise<void> {
   // The URL is read before the kill, because a dead renderer reports none and
   // that would look like a navigation failure rather than like a crash.
   const finalUrl = webContents.getURL();
+  const backgroundColor = window.getBackgroundColor();
 
   // Detached BEFORE the kill: the debugger is attached to the process about to
   // die, and detaching from a gone renderer throws — which would arrive as a
@@ -422,6 +425,7 @@ export async function reportRendererPolicy(): Promise<void> {
     url,
     failureListeners,
     failuresReceived: received.map((failure) => failure.event),
+    backgroundColor,
     connectBlocked,
     evalBlocked,
     nodeSurface: surface.visible,
