@@ -610,5 +610,10 @@ jobs:
       # from what was measured — a proof carrying its own copy of the budgets
       # would be a fourth copy of the numbers, in the place people look last, and
       # it would pass forever while the invariant said something else.
+      # Through the annotation wrapper. This proof measures RSS on the runner, so
+      # its failures are the least reproducible kind there is — and it failed
+      # twice here with the only public evidence being an exit code, which is the
+      # gap `scripts/ci/annotate.mjs` was written for and which I did not apply
+      # to the proof that needed it most.
       - name: Prove the performance gate follows the declared budgets
-        run: npm run proof:perfbudget
+        run: node scripts/ci/annotate.mjs scripts/proofs/perfBudget.proof.mjs
