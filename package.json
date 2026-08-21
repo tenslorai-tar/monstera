@@ -51,6 +51,7 @@
     "proof:preload": "node scripts/proofs/preloadSurface.proof.mjs",
     "proof:electronprovision": "node scripts/provision/electron.proof.mjs",
     "proof:electronimports": "node scripts/proofs/electronImports.proof.mjs",
+    "proof:rendererpolicy": "node scripts/proofs/rendererPolicy.proof.mjs",
     "provision:electron": "node scripts/provision/electron.mjs",
     "board": "node scripts/ci/board.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
