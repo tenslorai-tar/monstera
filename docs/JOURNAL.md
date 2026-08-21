@@ -644,6 +644,174 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `a66e1e6..03fcf9b` — the CSP becomes law, and the preload turns out never to have run
+
+**Audited through `03fcf9b`.** 5 commits, 24 files, **0 proofs added, 2
+modified**, 3 new source files — from `npm run audit:scope`. Owed on the **file**
+threshold rather than the commit one: 24 of 24, so the next commit crosses.
+
+Zero proofs added and one of them at **+252/−15** is the shape this checklist
+says to read closely, and it was worth reading: every deletion is a rename, a
+count, or prose. No check left. Six arrived.
+
+The range's substance: **invariant 27 pins the renderer's CSP** and the document
+becomes its writer of record, and the read-back is extended from one §2 item to
+five — which found, on its first run, that the preload had never executed.
+
+### HH-1 — the preload had never loaded, and every check about it passed
+
+`dist/preload.js: SyntaxError: Cannot use import statement outside a module`.
+`tsc` emits ESM into a `"type": "module"` package; a **sandboxed preload is
+loaded as CommonJS**. Announced through Electron's `preload-error` event and
+through nothing else — no stderr, no exception in main, no failed-load. The
+window opened, the page rendered, `window.monstera` was undefined.
+
+`proof:preload` derives the permitted import set from the file's syntax.
+`proof:contract` proves the channels are exhaustive. Both passed, **correctly**,
+about a file nothing had ever run. Reading the source could not have found this,
+and no amount of care in review would have either: the defect is not in the file.
+
+Closed in-range by bundling to CommonJS ([ADR-0020](DECISIONS/0020-the-preload-is-bundled.md)),
+entering the contract through a new `@monstera/contract/bridge` leaf —
+**137,809 bytes through the package root, 233 through the leaf**, because
+`channelIds = Object.keys(channels)` is a top-level evaluation in the index and
+nothing prunes around it.
+
+**Item 3: CI could not have caught it.** Nothing ran the preload anywhere. It now
+runs on both platforms every push.
+
+### HH-2 — my own new probe was vacuous, and only the mutation step found it
+
+With the navigation guard's `preventDefault` removed, the case stayed **green**.
+The probe navigated to `https://example.org/`, which produces zero loads when the
+guard refuses it *and* zero when the machine has no network. It could not tell a
+working guard from an offline runner.
+
+Item 4's fixture rule — **in the same file that already records being bitten by
+it**, on `example.invalid`, four commits earlier, in a comment I had read while
+writing the probe beneath it. Knowing the rule, having written the record, and
+having the counter-example on screen did not stop me reaching for a remote URL.
+
+The fixture is now the loaded document plus a query string: on disk so it loads
+with no network, different href so `isPermittedNavigation` refuses it — and it
+exercises that function's whole-href claim as a side effect. Red under the
+mutation, green with the guard.
+
+**No proof catches this class.** A vacuous case passes; only mutating the thing
+it guards separates it from a real one. That is why item 4 is mandatory rather
+than advisory, and this is the argument for it in one line.
+
+### HH-3 — ADR-0020 stated two reasons and had executed one
+
+The ADR says a sandboxed preload's `require` "resolves a small fixed set, not
+`node_modules`", and offers it as independently sufficient. **That was asserted.**
+The measured error was only the ESM one; nothing had ever run a CommonJS preload
+carrying a bare specifier.
+
+Measured during this audit by making the contract external to the bundle:
+`Error: module not found: @monstera/contract/bridge`, from the same
+`preload-error` channel. The claim is true. It was not evidence when it was
+written, and an ADR is where a future reader goes to find out what was
+established — so the ADR now carries a dated note separating what was measured
+when.
+
+### HH-4 — the honesty mechanism hand-maintains a number the roster computes
+
+`rendererPolicy.proof.mjs` prints `UNVERIFIABLE — 9 case(s)` followed by nine
+hand-written lines, beside a roster declared as `RUNTIME_PRESENT ? 13 : 4`. The
+9 is `13 − 4` and it is a **literal**. Add a runtime case and the roster is
+correct while the block that exists to say *what could not be looked at* names
+eight of nine and calls it nine.
+
+B3a, inside the mechanism whose entire job is to not overstate. The count and the
+list must be derived from one array. **Open**; the fix is one array and is next.
+
+### HH-5 — item 7's compound claim, created by the commit that corrected its neighbour
+
+`window.ts` line 14 describes `HERE` as resolving "the sibling `preload.js` and
+the `renderer/` beside the package root". The second clause is true. The first
+became false **eight lines above the comment written in the same commit to
+explain why it is `preload.cjs` now**.
+
+Exactly the shape the checklist names: a compound claim whose surviving clause
+vouches for the dead one, sitting in the position a reader treats as the
+contract, with the correction below it where a skimmer never reaches. Ninth
+occurrence of item 7 in this record, and the second created *by* the fix. **Open**,
+one word.
+
+### HH-6 — the read-back reads `dist/`, and nothing detects a stale one
+
+`proof:rendererpolicy` resolves the harness, the declared policy and the preload
+from `apps/desktop/dist/`. `npm run build` is `typecheck` + `build:preload`; a
+contributor who runs `npm run typecheck` alone — which is what `CLAUDE.md`'s
+Commands section shows — edits `preload.ts` and gets a **stale bundle**. The
+bridge still loads, all thirteen cases still pass, and they pass about the
+previous preload.
+
+This project already recognises the class: `proof:testresolution` exists to prove
+the tests read source and not a stale build. The renderer read-back is the same
+shape and has no equivalent. And it is the one failure `CLAUDE.md` names as
+unreachable by a positive control — a stale answer contains the known-present
+anchor too. **Open**; the remedy is a freshness comparison, not a wider probe.
+
+### Item 2a — two movements, and the second reads worse than it is
+
+The pin agreement is a **strengthening with no provisioning condition**: it
+compares two strings and runs on every machine, including the ones that can never
+start Electron.
+
+The UNVERIFIABLE block grew from **3 lines to 9**. That reads like a blind spot
+tripling and is not one: the *intent* half of §2 is `windowPolicy.test.ts`, which
+runs everywhere and gained an assertion this range. What is newly unverifiable on
+a runtime-less machine is *enforcement* — which was not verified there before
+either, because it was not verified anywhere. The block got longer because the
+coverage got wider, and the honest reading is that the list now names six things
+it previously did not think to mention.
+
+### Item 4a — the three new instrument files
+
+`rendererHarness.ts` — resolution-tested by four mutations, each reddening a
+distinct case, and one of them (`PERMITTED_PERMISSIONS` emptied) reddening
+**only** the control while the deny case stayed green, which is the separation
+the control exists for. `scripts/build/preload.mjs` — two known-different inputs,
+137,809 bytes and 233, by `wc -c` on the artefact. `scripts/ci/sandboxHelperPath.mjs`
+— **not** resolution-tested; its output derives from `electronRoot()`, whose
+agreement with the pin is covered by `proof:electronprovision`. Derived, not
+measured, and recorded as such.
+
+### Items 1 and 6
+
+Every fix in the range is a mechanism named in one sentence: a version literal
+replaced by the module's return value (`c8aa6ea`), a SUID helper configured
+rather than the sandbox disabled (`ddc9e16`), a policy pinned in the law with the
+code derived from it (`c98d62e`), a preload bundled at the build (`03fcf9b`). No
+loosened check, no override, no repair that could regenerate — with HH-6 as the
+qualifier, which is not a regeneration but a staleness.
+
+Architecture moved first where it moved: ADR-0019 is the amendment, and the
+constant changed in the same commit because the new agreement check makes any
+other order a red build. ADR-0020 amends nothing in `ARCHITECTURE.md` — it
+records how a thing the law already requires is produced.
+
+### Also recorded
+
+**`style-src 'unsafe-inline'` was dropped rather than pinned**, which the ruling
+that ordered the amendment did not cover and which is flagged as such. Nothing
+needed it; pinning it would have made an unproven grant into law by arriving
+early, which is the failure the pin exists to prevent.
+
+**GG-8's trigger has not fired.** The open finding — no check stops a version
+literal returning to a workflow — closes convert-on-touch, on the next commit
+that adds or edits a workflow step **touching the Electron tree**. `03fcf9b`
+edited two workflow steps; both are `Typecheck and build` and neither touches it.
+Stated because a trigger nobody checks precisely is a trigger that fires when
+it is convenient.
+
+**Open:** HH-4, HH-5, HH-6, GG-8, AA-1 (granularity), AA-3, CC-3, DD-2, BB-6,
+Y-3, and the MuPDF cache's restore-without-reverify.
+
+---
+
 ## 2026-08-21 — Stage audit: `d4c01c1..a66e1e6` — the shell starts, and `main` is red at the end of it
 
 **Audited through `a66e1e6`.** 9 commits, 20 files, **2 proofs added, 2 modified**,

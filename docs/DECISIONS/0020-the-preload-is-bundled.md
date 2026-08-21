@@ -6,6 +6,29 @@
   preload is built, which the law requires to exist and does not say how to
   produce.
 
+## Correction, 2026-08-21 — one of the two reasons was asserted when this was written
+
+Decision 1 below gives two reasons a sandboxed preload cannot be what `tsc`
+emits, and says either alone forces the outcome. **Only the first had been
+executed.** The measured failure was the ESM `SyntaxError`; the resolution claim
+— that `require` in a sandboxed preload reaches a small fixed set rather than
+`node_modules` — came from documentation and was written as though it were
+evidence.
+
+Measured afterwards, in the stage audit of this range, by making the contract
+external to the bundle so the built preload carried a bare `require`:
+
+```
+preload.cjs: Error: module not found: @monstera/contract/bridge
+```
+
+Same `preload-error` channel, different error. **The claim is true and the
+decision stands unchanged**; what was wrong was the status of the evidence, in
+the document a future reader consults precisely to find out what was
+established. Recorded rather than silently upgraded, because the two are not the
+same thing and the ADR is where the difference is supposed to be visible
+(finding HH-3).
+
 ## Context
 
 `apps/desktop/src/preload.ts` is the fourth contract surface: two Electron
