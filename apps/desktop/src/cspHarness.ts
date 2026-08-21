@@ -125,8 +125,14 @@ export async function reportDeliveredPolicy(): Promise<void> {
   const evalBlocked = violated.some((directive) => directive.startsWith('script-src'));
 
   const readback: Readback = { delivered, connectBlocked, evalBlocked, url };
-  process.stdout.write(`${MARKER}${JSON.stringify(readback)}\n`);
-
   webContents.debugger.detach();
-  app.exit(0);
+
+  // EXIT ONLY ONCE THE LINE IS FLUSHED. `app.exit()` terminates immediately, and
+  // when stdout is a pipe — which it always is under a proof — writes are
+  // asynchronous. Exiting on the next line truncates the report the caller is
+  // waiting for, and the caller then reports "no marker line", which is the same
+  // output a harness that never ran produces.
+  process.stdout.write(`${MARKER}${JSON.stringify(readback)}\n`, () => {
+    app.exit(0);
+  });
 }

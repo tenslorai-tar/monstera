@@ -128,9 +128,24 @@ function readback(binary) {
 
   const line = `${result.stdout}`.split(/\r?\n/).find((entry) => entry.startsWith(MARKER));
   if (line === undefined) {
+    // The harness reports its own failures on stderr with a marker, so "it broke
+    // and said why" is separated from "it never spoke". Those need different
+    // fixes and produce the same missing line.
+    const spoke = `${result.stderr}`
+      .split(/\r?\n/)
+      .filter((entry) => entry.startsWith('MONSTERA_CSP_HARNESS_FAILED'))
+      .join('\n');
     throw new Error(
-      `The harness produced no ${MARKER.trim()} line (exit ${result.status}).\n` +
-        `stdout: ${result.stdout.slice(0, 800)}\nstderr: ${result.stderr.slice(0, 800)}`,
+      `The harness produced no ${MARKER.trim()} line (exit ${String(result.status)}${
+        result.signal === null ? '' : `, signal ${result.signal}`
+      }).\n` +
+        (spoke === ''
+          ? `It reported no failure of its own either, so it was killed or never started. ` +
+            `A timeout here means the window never finished loading.\n`
+          : `${spoke}\n`) +
+        `command: ${command} ${args.join(' ')}\n` +
+        `stdout: ${result.stdout.slice(0, 1200)}\n` +
+        `stderr: ${result.stderr.slice(-2400)}`,
     );
   }
   return JSON.parse(line.slice(MARKER.length));
