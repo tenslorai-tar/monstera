@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { BrowserWindow, type Session, type WebContents } from 'electron';
 
+import { type ShellFailureSink, reportRendererFailures } from './shellFailure.js';
 import {
   CONTENT_SECURITY_POLICY,
   RENDERER_WEB_PREFERENCES,
@@ -117,7 +118,7 @@ export function lockNavigation(contents: WebContents, loaded: string): void {
  * is the white flash every Electron app ships with by default, and §10 bans
  * spinner-only loading states on surfaces whose shape is known.
  */
-export function createMainWindow(target: Session): BrowserWindow {
+export function createMainWindow(target: Session, failures: ShellFailureSink): BrowserWindow {
   applyPermissionPolicy(target);
   applyContentSecurityPolicy(target);
 
@@ -126,6 +127,12 @@ export function createMainWindow(target: Session): BrowserWindow {
     backgroundColor: '#00000000',
     webPreferences: { ...RENDERER_WEB_PREFERENCES, preload: PRELOAD, session: target },
   });
+
+  // Subscribed HERE, where the contents is born, so a window that exists is a
+  // window that reports. At the composition root instead, a window could be
+  // created without one — which is precisely the state that let a preload fail
+  // in silence.
+  reportRendererFailures(window.webContents, failures);
 
   lockNavigation(window.webContents, pathToFileURL(RENDERER_HTML).href);
   window.once('ready-to-show', () => {

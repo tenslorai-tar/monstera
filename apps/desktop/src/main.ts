@@ -2,10 +2,20 @@ import { type ContractHandlers, type IncidentSink } from '@monstera/contract';
 import { app, ipcMain, session } from 'electron';
 
 import { registerContractHandlers } from './registerHandlers.js';
+import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 
 /**
  * Brings up the hardened window and registers the contract over it.
+ *
+ * ## Two sinks, because they carry opposite things
+ *
+ * `incidents` receives diagnostics that did **not** cross to the renderer, and
+ * they are stripped of paths on the way (invariant 2). `failures` receives what
+ * the Electron runtime announces about its own processes, which crosses nothing
+ * and keeps its paths — an absolute preload path is what makes that channel
+ * worth having. Routing both to one destination is the caller's business; making
+ * them one type would not be.
  *
  * ## Why the handlers arrive as a parameter
  *
@@ -34,15 +44,23 @@ import { createMainWindow, senderCheckFor } from './window.js';
  * architecture makes unrepresentable *within* a process and cannot make
  * unrepresentable across two.
  */
-export function startShell(handlers: ContractHandlers, sink: IncidentSink): void {
+export function startShell(deps: {
+  readonly handlers: ContractHandlers;
+  readonly incidents: IncidentSink;
+  readonly failures: ShellFailureSink;
+}): void {
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
   }
 
+  // Subscribed before the window, because a child process can die during
+  // startup and `whenReady` is not early enough to hear it.
+  reportProcessFailures(app, deps.failures);
+
   void app.whenReady().then(() => {
-    const window = createMainWindow(session.defaultSession);
-    registerContractHandlers(ipcMain, handlers, sink, senderCheckFor(window));
+    const window = createMainWindow(session.defaultSession, deps.failures);
+    registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 
     app.on('second-instance', () => {
       if (window.isMinimized()) window.restore();

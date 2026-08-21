@@ -1,6 +1,7 @@
 import { BRIDGE_KEY } from '@monstera/contract';
 import { BrowserWindow, app, session } from 'electron';
 
+import { type ShellFailure } from './shellFailure.js';
 import { createMainWindow } from './window.js';
 
 /**
@@ -45,10 +46,22 @@ import { createMainWindow } from './window.js';
  * `sandbox: true` has no read-back. The page-context probe reports that no Node
  * surface is reachable, which is the *union* consequence of `sandbox`,
  * `contextIsolation` and `nodeIntegration: false` — it cannot attribute the
- * absence to one of the three. The independent evidence for the sandbox is that
- * Chromium refuses to start at all without a correctly-owned SUID helper on
- * Linux, which the CI job configures and which is a real observation about a
- * running process rather than a flag.
+ * absence to one of the three.
+ *
+ * **And there is no independent evidence for it either.** This paragraph
+ * previously offered one: that Chromium refuses to start without a
+ * correctly-owned SUID helper on Linux. That is a true observation and it is
+ * evidence for a **different proposition** — the helper backs the browser's
+ * OS-level sandbox, which the zygote and the GPU and utility processes need
+ * whatever one window's `webPreferences.sandbox` says, so it would be required
+ * with the flag off too. Offering it here committed the same attribution error
+ * the paragraph above correctly refuses in the page-side union, one line later
+ * (finding II-2). Neither reading is measured, so neither is relied on.
+ *
+ * The probe that *would* attribute to the flag alone is a harness-only window
+ * and a harness-only preload attempting a Node require, with the mutation being
+ * `sandbox` flipped by itself: that case must go red while the page-side
+ * node-surface case stays green. It is its own unit, and it is owed.
  *
  * Output is a single JSON line on stdout, prefixed so it cannot be confused with
  * Chromium's own chatter, which is copious and goes to stderr.
@@ -78,6 +91,24 @@ interface Readback {
    * rejected it" is the difference between a mystery and a fix.
    */
   readonly preloadError: string | null;
+  /**
+   * How many listeners the SHIPPED window carries per failure event.
+   *
+   * The harness having its own listener proves nothing about the product — that
+   * was exactly the state finding II-1 describes. This counts on the
+   * `WebContents` that `createMainWindow` returned, so it is a statement about
+   * what the shell subscribed, not about what the test did.
+   */
+  readonly failureListeners: Readonly<Record<string, number>>;
+  /**
+   * What the shell's failure sink actually received, after a real crash.
+   *
+   * A listener count says something is attached. It does not say the sink is
+   * reached, and "attached to a function that drops it" is the same silence one
+   * step along — so the renderer is genuinely killed and the sink's contents are
+   * reported.
+   */
+  readonly failuresReceived: readonly string[];
   readonly popupReturnedNull: boolean;
   readonly windowCount: number;
   readonly permissions: Readonly<Record<string, string>>;
@@ -132,7 +163,19 @@ function isStringArray(value: unknown): value is string[] {
 
 export async function reportRendererPolicy(): Promise<void> {
   await app.whenReady();
-  const window = createMainWindow(session.defaultSession);
+
+  // THE SHELL'S SINK, and the harness subscribes to nothing on its own behalf.
+  //
+  // It did at first, keeping a private `preload-error` listener so a missing
+  // bridge stayed attributable if the sink were the thing that broke. That
+  // second listener then satisfied the differential count below all by itself —
+  // the probe read one subscriber for an event the shell had stopped
+  // subscribing to. Reading the preload's failure out of the SHELL's sink
+  // instead tests the shipped path end to end and leaves nothing to subtract.
+  const received: ShellFailure[] = [];
+  const window = createMainWindow(session.defaultSession, (failure) => {
+    received.push(failure);
+  });
   const { webContents } = window;
 
   let delivered: string | null = null;
@@ -154,11 +197,6 @@ export async function reportRendererPolicy(): Promise<void> {
     }
   });
   await webContents.debugger.sendCommand('Network.enable');
-
-  let preloadError: string | null = null;
-  webContents.on('preload-error', (_event, path, error) => {
-    preloadError = `${path}: ${error.name}: ${error.message}`;
-  });
 
   // Counted rather than awaited, because the navigation probes need to
   // distinguish "no load happened" from "a load happened". A promise can only
@@ -342,22 +380,60 @@ export async function reportRendererPolicy(): Promise<void> {
   await settle(SETTLE_MS);
   const permittedNavigationLoads = loads - beforePermitted;
 
+  // COUNTED AGAINST A BASELINE, because an absolute count is not evidence.
+  //
+  // Measured: with `reportRendererFailures` deleted, every one of these events
+  // still reports exactly one listener — Electron attaches its own internally.
+  // So `count > 0` is satisfied by a window that subscribed to nothing, and the
+  // first version of this probe passed the mutation it existed to catch. HH-2's
+  // class exactly, an hour after HH-2's rule was written down: the reassuring
+  // reading was produced by something other than the thing under test.
+  //
+  // A bare window carries Electron's listeners and none of ours, so the
+  // DIFFERENCE is ours. Created after `windowCount` is sampled, so it cannot
+  // disturb the popup probe.
+  const bare = new BrowserWindow({ show: false });
+  const failureListeners = Object.fromEntries(
+    (['preload-error', 'render-process-gone', 'unresponsive'] as const).map((event) => [
+      event,
+      webContents.listenerCount(event) - bare.webContents.listenerCount(event),
+    ]),
+  );
+  bare.destroy();
+
+  // The URL is read before the kill, because a dead renderer reports none and
+  // that would look like a navigation failure rather than like a crash.
+  const finalUrl = webContents.getURL();
+
+  // Detached BEFORE the kill: the debugger is attached to the process about to
+  // die, and detaching from a gone renderer throws — which would arrive as a
+  // harness failure and read as though a probe had broken.
+  webContents.debugger.detach();
+
+  // THE SINK IS PROVEN BY KILLING SOMETHING, not by counting listeners. A
+  // listener attached to a function that drops what it is given produces the
+  // same silence one step along, which is the finding this closes wearing a
+  // different hat.
+  webContents.forcefullyCrashRenderer();
+  await settle(SETTLE_MS);
+
   const readback: Readback = {
     delivered,
     url,
+    failureListeners,
+    failuresReceived: received.map((failure) => failure.event),
     connectBlocked,
     evalBlocked,
     nodeSurface: surface.visible,
     bridgeExposed: surface.bridge,
-    preloadError,
+    preloadError: received.find((failure) => failure.event === 'preload-error')?.detail ?? null,
     popupReturnedNull,
     windowCount,
     permissions,
     refusedNavigationLoads,
     permittedNavigationLoads,
-    finalUrl: webContents.getURL(),
+    finalUrl,
   };
-  webContents.debugger.detach();
 
   // EXIT ONLY ONCE THE LINE IS FLUSHED. `app.exit()` terminates immediately, and
   // when stdout is a pipe — which it always is under a proof — writes are

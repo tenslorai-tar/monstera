@@ -92,6 +92,8 @@ const RUNTIME_CASES = [
   'a permission outside the allowed set is refused',
   'CONTROL: the one permitted permission is GRANTED',
   'navigation off the loaded document is refused, and a permitted one completes',
+  'the SHIPPED window subscribes to every failure Electron announces',
+  "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
 ];
 
 /** Cases decidable from strings alone. These run on every machine. */
@@ -307,6 +309,8 @@ function pinnedPolicy(markdown) {
  *   nodeSurface: string[],
  *   bridgeExposed: boolean,
  *   preloadError: string | null,
+ *   failureListeners: Record<string, number>,
+ *   failuresReceived: string[],
  *   popupReturnedNull: boolean,
  *   windowCount: number,
  *   permissions: Record<string, string>,
@@ -584,6 +588,36 @@ try {
         `The URL is deliberately not the discriminator: a refused navigation leaves it ` +
         `unchanged and a permitted navigation to the loaded document leaves it unchanged too, ` +
         `so counting loads is what separates "the guard refused" from "nothing navigates at all".`,
+    );
+
+    {
+      const listeners = seen.failureListeners;
+      const unsubscribed = Object.entries(listeners).filter(([, extra]) => extra < 1);
+      check(
+        'the SHIPPED window subscribes to every failure Electron announces',
+        Object.keys(listeners).length > 0 && unsubscribed.length === 0,
+        `listeners on the window createMainWindow returned, MINUS those a bare BrowserWindow ` +
+          `already carries: ${JSON.stringify(listeners)}. ` +
+          `${
+            Object.keys(listeners).length === 0
+              ? 'No events were counted at all, which is a broken probe rather than a passing one.'
+              : `Not subscribed by the shell: ${unsubscribed.map(([event]) => event).join(', ')}.`
+          } The subtraction is load-bearing and was added after the absolute count survived its ` +
+          `own mutation: Electron attaches one listener to each of these itself, so "count > 0" ` +
+          `is true of a window that subscribed to nothing. A failure channel the runtime ` +
+          `announces on and nothing subscribes to is not a channel — the preload proved that by ` +
+          `failing in total silence with two proofs passing about it.`,
+      );
+    }
+
+    check(
+      "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
+      seen.failuresReceived.includes('render-process-gone'),
+      `after forcefullyCrashRenderer the sink held: ` +
+        `${seen.failuresReceived.length === 0 ? '(nothing)' : seen.failuresReceived.join(', ')}. ` +
+        `The count above proves something is attached; it does not prove the sink is reached, ` +
+        `and a listener attached to a function that drops its argument produces the same ` +
+        `silence one step along. So the renderer is genuinely killed and the sink is read.`,
     );
 
     // The list and the branch, compared rather than trusted to match.

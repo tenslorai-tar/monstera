@@ -8,6 +8,17 @@ export {
   isPermittedPermission,
 } from './windowPolicy.js';
 export {
+  type ShellFailure,
+  type ShellFailureEvent,
+  type ShellFailureSink,
+  describeChildProcessGone,
+  describePreloadError,
+  describeRenderProcessGone,
+  describeUnresponsive,
+  reportProcessFailures,
+  reportRendererFailures,
+} from './shellFailure.js';
+export {
   applyContentSecurityPolicy,
   applyPermissionPolicy,
   createMainWindow,
