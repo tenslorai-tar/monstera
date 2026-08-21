@@ -44,8 +44,7 @@
  */
 
 import { readdirSync } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { copyFile, mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -541,7 +540,22 @@ export async function provisionElectron({ root = REPO_ROOT, key = platformKey() 
     });
   }
 
-  const staging = await mkdtemp(join(tmpdir(), 'monstera-electron-'));
+  // STAGED BESIDE THE DESTINATION, not in `tmpdir()`.
+  //
+  // `rename` cannot cross a filesystem, and on the Windows CI runner the
+  // workspace is on `D:` while `TEMP` is on `C:` — so the publish failed with
+  // EXDEV on a machine where the download and extraction had both succeeded.
+  // Locally the two happen to share a volume, which is why it worked here and
+  // nowhere else.
+  //
+  // `gitleaks.mjs:770` already stages at `${versionDirectory}.staging-${pid}`
+  // for exactly this reason. This module wrote a second answer to a question a
+  // sibling had solved, and the second answer is the one that broke (B3a). The
+  // pid suffix keeps two concurrent provisioners from sharing a staging tree.
+  const staging = `${electronRoot(root)}.staging-${String(process.pid)}`;
+  await mkdir(dirname(electronRoot(root)), { recursive: true });
+  await rm(staging, { recursive: true, force: true });
+  await mkdir(staging, { recursive: true });
   try {
     await copyFile(archive, join(staging, build.asset));
     extract(staging, build.asset);

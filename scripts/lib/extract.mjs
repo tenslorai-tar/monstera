@@ -34,19 +34,68 @@ function candidates() {
     const systemRoot = process.env['SystemRoot'] ?? process.env['windir'] ?? 'C:\\Windows';
     return [join(systemRoot, 'System32', 'tar.exe')];
   }
-  // bsdtar first where both exist: macOS ships it as /usr/bin/tar, and it reads
-  // zip, which GNU tar does not. /bin/tar covers distributions with no /usr
-  // split; /usr/local/bin covers a deliberately installed newer tar.
-  return ['/usr/bin/tar', '/bin/tar', '/usr/local/bin/tar'];
+  // bsdtar BY NAME first, then the paths a platform guarantees for `tar`.
+  //
+  // This list used to be the three `tar` paths alone, under a comment claiming
+  // "bsdtar first where both exist". That is true on macOS, where /usr/bin/tar
+  // IS bsdtar — and false on Linux, where it is GNU tar, which cannot read a
+  // zip. The comment described one platform and the list was used on both, so
+  // the first zip this project ever extracted on Linux failed. Electron ships
+  // every platform as `.zip`, including Linux, so it was the first caller to
+  // find out.
+  return [
+    '/usr/bin/bsdtar',
+    '/usr/local/bin/bsdtar',
+    '/usr/bin/tar',
+    '/bin/tar',
+    '/usr/local/bin/tar',
+  ];
+}
+
+/**
+ * Whether an extractor is libarchive-based, and therefore reads zip.
+ *
+ * Probed by running it, not inferred from its filename. `/usr/bin/tar` is
+ * bsdtar on macOS and GNU tar on Linux — the same path, opposite capabilities —
+ * so the name cannot answer this and a table of platforms would be a third
+ * opinion about a question the program answers about itself.
+ *
+ * @param {string} extractor
+ * @returns {boolean}
+ */
+function readsZip(extractor) {
+  const result = spawnSync(extractor, ['--version'], { encoding: 'utf8' });
+  if (result.error !== undefined || result.status !== 0) return false;
+  return /bsdtar|libarchive/iu.test(`${result.stdout}`);
 }
 
 /**
  * @returns {string} Absolute path to a tar that exists on this machine.
  * @throws when no candidate exists, naming every path tried.
  */
-export function extractorPath() {
+export function extractorPath(archiveName = '') {
   const tried = candidates();
-  const found = tried.find((path) => existsSync(path));
+  const present = tried.filter((path) => existsSync(path));
+
+  // A zip needs libarchive. Picking the first PRESENT tar and letting it fail
+  // would surface as `tar: Unrecognized archive format` — an error that names
+  // the archive rather than the program, which sends the reader to look at the
+  // download. Choose by capability, and if none has it, say which programs were
+  // tried and what to install.
+  if (archiveName.endsWith('.zip')) {
+    const capable = present.find((path) => readsZip(path));
+    if (capable !== undefined) return capable;
+    if (present.length > 0) {
+      throw new Error(
+        `No zip-capable extractor for ${archiveName}. Present but not libarchive-based:\n  ` +
+          `${present.join('\n  ')}\nGNU tar cannot read zip; bsdtar can. Install it — ` +
+          `\`libarchive-tools\` on Debian/Ubuntu, \`bsdtar\` elsewhere. PATH is deliberately ` +
+          `not consulted, so installing it somewhere unusual will not be found either.`,
+      );
+    }
+  }
+
+  const found = present[0];
   if (found === undefined) {
     throw new Error(
       `No archive extractor found. Tried:\n  ${tried.join('\n  ')}\n` +
@@ -76,7 +125,7 @@ export function extractorPath() {
  * @returns {string[]}
  */
 export function archiveSymlinks(directory, archiveName) {
-  const tar = extractorPath();
+  const tar = extractorPath(archiveName);
   const result = spawnSync(tar, ['-tvf', archiveName], {
     cwd: directory,
     encoding: 'utf8',
@@ -125,7 +174,7 @@ export function extract(directory, archiveName, extraArgs = []) {
     );
   }
 
-  const tar = extractorPath();
+  const tar = extractorPath(archiveName);
   const result = spawnSync(tar, ['-xf', archiveName, ...extraArgs], {
     cwd: directory,
     encoding: 'utf8',
