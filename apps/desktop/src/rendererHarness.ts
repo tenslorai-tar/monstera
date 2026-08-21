@@ -119,14 +119,15 @@ interface Readback {
    */
   readonly failuresReceived: readonly string[];
   /**
-   * Whether the crash reached the sink within the liveness bound.
+   * HOW the wait for the crash ended — see {@link CrashResolution}.
    *
    * Separate from {@link failuresReceived} being empty, because those are two
-   * different findings and only one of them is a defect: `false` here means the
-   * event never arrived at all, where an empty list alone used to mean *either*
-   * that or that the harness looked too early.
+   * different findings and only one is a defect: `'bound'` means the event never
+   * arrived at all, where an empty list alone used to mean *either* that or that
+   * the harness looked too early. And `'event'` is what no fixed sleep can
+   * produce, which is what makes the harness's own mechanism assertable.
    */
-  readonly crashObserved: boolean;
+  readonly crashResolvedBy: CrashResolution;
   /** What Chromium made of the declared `backgroundColor`. */
   readonly backgroundColor: string;
   /**
@@ -166,6 +167,29 @@ function settle(ms: number): Promise<void> {
  * a pure event-wait cannot do.
  */
 const CRASH_BOUND_MS = 15_000;
+
+/**
+ * HOW the wait for a crash ended, which is the harness's own mechanism rather
+ * than the run's outcome.
+ *
+ * This exists because the control for a harness fix has to assert what the
+ * harness PASSES, not what the run produces (the rule this project wrote after
+ * BB-4). On a machine where a fixed sleep happens to be long enough, "waited for
+ * the event" and "slept long enough" produce the same readback — so the boolean
+ * that used to live here could not separate the fix from its absence, and the
+ * mutation had to be run by hand.
+ *
+ * `'event'` can only be produced by a waiter that was installed and then fired.
+ * A `setTimeout` cannot reach it. Deleting the mechanism means deleting this
+ * field, which fails to compile against the `Readback` the proof carries — a
+ * red build rather than a silent pass.
+ *
+ * `'already'` is impossible for the crash case by construction: the waiter is
+ * installed before the kill is issued, so nothing can have arrived first. It is
+ * in the union because a second caller with a different ordering would need it,
+ * and a state that cannot occur is cheaper to keep than to rediscover.
+ */
+type CrashResolution = 'already' | 'event' | 'bound';
 
 /**
  * Runs `source` in the page and narrows the result, or throws saying what came
@@ -325,18 +349,18 @@ export async function reportRendererPolicy(): Promise<void> {
   const sinkReceives = async (
     event: ShellFailure['event'],
     boundMs: number,
-  ): Promise<boolean> => {
-    if (received.some((failure) => failure.event === event)) return true;
-    return await new Promise<boolean>((resolve) => {
+  ): Promise<CrashResolution> => {
+    if (received.some((failure) => failure.event === event)) return 'already';
+    return await new Promise<CrashResolution>((resolve) => {
       const timer = setTimeout(() => {
         waiter = null;
-        resolve(false);
+        resolve('bound');
       }, boundMs);
       waiter = {
         event,
         resolve: () => {
           clearTimeout(timer);
-          resolve(true);
+          resolve('event');
         },
       };
     });
@@ -600,15 +624,20 @@ export async function reportRendererPolicy(): Promise<void> {
   // correctness mechanism: reaching it means the event genuinely never arrived,
   // and the readback carries that apart from "arrived and was empty" so the
   // case can say which happened.
+  // THE WAITER IS INSTALLED BEFORE THE KILL. `sinkReceives` runs synchronously
+  // up to its `await`, so calling it without awaiting registers the waiter now —
+  // which makes `'already'` unreachable here and leaves `'event'` as the only
+  // resolution a working mechanism can produce.
+  const crashWait = sinkReceives('render-process-gone', CRASH_BOUND_MS);
   webContents.forcefullyCrashRenderer();
-  const crashObserved = await sinkReceives('render-process-gone', CRASH_BOUND_MS);
+  const crashResolvedBy = await crashWait;
 
   const readback: Readback = {
     delivered,
     url,
     failureListeners,
     failuresReceived: received.map((failure) => failure.event),
-    crashObserved,
+    crashResolvedBy,
     backgroundColor,
     preloadNodeReach,
     connectBlocked,

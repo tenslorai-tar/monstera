@@ -109,12 +109,19 @@ process.parentPort.on('message', (event) => {
   const advapi = koffi.load('advapi32.dll');
 
   // (b) process creation, and (b) memory. Both succeed with no job.
+  // EACH PROBE DECIDES ITS OWN OUTCOME, where the answer is known. Classifying
+  // the message afterwards was a second opinion about a question already
+  // answered inside the try/catch (B3a), and it read two differently-worded
+  // refusals as a difference in outcome.
+  const allowed = (detail) => ({ outcome: 'allowed', detail });
+  const refused = (detail) => ({ outcome: 'refused', detail });
+
   const cp = require('node:child_process');
   try {
     const out = cp.execFileSync(process.execPath, ['--version'], { encoding: 'utf8', timeout: 20000 });
-    report.spawn = 'spawned ' + out.trim();
+    report.spawn = allowed('spawned ' + out.trim());
   } catch (error) {
-    report.spawn = 'refused: ' + String(error && error.message).slice(0, 90);
+    report.spawn = refused(String(error && error.message).slice(0, 90));
   }
   // (c) network, through a loopback listener this process owns, so a refusal
   // cannot be a runner with no connectivity.
@@ -123,22 +130,22 @@ process.parentPort.on('message', (event) => {
   server.listen(0, '127.0.0.1', () => {
     const port = server.address().port;
     const socket = net.connect(port, '127.0.0.1', () => {
-      report.loopback = 'connected';
+      report.loopback = allowed('connected on ' + port);
       socket.destroy();
       server.close(() => finish());
     });
-    socket.on('error', (e) => { report.loopback = 'refused: ' + e.message; server.close(() => finish()); });
+    socket.on('error', (e) => { report.loopback = refused(e.message); server.close(() => finish()); });
   });
-  server.on('error', (e) => { report.loopback = 'listen failed: ' + e.message; finish(); });
+  server.on('error', (e) => { report.loopback = refused('listen failed: ' + e.message); finish(); });
 
   function finish() {
     // (d) filesystem, through the caller the adversary has. The JS read is
     // recorded beside it because the two disagreeing IS the finding.
     const fs = require('node:fs');
     try {
-      report.jsReadUnhanded = 'read ' + fs.readFileSync(process.execPath).length + ' bytes';
+      report.jsReadUnhanded = allowed('read ' + fs.readFileSync(process.execPath).length + ' bytes');
     } catch (error) {
-      report.jsReadUnhanded = 'refused: ' + String(error && error.code);
+      report.jsReadUnhanded = refused(String(error && error.code));
     }
 
     try {
@@ -151,18 +158,20 @@ process.parentPort.on('message', (event) => {
       const handle = CreateFileW(process.execPath, 0x80000000, 0x00000001, null, 3, 0, null);
       const addr = koffi.address(handle);
       if (!handle || addr === 0 || addr === -1 || addr === 0xffffffffffffffff) {
-        report.nativeReadUnhanded = 'CreateFileW refused: error ' + GetLastError();
+        report.nativeReadUnhanded = refused('CreateFileW: error ' + GetLastError());
       } else {
         const buffer = Buffer.alloc(4096);
         const readOut = [0];
         const ok = ReadFile(handle, buffer, buffer.length, readOut, null);
         CloseHandle(handle);
         report.nativeReadUnhanded = ok
-          ? 'read ' + readOut[0] + ' bytes, first two ' + JSON.stringify(buffer.toString('latin1', 0, 2))
-          : 'ReadFile refused: error ' + GetLastError();
+          ? allowed('read ' + readOut[0] + ' bytes, first two ' + JSON.stringify(buffer.toString('latin1', 0, 2)))
+          : refused('ReadFile: error ' + GetLastError());
       }
     } catch (error) {
-      report.nativeReadUnhanded = 'threw: ' + String(error && error.message).slice(0, 120);
+      // A THROW IS NOT A REFUSAL. The FFI binding failing is a broken probe, and
+      // reporting it as containment is the reassuring direction.
+      report.nativeReadUnhanded = { outcome: 'error', detail: String(error && error.message).slice(0, 120) };
     }
 
     // MEMORY LAST, and released. Run earlier it poisons everything after it:
@@ -174,10 +183,10 @@ process.parentPort.on('message', (event) => {
     try {
       const chunks = [];
       for (let i = 0; i < 12; i += 1) chunks.push(Buffer.alloc(64 * 1024 * 1024, 1));
-      report.commit768MB = 'allocated';
+      report.commit768MB = allowed('allocated');
       chunks.length = 0;
     } catch (error) {
-      report.commit768MB = 'refused: ' + String(error && error.message).slice(0, 90);
+      report.commit768MB = refused(String(error && error.message).slice(0, 90));
     }
 
     process.parentPort.postMessage(report);
@@ -309,6 +318,14 @@ function runVariant(index, done) {
         },
         IoInfo: { ReadOperationCount: 0n, WriteOperationCount: 0n, OtherOperationCount: 0n,
           ReadTransferCount: 0n, WriteTransferCount: 0n, OtherTransferCount: 0n },
+        // A LITERAL, and only tolerable because this file asserts nothing. The
+        // moment RR-3 turns any of this into a proof it becomes finding PP-4: a
+        // second opinion about §9.17's mupdf-host budget, living inside a
+        // Windows struct where a number survives review more easily than it
+        // would in a config object. Derive it undefaulted from
+        // memoryBudgets.mjs at the transition, as the composition root's ceiling
+        // is — flagged in ADR-0022's transition section so it does not cross the
+        // boundary with the code.
         ProcessMemoryLimit: 512 * 1024 * 1024, JobMemoryLimit: 0,
         PeakProcessMemoryUsed: 0, PeakJobMemoryUsed: 0,
       };
@@ -385,27 +402,41 @@ try {
   /** @param {string} label */
   const by = (label) => report.runs.find((run) => run['variant'] === label);
 
-  /** @param {string} label @param {string} key @returns {string} */
+  /**
+   * A probe's own verdict, or `unreadable` — NEVER a verdict inferred from an
+   * absence.
+   *
+   * The first version returned a string and let the classifier fall through, so
+   * a missing variant, a missing key or a probe that threw before assigning all
+   * produced text that classified as *refused* — and the table printed ASSERTED
+   * for a property nothing had measured. That is exactly the claim QQ-1 spent a
+   * day removing from row 283, regenerated from an absent reading.
+   *
+   * An empty intermediate result is a broken parse, not a clean input. "Could
+   * not look" and "looked and found containment" must not share an output, which
+   * is why the advisory register prints UNVERIFIABLE and why this returns a
+   * third state instead of a fourth guess.
+   *
+   * @param {string} label @param {string} key
+   * @returns {{ outcome: 'allowed' | 'refused' | 'error' | 'unreadable', detail: string }}
+   */
   const host = (label, key) => {
     const run = by(label);
-    const from = /** @type {Record<string, unknown> | undefined} */ (run?.['fromHost']);
-    return from === undefined || from === null ? '(no report)' : String(from[key]);
+    if (run === undefined) return { outcome: 'unreadable', detail: `no run for variant ${label}` };
+    const from = /** @type {Record<string, unknown> | undefined} */ (run['fromHost']);
+    if (from === undefined || from === null) {
+      return { outcome: 'unreadable', detail: `variant ${label} sent no host report` };
+    }
+    const reading = from[key];
+    if (typeof reading !== 'object' || reading === null) {
+      return { outcome: 'unreadable', detail: `variant ${label} has no reading for ${key}` };
+    }
+    const { outcome, detail } = /** @type {{ outcome?: unknown, detail?: unknown }} */ (reading);
+    if (outcome !== 'allowed' && outcome !== 'refused' && outcome !== 'error') {
+      return { outcome: 'unreadable', detail: `variant ${label} reported ${JSON.stringify(outcome)}` };
+    }
+    return { outcome, detail: String(detail ?? '') };
   };
-
-  /**
-   * ALLOWED or REFUSED, never the raw string.
-   *
-   * Comparing the text marked `(b) process creation` as separated because two
-   * refusals were WORDED differently — "UNKNOWN" against "Command failed" — and
-   * a difference in wording is not a difference in outcome. The raw text is
-   * still printed, because a refusal that does not say what was denied cannot be
-   * attributed, which this fixture has now been bitten by twice.
-   *
-   * @param {string} value
-   * @returns {'allowed' | 'refused'}
-   */
-  const outcome = (value) =>
-    /^(?:read |spawned |allocated|connected)/u.test(value) ? 'allowed' : 'refused';
 
   /**
    * Each property against the variant that removes ONLY its own mechanism, with
@@ -452,15 +483,78 @@ try {
     );
   }
 
+  /**
+   * One row's verdict. `unreadable` on either side is terminal: it is neither
+   * ASSERTED nor UNASSERTED, because both of those are claims about what was
+   * measured, and nothing was.
+   *
+   * @param {{ outcome: string, detail: string }} a
+   * @param {{ outcome: string, detail: string }} b
+   * @returns {'ASSERTED' | 'UNASSERTED' | 'UNREADABLE'}
+   */
+  const verdict = (a, b) => {
+    if (a.outcome === 'unreadable' || b.outcome === 'unreadable') return 'UNREADABLE';
+    if (a.outcome === 'error' || b.outcome === 'error') return 'UNREADABLE';
+    return a.outcome !== b.outcome ? 'ASSERTED' : 'UNASSERTED';
+  };
+
+  let unreadable = 0;
   for (const [property, key, withMech, without] of rows) {
     const a = host(withMech, key);
     const b = host(without, key);
-    const separated = outcome(a) !== outcome(b);
+    const decided = verdict(a, b);
+    if (decided === 'UNREADABLE') unreadable += 1;
     process.stdout.write(
-      `  ${separated ? 'ASSERTED  ' : 'UNASSERTED'} ${property}\n` +
-        `      ${withMech.padEnd(13)} ${outcome(a).padEnd(8)} ${a}\n` +
-        `      ${without.padEnd(13)} ${outcome(b).padEnd(8)} ${b}\n`,
+      `  ${decided.padEnd(10)} ${property}\n` +
+        `      ${withMech.padEnd(13)} ${a.outcome.padEnd(10)} ${a.detail}\n` +
+        `      ${without.padEnd(13)} ${b.outcome.padEnd(10)} ${b.detail}\n`,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // The control for that rule, run every time rather than trusted.
+  //
+  // MUTATED ON THE CONTAINED SIDE deliberately. Removing the UNCONTAINED side
+  // passes today for the wrong reason — two missing readings AGREE, so the row
+  // prints UNASSERTED — and that direction never reaches the defect. Only a
+  // missing CONTAINED reading beside a present uncontained one can manufacture
+  // the reassuring verdict.
+  // ---------------------------------------------------------------------------
+  {
+    const saved = report.runs;
+    report.runs = saved.map((run) =>
+      run['variant'] === 'contained'
+        ? {
+            ...run,
+            fromHost: Object.fromEntries(
+              Object.entries(/** @type {Record<string, unknown>} */ (run['fromHost'] ?? {})).filter(
+                ([key]) => key !== 'nativeReadUnhanded',
+              ),
+            ),
+          }
+        : run,
+    );
+    const missing = verdict(
+      host('contained', 'nativeReadUnhanded'),
+      host('uncontained', 'nativeReadUnhanded'),
+    );
+    report.runs = saved;
+
+    process.stdout.write(
+      `\n  CONTROL: with the CONTAINED reading removed, the row is ${missing}\n` +
+        `      It must be UNREADABLE. Classified from prose it read as "refused" beside an ` +
+        `allowed uncontained side, so the table printed ASSERTED for a property nothing had\n` +
+        `      measured — the exact claim QQ-1 removed from row 283, regenerated by an absent value.\n`,
+    );
+    if (missing !== 'UNREADABLE') unreadable += 1;
+  }
+
+  if (unreadable > 0) {
+    process.stderr.write(
+      `\n${String(unreadable)} row(s) could not be read. That is not a result: this exits non-zero ` +
+        `rather than printing a verdict it did not measure.\n`,
+    );
+    process.exitCode = 1;
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });

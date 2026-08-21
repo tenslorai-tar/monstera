@@ -319,7 +319,7 @@ function pinnedPolicy(markdown) {
  *   preloadError: string | null,
  *   failureListeners: Record<string, number>,
  *   failuresReceived: string[],
- *   crashObserved: boolean,
+ *   crashResolvedBy: 'already' | 'event' | 'bound',
  *   backgroundColor: string,
  *   preloadNodeReach: string,
  *   popupReturnedNull: boolean,
@@ -623,16 +623,21 @@ try {
 
     check(
       "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
-      seen.failuresReceived.includes('render-process-gone'),
+      seen.failuresReceived.includes('render-process-gone') && seen.crashResolvedBy === 'event',
       `after forcefullyCrashRenderer the sink held: ` +
         `${seen.failuresReceived.length === 0 ? '(nothing)' : seen.failuresReceived.join(', ')}, ` +
-        `and the harness ${seen.crashObserved ? 'DID' : 'did NOT'} observe the crash arrive ` +
-        `within its liveness bound.\n      ` +
+        `and the wait resolved by: ${seen.crashResolvedBy}.\n      ` +
+        `THE RESOLUTION IS THE HARNESS-FIX CONTROL. \`event\` can only be produced by a waiter ` +
+        `that was installed and then fired; a fixed sleep reaches \`bound\` or returns without ` +
+        `one, and \`already\` is unreachable because the waiter is installed before the kill is ` +
+        `issued. This asserts what the HARNESS PASSES rather than what the run produces, which is ` +
+        `the rule this project wrote after BB-4 — and which was first cited here as the reason no ` +
+        `control could exist, when it is the instruction for building one.\n      ` +
         `The count above proves something is attached; it does not prove the sink is reached, ` +
         `and a listener attached to a function that drops its argument produces the same ` +
         `silence one step along. So the renderer is genuinely killed and the sink is read.\n      ` +
-        `WHICH OF THE TWO IT IS matters: \`crashObserved: false\` means the event never arrived ` +
-        `at all, and an empty list with \`true\` would mean it arrived carrying nothing. Those ` +
+        `WHICH OF THE TWO IT IS matters: \`bound\` means the event never arrived at all, and an ` +
+        `empty list with \`event\` would mean it arrived carrying nothing. Those ` +
         `were one observation until this case failed on windows-latest and on no other runner — ` +
         `the harness waited a fixed 400 ms after the kill and read a sink that had not been ` +
         `reached YET, which is a working guard reported as a broken one. It now waits for the ` +
