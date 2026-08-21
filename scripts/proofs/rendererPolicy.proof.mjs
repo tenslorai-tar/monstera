@@ -45,7 +45,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,22 +73,119 @@ const RUNTIME_PRESENT = existsSync(ELECTRON_BINARY) && existsSync(HARNESS);
 const failures = [];
 
 /**
+ * The cases that need a runtime, named ONCE.
+ *
+ * This list is the count, the UNVERIFIABLE listing, and the thing the runtime
+ * branch is checked against. It used to be none of those: the block printed a
+ * literal `9 case(s)` and nine hand-written lines beside a roster declared
+ * `13 : 4`, so adding a runtime case left the mechanism whose entire job is *not
+ * to overstate* naming eight of nine and calling it nine. B3a inside the honesty
+ * mechanism, and the reason this is an array (finding HH-4).
+ */
+const RUNTIME_CASES = [
+  'the renderer RECEIVES the policy the shell declares',
+  'CONTROL: a policy the renderer does NOT have is not reported as delivered',
+  'the renderer OBEYS it: no network under connect-src none, no eval',
+  'no Node surface is reachable from page script',
+  'CONTROL: the contextBridge key IS reachable, so the probe could look',
+  "popups are denied, in the renderer's view and in main's",
+  'a permission outside the allowed set is refused',
+  'CONTROL: the one permitted permission is GRANTED',
+  'navigation off the loaded document is refused, and a permitted one completes',
+];
+
+/** Cases decidable from strings alone. These run on every machine. */
+const STRING_CASES = 4;
+
+/**
  * TWO WORLDS, TWO COUNTS, and the conditional is the honest form here.
  *
- * A single count would have to be the smaller one — which would let the three
- * runtime cases be deleted without a sound where the runtime exists — or the
+ * A single count would have to be the smaller one — which would let every
+ * runtime case be deleted without a sound where the runtime exists — or the
  * larger one, which would fail every run that cannot look. Declaring per world
  * keeps a deleted case loud in both, and the branch that produces the smaller
- * number is the branch that also prints UNVERIFIABLE, so nobody can read `2
- * cases passed` as coverage.
+ * number is the branch that also prints UNVERIFIABLE, so nobody can read
+ * `4 cases passed` as coverage.
  */
-const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? 13 : 4 });
+const roster = createRoster(failures, {
+  cases: RUNTIME_PRESENT ? STRING_CASES + RUNTIME_CASES.length : STRING_CASES,
+});
+
+/**
+ * Every label `check` has recorded, in order.
+ *
+ * Deriving the count from {@link RUNTIME_CASES} fixes the arithmetic and not the
+ * NAMES: a list that says nine while the branch below checks nine different
+ * things would still print a confident, wrong account of what could not be
+ * looked at. So the labels are compared to what actually ran, on every machine
+ * that can run them.
+ */
+/** @type {string[]} */
+const recorded = [];
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
   const mark = roster.mark();
   if (!condition) failures.push(`${label}\n      ${detail}`);
+  recorded.push(label);
   roster.record(mark, label);
+}
+
+/**
+ * Refuses to run against a build older than the source it was made from.
+ *
+ * ## The one failure a positive control cannot catch
+ *
+ * Everything else here asks the running renderer what it does, which is the
+ * strongest evidence this repository has. It is also evidence about **whatever
+ * was built**, and a stale artefact answers every probe confidently and
+ * correctly about the previous version of the shell. `CLAUDE.md` names this
+ * exactly: a stale answer contains the known-present anchor too, so no amount of
+ * "locate something you know is there" separates it.
+ *
+ * The gap is not hypothetical and it has a specific shape. `npm run build` is
+ * `typecheck` **plus** `build:preload`; `npm run typecheck` alone is what the
+ * Commands section shows and what habit reaches for. Editing `preload.ts` and
+ * running only `typecheck` leaves `preload.cjs` untouched — the bridge still
+ * loads, all thirteen cases still pass, and they pass about the old preload
+ * (finding HH-6).
+ *
+ * ## Freshness, compared the only way that means anything
+ *
+ * Source must not be **strictly newer** than the artefact built from it. Ties
+ * pass: a build completing inside one filesystem timestamp tick is not
+ * evidence of staleness, and a check that fails on granularity is a check
+ * someone turns off.
+ *
+ * A missing file is reported as missing rather than as fresh — `statSync` throws
+ * and the message says which pair, because "could not compare" must not read as
+ * "compared and agreed".
+ *
+ * @param {[string, string][]} pairs `[source, artefact]`, repo-relative
+ */
+function refuseStaleBuild(pairs) {
+  for (const [source, artefact] of pairs) {
+    const sourcePath = join(REPO_ROOT, source);
+    const artefactPath = join(REPO_ROOT, artefact);
+    if (!existsSync(artefactPath)) {
+      throw new Error(
+        `${artefact} does not exist. Run \`npm run build\` — which is \`typecheck\` plus ` +
+          `\`build:preload\`, and not \`typecheck\` alone.`,
+      );
+    }
+    const sourceAt = statSync(sourcePath).mtimeMs;
+    const artefactAt = statSync(artefactPath).mtimeMs;
+    if (sourceAt > artefactAt) {
+      throw new Error(
+        `${artefact} is OLDER than ${source}, so this proof would run against a stale build ` +
+          `and every case would pass about the previous version of the shell.\n  ` +
+          `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
+          `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
+          `Run \`npm run build\`. If you ran \`npm run typecheck\`, that does not produce the ` +
+          `preload bundle — which is the pair this check exists for.`,
+      );
+    }
+  }
 }
 
 /**
@@ -283,6 +380,10 @@ function readback(binary) {
 }
 
 try {
+  // The declaration is read from the build in every world, so its freshness is
+  // checked in every world.
+  refuseStaleBuild([['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js']]);
+
   const declared = await declaredPolicy();
 
   // ---------------------------------------------------------------------------
@@ -371,16 +472,9 @@ try {
   if (!RUNTIME_PRESENT) {
     process.stdout.write(
       `${roster.format('renderer-policy case')}\n` +
-        `UNVERIFIABLE — 9 case(s) could not be evaluated on this machine:\n` +
-        `  ??  the renderer RECEIVES the declared policy\n` +
-        `  ??  CONTROL: a policy the renderer does NOT have is not reported as delivered\n` +
-        `  ??  the renderer OBEYS it (connect-src and unsafe-eval)\n` +
-        `  ??  no Node surface is reachable from page script\n` +
-        `  ??  CONTROL: the contextBridge key IS reachable, so the probe could look\n` +
-        `  ??  popups are denied, in the renderer's view and in main's\n` +
-        `  ??  a permission outside the allowed set is refused\n` +
-        `  ??  CONTROL: the one permitted permission is GRANTED\n` +
-        `  ??  navigation off the loaded document is refused, and a permitted one completes\n\n` +
+        `UNVERIFIABLE — ${String(RUNTIME_CASES.length)} case(s) could not be evaluated on ` +
+        `this machine:\n` +
+        `${RUNTIME_CASES.map((label) => `  ??  ${label}\n`).join('')}\n` +
         `  ${existsSync(binary) ? 'The harness' : 'The Electron runtime'} is missing:\n` +
         `    ${existsSync(binary) ? HARNESS : binary}\n` +
         `  Run \`npm run provision:electron\` and \`npm run typecheck\`.\n\n` +
@@ -390,6 +484,15 @@ try {
         `reported as passing and not reported as "nothing to check".\n`,
     );
   } else {
+    // Everything the harness actually executes. `preload.cjs` is the pair that
+    // motivated this: it is the only artefact `typecheck` does not produce.
+    refuseStaleBuild([
+      ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
+      ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
+      ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js'],
+      ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js'],
+    ]);
+
     const seen = readback(binary);
 
     check(
@@ -482,6 +585,27 @@ try {
         `unchanged and a permitted navigation to the loaded document leaves it unchanged too, ` +
         `so counting loads is what separates "the guard refused" from "nothing navigates at all".`,
     );
+
+    // The list and the branch, compared rather than trusted to match.
+    //
+    // The count already comes from RUNTIME_CASES, so a case added without a line
+    // fails the roster. This catches the other half: nine lines describing nine
+    // DIFFERENT things still counts to nine, and the UNVERIFIABLE block would
+    // then give a confident, wrong account of what could not be looked at — the
+    // exact failure HH-4 is about, one level in.
+    //
+    // Thrown rather than checked, because a proof inconsistent with itself is
+    // not a case it can report: the roster it would report through is the thing
+    // in question.
+    const ran = recorded.slice(STRING_CASES);
+    if (ran.length !== RUNTIME_CASES.length || ran.some((label, at) => label !== RUNTIME_CASES[at]))
+      throw new Error(
+        `RUNTIME_CASES does not describe the runtime branch.\n  declared:\n    ` +
+          `${RUNTIME_CASES.join('\n    ')}\n  ran:\n    ${ran.join('\n    ')}\n` +
+          `That list is what a machine WITHOUT a runtime prints as its account of what could ` +
+          `not be evaluated. A wrong account there is worse than no account, because it reads ` +
+          `as rigour.`,
+      );
 
     process.stdout.write(
       failures.length > 0

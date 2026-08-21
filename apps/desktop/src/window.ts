@@ -11,7 +11,7 @@ import {
 } from './windowPolicy.js';
 
 /**
- * `dist/` at run time, so the sibling `preload.js` and the `renderer/` beside
+ * `dist/` at run time, so the sibling `preload.cjs` and the `renderer/` beside
  * the package root both resolve without a copy step.
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
