@@ -211,6 +211,18 @@ async function probeSandboxThroughPreload(target: Electron.Session): Promise<str
   // BOUNDED, because a probe that can only fail by hanging is the shape this
   // harness already has a rule about. A window that never finishes loading is a
   // reportable fact; a proof that times out after two minutes is not.
+  //
+  // THE ELAPSED TIME IS REPORTED ON BOTH PATHS, and that is the point of it.
+  // `proof:rendererpolicy` failed once on windows-latest at 37 seconds — about a
+  // normal run plus this bound — and passed everywhere else, so the bound is a
+  // suspect and there is no evidence against it. A bare pass/fail makes a load
+  // that took 14.9s indistinguishable from one that took 400ms, so the first
+  // warning of a cliff is falling off it. Reporting the duration turns that into
+  // a gradient somebody can read BEFORE it is a failure.
+  //
+  // Deliberately not raised. Bumping a timeout to make a red check green is the
+  // banned reflex, and the mechanism is not known yet.
+  const startedAt = process.hrtime.bigint();
   const loaded = await Promise.race([
     new Promise<'loaded'>((resolve) => {
       probe.webContents.once('did-finish-load', () => {
@@ -220,6 +232,8 @@ async function probeSandboxThroughPreload(target: Electron.Session): Promise<str
     }),
     settle(15_000).then(() => 'timed-out' as const),
   ]);
+
+  const elapsedMs = Number((process.hrtime.bigint() - startedAt) / 1_000_000n);
 
   if (loaded === 'timed-out') {
     probe.destroy();
@@ -234,7 +248,9 @@ async function probeSandboxThroughPreload(target: Electron.Session): Promise<str
   );
   probe.destroy();
 
-  if (typeof reported === 'string') return reported;
+  if (typeof reported === 'string') {
+    return `${reported} [probe window loaded in ${String(elapsedMs)}ms]`;
+  }
   // An absent report is NOT "the preload could not reach Node". It is a preload
   // that did not run, which is HH-1's class and produces the reassuring answer.
   return `the probe preload reported nothing (preload-error: ${failed.reason ?? 'none'})`;
