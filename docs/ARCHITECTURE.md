@@ -103,22 +103,44 @@ substance, only from its build step.
 │  Services: Update, Engagement, Ai, Ocr, Export, Print,     │
 │            NativeBins, Settings(main-side), Logs           │
 └────────────────────────────────────────────────────────────┘
-     │ generated typed IPC            │ typed worker contract
+     │ generated typed IPC            │ typed host contract, over a
+     │                                │ DACL'd named pipe
      ▼                                ▼
-┌─ renderer (sandboxed) ──────┐  ┌─ utility: mupdfHost ─────┐
+┌─ renderer (sandboxed) ──────┐  ┌─ contained: mupdfHost ───┐
 │  React, per-doc view state  │  │  MuPDF native, via koffi │
 │  PDF.js — presentation ONLY │  │  behind a flat-C shim.   │
 │  No Node, no fs, no paths   │  │  NO in-main fallback —   │
 └─────────────────────────────┘  │  native faults are       │
                                  │  uncatchable (L20)       │
                                  └──────────────────────────┘
-                                 ┌─ utility: pdfiumHost ────┐
+                                 ┌─ contained: pdfiumHost ──┐
                                  │  PDFium via koffi FFI    │
                                  │  NO in-main fallback —   │
                                  │  native faults are       │
                                  │  uncatchable             │
                                  └──────────────────────────┘
 ```
+
+**The engine hosts are processes this application creates, not Electron utility
+processes** ([ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)).
+`CreateProcessW` with `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` and an
+AppContainer SID, running `process.execPath` under `ELECTRON_RUN_AS_NODE=1` — the
+same runtime, so nothing new ships.
+
+The reason is invariant 25 and not preference: **a LowBox process cannot be
+created by `utilityProcess.fork`**, so the creation route is where two of the
+four containment properties live. Measured — a contained host is refused a file
+it was not handed through `CreateFileW` itself (`ERROR_ACCESS_DENIED`, the call
+Node's permission model cannot reach) and refused a **loopback** connection,
+while koffi, the shim and a document it *was* handed all still work.
+
+What this gives up is plumbing and is enumerated in the ADR: a `MessagePort`
+becomes a named pipe carrying the host contract — which had to be DACL'd for the
+container either way — while the job object is one main already assigns against
+the child's pid, and `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` outlives main dying
+badly rather than only main exiting cleanly. **The host body lives in
+`packages/kernel`**, where naming Electron is already a red build, for the reason
+in §9.26.
 
 **Renderer hardening (non-negotiable).** `sandbox: true`,
 `contextIsolation: true`, `nodeIntegration: false`, CSP set — **the exact
@@ -355,6 +377,17 @@ The worker protocol has the same shape via one `defineWorkerContract` helper
 shared by both hosts. Errors cross every boundary **structurally**
 (`{name, message, stack, cause}`), never as a bare string. Silent `catch {}` is
 banned except with a comment stating what is swallowed and why that is safe.
+
+**The engine host's pipe is a trust boundary, and it registers into this
+discipline rather than beside it**
+([ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)).
+Invariant 25's stated threat is code execution *inside* the host, so everything
+arriving over that pipe is attacker-controlled and the parser is ours. That
+obligation was identical with a `MessagePort`; what is new is the **wire
+format** — a byte stream needs framing, and framing is where a hostile peer gets
+its first move, before any schema is consulted. A framing layer beneath the
+contract is a transport. **A second validation discipline beside the contract is
+the defect** (B3a), and no host protocol may introduce one.
 
 ---
 
@@ -733,6 +766,31 @@ say**.
     scheduled row in `docs/FEATURES.md`, not an intention.
     ([Threat model §4.4](security/THREAT-MODEL.md))
 
+    **Amended 2026-08-22 — every property now has a mechanism, and two of them
+    decide the process type**
+    ([ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)).
+    Measured on a host with the engine actually in it: (a) and (b) are obtained
+    on an Electron utility process, read by main against the child's token and
+    from behaviour beside a control with no job. **(c) and (d) are not, and no
+    Node-level mechanism will ever supply them** — the permission model is
+    enforced inside Node's own filesystem bindings, so a `CreateFileW` walks past
+    it, which is the general rule this invariant now carries: *only
+    kernel-enforced mechanisms contain native code.* Of any proposed containment
+    mechanism, **ask who enforces it before asking what it denies.**
+
+    Both remaining properties are supplied by an AppContainer, which
+    `utilityProcess.fork` cannot create. So the containment is a property of the
+    **creation route**, and the paragraph above is the reason it is settled now
+    rather than deferred: deferring (c) and (d) would defer the route, and the
+    route is what everything else is built on. The hosts are processes this
+    application creates (§2).
+
+    **The trigger in `docs/security/engine-advisories.json` is therefore aimed at
+    a symbol shipped code will no longer name.** Re-pointing it at the creation
+    route is owed before the host lands; until then it is a check that can no
+    longer see its subject, which is the reassuring answer arriving for the wrong
+    reason.
+
 26. **Plain Node never loads Electron; it spawns the pinned binary by name.**
     No file that `node` starts — everything under `scripts/`, the launcher
     included — may reach the `electron` specifier by any route: static import,
@@ -758,6 +816,28 @@ say**.
     `node_modules/electron/dist` does not exist, which is only meaningful when
     it runs *after* the test suite. CI ran it 90 lines earlier and would have
     passed.
+
+    **Third case, 2026-08-22 — the engine host, which runs the Electron binary
+    in NODE MODE**
+    ([ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)). The
+    host is started as `process.execPath` with `ELECTRON_RUN_AS_NODE=1`, so the
+    process *is* Node and the specifier is the download trigger again — the same
+    hazard as the test case, reached a third way.
+
+    Three occurrences is enough to name the axis rather than add a clause:
+    **`apps/desktop/src/` is exempted as a proxy for a runtime property, and the
+    proxy is what keeps failing.** `eslint.config.js` already says so where the
+    plain-Node block is defined — *"may import Electron" is a property of code
+    that RUNS INSIDE Electron, and package membership is only a proxy for that.*
+
+    So this case is answered by **placement, not by a fourth clause**: the host
+    body lives in `packages/kernel` and **not** under `apps/desktop/src/`.
+    `MAY_IMPORT_ELECTRON` is an exception list naming only `desktop`, so every
+    other package fails lint on the specifier by all four routes `patternsFor`
+    covers, and TypeScript project references reject it independently at compile
+    time. The host cannot name Electron, so there is no rule about when it may
+    (B5). The factory that *creates* the process stays in `apps/desktop/`, where
+    Electron is the API surface and the code genuinely runs inside it.
 
     The mechanism is that the import IS the download.
     `node_modules/electron/index.js` ends with
@@ -1122,4 +1202,5 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn; §8 now separates native code we build and statically link from prebuilt binaries we download, and the AGPL source offer covers the MuPDF version, our build configuration and the shim source (§2, §3, §8, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |
 | 2026-08-18 | Opening a document runs none of its content, and an engine host contains a compromise rather than only a crash (§9.24, §9.25). Both land before the components they constrain, per the sequencing resolved the same day. | Nothing in the founding record — Part K is silent on active content, and Part C3's process split addresses faults rather than containment | [ADR-0017](DECISIONS/0017-the-security-substrate.md) |
 | 2026-08-21 | **The renderer's Content-Security-Policy is pinned as invariant 27** — the exact eleven-directive list, with this document as the writer of record and `apps/desktop/src/windowPolicy.ts` as the derived form, checked in both directions by `proof:rendererpolicy` against a running Chromium (§2, §9.27). `style-src`'s `'unsafe-inline'` is dropped in the same commit rather than pinned, because nothing needs it and an unproven grant that arrives before the pin is never argued for afterwards. | `BUILD-PROMPT.md` Part C2's "CSP set" as one item in a configuration list, and §2's own line which repeated it | [ADR-0019](DECISIONS/0019-the-renderers-csp-is-pinned.md) |
+| 2026-08-22 | **The engine hosts are processes this application creates, not Electron utility processes** (§2, §5, §9.25, §9.26). Invariant 25's (c) and (d) are supplied by an AppContainer, which `utilityProcess.fork` cannot create, so the containment is a property of the creation route — measured, including a native `CreateFileW` refused `ERROR_ACCESS_DENIED` and a loopback connection refused, with the engine still running inside. The host contract crosses a DACL'd named pipe and registers into `packages/contract`'s discipline rather than beside it; the host body lives in `packages/kernel`, which answers invariant 26's third case by placement instead of a fourth clause. | §2's `utility: mupdfHost` / `utility: pdfiumHost` topology, which ADR-0010 introduced; and §9.25's "policy before mechanism" | [ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md) |
 | 2026-08-18 | **Distribution is the Microsoft Store only.** No direct download exists; the website's download button links to the Store listing. The two-flavour seam is kept — flavour switch, `WebUpdateProvider` registered with no implementation, signing certificate as an empty config value — so a signed direct download is later a config change rather than an amendment. Updates are Windows'; `StoreUpdateProvider` adds a static-manifest version check that sends nothing, an in-app indicator linking to the Store, and a settings toggle (§8). | `BUILD-PROMPT.md` Part J's two-flavour distribution with a direct download, and its self-update path | [ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md) |

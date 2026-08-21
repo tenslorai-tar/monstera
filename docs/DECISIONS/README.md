@@ -62,3 +62,4 @@ Each contains:
 | [0019](0019-the-renderers-csp-is-pinned.md) | The renderer's CSP is pinned as invariant 27, and `'unsafe-inline'` is dropped rather than pinned | Accepted |
 | [0020](0020-the-preload-is-bundled.md) | The preload is bundled to CommonJS and enters the contract by a leaf export | Accepted |
 | [0021](0021-the-canonical-image-is-retained.md) | The canonical image is retained, one per open document, under a supplied ceiling | Accepted |
+| [0022](0022-the-engine-host-is-a-process-we-create.md) | The engine host is a process we create, not a utility process | Accepted |

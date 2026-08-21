@@ -183,8 +183,22 @@ is wrong** — fix the boundary, not the test.
   not anything calls it (invariant 24).
 - **An engine host contains a compromise, not only a crash.** Lowest workable
   integrity level, job object limits, no network, no filesystem beyond what it
-  was handed. Policy before mechanism, because the hosts are `DocumentService`'s
-  to create (invariant 25).
+  was handed (invariant 25). **All four now have a mechanism, and two of them
+  decide the process type** ([ADR-0022](docs/DECISIONS/0022-the-engine-host-is-a-process-we-create.md)):
+  network and filesystem come from an AppContainer, which `utilityProcess.fork`
+  cannot create, so **the engine hosts are processes we create** — `CreateProcessW`
+  running the Electron binary in Node mode. The host body lives in
+  `packages/kernel`; the factory that creates it lives in `apps/desktop/`.
+
+  **The rule that got us there is worth more than the decision:** *only
+  kernel-enforced mechanisms contain native code.* Node's permission model is
+  enforced inside Node's own filesystem bindings, so a `CreateFileW` walks past
+  it — measured. **Ask who enforces a containment mechanism before asking what it
+  denies.**
+
+  The host's pipe is a trust boundary and the host is hostile by that invariant's
+  own premise. It registers into `packages/contract`'s discipline; a second
+  validated-boundary discipline beside it is the defect (B3a).
 
 - **Plain Node never loads Electron — it spawns the pinned binary by name.** The
   import IS the download: `index.js` ends with
@@ -194,6 +208,14 @@ is wrong** — fix the boundary, not the test.
   closing it. **The launcher lives in `scripts/`** — under `apps/desktop/` it is
   invisible to both enforcers at once, since ESLint's boundary is per-package and
   exempts `desktop` while the scan's root stops at `scripts/` (invariant 26).
+
+  **`apps/desktop/src/` is exempted as a PROXY for "runs inside Electron", and
+  the proxy has now failed three times** — a module vitest imports, and the
+  engine host, which runs the Electron binary under `ELECTRON_RUN_AS_NODE=1` and
+  so *is* Node. The answer is placement, not another clause: anything that runs
+  in Node mode lives outside `desktop`, where `MAY_IMPORT_ELECTRON` already makes
+  the specifier a red build. Ask which **mode** a file runs in, never which
+  directory it sits in.
 
 - **Distribution is the Microsoft Store only.** No direct download. The
   two-flavour seam is kept deliberately — flavour switch, `WebUpdateProvider`

@@ -202,6 +202,35 @@ Required, and stated as policy now because the hosts do not exist yet:
 **Reason:** §1.1 meets §2's engine-host row. This is row 2 of §3, and the highest
 item the application itself can fix.
 
+**Still OWED, but no longer policy without a mechanism (2026-08-22,
+[ADR-0022](../DECISIONS/0022-the-engine-host-is-a-process-we-create.md)).** All
+four are now measured on a host with the engine in it, and the rule that orders
+them is worth more here than the list: **only kernel-enforced mechanisms contain
+native code.** The adversary in the first paragraph of this section is *native*,
+so a control enforced in userland does not see it — measured, with Node's
+permission model refusing a JavaScript read and returning 4,096 bytes to a
+`CreateFileW` against the same file.
+
+Integrity and the job object hold on any child. **Network and filesystem come
+from an AppContainer, which `utilityProcess.fork` cannot create**, so the two
+remaining properties are a function of the creation route and the engine hosts
+become processes this application creates.
+
+Three consequences this section owns, because they are attack surface rather
+than plumbing:
+
+- The container needs **read+execute on the FFI and the engine shim**, so those
+  paths are part of the containment. **Anything that can write them defeats it**,
+  which ties this row to §4.6 and to provisioning integrity rather than leaving
+  it a property of the host.
+- The host's pipe is a **trust boundary and the host is hostile** by this
+  section's own premise. Everything crossing it is attacker-controlled and the
+  framing is ours — a byte stream is parsed before any schema is consulted.
+- `docs/security/engine-advisories.json`'s `engine-host-containment` trigger
+  fires on `utilityProcess`, **a symbol shipped code will no longer name.**
+  Re-point it at the creation route before the host lands, or it becomes a check
+  that cannot see its subject and answers `no finding` for the wrong reason.
+
 ### 4.5 Fuzzing the document input path — OWED, start now
 
 Corpus-guided mutation feeding **open, page walk, render and save**, with crashes
