@@ -262,10 +262,29 @@ jobs:
       # configuration the product never runs in.
       #
       # Scoped to the one helper binary, not the tree, and only on the runner.
+      #
+      # THE PATH IS ASKED FOR, not written here. It used to read
+      # `.tools/electron/43.4.1/chrome-sandbox`, which made this the THIRD place
+      # naming ELECTRON_VERSION in executable form and the only one tied to
+      # nothing — the other two are held together by proof:electronprovision's
+      # version-agreement case. B3a, and the same ruling the launcher got; it
+      # simply did not read like it in YAML.
+      #
+      # It would have failed loudly on a bump — `pipefail`, and chown on a
+      # missing path exits non-zero — but in the wrong language: "cannot access
+      # .tools/electron/43.4.1/chrome-sandbox" reads as the provisioner not
+      # producing the file, not as this workflow naming the version twice.
+      #
+      # This step is also why the cache holds the ARCHIVE and not the extracted
+      # tree. Extraction runs every time, so the helper being configured is
+      # always the one just extracted. Were the tree cached, this chown would be
+      # correct today and wrong on the first warm-cache run — and the failure
+      # would be a silently unsandboxed renderer, which is the one outcome the
+      # step below cannot detect.
       - name: Configure Chromium's sandbox helper
         if: runner.os == 'Linux'
         run: |
-          helper=".tools/electron/43.4.1/chrome-sandbox"
+          helper="$(node scripts/ci/sandboxHelperPath.mjs)"
           sudo chown root:root "$helper"
           sudo chmod 4755 "$helper"
           ls -l "$helper"
