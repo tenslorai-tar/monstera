@@ -54,8 +54,8 @@ import { formatError } from '../lib/reportError.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const HARNESS = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'cspHarnessMain.js');
-const MARKER = 'MONSTERA_CSP_READBACK ';
+const HARNESS = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'rendererHarnessMain.js');
+const MARKER = 'MONSTERA_RENDERER_READBACK ';
 
 /** The law. Invariant 27 pins the directive list; the constant is derived. */
 const ARCHITECTURE = join(REPO_ROOT, 'docs', 'ARCHITECTURE.md');
@@ -82,7 +82,7 @@ const failures = [];
  * number is the branch that also prints UNVERIFIABLE, so nobody can read `2
  * cases passed` as coverage.
  */
-const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? 7 : 4 });
+const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? 13 : 4 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -203,7 +203,20 @@ function pinnedPolicy(markdown) {
  * this proof by hand on Linux behaves the same as running it in CI.
  *
  * @param {string} binary
- * @returns {{ delivered: string | null, connectBlocked: boolean, evalBlocked: boolean }}
+ * @returns {{
+ *   delivered: string | null,
+ *   connectBlocked: boolean,
+ *   evalBlocked: boolean,
+ *   nodeSurface: string[],
+ *   bridgeExposed: boolean,
+ *   preloadError: string | null,
+ *   popupReturnedNull: boolean,
+ *   windowCount: number,
+ *   permissions: Record<string, string>,
+ *   refusedNavigationLoads: number,
+ *   permittedNavigationLoads: number,
+ *   finalUrl: string,
+ * }}
  */
 function readback(binary) {
   const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
@@ -251,7 +264,7 @@ function readback(binary) {
     // fixes and produce the same missing line.
     const spoke = `${result.stderr}`
       .split(/\r?\n/)
-      .filter((entry) => entry.startsWith('MONSTERA_CSP_HARNESS_FAILED'))
+      .filter((entry) => entry.startsWith('MONSTERA_RENDERER_HARNESS_FAILED'))
       .join('\n');
     throw new Error(
       `The harness produced no ${MARKER.trim()} line (exit ${String(result.status)}${
@@ -358,17 +371,23 @@ try {
   if (!RUNTIME_PRESENT) {
     process.stdout.write(
       `${roster.format('renderer-policy case')}\n` +
-        `UNVERIFIABLE — 3 case(s) could not be evaluated on this machine:\n` +
+        `UNVERIFIABLE — 9 case(s) could not be evaluated on this machine:\n` +
         `  ??  the renderer RECEIVES the declared policy\n` +
         `  ??  CONTROL: a policy the renderer does NOT have is not reported as delivered\n` +
-        `  ??  the renderer OBEYS it (connect-src and unsafe-eval)\n\n` +
+        `  ??  the renderer OBEYS it (connect-src and unsafe-eval)\n` +
+        `  ??  no Node surface is reachable from page script\n` +
+        `  ??  CONTROL: the contextBridge key IS reachable, so the probe could look\n` +
+        `  ??  popups are denied, in the renderer's view and in main's\n` +
+        `  ??  a permission outside the allowed set is refused\n` +
+        `  ??  CONTROL: the one permitted permission is GRANTED\n` +
+        `  ??  navigation off the loaded document is refused, and a permitted one completes\n\n` +
         `  ${existsSync(binary) ? 'The harness' : 'The Electron runtime'} is missing:\n` +
         `    ${existsSync(binary) ? HARNESS : binary}\n` +
         `  Run \`npm run provision:electron\` and \`npm run typecheck\`.\n\n` +
-        `  This is COULD NOT LOOK, not looked-and-found-nothing. These two cases are the only ` +
-        `evidence that the policy is enforced rather than merely written down, so a run without ` +
-        `them proves less than it appears to — which is why they are not reported as passing ` +
-        `and not reported as "nothing to check".\n`,
+        `  This is COULD NOT LOOK, not looked-and-found-nothing. These are the only evidence ` +
+        `that ARCHITECTURE §2's renderer hardening is ENFORCED rather than merely configured, ` +
+        `so a run without them proves less than it appears to — which is why they are not ` +
+        `reported as passing and not reported as "nothing to check".\n`,
     );
   } else {
     const seen = readback(binary);
@@ -397,6 +416,71 @@ try {
         `A header can arrive and be IGNORED — Chromium drops a directive list it cannot parse, ` +
         `and a dropped policy is indistinguishable from an enforced one if all you compare is ` +
         `the string. This is the set-versus-enforced distinction invariant 25 refuses to elide.`,
+    );
+
+    // -------------------------------------------------------------------------
+    // The rest of §2's renderer hardening, read back the same way.
+    // -------------------------------------------------------------------------
+
+    check(
+      'no Node surface is reachable from page script',
+      seen.nodeSurface.length === 0,
+      `page script can see: ${seen.nodeSurface.join(', ')}. This is the union consequence of ` +
+        `sandbox, contextIsolation and nodeIntegration:false, and a single visible name means ` +
+        `at least one of the three did not take effect. It cannot say WHICH — the three are ` +
+        `entangled in this observation, and the proof states that rather than picking one.`,
+    );
+
+    check(
+      'CONTROL: the contextBridge key IS reachable, so the probe could look',
+      seen.bridgeExposed,
+      `the page could not see the bridge key either. An empty Node surface is also what a page ` +
+        `that failed to load returns, and what a probe that cannot read globalThis returns — ` +
+        `three failures with one reassuring output. Without this line the case above passes on ` +
+        `a blank renderer.\n      preload-error: ${seen.preloadError ?? '(none reported)'}\n` +
+        `      A preload that fails to load says so ONLY through that event — no stderr, no ` +
+        `exception in main, and a window that comes up looking correct. If it names a ` +
+        `SyntaxError, the shell is pointing at the ESM artefact \`tsc\` emits instead of the ` +
+        `CommonJS bundle from \`node scripts/build/preload.mjs\`. If it reports nothing at all, ` +
+        `the preload loaded and did not expose the key.`,
+    );
+
+    check(
+      "popups are denied, in the renderer's view and in main's",
+      seen.popupReturnedNull && seen.windowCount === 1,
+      `window.open returned ${seen.popupReturnedNull ? 'null' : 'a window'} and main counts ` +
+        `${String(seen.windowCount)} window(s). Both readings are required: a handler that ` +
+        `denied the renderer's proxy while Chromium still created a window satisfies the first ` +
+        `alone, and the window is the part that matters.`,
+    );
+
+    check(
+      'a permission outside the allowed set is refused',
+      seen.permissions['geolocation'] === 'denied' && seen.permissions['notifications'] === 'denied',
+      `geolocation=${seen.permissions['geolocation'] ?? '(absent)'} ` +
+        `notifications=${seen.permissions['notifications'] ?? '(absent)'}. Queried through ` +
+        `navigator.permissions, which takes the CHECK handler — the synchronous path that is ` +
+        `silently missing when only setPermissionRequestHandler is wired, and the reason ` +
+        `windowPolicy.ts insists both are installed.`,
+    );
+
+    check(
+      'CONTROL: the one permitted permission is GRANTED',
+      seen.permissions['camera'] === 'granted',
+      `camera=${seen.permissions['camera'] ?? '(absent)'}, and Electron maps it to the 'media' ` +
+        `permission this app grants. Without this line, a handler that denied everything and a ` +
+        `handler that was never installed at all both read as a working deny-all policy — the ` +
+        `fixture the defect handles correctly.`,
+    );
+
+    check(
+      'navigation off the loaded document is refused, and a permitted one completes',
+      seen.refusedNavigationLoads === 0 && seen.permittedNavigationLoads === 1,
+      `refused attempt produced ${String(seen.refusedNavigationLoads)} load(s), permitted ` +
+        `attempt produced ${String(seen.permittedNavigationLoads)}; final URL ${seen.finalUrl}. ` +
+        `The URL is deliberately not the discriminator: a refused navigation leaves it ` +
+        `unchanged and a permitted navigation to the loaded document leaves it unchanged too, ` +
+        `so counting loads is what separates "the guard refused" from "nothing navigates at all".`,
     );
 
     process.stdout.write(

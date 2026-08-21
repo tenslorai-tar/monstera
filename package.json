@@ -21,6 +21,8 @@
   "scripts": {
     "prepare": "node scripts/bootstrapHooks.mjs",
     "typecheck": "tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty",
+    "build:preload": "node scripts/build/preload.mjs",
+    "build": "npm run typecheck && npm run build:preload",
     "lint": "eslint .",
     "test": "vitest run",
     "provision:gitleaks": "node scripts/provision/gitleaks.mjs",

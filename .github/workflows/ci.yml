@@ -126,8 +126,14 @@ jobs:
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
       # package's exports map to dist.
+      #
+      # `build`, not `typecheck`: the preload is BUNDLED to CommonJS as well as
+      # compiled, because a sandboxed preload cannot load the ESM `tsc` emits
+      # and cannot resolve a workspace package. Running only `typecheck` here
+      # leaves the renderer with no bridge and no error anywhere — which is the
+      # state this repository was in until a read-back asked the page.
       - name: Typecheck and build
-        run: npm run typecheck
+        run: npm run build
 
       - name: Lint
         run: npm run lint
@@ -379,8 +385,12 @@ jobs:
             exit 1
           fi
 
+      # The same `build` the matrix job runs. This job exists to prove the
+      # declared Node floor can do everything the toolchain asks of it, and
+      # bundling the preload is now part of that — a floor that typechecks but
+      # cannot bundle would be a floor nobody can ship from.
       - name: Typecheck and build
-        run: npm run typecheck
+        run: npm run build
 
       - name: Lint
         run: npm run lint

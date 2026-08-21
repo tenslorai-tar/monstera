@@ -16,7 +16,14 @@ import {
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-const PRELOAD = join(HERE, 'preload.js');
+// `.cjs`, and the extension is the whole point. A sandboxed preload is loaded as
+// CommonJS, so the ESM `dist/preload.js` that `tsc` emits fails with
+// `SyntaxError: Cannot use import statement outside a module` — reported by
+// Electron's `preload-error` event and nowhere else. The window still opens and
+// the page still renders; the bridge is just absent. `scripts/build/preload.mjs`
+// produces this file, and `proof:rendererpolicy` fails if the page cannot see
+// the bridge, which is how the dead artefact next to it stays dead.
+const PRELOAD = join(HERE, 'preload.cjs');
 const RENDERER_HTML = join(HERE, '..', 'renderer', 'index.html');
 
 /**

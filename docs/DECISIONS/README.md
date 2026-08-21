@@ -60,3 +60,4 @@ Each contains:
 | [0017](0017-the-security-substrate.md) | The security substrate: invariants 24 and 25 | Accepted |
 | [0018](0018-distribution-is-the-microsoft-store.md) | Distribution is the Microsoft Store | Accepted |
 | [0019](0019-the-renderers-csp-is-pinned.md) | The renderer's CSP is pinned as invariant 27, and `'unsafe-inline'` is dropped rather than pinned | Accepted |
+| [0020](0020-the-preload-is-bundled.md) | The preload is bundled to CommonJS and enters the contract by a leaf export | Accepted |

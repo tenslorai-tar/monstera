@@ -1,4 +1,4 @@
-import { reportDeliveredPolicy } from './cspHarness.js';
+import { reportRendererPolicy } from './rendererHarness.js';
 
 /**
  * Electron entry point for `proof:rendererpolicy`, and nothing else.
@@ -25,7 +25,7 @@ import { reportDeliveredPolicy } from './cspHarness.js';
 /**
  * ANY failure in the harness must become a MESSAGE, never a hang.
  *
- * `void reportDeliveredPolicy()` discarded the rejection. Electron does not exit
+ * `void reportRendererPolicy()` discarded the rejection. Electron does not exit
  * on an unhandled rejection in the main process, so a throw anywhere in the
  * harness left the app running with no window activity until the proof's 120 s
  * timeout killed it — and the proof then reported "no marker line", which is
@@ -45,8 +45,8 @@ process.on('unhandledRejection', (reason) => {
 function reportHarnessFailure(cause: unknown): void {
   const message = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
   const stack = cause instanceof Error ? (cause.stack ?? '') : '';
-  process.stderr.write(`MONSTERA_CSP_HARNESS_FAILED ${message}\n${stack}\n`);
+  process.stderr.write(`MONSTERA_RENDERER_HARNESS_FAILED ${message}\n${stack}\n`);
   process.exit(70);
 }
 
-reportDeliveredPolicy().catch(reportHarnessFailure);
+reportRendererPolicy().catch(reportHarnessFailure);

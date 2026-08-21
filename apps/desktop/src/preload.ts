@@ -1,4 +1,4 @@
-import { BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract';
+import { BRIDGE_KEY, type MonsteraBridge } from '@monstera/contract/bridge';
 import { contextBridge, ipcRenderer } from 'electron';
 
 /**
@@ -35,13 +35,29 @@ import { contextBridge, ipcRenderer } from 'electron';
  * which is why the client is built on the renderer side from the contract it
  * already imports, rather than being handed over from here.
  *
- * ## Not yet enforced, and stated rather than implied
+ * ## Enforced now, and it was not before
  *
  * A preload is only confining if the window that loads it sets `sandbox: true`,
- * `contextIsolation: true` and `nodeIntegration: false`. That window does not
- * exist yet. This file is correct and unreachable; the hardening it depends on
- * lands with the main entry, and until then invariant 1's *"sandbox on"* clause
- * is unmet by absence rather than by violation.
+ * `contextIsolation: true` and `nodeIntegration: false`. `createMainWindow` sets
+ * all three, and `proof:rendererpolicy` reads back from the running renderer
+ * that no Node surface is reachable and that this bridge is.
+ *
+ * **That read-back's first finding was that this file had never executed.**
+ * `tsc` emits it as ESM into a `"type": "module"` package; a sandboxed preload
+ * is loaded as CommonJS and refused it with
+ * `SyntaxError: Cannot use import statement outside a module` — announced
+ * through Electron's `preload-error` event and through nothing else. The window
+ * opened, the page rendered, and the bridge was absent. Every check here was
+ * structural and every one of them passed, correctly, about a file nothing had
+ * run.
+ *
+ * So the shipped artefact is the CommonJS bundle from
+ * `scripts/build/preload.mjs`, and the import below is from
+ * `@monstera/contract/bridge` rather than the package root: a sandboxed
+ * preload's `require` reaches a small fixed set and never `node_modules`, so the
+ * key has to be inlined at build time — and entering through the root pulled the
+ * channel registry and zod in with it
+ * ([ADR-0020](../../../docs/DECISIONS/0020-the-preload-is-bundled.md)).
  */
 
 const bridge: MonsteraBridge = {
