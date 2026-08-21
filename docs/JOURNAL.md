@@ -644,6 +644,206 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — Stage audit: `f7c74ff..0548ad6` — the containment claim loses a property, and a control that could not fail becomes one that can
+
+**Audited through `0548ad6`.** 9 commits, 14 files, **1 proof added, 1
+modified**, 3 new instrument files — from `npm run audit:scope`. The range is
+2026-08-21's work; the audit is written just past midnight after it, which is
+why the dates differ by one.
+
+**Owed between the two thresholds, which sit one apart on purpose.** The report
+reads *"within one batch"* at 9 commits against a batch of 9; the Y-2 pre-commit
+gate counts `commits + 1` and so refuses the next code commit. Neither number is
+wrong — the report describes the range that exists, the gate describes the range
+the next commit would create. This range is exactly between them, which is the
+gate working rather than a disagreement.
+
+The range: PP-1, QQ-1, QQ-3 and QQ-4 closed; row 283 rewritten from three
+assertions to four; item 7 given a document-class rule; RR-1 and GG-8; the crash
+race CI found; and RR-2's fixture with SS-1 and SS-2 on top of it.
+
+### The headline is item 2a, and it fired twice in opposite directions
+
+**A claim being withdrawn and coverage arriving read identically in a diff, and
+neither announces itself.** Both are in this range, in the same document, and
+one of them is the range's whole point.
+
+| | direction | what moved |
+|---|---|---|
+| invariant 25's property **(d)** | **coverage WITHDRAWN** | *obtainable through `NODE_OPTIONS`, enforcement measured* → **no mechanism**. The candidate fell to QQ-1: the model is enforced inside Node's own filesystem bindings, and a `CreateFileW` never reaches them. |
+| row 283's assertion count | **coverage ARRIVING** | **three assertions → four**, against a law that has named four properties since it was written (PP-1). |
+| (a) integrity and (b) job object | **coverage arriving** | from a *description* to a fixture with a per-property differential — 0x2000 → 0x1000 read by main, and a job whose removal is the only variable that changes. |
+
+The withdrawal is the one that needed saying out loud. Nothing in the row's
+rendering distinguishes *"we measured this and it does not hold"* from *"we have
+not got to it"*, and the second reads as ordinary backlog. **Every gap line reads
+as rigour, including the ones that used to be claims** — which is item 2a's
+sentence about `UNVERIFIABLE`, arriving at a checklist row instead of at a
+register.
+
+So the row now says it in its own body: *(a) and (b) have a mechanism, a fixture
+and a differential; (c) and (d) have none — (d) had a candidate and it fell.*
+
+**And the principle underneath it predicts more than it summarises:** *only
+kernel-enforced mechanisms contain native code.* That is why QQ-1 leaves (a) and
+(b) untouched while it removes (d)'s only candidate, and why (c) is settled
+without a further measurement — no Node-level mechanism will ever deliver it.
+Of any proposed containment mechanism, ask **who enforces it** before asking what
+it denies.
+
+### The modified proof changed MEANING, and it is a strengthening — here is which
+
+`rendererPolicy.proof.mjs` is the load-bearing column this range, and its crash
+control now asserts a **mechanism** where it asserted an **outcome**:
+
+```
+- seen.failuresReceived.includes('render-process-gone'),
++ seen.failuresReceived.includes('render-process-gone') && seen.crashResolvedBy === 'event',
+```
+
+**A conjunct was added, so the case can only fail more often than before** — that
+much is settled by inspection and needs no run. What a run adds is that the new
+conjunct is not decorative: with the harness reverted to a fixed 400 ms, long
+enough on this machine that the sink *did* receive the crash and the old boolean
+passed, the case fails reporting `resolved by: already`. A loosened check and a
+corrected one look identical outside the diff; this one is a strengthening in
+both senses — strictly narrower, and separating something the old form could not.
+
+`'event'` is producible only by a waiter that was installed and then fired. A
+`setTimeout` cannot reach it, and deleting the mechanism deletes the field, which
+fails to compile against the `Readback` the proof carries. **That is the post-BB-4
+rule satisfied rather than cited: the control asserts what the harness passes,
+not what the run produces.**
+
+### Three findings I raised against my own instruments — classified (item 1)
+
+All three are root-cause, and the reasons differ enough to be worth separating.
+
+| finding | the fix | why it is not a workaround |
+|---|---|---|
+| the fixture's raw-string comparison | each probe reports `{ outcome, detail }` decided **inside the `try/catch` that produced it** | the decision moved to where the answer is known. The first attempt classified the probe's own prose, which is a second opinion (B3a) about a question already answered one frame up — that moved the defect a layer rather than closing it. |
+| the memory probe poisoning later reads | reordered so the allocation cannot disturb what follows | the interference was removed, not compensated for. A subtracted baseline would have been the workaround. |
+| SS-2's second layer — a missing reading classifying as *refused* | `host()` gained a fourth state, `unreadable`, terminal on either side and non-zero | *could-not-look* and *looked-and-found-containment* stop sharing an output. Guarding the symptom would have been a check for the empty case; the shape says an empty intermediate result is a broken parse, not a clean input. |
+
+**"I found it myself an hour later" is not the same as "I fixed the class",** and
+the middle column is where the difference shows. The one that came closest to
+being a workaround is the first: I had already "fixed" raw-string comparison
+once, by classifying raw strings.
+
+### The live specification and the record disagreed for a whole range
+
+At `f7c74ff`, `docs/JOURNAL.md` said property (d) was obtained through
+`NODE_OPTIONS` with enforcement measured. `docs/FEATURES.md` row 283 said the
+permission model was **withdrawn**. Both were written by the same seat, a day
+apart, and neither was aware of the other.
+
+The divergence happened to be in the safe direction — the spec understated what
+the record claimed — and by the end of this range the record moved back to
+agreeing with it. **That agreement is luck and not a mechanism.** Had position 2
+been right, the specification would have been under-claiming a delivered property
+for a range, with nothing able to say so.
+
+This is exactly what item 7's new document-class rule (landed at `18eef01`) is
+for, and the rule alone does not close it: nothing *checks* that a FEATURES body
+agrees with the record. Prose agreement is not mechanically checkable, so this is
+recorded as the reason the rule is written as strongly as it is, rather than as a
+finding owed a guard.
+
+### AA-1's compensation fired again, for the sixth consecutive range
+
+`sinkReceives` is a new instrument added **as a function inside a module that
+already existed** — precisely the granularity blind spot the new-files column
+discloses in its own output. It appears in no column. The modified-proofs diff
+for `rendererPolicy.proof.mjs` is what surfaced it, which is the compensation the
+report prints at the point of use.
+
+The ruling stands on its own terms: it becomes a defect the first time an
+instrument is found late that reading those diffs did not surface. That has still
+not happened.
+
+### TT-1 — a provisioning step with no consumer and no expiry
+
+RR-1 added `npm run provision:electron` to the shim job, because that job is the
+only one that can host the containment fixture: it is windows-latest, it already
+builds MuPDF, and it had no Electron. The step works — `d0352a9`'s CI run is the
+evidence, where the shim job succeeded and the failure was elsewhere.
+
+**Nothing in that job consumes it.** Today the step's own success is its whole
+value, and that value is already banked. From here it is a prerequisite for
+something ADR-0022 has not yet decided, held by nothing.
+
+So it needs a trigger rather than good intentions: **RR-3's research→proof
+section either names the step's consumer, or the step is removed in the same
+commit that says the fixture stays research-only.** A provisioned capability with
+no consumer is the shape that survives long enough to be assumed load-bearing by
+whoever finds it next.
+
+### Executed, or asserted (item 5)
+
+**Executed:** `proof:workflowpins` (7 cases) and `check:workflowpins`, both green,
+the scan reporting that it located its own positive control · the mutation on the
+crash control, in both directions · the fixture's built-in control mutated on the
+contained side, verified to report ASSERTED and exit 1 with the terminal check
+removed · the range's diffs, read per commit rather than netted — the report
+warned that 5 deletions in `rendererPolicy.proof.mjs` do not appear in the range
+diff, and the per-commit read is where the meaning change is visible.
+
+**Asserted, and named as such:** that `CRASH_BOUND_MS = 15_000` cannot push the
+proof past its own `timeout: 120_000`. The arithmetic is not close — the worst
+observed run was 37 s and the bound adds 15 s to it — but no run has exercised
+the bound, because the mechanism has never failed to fire.
+
+**Not claimed:** that any of this explains MM-1. Same proof, same runner,
+different symptom, and one plausible mechanism is not evidence for another
+failure. It stays open on its original terms.
+
+### Items 3, 4a/4b, 6, 7
+
+**3 — would CI have caught it?** It *did*, and that is the range's best result.
+The crash race was green on this machine and on ubuntu and red on windows-latest
+only; nothing local could have found it. The correction it prompted also makes
+the next occurrence self-diagnosing, so a repeat costs one annotation read rather
+than a round trip.
+
+**4a and 4b.** Both new research instruments carry paired controls by
+construction: `hostNativeRead.mjs` runs an inside-the-allow-list read beside every
+outside one, in both the JavaScript and the native surface, so a refusal cannot be
+a broken call and a success cannot be a binding that never fired.
+`hostFixture.mjs` runs its control every time and refuses to print a verdict it
+did not measure. `workflowPins.mjs` carries its positive control **in the scan**,
+not only in the proof — the instrument gets run by hand on the day someone needs
+an answer, and the proof runs in CI.
+
+**6 — architecture before the feature, or underneath it?** Before. No host has
+been written. The sequence is fixed and has not been bent: measure → spike →
+amendment if one is owed → then the host. The B4 question is now on **two**
+properties rather than four, which is a smaller amendment than the range started
+with, arrived at by measurement rather than by scoping.
+
+**7 — do the documents still match the code?** Row 283 rewritten as a live
+specification, body currently true, all three positions kept below it because a
+reader who knows only the final one will re-propose the middle one. `CLAUDE.md`
+item 7 carries the document-class table. The compound-claim check was run against
+the two files this range rewrote: `rendererHarness.ts`'s `settle()` doc still
+describes what `settle()` still does, and `hostContainment.mjs`'s PP-2 note is
+placed **above** the paragraph it qualifies rather than below it, so a reader
+meets the correction before the claim.
+
+### Verification state
+
+`0548ad6` is pushed and **unverified**. `77ee5a3` completed and is green — CI 224,
+reported by the reviewing seat. `d727843` has **no verdict and never will**: a
+push overtook it and cancelled runs do not resume.
+
+**A correction to my own reading of that rule.** I wrote that `77ee5a3` "was
+never watched, so by QQ-5 only the tip carries a verdict." That conflates two
+different facts. A run nobody looked at still runs and still records a
+conclusion; what removes a verdict is **cancellation**, which happens only when a
+later push lands while the run is still going. Unwatched-but-completed commits
+have evidence sitting there for free, and treating them as gaps discards it.
+
+---
+
 ## 2026-08-21 — Stage audit: `fac1e4a..f7c74ff` — the audit record stops being a search, and I drew two conclusions wider than their measurements
 
 **Audited through `f7c74ff`.** 9 commits, 14 files, **0 proofs added, 2
