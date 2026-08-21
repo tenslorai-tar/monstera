@@ -136,10 +136,19 @@ process.stdout.write(
     // count — the limit case of the modified column's own argument.
     section('proofs REMOVED — coverage leaving; say why in the entry', scope.proofsRemoved) +
     section('new source FILES — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
-    `    ^ NEW FILES ONLY. An instrument added as a function inside a module that\n` +
-    `      already existed does not appear above — read the modified-proofs diffs\n` +
-    `      for those. Four axes of this classifier have needed fixing so far:\n` +
-    `      pattern (W-1), root (X-1), state (Z-1), granularity (AA-1, open).\n` +
+    `    ^ NEW FILES ONLY, and this is a STATED LIMIT rather than an open defect.\n` +
+    `      An instrument added as a function inside a module that already existed\n` +
+    `      does not appear above — READ THE MODIFIED-PROOFS DIFFS for those. That\n` +
+    `      is the compensation, and it has surfaced every instrument this column\n` +
+    `      missed across five ranges (AA-1).\n` +
+    `      Three axes of this classifier were DEFECTS and were fixed: pattern\n` +
+    `      (W-1), root (X-1), state (Z-1). Granularity is the fourth and is ruled\n` +
+    `      a limitation, because it has never once concealed anything: the\n` +
+    `      disclosure you are reading is what sends you to the diffs, so the\n` +
+    `      compensation is prompted at the point of use rather than recalled.\n` +
+    `      IT BECOMES A DEFECT the first time an instrument is found LATE that\n` +
+    `      reading those diffs did not surface. Then fix the granularity; until\n` +
+    `      then do not carry it as open.\n` +
     // NO SILENT CAPS (finding AA-1). This column filters ADDED FILES, so an
     // instrument that arrives as a function inside a module that already existed
     // is invisible to it — and the column then prints `none`, which is item 4b's

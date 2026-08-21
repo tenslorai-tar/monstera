@@ -426,9 +426,25 @@ filesystem probe once landed under the latter and appeared in no column (X-1).
 
 That last column reports **added files only**, and says so in its own output. An
 instrument arriving as a function inside a module that already existed is
-invisible to it; read the modified-proofs diffs for those. The granularity fix is
-open (AA-1). Stated here because the digest is what an auditor reads before
-starting, and a column's blind spot is not something to learn from the column.
+invisible to it; **read the modified-proofs diffs for those.** Stated here as
+well because the digest is what an auditor reads before starting, and a column's
+blind spot is not something to learn from the column.
+
+**That granularity is a stated limitation, not an open finding (AA-1, ruled
+2026-08-21).** It has been the axis that hid something in five consecutive
+ranges, and in all five the compensation above surfaced it anyway. Three sibling
+axes — pattern (W-1), root (X-1), state (Z-1) — were real defects and were
+fixed; this one has never concealed anything, and carrying it open costs the
+attention the live findings need.
+
+The distinction that makes this safe, and it is the one that decides such rulings
+generally: **a compensation the instrument prints at the point of use is a
+mechanism; a compensation you must recall is not.** The report emits the
+disclosure in every run, so reading the diffs is prompted rather than remembered
+— which is why this ruling does not contradict the escape-guard argument, where a
+written rule failed seven times out of seven precisely because nothing prompted
+it. **It becomes a defect the first time an instrument is found late that reading
+those diffs did not surface.**
 
 The scoping is not a convenience. A tree-wide audit run at the end of a stage was
 right for the 43-finding audit, which caught things that had sat for weeks. It is
