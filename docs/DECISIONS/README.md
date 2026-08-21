@@ -63,3 +63,4 @@ Each contains:
 | [0020](0020-the-preload-is-bundled.md) | The preload is bundled to CommonJS and enters the contract by a leaf export | Accepted |
 | [0021](0021-the-canonical-image-is-retained.md) | The canonical image is retained, one per open document, under a supplied ceiling | Accepted |
 | [0022](0022-the-engine-host-is-a-process-we-create.md) | The engine host is a process we create, not a utility process | Accepted |
+| [0023](0023-how-the-contained-engine-host-is-built.md) | How the contained engine host is built | Accepted |

@@ -46,9 +46,18 @@
  * eventual mechanism must move.
  *
  * **Research, not a proof** — it asserts nothing and gates nothing. The
- * transition to a proof, and where it runs, is ADR-0022's to state (RR-3): the
- * shim job is the only one that can host it, which is why it now provisions
- * Electron (RR-1).
+ * transition to a proof, and where it runs, is stated in
+ * [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * §6 (RR-3): the shim job is the only one that can host it, which is why it now
+ * provisions Electron (RR-1).
+ *
+ * **This file measures the utility-process baseline, which is no longer the
+ * shipped shape.** ADR-0022 moved the hosts to a process we create, because (c)
+ * and (d) come from an AppContainer that `utilityProcess.fork` cannot make. What
+ * this fixture still establishes is (a) and (b) with their differentials, and
+ * that they hold on *any* child rather than on Chromium's arrangement — the job
+ * here is one main assigns against a pid. `lowboxSpike.mjs` is where the
+ * contained shape is measured.
  *
  * Usage: node scripts/research/hostFixture.mjs
  */
@@ -324,14 +333,17 @@ function runVariant(index, done) {
         },
         IoInfo: { ReadOperationCount: 0n, WriteOperationCount: 0n, OtherOperationCount: 0n,
           ReadTransferCount: 0n, WriteTransferCount: 0n, OtherTransferCount: 0n },
-        // A LITERAL, and only tolerable because this file asserts nothing. The
-        // moment RR-3 turns any of this into a proof it becomes finding PP-4: a
-        // second opinion about §9.17's mupdf-host budget, living inside a
-        // Windows struct where a number survives review more easily than it
-        // would in a config object. Derive it undefaulted from
-        // memoryBudgets.mjs at the transition, as the composition root's ceiling
-        // is — flagged in ADR-0022's transition section so it does not cross the
-        // boundary with the code.
+        // A LITERAL, and only tolerable because this file asserts nothing. In
+        // shipped code it is finding PP-4: a second opinion about §9.17's
+        // mupdf-host budget, living inside a Windows struct where a number
+        // survives review more easily than it would in a config object.
+        //
+        // RULED (ADR-0023 §2): the shipped limit is parsed from
+        // memoryBudgets.mjs, takes §9.17's ABSOLUTE CAP rather than the
+        // multiple — the cap is what bounds a whole process, which is what this
+        // field is — and is UNDEFAULTED. A budget that cannot be read is a host
+        // that does not start, because a default is how a withdrawn number
+        // returns. This literal must not cross the boundary with the code.
         ProcessMemoryLimit: 512 * 1024 * 1024, JobMemoryLimit: 0,
         PeakProcessMemoryUsed: 0, PeakJobMemoryUsed: 0,
       };

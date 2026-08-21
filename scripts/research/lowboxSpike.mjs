@@ -81,6 +81,12 @@
  * | document it WAS handed | opened, 1 page | same | same |
  * | IPC over a named pipe | refused `EPERM` | connected | **differs** |
  *
+ * And the ordering, added 2026-08-22 for ADR-0023 §1: `previousSuspendCount: 1`
+ * and `inJobBeforeResume: true`, with the host's **first** action — a spawn
+ * attempt — refused in the route cell and allowed in the baseline, which has no
+ * job of ours. The job is in force at instruction one, so the handshake finding
+ * PP-6 designed for that window is unnecessary.
+ *
  * **(c) and (d) both come back with a mechanism, and (d) binds the NATIVE
  * caller** — `error 5` is `ERROR_ACCESS_DENIED` from `CreateFileW` itself, which
  * is the call the permission model could not reach. The engine still runs.
@@ -107,13 +113,18 @@
  *
  * - **Capabilities.** The container is created with none. A host that needs one
  *   is a different measurement.
- * - **Whether a LowBox host is the right design.** That is ADR-0022's, and it
- *   needs this number first.
+ * - **Whether a LowBox host is the right design.** Decided on these numbers by
+ *   [ADR-0022](../../docs/DECISIONS/0022-the-engine-host-is-a-process-we-create.md):
+ *   it is, and the hosts are processes this application creates. How it is built
+ *   is [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md).
  * - **Anything about a renderer.** Reaching MuPDF there means WASM, which
  *   ADR-0010 withdrew on measurement.
  *
- * **Research, not a proof.** It asserts nothing and gates nothing. Whether any of
- * it becomes a proof, and where it would run, is ADR-0022's to state (RR-3).
+ * **Research, not a proof.** It asserts nothing and gates nothing. What becomes a
+ * proof and where it runs is stated in
+ * [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * §6 (RR-3) — the shim job, with this file's route control and its terminal
+ * `unreadable` state travelling with it.
  *
  * Usage: node scripts/research/lowboxSpike.mjs [--reset]
  *
@@ -283,7 +294,27 @@ const finish = () => {
   process.exit(0);
 };
 
-// THE HANDED DIRECTORY, read first because it carries the ports and doubles as
+// THE VERY FIRST THING THE HOST DOES, before anything else, is try to spawn.
+//
+// This is the ordering evidence. The job carries ActiveProcessLimit = 1 and is
+// assigned while the process is still suspended, so a refusal here means the job
+// was in force at instruction one. Done LAST in the file's reading order would
+// prove nothing — by then the host has run, and "the job arrived at some point"
+// and "the job was there first" would share one observation.
+//
+// The baseline cell is forked by Electron and gets no job from us, so it is
+// expected to SPAWN. That difference is the reading: it separates the ordering
+// from the container, which refuses process creation for its own reasons.
+try {
+  require('node:child_process').execFileSync(process.execPath, ['--version'], {
+    encoding: 'utf8', env: { ELECTRON_RUN_AS_NODE: '1' }, timeout: 10000,
+  });
+  report.probes.spawnAtStartup = allowed('spawned before doing anything else');
+} catch (error) {
+  report.probes.spawnAtStartup = refused(String(error && error.message));
+}
+
+// THE HANDED DIRECTORY, read next because it carries the ports and doubles as
 // the positive half of the filesystem pair: a refusal outside proves containment
 // only if the same call succeeds where reading is permitted.
 let config = null;
@@ -460,6 +491,20 @@ koffi.struct('SECURITY_CAPABILITIES', {
 koffi.struct('SECURITY_ATTRIBUTES', {
   nLength: 'uint32', lpSecurityDescriptor: 'void *', bInheritHandle: 'int32',
 });
+koffi.struct('IO_COUNTERS', {
+  ReadOperationCount: 'uint64', WriteOperationCount: 'uint64', OtherOperationCount: 'uint64',
+  ReadTransferCount: 'uint64', WriteTransferCount: 'uint64', OtherTransferCount: 'uint64',
+});
+koffi.struct('JOBOBJECT_BASIC_LIMIT_INFORMATION', {
+  PerProcessUserTimeLimit: 'int64', PerJobUserTimeLimit: 'int64', LimitFlags: 'uint32',
+  MinimumWorkingSetSize: 'size_t', MaximumWorkingSetSize: 'size_t', ActiveProcessLimit: 'uint32',
+  Affinity: 'size_t', PriorityClass: 'uint32', SchedulingClass: 'uint32',
+});
+koffi.struct('JOBOBJECT_EXTENDED_LIMIT_INFORMATION', {
+  BasicLimitInformation: 'JOBOBJECT_BASIC_LIMIT_INFORMATION', IoInfo: 'IO_COUNTERS',
+  ProcessMemoryLimit: 'size_t', JobMemoryLimit: 'size_t',
+  PeakProcessMemoryUsed: 'size_t', PeakJobMemoryUsed: 'size_t',
+});
 
 const CreateProcessW = kernel.func(
   'bool CreateProcessW(const char16_t *app, void *cmdline, void *pa, void *ta, bool inherit, ' +
@@ -473,6 +518,11 @@ const UpdateProcThreadAttribute = kernel.func(
     'size_t size, void *previous, void *returned)',
 );
 const DeleteProcThreadAttributeList = kernel.func('void DeleteProcThreadAttributeList(void *list)');
+const ResumeThread = kernel.func('uint32 ResumeThread(void *thread)');
+const CreateJobObjectW = kernel.func('void *CreateJobObjectW(void *attrs, const char16_t *name)');
+const SetInformationJobObject = kernel.func('bool SetInformationJobObject(void *job, int cls, void *info, uint32 len)');
+const AssignProcessToJobObject = kernel.func('bool AssignProcessToJobObject(void *job, void *proc)');
+const IsProcessInJob = kernel.func('bool IsProcessInJob(void *proc, void *job, _Out_ bool *result)');
 const CreateFileW = kernel.func(
   'void *CreateFileW(const char16_t *name, uint32 access, uint32 share, void *sa, uint32 disp, uint32 flags, void *tmpl)',
 );
@@ -488,6 +538,7 @@ const DeriveAppContainerSidFromAppContainerName = userenv.func(
 const PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009;
 const EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
 const CREATE_UNICODE_ENVIRONMENT = 0x00000400;
+const CREATE_SUSPENDED = 0x00000004;
 const NUL = String.fromCharCode(0);
 
 function wide(text) {
@@ -590,7 +641,15 @@ function spawnDirect(reportPath, cell, contained) {
   });
 
   const pi = Buffer.alloc(koffi.sizeof('PROCESS_INFORMATION'));
-  const flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT;
+  // CREATE_SUSPENDED, so the job can be assigned BEFORE the first instruction.
+  //
+  // utilityProcess.fork returns a process that is already running, so everything
+  // applied afterwards is applied to a process that has executed — which is the
+  // window finding PP-6 designed a handshake for. Owning the creation route
+  // closes it by construction instead, and the host's FIRST action is a spawn
+  // attempt so a refusal is evidence the job was in force from instruction one
+  // rather than an assertion that it was.
+  const flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
   const ok = CreateProcessW(null, commandLine, null, null, logUsable, flags, environmentBlock(), SCRATCH, si, pi);
   if (logUsable) CloseHandle(logHandle);
   if (!ok) {
@@ -600,6 +659,35 @@ function spawnDirect(reportPath, cell, contained) {
   }
 
   const info = koffi.decode(pi, 'PROCESS_INFORMATION');
+
+  const job = CreateJobObjectW(null, null);
+  const limits = {
+    BasicLimitInformation: {
+      PerProcessUserTimeLimit: 0n, PerJobUserTimeLimit: 0n,
+      // ACTIVE_PROCESS | KILL_ON_JOB_CLOSE. No memory limit here: that number is
+      // ADR-0023 §2's to derive from §9.17, and a literal in this struct is the
+      // shape it exists to forbid. This cell is about ORDER, not about budgets.
+      LimitFlags: 0x00000008 | 0x00002000,
+      MinimumWorkingSetSize: 0, MaximumWorkingSetSize: 0,
+      ActiveProcessLimit: 1, Affinity: 0, PriorityClass: 0, SchedulingClass: 0,
+    },
+    IoInfo: {
+      ReadOperationCount: 0n, WriteOperationCount: 0n, OtherOperationCount: 0n,
+      ReadTransferCount: 0n, WriteTransferCount: 0n, OtherTransferCount: 0n,
+    },
+    ProcessMemoryLimit: 0, JobMemoryLimit: 0, PeakProcessMemoryUsed: 0, PeakJobMemoryUsed: 0,
+  };
+  const limitBuffer = Buffer.alloc(koffi.sizeof('JOBOBJECT_EXTENDED_LIMIT_INFORMATION'));
+  koffi.encode(limitBuffer, 'JOBOBJECT_EXTENDED_LIMIT_INFORMATION', limits);
+  const limitsSet = SetInformationJobObject(job, 9, limitBuffer, limitBuffer.length);
+  const assigned = AssignProcessToJobObject(job, info.hProcess);
+  const inJobOut = [false];
+  IsProcessInJob(info.hProcess, job, inJobOut);
+  const inJobBeforeResume = inJobOut[0];
+
+  // ONLY NOW does the host run its first instruction.
+  const resumed = ResumeThread(info.hThread);
+
   const waited = WaitForSingleObject(info.hProcess, 60000);
   let exitCode = null;
   if (waited === 0) {
@@ -610,8 +698,16 @@ function spawnDirect(reportPath, cell, contained) {
   }
   CloseHandle(info.hThread);
   CloseHandle(info.hProcess);
+  CloseHandle(job);
   if (attributeList !== null) DeleteProcThreadAttributeList(attributeList);
-  return { pid: info.dwProcessId, exitCode, waited, log: readLog(logPath) };
+  return {
+    pid: info.dwProcessId, exitCode, waited, log: readLog(logPath),
+    // previousSuspendCount is what ResumeThread returns: the thread's suspend
+    // count BEFORE the call. A value of 1 is the proof the process really was
+    // created suspended, because a running thread reports 0 — which separates
+    // "we asked for CREATE_SUSPENDED" from "it took effect".
+    ordering: { limitsSet, assigned, inJobBeforeResume, previousSuspendCount: resumed },
+  };
 }
 
 function readLog(logPath) {
@@ -700,7 +796,16 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-lowbox-'));
  * ACL form of the same problem plus the engine and the runtime, and its LENGTH is
  * half the answer the spike exists to give: *reaches no path it was not handed*
  * and *reaches the runtime, the FFI, its platform package, the engine and what it
- * was handed* are different properties, and ADR-0022 has to name which one.
+ * was handed* are different properties, and ADR-0022 §6 names the second.
+ *
+ * **This list is measured in a DEVELOPMENT CHECKOUT and is not known to be the
+ * shipped one.** `C:\Program Files` grants `ALL APPLICATION PACKAGES`
+ * read+execute, so under the install root these paths may need no grant of ours
+ * at all — and `icacls "C:\Program Files\WindowsApps"` returns *Access is
+ * denied* without elevation, so this seat cannot tell. That is a could-not-look
+ * and not a looked-and-found-nothing. ADR-0023 §5 makes the host verify its own
+ * reach at startup and fail closed, so the mechanism does not depend on the
+ * answer; measuring the Store layout is owed separately, before Stage 10.
  */
 const GRANTS = [
   { path: join(ROOT, '.tools', 'electron', '43.4.1'), rights: 'RX', why: 'the runtime binary and its resources' },
@@ -711,7 +816,10 @@ const GRANTS = [
   // and then exited 97 — its own code for "could not write the report into the
   // directory it was handed". A host that reports needs to write where it was
   // handed, so "what it was handed" and "what it may read" are two grants and
-  // ADR-0022 names both.
+  // ADR-0022 §6 names both. The SHIPPED host reports over the pipe rather than
+  // to a file, so whether it needs a writable directory at all is decided by the
+  // startup check in ADR-0023 §5 and not inherited from this fixture's choice of
+  // channel.
   { path: scratch, rights: 'M', why: 'what the host was handed — and it must be able to write back' },
 ];
 
@@ -922,6 +1030,36 @@ function summarise(runs) {
     );
     return 2;
   }
+
+  // THE ORDERING EVIDENCE, read against the BASELINE rather than against the
+  // route, because both CreateProcessW cells carry the job and would agree.
+  // Baseline is forked by Electron and gets no job from us, so it spawns.
+  process.stdout.write(
+    'ORDERING — was the job in force at instruction ONE? (ADR-0023 §1)\n\n',
+  );
+  for (const cell of ['route', 'lowbox']) {
+    const run = runs.find((entry) => entry.cell === cell);
+    const ordering = /** @type {Record<string, unknown> | undefined} */ (
+      /** @type {Record<string, unknown>} */ (run?.spawn ?? {})['ordering']
+    );
+    process.stdout.write(
+      `  ${cell.padEnd(8)} ${ordering === undefined ? 'NO ORDERING RECORDED' : JSON.stringify(ordering)}\n`,
+    );
+  }
+  const baseSpawn = probe('baseline', 'spawnAtStartup');
+  const routeSpawn = probe('route', 'spawnAtStartup');
+  process.stdout.write(
+    `\n  the host's FIRST action is a spawn attempt, so its outcome is the reading:\n` +
+      `    baseline (no job from us)  ${baseSpawn.outcome.padEnd(9)} ${baseSpawn.detail}\n` +
+      `    route    (job, suspended)  ${routeSpawn.outcome.padEnd(9)} ${routeSpawn.detail}\n\n` +
+      `  ${baseSpawn.outcome === 'allowed' && routeSpawn.outcome === 'refused'
+        ? 'ASSIGNED BEFORE THE FIRST INSTRUCTION. previousSuspendCount 1 says the process was\n' +
+          '  genuinely created suspended, and the refusal says the job was already in force when\n' +
+          '  it resumed. The PP-6 handshake is unnecessary for this window.'
+        : 'NOT SHOWN. Either the baseline was also refused — in which case the refusal is not\n' +
+          '  ours and proves nothing — or the route spawned, in which case the job was NOT in\n' +
+          '  force at instruction one and the window is still open.'}\n\n`,
+  );
 
   process.stdout.write('PROPERTIES — lowbox against route, the only pair with one variable between them:\n\n');
   /** @type {Array<[string, string, string]>} */
