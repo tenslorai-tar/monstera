@@ -262,6 +262,19 @@ try {
           'createRequire aliases were covered, which is what a widened check is for.',
       },
     ],
+    [
+      'scripts/proofs/rendererPolicy.proof.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports apps/desktop/dist/windowPolicy.js by absolute path through a file:// URL, ' +
+          'to read the CSP the shell actually declares. It cannot be a literal: the path is a ' +
+          'BUILD OUTPUT resolved at run time and needs Windows backslash conversion — and a ' +
+          'static import of the constant would compare the declared policy against a copy of ' +
+          'itself, which is the one thing that proof exists not to do. Caught by this case on ' +
+          'the first genuinely new computed site it ever met, which is what it is for.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */
