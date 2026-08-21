@@ -644,6 +644,186 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `9a951d6..fac1e4a` — CI caught what this machine could not, and a comment named the hazard it was creating
+
+**Audited through `fac1e4a`.** 8 commits, 17 files, **1 proof added, 2
+modified**, 4 new source files — from `npm run audit:scope`.
+
+The range: II-2's attribution, the annotation wrapper, LL-4's owed role, and
+then **three commits spent on one red `main`** — which is the part worth
+reading.
+
+### The headline is item 3 answered the other way round
+
+Every previous entry in this journal asks *would CI have caught it?* and answers
+no. **NN-2 is the first defect in this project that CI caught and the local
+machine did not**, and the reason is worth stating precisely, because it is not
+luck: the case's outcome depended on a **measured** value, so the passing world
+and the failing world differ by no line of source.
+
+It cost three pushes to read, and the three are a fair record of what it takes
+to see a machine-dependent failure from a seat that cannot read logs:
+
+| commit | what it established |
+|---|---|
+| `f84f796` (NN-1) | the job never built what the gate measures — the step went 3 s → 26 s, so the build gap was real and the failure **moved** |
+| `4810586` | wrapped the proof in `scripts/ci/annotate.mjs` — not a fix; it makes the failure's own words public |
+| `fac1e4a` | the fix, read off the annotation |
+
+**`cfdaba4` paid for itself on its first real use.** A one-line
+`Process completed with exit code 1` became a stack naming
+`memoryBudgets.mjs:177`, the message ``main` is declared twice`, and the exact
+call site in the proof. Logs need a token; annotations do not.
+
+### NN-2 — the deduplication was keyed on the formatted string
+
+`main` has been answered to by two roles since LL-4. Building the neutralising
+entries for the `mupdf-host` case takes both, and the formatted string embeds
+`Math.ceil(ratio)`. Two ratios either side of an integer boundary give two
+**distinct strings that both declare `main`**, and the parser refuses that —
+correctly. The defect was upstream of the check that caught it.
+
+Measured here after the fix, on the dense shape: `main` **1.00x**,
+`main-service` **1.01x** — ceilings of 1 and 2. The gate's own display rounds to
+two decimals and therefore **cannot show which side of the boundary a ratio
+sits on**, which is why the output looked identical in both worlds.
+
+This is item 2 — *verified against the easy shape only* — arriving where the
+"shape" is not a fixture but a **bucket boundary the machine chooses**. The hard
+shape is unreachable from the source, so the control had to construct it: two
+results sharing one budget with ratios that ceil differently, asserted to
+produce one declaration. Item 4's fixture rule decided the numbers — ratios that
+ceil alike are exactly what the defect handles correctly — and the fixture now
+carries a case asserting its own ratios diverge, because the fixture is where
+this one hid.
+
+### NN-3 — the comment named the hazard, and then the code implemented it
+
+Raised by the reviewing seat. `Math.max(0, peak - baseline)` is verbatim the
+fourth entry in CLAUDE.md's list of blind instruments, live in the instrument
+that decides the Stage 0 memory gate.
+
+What makes it worth more than the fix is the comment that stood above it:
+
+> Floored at zero: a run that lands below its own baseline is noise, not a
+> negative cost, **and a negative ratio would pass every multiplier silently.**
+
+The clamp's stated justification is that the unclamped value passes every
+multiplier silently. A clamped value **also** passes every multiplier silently —
+it just does so while looking like a perfect result rather than an absurd one.
+The comment identified the exact hazard it was creating and drew the opposite
+conclusion from it. `documentCostBytes` now refuses the pair and says the two
+runs are not comparable.
+
+**Item 3, honestly:** CI could not have caught this and neither could any proof
+here. A clamp that fires produces a pass. It was found by reading.
+
+### Item 7 — the compound claim, in the commit that wrote it
+
+The comment above the defective block read:
+
+> BUDGET NAMES, not role labels, **and deduplicated** — `main` is measured twice
+> and a declaration line naming it twice is not a line the parser accepts.
+
+The first clause was true and load-bearing. The second was false. This is
+precisely the signal CLAUDE.md says to search for by hand — *the change
+invalidated one clause of a compound claim* — and the live clause vouched for
+the dead one, so nothing about reading it feels wrong. It reached review twice
+in that state, in LL-4's commit and in mine.
+
+The rule earns its place again: a wholly false sentence is caught by the next
+reader; a half-true one is not caught by anybody.
+
+### Item 4 — the mutations, and their direction
+
+Four controls, four mutations, each reddening its own case and no other:
+
+- restoring the format-keyed dedupe **reproduces the CI stack on this machine,
+  verbatim** — the strongest available evidence the diagnosis is the cause;
+- taking the **minimum** rather than the maximum across roles sharing a budget
+  reddens the generosity case alone. That is the mutation direction that
+  separates: "deduplicated" and "deduplicated to whichever came first" both
+  produce one entry, and only the second quietly lets a neutralised term start
+  deciding verdicts;
+- a fixture whose ratios ceil alike reddens the fixture's own guard;
+- restoring the clamp reddens the negative-cost case, with a positive case
+  beside it so a function that always threw would not satisfy it.
+
+### Item 2a — coverage moved in one direction only
+
+`perfBudget.proof.mjs` is the load-bearing modified proof: +143/−14 in the
+range, 23 cases to 29, **no case removed and none loosened**.
+`rendererPolicy.proof.mjs`'s single deletion is a diagnostic line replaced by
+four — MM-1's staleness message now names `npx tsc --build --force`, because the
+guard could otherwise sit red through the command its own message named.
+
+### AA-1 fired, concretely
+
+`documentCostBytes` is a new instrument that arrived **as a function inside a
+module that already existed**, and the scope report's instrument column lists
+new *files* only, so it appears nowhere in the range's own audit output. AA-1
+has been open as a stated blind spot; this is the first time it has hidden
+something real. It is now evidence rather than a caveat.
+
+### Open
+
+**OO-1 (new)** — NN-1 fixed one job. The class is *a CI job that runs a proof
+depending on built output without a step that builds it*, and nothing checks
+for it. The instance is closed; the class is not.
+
+**OO-2 (new, small)** — `perfBudget.proof.mjs` collects failures and prints them
+at the end, so a throw in the measured section discards findings already
+recorded. Observed during the mutation run: two pure controls had recorded
+failures and the process died before either was printed. Exit 1 either way, so
+this costs diagnosis rather than correctness.
+
+**OO-3 (new) — `check:docs` reads two documents through two scopes, which is
+Z-2's mechanism left standing in the sibling check.**
+
+Found while writing this entry, which is what a range-scoped audit is for.
+`documentConsistency.mjs` reads `docs/JOURNAL.md` through `readStagedBlob` — the
+**index** — and then calls `auditScope({ root: ROOT })` with no watermark, so
+`auditScope` falls back to `readFileSync` and takes the watermark from the
+**working tree**.
+
+Z-2 closed exactly this in the pre-commit gate by handing `auditScope` a
+`pending` watermark, and `auditWatermark.mjs` states the rule in its own header:
+*a gate's inputs all come from the scope its decision is about*. One caller was
+converted and the other was not.
+
+**Measured, not argued.** With this entry staged and the watermark advance left
+unstaged, `check:docs` exits **0** and prints
+*"the audit watermark is recorded in the journal and within one batch"* — a
+commit that records an audit without advancing the watermark. Nothing catches it
+afterwards either: on a clean checkout the watermark is the *old* sha, and the
+old sha appears in its own older journal entry, so CI passes as well. The next
+range then silently re-inherits this one, and the only signal is the batch gate
+firing early against an audit that was in fact performed.
+
+Not fixed here: the commit that records an audit is docs-only by rule. The fix is
+one line plus a control that must be built from the failing shape — a staged
+journal beside an unstaged watermark, which is the input the absent guard lets
+through.
+
+**MM-1 stays open, and correctly.** The bound was not raised — the probe loads
+in 205 ms against a 15,000 ms bound, so a runner that hit 15 s was structurally
+different and a bump would have hidden it. The load duration is now reported on
+the success path, which is an instrument added rather than a cause found.
+
+Also open: II-2 (before Stage 0 exit), GG-8, AA-1, AA-3, CC-3, DD-2, BB-6, Y-3,
+and the MuPDF cache's restore-without-reverify.
+
+### Executed, and asserted
+
+**Executed:** the annotation read from
+`check-runs/96800061993/annotations` · four mutations, each verified to redden
+its own case alone · `typecheck` · `lint` · `proof:perfbudget` (29 cases) ·
+`perf:gate` on both content shapes.
+
+**Asserted:** nothing in this entry.
+
+---
+
 ## 2026-08-21 — Stage audit: `7223851..9a951d6` — the app runs, and the kernel was loading the parser to hold bytes
 
 **Audited through `9a951d6`.** 3 commits, 21 files, **3 proofs added, 3
