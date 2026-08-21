@@ -72,6 +72,7 @@ function baselineFor(script, tinyDocument) {
 /**
  * @typedef {{
  *   role: string,
+ *   budget: string,
  *   peakBytes: number,
  *   baselineBytes: number,
  *   documentBytes: number,
@@ -112,9 +113,21 @@ export function runBudgetGate(options = {}) {
     throw new Error('The gate needs the document size to form a ratio; it will not assume one.');
   }
 
-  /** @type {Array<{ role: string, script: string }>} */
+  /**
+   * A role's LABEL and the budget it is asserted against are separate, and the
+   * second role is why.
+   *
+   * `main` is measured twice: once as a model of what it is supposed to cost
+   * (`roleMain.mjs` — read, hash, hold) and once through the real
+   * `DocumentService`. Both are `main` and both answer to `main`'s budget; only
+   * the second is evidence about the retention implementation, and a divergence
+   * between them is the finding (LL-4).
+   *
+   * @type {Array<{ role: string, budget?: string, script: string }>}
+   */
   const roles = [
     { role: 'main', script: join(HERE, 'roleMain.mjs') },
+    { role: 'main-service', budget: 'main', script: join(HERE, 'roleMainService.mjs') },
     { role: 'mupdf-host', script: join(HERE, 'roleMupdfHost.mjs') },
   ];
 
@@ -125,8 +138,8 @@ export function runBudgetGate(options = {}) {
 
   /** @type {RoleResult[]} */
   const results = [];
-  for (const { role, script } of roles) {
-    const budget = assertableBudget(budgets, role);
+  for (const { role, budget: budgetName, script } of roles) {
+    const budget = assertableBudget(budgets, budgetName ?? role);
     const baselineBytes = baselineFor(script, tiny.path);
     const measurement = measurePeak(script, [fixture.path]);
     // Floored at zero: a run that lands below its own baseline is noise, not a
@@ -135,6 +148,12 @@ export function runBudgetGate(options = {}) {
     const ratio = documentCost / documentBytes;
     results.push({
       role,
+      // WHICH BUDGET THIS WAS ASSERTED AGAINST, carried rather than inferred
+      // from the label. They stopped being the same thing when `main` began
+      // being measured twice, and `perfBudget.proof.mjs` synthesises budget
+      // declarations from results — it built one for `main-service`, which the
+      // parser correctly refused as a process nobody had declared.
+      budget: budgetName ?? role,
       peakBytes: measurement.peakRssBytes,
       baselineBytes,
       documentBytes,

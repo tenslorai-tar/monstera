@@ -73,13 +73,30 @@ That is the harness axis this project has already paid for once — *what does t
 harness hand its child that the real caller does not* — and here the harness does
 the retaining itself, so the real caller's version is exercised by nothing.
 
-**Owed, and named rather than left implicit:** a `perf:gate` role that opens
-through `DocumentService`. It was blocked until this commit for a reason worth
-recording — importing `DocumentService` loaded the native MuPDF shim, 38.1 MB,
-through a type-only import that survived compilation, so a role built on it
-could not have measured `main` without the parser in it. That is fixed and
-`proof:kernelload` holds it fixed; the role itself is the next unit.
-(Finding JJ-1.)
+**Closed 2026-08-21 — the role exists.** `scripts/perf/roleMainService.mjs`
+opens a document through the real `DocumentService`, with the production
+`BytesReader` rather than an injected one, and `perf:gate` asserts it against
+`main`'s budget beside the model:
+
+| role | image-heavy, 199.4 MB | object-dense, 25.1 MB |
+|---|---|---|
+| `main` — the model | 1.00× | 1.00× |
+| `main-service` — the implementation | 1.00× | 1.03× |
+
+So the implementation matches the model, which is the answer the model could
+only assume. Its fixed cost is about 7 MB higher — the kernel's own modules —
+and well inside the declared 96 MB base.
+
+**And the role's own resolution test is the argument for its existence.** With
+one deliberately leaked second reference inside `DocumentService`,
+`main-service` doubles and breaches on both shapes while `main` is unmoved and
+passes. That is exactly the class this ADR could not previously see.
+
+It was blocked until this range for a reason worth keeping: importing
+`DocumentService` loaded the native MuPDF shim — 38.1 MB, through a type-only
+import that survived compilation — so a role built on it would have measured
+`main` with the parser in it, which is the one thing `main`'s budget exists to
+detect. `proof:kernelload` holds that closed. (Finding JJ-1/LL-4.)
 
 ### 1a. The count is of every document-scaled byte, not only the image
 

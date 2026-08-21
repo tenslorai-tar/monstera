@@ -93,9 +93,19 @@ check(
 );
 
 check(
-  'both asserted roles were actually measured',
-  baseline.results.length === 2 && baseline.results.every((result) => result.peakBytes > 0),
-  `measured: ${baseline.results.map((r) => r.role).join(', ')}`,
+  'every asserted role was actually measured, INCLUDING main through the real service',
+  baseline.results.length === 3 &&
+    baseline.results.some((result) => result.role === 'main-service') &&
+    baseline.results.every((result) => result.peakBytes > 0),
+  `measured: ${baseline.results.map((r) => r.role).join(', ')}\n      ` +
+    `The count is pinned so a role that stopped being measured is loud rather than absent. ` +
+    `\`main-service\` is named as well as counted because it is the only role that exercises ` +
+    `the retention IMPLEMENTATION — \`main\` is a model of what main should cost, and a second ` +
+    `live reference inside DocumentService is invisible to it (finding LL-4). Verified by ` +
+    `leaking one copy inside the service: this role doubled and breached on both content ` +
+    `shapes while the model role was unmoved and passed. The figures are in the commit that ` +
+    `added this role, not here — this file states no limits of its own, and its own guard ` +
+    `rejects a literal shaped like one.`,
 );
 
 check(
@@ -110,17 +120,28 @@ check(
 // that role actually used must flip the verdict in both directions.
 // ---------------------------------------------------------------------------
 for (const measured of baseline.results) {
-  const others = baseline.results
-    .filter((result) => result.role !== measured.role)
-    // Left generous, so only the role under test can decide the verdict.
-    .map((result) => `${result.role} = ${String(Math.ceil(result.ratio) + 10)}x, 64 GB, base 32 GB`);
+  // BUDGET NAMES, not role labels, and deduplicated — `main` is measured twice
+  // and a declaration line naming it twice is not a line the parser accepts.
+  // This built one for `main-service` when the two were assumed identical, and
+  // the parser refused it as a process nobody had declared, which is that
+  // check working.
+  const others = [
+    ...new Set(
+      baseline.results
+        .filter((result) => result.budget !== measured.budget)
+        // Left generous, so only the role under test can decide the verdict.
+        .map(
+          (result) => `${result.budget} = ${String(Math.ceil(result.ratio) + 10)}x, 64 GB, base 32 GB`,
+        ),
+    ),
+  ];
 
   const tooTight = (measured.ratio - 0.05).toFixed(2);
   const justEnough = (measured.ratio + 0.05).toFixed(2);
 
   {
     const gate = runBudgetGate({
-      budgetsText: withEntries([`${measured.role} = ${tooTight}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
+      budgetsText: withEntries([`${measured.budget} = ${tooTight}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
     });
     const role = gate.results.find((result) => result.role === measured.role);
     check(
@@ -133,7 +154,7 @@ for (const measured of baseline.results) {
 
   {
     const gate = runBudgetGate({
-      budgetsText: withEntries([`${measured.role} = ${justEnough}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
+      budgetsText: withEntries([`${measured.budget} = ${justEnough}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
     });
     const role = gate.results.find((result) => result.role === measured.role);
     check(
@@ -158,7 +179,7 @@ for (const measured of baseline.results) {
       documentPath: baseline.fixture.path,
       documentBytes: baseline.fixture.bytes,
       budgetsText: withEntries([
-        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(belowBaselineMB)} MB`,
+        `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(belowBaselineMB)} MB`,
         ...generousOthers,
       ]),
     });
@@ -176,7 +197,7 @@ for (const measured of baseline.results) {
       documentPath: baseline.fixture.path,
       documentBytes: baseline.fixture.bytes,
       budgetsText: withEntries([
-        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(aboveBaselineMB)} MB`,
+        `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(aboveBaselineMB)} MB`,
         ...generousOthers,
       ]),
     });
@@ -194,7 +215,7 @@ for (const measured of baseline.results) {
     const belowPeakMB = Math.max(1, Math.floor(measured.peakBytes / MB) - 8);
     const gate = runBudgetGate({
       budgetsText: withEntries([
-        `${measured.role} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB, ` +
+        `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB, ` +
           `base ${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
         ...others,
         'renderer = provisional',
