@@ -644,6 +644,171 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-21 — Stage audit: `fac1e4a..f7c74ff` — the audit record stops being a search, and I drew two conclusions wider than their measurements
+
+**Audited through `f7c74ff`.** 9 commits, 14 files, **0 proofs added, 2
+modified**, 5 new instrument files — from `npm run audit:scope`. Owed on the
+commit threshold, and the Y-2 gate is what stopped the next commit rather than a
+decision to audit.
+
+The range: OO-3a, OO-3b and OO-2 closed; the AA-1 ruling; and then five research
+instruments measuring what an engine host can actually be made to do.
+
+### The headline is about me, and it happened twice
+
+**Two conclusions in one session, both wider than the measurement under them,
+both with every clause of the evidence true.**
+
+| | measured | concluded | what it cost |
+|---|---|---|---|
+| OO-3 | `check:docs` exits 0 with the advance unstaged | *the scope split lets an audit-recording commit land without the watermark* | the split is real and is not what causes that; the fix does not change the outcome |
+| the withdrawal | `--permission` via `execArgv` is accepted, visible, and inert | *Node's permission model is withdrawn as a mechanism* | one route was inert; the model works through `NODE_OPTIONS`, with enforcement measured |
+
+Neither was a guess. Both were written in the voice of the thing that had been
+executed, with the reasoned half carrying the weight. **And in both cases the
+tell was available at the time and is the same sentence: I had not run the thing
+I was concluding about against the case my conclusion covered.** For OO-3 that
+was the fix against the shape it claimed to close; for the withdrawal it was any
+route other than the one that failed.
+
+That is item 5 with a sharper edge than "executed, or asserted". The dangerous
+entry is not the asserted column — it is a claim standing on something executed,
+one inference further out than the execution reaches.
+
+### OO-3b — the record requirement was a search, and its silence was history
+
+"Does this sha appear in the journal" answers yes for **any** sha the journal has
+ever named, and it names every one of them forever. So the property was satisfied
+by history rather than by evidence: it caught a watermark advanced with no entry
+only while the sha happened to be new, and it could never catch an entry written
+with no advance.
+
+`auditRecordDisagreement` compares the newest recorded heading's range end
+against the watermark, exactly, both from the index. Six cases, and the load-
+bearing one sets the watermark to a sha that **is** in the journal — the input
+the absent guard lets through — with a control asserting that of the fixture, so
+it cannot quietly become a case that separates nothing. Restoring the search
+reddens that case alone.
+
+**One of my own cases was vacuous and the mutation found it.** The ref case
+asserted `!== null` and survived deleting the branch it existed for: a watermark
+is always a commit id, so `HEAD` is refused by the mismatch branch regardless.
+That branch decides the **message**, not the verdict. The case now asserts the
+text. Item 4's fixture rule, in the file where it had just been written down.
+
+### OO-2 — a proof that discarded findings it had already made
+
+A throw in the measured section ended the process before `failures` printed.
+Measured during a mutation run: two pure controls had recorded failures and
+neither reached the output. The section now runs through `guarded`, which
+**returns** the failure text — returning rather than throwing is what makes it
+testable in both directions — and says the remaining cases are UNRUN, so a
+shortened list cannot read as a complete one.
+
+### Item 4a — five instruments, and two shipped without adequate controls
+
+Both were caught in-range, which is the column doing its job:
+
+- **`hostSurface.mjs`'s permission probe had no positive control**, and its
+  `false` was load-bearing — it withdrew a mechanism. `false` is also what a
+  typo, a wrong object or a Node without the feature reports. Found by applying
+  item 4b to my own instruments rather than to code, prompted by the
+  audit-scope column that lists them. Closed with an anchor that must report
+  `true` where the model is known to work, and a control that reports `false`
+  without the flag: *"can say true"* and *"says true regardless"* are different
+  instruments.
+- **`hostContainment.mjs` ran step 4 on step 3's unanswered question** (PP-2,
+  raised by the reviewing seat). Step 3 came back ACCESS_DENIED and was recorded
+  as a could-not-look; step 4 then produced "a Low host still connected a socket"
+  about a process whose Low state was never established. Closed by reading the
+  child's token **from main**, twice — 0x2000 before, 0x1000 after — because two
+  readings that differ across the one action are the only shape separating a
+  working reader from one that always says Low.
+
+The other three carry their controls in the file: `hostJobObject.mjs`'s
+unassigned run, `hostIntegrityFromMain.mjs`'s before-reading, and
+`permissionProbeControl.mjs`, which is itself a control.
+
+### What the instruments established
+
+Invariant 25 names four properties. Three now have a mechanism, a fixture and a
+differential; **(c) no network alone has none.**
+
+- **(a)** a host can lower its own integrity and afterwards cannot read its own
+  token; main reads it instead.
+- **(b)** a job object assigned from main, nesting inside the one Chromium
+  already applies, refuses a spawn and a 768 MB commit where the same host
+  unconstrained does both. The cleanest differential in this range, and asking
+  `IsProcessInJob` **before** assigning is why one error code could not have had
+  two explanations.
+- **(d)** through `NODE_OPTIONS`, not `execArgv`: reading a file the host was
+  never handed is refused `ERR_ACCESS_DENIED` while reading one it was handed
+  returns 3,692 bytes, against three variants where both succeed.
+
+**The `--permission` result is worth keeping for its shape rather than its
+content.** Through `execArgv` it is set, readable back as set, and inert — a
+check reading `execArgv` reports containment in force. Through `NODE_OPTIONS` it
+works and leaves `execArgv` empty — so the same check reports it absent while it
+is active. **The read-back misleads in both directions**, which is worth more
+than either half.
+
+### Item 3 — CI sees none of this
+
+The five research instruments run nowhere but here. That is correct for scripts
+that assert nothing, and it is a gap the moment row 283's assertions are built:
+they need Electron and Windows, and the containment row is the one place where
+"it worked on my machine" is least acceptable. Named now so it is a decision
+later rather than a discovery.
+
+### Item 2a — coverage moved one way
+
+`auditScope.proof.mjs` +156/−2, 40 cases to 48. `perfBudget.proof.mjs`
++220/−164, 23 to 31 — the deletions are the measured section re-indented into
+`guarded`, and every case survived, which the count is what verifies. Nothing
+removed, nothing loosened.
+
+### Open
+
+**PP-1** — row 283 asserted three of the four properties the invariant names, so
+it could have gone green while its own title was true of three quarters of it.
+Fixed in the commit after this one; the Y-2 gate refused to let it share a commit
+with the audit, which is that gate working.
+
+**PP-4** — `ProcessMemoryLimit` is a literal in the research script. In the
+shipped host it would be a second opinion about §9.17's `mupdf-host = 6x, 3 GB`,
+B3a, and it hides well because it lives inside a Windows struct rather than a
+config object. Derive it undefaulted, as the composition root's ceiling is.
+
+**PP-5** — a job memory limit and ADR-0007's designed response are different
+failure modes. The ADR must say which is primary: main monitors and kills, with
+the job limit as the backstop that bounds the damage when the monitor is late.
+"We set a job memory limit" reads as satisfying ADR-0007 and does not.
+
+**PP-6** — the window between `fork` and `AssignProcessToJobObject` is time under
+no limits. Not to be documented: the host's first act blocks until main confirms
+assignment, and no document byte is accepted before it. B5, not a caveat.
+
+**The 403, and the cadence ruling.** Nine pushes in two and a half hours, each
+followed by a board run polling up to forty times, against ~60 requests an hour
+per IP. One-unit-per-push stays; the board discipline changes — check once per
+group of related commits, cut the poll cap, and do not watch a commit CI cannot
+fail on.
+
+Also open: OO-1, AA-3, CC-3, DD-2, BB-6, Y-3, the MuPDF cache's
+restore-without-reverify, and II-2's hard trigger before Stage 0 exit. AA-1 is
+now a stated limitation with a trigger, not an open finding.
+
+### Executed, and asserted
+
+**Executed:** every measurement above, each with a differential or an anchor ·
+four mutations on `perfBudget` · four on `auditScope` · `typecheck`, `lint`,
+`check:docs`, `proof:auditscope`, `proof:perfbudget`, `proof:electronimports`.
+
+**Asserted:** that `84ec8da` is green — the board hit 403 and reported a timeout,
+and the reading came from the reviewing seat's separate quota.
+
+---
+
 ## 2026-08-21 — Stage audit: `9a951d6..fac1e4a` — CI caught what this machine could not, and a comment named the hazard it was creating
 
 **Audited through `fac1e4a`.** 8 commits, 17 files, **1 proof added, 2
