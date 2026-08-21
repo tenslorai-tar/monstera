@@ -1,4 +1,17 @@
-import { type App, type WebContents } from 'electron';
+// `import type`, NOT `import { type … }`, and the difference is the whole
+// reason this line has a comment.
+//
+// The second form keeps the module specifier in the emitted JavaScript —
+// `import {} from 'electron'` — which is a side-effect import that runs. This
+// file is imported by `shellFailure.test.ts`, which vitest runs in **plain
+// Node**, and in plain Node importing `electron` IS the download: `index.js`
+// ends with `module.exports = getElectronPath()`, which fetches when the binary
+// is absent, through an installer that bypasses our pin (invariant 26).
+//
+// Measured: it fetched. `node_modules/electron/dist` appeared at the minute the
+// new unit test first ran. `import type` is erased entirely, so nothing remains
+// to execute.
+import type { App, WebContents } from 'electron';
 
 /**
  * The failures Electron announces and nothing was listening to.

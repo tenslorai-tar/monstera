@@ -346,6 +346,40 @@ try {
     return JSON.stringify(value);
   }
 
+  /**
+   * A verdict carrying a witness, LOCATED rather than named.
+   *
+   * Five cases below mutate one witness entry to prove the checker's handling of
+   * it. They used to name `kernel-holds-canonical-bytes` and its `ByteImage`
+   * witness, which coupled this proof to which verdicts happen to exist —
+   * and that verdict has now expired and been retired, exactly as it was
+   * designed to. A proof that goes red because a production verdict was
+   * correctly retired is a proof that measures the wrong thing.
+   *
+   * Located with a control, per audit item 4b: finding no witnessed verdict at
+   * all would leave five cases mutating `undefined` and reporting a checker
+   * failure that has nothing to do with what they test.
+   *
+   * @returns {{ claim: string, symbol: string }}
+   */
+  function aWitnessedVerdict() {
+    const reachability = /** @type {any} */ (parsed(pristine)).reachability;
+    for (const [claim, verdict] of Object.entries(reachability)) {
+      const witness = /** @type {any} */ (verdict).witness;
+      if (witness === undefined) continue;
+      const [symbol] = Object.keys(witness);
+      if (symbol !== undefined) return { claim, symbol };
+    }
+    throw new Error(
+      'No reachability verdict in the register carries a witness. Five cases below mutate one ' +
+        'to prove how the checker treats it; with none to find they would mutate undefined and ' +
+        'fail for an unrelated reason. If witnesses have genuinely gone away, delete those ' +
+        'cases deliberately rather than letting them rot into a broken lookup.',
+    );
+  }
+
+  const WITNESSED = aWitnessedVerdict();
+
   const misspeltUnwitnessed = runAgainst(
     'misspelt-unwitnessed',
     register((value) => {
@@ -419,7 +453,13 @@ try {
     !runAgainst(
       'no-witness',
       register((value) => {
-        delete value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'];
+        // Rebuilt without the key rather than `delete`d: a computed delete is
+        // banned by lint, and filtering says the same thing without asking for
+        // an exception.
+        const verdict = value.reachability[WITNESSED.claim];
+        verdict.witness = Object.fromEntries(
+          Object.entries(verdict.witness).filter(([symbol]) => symbol !== WITNESSED.symbol),
+        );
       }),
     ).ok,
     'An unaccounted symbol is in exactly the state a misspelt one is in. Omission cannot be ' +
@@ -431,7 +471,7 @@ try {
     !runAgainst(
       'empty-scope',
       register((value) => {
-        value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'].in = [];
+        value.reachability[WITNESSED.claim].witness[WITNESSED.symbol].in = [];
       }),
     ).ok,
     'A scope matching nothing finds nothing by construction, which is the shape of every ' +
@@ -469,7 +509,7 @@ try {
   const bareNull = runAgainst(
     'bare-null',
     register((value) => {
-      value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
+      value.reachability[WITNESSED.claim].witness[WITNESSED.symbol] = {
         in: null,
         why: 'a null with no condition at all',
       };
@@ -488,7 +528,7 @@ try {
       // `typescript` IS named in package.json, so this condition is false the
       // moment it is resolved — which is exactly what happened to the real one
       // when Electron landed.
-      value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
+      value.reachability[WITNESSED.claim].witness[WITNESSED.symbol] = {
         in: null,
         acceptedWhile: { absent: 'typescript', from: ['package.json'] },
         why: 'a condition that does not hold',
@@ -560,7 +600,7 @@ try {
   const shifted = runAgainst(
     'one-fewer-witnessed',
     register((value) => {
-      value.reachability['kernel-holds-canonical-bytes'].witness['ByteImage'] = {
+      value.reachability[WITNESSED.claim].witness[WITNESSED.symbol] = {
         in: null,
         // A condition that genuinely HOLDS, so this symbol becomes unverifiable
         // rather than a failure. It used to say `absent: 'electron'`, which was

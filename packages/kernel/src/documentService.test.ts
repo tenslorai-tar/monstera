@@ -22,10 +22,46 @@ import {
   DocumentBusyError,
   DocumentNotOpenError,
   DocumentService,
+  type DocumentServiceOptions,
   type IdentityReader,
   type OpenOutcome,
   type CommandWriter,
 } from './documentService.js';
+
+/**
+ * A service with a ceiling large enough not to be the thing under test.
+ *
+ * `residentImageCeiling` has no default in production, on purpose — a number in
+ * the kernel would be a second opinion about ADR-0007's budget. Tests still need
+ * one, and every test that is not *about* capacity needs it to be irrelevant, so
+ * it is generous and named. The capacity tests pass their own.
+ */
+const AMPLE_CEILING = 64 * 1024 * 1024;
+
+/**
+ * A FAKED IDENTITY IMPLIES FAKED BYTES, and that is one decision rather than
+ * two.
+ *
+ * A test that supplies its own `readIdentity` is describing files that do not
+ * exist — `C:\docs\a.pdf` and friends — so the real reader would `ENOENT` on
+ * every one of them. Coupling the two here keeps that from being ten separate
+ * remembering-to-do-its, and keeps the tests that DO use real files reading real
+ * bytes, which is what makes them worth having.
+ *
+ * A caller that wants both faked its own way still can: an explicit `readBytes`
+ * always wins.
+ */
+function newService(
+  capabilities: CapabilityRegistry,
+  options: Partial<DocumentServiceOptions> = {},
+): DocumentService {
+  const synthetic = options.readIdentity !== undefined && options.readBytes === undefined;
+  return new DocumentService(capabilities, {
+    residentImageCeiling: AMPLE_CEILING,
+    ...(synthetic ? { readBytes: () => Promise.resolve(new Uint8Array(0)) } : {}),
+    ...options,
+  });
+}
 
 /**
  * A `CommandWriter` for tests of the per-document state the bus writes.
@@ -129,7 +165,7 @@ function mustOpen(outcome: OpenOutcome): DocId {
 describe('DocumentService — minting a DocId', () => {
   it('mints from the byte source verbatim rather than deriving from the path', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       randomBytesSource: bytesOf(0x41),
       readIdentity: () => Promise.resolve(identity()),
     });
@@ -145,7 +181,7 @@ describe('DocumentService — minting a DocId', () => {
 
   it('refuses a byte source that returns a short draw', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       randomBytesSource: () => new Uint8Array(4),
       readIdentity: () => Promise.resolve(identity()),
     });
@@ -157,7 +193,7 @@ describe('DocumentService — minting a DocId', () => {
 
   it('does not reuse an id after close — a counter would', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const handle = registry.mint(original());
 
     const first = mustOpen(await service.open(handle));
@@ -174,7 +210,7 @@ describe('DocumentService — minting a DocId', () => {
 describe('DocumentService — one file is one document', () => {
   it('opens a file and reports the version it starts at', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const outcome = await service.open(registry.mint(original()));
 
@@ -185,7 +221,7 @@ describe('DocumentService — one file is one document', () => {
 
   it('a second open by a different path form returns the same DocId', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const first = mustOpen(await service.open(registry.mint(original())));
     const second = await service.open(registry.mint(original().toUpperCase()));
@@ -207,7 +243,7 @@ describe('DocumentService — one file is one document', () => {
 
   it("the 'already-open' outcome carries no state to build a second view from", async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     await service.open(registry.mint(original()));
     const second = await service.open(registry.mint(original()));
@@ -219,7 +255,7 @@ describe('DocumentService — one file is one document', () => {
 
   it.runIf(WINDOWS)('a hard link is the same document', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const first = mustOpen(await service.open(registry.mint(original())));
     const second = await service.open(registry.mint(hardLink()));
@@ -231,7 +267,7 @@ describe('DocumentService — one file is one document', () => {
 
   it('CONTROL: a copy matching on name, size and mtime opens as a SECOND document', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const first = mustOpen(await service.open(registry.mint(original())));
     const second = mustOpen(await service.open(registry.mint(copy())));
@@ -250,7 +286,7 @@ describe('DocumentService — one file is one document', () => {
     // control that depends on I/O landing in a convenient order is not a
     // control; it is the vacuous proof of audit item 4.
     const pending: (() => void)[] = [];
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       readIdentity: () =>
         new Promise((resolve) => {
           pending.push(() => {
@@ -280,7 +316,7 @@ describe('DocumentService — one file is one document', () => {
 
   it('a path with no file gets no identity, and mints nothing', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const outcome = await service.open(registry.mint(join(root, 'absent.pdf')));
 
@@ -290,7 +326,7 @@ describe('DocumentService — one file is one document', () => {
 
   it('a failed open does not poison the lane for the next one', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     await expect(service.open(asFileHandle('never-minted'))).rejects.toThrow(/Unknown FileHandle/);
     // One bad handle must not turn into a dead service.
@@ -307,7 +343,7 @@ describe('DocumentService — close removes the document before it tears down', 
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const service = new DocumentService(registry, { teardown: () => blocked });
+    const service = newService(registry, { teardown: () => blocked });
 
     const docId = mustOpen(await service.open(registry.mint(original())));
     const closing = service.close(docId);
@@ -327,7 +363,7 @@ describe('DocumentService — close removes the document before it tears down', 
   it('closing an unknown document is a no-op and tears nothing down', async () => {
     const registry = new CapabilityRegistry();
     let torn = 0;
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       teardown: () => {
         torn += 1;
         return Promise.resolve();
@@ -340,7 +376,7 @@ describe('DocumentService — close removes the document before it tears down', 
 
   it('a closed document reopens as a genuinely new document', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const first = mustOpen(await service.open(registry.mint(original())));
     await service.close(first);
@@ -361,7 +397,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('two entries on one document do not interleave', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const first = deferred();
@@ -391,7 +427,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('hands work the version it runs at, and stamps a query with the same one', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const result = await service.run(docId, (context) => Promise.resolve(context.version));
@@ -405,7 +441,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('CONTROL: a command that bumps is stamped with the version it PRODUCED', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const result = await service.run(docId, (context) => {
@@ -424,7 +460,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('CONTROL: a query queued behind a command sees the version the command produced', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const held = deferred();
@@ -445,7 +481,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('a freshly opened document is CLEAN — savedVersion seeds from the initial version', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     // Seeding savedVersion to 0 — the reading the old FIRST_VERSION comment
@@ -458,7 +494,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('a bump makes it dirty, and markSaved makes it clean again', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     // isDirty is read live, not snapshotted at entry start, so work that bumps
@@ -478,7 +514,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('CONTROL: dirty is dirty across lane entries, not just within one', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     await service.run(docId, (context) => {
@@ -496,7 +532,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('EACH DOCUMENT HAS ITS OWN LOG — asserted against the service, not a stub', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const first = mustOpen(await service.open(registry.mint(original())));
     const second = mustOpen(await service.open(registry.mint(other())));
 
@@ -528,7 +564,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('and closing a document drops its log, with every checkpoint in it', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     await service.run(docId, (context) => {
@@ -552,7 +588,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('CONTROL: dirty is CONSERVATIVE — undo/redo back to saved content still reports dirty', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const result = await service.run(docId, (context) => {
@@ -573,7 +609,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('the version is monotonic across undo and redo — it never goes backwards', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     const seen = await service.run(docId, (context) =>
@@ -589,7 +625,7 @@ describe('DocumentService — the per-document lane', () => {
   it('REENTRY: work cannot close its own document, and the index is untouched', async () => {
     const registry = new CapabilityRegistry();
     let torn = 0;
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       teardown: () => {
         torn += 1;
         return Promise.resolve();
@@ -621,7 +657,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('REENTRY: work cannot re-enter its own document lane', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     // The inner entry queues behind the outer while the outer awaits the inner.
@@ -640,7 +676,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('a failed entry does not poison the lane for the next one', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     await expect(service.run(docId, () => Promise.reject(new Error('boom')))).rejects.toThrow(
@@ -658,7 +694,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('GET-OR-MISS: a closed document gets no lane, it gets a miss', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
     await service.close(docId);
 
@@ -677,7 +713,7 @@ describe('DocumentService — the per-document lane', () => {
     const registry = new CapabilityRegistry();
     const held = deferred();
     const torn: string[] = [];
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       teardown: () => {
         torn.push('teardown');
         return Promise.resolve();
@@ -712,7 +748,7 @@ describe('DocumentService — the per-document lane', () => {
   it('teardown still runs when the pending work failed', async () => {
     const registry = new CapabilityRegistry();
     let torn = 0;
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       teardown: () => {
         torn += 1;
         return Promise.resolve();
@@ -731,7 +767,7 @@ describe('DocumentService — the per-document lane', () => {
 
   it('THE CAP: a saturated lane refuses with a named busy failure', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     // Drive the cap without a pathological loop — which is why the limit is 64
@@ -762,7 +798,7 @@ describe('DocumentService — the per-document lane', () => {
     // its own lanes.
     const state: { doc?: DocId; attempt?: Promise<unknown> } = {};
 
-    const service: DocumentService = new DocumentService(registry, {
+    const service: DocumentService = newService(registry, {
       readIdentity: () => {
         // `checkWriteTarget` calls this from inside the index lane. A
         // service-wide saveAll or closeAll would reach for a document lane from
@@ -788,7 +824,7 @@ describe('DocumentService — the per-document lane', () => {
 describe('DocumentService — the write-target check', () => {
   it('a lone document is the sole writer of its file', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const docId = mustOpen(await service.open(registry.mint(original())));
 
     expect(await service.checkWriteTarget(docId)).toStrictEqual({ kind: 'sole-writer' });
@@ -796,7 +832,7 @@ describe('DocumentService — the write-target check', () => {
 
   it('two genuinely distinct documents are each the sole writer of their own', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
     const a = mustOpen(await service.open(registry.mint(original())));
     const b = mustOpen(await service.open(registry.mint(other())));
 
@@ -805,7 +841,7 @@ describe('DocumentService — the write-target check', () => {
   });
 
   it('refuses to answer for a document that is not open', async () => {
-    const service = new DocumentService(new CapabilityRegistry());
+    const service = newService(new CapabilityRegistry());
     await expect(service.checkWriteTarget(asDocId('never-opened'))).rejects.toThrow(
       DocumentNotOpenError,
     );
@@ -818,7 +854,7 @@ describe('DocumentService — the write-target check', () => {
 
   it.runIf(WINDOWS)('CONTESTED: a file hard-linked to another open document', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const targetPath = join(root, 'contested-a.pdf');
     const rivalPath = join(root, 'contested-b.pdf');
@@ -842,7 +878,7 @@ describe('DocumentService — the write-target check', () => {
 
   it('REPLACED: the file at this path is not the file that was opened', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const path = join(root, 'replaced.pdf');
     writeFileSync(path, 'the file we opened\n');
@@ -873,7 +909,7 @@ describe('DocumentService — the write-target check', () => {
 
   it('TARGET ABSENT is its own answer, never a quiet clear verdict', async () => {
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry);
+    const service = newService(registry);
 
     const path = join(root, 'vanishing.pdf');
     writeFileSync(path, 'here for now\n');
@@ -892,7 +928,7 @@ describe('DocumentService — the write-target check', () => {
     // can answer "is this still the file we opened" once the path is held
     // fixed, so without it the honest answer is that the check could not
     // settle it — never a clear verdict, and never a claim of replacement.
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       readIdentity: () => Promise.resolve({ ...identity(), dev: null, ino: null }),
     });
 
@@ -934,7 +970,7 @@ describe('DocumentService — the write-target check', () => {
     // Same dev, same ino, later ctime: exactly what unlink+create looks like
     // when the new file lands on the freed inode. This returned `sole-writer`
     // — the one verdict that PERMITS a write — until the ADR correction.
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       readIdentity: readerThatChangesAfterOpen(
         identity({ changedMs: 1_700_000_000_000 }),
         identity({ changedMs: 1_700_000_005_000 }),
@@ -954,7 +990,7 @@ describe('DocumentService — the write-target check', () => {
     // the one a user notices, so it would be found. This is the direction that
     // stays quiet.
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       readIdentity: () => Promise.resolve(identity()),
     });
 
@@ -967,7 +1003,7 @@ describe('DocumentService — the write-target check', () => {
     // equal to another absent value and read as "unchanged" — the same reason
     // dev and ino are nullable rather than zero.
     const registry = new CapabilityRegistry();
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       readIdentity: () => Promise.resolve(identity({ changedMs: null })),
     });
 
@@ -989,7 +1025,7 @@ describe('DocumentService — the write-target check', () => {
     // happened.
     let releaseTargetRead = (): void => undefined;
     let reads = 0;
-    const service = new DocumentService(registry, {
+    const service = newService(registry, {
       readIdentity: () => {
         reads += 1;
         if (reads !== 2) return Promise.resolve(identity());
@@ -1025,11 +1061,121 @@ describe('DocumentService — the write-target check', () => {
       reads += 1;
       return Promise.resolve(reads <= 2 ? identity() : null);
     };
-    const service = new DocumentService(registry, { readIdentity: vanishingMidCheck });
+    const service = newService(registry, { readIdentity: vanishingMidCheck });
 
     const docId = mustOpen(await service.open(registry.mint('C:\\docs\\a.pdf')));
     await expect(service.checkWriteTarget(docId)).rejects.toThrow(
       /could not find this document at its own file/,
     );
+  });
+});
+
+describe('the canonical image', () => {
+  it('holds exactly one copy of an opened document, and its real bytes', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const size = statSync(original()).size;
+
+    expect(service.residentImageBytes()).toBe(0);
+    const outcome = await service.open(registry.mint(original()));
+
+    expect(outcome.kind).toBe('opened');
+    // Equal to the file, not merely non-zero. A reader that returned an empty
+    // buffer, or one that read a different path, satisfies "something is held"
+    // — which is the reassuring answer produced by a broken read.
+    expect(service.residentImageBytes()).toBe(size);
+  });
+
+  it('releases it on close, so a closed document costs nothing', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+    const outcome = await service.open(registry.mint(original()));
+    if (outcome.kind !== 'opened') throw new Error(`expected opened, got ${outcome.kind}`);
+
+    expect(service.residentImageBytes()).toBeGreaterThan(0);
+    await service.close(outcome.docId);
+
+    // The record's lifetime IS the image's. This asserts the consequence rather
+    // than the mechanism, because the mechanism is "there is no second place
+    // holding it" and that is what a leak would disprove.
+    expect(service.residentImageBytes()).toBe(0);
+  });
+
+  it('counts each open document separately', async () => {
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+
+    await service.open(registry.mint(original()));
+    const oneDocument = service.residentImageBytes();
+    await service.open(registry.mint(other()));
+
+    // `other()` is a different document with a different length, so the total
+    // could not be produced by counting one file twice — which a naive
+    // implementation keyed on the wrong thing would do.
+    expect(service.residentImageBytes()).toBe(oneDocument + statSync(other()).size);
+  });
+
+  it('refuses a document that would cross the ceiling, and says by how much', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const service = newService(registry, { residentImageCeiling: size - 1 });
+
+    const outcome = await service.open(registry.mint(original()));
+
+    expect(outcome.kind).toBe('at-capacity');
+    if (outcome.kind !== 'at-capacity') throw new Error('narrowing');
+    expect(outcome.wouldHold).toBe(size);
+    expect(outcome.ceiling).toBe(size - 1);
+    // Refused means refused: no record, no image, nothing to close.
+    expect(service.residentImageBytes()).toBe(0);
+  });
+
+  it('refuses an over-large document WITHOUT reading it', async () => {
+    const registry = new CapabilityRegistry();
+    let reads = 0;
+    const service = newService(registry, {
+      residentImageCeiling: 1,
+      readBytes: (path) => {
+        reads += 1;
+        return Promise.resolve(new Uint8Array(statSync(path).size));
+      },
+    });
+
+    await service.open(registry.mint(original()));
+
+    // THE POINT OF THE STAT-FIRST CHECK. Reading in order to refuse would
+    // allocate the very image the refusal exists to prevent — a guard causing
+    // the condition it guards against. Counting the reads is the only way to
+    // tell a refusal-before-read from a refusal-after-read, because both return
+    // the same outcome.
+    expect(reads).toBe(0);
+  });
+
+  it('admits a document that exactly fills the ceiling', async () => {
+    const registry = new CapabilityRegistry();
+    const size = statSync(original()).size;
+    const service = newService(registry, { residentImageCeiling: size });
+
+    const outcome = await service.open(registry.mint(original()));
+
+    // CONTROL for the two refusals above. A ceiling check written with the
+    // comparison inverted, or one that refuses everything, produces
+    // `at-capacity` for this too — and "the guard works" and "nothing opens"
+    // would be the same observation.
+    expect(outcome.kind).toBe('opened');
+    expect(service.residentImageBytes()).toBe(size);
+  });
+
+  it('refuses to be constructed without a ceiling at run time as well as at compile time', () => {
+    // The type makes the option required, which stops every caller inside this
+    // repository. It does not stop a JavaScript caller, and it does not stop
+    // `undefined` arriving from a config read — which is exactly how a bound
+    // becomes unbounded without anyone deciding to remove it.
+    expect(
+      () =>
+        new DocumentService(new CapabilityRegistry(), {
+          residentImageCeiling: Number.NaN,
+        }),
+    ).toThrow(/finite, non-negative/);
   });
 });

@@ -740,6 +740,25 @@ say**.
     `apps/desktop/src/` is out of scope and is not an exception: it runs *inside*
     the Electron runtime, where the specifier is the API surface.
 
+    **Corrected 2026-08-21 — that last sentence is true of the app and false of
+    its tests.** A module under `apps/desktop/src/` that a `.test.ts` imports is
+    executed by vitest in **plain Node**, where the specifier is the download
+    trigger and not an API surface. Measured: `shellFailure.ts` wrote
+    `import { type App } from 'electron'`, which TypeScript emits as
+    `import {} from 'electron'` — a side-effect import that survives because the
+    braces keep the specifier — and `node_modules/electron/dist` appeared at the
+    minute its unit test first ran.
+
+    Two consequences, both stated because neither is obvious from the rule
+    above. **`import type { … }` is required, not preferred**, for Electron
+    types in any module a test can reach; it is erased entirely and leaves
+    nothing to execute. And **neither enforcer covers this route** — ESLint's
+    boundary exempts `desktop`, the runtime scan's root stops at `scripts/` —
+    so the thing that catches it is `proof:electronimports` asserting that
+    `node_modules/electron/dist` does not exist, which is only meaningful when
+    it runs *after* the test suite. CI ran it 90 lines earlier and would have
+    passed.
+
     The mechanism is that the import IS the download.
     `node_modules/electron/index.js` ends with
     `module.exports = getElectronPath()`, and that function calls

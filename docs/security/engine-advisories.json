@@ -155,34 +155,6 @@
         }
       }
     },
-    "kernel-holds-canonical-bytes": {
-      "guards": [
-        "ADR-0009-SECTION-8",
-        "ADR-0007"
-      ],
-      "why": "Not an engine advisory; it uses this register because the register is the project's one mechanism for a verdict that expires when the code moves. THE CLAIM: nothing in the kernel depends on DocumentService holding canonical document bytes. THE INPUT ITS TRUTH RESTS ON: DocumentService does not touch bytes at all — its record is docId, handle, path, openedIdentity, version, savedVersion, lane, queued. ADR-0009 §8 says the kernel keeps the canonical bytes so that killing an engine process — ADR-0007's DESIGNED response to a memory breach — is a re-open rather than a loss. The engine seam ENABLES that (open takes bytes, serialise returns them, so no engine is forced to become authoritative) but does not SATISFY it: today a killed host loses everything since the last save, because the only bytes anywhere are the file on disk. An engineSeam.ts comment claimed the constraint was met; it was corrected in the same commit as this entry, because a comment asserting a guarantee is read as one by the code that depends on it. Retaining a full document image per open document is its own design unit with ADR-0007 budget consequences, so it is sized rather than added as a field. WHAT THIS TRIGGER DOES NOT DO: it catches 'DocumentService began touching document bytes', not 'and the retention policy was sized against the memory budget'. It is a prompt to decide, and what it prompts is the docs/FEATURES.md row for byte retention — how many images are resident, what happens at the ADR-0007 ceiling, and whether a killed host actually recovers, asserted against a RUNNING process rather than against the intent. Scoped to the single file because the adapter and its test legitimately name ByteImage, and the question is only ever about DocumentService.",
-      "shippedPaths": [
-        "packages/kernel/src/documentService.ts"
-      ],
-      "symbols": [
-        "ByteImage",
-        "Uint8Array"
-      ],
-      "witness": {
-        "ByteImage": {
-          "in": [
-            "packages/kernel/src/engineSeam.ts"
-          ],
-          "why": "The type is declared there, and that file is deliberately OUTSIDE this verdict's single-file scope — so the witness is never satisfied by the reference that would expire the verdict."
-        },
-        "Uint8Array": {
-          "in": [
-            "packages/kernel/src/engineSeam.ts"
-          ],
-          "why": "ByteImage is an alias of it, declared in the same file. Same disjointness."
-        }
-      }
-    },
     "pdf_subset_fonts": {
       "guards": [
         "DEBIAN-CVE-2026-7233",

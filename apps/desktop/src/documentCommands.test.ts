@@ -16,6 +16,9 @@ import {
 } from '@monstera/kernel';
 import { type DocId } from '@monstera/shared';
 
+/** Large enough that capacity is never what these tests are measuring. */
+const AMPLE_CEILING = 64 * 1024 * 1024;
+
 import { executeCommandHandler } from './commandHandlers.js';
 import { DocumentCommands, type DocumentSessions, MissingSessionError } from './documentCommands.js';
 
@@ -47,7 +50,7 @@ async function ownRotation(page: number): Promise<number | null> {
 
 async function openDocument(): Promise<void> {
   const registry = new CapabilityRegistry();
-  service = new DocumentService(registry);
+  service = new DocumentService(registry, { residentImageCeiling: AMPLE_CEILING });
   const outcome = await service.open(registry.mint(file));
   if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
   docId = outcome.docId;
@@ -161,7 +164,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
   }
 
   it('a document that is not open is a DECLARED code, carrying no incident id', async () => {
-    const closed = new DocumentService(new CapabilityRegistry());
+    const closed = new DocumentService(new CapabilityRegistry(), { residentImageCeiling: AMPLE_CEILING });
     const commands = new DocumentCommands(closed, bus(), sessions());
     const result = await wrapped(commands)({ docId, command: rotateOnce });
 
@@ -257,7 +260,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     const success = await wrapped(commands)(params);
     expect(structuredClone(success)).toStrictEqual(success);
 
-    const closed = new DocumentService(new CapabilityRegistry());
+    const closed = new DocumentService(new CapabilityRegistry(), { residentImageCeiling: AMPLE_CEILING });
     const declined = await wrapped(new DocumentCommands(closed, bus(), sessions()))(params);
     expect(structuredClone(declined)).toStrictEqual(declined);
   });

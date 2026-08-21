@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { readFile } from 'node:fs/promises';
 
 import {
   type Brand,
@@ -372,6 +373,28 @@ interface DocumentRecord {
    * the cases the walk exists to catch are the ones where it moved.
    */
   readonly openedIdentity: FileIdentity;
+  /**
+   * The canonical image — **ARCHITECTURE §2's first clause**, and the reason
+   * killing an engine host is a re-open rather than a loss.
+   *
+   * §2 states that per document this service owns "canonical bytes,
+   * lazily-created engine handles …, the command log and checkpoints, and the
+   * originating `FileHandle`". Four of the five were here; this is the fifth,
+   * and until it arrived the seam only *enabled* the guarantee. A killed host
+   * lost everything since the last save, because the only bytes anywhere were
+   * the file on disk.
+   *
+   * Held on the record for the same reason the lane and the log are: its
+   * lifetime **is** the record's. Dropping the record releases the image, by
+   * construction rather than by a `delete` someone must remember on every close
+   * path.
+   *
+   * One image per open document, and exactly one — measured. `npm run perf:gate`
+   * reports `main` at 1.00x of file size holding one and 2.00x holding two,
+   * which breaches ADR-0007's 1.5x on both content shapes. So a second copy
+   * anywhere in main is not a matter of taste.
+   */
+  readonly bytes: Uint8Array;
   /** Mutable only through {@link DocumentContext.bumpVersion}, inside the lane. */
   version: DocVersion;
   /**
@@ -425,7 +448,21 @@ interface DocumentRecord {
 export type OpenOutcome =
   | { readonly kind: 'opened'; readonly docId: DocId; readonly version: DocVersion }
   | { readonly kind: 'already-open'; readonly docId: DocId }
-  | { readonly kind: 'absent' };
+  | { readonly kind: 'absent' }
+  /**
+   * The canonical image would not fit under {@link DocumentServiceOptions.residentImageCeiling}.
+   *
+   * **An outcome, not a defect.** Opening a document larger than main may hold,
+   * or one more document than main may hold, is a thing a user can do and be
+   * told about — the same category as `absent`, and reported the same way.
+   */
+  | {
+      readonly kind: 'at-capacity';
+      /** What the resident total would have become, in bytes. */
+      readonly wouldHold: number;
+      /** The ceiling it would have crossed. */
+      readonly ceiling: number;
+    };
 
 /**
  * The result of asking whether a document may write to its own file.
@@ -554,12 +591,48 @@ function replacementVerdict(opened: FileIdentity, now: FileIdentity): WriteTarge
  */
 export type IdentityReader = (path: string) => Promise<FileIdentity | null>;
 
+/** Reads a document's canonical image. Injected so tests need no filesystem. */
+export type BytesReader = (path: string) => Promise<Uint8Array>;
+
+/** The default: the file, whole, once. */
+const readFileBytes: BytesReader = (path) => readFile(path);
+
+export interface DocumentServiceOptions {
+  /**
+   * Total canonical-image bytes this service may hold across every open
+   * document.
+   *
+   * **Required, and there is no default. That is the whole design of this
+   * option.** ADR-0007 states `main`'s budget, `docs/ARCHITECTURE.md` §9.17
+   * carries it as the one machine-read line, and `scripts/lib/memoryBudgets.mjs`
+   * is the single reader of it. The kernel cannot reach that module — it is
+   * plain Node under `scripts/`, and the boundary is deliberate — so any number
+   * written here would be **a second opinion about the budget** (B3a), correct
+   * on the day it was typed and silently stale afterwards.
+   *
+   * A default would also be the specific kind this project distrusts most: the
+   * one nobody revisits. `undefined` meaning "unbounded" would let retention
+   * ship with no bound at all, which is the condition ADR-0007 exists to
+   * prevent.
+   *
+   * So the composition root supplies it, derived from the invariant, and a
+   * service constructed without it does not compile.
+   */
+  readonly residentImageCeiling: number;
+  readonly teardown?: DocumentTeardown;
+  readonly randomBytesSource?: TokenBytesSource;
+  readonly readIdentity?: IdentityReader;
+  readonly readBytes?: BytesReader;
+}
+
 export class DocumentService {
   readonly #records = new Map<DocId, DocumentRecord>();
   readonly #capabilities: CapabilityRegistry;
   readonly #randomBytes: TokenBytesSource;
   readonly #teardown: DocumentTeardown;
   readonly #readIdentity: IdentityReader;
+  readonly #readBytes: BytesReader;
+  readonly #residentImageCeiling: number;
 
   /**
    * Serialises everything that reads the index and then writes it.
@@ -604,18 +677,38 @@ export class DocumentService {
    */
   readonly #executingDocument = new AsyncLocalStorage<DocId>();
 
-  constructor(
-    capabilities: CapabilityRegistry,
-    options: {
-      readonly teardown?: DocumentTeardown;
-      readonly randomBytesSource?: TokenBytesSource;
-      readonly readIdentity?: IdentityReader;
-    } = {},
-  ) {
+  constructor(capabilities: CapabilityRegistry, options: DocumentServiceOptions) {
+    if (!Number.isFinite(options.residentImageCeiling) || options.residentImageCeiling < 0) {
+      throw new TypeError(
+        `residentImageCeiling must be a finite, non-negative byte count; received ` +
+          `${String(options.residentImageCeiling)}. There is no default, deliberately — see ` +
+          `DocumentServiceOptions.`,
+      );
+    }
     this.#capabilities = capabilities;
+    this.#residentImageCeiling = options.residentImageCeiling;
     this.#teardown = options.teardown ?? noTeardown;
     this.#randomBytes = options.randomBytesSource ?? cryptoBytes;
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
+    this.#readBytes = options.readBytes ?? readFileBytes;
+  }
+
+  /** Canonical image bytes currently held across every open document. */
+  residentImageBytes(): number {
+    let total = 0;
+    for (const record of this.#records.values()) total += record.bytes.byteLength;
+    return total;
+  }
+
+  /**
+   * The refusal, or `null` if `incoming` fits.
+   *
+   * @param incoming bytes the service would additionally hold
+   */
+  #refuseIfOverCeiling(incoming: number): OpenOutcome | null {
+    const wouldHold = this.residentImageBytes() + incoming;
+    if (wouldHold <= this.#residentImageCeiling) return null;
+    return { kind: 'at-capacity', wouldHold, ceiling: this.#residentImageCeiling };
   }
 
   /**
@@ -640,6 +733,27 @@ export class DocumentService {
     const existing = (await this.#documentsAt(identity))[0];
     if (existing !== undefined) return { kind: 'already-open', docId: existing };
 
+    // CAPACITY IS CHECKED TWICE, and the first check is the one that matters for
+    // the failure everyone worries about.
+    //
+    // `identity.size` comes from the `stat` already performed, so a document
+    // larger than this service may hold is refused **without being read**.
+    // Checking only after the read would allocate the very image the refusal
+    // exists to prevent — a 2 GB file would have to be held in order to be told
+    // it is too big, which is the shape where a guard causes the condition it
+    // guards against.
+    const refusal = this.#refuseIfOverCeiling(identity.size);
+    if (refusal !== null) return refusal;
+
+    const bytes = await this.#readBytes(path);
+
+    // The second check is the CORRECT one, and it is not redundant. `stat` and
+    // the read are two observations of a file that anything may write between
+    // them, so the size used above is evidence and the length read is fact. The
+    // bytes are dropped by returning without storing them.
+    const overshoot = this.#refuseIfOverCeiling(bytes.byteLength);
+    if (overshoot !== null) return overshoot;
+
     // Minted, never derived. A hash of the path is the path in a lossy coat and
     // changes when the file is renamed; a counter gets reused after close, so a
     // late renderer message naming document 3 lands on a *different* document
@@ -652,6 +766,7 @@ export class DocumentService {
       handle,
       path,
       openedIdentity: identity,
+      bytes,
       version,
       // §5: seeded from the initial version, never from 0. A freshly opened
       // document is clean.

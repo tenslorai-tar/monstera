@@ -339,6 +339,29 @@ jobs:
       - name: Prove the tests read source, not a stale build
         run: npm run proof:testresolution
 
+      # RUN AGAIN, AFTER THE SUITE, AND THE ORDERING IS THE POINT.
+      #
+      # This proof has two halves. The static scans are best early — a violation
+      # in the source should fail fast. The assertion that
+      # `node_modules/electron/dist` does not exist is a statement about what
+      # this job has done SO FAR, and running it early makes it structurally
+      # blind to anything a later step does.
+      #
+      # Measured, not hypothesised: `import { type App } from 'electron'`
+      # compiles to `import {} from 'electron'` — a side-effect import that
+      # survives — and a unit test importing that module made plain Node fetch
+      # the unpinned runtime. Locally, `node_modules/electron/dist` appeared at
+      # the minute the test first ran. CI would have done the same and passed,
+      # because the guard had already run 90 lines earlier.
+      #
+      # The invariant's own enforcers cannot reach this: ESLint's boundary
+      # exempts `desktop` and the runtime scan's root stops at `scripts/`, so a
+      # `.test.ts` under `apps/desktop/src` dragging Electron into a plain-Node
+      # test runner is a route neither of them covers. This step is what covers
+      # it, and it only covers it here.
+      - name: Prove the test suite itself triggered no download
+        run: npm run proof:electronimports
+
   # The native seam, on the only platform that can build it today.
   #
   # This job exists because ADR-0010's measurements were produced in a scratch

@@ -29,12 +29,29 @@ import { type DocId, type DocVersion } from '@monstera/shared';
  * ## What it deliberately does not own
  *
  * **Engine session lifetime.** Sessions are looked up, never created here — see
- * {@link SessionLookup}. Who opens a session for a document, and from which
- * bytes, is a question §8 leaves open behind its own trigger
- * (`kernel-holds-canonical-bytes`), because `DocumentService` holds no canonical
- * bytes yet and giving it some has ADR-0007 budget consequences. Answering it
- * inside a composition point would be exactly the architecture-under-features
- * retrofit B4 exists to prevent.
+ * {@link SessionLookup}.
+ *
+ * **Who owns them is settled, and this comment used to say it was not.**
+ * `docs/ARCHITECTURE.md` §2 states that per document `DocumentService` owns
+ * "canonical bytes, lazily-created engine handles (invalidated together on any
+ * mutation), the command log and checkpoints, and the originating `FileHandle`",
+ * and §3.2 restates the handle half. That is the answer to *who opens a session
+ * and from which bytes*: `DocumentService`, lazily, from its own canonical
+ * image, as a cache that may be thrown away and rebuilt.
+ *
+ * The earlier text read ADR-0009 §8's silence as the project's. §8 is silent —
+ * it says only that the kernel keeps the bytes — but the **living law is not**,
+ * and `CLAUDE.md`'s document table puts `ARCHITECTURE.md` above an ADR wherever
+ * they diverge. The advisory register agreed with the law rather than with this
+ * comment: its entry called itself "a prompt to decide", and a prompt to decide
+ * is not a change-control stop. Widening a source's silence into the project's
+ * is how three lines of work acquire a ruling-sized question (EE-7's shape).
+ *
+ * What is genuinely open is the **policy**, not the ownership: how many images
+ * are resident, what happens at ADR-0007's ceiling, and whether a killed host
+ * actually recovers. The first two are answered in
+ * [ADR-0021](../../../docs/DECISIONS/0021-the-canonical-image-is-retained.md);
+ * the third is owed against a running host and is a `docs/FEATURES.md` row.
  */
 
 /**
