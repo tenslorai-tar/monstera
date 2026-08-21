@@ -25,6 +25,15 @@
  *   4. what a Low-integrity host can still DO: open a socket, read a file it
  *      was never handed, spawn a process.
  *
+ * **Step 4's results here are unsafe to read on their own, and this file is kept
+ * for step 1 and step 2.** Step 3 returns ACCESS_DENIED, so step 4 runs against
+ * a process whose Low state was never established — if the lowering had silently
+ * failed, its observations are about a *Medium* process (finding PP-2). The
+ * verified versions live in `hostIntegrityFromMain.mjs`, which reads the child's
+ * token from main before and after, and reruns the probes on a premise that
+ * holds. Read that file for the conclusions; read this one for how the failure
+ * to read one's own token was found.
+ *
  * Step 4 is the point. Low integrity is a WRITE control on Windows and says
  * little about reads or sockets, so the reassuring outcome here — "the call
  * succeeded" — is exactly the one that must not be mistaken for containment.
