@@ -24,8 +24,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
-import { SOURCE_FILE } from '../lib/memoryBudgets.mjs';
-import { runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
+import { SOURCE_FILE, memoryBudgets } from '../lib/memoryBudgets.mjs';
+import { documentCostBytes, runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
 import { formatBytes } from '../perf/peakRss.mjs';
 
 const ROOT = repoRoot();
@@ -53,6 +53,124 @@ function withEntries(entries) {
   return REAL.replace(
     /(^\s*>\s*\*\*Memory budgets:\*\*)[\s\S]*?(?=\n\s*>\s*\n)/mu,
     `$1 ${entries.map((entry) => `\`${entry}\``).join(' · ')}`,
+  );
+}
+
+/**
+ * The declaration entries for every budget EXCEPT the one under test, left
+ * generous so that only the role under test can decide the verdict.
+ *
+ * Keyed on the BUDGET NAME and deduplicated BEFORE formatting. Deduplicating
+ * after formatting is finding NN-2: `main` is answered to by two roles, the
+ * formatted string embeds `Math.ceil(ratio)`, and two ratios either side of an
+ * integer boundary give two distinct strings that both declare `main`. The
+ * parser refuses that, correctly, as a budget declared twice — and whether the
+ * two ratios land in the same integer bucket is a property of the machine, so
+ * the defect passed here and failed on CI with nothing in the diff to tell the
+ * passing world from the failing one.
+ *
+ * The surviving ratio is the MAXIMUM across the roles sharing the budget, so the
+ * generous line stays generous for every role it covers.
+ *
+ * @param {ReadonlyArray<{ budget: string, ratio: number }>} results
+ * @param {string} underTest the budget to leave out, which the caller declares
+ * @returns {string[]}
+ */
+function generousEntriesExcept(results, underTest) {
+  /** @type {Map<string, number>} */
+  const worst = new Map();
+  for (const result of results) {
+    if (result.budget === underTest) continue;
+    worst.set(result.budget, Math.max(worst.get(result.budget) ?? 0, result.ratio));
+  }
+  return [...worst].map(
+    ([budget, ratio]) => `${budget} = ${String(Math.ceil(ratio) + 10)}x, 64 GB, base 32 GB`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// That construction is itself under test, because the defect it carried was
+// invisible to every case below: it fires only when two roles share one budget
+// AND their ratios ceil to different integers, which is a property of the
+// runner. The figures here are inputs to a formatter, not thresholds — nothing
+// is asserted against them.
+// ---------------------------------------------------------------------------
+{
+  const sharedBudget = [
+    { budget: 'main', ratio: 1 },
+    { budget: 'main', ratio: 1.4 },
+    { budget: 'mupdf-host', ratio: 2.2 },
+  ];
+  const mains = sharedBudget.filter((result) => result.budget === 'main');
+
+  check(
+    'the shared-budget fixture uses ratios that ceil DIFFERENTLY',
+    new Set(mains.map((result) => Math.ceil(result.ratio))).size === mains.length,
+    `Ratios that ceil alike are exactly what the defect handles correctly, so a fixture built from ` +
+      `those separates nothing while carrying a name that says it does. This case guards the ` +
+      `fixture rather than the code, because the fixture is where this one hid.`,
+  );
+
+  const entries = generousEntriesExcept(sharedBudget, 'mupdf-host');
+  check(
+    'two roles sharing one budget produce exactly ONE declaration for it',
+    entries.length === 1,
+    `produced: ${entries.join(' · ')}. A line naming one budget twice is refused by the parser, ` +
+      `which is that check working — the defect is upstream of it.`,
+  );
+
+  const worstMain = Math.max(...mains.map((result) => result.ratio));
+  check(
+    'and the surviving declaration is the generous one, so no role sharing it is tightened',
+    entries[0] === `main = ${String(Math.ceil(worstMain) + 10)}x, 64 GB, base 32 GB`,
+    `produced: ${entries.join(' · ')}. Deduplicating to whichever entry came first would tighten ` +
+      `the line for the other role sharing the budget, which is the same defect with a quieter ` +
+      `failure: the neutralised term starts deciding verdicts.`,
+  );
+
+  let refused = '';
+  try {
+    memoryBudgets({
+      text: withEntries([
+        ...entries,
+        ...generousEntriesExcept(sharedBudget, 'main'),
+        'renderer = provisional',
+      ]),
+    });
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+  check(
+    'and the parser accepts the line that construction produces',
+    refused === '',
+    `The parser refused it: ${refused.split('\n')[0] ?? ''}. This is the end-to-end form of the ` +
+      `case above and it is the one CI actually hit.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A peak below the role's own baseline is a measurement failure and says so,
+// rather than being clamped to the most reassuring number available (NN-3).
+// ---------------------------------------------------------------------------
+{
+  let refused = '';
+  try {
+    documentCostBytes('main', 10 * MB, 20 * MB);
+  } catch (error) {
+    refused = error instanceof Error ? error.message : String(error);
+  }
+  check(
+    'a peak below the role own baseline is refused, not floored at zero',
+    /below its own baseline/u.test(refused),
+    `Got: ${refused || 'no error, so a cost was returned'}. Floored, this yields a ratio of zero, ` +
+      `which satisfies every multiplier declared and is indistinguishable from a process that held ` +
+      `the document for free.`,
+  );
+  check(
+    'and an ordinary pair still returns the difference',
+    documentCostBytes('main', 30 * MB, 20 * MB) === 10 * MB,
+    `Without this the case above is satisfied by a function that always throws, which would take ` +
+      `the whole gate with it.`,
   );
 }
 
@@ -120,21 +238,11 @@ check(
 // that role actually used must flip the verdict in both directions.
 // ---------------------------------------------------------------------------
 for (const measured of baseline.results) {
-  // BUDGET NAMES, not role labels, and deduplicated — `main` is measured twice
-  // and a declaration line naming it twice is not a line the parser accepts.
-  // This built one for `main-service` when the two were assumed identical, and
-  // the parser refused it as a process nobody had declared, which is that
-  // check working.
-  const others = [
-    ...new Set(
-      baseline.results
-        .filter((result) => result.budget !== measured.budget)
-        // Left generous, so only the role under test can decide the verdict.
-        .map(
-          (result) => `${result.budget} = ${String(Math.ceil(result.ratio) + 10)}x, 64 GB, base 32 GB`,
-        ),
-    ),
-  ];
+  // BUDGET NAMES, not role labels — `main` is measured twice and a declaration
+  // line naming it twice is not a line the parser accepts. This built one for
+  // `main-service` when the two were assumed identical, and the parser refused
+  // it as a process nobody had declared, which is that check working.
+  const others = generousEntriesExcept(baseline.results, measured.budget);
 
   const tooTight = (measured.ratio - 0.05).toFixed(2);
   const justEnough = (measured.ratio + 0.05).toFixed(2);

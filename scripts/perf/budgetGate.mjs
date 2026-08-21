@@ -70,6 +70,39 @@ function baselineFor(script, tinyDocument) {
 }
 
 /**
+ * The document-proportional cost of one run, or a refusal that names why there
+ * is none.
+ *
+ * **Deliberately not clamped at zero.** A peak below the role's own baseline
+ * does not mean the document cost nothing — it means noise exceeded signal and
+ * the two runs are not comparable. Clamped, it yields a ratio of zero, which
+ * satisfies every multiplier and reads identically to a perfect result. That is
+ * the fourth entry in CLAUDE.md's list of blind instruments, verbatim
+ * ("allocator counters that clamped an underflow to zero, so the failure state
+ * was identical to 'everything was freed'"), and it was live in the instrument
+ * that decides the Stage 0 memory gate, on a runner whose variance had just
+ * produced a second finding (NN-3).
+ *
+ * @param {string} role
+ * @param {number} peakBytes
+ * @param {number} baselineBytes
+ * @returns {number}
+ */
+export function documentCostBytes(role, peakBytes, baselineBytes) {
+  const cost = peakBytes - baselineBytes;
+  if (cost < 0) {
+    throw new Error(
+      `${role}: peak ${formatBytes(peakBytes)} came in below its own baseline ` +
+        `${formatBytes(baselineBytes)}, so no document cost can be formed from these two runs. ` +
+        `Noise exceeded signal and they are not comparable. This is reported rather than clamped ` +
+        `to zero, because a zero cost passes every limit declared and is indistinguishable from a ` +
+        `process that held the document for free.`,
+    );
+  }
+  return cost;
+}
+
+/**
  * @typedef {{
  *   role: string,
  *   budget: string,
@@ -142,9 +175,7 @@ export function runBudgetGate(options = {}) {
     const budget = assertableBudget(budgets, budgetName ?? role);
     const baselineBytes = baselineFor(script, tiny.path);
     const measurement = measurePeak(script, [fixture.path]);
-    // Floored at zero: a run that lands below its own baseline is noise, not a
-    // negative cost, and a negative ratio would pass every multiplier silently.
-    const documentCost = Math.max(0, measurement.peakRssBytes - baselineBytes);
+    const documentCost = documentCostBytes(role, measurement.peakRssBytes, baselineBytes);
     const ratio = documentCost / documentBytes;
     results.push({
       role,
