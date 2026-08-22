@@ -721,6 +721,19 @@ try {
     // Rename detection is content-based; a fixture that wants a delete has to
     // leave nothing for the deleted file to be mistaken for.
     commit('doomed.proof.mjs', 'export const doomed = "removed in this range";\n');
+    // DDD-1's fixture, and it has to exist BEFORE the watermark. A file created
+    // and deleted inside one range appears in that range's diff not at all, so
+    // a fixture built after the mark would exercise the new column with nothing
+    // — passing for the same reason a missing column passes.
+    //
+    // A deleted SOURCE instrument, not a proof: that is the state the source
+    // columns could not represent. Distinct content for the reason
+    // `doomed.proof.mjs` has it — rename detection is content-based, and a
+    // fixture that wants a delete must leave nothing to be paired with.
+    commit(
+      'scripts/retired.mjs',
+      'export const retired = "a research instrument, deleted in this range";\n',
+    );
     const mark = git(scratch, ['rev-parse', '--short', 'HEAD']);
     setWatermark(mark);
 
@@ -747,6 +760,9 @@ try {
     git(scratch, ['rm', '--quiet', 'doomed.proof.mjs']);
     git(scratch, ['commit', '--quiet', '-m', 'delete a proof']);
 
+    git(scratch, ['rm', '--quiet', 'scripts/retired.mjs']);
+    git(scratch, ['commit', '--quiet', '-m', 'delete a source instrument']);
+
     // core.quotePath defaults true, so without -z this arrives as
     // "caf\303\251.proof.mjs" — a path that matches no glob and resolves to
     // nothing. No such path exists in this repository today, which is an expiry
@@ -771,6 +787,26 @@ try {
       `proofsRemoved = ${JSON.stringify(scope.proofsRemoved)}. Unlike rename this can fire today: ` +
         `the classifier recognised A and M only, so a deleted proof showed up as one more line in ` +
         `the file count.`,
+    );
+
+    check(
+      'a DELETED SOURCE INSTRUMENT is reported as coverage leaving (DDD-1)',
+      scope.removedScripts.includes('scripts/retired.mjs'),
+      `removedScripts = ${JSON.stringify(scope.removedScripts)}. The proofs columns carried ` +
+        `added, modified and removed; these carried added and changed only, and a 636-line ` +
+        `research instrument was deleted into that gap and named in NO column. An asymmetry ` +
+        `between two halves of one classifier is the finding, because nobody audits for a ` +
+        `column that does not exist.`,
+    );
+
+    check(
+      'CONTROL: the deleted source instrument is NOT also reported as added or changed',
+      !scope.newScripts.includes('scripts/retired.mjs') &&
+        !scope.changedScripts.some((entry) => entry.path === 'scripts/retired.mjs'),
+      `newScripts = ${JSON.stringify(scope.newScripts)}, changedScripts = ` +
+        `${JSON.stringify(scope.changedScripts.map((entry) => entry.path))}. A path in two ` +
+        `columns means the state filters overlap, and the auditor reads a deletion as an ` +
+        `instrument that arrived.`,
     );
 
     check(

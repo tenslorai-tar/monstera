@@ -506,7 +506,17 @@ on did not apply to it.
 
 So the added-vs-changed half was a **defect**, not a limitation, and it joins
 pattern (W-1), root (X-1) and state (Z-1) as an axis of this classifier that was
-fixed rather than ruled. **Four axes now, all four defects.**
+fixed rather than ruled.
+
+**Five axes now, all five defects**, because DDD-1 arrived the same way one
+range later: the proofs columns carried *added, modified, removed* and the
+source columns carried *added, changed* — so a 636-line research instrument was
+**deleted** and named in no column at all. The transferable form is not the
+instance: **when one half of a classifier carries three states and the other
+half carries two, the asymmetry is the finding.** Nobody audits for a column
+that does not exist; they read the columns that do, and an absent column reports
+nothing in exactly the voice of an empty one. That is item 4b's *found nothing*
+arriving in a renderer rather than in a search.
 
 What remains a stated limitation is genuinely narrower: an instrument arriving
 as a **function inside a file the columns do name**. The compensation is to read

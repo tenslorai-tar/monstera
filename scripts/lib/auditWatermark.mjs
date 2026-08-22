@@ -159,6 +159,7 @@ function parseWatermark(text, source) {
  *     net: { added: number, removed: number },
  *     perCommit: { added: number, removed: number },
  *   }>,
+ *   removedScripts: string[],
  *   overBudget: string[],
  * }}
  */
@@ -683,6 +684,28 @@ function buildScope({ commit, range, commits, root, churn = true }) {
           ...churnFor(range, entry.path, root, entry.from),
         }))
       : [],
+    // FINDING DDD-1. The proofs side has carried three states — added, modified,
+    // removed — since Z-1. This side had two, and the gap swallowed a 636-line
+    // research instrument: `hostFixture.mjs` was deleted in the range this
+    // finding came from and appeared in NO column of the report that scopes the
+    // audit.
+    //
+    // The instance is small and the shape is not. **When one half of a
+    // classifier carries three states and the other half carries two, the
+    // asymmetry IS the finding** — because nobody audits for a column that does
+    // not exist. They read the columns that do, and an absent one reports
+    // nothing in exactly the voice of an empty one. That is item 4b's *found
+    // nothing* arriving in a renderer instead of a search.
+    //
+    // No churn, and not by omission: a deleted file has no after-state to count
+    // lines against, and `churnFor` would be asking git to diff a path that is
+    // gone. The path alone is the reading, exactly as it is for `proofsRemoved`.
+    //
+    // Fifth axis of this classifier to be a DEFECT rather than a stated limit,
+    // after pattern (W-1), root (X-1), state (Z-1) and added-vs-changed (WW-2).
+    removedScripts: status
+      .filter((e) => e.state === 'D' && !isProof(e.path) && isSource(e.path))
+      .map((e) => e.path),
     overBudget: [
       ...(commits > BATCH.commits ? [`${commits} commits (one batch is ${BATCH.commits})`] : []),
       ...(status.length > BATCH.files ? [`${status.length} files (one batch is ${BATCH.files})`] : []),

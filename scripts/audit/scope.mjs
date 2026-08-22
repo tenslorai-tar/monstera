@@ -148,12 +148,26 @@ process.stdout.write(
       'source FILES CHANGED — an instrument whose behaviour moved (items 4a, 4b)',
       scope.changedScripts,
     ) +
-    `    ^ WW-2 added the second of those two columns, and the first one alone was\n` +
-    `      the same "added files only" filter that hid four converted instruments\n` +
-    `      in one range. Both list ordinary modules beside instruments; sort by\n` +
-    `      churn and read the ones that could answer a question wrongly.\n` +
-    `      Four axes of this classifier have now been DEFECTS and been fixed:\n` +
-    `      pattern (W-1), root (X-1), state (Z-1), added-vs-changed (WW-2).\n` +
+    // DDD-1. An instrument LEAVING, which is coverage leaving exactly as a
+    // deleted proof is — and this column did not exist until a 636-line
+    // research instrument was deleted and appeared in none of the others.
+    section(
+      'source FILES REMOVED — an instrument leaving; say why in the entry',
+      scope.removedScripts,
+    ) +
+    `    ^ WW-2 added the CHANGED column, and ADDED alone was the same "new files\n` +
+    `      only" filter that hid four converted instruments in one range. DDD-1\n` +
+    `      added REMOVED, because these three states existed on the proofs side\n` +
+    `      and only two existed here — and a 636-line instrument was deleted into\n` +
+    `      that gap. WHEN ONE HALF OF A CLASSIFIER CARRIES THREE STATES AND THE\n` +
+    `      OTHER CARRIES TWO, THE ASYMMETRY IS THE FINDING: nobody audits for a\n` +
+    `      column that does not exist, and an absent one reports nothing in\n` +
+    `      exactly the voice of an empty one.\n` +
+    `      These columns list ordinary modules beside instruments; sort by churn\n` +
+    `      and read the ones that could answer a question wrongly.\n` +
+    `      Five axes of this classifier have now been DEFECTS and been fixed:\n` +
+    `      pattern (W-1), root (X-1), state (Z-1), added-vs-changed (WW-2),\n` +
+    `      changed-vs-removed (DDD-1).\n` +
     `\n` +
     `      WHAT REMAINS A STATED LIMIT is GRANULARITY, and it is narrower than\n` +
     `      AA-1's ruling claimed: an instrument arriving as a FUNCTION INSIDE a\n` +
