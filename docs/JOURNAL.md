@@ -853,6 +853,41 @@ belongs, and changing the spike now would edit the instrument that produced
 every reading ADR-0023 rests on. Recorded as the reason the proof is shaped
 differently from the spike it comes from.
 
+> **Measured the same day, and it corrects the entry above.** The claim that the
+> four properties do not need the Electron app was reasoned from which cell
+> imports what. It is now executed: a copy of the spike with the electron import
+> replaced by a stub, the baseline cell removed and the parent spawned as plain
+> Node ran **all four cells to a report** — `lowbox` and `lowbox-no-job` at
+> integrity `0x1000`, `route` and `route-no-job` at `0x2000`, the job present in
+> two and absent in two. The whole variant matrix, with **no GPU process and no
+> crash**. The copy was deleted after the reading.
+>
+> **And the run printed no property verdict at all, which is the correction.**
+> The entry says the four properties do not use the baseline. That is true of the
+> PROPERTIES rows and **false of the route control that gates them**: the control
+> compares `route` against `baseline`, so removing the baseline made it
+> `unreadable`, and the instrument refused every verdict —
+>
+> > ROUTE BROKEN — no property verdict is printed.
+>
+> The control working exactly as designed, on the person who removed its
+> counterpart. Dropping the baseline is therefore **not free**, and the entry
+> above reads as though it were.
+>
+> **What RR-3 has to decide, stated rather than absorbed (audit item 2a).** The
+> route control must be re-expressed from *our route behaves like the fork route*
+> to *the uncontained cell of our route is a working host* — koffi loads, the
+> shim loads, a handed document opens, all of which this run observed as
+> `allowed`. That is defensible, because ADR-0022 made the fork route historical
+> and "our route differs from a route we no longer use" is not a defect. It is
+> still a **weaker control than the one it replaces**: the differential could
+> catch a route that produces a subtly different host, and the self-contained
+> version catches only one that produces a broken host.
+>
+> Recorded here because a control that changes shape during a promotion is
+> exactly the change that gets absorbed into "the proof is a bit different from
+> the spike".
+
 ---
 
 ## 2026-08-23 — KKK-1: the register's scan cannot tell naming a symbol from using it, and the third time is the one to record
