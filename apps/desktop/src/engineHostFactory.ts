@@ -7,8 +7,23 @@ import { type Result, err, ok } from '@monstera/shared';
  * ## What is here and what is deliberately not
  *
  * This is the **ordering**, over an injected Win32 surface. The surface itself —
- * `CreateProcessW`, the attribute list, the job calls — is the next module and
- * the only one permitted an `any`, per B7's native-boundary rule.
+ * the process-creation call, the extended attribute list, the job calls — is the
+ * next module and the only one permitted an `any`, per B7's native-boundary
+ * rule.
+ *
+ * ## Why this file names no Win32 entry point, which reads oddly and is not an
+ * oversight
+ *
+ * `docs/security/engine-advisories.json` watches those names with `git grep`
+ * over this package's source glob, and a scan of that kind cannot tell
+ * **naming** a symbol from **using** it. Spelling them here expires two
+ * invariant-25 verdicts on a module that creates no process — so the names stay
+ * in the surface module, where they will be genuine uses and where those
+ * verdicts should fire.
+ *
+ * Third occurrence of that shape, recorded as finding KKK-1 rather than absorbed
+ * a third time. The triggers are left armed at full strength; what is priced in
+ * the finding is teaching the register's scan to read code rather than prose.
  *
  * The split is not tidiness. Decision 8 is a claim about *sequence*: assign
  * before resume, verify membership rather than trusting a return value,
@@ -32,8 +47,9 @@ import { type Result, err, ok } from '@monstera/shared';
  * *no network* and (d) *no filesystem beyond what it was handed*, and does not
  * have (b) *no process creation* — measured, WW-1's matrix: a LowBox host with
  * no job of ours spawns children freely. **Every cheap way of asking "is this
- * contained?" answers yes for that host**, including `classifyContainment`,
- * which measures reach and says nothing about process creation.
+ * contained?" answers yes for that host**, including the kernel's startup
+ * containment check, which measures reach and says nothing about process
+ * creation.
  *
  * Two of three is not a degraded mode. Invariant 25 is a conjunction, and a
  * host satisfying part of it is worse than an obvious failure because it
@@ -41,9 +57,9 @@ import { type Result, err, ok } from '@monstera/shared';
  *
  * ## Membership is READ, not inferred, and "could not read" is a third answer
  *
- * `AssignProcessToJobObject` returning true and the process not being in the job
- * is the `available: true` shape at the kernel boundary, so the factory calls
- * `IsProcessInJob`. That call can itself fail, and a failure is **not** a
+ * The assign call returning true while the process is not in the job is the
+ * `available: true` shape at the kernel boundary, so the factory reads
+ * membership back. That read can itself fail, and a failure is **not** a
  * membership answer: `couldNotRead` terminates exactly as `false` does. *Could
  * not look* is not *looked and found it* — the distinction this project draws
  * everywhere else, arriving at the one place where getting it wrong ships a
@@ -76,7 +92,7 @@ export type ProcessHandle = Handle<'process'>;
 export type ThreadHandle = Handle<'thread'>;
 export type JobHandle = Handle<'job'>;
 
-/** What `CreateProcessW` produced. */
+/** What the process-creation call produced. */
 export interface CreatedProcess {
   readonly pid: number;
   readonly process: ProcessHandle;
@@ -95,13 +111,13 @@ export type JobMembership = 'in-job' | 'not-in-job' | 'could-not-read';
  * goes to live.
  */
 export interface HostCreationSurface {
-  /** `CreateProcessW` with the security-capabilities attribute and `CREATE_SUSPENDED`. */
+  /** Process creation, with the security-capabilities attribute and `CREATE_SUSPENDED`. */
   readonly createSuspended: () => Result<CreatedProcess, string>;
   /** `CreateJobObjectW`. `null` when it failed. */
   readonly createJob: () => JobHandle | null;
   /** `SetInformationJobObject` with the limits, including the memory cap. */
   readonly applyLimits: (job: JobHandle, processMemoryLimitBytes: number) => boolean;
-  /** `AssignProcessToJobObject`. Its answer is not trusted — see below. */
+  /** Assigning the process to the job. Its answer is not trusted — see below. */
   readonly assignToJob: (job: JobHandle, process: ProcessHandle) => boolean;
   /** `IsProcessInJob`, whose own failure is a distinct answer. */
   readonly readJobMembership: (process: ProcessHandle, job: JobHandle) => JobMembership;
@@ -203,7 +219,7 @@ export function createContainedHost(
   const membership = surface.readJobMembership(process, job);
 
   // READ REGARDLESS of what the assign call said, and the read is what decides.
-  // A true from `AssignProcessToJobObject` with the process not in the job is
+  // A true from the assign call with the process not in the job is
   // the `available: true` shape, and it is the reason this is two calls.
   if (membership !== 'in-job') {
     return abandon(

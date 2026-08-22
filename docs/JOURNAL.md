@@ -801,6 +801,64 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — KKK-1: the register's scan cannot tell naming a symbol from using it, and the third time is the one to record
+
+The pre-push gate did its job on its second real push and blocked the engine
+host factory: three invariant-25 verdicts expired, on `CreateProcessW`,
+`AssignProcessToJobObject` and `classifyContainment`.
+
+**All three fired on prose.** The factory names those calls in doc comments
+describing what each member of its injected surface maps to. It creates no
+process — there is no Win32 surface — and it consults no containment check.
+Neither trigger's *subject* has occurred.
+
+### Why the response was to reword rather than to re-triage, which is the opposite of what the verdict's own words say
+
+`engine-host-containment` reads: *"The day shipped code **names** one of the
+symbols below, this verdict expires."* By that sentence I expired it, and the
+prescribed answer is a re-triage.
+
+The re-triage was drafted and refused. It would have had to re-point the symbol
+set at something still absent — `koffi` under the shell was the candidate — and
+that is **narrowing a security trigger on the day it fired**, for a module that
+does nothing the trigger is about. The alternative reading costs a few comments:
+the trigger is aimed at *a host can be created*, that day is when the surface
+lands, and the names belong in the surface module where they will be genuine
+uses.
+
+So both triggers stay armed at **full strength**, unchanged, and this file's
+prose stops spelling them. Recorded here because it is a real judgement and the
+opposite one is defensible: a reader who thinks a trigger firing should always
+be answered by re-triage should overturn this.
+
+### The class, which is what makes it a finding rather than a chore
+
+**Third occurrence.** HHH-1 was the first — a comment explaining why a helper was
+*avoided* kept a verdict red. That was recorded as a stated limit, with
+over-firing called the safe direction for a security trigger, which it is.
+
+What three occurrences show is narrower and worse than "it over-fires": **the
+modules most likely to discuss a watched symbol are exactly the ones being built
+to use it.** The over-fire is not spread evenly over the codebase; it is
+concentrated on the files the trigger most wants to watch. And the pressure it
+creates is to write vaguer comments in the security-relevant module — which is
+the wrong direction for everything except the scan.
+
+**Priced, not built.** `scripts/lib/verdict.mjs` matches with `git grep`. Reading
+code rather than prose is what `stackOwnership.mjs` already does with the
+compiler, and what `electronSurface.mjs` does for the same reason — its own
+header records that `electron.d.ts` is 56% comments and that a text search
+"would witness a symbol that had been REMOVED, which is worse than missing one".
+**That argument is already in this register, for the witness half.** The verdict
+half still greps. Making it parse is a unit; the obstacle is that the scan runs
+where `node_modules` may be absent, and the register must keep working there —
+which is `check:jobplacement`'s subject, one day old.
+
+Until then, the rule for anyone writing under a watched glob: **describe the
+call, do not spell it**, and put the name where it is used.
+
+---
+
 ## 2026-08-22 — GG-1 closes for one member: the pre-push gate reads the register's own globs
 
 GG-1 recorded a rule and named the obstacle to mechanising it: *proofs address

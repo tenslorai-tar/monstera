@@ -193,7 +193,7 @@ describe('a failed job assignment kills the process, never resumes it', () => {
   });
 
   it('reports a failed creation without terminating anything', () => {
-    const win32 = surface({ createSuspended: () => err('CreateProcessW failed: 5') });
+    const win32 = surface({ createSuspended: () => err('process creation failed: 5') });
     const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
 
     expect(result.ok).toBe(false);
