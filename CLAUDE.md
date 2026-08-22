@@ -639,8 +639,14 @@ which installs nothing. **The fix is not to remember this**: the locator now
 excludes derived claims from one shared list, and a control asserts on every
 runner that the verdict it picked is not one of them.
 
-The general shape: when a proof branches on provisioning, the branch you never
-execute is the specification you never read.
+The general shape, and it is wider than provisioning: **any branch keyed on the
+presence of something has a side that never executes wherever that thing is
+always present** — and that side is a specification nobody has read. Provisioning
+is the common case here; a cached artefact, an environment variable the runner
+sets, a file an earlier step wrote are the same shape.
+
+Twice now, both times a provisioning branch producing green-here-red-there: the
+electron-import coverage move recorded under item 2a, and ZZ-1 above.
 
 **4. Are the proofs non-vacuous?**
 Mutate the thing each proof guards and confirm the proof goes red. A proof that

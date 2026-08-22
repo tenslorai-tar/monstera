@@ -79,7 +79,7 @@ const failures = [];
  * witnessed verdict is not a derived one. That case is world-independent, so it
  * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 30 });
+const roster = createRoster(failures, { cases: 31 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -384,6 +384,33 @@ try {
    * The exclusion list is imported rather than restated: two opinions about
    * which claims are derived is what produced this (B3a).
    *
+   * ## Everything the cases assume about what this returns
+   *
+   * Written out because one control is only sufficient if the list is short,
+   * and "it is short" is otherwise a coincidence that currently holds. The
+   * locator picks by POSITION, so any unstated assumption recurs the next time
+   * the register is reordered or a verdict is inserted above this one — green
+   * here and red there, which is exactly how ZZ-1 arrived.
+   *
+   * 1. **It carries a witness at all.** Enforced by this function, which throws
+   *    rather than returning nothing (audit item 4b).
+   * 2. **Its symbols are not derived.** The control below, on every runner.
+   * 3. **`symbol` is named in the verdict's own `symbols[]`.** Deliberately
+   *    uncontrolled, because it **fails safe**: a witness key no symbol list
+   *    names makes all five mutations inert, the run stays green, and five
+   *    cases asserting `!ok` go red together. An assumption whose violation
+   *    reddens the cases holding it does not need a control — it announces
+   *    itself in the reassuring direction's opposite.
+   *
+   * Nothing else is read. Position, claim name, symbol spelling and the rest of
+   * the witness map are never asserted on, and `stale-null`'s extra requirement
+   * — a condition that resolves false — is met with `typescript` in
+   * `package.json`, a fact about the repository rather than about this verdict.
+   *
+   * **The trigger:** a case added below that reads any other property of this
+   * verdict needs its own control, or its own argument that it fails safe.
+   * Do not extend the list without extending this paragraph.
+   *
    * @returns {{ claim: string, symbol: string }}
    */
   function aWitnessedVerdict() {
@@ -490,34 +517,66 @@ try {
       `same string in text that does not declare it, so it cannot follow the mistake.\n${misspeltWitnessed.output}`,
   );
 
+  const noWitness = runAgainst(
+    'no-witness',
+    register((value) => {
+      // Rebuilt without the key rather than `delete`d: a computed delete is
+      // banned by lint, and filtering says the same thing without asking for
+      // an exception.
+      const verdict = value.reachability[WITNESSED.claim];
+      verdict.witness = Object.fromEntries(
+        Object.entries(verdict.witness).filter(([symbol]) => symbol !== WITNESSED.symbol),
+      );
+    }),
+  );
   check(
     'a symbol with NO witness entry FAILS rather than being tolerated',
-    !runAgainst(
-      'no-witness',
-      register((value) => {
-        // Rebuilt without the key rather than `delete`d: a computed delete is
-        // banned by lint, and filtering says the same thing without asking for
-        // an exception.
-        const verdict = value.reachability[WITNESSED.claim];
-        verdict.witness = Object.fromEntries(
-          Object.entries(verdict.witness).filter(([symbol]) => symbol !== WITNESSED.symbol),
-        );
-      }),
-    ).ok,
+    !noWitness.ok &&
+      noWitness.output.includes(
+        `${WITNESSED.claim}: ${WITNESSED.symbol} has no witness and no derivation`,
+      ),
     'An unaccounted symbol is in exactly the state a misspelt one is in. Omission cannot be ' +
-      'the quiet way past this rule.',
+      `the quiet way past this rule.\n${noWitness.output}`,
   );
 
+  const emptyScope = runAgainst(
+    'empty-scope',
+    register((value) => {
+      value.reachability[WITNESSED.claim].witness[WITNESSED.symbol].in = [];
+    }),
+  );
   check(
     'an EMPTY witness scope FAILS',
-    !runAgainst(
-      'empty-scope',
-      register((value) => {
-        value.reachability[WITNESSED.claim].witness[WITNESSED.symbol].in = [];
-      }),
-    ).ok,
+    !emptyScope.ok &&
+      emptyScope.output.includes(
+        `${WITNESSED.claim}: ${WITNESSED.symbol} declares an empty witness scope`,
+      ),
     'A scope matching nothing finds nothing by construction, which is the shape of every ' +
-      'broken search in this file.',
+      `broken search in this file.\n${emptyScope.output}`,
+  );
+
+  // RESOLUTION for the two cases above, and the reason they stopped asserting
+  // `!ok` alone. A bare `!ok` is satisfied by ANY failure, so both cases passed
+  // on each other's output and on a failure neither had caused — BB-5's finding,
+  // which was fixed for the misspelt-symbol case in this same file and left
+  // standing in its two siblings. Fixing the instance and not the class is the
+  // version that leaves no trace to find later (Rule 0).
+  //
+  // This asserts the separation directly rather than trusting it: each
+  // diagnostic must be absent from the other run's output. Two mutations that
+  // both merely fail are indistinguishable; two that fail with their own named
+  // cause are not.
+  check(
+    'RESOLUTION: the two witness-failure diagnostics are NOT interchangeable',
+    !emptyScope.output.includes(
+      `${WITNESSED.claim}: ${WITNESSED.symbol} has no witness and no derivation`,
+    ) &&
+      !noWitness.output.includes(
+        `${WITNESSED.claim}: ${WITNESSED.symbol} declares an empty witness scope`,
+      ),
+    'Each case above binds to one diagnostic naming the located verdict. If one output ' +
+      'carries the other case’s sentence the bindings are not separating anything, and both ' +
+      'cases are back to asserting "something went wrong".',
   );
 
   const circular = runAgainst(

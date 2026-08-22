@@ -700,6 +700,36 @@ the intent across frames, never raise the maximum, because raising it spends the
 property ADR-0023 §7 exists to protect on the one payload shape with a cheaper
 fix.
 
+> **Correction, 2026-08-22 (AAA-1).** *Never raise the maximum* holds. *Split
+> the intent across frames* was recorded as **the** answer, and it is the second
+> one — the comment in the source said so too, which is what the next person
+> would have acted on.
+>
+> **The bound is an artefact of the encoding, not of the transport.** 6.00 bytes
+> per page is the cost of writing a page set as an explicit list of decimal
+> indices. A bitmap is one bit per page: 2,500 bytes at 20,000 pages, 5,450 at
+> 43,600 — ~48× smaller at the stated extreme and **flat on an adversarial
+> selection**, which is the property ranges lack (alternating pages give ranges
+> one entry each). At that density a 256 KiB frame holds a selection over two
+> million pages, so the bound does not move — it stops existing, and the maximum
+> could then shrink, *strengthening* the property rather than spending it.
+>
+> Chunking is the expensive fallback: reassembly, ordering and partial-state
+> handling, added at a boundary whose counterparty is hostile by invariant 25's
+> own premise, and it leaves the maximum where it is with new surface
+> underneath.
+>
+> **Arithmetic only — no bitmap encoding has been measured.** Changing the
+> payload shape reaches `packages/contract`'s schemas and how every command
+> declares a page selection, so it is its own unit, taken when something needs
+> it. What changed today is the comment: both answers named, the cheaper one
+> first.
+>
+> The general rule, and the reason this is a correction rather than a
+> preference: **prove the limit has to exist before designing around it.**
+> Removal is the first candidate, not a footnote. A recorded answer that points
+> at the expensive fix is worse than no answer, because it reads as decided.
+
 **The general form, which is item 4a arriving in a constant rather than an
 instrument:** where one number is derived from another, assert the derivation
 *exactly*. A tolerance band is the numeric version of a search that reports

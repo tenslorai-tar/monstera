@@ -70,11 +70,41 @@ export const LARGEST_INTENT_PAYLOAD_BYTES = 120_057;
  * open-ended promise. Measuring the derivation is what surfaced this; the
  * estimate it replaced did not.
  *
- * **The answer beyond that point is to split the intent across frames, not to
- * raise this.** The transport already carries many frames, and a command large
- * enough to need two of them is still intent. Raising the maximum instead would
- * spend the property ADR-0023 §7 exists to protect, on the one payload shape
- * that has a cheaper fix. Chunking is undesigned; the bound is named here so
- * that whoever meets it knows which of the two they are choosing between.
+ * ## The bound is an ENCODING artefact, and that is the first thing to fix
+ *
+ * Finding AAA-1. The 6.00 bytes per page is what it costs to write a page set
+ * as an explicit list of decimal indices. A page set has cheaper
+ * representations, and the flat one removes the bound rather than moving it:
+ *
+ * | encoding | 20,000 pages | 43,600 pages | worst case |
+ * | --- | --- | --- | --- |
+ * | index list (today) | 120,057 B | ~262,000 B | — |
+ * | ranges | a few bytes | a few bytes | alternating pages: one range each |
+ * | bitmap | 2,500 B | 5,450 B | flat, whatever the selection |
+ *
+ * A bitmap is ~48× smaller at the stated extreme and does not degrade on an
+ * adversarial selection, which is the property ranges lack. At one bit per page
+ * a 256 KiB frame holds a selection over two million pages, so the bound stops
+ * existing instead of being renegotiated — and the maximum could then *shrink*,
+ * strengthening the property this constant exists to protect rather than
+ * spending it.
+ *
+ * **Arithmetic from the measured 6.00 bytes/page. No bitmap encoding has been
+ * measured here**, and changing the payload shape reaches this package's
+ * schemas and how every command declares a page selection. That is its own
+ * unit, decided when something needs it — not now, when the bound sits 2.2×
+ * beyond any document that exists.
+ *
+ * ## So: payload shape first, chunking second
+ *
+ * **This constant is not raised either way.** Splitting the intent across
+ * frames is the fallback if a set representation cannot be made to work, and it
+ * is the expensive one: reassembly, ordering and partial-state handling, added
+ * at a boundary whose counterparty is hostile by invariant 25's own premise —
+ * the worst place in this system to grow protocol. It also leaves the maximum
+ * where it is and adds surface underneath.
+ *
+ * The rule this follows: **prove the limit has to exist before designing around
+ * it.** Removal is the first candidate, not a footnote.
  */
 export const ENGINE_HOST_FRAME_MAX_BYTES = 256 * 1024;
