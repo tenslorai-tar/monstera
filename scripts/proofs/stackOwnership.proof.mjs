@@ -27,7 +27,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -396,13 +396,22 @@ try {
   // THE SCAN IS REGISTERED. A check nothing runs is a check that does not exist.
   // ---------------------------------------------------------------------------
   {
-    const guards = readFileSync(join(ROOT, '.github', 'workflows', 'guards.yml'), 'utf8');
+    // Every workflow, read out of the directory: naming one file here would ask
+    // this case to know which job installs node_modules, and that is exactly
+    // the thing this scan needs and Guards does not have. It belongs wherever
+    // `npm ci` runs, and that placement may move again.
+    const dir = join(ROOT, '.github', 'workflows');
+    const workflows = readdirSync(dir).filter((name) => /\.ya?ml$/u.test(name));
+    if (workflows.length === 0) throw new Error(`${dir} holds no workflows to read.`);
+    const registered = workflows.some((name) =>
+      readFileSync(join(dir, name), 'utf8').includes('check:stackowner'),
+    );
     const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const script = String(manifest.scripts?.['check:stackowner'] ?? '');
     check(
       'and a workflow actually runs it, through a script that names the scan',
-      guards.includes('check:stackowner') && script.includes('scripts/lib/stackOwnership.mjs'),
-      `guards names it: ${String(guards.includes('check:stackowner'))}; ` +
+      registered && script.includes('scripts/lib/stackOwnership.mjs'),
+      `a workflow names it: ${String(registered)}; ` +
         `check:stackowner = ${JSON.stringify(script)}. A workflow running a script name that ` +
         `points somewhere else is registered in appearance only.`,
     );

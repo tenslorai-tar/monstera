@@ -210,6 +210,23 @@ jobs:
       - name: Prove the preload cannot import its way out of invariant 1
         run: node scripts/ci/annotate.mjs scripts/proofs/preloadSurface.proof.mjs
 
+      # FFF-1, closing Y-3. Sixteen handlers that printed a stack and discarded
+      # the `cause` were fixed by enumeration on 2026-08-20; a seventeenth
+      # arrived on 2026-08-21. The rule names the two OWNERS of stack rendering
+      # rather than defining the population of subjects, and the receiver's TYPE
+      # decides, so a reader of a declared field is not reported and a comment is
+      # not seen.
+      #
+      # HERE for the same reason as the two steps above: it builds a Program per
+      # project with the TypeScript compiler, and the Guards job runs no
+      # `npm ci`. Placing it there would have made it fail on every run — which
+      # this machine, where node_modules always exists, could not have shown.
+      - name: Prove the stack-ownership scan sees, refuses and separates
+        run: node scripts/ci/annotate.mjs scripts/proofs/stackOwnership.proof.mjs
+
+      - name: Only an owner renders a thrown value's stack
+        run: npm run check:stackowner
+
       # `require('electron')` from plain Node IS the download trigger:
       # node_modules/electron/index.js ends with `module.exports =
       # getElectronPath()`, which downloads when the binary is absent. So the pin

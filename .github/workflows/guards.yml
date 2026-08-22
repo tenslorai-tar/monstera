@@ -307,18 +307,6 @@ jobs:
       - name: Every workflow proof step reaches a public annotation
         run: npm run check:annotatecoverage
 
-      # FFF-1, and it closes Y-3 rather than restating it. Sixteen handlers that
-      # printed a stack and discarded the `cause` were fixed by enumeration on
-      # 2026-08-20; a seventeenth arrived on 2026-08-21. The rule names the two
-      # OWNERS of stack rendering rather than defining the population of
-      # subjects, and the receiver's type — not its spelling — decides, so a
-      # reader of a declared field is not reported and a comment is not seen.
-      - name: Prove the stack-ownership scan sees, refuses and separates
-        run: node scripts/ci/annotate.mjs scripts/proofs/stackOwnership.proof.mjs
-
-      - name: Only an owner renders a thrown value's stack
-        run: npm run check:stackowner
-
       # The pin these very jobs run on is one declaration, not three copies. A
       # workflow left on a floating major keeps working and keeps passing while
       # changing the npm that validates this project's lockfile — which is how
