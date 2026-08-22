@@ -71,6 +71,64 @@ import { filesInCommit, repoRoot } from './gitScope.mjs';
 const TICK = String.fromCharCode(96);
 
 /**
+ * Does this line OPEN a multi-line template?
+ *
+ * **Not `String.raw` only, and that correction is finding VV-1.** The first
+ * version of this scan matched `String.raw` and nothing else, which left four
+ * emitted-source bodies in `scripts/research/` invisible — `hostContainment`,
+ * `hostSurface` twice, and `permissionProbeControl` all write a program to disk
+ * from a PLAIN template literal. A guard shipped claiming to close a class,
+ * blind to half of it, is the pattern axis of a classifier (W-1) reappearing in
+ * the check written to close a different class.
+ *
+ * A plain template is in fact the **more** dangerous of the two, because it
+ * interpolates as well as terminating.
+ *
+ * Three conditions, and each removes a specific false positive:
+ *
+ * - it ends with a backtick, which is what makes the body multi-line;
+ * - it has an ODD number of unescaped backticks, so a completed one-line
+ *   template is not read as an opener;
+ * - it is not a comment line, because this repository's prose wraps and a
+ *   sentence can end on a backtick mid-pair.
+ *
+ * @param {string} line
+ */
+function opensTemplate(line) {
+  const trimmed = line.trim();
+  if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) return false;
+  if (!line.trimEnd().endsWith(TICK)) return false;
+  // Escapes first: a `\` + backtick is not a delimiter and must not be counted.
+  const unescaped = line.replace(/\\./gu, '');
+  return (unescaped.split(TICK).length - 1) % 2 === 1;
+}
+
+/**
+ * `String.raw` IS THE MARKER FOR EMITTED SOURCE, and that is a decision this
+ * check makes rather than a fact it discovered.
+ *
+ * Widening the scan to every multi-line template was tried and rejected on the
+ * measurement: it reported 36 problems, nearly all of them openers whose
+ * terminator is not a bare backtick-semicolon — `contract.proof.mjs` alone has
+ * fourteen, ending inside argument lists. **Where a template ends cannot be
+ * determined textually, which is the same wall the parser hits**, so a check
+ * over all of them either guesses a boundary or drowns in false findings.
+ *
+ * Marking the class instead makes it decidable. `String.raw` is also the right
+ * spelling for a program body on its own merits — escape processing is exactly
+ * what you do not want in emitted code — so the marker costs nothing to adopt.
+ *
+ * The escape hatch that would otherwise open is closed by
+ * {@link plainTemplatesInResearch}: in the directory where all three occurrences
+ * happened, a multi-line plain template is itself a finding.
+ *
+ * @param {string} line
+ */
+function opensRawTemplate(line) {
+  return line.includes(`String.raw${TICK}`) && opensTemplate(line);
+}
+
+/**
  * Every emitted-source region in `text`, and every opener whose end could not be
  * found.
  *
@@ -86,9 +144,7 @@ export function emittedRegions(text) {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? '';
-    // The opening backtick must be the last character: that is what makes it a
-    // multi-line body rather than a one-line raw string.
-    if (!line.includes(`String.raw${TICK}`) || !line.trimEnd().endsWith(TICK)) continue;
+    if (!opensRawTemplate(line)) continue;
 
     let end = -1;
     for (let scan = index + 1; scan < lines.length; scan += 1) {
@@ -124,11 +180,38 @@ export function backtickViolations(text) {
     // The boundary lines hold the delimiters themselves and are not content.
     for (let line = region.from + 1; line < region.to; line += 1) {
       const content = lines[line - 1] ?? '';
-      if (content.includes(TICK)) violations.push({ line, text: content.trim().slice(0, 120) });
+      // An ESCAPED backtick is not a delimiter and does not close anything, so
+      // reporting it would be a false finding. Measured: the threat-model topic
+      // fixtures carry several deliberately.
+      if (content.replace(/\\./gu, '').includes(TICK)) {
+        violations.push({ line, text: content.trim().slice(0, 120) });
+      }
     }
   }
 
   return { violations, unterminated };
+}
+
+/**
+ * Multi-line PLAIN template literals under `scripts/research/`.
+ *
+ * Emitted source there must carry the `String.raw` marker, or the scan above has
+ * an escape hatch: write the body as a plain template and it is invisible. That
+ * is not hypothetical — it was the state of the tree when this check first
+ * passed (finding VV-1), with four emitted bodies unmarked.
+ *
+ * Scoped to `scripts/research/` because that is where every occurrence of the
+ * class has happened and where every file's whole purpose is to write a program
+ * and spawn it. Elsewhere a multi-line template is ordinary.
+ *
+ * @param {string} text
+ * @returns {number[]} line numbers
+ */
+export function plainTemplatesInResearch(text) {
+  return text
+    .split('\n')
+    .map((line, index) => (opensTemplate(line) && !opensRawTemplate(line) ? index + 1 : 0))
+    .filter((line) => line !== 0);
 }
 
 /**
@@ -197,7 +280,12 @@ export function scan() {
 
   for (const relative of scannedFiles()) {
     const text = readFileSync(`${root}/${relative}`, 'utf8');
-    if (!text.includes(`String.raw${TICK}`)) continue;
+    // A file with no backtick at all cannot hold a template. Anything narrower
+    // here would be a SECOND opinion about what opens one, held one level above
+    // `opensTemplate` — and that is exactly how VV-1 survived its own first fix:
+    // the opener pattern was widened and this line still said `String.raw`, so
+    // four files were skipped before the widened matcher ever saw them.
+    if (!text.includes(TICK)) continue;
     const { violations, unterminated } = backtickViolations(text);
     regionCount += emittedRegions(text).regions.length;
 
@@ -215,6 +303,17 @@ export function scan() {
           `        ${violation.text}\n` +
           `        It closes the template and the parser then blames whatever follows.\n`,
       );
+    }
+
+    if (relative.startsWith('scripts/research/')) {
+      for (const line of plainTemplatesInResearch(text)) {
+        offending += 1;
+        process.stdout.write(
+          `  FAIL  ${relative}:${line} — emitted source without the String.raw marker.\n` +
+            `        A plain template is invisible to the backtick scan AND interpolates, so it\n` +
+            `        is the more dangerous of the two. Mark it String.raw.\n`,
+        );
+      }
     }
   }
 

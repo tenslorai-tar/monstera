@@ -18,6 +18,7 @@ import {
   CONTROL_LINE,
   backtickViolations,
   emittedRegions,
+  plainTemplatesInResearch,
   scannedFiles,
 } from '../lib/emittedTemplates.mjs';
 
@@ -148,6 +149,54 @@ const OCCURRENCE_THREE = emitted([
   );
 }
 
+// --- VV-1: the marker, and the escape hatch it would otherwise leave --------
+
+{
+  // The state of the tree when this check FIRST PASSED: four emitted bodies
+  // written as plain templates, invisible to a scan keyed on String.raw.
+  const unmarked = emitted([
+    `const HOST = ${TICK}`,
+    `const x = 1;`,
+    `${TICK};`,
+  ]);
+  check(
+    'a plain multi-line template in scripts/research/ is a finding',
+    plainTemplatesInResearch(unmarked).length === 1,
+    'without this, the backtick scan is escaped by dropping String.raw — which is not ' +
+      'hypothetical: it was the tree state when the scan first reported clean (VV-1)',
+  );
+  check(
+    'and a plain template carries NO backtick violation, which is exactly why it needs its own case',
+    backtickViolations(unmarked).violations.length === 0,
+    'if the backtick scan saw plain templates, the marker rule would be redundant — it does not',
+  );
+}
+
+{
+  const marked = emitted([`const HOST = String.raw${TICK}`, `const x = 1;`, `${TICK};`]);
+  check(
+    'CONTROL: a MARKED template is not reported as unmarked',
+    plainTemplatesInResearch(marked).length === 0,
+    'a rule that flags every template flags the correct ones too and separates nothing',
+  );
+}
+
+{
+  // The threat-model topic fixtures carry these deliberately, and an escaped
+  // backtick closes nothing. Reporting it would be a false finding, and a false
+  // finding in a guard is how the guard gets switched off.
+  const escaped = emitted([
+    `const BODY = String.raw${TICK}`,
+    `// naming \\${TICK}fz_open_document\\${TICK} safely`,
+    `${TICK};`,
+  ]);
+  check(
+    'an ESCAPED backtick inside a region is not a violation',
+    backtickViolations(escaped).violations.length === 0,
+    `it is not a delimiter and closes nothing: ${JSON.stringify(backtickViolations(escaped).violations)}`,
+  );
+}
+
 // --- The scan reaches real files --------------------------------------------
 
 {
@@ -166,7 +215,7 @@ const OCCURRENCE_THREE = emitted([
 
 process.stdout.write(
   failures === 0
-    ? `\n9 emitted-template cases passed.\n`
+    ? `\n14 emitted-template cases passed.\n`
     : `\n${failures} emitted-template case(s) FAILED.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

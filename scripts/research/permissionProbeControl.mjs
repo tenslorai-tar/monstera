@@ -60,7 +60,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-perm-'));
  * these drift, the control stops controlling the thing it names — which is the
  * B3a shape, two opinions about one question.
  */
-const PROBE = `
+const PROBE = String.raw`
 const present = typeof process.permission === 'object' && process.permission !== null;
 let fsRead = 'not asked';
 if (present) {
@@ -75,7 +75,7 @@ process.stdout.write(JSON.stringify({
   execArgv: process.execArgv,
   hasPermission: present,
   permissionFsRead: fsRead,
-}) + '\\n');
+}) + '\n');
 `;
 
 try {

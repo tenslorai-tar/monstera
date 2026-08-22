@@ -41,7 +41,7 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-host-'));
  * The host body. Everything here runs INSIDE the utility process, which is the
  * only place these questions have an answer.
  */
-const HOST = `
+const HOST = String.raw`
 const report = {};
 
 report.versions = {
@@ -144,7 +144,7 @@ try {
  * utility process honours those flags at all is not something to assume — it is
  * a Node feature reached through an Electron fork, and either layer can drop it.
  */
-const MAIN = `
+const MAIN = String.raw`
 const { app, utilityProcess } = require('electron');
 const { join } = require('node:path');
 
@@ -174,7 +174,7 @@ const results = [];
 
 function runVariant(index) {
   if (index >= VARIANTS.length) {
-    process.stdout.write('MONSTERA_HOST_REPORT ' + JSON.stringify(results) + '\\n');
+    process.stdout.write('MONSTERA_HOST_REPORT ' + JSON.stringify(results) + '\n');
     app.exit(0);
     return;
   }
@@ -211,7 +211,7 @@ function runVariant(index) {
 app.whenReady().then(() => runVariant(0));
 
 setTimeout(() => {
-  process.stdout.write('MONSTERA_HOST_REPORT ' + JSON.stringify({ error: 'timed out', results }) + '\\n');
+  process.stdout.write('MONSTERA_HOST_REPORT ' + JSON.stringify({ error: 'timed out', results }) + '\n');
   app.exit(1);
 }, 90000);
 `;

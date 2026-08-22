@@ -186,7 +186,7 @@ try {
 }
 `;
 
-const MAIN = `
+const MAIN = String.raw`
 const { app, utilityProcess } = require('electron');
 const { join } = require('node:path');
 
@@ -204,7 +204,7 @@ app.whenReady().then(() => {
   const done = (payload) => {
     if (settled) return;
     settled = true;
-    process.stdout.write('MONSTERA_HOST_REPORT ' + JSON.stringify(payload) + '\\n');
+    process.stdout.write('MONSTERA_HOST_REPORT ' + JSON.stringify(payload) + '\n');
     app.exit(0);
   };
   child.on('message', (message) => done(message));

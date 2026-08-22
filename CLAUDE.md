@@ -428,6 +428,14 @@ These were given directly and bind every agent on this project.
   answer and CI is not there. The rule bans backticks in the emitted **code**
   too, and that is what makes it checkable: a parser cannot help, since the stray
   pair has already closed the template by the time one runs.
+
+  **`String.raw` is the MARKER for emitted source, and under `scripts/research/`
+  a multi-line plain template is itself a finding** (VV-1). Widening the scan to
+  every template was tried and measured: 36 reports, nearly all openers whose
+  terminator is not a bare backtick-semicolon, because *where a template ends
+  cannot be determined textually* — the same wall the parser hits. Marking the
+  class makes it decidable, and the marker is right on its own merits, since
+  escape processing is the last thing a program body wants.
 - **Research versions, never recall them.** Fetch the registry or the release
   API. Assumptions lost badly on the first attempt: two GitHub Actions were
   majors out of date, ESLint was at 10 rather than 9, TypeScript at 7, Vite at 8.
