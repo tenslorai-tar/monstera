@@ -1,10 +1,13 @@
 // @ts-check
 /**
- * The pre-commit gate. Three checks, all blocking:
+ * The pre-commit gate. All checks blocking:
  *
  *   1. Staged content policy (guardFiles.mjs).
  *   2. Emitted-source templates carry no backtick (emittedTemplates.mjs, WW-4).
- *   3. Secret scan of the staged diff (gitleaks).
+ *   3. Only an owner renders a thrown value's stack (stackOwnership.mjs,
+ *      HHH-2) — only when the commit stages a source file naming the property,
+ *      because it costs 21 s and the other two cost under 2 s together.
+ *   4. Secret scan of the staged diff (gitleaks).
  *
  * Both fail *closed*. If gitleaks cannot be found, the commit is rejected with
  * instructions rather than allowed through with a warning: a scanner that
@@ -16,6 +19,7 @@
 
 import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
 import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
+import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import {
@@ -32,6 +36,56 @@ import {
 } from './contractDrift.mjs';
 import { formatFailures, guardFiles } from './guardFiles.mjs';
 import { checkLockfile, explain, touchesDependencies } from './lockfileIntegrity.mjs';
+
+/** Extensions the stack-ownership scan can reach. */
+const SOURCE_EXTENSIONS = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/u;
+
+/**
+ * Whether this commit stages a source file whose STAGED content names the
+ * property. Read from the index, because a working-tree read passes a commit
+ * whose staged content is the one that introduces the defect.
+ *
+ * The token, not the property access: this decides whether to spend twenty
+ * seconds, and the scan itself decides what is a finding. Over-triggering costs
+ * time; under-triggering costs a public commit.
+ *
+ * @returns {boolean}
+ */
+function stagesAStackRead() {
+  return changedPaths(['--cached'])
+    .filter((entry) => entry.state !== 'D' && SOURCE_EXTENSIONS.test(entry.path))
+    .some((entry) => {
+      const blob = readStagedBlob(entry.path);
+      return blob !== null && /\bstack\b/u.test(`${blob}`);
+    });
+}
+
+/**
+ * @returns {Promise<number>} 0 when the tree is clean, 1 otherwise.
+ */
+async function runStackOwnership() {
+  // Imported here rather than at the top: this module loads the TypeScript
+  // compiler, and a commit that stages no stack read should not pay for it.
+  const { report, scan } = await import('../lib/stackOwnership.mjs');
+  const result = await scan();
+  if (result.blind) {
+    process.stderr.write(
+      `\n${report(result)}\n` +
+        `Commit blocked — the stack-ownership scan could not see, so its silence means\n` +
+        `nothing. That is not the same as a clean tree.\n\n`,
+    );
+    return 1;
+  }
+  if (result.findings.length + result.unresolved.length === 0) return 0;
+  process.stderr.write(
+    `\n${report(result)}\n` +
+      `Commit blocked — an Error's stack is read outside an owner (reported above).\n\n` +
+      `\`Error.prototype.stack\` does not include \`cause\`, and the cause's errno is usually\n` +
+      `the diagnosis. Sixteen sites were fixed by hand on 2026-08-20 and a seventeenth was\n` +
+      `written on 2026-08-21, which is why this is a check and not a rule.\n\n`,
+  );
+  return 1;
+}
 
 async function main() {
   // Before anything else: is the tool-use guard actually in force? A settings
@@ -75,6 +129,36 @@ async function main() {
         `Concatenate with + instead, or move the prose out of the emitted body.\n\n`,
     );
     return 1;
+  }
+
+  // HHH-2. WW-4's argument applies here unchanged: a guard that runs only in CI
+  // catches the defect after the commit is public, and B10 makes that
+  // permanent. It applies with unusual force to this class — the seventeenth
+  // `.stack` handler was written ONE DAY after the sixteen were fixed, in
+  // ordinary work.
+  //
+  // The counterweight is real and measured. `check:stackowner` builds a
+  // TypeScript Program per project: 21.2 s, 20.5 s, 21.5 s over three runs,
+  // against 1.0 s for the emitted-template scan and 0.7 s for the file guard.
+  // Twenty seconds on every commit is how a hook becomes something people
+  // bypass, and `--no-verify` on this repository is a Rule 0 violation with a
+  // permanent public consequence. Making the gate painful raises the odds of
+  // the one action the project most forbids.
+  //
+  // So it runs on the commits that can INTRODUCE the defect, and the trigger is
+  // read from the INDEX: a new Error-stack read requires the token in a staged
+  // source file. Cost is a grep over staged blobs on every other commit.
+  //
+  // THE RESIDUAL, stated rather than implied: a type change elsewhere can turn
+  // an existing access from a declared field into an Error's stack without any
+  // staged file naming it. That commit is not scanned here and is caught by CI.
+  // And unlike `emittedTemplates`, this scan reads the WORKING TREE — the
+  // compiler needs a file system, and materialising the index into one is a
+  // different unit of work. A commit that stages a defect and then fixes it
+  // without staging the fix is not seen here.
+  if (stagesAStackRead()) {
+    const stack = await runStackOwnership();
+    if (stack !== 0) return stack;
   }
 
   // Only when the commit touches dependency resolution — it costs a few

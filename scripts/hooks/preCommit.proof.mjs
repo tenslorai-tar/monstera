@@ -690,6 +690,73 @@ check('CONTROL: the environment a spawned hook receives carries no npm_execpath'
   }
 });
 
+// ---------------------------------------------------------------------------
+// HHH-2: the stack-ownership scan runs from the gate, and only when the staged
+// content can introduce the defect.
+//
+// The pair is what makes either case mean anything. The trigger costs 21 s when
+// it fires — measured, against 1.0 s for the template scan — so a version that
+// always fired and a version that never fired are both wrong, and the two cases
+// below fail in opposite directions.
+//
+// A fixture repository has no TypeScript projects, so the scan REFUSES there.
+// That is the observation: a hook that reached the scan reports its refusal, and
+// a hook that never reached it walks on to the scanner. Asserting the refusal
+// proves the wiring AND that the wiring fails closed, which is the property a
+// textual "the hook names the module" assertion could never reach.
+// ---------------------------------------------------------------------------
+check('a staged source file naming the property reaches the stack-ownership scan', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'reporter.mjs', 'export const show = (e) => e.stack ?? e.message;\n');
+    const { ok, output } = runHook(root);
+    if (ok) {
+      return (
+        'the gate passed without reaching the scan. The trigger reads staged blobs for the ' +
+        'token, and this file carries it on the only line it has.'
+      );
+    }
+    return /stack-ownership|tsconfig|project references/iu.test(output)
+      ? null
+      : `blocked, but not by this check — nothing named it:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+check('CONTROL: a staged source file that does NOT name it never pays for the scan', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'plain.mjs', 'export const add = (a, b) => a + b;\n');
+    const { ok, output } = runHook(root);
+    return ok
+      ? null
+      : `expected the gate to pass a file with no stack read, it blocked:\n${output}\n\n` +
+          `Without this the case above is satisfied by a hook that runs the scan on every ` +
+          `commit, which is the version that gets bypassed.`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+check('CONTROL: and the trigger reads the INDEX, not the working tree', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'reporter.mjs', 'export const show = (e) => e.stack ?? e.message;\n');
+    writeFileSync(join(root, 'reporter.mjs'), 'export const show = (e) => String(e);\n');
+    const { ok, output } = runHook(root);
+    return ok
+      ? 'the gate passed a commit whose STAGED content names the property, because the ' +
+          'trigger read the working copy. Deciding whether to look from bytes other than the ' +
+          'ones being committed is deciding from the wrong file.'
+      : /stack-ownership|tsconfig|project references/iu.test(output)
+        ? null
+        : `blocked, but not by this check:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 if (failures.length > 0) {
   process.stderr.write(`\n${failures.length} hook proof failure(s):\n\n${failures.join('\n\n')}\n`);
   process.exit(1);

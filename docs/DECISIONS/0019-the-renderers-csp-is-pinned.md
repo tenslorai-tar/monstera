@@ -149,3 +149,39 @@ put it. One writer, and it is the shell.
   even when enforcement cannot be.
 - Enforcement evidence still covers two directives of eleven. §9.27 states that
   rather than letting "verified against a running renderer" read as complete.
+
+## Addendum, 2026-08-22 — the same choice one layer down: which way a scan errs
+
+This ADR decided that **which side of B3 holds the pen is decided per concern**,
+not once for the repository: the CSP is pinned in the document and derived in
+code, while the memory budgets are held in code and forbidden in prose. Two
+scans shipped on 2026-08-22 forced the same kind of choice at a smaller scale,
+and the answer has the same shape, so it is recorded here rather than as a note
+about two files.
+
+**A scan that cannot be exactly right must err, and which way is a property of
+what its false positives COST — not a general preference for caution.**
+
+| scan | errs toward | why that way |
+|---|---|---|
+| `docs/security/engine-advisories.json`'s symbol triggers | **over-firing** | `git grep`, so a comment naming a watched symbol expires a verdict exactly as a call does. Measured: a comment explaining why a helper was *avoided* kept the verdict red. The register is small, an over-fire costs one re-triage, and the alternative — a scan that can miss a real reference — costs a security claim that is quietly false. |
+| `scripts/lib/stackOwnership.mjs` | **under-firing** | it asks the compiler for the receiver's type, so a comment, a template's contents and a differently-named property are not property accesses and are never seen. Over-firing here would hit prose across the whole tree and need an exception list, which is the disease the check exists to prevent. |
+
+Both are right, and the reasoning is symmetrical to the pen-holding one: ask what
+the wrong answer costs **in this concern**, and let that decide. A repository-wide
+rule — *always err safe* — would have made the stack scan unusable and the
+register weaker, in one sentence.
+
+The corollary is worth stating because it looks like an inconsistency in review:
+**two scans in one commit erring in opposite directions is not a defect**, and a
+reviewer who normalises them will damage one of the two. What must be consistent
+is that each one *says* which way it errs and why, in its own header.
+
+There is a third case in the same range and it is the counter-example that keeps
+this honest. `scripts/lib/nodeModulesPlacement.mjs` first erred toward
+over-firing on the reasoning above, and reported **28 misplaced steps in a job
+that is green**. The cost of a false positive was not one re-triage; it was a
+guard nobody could act on, and this project has already written that *a scan
+that cries wolf is a scan someone relaxes*. The remedy was neither direction but
+precision — the compiler again — which is the answer whenever the cheap version's
+error rate is high enough to make the output unreadable.
