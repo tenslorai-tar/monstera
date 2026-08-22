@@ -396,24 +396,29 @@ try {
   // THE SCAN IS REGISTERED. A check nothing runs is a check that does not exist.
   // ---------------------------------------------------------------------------
   {
-    // Every workflow, read out of the directory: naming one file here would ask
-    // this case to know which job installs node_modules, and that is exactly
-    // the thing this scan needs and Guards does not have. It belongs wherever
-    // `npm ci` runs, and that placement may move again.
+    // Every workflow, read out of the directory, and matched on the SCAN'S OWN
+    // PATH rather than on an npm script name. Naming one file would ask this
+    // case to know which job installs node_modules — exactly the thing this
+    // scan needs and Guards does not have — and matching a script name would
+    // report a de-registration the moment the step is wrapped, since the
+    // wrapper spawns a path.
     const dir = join(ROOT, '.github', 'workflows');
     const workflows = readdirSync(dir).filter((name) => /\.ya?ml$/u.test(name));
     if (workflows.length === 0) throw new Error(`${dir} holds no workflows to read.`);
+    const SCAN_PATH = 'scripts/lib/stackOwnership.mjs';
     const registered = workflows.some((name) =>
-      readFileSync(join(dir, name), 'utf8').includes('check:stackowner'),
+      readFileSync(join(dir, name), 'utf8')
+        .split('\n')
+        .some((line) => line.includes(SCAN_PATH) && line.includes('node ')),
     );
     const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const script = String(manifest.scripts?.['check:stackowner'] ?? '');
     check(
-      'and a workflow actually runs it, through a script that names the scan',
-      registered && script.includes('scripts/lib/stackOwnership.mjs'),
-      `a workflow names it: ${String(registered)}; ` +
-        `check:stackowner = ${JSON.stringify(script)}. A workflow running a script name that ` +
-        `points somewhere else is registered in appearance only.`,
+      'and a workflow actually runs the scan, by path, on a line that invokes node',
+      registered && script.includes(SCAN_PATH),
+      `a workflow runs it: ${String(registered)}; ` +
+        `check:stackowner = ${JSON.stringify(script)}. Both halves are needed — the npm script ` +
+        `is how a person runs it, the workflow line is how CI does.`,
     );
   }
 } finally {

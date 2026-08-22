@@ -59,8 +59,23 @@
  * how a project ships a known-vulnerable parser for a year.
  *
  * Usage:
- *   node scripts/security/engineAdvisories.mjs           check
- *   node scripts/security/engineAdvisories.mjs --refresh rewrite the baseline
+ *   node scripts/security/engineAdvisories.mjs
+ *       check, against the LIVE feed. This is what ships.
+ *   node scripts/security/engineAdvisories.mjs --refresh
+ *       rewrite the baseline
+ *   node scripts/security/engineAdvisories.mjs --require-derivation
+ *       fail rather than report UNVERIFIABLE when the OCR doors cannot be
+ *       derived. Passed by the one job that provisions the MuPDF source.
+ *   node scripts/security/engineAdvisories.mjs --record-advisories
+ *       fetch the live feed once and write it to the tracked recording, then
+ *       exit. The only way that file is written, so a recording is always
+ *       something a live query produced.
+ *   node scripts/security/engineAdvisories.mjs --recorded-advisories
+ *       read the recording instead of fetching. An INPUT SUBSTITUTE for callers
+ *       whose subject is the register, never for the shipped check: a security
+ *       check reading a snapshot reports the world as it was on the day someone
+ *       recorded it. `advisoryRegister.proof.mjs` asserts the shipped script
+ *       does not pass this.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -974,7 +989,18 @@ async function main() {
     (source) =>
       `${advisories.filter((a) => a.component === source.component).length} ${source.component}`,
   ).join(', ');
-  process.stdout.write(`  ok  ${advisories.length} advisories (${perComponent}), all triaged\n`);
+  // The SOURCE is printed, not only the count. `--recorded-advisories` had no
+  // case proving it took effect: a broken parse would fetch live and every
+  // register case would still pass, slowly, while the proof's comment claimed
+  // exactly one live call (finding GGG-2). A count cannot separate them — the
+  // recording was made from the live feed, so the two agree by construction, and
+  // asserting on it is a fixture the bug also handles correctly. This label is
+  // downstream of the same `useRecorded` decision, so it moves when the flag
+  // does.
+  process.stdout.write(
+    `  ok  ${advisories.length} advisories (${perComponent}) from the ` +
+      `${useRecorded ? 'RECORDED' : 'LIVE'} feed, all triaged\n`,
+  );
 
   if (open.length > 0) {
     process.stdout.write(

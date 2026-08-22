@@ -121,7 +121,7 @@ jobs:
       # needs nothing. Provisioning itself starts no process; the step that does
       # is the renderer read-back.
       - name: Provision the pinned Electron runtime
-        run: npm run provision:electron
+        run: node scripts/ci/annotate.mjs scripts/provision/electron.mjs
 
       # Build precedes the proofs that resolve compiled output: the boundary
       # proof lints imports of `@monstera/*`, which resolve through each
@@ -225,7 +225,7 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/stackOwnership.proof.mjs
 
       - name: Only an owner renders a thrown value's stack
-        run: npm run check:stackowner
+        run: node scripts/ci/annotate.mjs scripts/lib/stackOwnership.mjs
 
       # `require('electron')` from plain Node IS the download trigger:
       # node_modules/electron/index.js ends with `module.exports =
@@ -354,7 +354,7 @@ jobs:
       # README with no build step. This fails if one no longer matches the
       # master it was generated from.
       - name: Check generated brand assets match the master
-        run: npm run brand:check
+        run: node scripts/ci/annotate.mjs scripts/brand/generateAssets.mjs --check
 
       # No --passWithNoTests. The flag's only effect is to turn "no test files
       # found" from exit 1 into exit 0, which is the single signal that would
@@ -521,13 +521,13 @@ jobs:
       # invariant 26 forbids. No display concern: this runner is Windows, and
       # provisioning starts no process in any case.
       - name: Provision the pinned Electron runtime
-        run: npm run provision:electron
+        run: node scripts/ci/annotate.mjs scripts/provision/electron.mjs
 
       # Builds MuPDF from source against a pinned SHA-256, links the shim, and
       # fails if the DLL does not export every MZ_EXPORT symbol the source
       # declares.
       - name: Provision MuPDF and build the shim
-        run: npm run provision:mupdf
+        run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
 
       # THIS JOB NOW NEEDS COMPILED TYPESCRIPT, and it did not before.
       #
@@ -577,7 +577,7 @@ jobs:
       # declared but never linked and five linked but never declared, openssl
       # among them.
       - name: Check NOTICE against the tree and the native build
-        run: npm run notice:check
+        run: node scripts/ci/annotate.mjs scripts/release/generateNotice.mjs --check
 
       # Every bundled licence now cites the file its terms were read from, and
       # that file must still contain a marker distinguishing those terms. The
@@ -616,7 +616,7 @@ jobs:
       # job has the source, so here "could not look" is a defect in the job, not
       # a fact about the machine.
       - name: The OCR door set is derived HERE, where the source exists
-        run: npm run check:advisories -- --require-derivation
+        run: node scripts/ci/annotate.mjs scripts/security/engineAdvisories.mjs --require-derivation
 
       # The door check answers a question about our source text: does any shipped
       # file NAME a door. This answers the one about the binary: walking forward

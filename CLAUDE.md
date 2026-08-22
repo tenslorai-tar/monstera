@@ -1022,6 +1022,8 @@ npm run proof:secretscan  # prove the secret scan cannot be silently disarmed
 npm run proof:escapeguard # prove the escape-resolving-write hook blocks and permits correctly
 npm run check:emittedtemplates  # no emitted-source template carries a backtick
 npm run proof:emittedtemplates  # prove that scan can see, refuse and tolerate
+npm run check:stackowner  # only an owner renders a thrown value's stack (needs node_modules)
+npm run proof:stackowner  # prove that scan can see, refuse and separate
 npm run proof:advisories  # prove the advisory register cannot pass while unreadable
 npm run guard:staged      # file policy against the index
 npm run guard:tree        # file policy against every tracked file (CI mirror)

@@ -79,7 +79,7 @@ const failures = [];
  * witnessed verdict is not a derived one. That case is world-independent, so it
  * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 33 });
+const roster = createRoster(failures, { cases: 34 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -161,12 +161,23 @@ function liveRun() {
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
 
-/** Runs the checker against a register absent from disk. */
+/**
+ * Runs the checker against a register absent from disk.
+ *
+ * `--recorded-advisories` is passed even though this run cannot reach the fetch:
+ * the checker reads the baseline before it reads the feed, so the missing file
+ * ends the run first. That made the one-live-call-site property INHERITED from
+ * an ordering inside another module rather than held here (FFF-4). Reorder those
+ * two reads — for any reason, in a commit about something else — and this case
+ * silently becomes a second live call, with `liveRun`'s comment still claiming
+ * there is one. The flag makes the property true at the call site (B5).
+ */
 function runAgainstMissing() {
-  const result = spawnSync(process.execPath, [CHECKER, '--baseline', join(scratch, 'gone.json')], {
-    cwd: ROOT,
-    encoding: 'utf8',
-  });
+  const result = spawnSync(
+    process.execPath,
+    [CHECKER, '--baseline', join(scratch, 'gone.json'), '--recorded-advisories'],
+    { cwd: ROOT, encoding: 'utf8' },
+  );
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
 
@@ -210,6 +221,27 @@ try {
       `other case in this file runs against packages/testing/fixtures/security/osv-recorded.json ` +
       `and cannot fail this way.\n${live.output}`,
   );
+  // -------------------------------------------------------------------------
+  // AND THE FLAG THAT KEEPS THIS FILE OFF THE NETWORK ACTUALLY TAKES EFFECT.
+  //
+  // GGG-2: without this, a broken `--recorded-advisories` parse would make every
+  // case above fetch live and STILL PASS — slowly, while `liveRun`'s comment
+  // claimed exactly one live call. The reassuring answer here is "the cases
+  // pass", and a no-op flag produces it too.
+  //
+  // Asserted on the SOURCE, not on the count. The recording was made from the
+  // live feed, so the two counts agree by construction and a count assertion is
+  // a fixture the defect also satisfies.
+  // -------------------------------------------------------------------------
+  check(
+    'the recorded-feed flag TAKES EFFECT: a recorded run says so, and the live one does not',
+    /from the RECORDED feed/.test(control.output) && /from the LIVE feed/.test(live.output),
+    `A run through runAgainst must report the RECORDED feed and the one live case must report ` +
+      `the LIVE one. If both say LIVE, the flag is being ignored and this file is reaching OSV ` +
+      `on every case.\nrecorded run: ${control.output.split('\n').find((l) => l.includes('advisories (')) ?? '(no count line)'}` +
+      `\nlive run: ${live.output.split('\n').find((l) => l.includes('advisories (')) ?? '(no count line)'}`,
+  );
+
   check(
     'CONTROL: and it reports that the walk found its controls',
     /reachability walk: \d+ control\(s\) found/.test(control.output),
@@ -829,21 +861,35 @@ try {
   const shimJob = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
   const guardsJob = readFileSync(join(ROOT, '.github', 'workflows', 'guards.yml'), 'utf8');
 
+  // Matched on the CHECKER'S PATH, not on an npm script name. These read
+  // `check:advisories -- --require-derivation` until FFF-2 routed every workflow
+  // step through the annotate wrapper, which spawns a path — and both cases then
+  // reported a de-registration that had not happened. A registration case tied
+  // to one spelling reports the spelling changing and stays silent when the step
+  // moves somewhere it cannot run. The path is what actually executes.
+  const CHECKER_PATH = 'scripts/security/engineAdvisories.mjs';
+  /** @param {string} workflow */
+  const derives = (workflow) =>
+    workflow
+      .split('\n')
+      .some((line) => line.includes(CHECKER_PATH) && line.includes('--require-derivation'));
+
   check(
     'the job that provisions MuPDF requires the derivation',
-    /check:advisories -- --require-derivation/u.test(shimJob),
-    'ci.yml must run check:advisories with --require-derivation in the job that provisions ' +
+    derives(shimJob),
+    'ci.yml must run the advisory checker with --require-derivation in the job that provisions ' +
       'MuPDF. Without it the OCR door set is derived in no job at all, and "unverifiable ' +
       'everywhere" is a stable state nothing reports as wrong.',
   );
 
   check(
     'CONTROL: and the job that does NOT provision it must not require the derivation',
-    guardsJob.includes('npm run check:advisories\n') &&
-      !/check:advisories -- --require-derivation/u.test(guardsJob),
+    guardsJob.includes(CHECKER_PATH) && !derives(guardsJob),
     'guards.yml does not provision MuPDF, so requiring the derivation there turns every run ' +
       'red on both platforms. Without this control the case above is satisfied by putting the ' +
-      'flag on every invocation, which is the failure that was just fixed.',
+      'flag on every invocation, which is the failure that was just fixed. The first half is ' +
+      'load-bearing too: a Guards that runs the checker NOWHERE also satisfies "not with the ' +
+      'flag".',
   );
 } finally {
   rmSync(scratch, { recursive: true, force: true });

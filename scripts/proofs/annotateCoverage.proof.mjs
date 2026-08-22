@@ -14,19 +14,23 @@
  * cost `advisoryRegister.proof.mjs` a case when a verdict was correctly retired.
  */
 
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { findProofInvocations, proofEntryPoints, scan } from '../lib/annotateCoverage.mjs';
+import {
+  findWrappableInvocations,
+  scan,
+  wrappableEntryPoints,
+} from '../lib/annotateCoverage.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 
 const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 12 });
+const roster = createRoster(failures, { cases: 15 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -168,34 +172,84 @@ try {
     const root = tempRepo({ scripts: { build: 'tsc' }, workflows: { 'a.yml': 'x\n' } });
     let threw = false;
     try {
-      findProofInvocations({ root });
+      findWrappableInvocations({ root });
     } catch {
       threw = true;
     }
     check(
-      'a manifest with NO proof scripts throws, rather than finding nothing',
+      'a manifest with NO wrappable scripts throws, rather than finding nothing',
       threw,
       'With no names and no paths, every workflow line is unrecognised and the scan reports a ' +
         'clean tree — the reassuring answer, produced by having looked at nothing.',
     );
   }
 
+  // -------------------------------------------------------------------------
+  // FFF-2: THE SCOPE IS "WHAT THE WRAPPER CAN SPAWN", not a name prefix.
+  //
+  // `annotate.mjs` runs its target with process.execPath, so a step running
+  // `tsc`, `eslint` or `vitest` is outside the rule as a matter of mechanism.
+  // A chain like `npm run build` names no path of its own; the derivation reads
+  // each command's own text and does not follow chains.
+  // -------------------------------------------------------------------------
   {
     const root = tempRepo({
-      scripts: { 'proof:thing': 'echo nothing-that-looks-like-a-path' },
+      scripts: {
+        lint: 'eslint .',
+        typecheck: 'tsc --build',
+        build: 'npm run typecheck && npm run build:preload',
+        'build:preload': 'node scripts/build/preload.mjs',
+        'guard:tree': 'node scripts/hooks/guardFiles.mjs --tree',
+        'check:docs': 'node scripts/hooks/documentConsistency.mjs',
+      },
       workflows: { 'a.yml': 'x\n' },
     });
-    let threw = false;
-    try {
-      proofEntryPoints(root);
-    } catch {
-      threw = true;
-    }
+    const { names } = wrappableEntryPoints(root);
     check(
-      'proof scripts that yield NO paths throw, because the matcher and the manifest disagree',
-      threw,
-      'Names without paths means the path matcher is wrong. A scan that recognises no paths ' +
-        'finds no violations for the wrong reason.',
+      'a script that runs a non-node tool is not wrappable, and neither is a chain',
+      !names.includes('lint') && !names.includes('typecheck') && !names.includes('build'),
+      `names = ${JSON.stringify(names)}. The wrapper spawns a node script; requiring a step to ` +
+        `route \`eslint\` through it would be a rule nothing can satisfy, which is how a check ` +
+        `gets disabled.`,
+    );
+    check(
+      'CONTROL: and a script that DOES run a node file is, including one behind a chain',
+      names.includes('guard:tree') &&
+        names.includes('check:docs') &&
+        names.includes('build:preload'),
+      `names = ${JSON.stringify(names)}. Without this, the case above is satisfied by a ` +
+        `derivation that recognises nothing at all — which is the same fixture reporting ` +
+        `"correctly excluded" for every entry.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // A PATH IS NOT AN INVOCATION. Dropping the `proof:` filter alone reports
+  // three hashFiles() cache keys in ci.yml, which name a script and run
+  // nothing. The line must also invoke node on a repository script.
+  // -------------------------------------------------------------------------
+  {
+    const root = tempRepo({
+      scripts: { 'guard:tree': 'node scripts/hooks/guardFiles.mjs --tree' },
+      workflows: {
+        'a.yml':
+          '          key: cache-${{ hashFiles(\'scripts/hooks/guardFiles.mjs\') }}\n' +
+          '        run: node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --tree\n',
+      },
+    });
+    const result = scan({ root });
+    check(
+      'a script path inside a cache key is NOT an invocation',
+      result.violations.length === 0,
+      `violations = ${JSON.stringify(result.violations)}. A hashFiles key names a script and ` +
+        `runs nothing; reporting it would be a violation nobody can fix, on a line that cannot ` +
+        `fail.`,
+    );
+    check(
+      'CONTROL: and the wrapped line beneath it was still recognised',
+      result.wrapped === 1 && !result.blind,
+      `wrapped = ${String(result.wrapped)}. Without this, "no violations" above is satisfied by ` +
+        `a scan that recognised neither line.`,
     );
   }
 
@@ -210,7 +264,7 @@ try {
     mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
     let threw = false;
     try {
-      findProofInvocations({ root: dir });
+      findWrappableInvocations({ root: dir });
     } catch {
       threw = true;
     }
@@ -245,17 +299,30 @@ try {
   // which is the shape this whole finding is about.
   // -------------------------------------------------------------------------
   {
-    const guards = readFileSync(join(ROOT, '.github', 'workflows', 'guards.yml'), 'utf8');
+    // Asserted against the SCAN'S OWN PATH in any workflow, not against an npm
+    // script name in a named file. The previous form asserted
+    // `guards.yml contains "check:annotatecoverage"`, and FFF-2 broke it by
+    // making the workflow name the path directly — which is what the widened
+    // rule requires of every step. A registration case coupled to one spelling
+    // in one file reports a de-registration when the spelling changes, and says
+    // nothing when the step moves to a job that cannot run it.
+    const dir = join(ROOT, '.github', 'workflows');
+    const workflows = readdirSync(dir).filter((name) => /\.ya?ml$/u.test(name));
+    if (workflows.length === 0) throw new Error(`${dir} holds no workflows to read.`);
+    const SCAN_PATH = 'scripts/lib/annotateCoverage.mjs';
+    const runsIt = workflows.some((name) => {
+      const text = readFileSync(join(dir, name), 'utf8');
+      return text.split('\n').some((line) => line.includes(SCAN_PATH) && line.includes('node '));
+    });
     const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const script = String(manifest.scripts?.['check:annotatecoverage'] ?? '');
     check(
-      'and a workflow actually runs it, through a script that names the scan',
-      guards.includes('check:annotatecoverage') &&
-        script.includes('scripts/lib/annotateCoverage.mjs'),
-      `guards names it: ${String(guards.includes('check:annotatecoverage'))}; ` +
-        `check:annotatecoverage = ${JSON.stringify(script)}. Both halves are needed — a ` +
-        `workflow running a script name that points somewhere else is registered in appearance ` +
-        `only, and EEE-3 exists because a remedy written but not rolled out is not a remedy.`,
+      'and a workflow actually runs the scan, by path, on a line that invokes node',
+      runsIt && script.includes(SCAN_PATH),
+      `a workflow runs it: ${String(runsIt)}; check:annotatecoverage = ` +
+        `${JSON.stringify(script)}. Both halves are needed — the npm script is how a person ` +
+        `runs it, the workflow line is how CI does, and EEE-3 exists because a remedy written ` +
+        `but not rolled out is not a remedy.`,
     );
   }
 } finally {

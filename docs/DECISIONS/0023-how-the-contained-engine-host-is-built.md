@@ -318,7 +318,13 @@ named helper on top of them.
 Left as written, because what this ADR instructed at the time is the record.
 `docs/ARCHITECTURE.md` §5's **body** is corrected instead, being living law.
 
-## 7. What crosses the pipe — intent and handles, never images (decided 2026-08-22)
+## Decision 7 — what crosses the pipe: intent and handles, never images (decided 2026-08-22)
+
+*Numbered into the same sequence as §1–§6, which are `###` under `## Decision`.
+This one and §8 were decided later and are appended at `##`, beside the
+corrections, because this document is a record and appended sections are not
+reordered into the body above them. The heading says "Decision" so the level
+carries the same meaning either way.*
 
 §4 settled the *shape* of the protocol and left its *payload* open, which is the
 question that decides the frame maximum. Appended rather than folded into §4,
@@ -450,7 +456,7 @@ reconstructs it.** Its evidence came from `36caf21`; ADR-0022 itself is
 measurement taken **two commits before** the blinding, and the ADR was written
 one commit before it.
 
-## 8. A failed job assignment kills the process — never a host running with two of three (EEE-2, decided 2026-08-22)
+## Decision 8 — a failed job assignment kills the process, never a host running with two of three (EEE-2, decided 2026-08-22)
 
 **The measurement that forces this.** WW-1's per-property variant matrix
 separated two mechanisms that had always been applied together, and the result

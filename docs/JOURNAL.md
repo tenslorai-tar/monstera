@@ -644,6 +644,83 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — HHH-1: the register's expiry fired on my own change, one push later
+
+`d55b893` went red on **both** workflows. Not the network, not a platform: the
+advisory register's `renderer-facing-errors-carry-no-text` verdict expired,
+exactly as designed, because `apps/desktop/src/rendererHarnessMain.ts` had
+started naming `@monstera/shared`'s structured-error helper.
+
+That is the mechanism working at full strength — a claim whose expiry is *the
+day shipped code names X*, firing within one push of the naming, on a change
+made for an unrelated reason (FFF-1's fix for a discarded `cause` chain). It is
+also the third proxy failure on this same directory, and the second finding this
+week about where a claim's expiry lives.
+
+### What was done, and the alternative that was refused
+
+The harness now renders with `util.inspect`, which walks `cause` and prints the
+errno fields beside it — Node's own answer to "render a thrown value", so B3a
+says implement it once and call it rather than hold a second opinion. It names
+no watched symbol and no `stack`, so FFF-1's scan stays satisfied with no
+exemption.
+
+**The refused alternative is the more interesting half.** Keeping the helper and
+re-triaging the verdict would have meant narrowing its stated input — *no code
+under `apps/*/src/**` builds a diagnostic* — so that a **proof harness** could
+use a nicer helper. The claim itself still holds: this file writes to its own
+stderr, is not re-exported by `index.ts`, and owns no channel. But weakening a
+security verdict's scope to accommodate a harness is the trade the wrong way
+round, and "exclude the file that tripped it" is an exception list with one entry
+and room for more.
+
+### Three things the trigger cannot do, and only one of them is a defect
+
+- **Its `shippedPaths` glob is a DIRECTORY PROXY for "renderer-facing".** The
+  harness is not renderer-facing and the glob cannot tell. `CLAUDE.md` already
+  records that `apps/desktop/src/` is exempted as a proxy for *runs inside
+  Electron* and that **the proxy has failed three times**; this is a fourth
+  failure of the same directory standing in for a property. The answer there was
+  *ask which mode a file runs in, never which directory it sits in* — and the
+  precise input here is **reachable from the package's exports**, which is
+  derivable and not built. Recorded with its trigger: it becomes a defect the
+  first time a genuinely renderer-facing file is missed, or the first time
+  someone narrows the glob instead of deriving it.
+- **It scans with `git grep`, so a COMMENT naming the symbol expires the verdict
+  exactly as a call does.** Measured here: the first fix kept the verdict red
+  because the comment explaining why the helper was avoided spelled its name.
+  This over-fires, which is the safe direction for a security trigger, and it is
+  the opposite choice from FFF-1's scan — where over-firing on prose would have
+  needed an exception list, so the walk was made unable to see comments at all.
+  **Both are right, and which way a scan should err is decided by what its
+  false positives cost**, not by a general preference.
+- **Its symbol set is a proxy for "assembles free text", and `util.inspect` is
+  outside it.** A real IPC handler using it would not trip the trigger. That
+  hole exists whatever this commit does — the trigger has always watched two
+  names — but this commit is the first code under the glob to walk through it,
+  so it is written down here rather than left for whoever finds it next.
+
+### GG-1, third occurrence, and this one WAS derivable
+
+The reason the red was found by CI rather than locally is GG-1 again: the change
+touched `apps/desktop/src/`, `check:advisories` reads `apps/*/src/**`, and I did
+not run it. Same class as the two occurrences `3a58ed6` recorded, and the same
+cost — a push, a red board, and a diagnosis.
+
+**But the obstacle that entry recorded does not hold for this check.** GG-1 says
+the mapping cannot be derived because *proofs address their inputs by
+construction*, so no literal path exists to grep for. That is true of proofs. It
+is **false of the advisory register**: its `shippedPaths` and witness `in` globs
+are literal strings in a tracked JSON file, so "which check reads which path"
+already exists as data for this one. A pre-commit rule that runs
+`check:advisories` when a commit stages a file matching any declared glob is
+derivable today, from the register itself, with no list.
+
+That does not close GG-1 — it narrows it. The general mapping is still
+undecided; one member of it is not.
+
+---
+
 ## 2026-08-22 — Stage audit: `d3ea661..d55b893` — a flag nothing proves takes effect, and a step on the job that cannot run it
 
 **Audited through `d55b893`.** 9 commits, 23 files, **2 proofs added, 4
@@ -714,9 +791,21 @@ one the whole fix rests on — the file's own comment says grepping for `liveRun
 finds every live case, *currently one*, which is true only if the flag works.
 
 The fixture that would separate them is derived, not restated: have the checker
-print the advisory count and its source, and assert that a recorded run reports
-exactly `osv-recorded.json`'s own length. A broken flag fetches live, and a live
-count equals 74 only by coincidence.
+print the advisory **source** and assert that a recorded run says so.
+
+> **Closed the same day, and the first draft of that remedy was wrong.** The
+> sentence above originally proposed asserting the *count* — that a recorded run
+> reports exactly `osv-recorded.json`'s own length — on the reasoning that a live
+> count equals 74 only by coincidence. It is not a coincidence: **the recording
+> was made from the live feed**, so the two counts agree by construction, and a
+> count assertion is a fixture the defect also satisfies. That is item 4's other
+> half — *never build a fixture the bug also handles correctly* — arriving inside
+> the remedy for a vacuity finding.
+>
+> The label is what separates them, because it is downstream of the same
+> `useRecorded` decision. Mutated to check: with the flag forced to a no-op,
+> **exactly one case goes red** and its diagnostic prints both runs saying
+> `from the LIVE feed`, with `74` on both lines.
 
 ### GGG-3 — the checker's Usage block does not list the two flags it gained
 

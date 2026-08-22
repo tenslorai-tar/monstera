@@ -240,7 +240,7 @@ jobs:
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.
       - name: Document consistency
-        run: npm run check:docs
+        run: node scripts/ci/annotate.mjs scripts/hooks/documentConsistency.mjs
 
       # Check 7 guards a document that does not exist yet, so nothing exercises
       # it in the ordinary course of work: check:docs finds no threat model,
@@ -275,7 +275,7 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/workflowPins.proof.mjs
 
       - name: No workflow names a path inside the provisioned Electron tree
-        run: npm run check:workflowpins
+        run: node scripts/ci/annotate.mjs scripts/lib/workflowPins.mjs
 
       # Runs HERE, on Linux, with no native library involved: the check is pure
       # arithmetic on what koffi returns, and the value it must reject was
@@ -293,7 +293,7 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/emittedTemplates.proof.mjs
 
       - name: No emitted-source template carries a backtick
-        run: npm run check:emittedtemplates
+        run: node scripts/ci/annotate.mjs scripts/lib/emittedTemplates.mjs
 
       # EEE-3, and it closes Y-3's shape rather than adding a third list. The
       # annotate wrapper was rolled out by enumeration — three steps in ci.yml,
@@ -305,7 +305,7 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/annotateCoverage.proof.mjs
 
       - name: Every workflow proof step reaches a public annotation
-        run: npm run check:annotatecoverage
+        run: node scripts/ci/annotate.mjs scripts/lib/annotateCoverage.mjs
 
       # The pin these very jobs run on is one declaration, not three copies. A
       # workflow left on a floating major keeps working and keeps passing while
@@ -350,7 +350,7 @@ jobs:
       # not derive" as "was not derived" — the rule's own distinction, broken by
       # its own implementation.
       - name: Native engine advisories
-        run: npm run check:advisories
+        run: node scripts/ci/annotate.mjs scripts/security/engineAdvisories.mjs
 
       # The register above is only as good as its inability to pass while
       # unreadable. Its parse used to be wrapped in a bare `catch` returning an
@@ -362,7 +362,7 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/advisoryRegister.proof.mjs
 
       - name: File policy (whole tree)
-        run: node scripts/hooks/guardFiles.mjs --tree
+        run: node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --tree
 
       # The tree scope sees only what survives to the tip. A blob committed and
       # then deleted is gone from `git ls-files` and retained by GitHub forever,
@@ -375,12 +375,12 @@ jobs:
       - name: File policy (history introduced by this change)
         run: |
           if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
-            node scripts/hooks/guardFiles.mjs --history \
+            node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
               --range "${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
           else
-            node scripts/hooks/guardFiles.mjs --history \
+            node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --history \
               --range "${{ github.event.before }}..${{ github.sha }}"
           fi
 
       - name: Secret scan (full history)
-        run: node scripts/hooks/scanSecrets.mjs
+        run: node scripts/ci/annotate.mjs scripts/hooks/scanSecrets.mjs
