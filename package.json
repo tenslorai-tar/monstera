@@ -75,6 +75,8 @@
     "proof:win32handle": "node scripts/proofs/win32Handle.proof.mjs",
     "proof:emittedtemplates": "node scripts/proofs/emittedTemplates.proof.mjs",
     "check:emittedtemplates": "node scripts/lib/emittedTemplates.mjs",
+    "proof:annotatecoverage": "node scripts/proofs/annotateCoverage.proof.mjs",
+    "check:annotatecoverage": "node scripts/lib/annotateCoverage.mjs",
     "check:workflowpins": "node scripts/lib/workflowPins.mjs",
     "proof:toolchain": "node scripts/proofs/toolchainPin.proof.mjs",
     "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",

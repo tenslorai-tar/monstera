@@ -152,10 +152,10 @@ jobs:
       # builds from a clean checkout. The control plants a violation in real
       # source, so a config that ignored the whole tree cannot pass.
       - name: Prove the lint ignores track .gitignore and still lint source
-        run: npm run proof:lintignores
+        run: node scripts/ci/annotate.mjs scripts/proofs/lintIgnores.proof.mjs
 
       - name: Prove the React lint rules are registered and fire
-        run: npm run proof:lintrules
+        run: node scripts/ci/annotate.mjs scripts/proofs/lintRules.proof.mjs
 
       # The instrument the Stage 0 performance gate will use, resolution-tested
       # before it measures anything real. Its predecessor was a setInterval
@@ -164,7 +164,7 @@ jobs:
       # which is what made it convincing. The blocked-loop case here is that
       # exact failure mode, ruled out rather than assumed away.
       - name: Prove the peak-RSS instrument can tell two numbers apart
-        run: npm run proof:peakrss
+        run: node scripts/ci/annotate.mjs scripts/proofs/peakRss.proof.mjs
 
       # ADR-0010 recorded that koffi "needs Electron ABI prebuilds". It does
       # not: it is a Node-API addon, and its prebuilts are per platform-arch.
@@ -173,10 +173,10 @@ jobs:
       # first FFI call inside a shipped application. Runs on both platforms
       # because the lockfile pins a binary for each and either could go missing.
       - name: Prove the FFI binding is installed and callable
-        run: npm run proof:nativeaddon
+        run: node scripts/ci/annotate.mjs scripts/proofs/nativeAddon.proof.mjs
 
       - name: Prove the architecture boundaries are enforced
-        run: npm run proof:boundaries
+        run: node scripts/ci/annotate.mjs scripts/proofs/boundaries.proof.mjs
 
       # electron.d.ts is 56% comments, and a text search matches prose as readily
       # as a declaration — so it would witness a symbol that had been REMOVED,
@@ -190,7 +190,7 @@ jobs:
       # `file://` + backslash replacement is Windows-specific code that no CI job
       # would otherwise execute.
       - name: Prove the Electron surface is parsed, not searched
-        run: npm run proof:electronsurface
+        run: node scripts/ci/annotate.mjs scripts/proofs/electronSurface.proof.mjs
 
       # Invariant 1's IMPORT half, and the only half of the preload that can be
       # proven at all today: every workflow installs Electron with
@@ -208,7 +208,7 @@ jobs:
       # restated, so amending the invariant changes what the preload may import
       # in the same commit (ADR-0012's rule, applied to names instead of numbers).
       - name: Prove the preload cannot import its way out of invariant 1
-        run: npm run proof:preload
+        run: node scripts/ci/annotate.mjs scripts/proofs/preloadSurface.proof.mjs
 
       # `require('electron')` from plain Node IS the download trigger:
       # node_modules/electron/index.js ends with `module.exports =
@@ -227,7 +227,7 @@ jobs:
       # `--ignore-scripts` on line 89 actually prevented the install script from
       # unpacking a second, unpinned runtime.
       - name: Prove nothing can trigger the unpinned Electron download
-        run: npm run proof:electronimports
+        run: node scripts/ci/annotate.mjs scripts/proofs/electronImports.proof.mjs
 
       # The FIRST check in this repository that starts Electron and reads
       # something back out of a running renderer. Two claims, split so a
@@ -312,10 +312,10 @@ jobs:
       # reader. Measured cost of getting it wrong: 38.1 MB of native MuPDF
       # binding loaded by importing the module that must never parse.
       - name: Prove DocumentService does not load the native shim
-        run: npm run proof:kernelload
+        run: node scripts/ci/annotate.mjs scripts/proofs/kernelLoad.proof.mjs
 
       - name: Prove the composition root's ceiling is ADR-0007's
-        run: npm run proof:composition
+        run: node scripts/ci/annotate.mjs scripts/proofs/composition.proof.mjs
 
       # Needs the display installed above, for the same reason the renderer
       # read-back does. A composition root known only to compile is one nobody
@@ -324,14 +324,14 @@ jobs:
         run: node scripts/ci/annotate.mjs scripts/proofs/shell.proof.mjs
 
       - name: Prove the IPC contract is exhaustive
-        run: npm run proof:contract
+        run: node scripts/ci/annotate.mjs scripts/proofs/contract.proof.mjs
 
       # The writer-of-record matrix rests on measured engine behaviour, not on
       # type declarations. This re-measures it, so an engine upgrade that
       # changes any of those behaviours turns the build red instead of quietly
       # invalidating the architecture built on top of them.
       - name: Prove engine behaviour still matches the matrix
-        run: npm run proof:engines
+        run: node scripts/ci/annotate.mjs scripts/spike/engineSpike.mjs
 
       # The committed logo derivatives exist only because GitHub renders the
       # README with no build step. This fails if one no longer matches the
@@ -359,7 +359,7 @@ jobs:
       # Runs after the suite: it poisons build output and restores it, so a
       # failure here should not be able to explain away a failure above.
       - name: Prove the tests read source, not a stale build
-        run: npm run proof:testresolution
+        run: node scripts/ci/annotate.mjs scripts/proofs/testResolution.proof.mjs
 
       # RUN AGAIN, AFTER THE SUITE, AND THE ORDERING IS THE POINT.
       #
@@ -382,7 +382,7 @@ jobs:
       # test runner is a route neither of them covers. This step is what covers
       # it, and it only covers it here.
       - name: Prove the test suite itself triggered no download
-        run: npm run proof:electronimports
+        run: node scripts/ci/annotate.mjs scripts/proofs/electronImports.proof.mjs
 
   # The native seam, on the only platform that can build it today.
   #
@@ -530,28 +530,28 @@ jobs:
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous
-        run: npm run proof:shim
+        run: node scripts/ci/annotate.mjs scripts/provision/mupdf.proof.mjs
 
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
       # bump silently dropping the bounds check.
       - name: Prove the CFF over-read is fixed and the check is load-bearing
-        run: npm run proof:cff
+        run: node scripts/ci/annotate.mjs scripts/security/cffOobProof.mjs
 
       # The cheap page-geometry path is the viewer's scroll-layout source (L21).
       # It must agree with fz_bound_page exactly, on documents with inherited
       # /Rotate and with a /CropBox — the two shapes a flat fixture cannot show,
       # and the two the old hand-rolled reads got wrong.
       - name: Prove cheap page geometry agrees with the expensive path
-        run: npm run proof:geometry
+        run: node scripts/ci/annotate.mjs scripts/proofs/pageGeometry.proof.mjs
 
       # Holds the purge census to an equation rather than to a comment:
       # cached_after == cached_before - droppable. The load-bearing fixture is
       # the one edited in memory after rendering, where a per-object-number walk
       # and a per-section walk genuinely see different populations.
       - name: Prove the purge census mirrors pdf_clear_xref
-        run: npm run proof:purge
+        run: node scripts/ci/annotate.mjs scripts/proofs/purgeCensus.proof.mjs
 
       # NOTICE is generated from the production dependency tree and from what
       # libmupdf actually compiles. This job has the MuPDF source, so it is the
@@ -573,7 +573,7 @@ jobs:
       # changes when they happen. This job has the source, so it is where the
       # real declaration gets checked rather than skipped.
       - name: Prove every bundled licence matches the file it cites
-        run: npm run proof:licences
+        run: node scripts/ci/annotate.mjs scripts/proofs/licenceProvenance.proof.mjs
 
       # The advisory register holds a NOT-REACHABLE verdict for Tesseract and
       # Leptonica, and it rests on a list of the public MuPDF functions that can
@@ -585,7 +585,7 @@ jobs:
       # case that matters is fz_clone_text_span: same file as a real door, no
       # path to OCR, and only a correct analysis tells them apart.
       - name: Prove the OCR door derivation can tell a call path from none
-        run: npm run proof:ocrdoors
+        run: node scripts/ci/annotate.mjs scripts/proofs/ocrDoors.proof.mjs
 
 
       # The register runs in Guards too, and there it CANNOT derive the door set:
@@ -611,7 +611,7 @@ jobs:
       # path into the dispatcher must be reported as reaching, or a walk that
       # returns the empty set for every input would pass everything else.
       - name: Prove no shim export reaches the OCR subsystem
-        run: npm run proof:shimreach
+        run: node scripts/ci/annotate.mjs scripts/proofs/shimReach.proof.mjs
 
       # Invariant 23 (ADR-0015). The measurement above is true today and would
       # have to be re-established at every engine release; this removes the class
@@ -621,7 +621,7 @@ jobs:
       # path and are NOT dispatchers, because a rule banning every path-taking
       # function would ban the shim's own save and be switched off within a week.
       - name: Enforce invariant 23 — no filename may select a native library
-        run: npm run proof:pathdispatch
+        run: node scripts/ci/annotate.mjs scripts/proofs/pathDispatch.proof.mjs
 
       # ADR-0016. fz_open_document scores handlers on CONTENT, and the shim's
       # "not a PDF" refusal used to come from pdf_specifics AFTER the foreign
@@ -631,7 +631,7 @@ jobs:
       # post-hoc one. Runs against the real DLL, with a real PDF opening as the
       # control, since "refuses everything" would otherwise pass.
       - name: Prove only PDF is opened, and foreign formats fail at recognition
-        run: npm run proof:documenthandlers
+        run: node scripts/ci/annotate.mjs scripts/proofs/documentHandlers.proof.mjs
 
       # The Stage 0 performance gate. Runs here because it needs the built shim:
       # the mupdf-host role is the process that holds the parser, and measuring

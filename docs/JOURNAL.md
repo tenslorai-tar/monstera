@@ -3692,6 +3692,31 @@ Recorded rather than built: the sixteen are correct now, and a search-shaped
 guard written in the same hour as the fix it guards is precisely the fix-induced
 shape this range already produced two of.
 
+> **Note, 2026-08-22 — the precedent exists now, and it does not fully
+> transfer.** EEE-3 built exactly the shape this entry asked for, for a different
+> subject: `scripts/lib/annotateCoverage.mjs` derives the set of proofs from
+> `package.json`, requires every workflow line running one to name the wrapper,
+> carries a positive control that must find a correctly wrapped invocation on
+> every run, and **refuses to report at all** when it cannot. `CCC-1` was the
+> same disease as this entry — a remedy rolled out by enumeration, where nothing
+> makes the list complete.
+>
+> **Y-3 is NOT closed, and the reason is worth recording rather than leaving as
+> a to-do.** What made EEE-3 a derivation is that its subject has an authority to
+> derive from: a proof *is* a `proof:*` script, and `package.json` owns that
+> definition, so a proof added tomorrow is covered the moment it is registered.
+> Y-3's subject is *a top-level handler*, and nothing in this repository defines
+> what one is. A scan for a bare `.stack` finds twelve files, of which
+> `scripts/lib/reportError.mjs` and `packages/shared/src/result.ts` **own** the
+> rule and two research instruments print it inside emitted host bodies where no
+> reporter exists.
+>
+> So the obvious implementation is a pattern plus an exception list — which is
+> the enumeration problem again, wearing a derivation's clothes, and worse than
+> the current state because it would read as closed. **The open question for Y-3
+> is not "write the scan", it is "what owns the definition of a top-level
+> handler".** Answer that and the scan is fifteen minutes.
+
 ### Y-4 — one thing 9303bb5 called unproven is in fact enforced
 
 That commit removed `version` from `publish`'s parameters so the function cannot

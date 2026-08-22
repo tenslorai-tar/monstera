@@ -295,6 +295,18 @@ jobs:
       - name: No emitted-source template carries a backtick
         run: npm run check:emittedtemplates
 
+      # EEE-3, and it closes Y-3's shape rather than adding a third list. The
+      # annotate wrapper was rolled out by enumeration — three steps in ci.yml,
+      # none here — and nothing made that list complete. This derives the set of
+      # proofs from package.json and requires every workflow line running one to
+      # name the wrapper, so a proof registered tomorrow is covered the moment it
+      # exists.
+      - name: Prove the annotate-coverage scan sees, refuses and tolerates
+        run: node scripts/ci/annotate.mjs scripts/proofs/annotateCoverage.proof.mjs
+
+      - name: Every workflow proof step reaches a public annotation
+        run: npm run check:annotatecoverage
+
       # The pin these very jobs run on is one declaration, not three copies. A
       # workflow left on a floating major keeps working and keeps passing while
       # changing the npm that validates this project's lockfile — which is how
