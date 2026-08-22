@@ -73,56 +73,78 @@
  * search is blind and this exits rather than concluding — one instrument, two
  * readings that must disagree, which is also its resolution test (item 4a).
  *
- * ## THE CONTAINED COLUMN IS CURRENTLY DARK (finding BBB-1, 2026-08-22)
+ * ## BBB-1 — one probe blinded both contained cells for four commits
  *
- * **Read this before the table below it.** Both contained cells stop at their
- * FIRST probe and are terminated at the 60-second wait, so every property row in
- * the lowbox column reads UNREADABLE. The table further down is a real reading
- * and it is not a current one.
+ * Found and fixed 2026-08-22. Recorded because the *shape* recurs and the fix
+ * does not stop it recurring.
  *
- * The mechanism, and it is ours rather than the machine's. `spawnAtStartup`
- * arrived in `56f77f7` to supply ADR-0023 §1's ordering evidence, and it makes a
- * **synchronous** child-process spawn the host's first action. Inside an
- * AppContainer that call does not return: the breadcrumbs stop at
- * `STEP spawnAtStartup` in both contained cells and at nothing else in either
- * uncontained one. `execFileSync`'s `timeout: 10000` does not bound it — every
- * other probe in this file arms its own timer and this one borrows somebody
- * else's, which is the difference.
+ * `spawnAtStartup` arrived in `56f77f7` to supply ADR-0023 §1's ordering
+ * evidence, written as a **synchronous** `execFileSync` — the host's first
+ * action, which is what that reading requires. From that commit until this one,
+ * **both contained cells died at main's 60-second wait having measured
+ * nothing**, so every property row in the lowbox column read UNREADABLE while
+ * the table below went on displaying readings taken at `36caf21`, one commit
+ * earlier.
  *
- * **So one probe added for one property blinded every other property in that
- * cell**, and the file went on printing a table measured at `36caf21`, one
- * commit earlier. Nothing caught it because the ordering section reads
- * `baseline` against `route`, and both of those still work — the reading that
- * the new probe was added FOR is the one reading its failure could not reach.
+ * The measured mechanism, corrected once by running it — the first version of
+ * this paragraph said the spawn call did not return, and the async probe shows
+ * that is not what happens:
  *
- * Established by control, not by inference: the pre-consolidation file, stashed
- * and run unmodified, hangs identically. WW-1's consolidation did not cause this
- * and does not fix it.
+ *   - inside the container the child **is** created; the attempt resolves
+ *     `allowed`, just slowly, around five seconds;
+ *   - the child then does not exit inside main's whole 60-second window;
+ *   - `execFileSync` waits for **exit**, not for creation, so it blocked;
+ *   - and its `timeout: 10000` did not end that wait. Why the timeout's kill did
+ *     not take is **not established here** and is not guessed at.
  *
- * **The fix is a split, and it is the next unit.** The ordering probe must be
- * the first instruction to mean anything, and the property probes need the host
- * to survive; one host body cannot serve both, and running them together makes
- * the first one's failure mode swallow all the others. Moving the spawn later
- * would destroy what it measures, and special-casing the contained cells would
- * be exempting the input that failed.
+ * **The question never needed the exit.** *Can this process create a process* is
+ * answered by the attempt resolving, so the probe now spawns asynchronously,
+ * settles once, and arms **its own** timer — which is what every other probe in
+ * this host already did. That is the class: this was the only probe in the file
+ * that borrowed somebody else's timeout, and it is the only one that hung.
  *
- * ## What it measured at `36caf21`, on this machine
+ * Two things worth keeping beyond the fix:
+ *
+ *   1. **The blinding is silent and asymmetric.** One probe added for one
+ *      property took out every *other* property in that cell, and the reading it
+ *      was added FOR still worked — the ordering section reads `baseline`
+ *      against `route`, both uncontained. A defect that spares the thing it was
+ *      introduced with is a defect nobody is looking at.
+ *   2. **The control came before the conclusion.** The pre-consolidation file,
+ *      stashed and run unmodified, hung identically — so WW-1's consolidation
+ *      was excluded as the cause by measurement rather than by reading a diff.
+ *
+ * The breadcrumbs below are what located it and are permanent. Before them the
+ * instrument could say *unreadable* and nothing could say *unreadable where*.
+ *
+ * ## What it measured, 2026-08-22, on this machine
  *
  * Dated because it is a reading and not a property of the file. Re-run it rather
- * than trusting this block — and see BBB-1 above for why re-running currently
- * returns less than this.
+ * than trusting this block.
  *
  * The route control passed: `baseline` and `route` agree on koffi, the shim and
- * the document, so the spawn route was sound and the lowbox column was readable.
+ * the document, so the spawn route is sound and the lowbox column is readable.
  *
- * | property | lowbox | route | |
+ * Every row below is against the cell that removes ONLY that row's mechanism,
+ * and the run exits 0 with no unreadable row.
+ *
+ * | property | contained | uncontained | |
  * |---|---|---|---|
- * | (d) filesystem, JS | refused `EPERM` | read 6029 bytes | **differs** |
+ * | (b) process creation — job alone | `route` refused `UNKNOWN` | `route-no-job` spawned | **differs** |
+ * | (b) process creation — LowBox alone | `lowbox-no-job` spawned | `route-no-job` spawned | same |
+ * | (d) filesystem, JS | refused `EPERM` | read 6250 bytes | **differs** |
  * | (d) filesystem, native | refused `CreateFileW: error 5` | read 4096 bytes | **differs** |
  * | (c) network, loopback | refused `ETIMEDOUT` | connected | **differs** |
  * | engine | `mz_init` created a context | same | same |
  * | document it WAS handed | opened, 1 page | same | same |
  * | IPC over a named pipe | refused `EPERM` | connected | **differs** |
+ *
+ * **The second row is new and it is a correction to a natural assumption:
+ * invariant 25(b) is delivered by the JOB, not by the container.** A LowBox host
+ * with no job of ours creates a child process without difficulty. Nothing had
+ * said otherwise, but nothing had separated them either — both mechanisms were
+ * always present together, which is precisely the union problem the variant
+ * matrix exists to break, and it broke it on the first run that could read.
  *
  * And the ordering, added 2026-08-22 for ADR-0023 §1: `previousSuspendCount: 1`
  * and `inJobBeforeResume: true`, with the host's **first** action — a spawn
@@ -376,7 +398,33 @@ const allowed = (detail) => ({ outcome: 'allowed', detail: String(detail).slice(
 const refused = (detail) => ({ outcome: 'refused', detail: String(detail).slice(0, 160) });
 const errored = (detail) => ({ outcome: 'error', detail: String(detail).slice(0, 160) });
 
+// THE SPAWN PROBE SETTLES ON ITS OWN TIMER, and finish() waits for it.
+//
+// Declared here rather than beside the probe because finish() has to know
+// whether the last outstanding reading has arrived. Everything else in this
+// host is settled by the time finish() is reachable; this one is not, by
+// design, which is the whole of BBB-1's fix.
+let spawnSettled = false;
+let spawnTimer = null;
+let onSpawnSettled = null;
+const settleSpawn = (value) => {
+  if (spawnSettled) return;
+  spawnSettled = true;
+  report.probes.spawnAtStartup = value;
+  step('spawnAtStartup settled');
+  if (spawnTimer !== null) clearTimeout(spawnTimer);
+  if (onSpawnSettled !== null) onSpawnSettled();
+};
+
 const finish = () => {
+  // The spawn probe is the only reading that can still be outstanding. Waiting
+  // for it is bounded by its own timer, so this cannot wait forever — which is
+  // exactly what the synchronous version could not promise.
+  if (!spawnSettled) {
+    step('waiting for the spawn probe');
+    onSpawnSettled = finish;
+    return;
+  }
   step('writing the report');
   try {
     fs.writeFileSync(REPORT, JSON.stringify(report), 'utf8');
@@ -399,14 +447,63 @@ const finish = () => {
 // The baseline cell is forked by Electron and gets no job from us, so it is
 // expected to SPAWN. That difference is the reading: it separates the ordering
 // from the container, which refuses process creation for its own reasons.
+// ASYNCHRONOUS, AND BOUNDED BY A TIMER THIS FILE OWNS (finding BBB-1).
+//
+// It used to be execFileSync with timeout: 10000, and inside an AppContainer
+// that call did not return — so the host died at main's 60-second wait having
+// measured NOTHING, and every property row in both contained cells read
+// unreadable from 56f77f7 onward while the header displayed a table from one
+// commit earlier.
+//
+// The mechanism is that execFileSync's timeout is not ours: it is armed by the
+// wait the call performs, so a call that never gets that far is not bounded by
+// it. Every other probe in this host arms its own setTimeout and settles once;
+// this one borrowed somebody else's, and it was the only one that did. Making
+// it match its siblings is the fix, rather than moving it or exempting the cell
+// where it failed.
+//
+// STILL THE FIRST INSTRUCTION, which is the only thing the ordering evidence
+// requires. What is dropped is waiting for the child to EXIT, which the question
+// never needed: "can this process create a process" is answered by the spawn
+// attempt resolving, not by what the child then printed.
+// ONE CLASSIFIER FOR BOTH ARRIVAL PATHS, keyed on WHAT THE OS ANSWERED rather
+// than on HOW the answer arrived.
+//
+// Node reports a failed spawn two ways: an 'error' event, or a synchronous
+// throw from spawn() itself for a non-ENOENT errno — which on Windows is what a
+// refused CreateProcessW does. Written the obvious way, the job's refusal landed
+// in the catch and was recorded as an ERROR, so the ordering reading went from
+// ASSIGNED BEFORE THE FIRST INSTRUCTION to NOT SHOWN while nothing about the
+// spawn had changed. Measured, not reasoned about.
+//
+// A syscall of 'spawn' is the distinction that holds: it means the kernel was
+// asked and said no. Anything else — a TypeError, a bad argument — is a broken
+// probe, and a broken probe reported as containment is the reassuring direction.
+// The arguments here are constants in this file, so the second case should be
+// unreachable; it is classified anyway rather than assumed away.
+const spawnAnswer = (error) =>
+  (error && error.syscall === 'spawn' ? refused : errored)(
+    String(error && error.message) + (error && error.code ? ' [' + error.code + ']' : ''),
+  );
+
 step('spawnAtStartup');
 try {
-  require('node:child_process').execFileSync(process.execPath, ['--version'], {
-    encoding: 'utf8', env: { ELECTRON_RUN_AS_NODE: '1' }, timeout: 10000,
+  const attempt = require('node:child_process').spawn(process.execPath, ['--version'], {
+    env: { ELECTRON_RUN_AS_NODE: '1' }, stdio: 'ignore',
   });
-  report.probes.spawnAtStartup = allowed('spawned before doing anything else');
+  // unref so a child that outlives its usefulness cannot hold this host open;
+  // the reading is the attempt, not the lifetime. Inside the container the child
+  // IS created and then takes longer than main's whole wait to exit, which is
+  // what BBB-1's synchronous version was blocked on.
+  attempt.unref();
+  attempt.on('spawn', () => settleSpawn(allowed('spawned before doing anything else')));
+  attempt.on('error', (error) => settleSpawn(spawnAnswer(error)));
+  spawnTimer = setTimeout(
+    () => settleSpawn(errored('the spawn attempt neither started nor failed within the window')),
+    10000,
+  );
 } catch (error) {
-  report.probes.spawnAtStartup = refused(String(error && error.message));
+  settleSpawn(spawnAnswer(error));
 }
 
 // THE HANDED DIRECTORY, read next because it carries the ports and doubles as

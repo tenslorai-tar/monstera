@@ -419,13 +419,23 @@ These were given directly and bind every agent on this project.
 - **An emitted-source template carries no backtick — and that is now a check, not
   a rule.** A `String.raw` holding a program we write to disk is the one place
   prose and code share a delimiter, and a backtick pair inside closes the literal
-  and reopens it, so the parser blames whatever follows. It has happened **four
+  and reopens it, so the parser blames whatever follows. It has happened **five
   times**: the third in a file whose own header carried the rule against it, and
   the fourth **one commit after the check shipped, by the agent that wrote the
   check, in the same session**. **Written down is not a mechanism** — the same
   sentence the escape guard paid for seven times, and occurrence 4 says the
   stronger version: *having just mechanised a rule does not put it in reach at
   the moment a comment is composed either.*
+
+  **Occurrence 5, and it is the one that pays WW-4 back.** Same author, same
+  shape — a property name quoted in a comment, written while documenting a
+  *different* finding in the same file. The difference is what stopped it: 4 was
+  stopped by a hand-run `node --check`, which is a person remembering; 5 was
+  reported by `check:emittedtemplates` at the right line during an ordinary
+  check run, and WW-4 had already put that scan in pre-commit against the index,
+  so it could not have reached a commit. **Expect a sixth.** The count is not
+  going to stop rising, and it does not need to — the point of the move was that
+  the count stops mattering.
 
   **That reading is the argument for where the check runs, and it moved
   (WW-4).** The scan does see occurrence 4 — fed the broken text it names the

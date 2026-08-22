@@ -18,11 +18,21 @@
  * | 2 | the same, in a different research file | the parser, blaming a later line |
  * | 3 | a comment naming a variable in backticks, inside emitted source | the parser; the file's own header carried the rule against it |
  * | 4 | the same, one commit after this scan shipped, written by the author of this scan | `node --check`; **this scan reports it at the right line** — verified by mutation, not assumed |
+ * | 5 | a comment quoting a property name, written while documenting a *different* finding in the same file | `node --check` AND this scan, live, naming the line — the first occurrence caught by the mechanism rather than by someone remembering |
  *
  * Each time the remedy was the same and each time it was a remedy applied to the
  * instance: move the prose out, or drop the backticks. **Written down is not a
  * mechanism** — that sentence has now been paid for by the escape guard seven
- * times and by this four, so the rule gets a check.
+ * times and by this five, so the rule gets a check.
+ *
+ * **Occurrence 5 is the first one this scan caught in anger**, and it is worth
+ * separating from occurrence 4. Both were written by the author of the check.
+ * The difference is what stopped them: 4 was stopped by a syntax check run by
+ * hand, which is a person remembering; 5 was reported by this scan, at the right
+ * line, in the ordinary course of running the checks — and WW-4 had by then put
+ * it in the pre-commit set against the index, so it could not have reached a
+ * commit either way. That is the whole return on WW-4, collected one commit
+ * later, on its author again.
  *
  * Occurrence 4 is the sharpest version of that argument available, and it is
  * unflattering on purpose: the rule was not merely written down, it had just
