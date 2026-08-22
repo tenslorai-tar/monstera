@@ -66,7 +66,7 @@ check(
 );
 
 check(
-  'CONTROL: `address === -1` — the spelling hostFixture.mjs used — MISSES it',
+  'CONTROL: `address === -1` — the spelling the retired hostFixture.mjs used — MISSES it',
   // @ts-expect-error deliberately comparing a BigInt to a Number, which is the bug
   MEASURED_INVALID !== -1,
   'a BigInt is never === a Number, and that is why the branch never ran',

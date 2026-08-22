@@ -6,10 +6,7 @@
  * ## The one question, covering invariant 25's (c) and (d) together
  *
  * (a) integrity and (b) job object are obtained and have differentials on a host
- * carrying the engine (`hostFixture.mjs` — which measured them on a utility
- * process, the shape ADR-0022 then withdrew; see WW-1 in its header, and the
- * consolidation note at the foot of this one). (c) *no network* and (d) *reaches
- * no filesystem path
+ * carrying the engine. (c) *no network* and (d) *reaches no filesystem path
  * it was not handed* have **no mechanism**: QQ-1 removed the only candidate for
  * (d) by measuring that Node's permission model is enforced inside Node's own
  * filesystem bindings, so a `CreateFileW` walks past it. The principle that
@@ -23,7 +20,7 @@
  * had to be granted for it to, and which of (c) and (d) come back with a
  * mechanism.
  *
- * ## Three cells, because the comparison otherwise crosses two variables
+ * ## Five cells, because a comparison that crosses two variables says nothing
  *
  * A LowBox process cannot be created by `utilityProcess.fork` — that is the whole
  * premise, and it means the contained cell differs from today's host in *two*
@@ -31,22 +28,31 @@
  * comparison is unattributable, which is the shape that has cost this project
  * three findings in as many days.
  *
- * | cell | created by | LowBox |
- * |---|---|---|
- * | `baseline` | `utilityProcess.fork` | — |
- * | `route` | our own `CreateProcessW` | no |
- * | `lowbox` | our own `CreateProcessW` | yes |
+ * | cell | created by | LowBox | job |
+ * |---|---|---|---|
+ * | `baseline` | `utilityProcess.fork` | — | — |
+ * | `route` | our own `CreateProcessW` | no | yes |
+ * | `route-no-job` | our own `CreateProcessW` | no | **no** |
+ * | `lowbox` | our own `CreateProcessW` | yes | yes |
+ * | `lowbox-no-job` | our own `CreateProcessW` | yes | **no** |
  *
- * Each neighbour pair flips exactly one thing. `baseline` → `route` changes the
- * creation route with containment off, so it is a control on the route; `route` →
- * `lowbox` changes containment with the route held fixed, so it is the only pair
- * a property verdict may be read from.
+ * `baseline` → `route` changes the creation route with containment off, so it is
+ * the control on the route. Everything below it is two independent switches —
+ * containment and the job — so **every property has a pair that flips exactly
+ * one thing**, which is what RR-2 asks for and what WW-1 moved here.
  *
- * **The middle cell is the one that feels redundant while it is being written,
+ * **The route cell is the one that feels redundant while it is being written,
  * and it is the load-bearing one.** Without it, *the host could not load koffi*
  * has two explanations and no way to choose between them. So this file refuses to
  * print property verdicts at all when the route control fails: a broken spawn
  * route is reported as **ROUTE BROKEN**, terminally, rather than as containment.
+ *
+ * **The job axis paid for itself before it reached a property row.** The
+ * ordering evidence for ADR-0023 §1 used to be read `route` against `baseline`,
+ * because every `CreateProcessW` cell carried the job and no other cell lacked
+ * one — so that reading crossed the creation route as well, one section below
+ * where this file refuses to do exactly that. `route-no-job` makes it single
+ * variable.
  *
  * ## ACLs are machine state, and this is the one spike that changes the machine
  *
@@ -67,13 +73,47 @@
  * search is blind and this exits rather than concluding — one instrument, two
  * readings that must disagree, which is also its resolution test (item 4a).
  *
- * ## What it measured, 2026-08-22, on this machine
+ * ## THE CONTAINED COLUMN IS CURRENTLY DARK (finding BBB-1, 2026-08-22)
+ *
+ * **Read this before the table below it.** Both contained cells stop at their
+ * FIRST probe and are terminated at the 60-second wait, so every property row in
+ * the lowbox column reads UNREADABLE. The table further down is a real reading
+ * and it is not a current one.
+ *
+ * The mechanism, and it is ours rather than the machine's. `spawnAtStartup`
+ * arrived in `56f77f7` to supply ADR-0023 §1's ordering evidence, and it makes a
+ * **synchronous** child-process spawn the host's first action. Inside an
+ * AppContainer that call does not return: the breadcrumbs stop at
+ * `STEP spawnAtStartup` in both contained cells and at nothing else in either
+ * uncontained one. `execFileSync`'s `timeout: 10000` does not bound it — every
+ * other probe in this file arms its own timer and this one borrows somebody
+ * else's, which is the difference.
+ *
+ * **So one probe added for one property blinded every other property in that
+ * cell**, and the file went on printing a table measured at `36caf21`, one
+ * commit earlier. Nothing caught it because the ordering section reads
+ * `baseline` against `route`, and both of those still work — the reading that
+ * the new probe was added FOR is the one reading its failure could not reach.
+ *
+ * Established by control, not by inference: the pre-consolidation file, stashed
+ * and run unmodified, hangs identically. WW-1's consolidation did not cause this
+ * and does not fix it.
+ *
+ * **The fix is a split, and it is the next unit.** The ordering probe must be
+ * the first instruction to mean anything, and the property probes need the host
+ * to survive; one host body cannot serve both, and running them together makes
+ * the first one's failure mode swallow all the others. Moving the spawn later
+ * would destroy what it measures, and special-casing the contained cells would
+ * be exempting the input that failed.
+ *
+ * ## What it measured at `36caf21`, on this machine
  *
  * Dated because it is a reading and not a property of the file. Re-run it rather
- * than trusting this block.
+ * than trusting this block — and see BBB-1 above for why re-running currently
+ * returns less than this.
  *
  * The route control passed: `baseline` and `route` agree on koffi, the shim and
- * the document, so the spawn route is sound and the lowbox column is readable.
+ * the document, so the spawn route was sound and the lowbox column was readable.
  *
  * | property | lowbox | route | |
  * |---|---|---|---|
@@ -86,9 +126,12 @@
  *
  * And the ordering, added 2026-08-22 for ADR-0023 §1: `previousSuspendCount: 1`
  * and `inJobBeforeResume: true`, with the host's **first** action — a spawn
- * attempt — refused in the route cell and allowed in the baseline, which has no
- * job of ours. The job is in force at instruction one, so the handshake finding
- * PP-6 designed for that window is unnecessary.
+ * attempt — refused in the route cell and allowed where no job of ours exists.
+ * The job is in force at instruction one, so the handshake finding PP-6 designed
+ * for that window is unnecessary. **This reading still reproduces**, and it is
+ * now single-variable: `route` refused against `route-no-job` allowed, same
+ * creation route on both sides. It was read against the forked baseline until
+ * WW-1 added the job axis.
  *
  * **(c) and (d) both come back with a mechanism, and (d) binds the NATIVE
  * caller** — `error 5` is `ERROR_ACCESS_DENIED` from `CreateFileW` itself, which
@@ -123,23 +166,38 @@
  * - **Anything about a renderer.** Reaching MuPDF there means WASM, which
  *   ADR-0010 withdrew on measurement.
  *
- * ## This file is the one that survives, and it inherits two things (WW-1)
+ * ## This is the only containment instrument (WW-1, done 2026-08-22)
  *
- * `hostFixture.mjs` measures a utility process that lowers its own integrity,
- * which ADR-0022 withdrew as the host and ADR-0023 §1 withdrew as a step. Two
- * instruments measuring two process types breaks RR-2's premise that every
- * containment conclusion comes from one, so they consolidate here rather than
- * both being maintained.
+ * `hostFixture.mjs` measured a utility process that lowers its own integrity —
+ * a process type ADR-0022 withdrew as the host and a step ADR-0023 §1 withdrew
+ * as a mechanism, since a LowBox token is Low at creation. Two instruments
+ * measuring two process types breaks RR-2's premise that every containment
+ * conclusion comes from one, so it was **consolidated here and deleted**, rather
+ * than repaired into a second maintained thing.
  *
- * What comes across is the part worth keeping: the **per-property variant
- * matrix** — one uncontained variant per property, so a denial is attributable
- * to the mechanism whose absence produced it — and the **four-state outcome
- * classifier**, whose `unreadable` is terminal so that *could not look* and
- * *looked and found containment* never share an output. This file's three cells
- * become the route axis of that matrix; they do not replace it.
+ * Three things came across, and each closes a gap this file had:
  *
- * Not yet done. Until it is, that file carries the gate in its own header and
- * prints it above its table.
+ *   1. the **per-property variant matrix** — the job axis above, so a denial is
+ *      attributable to the mechanism whose absence produced it;
+ *   2. the **four-state outcome classifier**, whose `unreadable` is terminal, so
+ *      *could not look* and *looked and found containment* never share an
+ *      output. This file used to return a probe's reading as it arrived, which
+ *      is how the fixture's own first version printed a containment verdict for
+ *      prose;
+ *   3. the **control that removes the CONTAINED reading** and requires the row
+ *      to go unreadable — mutated on that side because two absences agree, so
+ *      the other direction never reaches the defect.
+ *
+ * One reading did **not** come across and the table says so where it would have
+ * been: **(b) memory**. The fixture measured it against a 512 MB literal its own
+ * comment flagged as PP-4; ADR-0023 §2 makes the shipped limit a derivation from
+ * §9.17's absolute cap, and implementing that rule a second time here is B3a. It
+ * is a coverage reduction, printed at the point of use, with RR-3 as its
+ * trigger.
+ *
+ * `hostIntegrityFromMain.mjs` survives: (a) still has to be read from outside,
+ * and is now read at creation rather than after a lowering that no longer
+ * happens, so its motivation changed and its existence did not.
  *
  * **Research, not a proof.** It asserts nothing and gates nothing. What becomes a
  * proof and where it runs is stated in
@@ -299,12 +357,27 @@ const argv = process.argv.slice(-2);
 const REPORT = argv[0];
 const CELL = argv[1];
 
+// A BREADCRUMB PER STEP, on the inherited stderr handle.
+//
+// A host that HANGS reports nothing at all: no report file, no exit code, and a
+// wait that ends in WAIT_TIMEOUT. Every probe below is individually bounded, so
+// the instrument's own design says that cannot happen — which is exactly the
+// kind of claim that turns out to be wrong, and did (finding BBB-1). Without
+// these lines the only honest thing the table can say is "unreadable", and the
+// question "unreadable WHERE" has no channel to be answered on.
+//
+// Unguarded on purpose. A diagnostic wrapped in a swallow can fail silently in
+// the one situation it exists for, and the route cells prove this handle works.
+const step = (name) => process.stderr.write('STEP ' + name + '\n');
+step('host entered');
+
 const report = { cell: CELL, probes: {} };
 const allowed = (detail) => ({ outcome: 'allowed', detail: String(detail).slice(0, 160) });
 const refused = (detail) => ({ outcome: 'refused', detail: String(detail).slice(0, 160) });
 const errored = (detail) => ({ outcome: 'error', detail: String(detail).slice(0, 160) });
 
 const finish = () => {
+  step('writing the report');
   try {
     fs.writeFileSync(REPORT, JSON.stringify(report), 'utf8');
   } catch (error) {
@@ -326,6 +399,7 @@ const finish = () => {
 // The baseline cell is forked by Electron and gets no job from us, so it is
 // expected to SPAWN. That difference is the reading: it separates the ordering
 // from the container, which refuses process creation for its own reasons.
+step('spawnAtStartup');
 try {
   require('node:child_process').execFileSync(process.execPath, ['--version'], {
     encoding: 'utf8', env: { ELECTRON_RUN_AS_NODE: '1' }, timeout: 10000,
@@ -338,6 +412,7 @@ try {
 // THE HANDED DIRECTORY, read next because it carries the ports and doubles as
 // the positive half of the filesystem pair: a refusal outside proves containment
 // only if the same call succeeds where reading is permitted.
+step('readHanded');
 let config = null;
 try {
   config = JSON.parse(fs.readFileSync(path.join(path.dirname(REPORT), 'handed.json'), 'utf8'));
@@ -346,6 +421,7 @@ try {
   report.probes.readHanded = refused(String(error && error.code || error));
 }
 
+step('loadKoffi');
 let koffi = null;
 try {
   koffi = require(KOFFI_PATH);
@@ -354,6 +430,7 @@ try {
   report.probes.loadKoffi = refused(String(error && error.message));
 }
 
+step('loadShim');
 if (koffi !== null) {
   try {
     const shim = koffi.load(SHIM_PATH);
@@ -393,6 +470,7 @@ if (koffi !== null) {
 // package.json: a file the ROUTE cell reads without difficulty, which is the
 // negative-probe rule — build the input from something that would SUCCEED if the
 // containment were absent, or refusal and impossibility share one observation.
+step('jsReadUnhanded');
 try {
   const bytes = fs.readFileSync(UNHANDED_PATH).length;
   report.probes.jsReadUnhanded = allowed('read ' + bytes + ' bytes');
@@ -404,6 +482,7 @@ try {
 // the permission model fell: a readFileSync refused by Node says nothing about a
 // CreateFileW that never reaches Node. An ACL is a kernel object and should bind
 // both; that is the prediction under test.
+step('nativeReadUnhanded');
 if (koffi !== null) {
   try {
     const kernel = koffi.load('kernel32.dll');
@@ -442,6 +521,7 @@ if (koffi !== null) {
 // mistake has been made three times here (HH-2). Main listens on 127.0.0.1, so
 // an unconstrained host connects and a refusal is the container.
 const afterNetwork = () => {
+  step('namedPipe');
   // AND THE IPC QUESTION, which is what a contained host would actually need:
   // a MessagePort is unreachable because this process was not forked by Electron,
   // so a named pipe is the realistic candidate and its reachability is the price.
@@ -463,6 +543,7 @@ const afterNetwork = () => {
   setTimeout(() => done(errored('no result within the window')), 5000);
 };
 
+step('loopback');
 if (config === null || !config.port) {
   report.probes.loopback = errored('no handed config, so no port to try');
   afterNetwork();
@@ -594,7 +675,7 @@ function wide(text) {
   return Buffer.from(text + NUL, 'utf16le');
 }
 
-// ELECTRON_RUN_AS_NODE is what makes the three cells the SAME RUNTIME. A cell
+// ELECTRON_RUN_AS_NODE is what makes every cell the SAME RUNTIME. A cell
 // running a different binary would be a third variable in a comparison that
 // already has one too many.
 function environmentBlock() {
@@ -609,10 +690,16 @@ function environmentBlock() {
 
 /**
  * One cell created by CreateProcessW, with the security-capabilities attribute
- * present or absent. Everything else is identical between the two, which is what
- * makes the pair readable.
+ * present or absent and the job assigned or not. Everything else is identical
+ * across all four, which is what makes each neighbour pair readable.
+ *
+ * TWO INDEPENDENT SWITCHES, not one, and that is WW-1's matrix arriving here.
+ * Every cell used to carry the job, so a job-attributable property had no
+ * one-variable pair anywhere in this file and had to be read against the FORKED
+ * baseline — which changes the creation route at the same time. Removing the
+ * job with the route held fixed is what makes that reading single-variable.
  */
-function spawnDirect(reportPath, cell, contained) {
+function spawnDirect(reportPath, cell, contained, withJob) {
   // --preserve-symlinks-main AND --preserve-symlinks, and the reason is measured
   // rather than defensive.
   //
@@ -709,7 +796,15 @@ function spawnDirect(reportPath, cell, contained) {
 
   const info = koffi.decode(pi, 'PROCESS_INFORMATION');
 
-  const job = CreateJobObjectW(null, null);
+  // THE JOB VARIANT. Skipped entirely rather than created-and-not-assigned: a
+  // job object nobody is in still has KILL_ON_JOB_CLOSE and a process limit, and
+  // the point of this cell is that no job of ours exists for the child at all.
+  //
+  // CREATE_SUSPENDED stays on both sides. It is what makes integrityBeforeResume
+  // readable, and it is not the mechanism under test in either pair — dropping it
+  // here would put a second variable into the one comparison this cell exists to
+  // make single-variable.
+  const job = withJob ? CreateJobObjectW(null, null) : null;
   const limits = {
     BasicLimitInformation: {
       PerProcessUserTimeLimit: 0n, PerJobUserTimeLimit: 0n,
@@ -728,11 +823,16 @@ function spawnDirect(reportPath, cell, contained) {
   };
   const limitBuffer = Buffer.alloc(koffi.sizeof('JOBOBJECT_EXTENDED_LIMIT_INFORMATION'));
   koffi.encode(limitBuffer, 'JOBOBJECT_EXTENDED_LIMIT_INFORMATION', limits);
-  const limitsSet = SetInformationJobObject(job, 9, limitBuffer, limitBuffer.length);
-  const assigned = AssignProcessToJobObject(job, info.hProcess);
-  const inJobOut = [false];
-  IsProcessInJob(info.hProcess, job, inJobOut);
-  const inJobBeforeResume = inJobOut[0];
+  let limitsSet = 'NO JOB (variant)';
+  let assigned = 'NO JOB (variant)';
+  let inJobBeforeResume = 'NO JOB (variant)';
+  if (job !== null) {
+    limitsSet = SetInformationJobObject(job, 9, limitBuffer, limitBuffer.length);
+    assigned = AssignProcessToJobObject(job, info.hProcess);
+    const inJobOut = [false];
+    IsProcessInJob(info.hProcess, job, inJobOut);
+    inJobBeforeResume = inJobOut[0];
+  }
 
   // PROPERTY (a) WHILE THE PROCESS IS STILL SUSPENDED. This is the second window
   // and it deserves the same evidence the first one got: if the token is already
@@ -754,7 +854,7 @@ function spawnDirect(reportPath, cell, contained) {
   }
   CloseHandle(info.hThread);
   CloseHandle(info.hProcess);
-  CloseHandle(job);
+  if (job !== null) CloseHandle(job);
   if (attributeList !== null) DeleteProcThreadAttributeList(attributeList);
   return {
     pid: info.dwProcessId, exitCode, waited, log: readLog(logPath),
@@ -820,17 +920,25 @@ app.whenReady().then(() => {
         app.exit(0);
       };
 
+      // THE CELLS. Two axes now: containment and the job, each switchable on
+      // its own, so every property below has a pair that flips exactly one
+      // thing. The baseline is the route control and is not on either axis.
+      const DIRECT = [
+        { cell: 'lowbox', contained: true, job: true },
+        { cell: 'route', contained: false, job: true },
+        { cell: 'route-no-job', contained: false, job: false },
+        { cell: 'lowbox-no-job', contained: true, job: false },
+      ];
+
       const baselineReport = path.join(SCRATCH, 'report-baseline.json');
       spawnForked(baselineReport, 'baseline', (outcome) => {
         runs.push({ cell: 'baseline', spawn: outcome, report: readReport(baselineReport) });
 
-        const routeReport = path.join(SCRATCH, 'report-route.json');
-        const routeOutcome = spawnDirect(routeReport, 'route', false);
-        runs.push({ cell: 'route', spawn: routeOutcome, report: readReport(routeReport) });
-
-        const lowboxReport = path.join(SCRATCH, 'report-lowbox.json');
-        const lowboxOutcome = spawnDirect(lowboxReport, 'lowbox', true);
-        runs.push({ cell: 'lowbox', spawn: lowboxOutcome, report: readReport(lowboxReport) });
+        for (const spec of DIRECT) {
+          const reportPath = path.join(SCRATCH, 'report-' + spec.cell + '.json');
+          const outcome = spawnDirect(reportPath, spec.cell, spec.contained, spec.job);
+          runs.push({ cell: spec.cell, spawn: outcome, report: readReport(reportPath) });
+        }
 
         finishAll();
       });
@@ -1022,7 +1130,7 @@ try {
     'utf8',
   );
 
-  process.stdout.write('\nrunning three cells\n\n');
+  process.stdout.write('\nrunning five cells\n\n');
   const result = spawnSync(electronBinaryPath(), [scratch], { encoding: 'utf8', timeout: 360_000 });
   if (`${result.stderr}`.trim() !== '') process.stdout.write(`stderr:\n${result.stderr}\n`);
 
@@ -1059,17 +1167,67 @@ process.exit(exitCode);
  * @param {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} runs
  */
 function summarise(runs) {
-  /** @param {string} cell @param {string} key */
-  const probe = (cell, key) => {
-    const run = runs.find((entry) => entry.cell === cell);
+  /**
+   * A probe's own verdict, or `unreadable` — NEVER a verdict inferred from an
+   * absence. The four-state classifier, brought across from `hostFixture.mjs`
+   * by WW-1's consolidation.
+   *
+   * The last clause is the one that was missing here. This used to return the
+   * reading as it arrived, so a probe that reported anything other than the
+   * three known outcomes — a string, a half-built object, a value from a future
+   * probe that reports differently — was compared as though it were a verdict.
+   * That is how the fixture's first version printed ASSERTED for a property
+   * nothing had measured: prose fell through and classified as *refused* beside
+   * an allowed uncontained side.
+   *
+   * *Could not look* and *looked and found containment* must not share an
+   * output, which is why an unrecognised value becomes a third state rather
+   * than a fourth guess.
+   *
+   * Reads from an explicit `source` rather than closing over `runs`, so the
+   * control below can pose the same question to a deliberately damaged copy
+   * without mutating anything the rest of this function reads.
+   *
+   * @param {typeof runs} source @param {string} cell @param {string} key
+   * @returns {{ outcome: string, detail: string }}
+   */
+  const probeIn = (source, cell, key) => {
+    const run = source.find((entry) => entry.cell === cell);
     if (run === undefined) return { outcome: 'unreadable', detail: `no ${cell} cell ran` };
     if (run.report === null) {
       const spawn = JSON.stringify(run.spawn);
       return { outcome: 'unreadable', detail: `${cell} wrote no report; spawn said ${spawn}` };
     }
     const reading = run.report.probes?.[key];
-    if (reading === undefined) return { outcome: 'unreadable', detail: `${cell} has no reading for ${key}` };
-    return reading;
+    if (reading === undefined || reading === null || typeof reading !== 'object') {
+      return { outcome: 'unreadable', detail: `${cell} has no reading for ${key}` };
+    }
+    const { outcome, detail } = reading;
+    if (outcome !== 'allowed' && outcome !== 'refused' && outcome !== 'error') {
+      return { outcome: 'unreadable', detail: `${cell} reported ${JSON.stringify(outcome)} for ${key}` };
+    }
+    return { outcome, detail: String(detail ?? '') };
+  };
+
+  /** @param {string} cell @param {string} key */
+  const probe = (cell, key) => probeIn(runs, cell, key);
+
+  /**
+   * One row's verdict. `unreadable` or `error` on either side is terminal: it is
+   * neither DIFFERS nor same, because both of those are claims about what was
+   * measured, and nothing was.
+   *
+   * A THROW IS NOT A REFUSAL, which is why `error` lands here rather than being
+   * compared. An FFI binding that failed is a broken probe, and reporting it as
+   * containment is the reassuring direction.
+   *
+   * @param {{ outcome: string }} a @param {{ outcome: string }} b
+   * @returns {'DIFFERS' | 'same' | 'UNREADABLE'}
+   */
+  const verdict = (a, b) => {
+    if (a.outcome === 'unreadable' || b.outcome === 'unreadable') return 'UNREADABLE';
+    if (a.outcome === 'error' || b.outcome === 'error') return 'UNREADABLE';
+    return a.outcome !== b.outcome ? 'DIFFERS' : 'same';
   };
 
   process.stdout.write('THE ROUTE CONTROL — read before anything else:\n\n');
@@ -1097,13 +1255,24 @@ function summarise(runs) {
     return 2;
   }
 
-  // THE ORDERING EVIDENCE, read against the BASELINE rather than against the
-  // route, because both CreateProcessW cells carry the job and would agree.
-  // Baseline is forked by Electron and gets no job from us, so it spawns.
+  // THE ORDERING EVIDENCE, and WW-1's matrix pays for itself here before it
+  // reaches a single property row.
+  //
+  // This used to be read against the BASELINE, for a reason stated honestly at
+  // the time: both CreateProcessW cells carried the job, so no one-variable pair
+  // existed and the forked baseline was the only cell without one. But the
+  // baseline also changes the creation route, so the reading crossed two
+  // variables — the exact shape this file's middle cell exists to prevent, one
+  // section above where it prevents it.
+  //
+  // `route-no-job` is our own CreateProcessW with no job of ours assigned. Pairs
+  // with `route` on the job alone. The baseline row is kept below it as what it
+  // actually is: a second opinion from a different route, useful for noticing
+  // that neither number is nonsense, and not the attribution.
   process.stdout.write(
     'ORDERING — was the job in force at instruction ONE? (ADR-0023 §1)\n\n',
   );
-  for (const cell of ['route', 'lowbox']) {
+  for (const cell of ['route', 'route-no-job', 'lowbox', 'lowbox-no-job']) {
     const run = runs.find((entry) => entry.cell === cell);
     const ordering = /** @type {Record<string, unknown> | undefined} */ (
       /** @type {Record<string, unknown>} */ (run?.spawn ?? {})['ordering']
@@ -1114,46 +1283,146 @@ function summarise(runs) {
   }
   const baseSpawn = probe('baseline', 'spawnAtStartup');
   const routeSpawn = probe('route', 'spawnAtStartup');
+  const noJobSpawn = probe('route-no-job', 'spawnAtStartup');
+  const orderingShown =
+    verdict(routeSpawn, noJobSpawn) === 'DIFFERS' &&
+    noJobSpawn.outcome === 'allowed' &&
+    routeSpawn.outcome === 'refused';
   process.stdout.write(
     `\n  the host's FIRST action is a spawn attempt, so its outcome is the reading:\n` +
-      `    baseline (no job from us)  ${baseSpawn.outcome.padEnd(9)} ${baseSpawn.detail}\n` +
-      `    route    (job, suspended)  ${routeSpawn.outcome.padEnd(9)} ${routeSpawn.detail}\n\n` +
-      `  ${baseSpawn.outcome === 'allowed' && routeSpawn.outcome === 'refused'
+      `    route-no-job (our route, NO job)   ${noJobSpawn.outcome.padEnd(9)} ${noJobSpawn.detail}\n` +
+      `    route        (our route, job)      ${routeSpawn.outcome.padEnd(9)} ${routeSpawn.detail}\n` +
+      `    baseline     (forked, no job)      ${baseSpawn.outcome.padEnd(9)} ${baseSpawn.detail}\n` +
+      `                 not the attribution — it changes the route as well\n\n` +
+      `  ${orderingShown
         ? 'ASSIGNED BEFORE THE FIRST INSTRUCTION. previousSuspendCount 1 says the process was\n' +
           '  genuinely created suspended, and the refusal says the job was already in force when\n' +
-          '  it resumed. The PP-6 handshake is unnecessary for this window.'
-        : 'NOT SHOWN. Either the baseline was also refused — in which case the refusal is not\n' +
-          '  ours and proves nothing — or the route spawned, in which case the job was NOT in\n' +
+          '  it resumed — with the creation route held fixed across the pair, so the job is the\n' +
+          '  only thing that differs. The PP-6 handshake is unnecessary for this window.'
+        : 'NOT SHOWN. Either route-no-job was also refused — in which case the refusal is not\n' +
+          '  the job and proves nothing — or route spawned, in which case the job was NOT in\n' +
           '  force at instruction one and the window is still open.'}\n\n`,
   );
 
-  process.stdout.write('PROPERTIES — lowbox against route, the only pair with one variable between them:\n\n');
-  /** @type {Array<[string, string, string]>} */
+  // ---------------------------------------------------------------------------
+  // ONE UNCONTAINED VARIANT PER PROPERTY (finding RR-2), brought here by WW-1.
+  //
+  // A run that applies every mechanism and reports every denial cannot say which
+  // mechanism produced which denial — the union problem that cost this project
+  // its sandbox attribution. So each row names its OWN pair, differing in
+  // exactly the mechanism whose absence the row is reading.
+  //
+  // A property whose two cells AGREE is UNASSERTED no matter what else this
+  // prints, and the table says so by name rather than leaving a reader to
+  // notice.
+  //
+  // WHY (b) PROCESS CREATION GETS TWO ROWS. With both mechanisms present the
+  // outcome is over-determined: a LowBox refuses a spawn for its own reasons, so
+  // `lowbox` against `lowbox-no-job` would read the job's contribution through a
+  // container that already refuses. Each mechanism is therefore read against the
+  // pair in which the OTHER one is absent on both sides.
+  // ---------------------------------------------------------------------------
+  /** @type {Array<[string, string, string, string, string]>} */
   const PROPERTIES = [
-    ['(d) filesystem, JS', 'jsReadUnhanded', 'a file the host was not handed, read through Node'],
-    ['(d) filesystem, native', 'nativeReadUnhanded', 'the same file through CreateFileW — the path the adversary has'],
-    ['(c) network', 'loopback', 'a loopback connection, so a refusal cannot be a runner with no network'],
-    ['engine', 'loadShim', 'the MuPDF shim, loaded through koffi'],
-    ['document', 'openDocument', 'a document it WAS handed'],
-    ['IPC', 'namedPipe', 'a named pipe main created — the MessagePort is unreachable off the fork route'],
-    ['CONTROL: handed', 'readHanded', 'must be allowed on BOTH sides, or the container was handed nothing'],
+    ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job',
+      'the job, at Medium integrity on both sides so the container cannot be the cause'],
+    ['(b) process creation — LowBox alone', 'spawnAtStartup', 'lowbox-no-job', 'route-no-job',
+      'the container, with no job of ours on either side'],
+    ['(d) filesystem, JS', 'jsReadUnhanded', 'lowbox', 'route',
+      'a file the host was not handed, read through Node'],
+    ['(d) filesystem, native', 'nativeReadUnhanded', 'lowbox', 'route',
+      'the same file through CreateFileW — the path the adversary has'],
+    ['(c) network', 'loopback', 'lowbox', 'route',
+      'a loopback connection, so a refusal cannot be a runner with no network'],
+    ['engine', 'loadShim', 'lowbox', 'route', 'the MuPDF shim, loaded through koffi'],
+    ['document', 'openDocument', 'lowbox', 'route', 'a document it WAS handed'],
+    ['IPC', 'namedPipe', 'lowbox', 'route',
+      'a named pipe main created — the MessagePort is unreachable off the fork route'],
+    ['CONTROL: handed', 'readHanded', 'lowbox', 'route',
+      'must be `same` and allowed on BOTH sides, or the container was handed nothing'],
   ];
 
+  process.stdout.write('PROPERTIES — each row against the cell that removes ONLY its own mechanism:\n\n');
+
   let unreadable = 0;
-  for (const [label, key, why] of PROPERTIES) {
-    const contained = probe('lowbox', key);
-    const uncontained = probe('route', key);
-    let verdict;
-    if (contained.outcome === 'unreadable' || uncontained.outcome === 'unreadable') verdict = 'UNREADABLE';
-    else if (contained.outcome === 'error' || uncontained.outcome === 'error') verdict = 'UNREADABLE';
-    else verdict = contained.outcome !== uncontained.outcome ? 'DIFFERS' : 'same';
-    if (verdict === 'UNREADABLE') unreadable += 1;
+  for (const [label, key, withMech, without, why] of PROPERTIES) {
+    const contained = probe(withMech, key);
+    const uncontained = probe(without, key);
+    const decided = verdict(contained, uncontained);
+    if (decided === 'UNREADABLE') unreadable += 1;
     process.stdout.write(
-      `  ${verdict.padEnd(11)} ${label}\n` +
+      `  ${decided.padEnd(11)} ${label}\n` +
         `              ${why}\n` +
-        `              lowbox  ${contained.outcome.padEnd(11)} ${contained.detail}\n` +
-        `              route   ${uncontained.outcome.padEnd(11)} ${uncontained.detail}\n\n`,
+        `              ${withMech.padEnd(13)} ${contained.outcome.padEnd(11)} ${contained.detail}\n` +
+        `              ${without.padEnd(13)} ${uncontained.outcome.padEnd(11)} ${uncontained.detail}\n\n`,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // (b) MEMORY IS NOT MEASURED HERE, and saying so is the point of printing it.
+  //
+  // A COVERAGE REDUCTION AGAINST `hostFixture.mjs`, stated rather than absorbed
+  // (audit item 2a, weakening direction). That file carried a `commit768MB`
+  // probe against a job whose ProcessMemoryLimit was the literal 512 MB — which
+  // its own comment flagged as PP-4's shape: a second opinion about §9.17's
+  // mupdf-host budget, living inside a Windows struct.
+  //
+  // Carrying the literal here would carry PP-4 with it. Carrying the DERIVATION
+  // would be a second implementation of the rule ADR-0023 §2 assigns to the
+  // shipped host — parse memoryBudgets.mjs, take the absolute cap, undefault it
+  // — which is B3a. So the limit arrives with the host that ships it, and the
+  // measurement arrives with RR-3.
+  //
+  // Not silently dropped: a reduction nobody prints is a reduction nobody
+  // reviews, and the trigger is named so this cannot sit here indefinitely.
+  // ---------------------------------------------------------------------------
+  process.stdout.write(
+    '  NOT MEASURED  (b) memory\n' +
+      '              The job here sets no memory limit. hostFixture.mjs measured this against a\n' +
+      '              512 MB literal it flagged as PP-4; ADR-0023 §2 makes the shipped limit a\n' +
+      "              derivation from §9.17's absolute cap, and implementing that rule twice is\n" +
+      '              B3a. TRIGGER: RR-3, where the shipped derivation runs and can be read.\n\n',
+  );
+
+  // ---------------------------------------------------------------------------
+  // THE CONTROL FOR THE UNASSERTED RULE, run every time rather than trusted, and
+  // brought across with the classifier because neither is worth much alone.
+  //
+  // MUTATED ON THE CONTAINED SIDE deliberately. Removing the UNCONTAINED reading
+  // passes today for the wrong reason — two missing readings AGREE, so the row
+  // prints `same` — and that direction never reaches the defect. Only a missing
+  // CONTAINED reading beside a present uncontained one can manufacture the
+  // reassuring verdict, which is the direction the bug takes.
+  // ---------------------------------------------------------------------------
+  {
+    const damaged = runs.map((entry) =>
+      entry.cell !== 'lowbox' || entry.report === null
+        ? entry
+        : {
+            ...entry,
+            report: {
+              ...entry.report,
+              probes: Object.fromEntries(
+                Object.entries(entry.report.probes ?? {}).filter(
+                  ([key]) => key !== 'nativeReadUnhanded',
+                ),
+              ),
+            },
+          },
+    );
+    const missing = verdict(
+      probeIn(damaged, 'lowbox', 'nativeReadUnhanded'),
+      probeIn(damaged, 'route', 'nativeReadUnhanded'),
+    );
+
+    process.stdout.write(
+      `  CONTROL: with the CONTAINED reading removed, that row reads ${missing}\n` +
+        `              It must be UNREADABLE. Classified from an absence it read as a refusal beside\n` +
+        `              an allowed uncontained side, so the table printed a containment verdict for a\n` +
+        `              property nothing had measured — the claim QQ-1 removed from row 283,\n` +
+        `              regenerated by a missing value.\n\n`,
+    );
+    if (missing !== 'UNREADABLE') unreadable += 1;
   }
 
   if (unreadable > 0) {

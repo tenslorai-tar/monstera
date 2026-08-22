@@ -385,3 +385,28 @@ A byte-image writer running in main needs no pipe crossing whatever.
 **Do not let that widen the frame maximum without its own decision.** The
 maximum is a required, undefaulted argument precisely so that widening it is a
 visible act at a named call site rather than a constant somebody edits.
+
+## Correction, 2026-08-22 — `hostFixture.mjs` no longer exists (finding WW-1)
+
+§1 above names `hostFixture.mjs` as the instrument that had the host call
+`SetTokenInformation` on its own token, and that remains an accurate statement
+about what that file did. **The file has been deleted**, so it is history rather
+than somewhere to go and look.
+
+The reason is this ADR's own §1. Deciding that the LowBox token is Low at
+creation withdrew the mechanism the fixture's variant matrix was switching, on a
+process type ADR-0022 had already withdrawn — so the instrument named *one
+realistic engine host* was the one that had stopped being realistic, and two
+instruments measuring two process types breaks RR-2's premise that every
+containment conclusion comes from one.
+
+It was **consolidated rather than repaired**: the per-property variant matrix,
+the four-state outcome classifier and the removed-contained-reading control moved
+into `scripts/research/lowboxSpike.mjs`, which creates the process the shipped
+way. That file is now the only containment instrument, and it is the one §6
+(RR-3) turns into a proof. One reading did not survive the move and is printed
+where it would have been: **(b) memory**, because the fixture measured it against
+a 512 MB literal and §2 of this ADR makes the shipped limit a derivation — so the
+measurement belongs with the derivation, at RR-3.
+
+Left as written above, because what this ADR said at the time is the record.
