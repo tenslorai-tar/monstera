@@ -77,15 +77,35 @@ jobs:
       # job went red, because the gate's pass-path case cannot run without a
       # scanner. A step order that must be remembered is a step order that will
       # eventually be got wrong.
+      #
+      # EVERY PROOF BELOW RUNS THROUGH scripts/ci/annotate.mjs (finding CCC-1).
+      # Actions serves logs only to authenticated callers, so a proof that fails
+      # here is fully diagnosable by the owner and completely opaque to everyone
+      # else. The wrapper re-emits a failing script's own output as a public
+      # annotation, and it was written for exactly that — then applied to three
+      # steps in ci.yml and to NONE here, which is where the guard proofs live.
+      #
+      # Measured: `proof:advisories` went red on windows-latest at a0d2ec0 with
+      # ubuntu-latest green, and the only public evidence was the step name. The
+      # reusable remedy existed and had not been rolled out — the same half-fix
+      # shape as W-1/X-1/Z-1, where the instance was repaired and the class was
+      # left. It is invoked by SCRIPT PATH rather than through `npm run` so the
+      # wrapper spawns the proof directly; that drops the npm-run environment,
+      # and only two proofs anywhere touch it — rendererPolicy.proof.mjs, which
+      # already runs wrapped in ci.yml, and preCommit.proof.mjs, which deletes
+      # `npm_execpath` deliberately because inheriting it hid a branch.
       - name: Prove the guards still catch what they claim
-        run: npm run proof:guards
+        run: |
+          node scripts/ci/annotate.mjs scripts/hooks/guardFiles.proof.mjs
+          node scripts/ci/annotate.mjs scripts/hooks/preCommit.proof.mjs
+          node scripts/ci/annotate.mjs scripts/bootstrapHooks.proof.mjs
 
       # Before the proofs that report failures, because a blind reporter turns
       # every red step below it into a message nobody can act on. Both platforms
       # run it deliberately: the errno a failed rename produces is exactly what
       # differs between them.
       - name: Prove a failure report carries its diagnosis
-        run: npm run proof:errorreport
+        run: node scripts/ci/annotate.mjs scripts/lib/reportError.proof.mjs
 
       # The other half of the same property — what a PASS says — and it needs no
       # platform argument at all. The two ran under one step name while they
@@ -93,7 +113,7 @@ jobs:
       # stood as the reason for both. Split so each step's reason is true of the
       # step it is attached to.
       - name: Prove an ok line cannot outlive the case that earned it
-        run: npm run proof:passroster
+        run: node scripts/ci/annotate.mjs scripts/lib/passRoster.proof.mjs
 
       # The same property a third time, about the instrument that decides whether
       # THIS board is green. It failed twice in one day and both times printed
@@ -103,7 +123,7 @@ jobs:
       # instance of the live-third-party dependency this repository already has
       # twice, and the only one of the three inside CI.
       - name: Prove the board reader knows "not yet" from "cannot see"
-        run: npm run proof:board
+        run: node scripts/ci/annotate.mjs scripts/lib/boardStatus.proof.mjs
 
       # A fourth instrument about CI's own legibility. Actions serves LOGS only
       # to authenticated callers, so a proof that fails on a runner is opaque to
@@ -112,7 +132,7 @@ jobs:
       # exit code 1". Annotations need no token, so the wrapper moves the bytes
       # the runner already printed into a place anybody can read.
       - name: Prove a failing step's own words reach a public annotation
-        run: npm run proof:annotate
+        run: node scripts/ci/annotate.mjs scripts/proofs/annotate.proof.mjs
 
       # The Electron pin cannot drift from the dependency and cannot be routed
       # around. Reads tracked files only and downloads NOTHING: proof:provision
@@ -132,37 +152,37 @@ jobs:
       # other loadTypeScript consumers. A case needing node_modules does not
       # belong in this job however much it belongs with these ones.
       - name: Prove the Electron pin cannot drift or be bypassed
-        run: npm run proof:electronprovision
+        run: node scripts/ci/annotate.mjs scripts/provision/electron.proof.mjs
 
       - name: Prove provisioning is safe under concurrency
-        run: npm run proof:provision
+        run: node scripts/ci/annotate.mjs scripts/provision/gitleaks.proof.mjs
 
       # The scan below is only worth its runtime if it cannot be silently
       # disarmed. This proves each suppression channel is closed AND, by running
       # the corpus without each closure, that the closure is what shuts it —
       # neither half is evidence alone.
       - name: Prove the secret scan cannot be disarmed
-        run: npm run proof:secretscan
+        run: node scripts/ci/annotate.mjs scripts/lib/secretScan.proof.mjs
 
       # Three claims in a row were true only because of state nothing was
       # watching. The mechanism that fixes that class has to be able to detect a
       # change itself, or it is the fourth instance wearing the uniform of the
       # fix — so every input kind is resolution-tested here.
       - name: Prove a verdict's inputs detect a change
-        run: npm run proof:verdict
+        run: node scripts/ci/annotate.mjs scripts/lib/verdict.proof.mjs
 
       # A native measurement taken through a DLL built from older source still
       # runs and still prints plausible numbers. Runs here rather than in the
       # native job because it needs only the tracked shim source, not a build.
       - name: Prove a stale shim is refused rather than measured
-        run: npm run proof:shimstate
+        run: node scripts/ci/annotate.mjs scripts/lib/shimBinary.proof.mjs
 
       # The withdrawn-phrase check unblocked Stage 0 and shipped with no proof.
       # Three false negatives had already got through it — a tilde, a table row,
       # and a phrase wrapped across a line break — each found by grepping the
       # real tree by hand, which only ever finds what someone thinks to look for.
       - name: Prove the withdrawn-phrase check catches what it claims
-        run: npm run proof:withdrawn
+        run: node scripts/ci/annotate.mjs scripts/lib/withdrawnPhrases.proof.mjs
 
       # The standing rule against writing files through escape-resolving shell
       # paths was broken six times while claiming to be the only defence. It is
@@ -171,7 +191,7 @@ jobs:
       # .claude/settings.json still wires it to both shells — a correct script
       # nothing invokes would leave every case above passing over an open door.
       - name: Prove the escape-resolving-write hook is wired and discriminates
-        run: npm run proof:escapeguard
+        run: node scripts/ci/annotate.mjs scripts/hooks/blockEscapeResolvingWrites.proof.mjs
 
       # A hook cannot detect its own absence. A settings file at a scope above
       # the project's — personal, gitignored, in nobody's diff — can carry
@@ -179,7 +199,7 @@ jobs:
       # shape again. The git pre-commit hook refuses; this proves it refuses for
       # the right reasons and stays quiet for a contributor's ordinary settings.
       - name: Prove a locally disarmed tool-use guard is detected
-        run: npm run proof:hookintegrity
+        run: node scripts/ci/annotate.mjs scripts/lib/hookIntegrity.proof.mjs
 
       # Everything above proves the guard's PARTS. None of it can reach the one
       # thing CLAUDE.md actually asserts — that the hook is loaded in the agent
@@ -190,14 +210,14 @@ jobs:
       # configuration (which is what produced the first attempt's result), or
       # one that honestly says the guard did not fire.
       - name: Prove the tool-use guard gate cannot be claimed unproven
-        run: npm run proof:hookprobe
+        run: node scripts/ci/annotate.mjs scripts/proofs/hookProbe.proof.mjs
 
       # Downloads a deliberately older gitleaks — one that runs the shipped
       # invocation, exits like a healthy scan, and quietly finds one family
       # fewer. Every other case for the canary runs against the pinned build,
       # which is the one binary it is not meant to be for.
       - name: Prove the canary rejects an older scanner
-        run: npm run proof:canary
+        run: node scripts/ci/annotate.mjs scripts/lib/scannerCanary.proof.mjs
 
       # The memory budgets are read from invariant §9.17 rather than defined as
       # constants (ADR-0012), so the number a human reads is the number the
@@ -206,7 +226,7 @@ jobs:
       # should have stopped, and a fallback is how a withdrawn budget returns
       # silently.
       - name: Prove the budgets are read, never substituted
-        run: npm run proof:budgets
+        run: node scripts/ci/annotate.mjs scripts/proofs/memoryBudgets.proof.mjs
 
       # The document checker enumerates from the commit and must read from it
       # too. It used to read the filesystem, which is a different scope with a
@@ -214,7 +234,7 @@ jobs:
       # state crashed it. Guarding the state left a document unchecked while the
       # checker printed success; aligning the scopes removes it.
       - name: Prove the document checker reads the scope it enumerates
-        run: npm run proof:docscope
+        run: node scripts/ci/annotate.mjs scripts/proofs/documentScope.proof.mjs
 
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
@@ -229,7 +249,7 @@ jobs:
       # shallow one — a component list naming Leptonica, and "we only open PDFs"
       # — because that is what a threat model written in a hurry looks like.
       - name: Prove the carried threat-model questions can fail
-        run: npm run proof:threattopics
+        run: node scripts/ci/annotate.mjs scripts/proofs/threatModelTopics.proof.mjs
 
       # The audit watermark gate guards a condition that is false almost all the
       # time, so nothing in ordinary work exercises it — and a gate never
@@ -238,7 +258,7 @@ jobs:
       # one batch and must NOT trip below it, since an always-red gate gets
       # switched off rather than obeyed.
       - name: Prove the stage-audit watermark gate can fail
-        run: npm run proof:auditscope
+        run: node scripts/ci/annotate.mjs scripts/proofs/auditScope.proof.mjs
 
       # A workflow naming a path inside the provisioned Electron tree embeds the
       # pin where nothing checks it against ELECTRON_VERSION: when the pin moves,
@@ -252,7 +272,7 @@ jobs:
       # the scan can also refuse, and can tolerate the commented occurrences that
       # explain why the path is dangerous (finding GG-8).
       - name: Prove the workflow-path scan can see, refuse and tolerate
-        run: npm run proof:workflowpins
+        run: node scripts/ci/annotate.mjs scripts/proofs/workflowPins.proof.mjs
 
       - name: No workflow names a path inside the provisioned Electron tree
         run: npm run check:workflowpins
@@ -263,14 +283,14 @@ jobs:
       # in three files at once should not need a Windows runner to catch
       # (finding TT-2).
       - name: Prove the invalid-handle check catches what four spellings missed
-        run: npm run proof:win32handle
+        run: node scripts/ci/annotate.mjs scripts/proofs/win32Handle.proof.mjs
 
       # The proof first, because it is what establishes the scan can SEE — a
       # search's silence is worthless until something known-present proves it is
       # not blind. The scan then carries the same control itself, since it gets
       # run by hand on the day someone needs an answer and CI is not there.
       - name: Prove the emitted-source backtick scan sees, refuses and tolerates
-        run: npm run proof:emittedtemplates
+        run: node scripts/ci/annotate.mjs scripts/proofs/emittedTemplates.proof.mjs
 
       - name: No emitted-source template carries a backtick
         run: npm run check:emittedtemplates
@@ -280,7 +300,7 @@ jobs:
       # changing the npm that validates this project's lockfile — which is how
       # CI came to reject a lockfile that every developer machine accepted.
       - name: Prove the toolchain pin is one declaration
-        run: npm run proof:toolchain
+        run: node scripts/ci/annotate.mjs scripts/proofs/toolchainPin.proof.mjs
 
       # MuPDF is compiled into the shim and parses the most attacker-controlled
       # input this application has. Pinning it is correct — it makes builds
@@ -327,7 +347,7 @@ jobs:
       # fails ON THE PARSE, and that the walk finds a symbol known to be there
       # before any "no references" it reports is believed.
       - name: Advisory register cannot be silently disarmed
-        run: npm run proof:advisories
+        run: node scripts/ci/annotate.mjs scripts/proofs/advisoryRegister.proof.mjs
 
       - name: File policy (whole tree)
         run: node scripts/hooks/guardFiles.mjs --tree
