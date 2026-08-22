@@ -644,6 +644,156 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — Stage audit: `d3ea661..d55b893` — a flag nothing proves takes effect, and a step on the job that cannot run it
+
+**Audited through `d55b893`.** 9 commits, 23 files, **2 proofs added, 4
+modified**, 2 new instrument files and **7 changed** — from `npm run audit:scope`.
+
+The range is EEE-1's re-verification, the OSV fix, EEE-2's requirement, EEE-3,
+GG-1's note, and FFF-1. Findings **GGG-1** to **GGG-3**.
+
+### 1. Root cause or workaround
+
+Seven fixes. Six are root cause. **The OSV one needs a sentence it did not get.**
+
+`a8cc7f8` moved 31 of the advisory proof's cases off the live feed onto a
+recorded one. That is correct on its own grounds and the grounds are stated: a
+case about *register logic* — a missing key, a misspelt symbol, an empty witness
+scope — has no business depending on what a third party answers today, and one
+proof run was reaching `api.osv.dev` dozens of times with `fetchAdvisories`
+throwing on any non-OK status by design.
+
+**But it is not evidence about the red at `a0d2ec0`, and the commit reads as
+though it might be.** That failure was never diagnosed — Actions serves logs only
+to authenticated callers — and the network hypothesis remains a hypothesis. A
+correct change made in the neighbourhood of an undiagnosed failure is the exact
+shape that closes a finding without fixing it. The red stays open and
+unattributed; the change stands on the reason given, not on that one.
+
+### 2a. A change to HOW something is proven moved the coverage
+
+The same change, and it is a reduction that has to be stated rather than
+inferred. Before: 31 invocations exercised the checker end-to-end against the
+live feed, so a change in OSV's response *shape* would have reddened all of them.
+After: one case does. The parse is still covered — the live case runs the whole
+checker — but it is covered once, and the failure of that one case is now the
+only externally-fallible signal in the file. It is named that way in the case
+title, which is the mitigation.
+
+### GGG-1 — the new steps were registered on the one job that cannot run them
+
+`check:stackowner` and `proof:stackowner` were added to `guards.yml`. **Guards
+runs no `npm ci`.** The scan builds a TypeScript Program per project, so both
+steps would have failed on every Guards run, on both platforms, from the commit
+that added them. `ci.yml` already carries two steps placed there for precisely
+this reason, each with a comment saying so.
+
+**This machine could not have shown it**, and that is the finding rather than the
+slip. `node_modules` always exists here, so the branch that throws when the
+compiler is absent never executes locally. Item 3's second question — *is there a
+defect THIS MACHINE cannot see* — found it one commit later and before either was
+pushed. Fixed in `d55b893`.
+
+**Its proof case moved too, and the reason generalises.** The registration case
+read `guards.yml` **by name** and asserted the string appeared in it. That case
+would have stayed green while the steps sat in a job that cannot run them: it
+asserted the step was *somewhere*, not that the somewhere could execute. It now
+reads every workflow out of the directory. **A registration check that names one
+file is a check about a filename, not about registration.**
+
+### GGG-2 — `--recorded-advisories` has no case that proves it takes effect
+
+**Open, with the remedy priced.** The flag selects the recorded feed in
+`engineAdvisories.mjs`. If its parse broke — a rename, a typo, an argv change —
+every one of the 31 register cases would silently fetch live and **still pass**,
+slowly. Nothing in `advisoryRegister.proof.mjs` separates those two worlds.
+
+That is item 4 in its sharpest form: *the reassuring answer here is "the cases
+pass", and a no-op flag produces it too.* And the property left unproven is the
+one the whole fix rests on — the file's own comment says grepping for `liveRun`
+finds every live case, *currently one*, which is true only if the flag works.
+
+The fixture that would separate them is derived, not restated: have the checker
+print the advisory count and its source, and assert that a recorded run reports
+exactly `osv-recorded.json`'s own length. A broken flag fetches live, and a live
+count equals 74 only by coincidence.
+
+### GGG-3 — the checker's Usage block does not list the two flags it gained
+
+`engineAdvisories.mjs`'s header ends with a `Usage:` block naming two
+invocations. The range added `--record-advisories` and `--recorded-advisories`,
+and the block still names two. This is item 7 at comment scale, in the shape that
+does not get caught: **the stale half sits in the position a reader treats as the
+contract**, and the section explaining the recording lives further down where a
+skimmer never reaches. A `Usage:` block is a live specification, so it is
+corrected by editing the body.
+
+### 3. Would CI have caught it?
+
+GGG-1, no — it *was* CI, in the sense that CI would have gone red on the first
+run. The audit caught it before the push, which is the cheaper end of the same
+mechanism. GGG-2, no: a no-op flag is green everywhere. GGG-3, no: no check reads
+a comment for completeness, and none should.
+
+The cost of the new scan is measured rather than assumed: **≈18 s** per run, two
+platforms, from seven `createProgram` calls. It buys the separation no textual
+scan can make, and it fails closed when the compiler is absent.
+
+### 4, 4a, 4b. Vacuity, resolution, and the searches
+
+`stackOwnership.mjs` was mutation-tested three ways and each mutation reddened
+exactly the case that exists for it: folding UNRESOLVED into `other`, disarming
+both controls, and dropping the destructuring branch. Its resolution test is the
+one that matters for this instrument — **the same text on two receivers that
+differ only by type**, `Error` at line 6 and a declared field at line 14, must
+come back as different verdicts. And it was run against the **real pre-fix file**
+rather than a fixture: with `perfBudget.proof.mjs` reverted it names
+`perfBudget.proof.mjs:203`.
+
+Stated precisely, because the discipline says *before* it measures anything real:
+the first run against this tree happened before the mutation, and it returned a
+**finding** rather than silence, so it was never resting on an unverified "found
+nothing". That is luck, not method, and the mutation followed within minutes.
+
+Both new instruments are searches and both carry controls that run in the
+instrument, not only in the proof: `annotateCoverage` must locate a wrapped
+invocation, `stackOwnership` must locate an Error-typed read in **each** owner,
+and both refuse to report when they cannot.
+
+### 5. Executed, or asserted?
+
+**Executed:** `proof:stackowner` (24 cases) · three mutations of the scan ·
+the real-file pre-fix mutation · `check:stackowner` · `typecheck` (both
+projects) · `eslint` on every changed file · `check:docs` ·
+`check:emittedtemplates` · `check:annotatecoverage` · `proof:annotatecoverage` ·
+`proof:perfbudget` (31 cases, with the `formatError` change in place) ·
+`proof:rendererpolicy` (17 cases, real Electron, with the one-line harness
+payload) · `guard:staged` · the pre-commit hook twice.
+
+**Asserted, not executed:** that `check:stackowner` passes on both CI runners —
+the board will say, and it is the first run of a step that needs `node_modules`
+in a job whose sibling does not have it; that 18 s is acceptable there; and
+GGG-2's whole subject, which is asserted by a comment and by a call-site split.
+
+### 6, 7. Architecture, and the documents
+
+No architecture changed underneath a feature this range. ADR-0023 §8 was written
+**before** any factory exists, which is the order B4 asks for.
+
+`docs/JOURNAL.md` gained the Y-3 closure as an appended note rather than an edit,
+because what Y-3 concluded at the time is the record and the useful part is that
+its blocking question was answered by being **rejected**. `FFF-1a` — three
+opinions about the entry-point test, one of them written yesterday by me — is
+recorded there rather than fixed, with the consolidation priced.
+
+Open from earlier ranges: the unattributed red at `a0d2ec0`, GG-1's derivation,
+(b) memory until RR-3, the spike's invalid-outcome mutation test and its GPU
+flake, EEE-3's `check:*` scope, P1, AA-1's granularity half, AA-3, CC-3, DD-2,
+BB-6, OO-1, the MuPDF cache's restore-without-reverify, and **II-2's hard trigger
+before Stage 0 exit**.
+
+---
+
 ## 2026-08-22 — Stage audit: `1d5e6d6..d3ea661` — the instrument that was dark for four commits, and the column that cannot see a deletion
 
 **Audited through `d3ea661`.** 7 commits, 17 files, **0 proofs added, 3
