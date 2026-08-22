@@ -644,6 +644,163 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — Stage audit: `d55b893..5f07e80` — a branch nothing executed, and four instruments that were wrong before they measured
+
+**Audited through `5f07e80`.** 5 commits, 23 files, **2 proofs added, 4
+modified**, 2 new instrument files and **5 changed** — from `npm run audit:scope`.
+
+The range is FFF-2/3/4, GGG-2/3, HHH-1/2/3, III-1 and GG-1's first closed
+member. Findings **JJJ-1** to **JJJ-3**.
+
+### 1. Root cause or workaround
+
+Ten fixes, and the one worth arguing about is the `util.inspect` swap in
+`rendererHarnessMain.ts`. The advisory register's expiry fired on it correctly;
+the response was to stop naming the watched symbol rather than to re-triage the
+verdict. That IS stepping around a guard that fired, and it is recorded as a
+decision with the refused alternative beside it — narrowing a security verdict's
+glob so a proof harness could use a nicer helper. **If any call in this range is
+overturned, it is this one**, and the three limits of that trigger are written
+down where the next person meets them.
+
+Everything else is root, and two were corrections to a specified remedy rather
+than to the code: HHH-1's derivation as stated over-fired on two green steps,
+and GGG-2's first proposed fixture was one the defect also satisfies.
+
+### JJJ-1 — a branch in a new instrument that nothing executed, anywhere
+
+`nodeModulesPlacement.mjs` treats a `.catch()` chain as handling a rejection,
+because it does. **Disabling that branch left all nineteen cases green and the
+real scan unmoved.** No code in this repository writes the shape, so the branch
+was a specification nobody had read — item 3's *a branch keyed on the presence of
+something has a side that never executes wherever that thing is absent*, in the
+form where the thing is absent **everywhere** and the branch is therefore dead
+from birth.
+
+Found by mutation during the audit, not by a failure. Kept rather than deleted —
+the fact it encodes is true, and removing it makes the scan report a false
+positive the day someone writes it — and now covered by a pair: the chained call
+is not reported, and the same call without the chain is. With the branch
+disabled, exactly that case reddens.
+
+**The general form is worth more than the instance.** A new instrument's
+mutation testing naturally aims at the branches its fixtures exercise. The
+branches worth checking are the ones no fixture reached, and the cheapest way to
+find them is to disable each in turn and see whether *anything* notices. Two of
+this range's four instruments had one.
+
+### JJJ-2 — a proof CASE was deleted, and no column reports that
+
+`annotateCoverage.proof.mjs` lost the case *"proof scripts that yield NO paths
+throw"*, because the guard it covered became unreachable: `names` and `paths`
+now come from one match, so a non-empty `names` implies a non-empty `paths` (B5,
+and the guard went with it). That is a correct removal — the thing being covered
+stopped existing.
+
+It is recorded because of **how** it surfaced. The audit report classifies that
+file under *proofs MODIFIED*, since the file remains; a removed **case** appears
+in no column. This is exactly the granularity limitation AA-1 ruled on, and this
+range is the first time its mandated compensation — *read the modified-proofs
+diffs* — actually had to do the work for a deleted case. It did. **The
+limitation holds, and the trigger has not fired.**
+
+Worth stating precisely, because the failure mode is close: the compensation
+works only while someone reads those diffs for deletions specifically. The report
+now prints *"N deletion(s) DO NOT APPEAR in the range diff"* for three files in
+this range, which is what sent me to `git log -p`. Without that line the removal
+nets to an insertion and is invisible in the range diff.
+
+### JJJ-3 — the pre-push hook's blocking path is proven by nothing
+
+Fifteen cases cover the decision — which ranges are parsed, which pathspecs are
+watched, when the check fires and when it does not. **None covers what happens
+when the register FAILS.** The hook's whole purpose is to block that push, and
+that path is asserted by reading it.
+
+The obstacle is real and named rather than worked around: `CHECKER` is an
+absolute path into this repository, so a fixture cannot supply a failing
+register without the run reaching the real one. Making the checker path
+injectable is the fix and it is a unit of its own — and an injectable path is
+exactly what `--recorded-advisories` refused to be, for good reason, so it wants
+thinking about rather than a parameter.
+
+Until then this is a **stated gap, not a covered one**. The failure text was read
+by hand once, which is a person remembering.
+
+### 2, 2a. Shapes, and coverage that moved
+
+The hard shapes are covered for the placement scan — a catch, a try with only a
+finally, a mixed module, a bare import, a wrapped line, and prose that says
+`npm ci`. What is not: a dynamic `import()` of a computed expression, which is
+why `DECLARED_ROOTS` exists and is stated in the header.
+
+Coverage **widened** rather than moved: `annotateCoverage`'s subject went from
+`proof:*` to every script the wrapper can spawn, and three registration cases in
+three different proofs stopped matching an npm script NAME and started matching
+the path that actually executes. That last one is a strengthening that looked
+like a regression — all three went red at once when FFF-2 landed, reporting a
+de-registration that had not happened.
+
+### 3. Would CI have caught it? Is there a defect this machine cannot see?
+
+GGG-1 was the second question's answer last range, and this range built the
+mechanism for it. The new scan **covers its own registration**: it is in the
+needing set, so putting it on Guards would make it report itself.
+
+Cost, measured rather than assumed: `check:stackowner` 21 s, `check:jobplacement`
+4.5 s, `check:advisories --recorded-advisories` 16 s. The first two run in CI's
+build job; the third runs pre-push, on the pushes that can break the register.
+
+### 4a. The instrument that refused before it measured anything
+
+`nodeModulesPlacement.mjs`'s **first run reported BLIND** — the control named
+`preloadSurface.mjs`, and no workflow runs that file directly; the proof runs it.
+The scan said so instead of printing a clean tree. That is the positive control
+paying for itself before the instrument had guarded anything, which is the
+ordering item 4a asks for and does not usually get.
+
+Three more versions of the same instrument were wrong before it measured
+anything real, and every wrong answer was the reassuring one. The order matters:
+with only the prose-matching defect fixed, the scan would have printed a clean
+tree while blind.
+
+### 5. Executed, or asserted?
+
+**Executed:** `proof:jobplacement` (21) · `proof:stackowner` (24) ·
+`proof:annotatecoverage` (18) · `proof:advisories` (34) · `proof:guards` (30 +
+29 + 15 + 10) · `check:docs` (9) · `check:jobplacement` · `check:stackowner` ·
+`check:annotatecoverage` · `check:emittedtemplates` · both typecheck projects ·
+`eslint .` · `guard:staged` · seven mutations, each reddening the case that
+exists for it · **a real `git push` through the new pre-push hook**, which named
+its range, ran the register offline and passed · the board green at `5f07e80`.
+
+**Asserted, not executed:** JJJ-3's blocking path; that 21 s in pre-commit is
+tolerable in practice rather than in principle; and that the `util.inspect`
+decision is the right one.
+
+### 6, 7. Architecture and documents
+
+No architecture changed underneath a feature. ADR-0019 gained an **addendum**
+rather than an edit — a general rule extracted from two scans erring in opposite
+directions, placed beside the decision it generalises.
+
+`CLAUDE.md`'s command list gained both new checks. `docs/FEATURES.md`'s row 283
+is a live specification again, and the class that let it stop being one is now
+checked.
+
+**The escape-resolving-write hook fired three times this range** — `node -p`, a
+heredoc redirect, and `sed -i` — every one on my own reflex composition, none of
+them written. It has now denied more often than the rule was recalled, which is
+the whole argument the rule could not make for itself.
+
+Open from earlier ranges: the unattributed red at `a0d2ec0`, the general
+proof-to-inputs mapping, (b) memory until RR-3, the spike's invalid-outcome
+mutation test and its GPU flake, P1, AA-1's granularity half, AA-3, CC-3, DD-2,
+BB-6, OO-1, the MuPDF cache's restore-without-reverify, and **II-2's hard trigger
+before Stage 0 exit**.
+
+---
+
 ## 2026-08-22 — GG-1 closes for one member: the pre-push gate reads the register's own globs
 
 GG-1 recorded a rule and named the obstacle to mechanising it: *proofs address
