@@ -154,6 +154,11 @@ function parseWatermark(text, source) {
  *     perCommit: { added: number, removed: number },
  *   }>,
  *   newScripts: string[],
+ *   changedScripts: Array<{
+ *     path: string,
+ *     net: { added: number, removed: number },
+ *     perCommit: { added: number, removed: number },
+ *   }>,
  *   overBudget: string[],
  * }}
  */
@@ -604,9 +609,30 @@ function buildScope({ commit, range, commits, root, churn = true }) {
   // column's "read each diff" instruction is written for; `R100` is a move,
   // which an auditor still wants told about. The source path is carried so the
   // churn figures can span the rename.
-  const modified = status.filter(
-    (e) => (e.state === 'M' || e.state === 'R' || e.state === 'C') && isProof(e.path),
-  );
+  const changed = (/** @type {(path: string) => boolean} */ predicate) =>
+    status.filter(
+      (e) => (e.state === 'M' || e.state === 'R' || e.state === 'C') && predicate(e.path),
+    );
+
+  const modified = changed(isProof);
+
+  // WW-2. The instrument column filtered ADDED FILES, so an instrument that
+  // already existed and whose BEHAVIOUR changed appeared in no column at all.
+  //
+  // That was carried as AA-1's granularity limitation on the reasoning that the
+  // mandated compensation — read the modified-proof diffs — had surfaced every
+  // instance. The compensation reaches instruments that are PROOFS. It reaches
+  // nothing else: a non-proof instrument that changed is in no diff the
+  // disclosure sends anyone to, so for that class there was no compensation to
+  // print and the ruling's own basis did not apply.
+  //
+  // Measured on the range that found it: four research instruments were
+  // converted to `String.raw`, which alters escape handling in the program each
+  // writes to disk, and every one of them could have been broken by it. What
+  // caught them was running all four by hand. That is diligence, not a
+  // mechanism, and counting it as the limitation holding is how a stated limit
+  // becomes permanent.
+  const modifiedSource = changed((path) => !isProof(path) && isSource(path));
 
   return {
     watermark: commit,
@@ -644,6 +670,19 @@ function buildScope({ commit, range, commits, root, churn = true }) {
     newScripts: status
       .filter((e) => e.state === 'A' && !isProof(e.path) && isSource(e.path))
       .map((e) => e.path),
+    // Carries churn for the same reason the proof column does, and it matters
+    // more here: this column lists ordinary modules alongside instruments, so
+    // without a figure to sort by it is a wall of paths an auditor skims — which
+    // is the failure the column was added to stop, reproduced one level up.
+    //
+    // Skipped with `churn: false` on the gate path, like `proofChurn`, so the
+    // pre-commit hook does not pay for a report nobody is reading there.
+    changedScripts: churn
+      ? modifiedSource.map((entry) => ({
+          path: entry.path,
+          ...churnFor(range, entry.path, root, entry.from),
+        }))
+      : [],
     overBudget: [
       ...(commits > BATCH.commits ? [`${commits} commits (one batch is ${BATCH.commits})`] : []),
       ...(status.length > BATCH.files ? [`${status.length} files (one batch is ${BATCH.files})`] : []),

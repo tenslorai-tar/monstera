@@ -79,11 +79,16 @@ function section(title, entries) {
  * U-2's value. Two figures with nothing joining them are a subtraction the
  * reader has to do.
  *
+ * Shared by both churn columns rather than copied into the second one. They
+ * print the same three figures and carry the same U-2 disclosure, and two
+ * renderers would be two opinions about what a rewrite inside the range looks
+ * like (B3a).
+ *
+ * @param {string} title
  * @param {import('../lib/auditWatermark.mjs').ProofChurn[]} entries
  * @returns {string}
  */
-function proofChurnSection(entries) {
-  const title = 'proofs MODIFIED — read each diff; a loosened check looks like a corrected one';
+function churnSection(title, entries) {
   if (entries.length === 0) return `  ${title}: none\n`;
 
   return (
@@ -130,38 +135,36 @@ process.stdout.write(
     `  commits: ${scope.commits} (one batch is ${BATCH.commits})\n` +
     `  files:   ${scope.files.length} (one batch is ${BATCH.files})\n\n` +
     section('proofs ADDED — new coverage', scope.proofsAdded) +
-    proofChurnSection(scope.proofChurn) +
+    churnSection(
+      'proofs MODIFIED — read each diff; a loosened check looks like a corrected one',
+      scope.proofChurn,
+    ) +
     // Coverage LEAVING. The classifier recognised A and M only, so a deleted
     // proof appeared in no column and read as an ordinary line in the file
     // count — the limit case of the modified column's own argument.
     section('proofs REMOVED — coverage leaving; say why in the entry', scope.proofsRemoved) +
-    section('new source FILES — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
-    `    ^ NEW FILES ONLY, and this is a STATED LIMIT rather than an open defect.\n` +
-    `      An instrument added as a function inside a module that already existed\n` +
-    `      does not appear above — READ THE MODIFIED-PROOFS DIFFS for those. That\n` +
-    `      is the compensation, and it has surfaced every instrument this column\n` +
-    `      missed across five ranges (AA-1).\n` +
-    `      Three axes of this classifier were DEFECTS and were fixed: pattern\n` +
-    `      (W-1), root (X-1), state (Z-1). Granularity is the fourth and is ruled\n` +
-    `      a limitation, because it has never once concealed anything: the\n` +
-    `      disclosure you are reading is what sends you to the diffs, so the\n` +
-    `      compensation is prompted at the point of use rather than recalled.\n` +
+    section('source FILES ADDED — instruments to resolution-test (items 4a, 4b)', scope.newScripts) +
+    churnSection(
+      'source FILES CHANGED — an instrument whose behaviour moved (items 4a, 4b)',
+      scope.changedScripts,
+    ) +
+    `    ^ WW-2 added the second of those two columns, and the first one alone was\n` +
+    `      the same "added files only" filter that hid four converted instruments\n` +
+    `      in one range. Both list ordinary modules beside instruments; sort by\n` +
+    `      churn and read the ones that could answer a question wrongly.\n` +
+    `      Four axes of this classifier have now been DEFECTS and been fixed:\n` +
+    `      pattern (W-1), root (X-1), state (Z-1), added-vs-changed (WW-2).\n` +
+    `\n` +
+    `      WHAT REMAINS A STATED LIMIT is GRANULARITY, and it is narrower than\n` +
+    `      AA-1's ruling claimed: an instrument arriving as a FUNCTION INSIDE a\n` +
+    `      file listed above is not called out by name. The compensation is that\n` +
+    `      the file it lives in is now named in one of these two columns whatever\n` +
+    `      state it arrived in, which is what AA-1's ruling assumed and did not\n` +
+    `      have. Read the diffs of the files above.\n` +
     `      IT BECOMES A DEFECT the first time an instrument is found LATE that\n` +
-    `      reading those diffs did not surface. Then fix the granularity; until\n` +
-    `      then do not carry it as open.\n` +
-    // NO SILENT CAPS (finding AA-1). This column filters ADDED FILES, so an
-    // instrument that arrives as a function inside a module that already existed
-    // is invisible to it — and the column then prints `none`, which is item 4b's
-    // exact output: "found nothing", indistinguishable from "nothing to find",
-    // in the one column whose whole job is to say RESOLUTION-TEST THESE.
-    //
-    // Measured on the range that found it: `transienceNote`, `probeOutsideStaging`
-    // and the shared `--name-status` reader all landed inside modified files, and
-    // this column reported none of them.
-    //
-    // The bound is printed rather than fixed because surfacing per-function
-    // instruments is real work and will be noisy, and a deferral nobody can see
-    // is the same defect one level up.
+    `      reading those diffs did not surface. Catching one by running it is\n` +
+    `      diligence and does not count as the limit holding — that reading is\n` +
+    `      what kept WW-2 closed for a range longer than it should have been.\n` +
     `\n`,
 );
 

@@ -903,6 +903,35 @@ The ruling stands on its own terms: it becomes a defect the first time an
 instrument is found late that reading those diffs did not surface. That has still
 not happened.
 
+> **Correction, 2026-08-22 (WW-2).** The paragraph above is sound for the
+> instrument it describes — `sinkReceives` is inside a modified *proof*, so the
+> compensation genuinely reaches it. What it generalises from is not.
+>
+> **The ruling's stated basis was wider than the compensation it rested on.**
+> *Read the modified-proofs diffs* reaches instruments **that are proofs** and
+> nothing else. A non-proof instrument whose behaviour changed appeared in no
+> diff the disclosure sent anyone to — for that class there was no compensation
+> to print, so the distinction the ruling turned on (*printed at the point of use
+> is a mechanism, recalled is not*) had nothing to attach to.
+>
+> Measured on the range that produced this correction: four research instruments
+> were converted to `String.raw`, which alters escape handling in the program
+> each writes to disk, and every one could have been broken by it. They appeared
+> in no column. What caught them was running all four by hand.
+>
+> **And that is why the trigger did not fire, which is the part worth keeping.**
+> Nothing was found *late*, so on a literal reading the limit held. Diligence is
+> not the mechanism, and counting a near miss as the trigger not firing is how a
+> stated limitation becomes permanent. It is treated here as the trigger firing.
+>
+> The added-vs-changed axis is therefore a **defect**, fixed in the same commit
+> as this correction: `audit:scope` now reports source files ADDED and source
+> files CHANGED as two columns. Four axes of that classifier have now been
+> defects and been fixed — pattern (W-1), root (X-1), state (Z-1),
+> added-vs-changed (WW-2). What remains a stated limitation is narrower and is
+> the thing AA-1 was named for: an instrument arriving as a function inside a
+> file the columns *do* name.
+
 ### TT-1 — a provisioning step with no consumer and no expiry
 
 RR-1 added `npm run provision:electron` to the shim job, because that job is the

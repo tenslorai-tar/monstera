@@ -105,6 +105,13 @@ try {
   // "counts everything" produce the same non-empty columns.
   commit('unit.test.ts', 'export const a = 1;\n');
   commit('plain.ts', 'export const a = 1;\n');
+  // WW-2's subject: a NON-PROOF SOURCE file that existed at the watermark, so a
+  // later edit to it lands in the CHANGED column rather than in none at all.
+  // The added-only filter is what hid four converted instruments in one range,
+  // and a fixture created inside the range cannot show it — git calls that `A`
+  // however many times it is edited afterwards.
+  mkdirSync(join(scratch, 'scripts'), { recursive: true });
+  commit(join('scripts', 'existing.mjs'), 'export const a = 1;\n');
   const base = commit('appended.proof.mjs', 'export const a = 1;\n');
   setWatermark(base);
 
@@ -143,6 +150,8 @@ try {
     writeFileSync(join(scratch, 'added.test.ts'), 'export const a = 1;\n', 'utf8');
     writeFileSync(join(scratch, 'unit.test.ts'), 'export const a = 2;\n', 'utf8');
     writeFileSync(join(scratch, 'plain.ts'), 'export const a = 2;\n', 'utf8');
+    // WW-2's subject, edited.
+    writeFileSync(join(scratch, 'scripts', 'existing.mjs'), 'export const a = 2;\n', 'utf8');
     // X-1's subject: an instrument that is not under scripts/.
     mkdirSync(join(scratch, 'packages', 'kernel', 'src'), { recursive: true });
     writeFileSync(join(scratch, 'packages', 'kernel', 'src', 'probe.ts'), 'export const a = 1;\n', 'utf8');
@@ -206,6 +215,51 @@ try {
       `modified: ${scope.proofsModified.join(', ') || '(none)'} — a control whose assertion ` +
         `changed is exactly what this column exists to make someone read.`,
     );
+    // WW-2. The instrument column filtered ADDED FILES, so an instrument that
+    // already existed and whose behaviour moved was in no column at all — and
+    // that was carried as AA-1's granularity limitation on a compensation
+    // ("read the modified-PROOF diffs") which by construction cannot reach a
+    // file that is not a proof.
+    const changed = new Set(scope.changedScripts.map((entry) => entry.path));
+    check(
+      'WW-2: a source file that existed at the watermark and changed is reported as CHANGED',
+      changed.has('scripts/existing.mjs'),
+      `changed: ${[...changed].join(', ') || '(none)'} — this is the column WW-2 added. Four ` +
+        `research instruments were converted in one range and appeared here in no form; what ` +
+        `caught them was running all four, which is diligence and not a mechanism.`,
+    );
+
+    // The three controls that stop this column becoming the file list. Each
+    // names a file the column MUST NOT contain, and each is a different way the
+    // widening could have been satisfied without being right.
+    check(
+      'CONTROL: an ADDED source file is not also reported as changed',
+      !changed.has('scripts/tool.mjs') && scope.newScripts.includes('scripts/tool.mjs'),
+      `changed: ${[...changed].join(', ') || '(none)'} — added and changed mean different work ` +
+        `for an auditor: one is read whole, the other is read as a diff. A column listing both ` +
+        `is satisfied by the case above while telling nobody which is which.`,
+    );
+    check(
+      'CONTROL: a modified PROOF stays in the proofs column and is not double-counted here',
+      !changed.has('scripts.proof.mjs') && scope.proofsModified.includes('scripts.proof.mjs'),
+      `changed: ${[...changed].join(', ') || '(none)'} — the proofs column carries the reading ` +
+        `for a check whose meaning moved. Repeating it here would dilute the column that exists ` +
+        `for instruments.`,
+    );
+    check(
+      'CONTROL: a changed file outside every source root is in neither column',
+      !changed.has('plain.ts'),
+      `changed: ${[...changed].join(', ') || '(none)'} — plain.ts sits at the repository root, ` +
+        `which is not a place source lives. Without this, "lists changed source" and "lists ` +
+        `every changed file" produce the same non-empty column.`,
+    );
+    check(
+      'and the CHANGED column carries churn, so an auditor can sort rather than skim',
+      scope.changedScripts.some((entry) => entry.path === 'scripts/existing.mjs' && entry.net.added > 0),
+      `changed: ${JSON.stringify(scope.changedScripts)} — a wall of paths with no figure is ` +
+        `skimmed, which reproduces one level up the failure this column was added to stop.`,
+    );
+
     check(
       'CONTROL: an ordinary source file is in NEITHER column',
       !scope.proofsAdded.includes('plain.ts') && !scope.proofsModified.includes('plain.ts'),
@@ -293,20 +347,25 @@ try {
         `the state U-2 was about.\n${output}`,
     );
 
-    // AA-1's honesty half. The column filters ADDED FILES, so an instrument
-    // arriving as a function inside an existing module is invisible to it — and
-    // it then prints `none`, which is item 4b's output exactly: "found nothing",
-    // indistinguishable from "nothing to find", in the column whose whole job is
-    // to say resolution-test these. The granularity fix is open; the disclosure
-    // is not optional, because a deferral nobody can see is the same defect one
-    // level up.
+    // AA-1's honesty half, now narrowed by WW-2. The added-only filter was the
+    // reported limit and is fixed; what remains is genuinely granularity — an
+    // instrument arriving as a function inside a file the columns DO name. The
+    // disclosure is not optional either way, because a deferral nobody can see
+    // is the same defect one level up.
     check(
-      'THE REPORT DECLARES what the instrument column cannot see',
-      /NEW FILES ONLY/u.test(output) && /granularity/u.test(output),
-      `the instrument column printed its result without saying it filters added files only. ` +
-        `Measured on the range that found this: three instruments — a transience note, a ` +
-        `publish probe and the shared --name-status reader — all landed inside modified files ` +
-        `and the column reported none of them.\n${output}`,
+      'THE REPORT DECLARES what the instrument columns still cannot see',
+      /granularity/iu.test(output) && /FUNCTION INSIDE/u.test(output),
+      `the instrument columns printed their result without saying what they cannot resolve. ` +
+        `A column that says "none" and a column that cannot see are the same output.\n${output}`,
+    );
+
+    // The report must also NAME the changed column, not merely compute it. V-2's
+    // finding was that every case here tested auditScope's data while the thing
+    // a human reads went unasserted, and deleting a whole section passed.
+    check(
+      'THE REPORT PRINTS the changed-source column with its subject in it',
+      /source FILES CHANGED/u.test(output) && /scripts\/existing\.mjs/u.test(output),
+      `WW-2's column has to reach the page, not just the return value.\n${output}`,
     );
 
     check(

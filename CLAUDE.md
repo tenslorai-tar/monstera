@@ -473,27 +473,39 @@ range: commits, files, proofs added, **proofs modified**, proofs removed, and ne
 instrument files — across `scripts/` **and** `packages/*/src/`, since a
 filesystem probe once landed under the latter and appeared in no column (X-1).
 
-That last column reports **added files only**, and says so in its own output. An
-instrument arriving as a function inside a module that already existed is
-invisible to it; **read the modified-proofs diffs for those.** Stated here as
-well because the digest is what an auditor reads before starting, and a column's
-blind spot is not something to learn from the column.
+Source files come in **two** columns — added, and changed — and both are read
+for the same reason: an instrument that arrives is one to resolution-test, and
+an instrument whose behaviour moved is one to re-test. There was one column for
+a long time and it reported **added files only**, which is **WW-2**, fixed
+2026-08-22.
 
-**That granularity is a stated limitation, not an open finding (AA-1, ruled
-2026-08-21).** It has been the axis that hid something in five consecutive
-ranges, and in all five the compensation above surfaced it anyway. Three sibling
-axes — pattern (W-1), root (X-1), state (Z-1) — were real defects and were
-fixed; this one has never concealed anything, and carrying it open costs the
-attention the live findings need.
+**AA-1's ruling was right in form and its stated basis was too wide, corrected
+2026-08-22.** It closed the granularity axis as a stated limitation on the
+grounds that the mandated compensation — *read the modified-proofs diffs* — had
+surfaced every instance across five ranges. That compensation reaches
+instruments **that are proofs**. It reaches nothing else: a non-proof instrument
+that changed appeared in no diff the disclosure sent anyone to, so for that
+class there was no compensation to print, and the distinction the ruling rested
+on did not apply to it.
 
-The distinction that makes this safe, and it is the one that decides such rulings
-generally: **a compensation the instrument prints at the point of use is a
-mechanism; a compensation you must recall is not.** The report emits the
-disclosure in every run, so reading the diffs is prompted rather than remembered
-— which is why this ruling does not contradict the escape-guard argument, where a
-written rule failed seven times out of seven precisely because nothing prompted
-it. **It becomes a defect the first time an instrument is found late that reading
-those diffs did not surface.**
+So the added-vs-changed half was a **defect**, not a limitation, and it joins
+pattern (W-1), root (X-1) and state (Z-1) as an axis of this classifier that was
+fixed rather than ruled. **Four axes now, all four defects.**
+
+What remains a stated limitation is genuinely narrower: an instrument arriving
+as a **function inside a file the columns do name**. The compensation is to read
+that file's diff — which the ruling assumed and, for non-proofs, did not have
+until WW-2.
+
+The distinction that made the ruling safe still stands and is the one that
+decides such rulings generally: **a compensation the instrument prints at the
+point of use is a mechanism; a compensation you must recall is not.** So does
+its trigger: **it becomes a defect the first time an instrument is found late
+that reading those diffs did not surface.** With one correction learned from
+WW-2 — **catching one by running it does not count as the limit holding.** All
+four converted instruments in the range that produced WW-2 were caught that way,
+and reading it as the trigger not firing is precisely how a stated limitation
+becomes permanent.
 
 The scoping is not a convenience. A tree-wide audit run at the end of a stage was
 right for the 43-finding audit, which caught things that had sat for weeks. It is
