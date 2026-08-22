@@ -374,6 +374,11 @@ function readback(binary) {
     // The harness reports its own failures on stderr with a marker, so "it broke
     // and said why" is separated from "it never spoke". Those need different
     // fixes and produce the same missing line.
+    //
+    // The payload is one line of JSON — a serialised `StructuredError`, cause
+    // chain included. It used to be a message on this line and a stack on the
+    // lines after it, and this filter kept only the first, so the stack was
+    // written and discarded here.
     const spoke = `${result.stderr}`
       .split(/\r?\n/)
       .filter((entry) => entry.startsWith('MONSTERA_RENDERER_HARNESS_FAILED'))

@@ -1,3 +1,5 @@
+import { toStructuredError } from '@monstera/shared';
+
 import { reportRendererPolicy } from './rendererHarness.js';
 
 /**
@@ -42,10 +44,22 @@ process.on('unhandledRejection', (reason) => {
   reportHarnessFailure(reason);
 });
 
+/**
+ * ONE line, and the whole chain on it.
+ *
+ * This wrote `${name}: ${message}` on the marker line and the stack on the lines
+ * after it. The reader keeps only lines that START with the marker, so the stack
+ * was written and then dropped by the one thing that reads it — a diagnostic
+ * emitted onto a channel nobody subscribes to.
+ *
+ * `toStructuredError` is the writer of record for carrying a thrown value across
+ * a boundary on this side (B3): it recurses into `cause`, which the removed form
+ * discarded, and JSON gives the whole chain on a single line without a second
+ * opinion about how an error renders.
+ */
 function reportHarnessFailure(cause: unknown): void {
-  const message = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
-  const stack = cause instanceof Error ? (cause.stack ?? '') : '';
-  process.stderr.write(`MONSTERA_RENDERER_HARNESS_FAILED ${message}\n${stack}\n`);
+  const payload = JSON.stringify(toStructuredError(cause));
+  process.stderr.write(`MONSTERA_RENDERER_HARNESS_FAILED ${payload}\n`);
   process.exit(70);
 }
 

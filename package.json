@@ -77,6 +77,8 @@
     "check:emittedtemplates": "node scripts/lib/emittedTemplates.mjs",
     "proof:annotatecoverage": "node scripts/proofs/annotateCoverage.proof.mjs",
     "check:annotatecoverage": "node scripts/lib/annotateCoverage.mjs",
+    "proof:stackowner": "node scripts/proofs/stackOwnership.proof.mjs",
+    "check:stackowner": "node scripts/lib/stackOwnership.mjs",
     "check:workflowpins": "node scripts/lib/workflowPins.mjs",
     "proof:toolchain": "node scripts/proofs/toolchainPin.proof.mjs",
     "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",

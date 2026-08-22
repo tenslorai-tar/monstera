@@ -25,6 +25,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { SOURCE_FILE, memoryBudgets } from '../lib/memoryBudgets.mjs';
+import { formatError } from '../lib/reportError.mjs';
 import { documentCostBytes, runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
 import { formatBytes } from '../perf/peakRss.mjs';
 
@@ -200,7 +201,7 @@ function guarded(section) {
     return (
       `the measured section THREW, so every case after the throw is UNRUN and this list is ` +
       `INCOMPLETE\n      ` +
-      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}`
+      formatError(error)
     );
   }
 }

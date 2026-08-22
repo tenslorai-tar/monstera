@@ -3744,6 +3744,90 @@ shape this range already produced two of.
 > is not "write the scan", it is "what owns the definition of a top-level
 > handler".** Answer that and the scan is fifteen minutes.
 
+> **CLOSED, 2026-08-22 (finding FFF-1). The expiry fired first, and the
+> blocking question above was the wrong question.**
+>
+> **The prediction, measured.** `scripts/proofs/perfBudget.proof.mjs:203`
+> acquired a seventeenth instance in `5ce1bc3` (2026-08-21) — one day after
+> `8130551` (2026-08-20) closed the class by enumerating sixteen.
+> `git merge-base --is-ancestor 8130551 5ce1bc3` succeeds. The paragraph above
+> says "nothing prevents the next script from being written with `.stack`", and
+> the next script was written with it inside twenty-four hours, by the same
+> author, in a range this project audited. **A claim recorded with an expiry and
+> no mechanism is a claim that expires on schedule.**
+>
+> **The question was wrong, and every answer to it shared a false premise.**
+> *What counts as a top-level handler* asks the rule to define its compliant
+> **population**, which is the enumeration disease with a predicate on the front.
+> A rule does not have to define its subjects; it has to name its **owner**
+> (B3) — one component writes a property, many read it. So the rule is *only an
+> owner of stack rendering may name the property*, and the owners are declared:
+> `scripts/lib/reportError.mjs` and `packages/shared/src/result.ts`. Two entries,
+> and that list does not grow with the codebase. A list of subjects does.
+>
+> This is the transferable half. **When a derivation looks blocked on defining
+> its subjects, ask who owns the thing instead** — a list of writers is B3, a
+> list of subjects is the disease.
+>
+> **The scan asks the compiler, so three of the four hard cases need no rule.**
+> `scripts/lib/stackOwnership.mjs` builds a program per project and walks for
+> property accesses named `stack`, then asks the checker what the receiver is.
+> A textual scan cannot separate these, and all four occur here:
+>
+> | the text | what it is | how the walk decides |
+> |---|---|---|
+> | a caught Error's stack, read | the defect | receiver is Error-family |
+> | a `StructuredError`'s, read | a declared field — B3 says readers are fine | receiver is `StructuredError` |
+> | `shim.stackCookie` | a different property | never seen |
+> | the same read inside a `String.raw` body | text, not code | never seen |
+>
+> The last two are B5 rather than filtering: a comment, a template's contents and
+> a differently-named property are not property accesses, so nothing has to
+> except them. The one thing the walk is told is that a **write** is not a
+> rendering — planting a stack on a fixture reads no chain to discard.
+>
+> **Three controls, every run.** Each owner must yield at least one Error-typed
+> read, or the scan reports BLIND and refuses (item 4b). Every tracked source
+> file must be a root of some project — 197 of 197 at the time of writing —
+> because fixing a classifier's pattern and leaving its root is half a fix (X-1).
+> And a receiver typed `any` is reported as UNRESOLVED rather than clean: *could
+> not look* and *looked and found nothing* must not share an output. There is no
+> such receiver in this repository, which is exactly why the proof supplies one.
+>
+> **Widening the root found a second live instance, and it was worse than the
+> seventeenth.** `apps/desktop/src/rendererHarnessMain.ts:47` rendered
+> `${name}: ${message}` on the marker line and the stack on the lines after it —
+> and `rendererPolicy.proof.mjs` keeps only lines that START with the marker, so
+> the stack was written and then dropped by the one thing that reads it. A
+> diagnostic emitted onto a channel nobody subscribes to, in the file whose own
+> header explains that a hang reading as a timeout is impossible to attribute. It
+> now emits one line: `toStructuredError` serialised, cause chain included.
+>
+> That instance is the argument for the root control. The finding as reported
+> named `scripts/`; scoping the scan there would have left a second live
+> instance, in a different language, unreported and reading as covered.
+
+### FFF-1a — three opinions about "am I the entry point", and one of them is mine
+
+Found while writing the above. The test appears in three forms under `scripts/`:
+`resolve(process.argv[1]) === fileURLToPath(import.meta.url)` in six modules,
+`import.meta.url === pathToFileURL(process.argv[1]).href` in
+`emittedTemplates.mjs`, and `import.meta.url.endsWith(...)` in
+`annotateCoverage.mjs` — which I wrote yesterday, without looking at either
+existing form.
+
+`scripts/provision/electron.mjs:613` already carries a comment explaining that a
+hand-built `file://` prefix is wrong on Windows, and `emittedTemplates.mjs`
+records that the same bug made that module run **nothing** and exit 0. So this
+repository has paid for the question twice and still holds three answers to it.
+
+**The finding is the third opinion, not the loose one.** `endsWith` is not wrong
+today; it asks a looser question than the one intended, and the next module
+copies whichever form it happens to see. Not fixed here — `stackOwnership.mjs`
+uses the majority form and says why in a comment, and consolidating all three
+into one exported predicate is a unit of its own. Recorded so it is a decision
+rather than drift.
+
 ### Y-4 — one thing 9303bb5 called unproven is in fact enforced
 
 That commit removed `version` from `publish`'s parameters so the function cannot
