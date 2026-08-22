@@ -2280,6 +2280,33 @@ one found by a commit *adding* a site. Closed in `446a37a` with the reason
 recorded — the path is a build output resolved at run time, and a literal would
 compare the declared policy against a copy of itself.
 
+> **Note, 2026-08-22 — this recurred twice in one session, and the rule as
+> written cannot stop it.** Both times the file touched was
+> `docs/security/engine-advisories.json` and the proof not run was
+> `advisoryRegister.proof.mjs`, which reads it. Both times what *was* run was
+> `check:advisories` — the neighbour. The second time it turned Guards red on
+> one runner.
+>
+> **The bolded rule above is a rule you must recall at the moment you choose
+> which checks to run**, which this project has written three times is not a
+> remedy. The derivable version is the one to build: *when a commit touches a
+> file some proof reads, that proof is in the pre-commit set*, with the mapping
+> **computed from what each proof reads** rather than kept as a table.
+>
+> **Not built, and the obstacle is specific rather than a lack of time.** Proofs
+> address their inputs by construction — `join(ROOT, 'docs', 'security',
+> 'engine-advisories.json')` — so the path exists nowhere as a literal to grep
+> for, and a scan matching segments would produce a mapping with holes that
+> reads as complete. That is the enumeration disease again, which is exactly
+> what EEE-3 refused to ship for Y-3.
+>
+> The two candidates worth pricing: a **runtime trace** — run each proof once
+> with `fs` instrumented and record the tracked files it opened, which is a real
+> derivation and needs an answer for staleness; or a **declaration each proof
+> makes about itself**, which is still a list but one that sits beside the code
+> it describes rather than in a central table, and can be checked against a
+> trace. Either is a unit; neither is a five-minute change.
+
 ### GG-2 — the premise under four hypotheses was asserted, and cost two pushes
 
 "Only the read-back step fails" was never read. Every hypothesis built on it —
