@@ -449,3 +449,69 @@ reconstructs it.** Its evidence came from `36caf21`; ADR-0022 itself is
 `9741cc3`; the blinding arrived in `56f77f7`. So the decision rests on a
 measurement taken **two commits before** the blinding, and the ADR was written
 one commit before it.
+
+## 8. A failed job assignment kills the process — never a host running with two of three (EEE-2, decided 2026-08-22)
+
+**The measurement that forces this.** WW-1's per-property variant matrix
+separated two mechanisms that had always been applied together, and the result
+was not what the surrounding prose assumed:
+
+| row | contained cell | uncontained cell | verdict |
+|---|---|---|---|
+| (b) process creation — job alone | `route` refused | `route-no-job` spawned | **differs** |
+| (b) process creation — LowBox alone | `lowbox-no-job` spawned | `route-no-job` spawned | **same** |
+
+**Invariant 25(b) is delivered by the job object, not by the AppContainer.** A
+LowBox host with no job of ours creates child processes without difficulty.
+Nothing had claimed otherwise, and nothing had separated them either — which is
+the union problem the matrix exists to break.
+
+### The state this makes representable, and it looks contained
+
+A host created with the container applied and `AssignProcessToJobObject`
+**failed** has (c) *no network* and (d) *no filesystem beyond what it was
+handed*, and does **not** have (b). It is a partly contained host, and every
+cheap way of asking "is this contained?" answers yes:
+
+- the token is a LowBox token — Low at creation, per §1;
+- `classifyContainment` in `packages/kernel/src/host/containment.ts` measures
+  **(d)**, by probing reads. It says nothing about (b) and cannot: a host free to
+  create processes still fails every filesystem probe exactly as a fully
+  contained one does.
+
+So the containment verdict and the job are **different mechanisms and neither
+implies the other**, which is worth stating because the verdict's name invites
+the opposite reading.
+
+### The requirement
+
+**If the job assignment does not take, the process is terminated. It is never
+resumed.**
+
+The ordering already in §1 makes this nearly free rather than a new mechanism:
+the factory creates the process `CREATE_SUSPENDED`, assigns the job, and only
+then calls `ResumeThread`. At the moment the assignment fails, the host has
+executed **no instruction**. Terminating there is the natural branch; resuming
+is the mistake, and it is the kind of mistake that produces a running host whose
+own startup probe will confirm it is contained.
+
+**Membership is verified, not inferred from a return value.** The factory checks
+`IsProcessInJob` rather than trusting `AssignProcessToJobObject`'s boolean —
+`scripts/research/lowboxSpike.mjs` already reads exactly this as
+`inJobBeforeResume`, so the mechanism exists and has been exercised on every
+cell of every run. A call that returned success while the process is not in the
+job is the `available: true` shape at the kernel boundary.
+
+**Two of three is not a degraded mode, it is a failure.** There is no
+configuration in which a host runs with containment partially applied: invariant
+25 is a conjunction, and a host that satisfies part of it is a host whose
+compromise is contained in some directions and not others — which is worse than
+an obvious failure, because it reports as healthy.
+
+### Why this is written now rather than when someone meets it
+
+The spike already carries the cell that demonstrates it. `lowbox-no-job` is not
+a hypothetical: it is a real process, created the shipped way with the container
+applied and no job, and it spawns children freely on every run. A requirement
+whose counterexample is already running in an instrument is one to record before
+the code that would violate it is written, not after.

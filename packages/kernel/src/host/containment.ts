@@ -18,6 +18,23 @@ import { open } from 'node:fs/promises';
  * a process is only evidence about that process to whatever extent the process
  * is not the thing under suspicion.
  *
+ * ## What a `contained` verdict does NOT cover, because the name invites the
+ * opposite reading
+ *
+ * **This measures invariant 25(d) — filesystem reach — and nothing else.** It
+ * says nothing about (b), *no process creation*, and cannot: WW-1's variant
+ * matrix measured that (b) is delivered by the **job object**, not by the
+ * AppContainer, so a host with the container applied and the job assignment
+ * failed refuses every probe here exactly as a fully contained one does, while
+ * being free to spawn children.
+ *
+ * A `contained` verdict is therefore evidence about reach, not a statement that
+ * invariant 25 holds. (b) is established at creation by the factory and is
+ * ADR-0023 §8's requirement: a failed assignment terminates the suspended
+ * process rather than resuming it, and membership is verified with
+ * `IsProcessInJob` rather than inferred from the assign call's return value.
+ * The two mechanisms are independent and neither implies the other.
+ *
  * **Which is exactly why the probe runs before the first document byte.** The
  * host is hostile by invariant 25's own premise, so a report it sends is not
  * evidence in general. It is evidence *here* because ADR-0023 §1's third window
