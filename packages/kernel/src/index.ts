@@ -79,3 +79,10 @@ export {
   probeContainment,
   probePath,
 } from './host/containment.js';
+export {
+  type HostRuntime,
+  type HostRuntimeOptions,
+  type HostRuntimeTransport,
+  type HostTermination,
+  createHostRuntime,
+} from './host/runtime.js';

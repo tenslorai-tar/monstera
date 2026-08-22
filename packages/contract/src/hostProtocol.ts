@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * What the engine-host pipe carries, and how large one frame may be
  * (ADR-0023 §7).
@@ -108,3 +110,84 @@ export const LARGEST_INTENT_PAYLOAD_BYTES = 120_057;
  * it.** Removal is the first candidate, not a footnote.
  */
 export const ENGINE_HOST_FRAME_MAX_BYTES = 256 * 1024;
+
+/**
+ * What one frame carries.
+ *
+ * ## Why the correlation id is OUTSIDE the result envelope
+ *
+ * `envelopeSchema(channel.result)` already describes what a call answers, and
+ * `createClient` already parses exactly that. Putting a correlation id inside it
+ * would give this transport its own opinion about what a result looks like —
+ * B3a, and the second opinion is the finding rather than the wrong one. So the
+ * wire response is a correlation id **plus** that envelope, unchanged, and the
+ * client parses the same object it parses over Electron IPC.
+ *
+ * The request has no counterpart to reuse, because Electron's own IPC carries
+ * the channel name and the renderer never needs to correlate — `invoke` returns
+ * a promise the runtime pairs up. A byte stream has neither, so both must be on
+ * the wire, and this is where they are declared once for both ends.
+ *
+ * ## The id is a string, and it is opaque to the host
+ *
+ * A number invites arithmetic — the next id, a range, a comparison — and none of
+ * those is a property this protocol has. The host echoes what it was given and
+ * never mints one, so nothing here needs it to be ordered or dense. What the
+ * host DOES check is that an id is not already in flight, because two answers
+ * for one id is the peer contradicting itself.
+ */
+
+/**
+ * The largest a correlation id may be.
+ *
+ * Bounded because it is echoed: an unbounded id is a peer choosing how many
+ * bytes of our response it writes, and a frame maximum that can be reached by
+ * the id alone is a frame maximum spent on nothing. 64 characters is four times
+ * a UUID's hex digits.
+ */
+export const HOST_CORRELATION_ID_MAX_CHARS = 64;
+
+/**
+ * A request travelling from main to the engine host.
+ *
+ * `.strict()`, for the same reason `failureSchema` is: an extra field arriving
+ * here is either a peer we do not understand or a field someone added on one
+ * side only, and both are better refused than ignored. `params` is `unknown` on
+ * purpose — the channel's own schema validates it one layer up, in the same
+ * `wrapHandler` everything else goes through, and a second parse here would be
+ * a second opinion about what a channel accepts.
+ *
+ * **`params` is required, not optional.** A no-argument channel declares
+ * `z.object({})` and its handler is called with `{}`, so an absent field would
+ * have to become something before the channel's schema saw it — this layer
+ * inventing a value on the peer's behalf, which is the one thing a wire schema
+ * must never do. The peer sends the field; what may be in it is not this
+ * layer's question.
+ */
+export const hostRequestSchema = z
+  .object({
+    id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
+    channel: z.string().min(1),
+    params: z.unknown(),
+  })
+  .strict();
+
+/** @see hostRequestSchema */
+export type HostRequest = z.infer<typeof hostRequestSchema>;
+
+/**
+ * A response travelling from the engine host back to main.
+ *
+ * `body` is deliberately untyped here and validated by the caller against
+ * `envelopeSchema(channel.result)` — the channel decides what its own answer
+ * looks like, and this layer does not get a vote.
+ */
+export const hostResponseSchema = z
+  .object({
+    id: z.string().min(1).max(HOST_CORRELATION_ID_MAX_CHARS),
+    body: z.unknown(),
+  })
+  .strict();
+
+/** @see hostResponseSchema */
+export type HostResponse = z.infer<typeof hostResponseSchema>;

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { FrameDecoder, encodeFrame } from './frame.js';
-import { ENGINE_HOST_FRAME_MAX_BYTES, LARGEST_INTENT_PAYLOAD_BYTES } from './hostProtocol.js';
+import {
+  ENGINE_HOST_FRAME_MAX_BYTES,
+  HOST_CORRELATION_ID_MAX_CHARS,
+  LARGEST_INTENT_PAYLOAD_BYTES,
+  hostRequestSchema,
+  hostResponseSchema,
+} from './hostProtocol.js';
 
 /**
  * Declared locally rather than by widening this package's `types`, which is the
@@ -110,5 +116,83 @@ describe('the engine-host frame maximum', () => {
     if (!pushed.ok) return;
     expect(pushed.value).toHaveLength(1);
     expect(pushed.value[0]?.byteLength).toBe(payload.byteLength);
+  });
+});
+
+describe('the host request envelope', () => {
+  it('accepts an id, a channel and any params', () => {
+    const parsed = hostRequestSchema.safeParse({
+      id: 'c1',
+      channel: 'document.open',
+      params: { anything: [1, 2, 3] },
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('leaves params UNTOUCHED, because the channel owns what it accepts', () => {
+    const parsed = hostRequestSchema.safeParse({ id: 'c1', channel: 'x', params: { a: 1 } });
+
+    // A second parse here would be a second opinion about a channel's inputs,
+    // and `wrapHandler` is where that question already has one answer.
+    expect(parsed.success && parsed.data.params).toStrictEqual({ a: 1 });
+  });
+
+  it('refuses an extra field rather than ignoring it', () => {
+    const parsed = hostRequestSchema.safeParse({
+      id: 'c1',
+      channel: 'x',
+      params: {},
+      extra: true,
+    });
+
+    // The same reasoning `failureSchema` is strict for: a field arriving on one
+    // side only is a build drift, and a permissive parse is exactly what does
+    // not notice it.
+    expect(parsed.success).toBe(false);
+  });
+
+  it('refuses an empty id and an empty channel', () => {
+    expect(hostRequestSchema.safeParse({ id: '', channel: 'x', params: {} }).success).toBe(false);
+    expect(hostRequestSchema.safeParse({ id: 'c1', channel: '', params: {} }).success).toBe(false);
+  });
+
+  it('bounds the id, because the host echoes it', () => {
+    const atLimit = 'x'.repeat(HOST_CORRELATION_ID_MAX_CHARS);
+    expect(hostRequestSchema.safeParse({ id: atLimit, channel: 'x', params: {} }).success).toBe(
+      true,
+    );
+    expect(
+      hostRequestSchema.safeParse({ id: `${atLimit}y`, channel: 'x', params: {} }).success,
+    ).toBe(false);
+  });
+
+  it('REQUIRES params to be present, and accepts any value in it', () => {
+    // Present, not optional. A no-argument channel declares `z.object({})` and
+    // its handler is called with `{}`, so an absent field would have to be
+    // turned into something before the channel schema saw it — this layer
+    // inventing a value on the peer's behalf. `null` is accepted because
+    // `unknown` accepts it and the channel is what decides.
+    expect(hostRequestSchema.safeParse({ id: 'c1', channel: 'x' }).success).toBe(false);
+    expect(hostRequestSchema.safeParse({ id: 'c1', channel: 'x', params: null }).success).toBe(true);
+  });
+});
+
+describe('the host response envelope', () => {
+  it('carries the correlation id BESIDE the result envelope, not inside it', () => {
+    const parsed = hostResponseSchema.safeParse({
+      id: 'c1',
+      body: { ok: true, value: { pages: 3 } },
+    });
+
+    // The body is whatever `envelopeSchema(channel.result)` says it is, and the
+    // caller parses it with exactly that. Reaching into it here would give this
+    // transport its own opinion about what a result looks like.
+    expect(parsed.success && parsed.data.body).toStrictEqual({ ok: true, value: { pages: 3 } });
+  });
+
+  it('refuses an extra field, and an id that is not a string', () => {
+    expect(hostResponseSchema.safeParse({ id: 'c1', body: {}, extra: 1 }).success).toBe(false);
+    expect(hostResponseSchema.safeParse({ id: 7, body: {} }).success).toBe(false);
   });
 });
