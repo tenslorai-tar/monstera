@@ -397,11 +397,20 @@ try {
   // ---------------------------------------------------------------------------
   {
     // Every workflow, read out of the directory, and matched on the SCAN'S OWN
-    // PATH rather than on an npm script name. Naming one file would ask this
-    // case to know which job installs node_modules — exactly the thing this
-    // scan needs and Guards does not have — and matching a script name would
+    // PATH rather than on an npm script name. Matching a script name would
     // report a de-registration the moment the step is wrapped, since the
     // wrapper spawns a path.
+    //
+    // THIS CASE IS ABOUT REGISTRATION AND NOT ABOUT RUNNABILITY, and saying so
+    // is the point. It asserts the scan is named on a line that invokes node —
+    // which cannot separate a job that runs `npm ci` from one that does not,
+    // and that is exactly what GGG-1 was. A compound claim whose true clause
+    // vouches for the unchecked one (HHH-1).
+    //
+    // Runnability is owned by `check:jobplacement`, which derives which scripts
+    // die without node_modules and requires every workflow line running one to
+    // sit in a job that installs. Its proof carries the case that this scan is
+    // in that set, so the two halves are checked and neither is implied.
     const dir = join(ROOT, '.github', 'workflows');
     const workflows = readdirSync(dir).filter((name) => /\.ya?ml$/u.test(name));
     if (workflows.length === 0) throw new Error(`${dir} holds no workflows to read.`);

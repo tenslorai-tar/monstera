@@ -30,7 +30,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+const roster = createRoster(failures, { cases: 18 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -220,6 +220,67 @@ try {
       `names = ${JSON.stringify(names)}. Without this, the case above is satisfied by a ` +
         `derivation that recognises nothing at all — which is the same fixture reporting ` +
         `"correctly excluded" for every entry.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // HHH-3: THE MANIFEST IS NOT THE AUTHORITY FOR WHAT A WORKFLOW RUNS.
+  //
+  // A workflow can invoke a script no npm script names, and one did:
+  // `helper="$(node scripts/ci/sandboxHelperPath.mjs)"`. A manifest-derived path
+  // set could not see it, so its failures were exit-code-only in public — the
+  // gap the whole check exists to close, sitting inside the check's own blind
+  // spot. Recognition is now the INVOCATION, and the manifest is consulted only
+  // for what `npm run x` means.
+  //
+  // The second half is the word boundary. It admitted a command after
+  // whitespace or a shell operator and nothing else, so a COMMAND SUBSTITUTION
+  // was invisible even after the path rule was widened — two independent
+  // reasons for the same silence, and fixing either alone still reports
+  // nothing. Both fixtures are here for that reason.
+  // -------------------------------------------------------------------------
+  {
+    const root = tempRepo({
+      scripts: { 'guard:tree': 'node scripts/hooks/guardFiles.mjs --tree' },
+      workflows: {
+        'a.yml':
+          '        run: node scripts/ci/unregistered.mjs\n' +
+          '        run: node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --tree\n',
+      },
+    });
+    const result = scan({ root });
+    check(
+      'a script NO npm script registers is still an invocation',
+      result.violations.length === 1 && result.violations[0]?.line === 1,
+      `violations = ${JSON.stringify(result.violations)}. package.json owns what \`npm run x\` ` +
+        `means; it does not own what a workflow runs, and a set derived from it is silent about ` +
+        `every line that names a path directly.`,
+    );
+    check(
+      'and the diagnostic says the manifest does not know it',
+      `${result.violations[0]?.why}`.includes('no npm script registers'),
+      `why = ${JSON.stringify(result.violations[0]?.why)}. A path nothing registers is worth ` +
+        `seeing on its own: it is either a step that should be a script, or the shape that was ` +
+        `invisible here.`,
+    );
+  }
+
+  {
+    const root = tempRepo({
+      scripts: { 'guard:tree': 'node scripts/hooks/guardFiles.mjs --tree' },
+      workflows: {
+        'a.yml':
+          '          helper="$(node scripts/ci/helperPath.mjs)"\n' +
+          '        run: node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --tree\n',
+      },
+    });
+    const result = scan({ root });
+    check(
+      'a COMMAND SUBSTITUTION is an invocation — the boundary is not whitespace',
+      result.violations.length === 1 && result.violations[0]?.line === 1,
+      `violations = ${JSON.stringify(result.violations)}. The boundary was a guess about how a ` +
+        `command can be introduced, and \`$(\` is not in it. A window chosen by hand reports ` +
+        `the absence it caused.`,
     );
   }
 

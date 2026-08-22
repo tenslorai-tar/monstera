@@ -103,7 +103,7 @@ const WRAPPER = 'scripts/ci/annotate.mjs';
  * A node invocation of a repository script, in an npm command or a workflow
  * line. `node scripts/x.mjs` matches; `hashFiles('scripts/x.mjs')` does not.
  */
-const NODE_INVOCATION = /(?:^|[\s&|;])node\s+(scripts\/[\w./-]+\.mjs)/gu;
+const NODE_INVOCATION = /(?:^|[^\w-])node\s+(scripts\/[\w./-]+\.mjs)/gu;
 
 /**
  * The wrappable entry points, read out of `package.json` rather than listed.
@@ -209,12 +209,22 @@ export function findWrappableInvocations({ root = repoRoot() } = {}) {
       );
       // A path alone is not an invocation. `hashFiles('scripts/x.mjs')` names a
       // script in a cache key and runs nothing — three such lines in ci.yml —
-      // so the line must also invoke node on a repository script. Textual, and
+      // so the line must INVOKE node on a repository script. Textual, and
       // therefore no second opinion about YAML.
+      //
+      // And the invocation is the whole rule: the path does NOT have to be one
+      // `package.json` names. HHH-3 — `helper="$(node scripts/ci/
+      // sandboxHelperPath.mjs)"` is invoked by no npm script, so a
+      // manifest-derived path set could not see it and its failures were
+      // exit-code-only in public. The manifest is still the authority for what
+      // `npm run x` MEANS; it is not the authority for what a workflow runs.
       NODE_INVOCATION.lastIndex = 0;
-      const invokesNode = NODE_INVOCATION.test(text);
-      const viaPath = invokesNode ? paths.find((path) => text.includes(path)) : undefined;
-      if (viaName === undefined && viaPath === undefined) continue;
+      const invoked = NODE_INVOCATION.exec(text)?.[1];
+      if (viaName === undefined && invoked === undefined) continue;
+      // Named separately from `invoked` so the diagnostic can say whether the
+      // manifest knows this script — a path nothing registers is worth seeing.
+      const viaPath = invoked === undefined ? undefined : invoked;
+      const registered = invoked !== undefined && paths.includes(invoked);
       found.push({
         file: `${WORKFLOW_DIR}/${name}`,
         line: index + 1,
@@ -223,7 +233,7 @@ export function findWrappableInvocations({ root = repoRoot() } = {}) {
         why:
           viaName !== undefined
             ? `runs ${viaName}, an npm script the wrapper cannot spawn — name the script path`
-            : `runs ${String(viaPath)}`,
+            : `runs ${String(viaPath)}${registered ? '' : ', which no npm script registers'}`,
       });
     }
   }

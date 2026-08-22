@@ -227,6 +227,22 @@ jobs:
       - name: Only an owner renders a thrown value's stack
         run: node scripts/ci/annotate.mjs scripts/lib/stackOwnership.mjs
 
+      # HHH-1. The step above was first registered on Guards, which runs no
+      # `npm ci`, so it would have failed on every run — and no machine with
+      # node_modules installed can reproduce that. This derives which scripts
+      # DIE without them (a bare import, or an uncaught call to the compiler
+      # loader, per function rather than per module) and requires every workflow
+      # line running one to sit in a job that installs. Both facts are literal
+      # in the tree; neither is a list.
+      #
+      # HERE for the reason it exists to check: it parses `scripts/` with the
+      # compiler, so it needs the very thing it is about.
+      - name: Prove the job-placement scan sees, refuses and tolerates
+        run: node scripts/ci/annotate.mjs scripts/proofs/nodeModulesPlacement.proof.mjs
+
+      - name: Every module-needing step sits in a job that installs
+        run: node scripts/ci/annotate.mjs scripts/lib/nodeModulesPlacement.mjs
+
       # `require('electron')` from plain Node IS the download trigger:
       # node_modules/electron/index.js ends with `module.exports =
       # getElectronPath()`, which downloads when the binary is absent. So the pin
@@ -304,10 +320,18 @@ jobs:
       # correct today and wrong on the first warm-cache run — and the failure
       # would be a silently unsandboxed renderer, which is the one outcome the
       # step below cannot detect.
+      #
+      # Wrapped inside the command substitution (HHH-3). `annotate.mjs` passes
+      # the child's stdout through verbatim and exits with its status, so `$()`
+      # captures the same path and `pipefail` still sees the same failure — the
+      # only difference is that a failure now says WHY in public. This line was
+      # invisible to `check:annotatecoverage` twice over: no npm script names
+      # this file, and the scan's word boundary admitted a command only after
+      # whitespace or a shell operator, never after `$(`.
       - name: Configure Chromium's sandbox helper
         if: runner.os == 'Linux'
         run: |
-          helper="$(node scripts/ci/sandboxHelperPath.mjs)"
+          helper="$(node scripts/ci/annotate.mjs scripts/ci/sandboxHelperPath.mjs)"
           sudo chown root:root "$helper"
           sudo chmod 4755 "$helper"
           ls -l "$helper"
