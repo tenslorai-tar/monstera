@@ -272,3 +272,31 @@ replaced and not to the part being added.
 - Everything here is Windows-specific, which matches distribution being the
   Microsoft Store only (ADR-0018). A port would need this decision retaken, not
   translated.
+
+## Correction, 2026-08-22 — `defineWorkerContract` does not exist (finding XX-1)
+
+§4 above says *"the worker protocol already has the same shape through one
+`defineWorkerContract` helper shared by both hosts"*, and goes on to weigh
+whether the host protocol can *literally reuse* it. **No such helper is
+implemented.** `BUILD-PROMPT.md` Part D and `docs/ARCHITECTURE.md` §5 both
+describe it in the present tense, and this ADR took them at their word without
+looking.
+
+**The decision does not change**, and that is worth saying plainly rather than
+leaving a reader to work out how much of §4 survives. What §4 decided is that
+there will be no second opinion about how a wire boundary is validated (B3a),
+and that stands on `packages/contract`'s discipline whatever the helper is
+called. What was wrong was the *premise* that the discipline already had a
+byte-stream-shaped vehicle to extend.
+
+Left as written above, because what this ADR believed at the time is the record.
+Recorded here because **an ADR whose reasoning cites a fact that is not one gets
+read as evidence by whoever writes the next ADR** — which is exactly what
+happened: ADR-0023 §4 instructed that the helper "is extended", and the first
+person to build against that instruction had to discover there was nothing to
+extend.
+
+`docs/ARCHITECTURE.md` §5, being living law rather than a record, has had its
+**body** corrected instead. `BUILD-PROMPT.md` is untouched — it is the immutable
+founding record, and the architecture document superseding it is the document
+table working rather than a problem.

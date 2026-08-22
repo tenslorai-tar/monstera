@@ -286,3 +286,89 @@ app itself, so a design that needs a runtime grant on an install-root path
 cannot execute on any real installation. It would fail on every machine, not
 some — which is why the branch had to be chosen now rather than discovered at
 packaging.
+
+## Correction, 2026-08-22 — `defineWorkerContract` does not exist (finding XX-1)
+
+§4 above instructs that *"`defineWorkerContract` is extended to carry a
+byte-stream transport rather than copied"*. **No such helper is implemented.**
+`BUILD-PROMPT.md` Part D and `docs/ARCHITECTURE.md` §5 described it in the
+present tense, ADR-0022 §4 repeated it, and this ADR turned it into an
+instruction — three documents deep, none of which looked.
+
+The instruction's *intent* is unchanged and is what to follow: extend the one
+validated-boundary discipline, never write a second (B3a). Today that discipline
+is `channel()` plus `wrapHandler`/`wrapHandlers`/`createClient`, and
+`packages/contract/src/frame.ts` is the byte-stream layer beneath it, added in
+`9429e00`. Whoever writes the worker protocol either extends those or builds the
+named helper on top of them.
+
+Left as written, because what this ADR instructed at the time is the record.
+`docs/ARCHITECTURE.md` §5's **body** is corrected instead, being living law.
+
+## 7. What crosses the pipe — intent and handles, never images (decided 2026-08-22)
+
+§4 settled the *shape* of the protocol and left its *payload* open, which is the
+question that decides the frame maximum. Appended rather than folded into §4,
+because this ADR's earlier text is a record of what was decided when.
+
+**Intent and handles cross. Document images do not. The frame maximum is
+kilobytes.**
+
+### It follows from a budget this repository already enforces
+
+Main's memory budget is **≤ 1.5× file size**, machine-read from
+`docs/ARCHITECTURE.md` §9.17 and enforced on every push. Main already holds the
+canonical image, measured at **1.00×**. Serialising a second full copy into a
+pipe write puts main at **2.00×** — which is precisely the figure `perf:gate`
+reports for two resident images, and it FAILS on both content shapes.
+
+**A design whose normal path breaches a budget this repository enforces is wrong
+before anyone argues about it.** No new measurement was needed and none was
+taken; the numbers were already on the board.
+
+### Three things support it, and none of them is the reason
+
+Recorded separately from the argument above, because a supporting consideration
+promoted to a reason is how a decision survives the withdrawal of its actual
+basis.
+
+1. **Invariant 25(d) presupposes handed paths.** *"Reaches no filesystem path it
+   was not handed"* is a statement about a host that is handed some. A host that
+   received everything over a pipe would have the simpler property, and that is
+   not what the law says.
+2. **The handed directory already exists in the design.** The LowBox spike
+   measured a grant of **modify** on what the host was handed, because a host
+   that reports has to write where it was handed.
+3. **ADR-0007's kill-and-restart re-reads a path.** Re-transmitting hundreds of
+   megabytes from a main process already near its ceiling is the worst possible
+   moment to do the most expensive thing.
+
+### How an image actually reaches the host is mechanism, and wants a measurement
+
+Not decided here, and deliberately not chosen from an armchair. **The candidate
+to test first:** main writes its canonical image to a handed path once per
+version, and the host reads it there.
+
+Its argument is not performance. It keeps **main the single source of truth** —
+the host never opens the user's original, so the two cannot disagree about a
+file that changed underneath, which is the entire subject of ADR-0009's identity
+work.
+
+**Split the grants by verb: read on the snapshot, modify only on the output
+directory.** A compromised host that can rewrite the user's document is a
+materially worse outcome than one that can read a copy of it, and the spike's
+single modify grant on "what it was handed" does not distinguish the two.
+
+### One argument to expect, and to refuse on its merits
+
+Three of the four writers of record — `@cantoo/pdf-lib` field creation,
+`@signpdf` — consume and produce whole byte images (`engineSeam.ts`), and
+someone will conclude that this forces images through the pipe.
+
+**It does not.** Whether those JavaScript writers run in the engine host *at all*
+is undecided, and invariant 25's argument is about **native** memory-safety bugs.
+A byte-image writer running in main needs no pipe crossing whatever.
+
+**Do not let that widen the frame maximum without its own decision.** The
+maximum is a required, undefaulted argument precisely so that widening it is a
+visible act at a named call site rather than a constant somebody edits.

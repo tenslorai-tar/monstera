@@ -373,8 +373,18 @@ params and result. Generated or type-derived from it:
 Hand-writing the same channel in several places drifts silently and surfaces at
 runtime.
 
-The worker protocol has the same shape via one `defineWorkerContract` helper
-shared by both hosts. Errors cross every boundary **structurally**
+The worker protocol takes the same shape, and the **intended** vehicle is one
+`defineWorkerContract` helper shared by both hosts. *That helper does not exist
+yet* (finding XX-1, 2026-08-22). This paragraph asserted it in the present tense
+from the founding record onwards, and two ADRs then reasoned from it as though it
+were built. What carries the discipline today is `channel()` plus
+`wrapHandler`/`wrapHandlers`/`createClient` in `packages/contract`, with
+`frame.ts` beneath them for the byte-stream transport the engine host needs.
+Whoever writes the worker protocol either extends those or builds the named
+helper on top of them; what is settled either way is that there is **one**
+validated-boundary discipline and not a second (B3a).
+
+Errors cross every boundary **structurally**
 (`{name, message, stack, cause}`), never as a bare string. Silent `catch {}` is
 banned except with a comment stating what is swallowed and why that is safe.
 
