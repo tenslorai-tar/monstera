@@ -31,7 +31,7 @@
     "guard:staged": "node scripts/hooks/guardFiles.mjs --staged",
     "guard:tree": "node scripts/hooks/guardFiles.mjs --tree",
     "scan:secrets": "node scripts/hooks/scanSecrets.mjs",
-    "proof:guards": "node scripts/hooks/guardFiles.proof.mjs && node scripts/hooks/preCommit.proof.mjs && node scripts/bootstrapHooks.proof.mjs",
+    "proof:guards": "node scripts/hooks/guardFiles.proof.mjs && node scripts/hooks/preCommit.proof.mjs && node scripts/hooks/prePush.proof.mjs && node scripts/bootstrapHooks.proof.mjs",
     "proof:secretscan": "node scripts/lib/secretScan.proof.mjs",
     "proof:verdict": "node scripts/lib/verdict.proof.mjs",
     "proof:shimstate": "node scripts/lib/shimBinary.proof.mjs",

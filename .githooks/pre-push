@@ -1,0 +1,25 @@
+#!/bin/sh
+# Monstera pre-push gate. See scripts/hooks/prePush.mjs for what it checks.
+#
+# Thin for the same reason the pre-commit shim is: everything it could do in
+# shell it would have to do twice, once for sh and once for Windows, and the two
+# copies would drift.
+#
+# stdin carries git's "<localRef> <localSha> <remoteRef> <remoteSha>" lines and
+# is passed straight through — the hook reads the pushed range from it rather
+# than guessing at an upstream.
+set -e
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "" >&2
+  echo "Push blocked — node is not on PATH, so the pre-push guard could not run." >&2
+  echo "" >&2
+  echo "  Install Node (package.json \"engines\" states the minimum) and push again." >&2
+  echo "" >&2
+  echo "The hook refuses to pass a push it did not check. Skipping the check when the" >&2
+  echo "runtime is missing would report success for a check that never ran." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exec node "$(git rev-parse --show-toplevel)/scripts/hooks/prePush.mjs"

@@ -644,6 +644,81 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — GG-1 closes for one member: the pre-push gate reads the register's own globs
+
+GG-1 recorded a rule and named the obstacle to mechanising it: *proofs address
+their inputs by construction*, so no literal path exists to map a proof to the
+files it reads. That is true of proofs and **false of the advisory register** —
+its `shippedPaths`, witness `in` and control `from` entries are literal strings
+in a tracked JSON file, put there so `git grep` can use them. The mapping
+already exists as data.
+
+So the member of GG-1 that produced **all three occurrences** is now a mechanism:
+`.githooks/pre-push` runs the register against the tree whenever the pushed
+range changes a file any of those globs matches. Nine pathspecs today, read from
+the register rather than listed.
+
+**Pre-push, not pre-commit, and the reason is where the harm is.** All three
+occurrences were at push. A commit that will be amended or rebased has published
+nothing; a push is permanent under B10.
+
+**Offline and deterministic**, using the flag built one commit earlier for a
+different caller. What expires a verdict is the reachability walk — baseline,
+`git grep`, the compiler — and none of it consumes the advisory feed, so the
+local gate passes `--recorded-advisories` and cannot fail because a third party
+was unreachable. A gate that can go red for a reason outside the repository is a
+gate people disable. `check:advisories` itself still fetches, and a case
+requires that.
+
+The positive control is in the hook, not only in its proof: at least one watched
+pathspec must match a tracked file on every run. A glob that matches nothing —
+or one whose syntax git stopped understanding — answers *this push touches
+nothing watched* for every push, forever.
+
+**Still open, and narrower than before:** the general mapping from a proof to the
+files it reads. One member of it is closed; the rest is not, and the two
+candidates priced in GG-1's entry (a runtime trace, or a declaration beside each
+proof) are unchanged.
+
+---
+
+## 2026-08-22 — III-1: a FEATURES item that was not a row, and nothing was red
+
+`docs/FEATURES.md:283` — the engine-host containment item — carried exactly one
+pipe, the leading one. It was not a malformed row; **it was not a row**. The
+table above it terminated, the item rendered as prose with a stray pipe, and it
+appeared in no status count. `check:docs` passed, because every check there
+reads rows it can find and this had stopped being one.
+
+**One occurrence, so the defect is an instance. The way it hid is a class**, and
+it is the one this project keeps paying for: *an absent status reads exactly like
+an empty one*. That is DDD-1's sentence — when one half of a classifier carries
+three states and the other carries two, the asymmetry is the finding — arriving
+in a document instead of in a report. Nobody audits for a row that is not there.
+
+It matters more here than in a report, because of the document-class rule
+already in `CLAUDE.md`: a FEATURES row is a **live specification of what is
+owed**, not a record of a moment. An item that silently leaves the table is a
+commitment that stops being counted while still looking present to a reader
+scrolling past it.
+
+The status is restored as **partly done** with what the row's body now supports:
+three of invariant 25's four properties have a mechanism confirmed on a running
+process, the job's memory limit is printed as `NOT MEASURED` rather than assumed,
+and the readings are taken against a research instrument because the shipped host
+factory does not exist. Both triggers are named in the body, RR-3 being the one
+that moves the assertions off the spike.
+
+`check:docs` now requires every line opening a row inside a FEATURES table to
+carry as many cells as its table declares. It is a search, so it refuses when it
+finds fewer than twenty well-formed rows — a separator pattern that matches
+nothing makes every table invisible and every row skipped, and reports no
+problems while doing it. Both directions measured: fed the real defect it names
+`docs/FEATURES.md:283`; with the separator pattern broken it reports the control
+rather than a clean document.
+
+---
+
 ## 2026-08-22 — HHH-1: the register's expiry fired on my own change, one push later
 
 `d55b893` went red on **both** workflows. Not the network, not a platform: the

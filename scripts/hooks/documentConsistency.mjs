@@ -98,7 +98,7 @@ const failures = [];
 
 // Section 7 applies only when a threat model exists, and the fixed block of
 // `ok` lines this replaces claimed it either way — see scripts/lib/passRoster.mjs.
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 9 });
 const { record } = roster;
 
 // ---------------------------------------------------------------------------
@@ -461,6 +461,78 @@ const { record } = roster;
     mark,
     "the watermark and the journal's newest audit are the same string, and the range is within one batch",
   );
+}
+
+// ---------------------------------------------------------------------------
+// 9. Every row in a FEATURES table carries a Status cell.
+//
+// `docs/FEATURES.md:283` lost its trailing `| **partly done** |` and kept only
+// the leading pipe. That is not a malformed row — it is not a ROW. The table
+// above it terminates, the item renders as prose with a stray pipe, and it
+// appears in no status count. Nothing was red: every check here reads rows it
+// can find, and this one had stopped being one.
+//
+// **An absent status reads exactly like an empty one**, which is DDD-1's
+// sentence arriving in a document instead of a report. A FEATURES row is a live
+// specification of what is owed, so an item that silently leaves the table is a
+// commitment that stops being counted while still looking present.
+//
+// One occurrence, so this is an instance — the check exists because the way it
+// hid is a class.
+// ---------------------------------------------------------------------------
+{
+  const mark = roster.mark();
+  const lines = read('docs/FEATURES.md').split('\n');
+
+  /** A table's separator: `|---|---|`, however many columns. */
+  const SEPARATOR = /^\|[\s:|-]+\|$/u;
+  /** A line that opens a table row. */
+  const OPENS_ROW = /^\|/u;
+
+  /** @type {string[]} */
+  const malformed = [];
+  let wellFormed = 0;
+  let inTable = false;
+  let columns = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (SEPARATOR.test(line)) {
+      inTable = true;
+      columns = line.split('|').length - 2;
+      continue;
+    }
+    if (!OPENS_ROW.test(line)) {
+      // A blank line ends the table. Any other prose does too — a row cannot
+      // begin without a pipe.
+      inTable = false;
+      continue;
+    }
+    if (!inTable) continue;
+    const cells = line.split('|').length - 2;
+    if (cells === columns) {
+      wellFormed += 1;
+      continue;
+    }
+    malformed.push(
+      `docs/FEATURES.md:${String(index + 1)} opens a row with ${String(cells)} cell(s) where ` +
+        `the table declares ${String(columns)}. It renders as prose and is counted by nothing.` +
+        `\n        ${line.slice(0, 110)}…`,
+    );
+  }
+
+  // THE POSITIVE CONTROL. This is a search, and "no malformed rows" is also
+  // what a separator pattern that matches nothing produces — every table would
+  // then be invisible and every row skipped, silently.
+  if (wellFormed < 20) {
+    failures.push(
+      `The FEATURES row scan found only ${String(wellFormed)} well-formed rows. It cannot ` +
+        `report a missing Status cell if it cannot find the tables, and a low count means the ` +
+        `separator or row pattern stopped matching — not that the document shrank.`,
+    );
+  }
+  failures.push(...malformed);
+  record(mark, 'every row in a FEATURES table has as many cells as its table declares');
 }
 
 if (failures.length > 0) {
