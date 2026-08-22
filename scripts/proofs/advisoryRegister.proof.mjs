@@ -44,6 +44,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { DERIVED_CLAIMS } from '../security/derivedClaims.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -67,14 +68,18 @@ const failures = [];
  * the total with it and nothing anywhere noticed — finding Z-4, in the proof
  * that guards invariant 25.
  *
- * **TWENTY-NINE, and it is correct in both worlds, which is what made this one
- * line rather than an argument.** With `node_modules/electron` present, 29 cases
- * pass and none skip. With it hidden — the Guards job's normal state, since it
- * runs no `npm ci` — 28 pass and the completeness case prints as a skip.
- * `format` checks `passed + skipped`, so 29 + 0 and 28 + 1 both record 29.
- * Measured both ways before this number was written down.
+ * **THIRTY, and it is correct in both worlds, which is what made this one line
+ * rather than an argument.** With `node_modules/electron` present, 30 cases pass
+ * and none skip. With it hidden — the Guards job's normal state, since it runs
+ * no `npm ci` — 29 pass and the completeness case prints as a skip. `format`
+ * checks `passed + skipped`, so 30 + 0 and 29 + 1 both record 30. Measured both
+ * ways before this number was written down.
+ *
+ * Was 29 until 2026-08-22, when ZZ-1 added the control asserting the located
+ * witnessed verdict is not a derived one. That case is world-independent, so it
+ * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 29 });
+const roster = createRoster(failures, { cases: 30 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -347,7 +352,8 @@ try {
   }
 
   /**
-   * A verdict carrying a witness, LOCATED rather than named.
+   * A verdict carrying a witness **and no derivation**, LOCATED rather than
+   * named.
    *
    * Five cases below mutate one witness entry to prove the checker's handling of
    * it. They used to name `kernel-holds-canonical-bytes` and its `ByteImage`
@@ -360,25 +366,61 @@ try {
    * all would leave five cases mutating `undefined` and reporting a checker
    * failure that has nothing to do with what they test.
    *
+   * ## Why `DERIVED_CLAIMS` is excluded, which is finding ZZ-1
+   *
+   * Three of those five cases assert that a **witness problem is a hard
+   * failure** — no witness, an empty scope, a bare null. That is only true where
+   * no derivation can absorb the symbol into `unverifiable` instead, and a
+   * derivation has a provisioning condition where a witness does not.
+   *
+   * Measured: `engine-host-containment` gained a witness on 2026-08-22 and, being
+   * earlier in the register, became the first witnessed verdict this locator
+   * found. It is also derived. So on a machine with `node_modules` the cases
+   * stayed green and on the Guards job — which installs nothing — the derivation
+   * could not run, the removed witness became unverifiable rather than a
+   * failure, and the step went red. **A proof that passes locally and fails in
+   * CI for a reason the register's own design calls correct.**
+   *
+   * The exclusion list is imported rather than restated: two opinions about
+   * which claims are derived is what produced this (B3a).
+   *
    * @returns {{ claim: string, symbol: string }}
    */
   function aWitnessedVerdict() {
     const reachability = /** @type {any} */ (parsed(pristine)).reachability;
+    const derived = /** @type {readonly string[]} */ (DERIVED_CLAIMS);
     for (const [claim, verdict] of Object.entries(reachability)) {
+      if (derived.includes(claim)) continue;
       const witness = /** @type {any} */ (verdict).witness;
       if (witness === undefined) continue;
       const [symbol] = Object.keys(witness);
       if (symbol !== undefined) return { claim, symbol };
     }
     throw new Error(
-      'No reachability verdict in the register carries a witness. Five cases below mutate one ' +
-        'to prove how the checker treats it; with none to find they would mutate undefined and ' +
-        'fail for an unrelated reason. If witnesses have genuinely gone away, delete those ' +
-        'cases deliberately rather than letting them rot into a broken lookup.',
+      'No UNDERIVED reachability verdict in the register carries a witness. Five cases below ' +
+        'mutate one to prove how the checker treats it, and three of them assert that a witness ' +
+        'problem is a hard failure — which a derived claim turns into "unverifiable" wherever ' +
+        'its derivation cannot run. With none to find they would mutate undefined and fail for ' +
+        'an unrelated reason. If witnesses on underived verdicts have genuinely gone away, ' +
+        'delete those cases deliberately rather than letting them rot into a broken lookup.',
     );
   }
 
   const WITNESSED = aWitnessedVerdict();
+
+  // ZZ-1's mechanism, and it runs on every runner rather than being a thing I
+  // checked once. The three cases below that assert "a witness problem is a hard
+  // failure" are only right for an UNDERIVED claim: where a derivation exists and
+  // cannot run, the same mutation is reported unverifiable, correctly. That
+  // difference is invisible on a machine with node_modules, which is precisely
+  // where a human verifies it.
+  check(
+    'CONTROL: the located witnessed verdict is NOT one whose symbols are derived',
+    !(/** @type {readonly string[]} */ (DERIVED_CLAIMS)).includes(WITNESSED.claim),
+    `Located ${WITNESSED.claim}, which is derived. Three cases below would then pass here and ` +
+      `fail on the Guards job, which installs nothing — measured on 2026-08-22, when ` +
+      `engine-host-containment gained a witness and became the first one this locator found.`,
+  );
 
   const misspeltUnwitnessed = runAgainst(
     'misspelt-unwitnessed',

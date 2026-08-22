@@ -71,6 +71,7 @@ import { digestInputs } from '../lib/verdict.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
 import { declaredNativeComponents } from '../release/generateNotice.mjs';
+import { DERIVED_CLAIMS } from './derivedClaims.mjs';
 import { deriveOcrDoors } from './ocrDoors.mjs';
 import { readElectronSurface } from './electronSurface.mjs';
 
@@ -1017,7 +1018,7 @@ async function main() {
     {
       verified: drift.verified,
       checked: drift.checked,
-      claim: 'ocr',
+      claim: DERIVED_CLAIMS[0],
       reason: 'the engine source is not provisioned, so the derivation could not run',
     },
     {
@@ -1027,7 +1028,7 @@ async function main() {
       // been REMOVED. See scripts/security/electronSurface.mjs.
       verified: electron.checked ? electron.declared : [],
       checked: electron.checked,
-      claim: 'engine-host-containment',
+      claim: DERIVED_CLAIMS[1],
       reason: electron.reason,
     },
   ]);

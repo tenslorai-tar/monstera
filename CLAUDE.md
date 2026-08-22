@@ -624,6 +624,24 @@ If not, say so and close the gap. A defect CI cannot see is waiting for a
 contributor, not for you. (Provisioning worked from PowerShell and failed from
 Git Bash; the guards job runs on Linux, so CI was structurally blind to it.)
 
+**And ask it the other way round, because the answer is not symmetric: is there
+a defect THIS MACHINE cannot see?** A check whose behaviour depends on
+provisioning has two worlds, and the developed-in one is the richer one — so it
+is the one that hides the defect. The tell is a branch keyed on whether
+something is installed.
+
+Measured (ZZ-1): `advisoryRegister.proof.mjs` locates "a verdict carrying a
+witness" and mutates it. A witness gained by a **derived** claim made it pick
+that one, and three mutations that assert *a witness problem is a hard failure*
+became *unverifiable* instead — which the register's own design calls correct,
+because a derivation that cannot run has not looked. Green here, red on Guards,
+which installs nothing. **The fix is not to remember this**: the locator now
+excludes derived claims from one shared list, and a control asserts on every
+runner that the verdict it picked is not one of them.
+
+The general shape: when a proof branches on provisioning, the branch you never
+execute is the specification you never read.
+
 **4. Are the proofs non-vacuous?**
 Mutate the thing each proof guards and confirm the proof goes red. A proof that
 cannot fail is a green check that verifies nothing. When a mutation *doesn't*
