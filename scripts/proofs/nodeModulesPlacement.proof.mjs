@@ -35,7 +35,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 19 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -209,6 +209,61 @@ try {
       ).violations.length === 1,
       `A \`finally\` runs the cleanup and rethrows. Without this the case above is satisfied by ` +
         `a scan that treats any \`try\` as handling, and both shapes are in this repository.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // A `.catch()` CHAIN HANDLES THE REJECTION AS SURELY AS A `try` DOES, and
+  // this case exists because the branch that says so was exercised by nothing.
+  //
+  // Found by the stage audit, not by a failure: disabling the branch left all
+  // nineteen cases green and the real scan unmoved, because no code in this
+  // repository writes that shape. A branch keyed on the presence of something
+  // has a side that never executes wherever that thing is absent — and here it
+  // was absent everywhere, so the branch was a specification nobody had read.
+  //
+  // Kept rather than deleted: the fact it encodes is true, and removing it
+  // would make the scan report a false positive the day someone writes it.
+  // -------------------------------------------------------------------------
+  {
+    const chained = [
+      "import { loadTypeScript } from '../lib/loadTypeScript.mjs';",
+      'export const held = loadTypeScript("wanted").catch(() => "UNVERIFIABLE");',
+      '',
+    ].join('\n');
+    const root = fixture({
+      'scripts/hooks/chained.mjs': chained,
+      [CONTROL_PATH]: CONTROL_SOURCE,
+      '.github/workflows/a.yml': workflow(
+        ['node scripts/ci/annotate.mjs scripts/proofs/control.proof.mjs'],
+        ['node scripts/ci/annotate.mjs scripts/hooks/chained.mjs'],
+      ),
+    });
+    const result = await scan({ root, control: CONTROL_PATH });
+    check(
+      'a dying call with a .catch() chain is handled, and not reported',
+      result.violations.length === 0 && !result.blind,
+      `violations = ${JSON.stringify(result.violations.map((v) => v.script))}. A rejection ` +
+        `handled by a chain is handled; treating only \`try\` as handling would report a shape ` +
+        `that is correct.`,
+    );
+    check(
+      'CONTROL: and the same call WITHOUT the chain is reported',
+      (
+        await scan({
+          root: fixture({
+            'scripts/hooks/chained.mjs': chained.replace('.catch(() => "UNVERIFIABLE")', ''),
+            [CONTROL_PATH]: CONTROL_SOURCE,
+            '.github/workflows/a.yml': workflow(
+              ['node scripts/ci/annotate.mjs scripts/proofs/control.proof.mjs'],
+              ['node scripts/ci/annotate.mjs scripts/hooks/chained.mjs'],
+            ),
+          }),
+          control: CONTROL_PATH,
+        })
+      ).violations.length === 1,
+      `Without this, the case above is satisfied by a scan that reports nothing in that file for ` +
+        `some other reason — a path it never read, a binding it never matched.`,
     );
   }
 
