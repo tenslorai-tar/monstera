@@ -416,6 +416,18 @@ These were given directly and bind every agent on this project.
   (`0x07`, byte arrays), because nothing in that path resolves an escape. That
   is how `docs/JOURNAL.md` was repaired: the corrupt bytes are invisible to
   every editor, so there was no string to match on.
+- **An emitted-source template carries no backtick — and that is now a check, not
+  a rule.** A `String.raw` holding a program we write to disk is the one place
+  prose and code share a delimiter, and a backtick pair inside closes the literal
+  and reopens it, so the parser blames whatever follows. It happened three times,
+  the third in a file whose own header carried the rule against it. **Written
+  down is not a mechanism** — the same sentence the escape guard paid for seven
+  times. `check:emittedtemplates` scans the region and `proof:emittedtemplates`
+  proves it can see; the scan carries its own positive control and refuses to
+  report when blinded, because it is run by hand on the day someone needs an
+  answer and CI is not there. The rule bans backticks in the emitted **code**
+  too, and that is what makes it checkable: a parser cannot help, since the stray
+  pair has already closed the template by the time one runs.
 - **Research versions, never recall them.** Fetch the registry or the release
   API. Assumptions lost badly on the first attempt: two GitHub Actions were
   majors out of date, ESLint was at 10 rather than 9, TypeScript at 7, Vite at 8.
@@ -907,6 +919,8 @@ by hand.
 npm run proof:guards      # prove the pre-commit guards still catch what they claim
 npm run proof:secretscan  # prove the secret scan cannot be silently disarmed
 npm run proof:escapeguard # prove the escape-resolving-write hook blocks and permits correctly
+npm run check:emittedtemplates  # no emitted-source template carries a backtick
+npm run proof:emittedtemplates  # prove that scan can see, refuse and tolerate
 npm run proof:advisories  # prove the advisory register cannot pass while unreadable
 npm run guard:staged      # file policy against the index
 npm run guard:tree        # file policy against every tracked file (CI mirror)

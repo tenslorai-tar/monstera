@@ -265,6 +265,16 @@ jobs:
       - name: Prove the invalid-handle check catches what four spellings missed
         run: npm run proof:win32handle
 
+      # The proof first, because it is what establishes the scan can SEE — a
+      # search's silence is worthless until something known-present proves it is
+      # not blind. The scan then carries the same control itself, since it gets
+      # run by hand on the day someone needs an answer and CI is not there.
+      - name: Prove the emitted-source backtick scan sees, refuses and tolerates
+        run: npm run proof:emittedtemplates
+
+      - name: No emitted-source template carries a backtick
+        run: npm run check:emittedtemplates
+
       # The pin these very jobs run on is one declaration, not three copies. A
       # workflow left on a floating major keeps working and keeps passing while
       # changing the npm that validates this project's lockfile — which is how

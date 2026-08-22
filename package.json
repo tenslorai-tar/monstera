@@ -73,6 +73,8 @@
     "proof:auditscope": "node scripts/proofs/auditScope.proof.mjs",
     "proof:workflowpins": "node scripts/proofs/workflowPins.proof.mjs",
     "proof:win32handle": "node scripts/proofs/win32Handle.proof.mjs",
+    "proof:emittedtemplates": "node scripts/proofs/emittedTemplates.proof.mjs",
+    "check:emittedtemplates": "node scripts/lib/emittedTemplates.mjs",
     "check:workflowpins": "node scripts/lib/workflowPins.mjs",
     "proof:toolchain": "node scripts/proofs/toolchainPin.proof.mjs",
     "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",
