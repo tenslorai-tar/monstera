@@ -644,6 +644,148 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — Stage audit: `0548ad6..4d04942` — the decision range, and two guards that were blind in the direction they were pointed
+
+**Audited through `4d04942`.** 8 commits, 21 files, **2 proofs added, 0
+modified**, 3 new instrument files — from `npm run audit:scope`.
+
+The range is one arc and is audited at its own boundary rather than mid-build:
+the spike's findings, the B4 amendment, both ADRs, the cross-reference sweep, and
+two new guards. Feature code starts after it.
+
+### The load-bearing column is EMPTY, and that is information
+
+**No proof was modified in this range.** Every other recent audit has had that
+column carrying the reading — a check whose meaning changed looks identical to
+one that was loosened. Here there is nothing to read, and the honest statement is
+that *this range added coverage and changed none*.
+
+It is worth saying rather than skipping, because an empty load-bearing column and
+an unread one produce the same silence.
+
+### Item 2a — coverage moved four times, and two of them REMOVED a mechanism
+
+| | direction | what moved |
+|---|---|---|
+| invariant 25 (c) and (d) | **arriving** | *no mechanism* → an AppContainer, measured against a route control, with the native `CreateFileW` refused `ERROR_ACCESS_DENIED` |
+| PP-6's fork→assign handshake | **REMOVED** | withdrawn, and replaced by `CREATE_SUSPENDED` + assign + `ResumeThread` — a construction rather than an agreement |
+| the host lowering its own integrity | **REMOVED** | the LowBox token is Low at creation, so the mechanism does not exist rather than being deferred |
+| the five ACL grants | **reclassified** | from *the mechanism* to *a development accommodation* — a claim withdrawn about what ships |
+
+The two removals are the ones that need stating. A withdrawn mechanism reads in
+a diff exactly like a mechanism that was never there, and both of these are
+replacements by construction — which is the outcome B5 asks for and also the
+outcome that leaves the least trace. **Neither was removed on an inference:**
+`previousSuspendCount: 1` beside a running thread reporting `0`, and
+`integrityBeforeResume` reading `0x1000` contained against `0x2000` uncontained,
+are the differentials that made each a reading.
+
+### Item 1 — every fix in the range, classified
+
+All root-cause. The two that were nearly not are worth the space.
+
+| fix | why it is not a workaround |
+|---|---|
+| **TT-2** — `INVALID_HANDLE_VALUE` | one resolver for Win32's own rule, with the emitted copy *derived* from the function rather than kept by hand. Patching the file that failed would have left the other two, and the next caller free to write a fourth (B3a) |
+| **VV-1** — the scan's blind spot | fixed on **two axes**, because fixing one changed nothing: the opener matcher and the file-level filter both said `String.raw`, so the four blind files were skipped before the widened matcher saw them |
+| the spike's missing child log | a channel nobody subscribed to. Adding an inherited log handle is the fix; guessing at the exit code would have been the workaround |
+| the handed directory granted `RX` | the grant was wrong, and the host said so with its own exit code. Widening the grant is the repair, not an accommodation |
+| escaped backticks reported as violations | a false finding in a guard is how the guard gets switched off, so escapes are stripped before the check rather than allowlisted after it |
+
+### VV-1 is the range's best finding, and it was found by auditing the previous commit
+
+The backtick guard reported *"11 emitted-source templates carry no backtick"* and
+meant *"11 of the 15 I can see"*. Four emitted bodies in `scripts/research/` are
+plain template literals — and a plain template is the **more** dangerous of the
+two, because it interpolates as well as terminating.
+
+That is the **pattern axis of a classifier (W-1) reappearing inside a check
+written to close a different class**, one commit after it was committed and green
+in CI. The range-scoped audit exists for exactly this shape.
+
+**Widening to every template was tried and rejected on a measurement**, which is
+the part worth keeping: 36 reports, nearly all openers whose terminator is not a
+bare backtick-semicolon. *Where a template ends cannot be determined textually* —
+the same wall the parser hits — so a check over all of them either guesses a
+boundary or drowns. Marking the class makes it decidable, and the escape hatch
+that opens with a marker is closed by a second rule scoped to the directory where
+every occurrence has happened.
+
+### VV-2, OPEN — the scope report has no column for an instrument that CHANGED
+
+`audit:scope` distinguishes proofs **added** from proofs **modified**, and for
+instruments reports **added only**. So an instrument file that already existed and
+whose behaviour changed appears in no column at all.
+
+This range changed four of them: `hostContainment`, `hostSurface` twice and
+`permissionProbeControl` were converted to `String.raw`, which alters escape
+handling in the program each one writes to disk. **Every one could have been
+broken by it**, and what caught them was running all four, not the report.
+
+**This is not AA-1 and must not be filed as it.** AA-1 is *granularity* — an
+instrument arriving as a function inside a module that already existed — and its
+stated compensation is to read the modified-proofs diffs. That compensation
+cannot reach this: these are not proofs, so they appear in no diff the disclosure
+sends you to. It is a fourth axis of the same classifier, beside pattern (W-1),
+root (X-1) and state (Z-1): **added-versus-modified, for instruments.**
+
+The fix is named: report modified instrument files the way modified proofs are
+reported, with the same warning, since a loosened instrument and a corrected one
+are indistinguishable outside the diff.
+
+### Items 3, 4, 4a/4b, 6, 7
+
+**3 — would CI have caught it?** Not TT-2: the refusal branch had never executed,
+so nothing in the suite reached it. Not VV-1 either — the guard was green in CI at
+`f71cd9d` while blind to four files, because a search's silence is its most
+convincing failure. Both now have proofs on the Guards job, and both proofs run on
+Linux with no native library, since a defect living in three files at once should
+not need a Windows runner to catch.
+
+**4 — mutation.** `proof:win32handle` reverted to `value === -1n` reddens two
+cases; one of them reddened with the **wrong message**, a true-sounding diagnosis
+of a defect that was not there, because it was a compound assertion — split.
+`proof:emittedtemplates` narrowed to skip comment lines reddens two cases **and**
+makes the scan itself refuse to report, because its own control goes silent: two
+independent detections of the same blinding.
+
+**4a/4b.** Both new instruments carry positive controls that run in the
+instrument, not only in the proof — the proof runs in CI and the instrument gets
+run by hand on the day someone needs an answer. The backtick scan's control is a
+fixture it must locate every run; the spike's is the grant itself, since after
+granting the same search must find the principal it just called absent.
+
+**And the scan shipped with the class it guards, in its own entry point.** Its
+first run printed nothing and exited 0 — the module-is-main test built a `file://`
+URL by string concatenation, which is wrong on Windows. *A scan that does not run
+and a scan that finds nothing print the same thing.*
+
+**6 — architecture before the feature.** This range **is** that, in the strongest
+form the project has managed: measure → spike → amendment → mechanism ADR, with
+no host code written. The B4 went from four properties to two to zero on
+measurements, and the amendment landed alone with its own CI verdict.
+
+**7 — documents.** UU-1 is item 7 at cross-reference scale, and it is the case
+`check:docs` structurally cannot see: **a renumber leaves both targets existing**,
+so the link resolves and the reader lands on a real ADR that says something else.
+Worse than a broken link, which announces itself. Three references swept by hand;
+the class recorded in `DECISIONS/README.md` beside *never renumbered*, which was
+previously a convention with no stated mechanism.
+
+The compound-claim check found two more in this range's own files, and both are
+the exact shape it hunts: `hostFixture`'s *"nothing yet delivers them"* and
+`hostNativeRead`'s *"the property goes back to having no mechanism"*. Each was
+true when written and false eight commits later, and in each the live half —
+*a utility process cannot* — kept vouching for the dead half beside it.
+
+### Verification state
+
+Green at `9741cc3` and at `f71cd9d`, both CI and Guards. `4d04942` is pushed and
+unverified; it carries VV-1's widened scan, so its verdict is the one that matters
+for the guard.
+
+---
+
 ## 2026-08-22 — Stage audit: `f7c74ff..0548ad6` — the containment claim loses a property, and a control that could not fail becomes one that can
 
 **Audited through `0548ad6`.** 9 commits, 14 files, **1 proof added, 1
