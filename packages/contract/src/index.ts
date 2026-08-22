@@ -23,6 +23,13 @@ export {
 } from './channels.js';
 export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
+export {
+  FRAME_HEADER_BYTES,
+  FRAME_LENGTH_CEILING,
+  FrameDecoder,
+  type FrameViolation,
+  encodeFrame,
+} from './frame.js';
 export { type Incident, IncidentLog, type IncidentSink } from './incident.js';
 export {
   type Command,
