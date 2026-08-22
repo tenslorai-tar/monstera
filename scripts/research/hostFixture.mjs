@@ -1,7 +1,44 @@
 // @ts-check
 /**
- * ONE realistic engine host, and every containment conclusion measured against
- * it.
+ * The utility-process baseline: (a) and (b) measured against a host that is no
+ * longer the shipped shape.
+ *
+ * ## STALE, and the heading above is what changed (finding WW-1)
+ *
+ * This file was written as *one realistic engine host, and every containment
+ * conclusion measured against it*. Both halves of that have since stopped being
+ * true, and the second one is the finding.
+ *
+ * ADR-0022 moved the shipped host to a process we create, and ADR-0023 §1
+ * withdrew the mechanism the cells below still exercise: the host lowering its
+ * own integrity does not happen, because the LowBox token is **Low at
+ * creation** — measured, `integrityBeforeResume` `0x1000` contained against
+ * `0x2000` uncontained, read by main while the process is still suspended. So
+ * the `lower` variable in {@link VARIANTS} switches a step the product does not
+ * perform, on a process type the architecture withdrew.
+ *
+ * That is finding QQ-2's shape — *a conclusion about the host, measured on
+ * something that is not the host* — regenerated through an architecture change
+ * rather than through an oversight. And it breaks RR-2's premise directly:
+ * there are now **two** instruments measuring two process types, and every
+ * containment conclusion is supposed to come from one.
+ *
+ * **The gate, until that is fixed: no containment assertion may be written
+ * against this file.** It still reads correctly for what it measures — (a) and
+ * (b) hold on any child, and the job here is one main assigns against a pid,
+ * which is worth knowing precisely because it is not Chromium's arrangement.
+ * What it must not be read as is a statement about the host that ships.
+ *
+ * **The fix is consolidation, not repair.** `lowboxSpike.mjs` already creates
+ * the process the shipped way and carries the route control that makes its
+ * column readable; this file has the per-property variant matrix and the
+ * four-state outcome classifier, which are the parts worth keeping. The matrix
+ * and the classifier move into the spike and this file retires — one
+ * instrument, shipped shape, and it is the one RR-3 turns into a proof.
+ *
+ * `hostIntegrityFromMain.mjs` survives that consolidation. (a) still has to be
+ * read from outside; it is now read at creation rather than after a lowering
+ * that no longer happens, so its motivation changes and its existence does not.
  *
  * ## Why one fixture and not a sixth probe
  *
@@ -12,9 +49,11 @@
  * the same process. A conclusion about the engine host is only about the engine
  * host if it was measured on one (finding QQ-2).
  *
- * So this host is the real shape: **koffi loaded, the MuPDF shim opened through
- * it, the job object assigned, the integrity level lowered.** Everything the
- * ADR asserts runs here.
+ * So this host carries the engine: **koffi loaded, the MuPDF shim opened
+ * through it, the job object assigned, the integrity level lowered.** That was
+ * the whole shape when it was written; it is now the shape of the baseline
+ * only, per WW-1 above — the last of those four steps is a mechanism ADR-0023
+ * §1 withdrew, and the first three are what still reads.
  *
  * ## One uncontained variant PER PROPERTY, permanently (finding RR-2)
  *
@@ -56,14 +95,6 @@
  * [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
  * §6 (RR-3): the shim job is the only one that can host it, which is why it now
  * provisions Electron (RR-1).
- *
- * **This file measures the utility-process baseline, which is no longer the
- * shipped shape.** ADR-0022 moved the hosts to a process we create, because (c)
- * and (d) come from an AppContainer that `utilityProcess.fork` cannot make. What
- * this fixture still establishes is (a) and (b) with their differentials, and
- * that they hold on *any* child rather than on Chromium's arrangement — the job
- * here is one main assigns against a pid. `lowboxSpike.mjs` is where the
- * contained shape is measured.
  *
  * Usage: node scripts/research/hostFixture.mjs
  */
@@ -284,6 +315,14 @@ function childIntegrity(pid) {
   } finally { CloseHandle(proc); }
 }
 
+// The four cells.
+//
+// The lower flag switches a step the shipped host does not perform (WW-1, and
+// see the module header). A LowBox token is Low at creation, so the contained
+// cell here is a UTILITY PROCESS THAT LOWERED ITSELF, which is a different
+// thing from the host at the same integrity level. The differential it produces
+// for (a) is still a real reading about integrity; it is not a reading about
+// the host.
 const VARIANTS = [
   { label: 'contained', lower: true, job: true },
   { label: 'no-integrity', lower: false, job: true },
@@ -483,6 +522,17 @@ try {
     ['(d) filesystem, native', 'nativeReadUnhanded', 'contained', 'uncontained'],
     ['(d) filesystem, JS', 'jsReadUnhanded', 'contained', 'uncontained'],
   ];
+
+  // The staleness is printed, not only written in the header, because a
+  // compensation a reader must remember is not a mechanism and a compensation
+  // the instrument emits at the point of use is one. This table is the thing
+  // someone quotes; the header is the thing they skip.
+  process.stdout.write(
+    `STALE — this measures a utility process that lowers its own integrity, and the shipped\n` +
+      `host is a CreateProcessW LowBox child that is Low at creation (WW-1, ADR-0022, ADR-0023 §1).\n` +
+      `No containment assertion may be written against the table below. lowboxSpike.mjs measures\n` +
+      `the shipped shape; the matrix and classifier here move into it and this file retires.\n\n`,
+  );
 
   process.stdout.write(`ATTRIBUTION — a property whose two variants AGREE is UNASSERTED\n\n`);
 

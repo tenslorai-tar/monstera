@@ -27,10 +27,17 @@ const TICK = String.fromCharCode(96);
 
 let failures = 0;
 
+// COUNTED, not written down. The total was a literal and it was already wrong
+// by one when a case was added beside it — a summary line that cannot disagree
+// with the run is the only kind worth printing, and the same argument the
+// budgets and the invariant count already carry.
+let ran = 0;
+
 /**
  * @param {string} name @param {boolean} condition @param {string} detail
  */
 function check(name, condition, detail) {
+  ran += 1;
   if (condition) {
     process.stdout.write(`  ok  ${name}\n`);
     return;
@@ -124,6 +131,33 @@ const OCCURRENCE_THREE = emitted([
 }
 
 {
+  // OCCURRENCE FOUR's position, which the case above does not reach. That one
+  // proves both regions are FOUND; it cannot separate a scan that finds two and
+  // then only walks the first, because its expected violation count is zero
+  // either way. Occurrence 4 landed in the second of two regions — the file has
+  // a HOST body and a MAIN body, and the comment went into MAIN.
+  //
+  // So the fixture puts a CLEAN first region in front of the violation: a scan
+  // that stops after region one reports nothing here, which is the bug, and
+  // there is no arrangement of a clean tree that produces the same reading.
+  const secondRegion = emitted([
+    `const HOST = String.raw${TICK}`,
+    `const clean = 1;`,
+    `${TICK};`,
+    `const MAIN = String.raw${TICK}`,
+    `// the ${TICK}lower${TICK} flag switches a step the shipped host does not perform`,
+    `${TICK};`,
+  ]);
+  const { violations } = backtickViolations(secondRegion);
+  check(
+    'a violation in the SECOND region is reported, not only in the first',
+    violations.length === 1 && violations[0]?.line === 5,
+    `occurrence 4 was on line 321 of a file whose first region ends at 269: ` +
+      `${JSON.stringify(violations)}`,
+  );
+}
+
+{
   const unterminatedSource = emitted([
     `const A = String.raw${TICK}`,
     `const oops = 1;`,
@@ -207,15 +241,23 @@ const OCCURRENCE_THREE = emitted([
     `an empty file list is a broken lookup, not a clean tree: ${files.length} file(s)`,
   );
   check(
-    'and it reaches the research scripts, which are where all three occurrences happened',
+    'and it reaches the research scripts, which are where every occurrence has happened',
     files.includes('scripts/research/lowboxSpike.mjs'),
     'the scan does not cover the directory the class lives in',
   );
 }
 
+// A run that asserted nothing must not print the reassuring line. Zero cases
+// and every case passing are the same output otherwise, which is item 4b in a
+// proof's own summary.
+if (ran === 0) {
+  process.stdout.write('\nNo emitted-template case ran. That is a broken proof, not a clean one.\n');
+  process.exit(1);
+}
+
 process.stdout.write(
   failures === 0
-    ? `\n14 emitted-template cases passed.\n`
-    : `\n${failures} emitted-template case(s) FAILED.\n`,
+    ? `\n${ran} emitted-template cases passed.\n`
+    : `\n${failures} of ${ran} emitted-template case(s) FAILED.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

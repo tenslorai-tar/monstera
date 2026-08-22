@@ -5,8 +5,11 @@
  *
  * ## The one question, covering invariant 25's (c) and (d) together
  *
- * (a) integrity and (b) job object are obtained and have differentials on a real
- * host (`hostFixture.mjs`). (c) *no network* and (d) *reaches no filesystem path
+ * (a) integrity and (b) job object are obtained and have differentials on a host
+ * carrying the engine (`hostFixture.mjs` — which measured them on a utility
+ * process, the shape ADR-0022 then withdrew; see WW-1 in its header, and the
+ * consolidation note at the foot of this one). (c) *no network* and (d) *reaches
+ * no filesystem path
  * it was not handed* have **no mechanism**: QQ-1 removed the only candidate for
  * (d) by measuring that Node's permission model is enforced inside Node's own
  * filesystem bindings, so a `CreateFileW` walks past it. The principle that
@@ -119,6 +122,24 @@
  *   is [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md).
  * - **Anything about a renderer.** Reaching MuPDF there means WASM, which
  *   ADR-0010 withdrew on measurement.
+ *
+ * ## This file is the one that survives, and it inherits two things (WW-1)
+ *
+ * `hostFixture.mjs` measures a utility process that lowers its own integrity,
+ * which ADR-0022 withdrew as the host and ADR-0023 §1 withdrew as a step. Two
+ * instruments measuring two process types breaks RR-2's premise that every
+ * containment conclusion comes from one, so they consolidate here rather than
+ * both being maintained.
+ *
+ * What comes across is the part worth keeping: the **per-property variant
+ * matrix** — one uncontained variant per property, so a denial is attributable
+ * to the mechanism whose absence produced it — and the **four-state outcome
+ * classifier**, whose `unreadable` is terminal so that *could not look* and
+ * *looked and found containment* never share an output. This file's three cells
+ * become the route axis of that matrix; they do not replace it.
+ *
+ * Not yet done. Until it is, that file carries the gate in its own header and
+ * prints it above its table.
  *
  * **Research, not a proof.** It asserts nothing and gates nothing. What becomes a
  * proof and where it runs is stated in

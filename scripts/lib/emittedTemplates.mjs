@@ -10,19 +10,28 @@
  * and the parser then reports whatever follows — so the error names a line that
  * is fine and says nothing about the delimiter.
  *
- * Three occurrences, all in the same shape and the third in a file whose own
- * header carried the rule against it:
+ * Four occurrences, all in the same shape:
  *
- * | | what closed it |
- * |---|---|
- * | 1 | a backtick pair in an embedded comment |
- * | 2 | the same, in a different research file |
- * | 3 | a comment naming a variable in backticks, inside emitted source |
+ * | | what closed it | caught by |
+ * |---|---|---|
+ * | 1 | a backtick pair in an embedded comment | the parser, blaming a later line |
+ * | 2 | the same, in a different research file | the parser, blaming a later line |
+ * | 3 | a comment naming a variable in backticks, inside emitted source | the parser; the file's own header carried the rule against it |
+ * | 4 | the same, one commit after this scan shipped, written by the author of this scan | `node --check`; **this scan reports it at the right line** — verified by mutation, not assumed |
  *
  * Each time the remedy was the same and each time it was a remedy applied to the
  * instance: move the prose out, or drop the backticks. **Written down is not a
  * mechanism** — that sentence has now been paid for by the escape guard seven
- * times and by this three, so the rule gets a check.
+ * times and by this four, so the rule gets a check.
+ *
+ * Occurrence 4 is the sharpest version of that argument available, and it is
+ * unflattering on purpose: the rule was not merely written down, it had just
+ * been mechanised, by the same agent, in the same session, and it was violated
+ * anyway while annotating a *different* finding. **What is in reach at the
+ * moment a comment is composed is not what is written in the file.** The scan
+ * caught it in the sense that matters — fed the broken text it names line 321 —
+ * but it runs on the Guards job, so what actually stopped it reaching a commit
+ * was a syntax check run by hand. That gap is finding WW-4.
  *
  * ## Why the rule bans backticks in the emitted CODE too, not only in comments
  *
@@ -119,7 +128,7 @@ function opensTemplate(line) {
  * what you do not want in emitted code — so the marker costs nothing to adopt.
  *
  * The escape hatch that would otherwise open is closed by
- * {@link plainTemplatesInResearch}: in the directory where all three occurrences
+ * {@link plainTemplatesInResearch}: in the directory where every occurrence has
  * happened, a multi-line plain template is itself a finding.
  *
  * @param {string} line

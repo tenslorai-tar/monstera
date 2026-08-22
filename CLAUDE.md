@@ -419,10 +419,17 @@ These were given directly and bind every agent on this project.
 - **An emitted-source template carries no backtick — and that is now a check, not
   a rule.** A `String.raw` holding a program we write to disk is the one place
   prose and code share a delimiter, and a backtick pair inside closes the literal
-  and reopens it, so the parser blames whatever follows. It happened three times,
-  the third in a file whose own header carried the rule against it. **Written
-  down is not a mechanism** — the same sentence the escape guard paid for seven
-  times. `check:emittedtemplates` scans the region and `proof:emittedtemplates`
+  and reopens it, so the parser blames whatever follows. It has happened **four
+  times**: the third in a file whose own header carried the rule against it, and
+  the fourth **one commit after the check shipped, by the agent that wrote the
+  check, in the same session**. **Written down is not a mechanism** — the same
+  sentence the escape guard paid for seven times, and occurrence 4 says the
+  stronger version: *having just mechanised a rule does not put it in reach at
+  the moment a comment is composed either.* The scan does see it — fed the broken
+  text it names the exact line, verified by mutation — but it runs on the Guards
+  job, so what stopped occurrence 4 reaching a commit was a hand-run
+  `node --check` (finding WW-4).
+  `check:emittedtemplates` scans the region and `proof:emittedtemplates`
   proves it can see; the scan carries its own positive control and refuses to
   report when blinded, because it is run by hand on the day someone needs an
   answer and CI is not there. The rule bans backticks in the emitted **code**

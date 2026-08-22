@@ -23,10 +23,16 @@ import { INVALID_HANDLE_SOURCE, isInvalidHandle } from '../lib/win32Handle.mjs';
 
 let failures = 0;
 
+// COUNTED, not written down — the sibling guard's literal was already off by one
+// when a case was added beside it, and a summary that cannot disagree with the
+// run is the only kind worth printing.
+let ran = 0;
+
 /**
  * @param {string} name @param {boolean} condition @param {string} detail
  */
 function check(name, condition, detail) {
+  ran += 1;
   if (condition) {
     process.stdout.write(`  ok  ${name}\n`);
     return;
@@ -149,9 +155,15 @@ check(
   'the text and the function disagree, so children and parent are checking different rules',
 );
 
+// Zero cases and every case passing are the same output otherwise.
+if (ran === 0) {
+  process.stdout.write('\nNo invalid-handle case ran. That is a broken proof, not a clean one.\n');
+  process.exit(1);
+}
+
 process.stdout.write(
   failures === 0
-    ? `\n12 invalid-handle cases passed.\n`
-    : `\n${failures} invalid-handle case(s) FAILED.\n`,
+    ? `\n${ran} invalid-handle cases passed.\n`
+    : `\n${failures} of ${ran} invalid-handle case(s) FAILED.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);
