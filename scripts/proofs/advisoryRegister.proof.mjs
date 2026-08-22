@@ -79,7 +79,7 @@ const failures = [];
  * witnessed verdict is not a derived one. That case is world-independent, so it
  * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 31 });
+const roster = createRoster(failures, { cases: 33 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -128,10 +128,36 @@ const pristine = readFileSync(TRACKED, 'utf8');
 function runAgainst(name, text) {
   const path = join(scratch, `${name}.json`);
   writeFileSync(path, text, 'utf8');
-  const result = spawnSync(process.execPath, [CHECKER, '--baseline', path], {
+  // AGAINST THE RECORDED FEED. Every case reached through here is about REGISTER
+  // LOGIC — a missing key, a misspelt symbol, an empty witness scope — and none
+  // of them is about what OSV published today. Fetching live for each meant one
+  // proof run reached a third party dozens of times, with `fetchAdvisories`
+  // throwing on any non-OK status by design, so this proof could go red for a
+  // reason unrelated to what it proves. It did: Guards at `a0d2ec0`, windows
+  // red and ubuntu green, on a checker byte-identical to the green run three
+  // commits later.
+  //
+  // The live path is not abandoned — `liveRun` below keeps exactly one case on
+  // it, and that case is named so a red there is diagnosable at a glance rather
+  // than by elimination.
+  const result = spawnSync(process.execPath, [CHECKER, '--baseline', path, '--recorded-advisories'], {
     cwd: ROOT,
     encoding: 'utf8',
   });
+  return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
+}
+
+/**
+ * The one invocation that reaches OSV.
+ *
+ * Separate from {@link runAgainst} so that "this case talks to the internet" is
+ * a property of the call site rather than a flag someone has to notice, and so
+ * that grepping for it finds every live case in this file — currently one.
+ *
+ * @returns {{ ok: boolean, output: string }}
+ */
+function liveRun() {
+  const result = spawnSync(process.execPath, [CHECKER], { cwd: ROOT, encoding: 'utf8' });
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
 
@@ -160,6 +186,29 @@ try {
     'CONTROL: the register as tracked passes',
     control.ok,
     `The unmodified register must pass, or the failures below prove nothing.\n${control.output}`,
+  );
+
+  // THE ONLY CASE IN THIS FILE THAT CAN FAIL FOR A REASON OUTSIDE THIS
+  // REPOSITORY, and it is named that way on purpose.
+  //
+  // Everything else runs against a recorded feed, so a red anywhere else is a
+  // statement about this repository. Here — and only here — a red may mean OSV
+  // was unreachable, rate-limited, or answered with a shape the parser rejects.
+  // Read this line first when the step goes red on one runner and not another.
+  //
+  // It is kept live rather than deleted because the recorded path can only ever
+  // prove register logic. That the FETCH works, that the parse still matches
+  // what OSV returns, and that the tracked register is accurate against the real
+  // feed today are all only observable here. Removing it would trade a flaky
+  // case for an unwatched one.
+  const live = liveRun();
+  check(
+    'LIVE — the tracked register passes against the REAL feed (the only externally-fallible case)',
+    live.ok,
+    `A red here has two candidate causes and the second is not this repository's: the register ` +
+      `disagrees with what OSV publishes today, OR OSV could not be reached or parsed. Every ` +
+      `other case in this file runs against packages/testing/fixtures/security/osv-recorded.json ` +
+      `and cannot fail this way.\n${live.output}`,
   );
   check(
     'CONTROL: and it reports that the walk found its controls',
@@ -732,6 +781,32 @@ try {
     readFileSync(TRACKED, 'utf8') === pristine,
     'This proof must not be able to leave a corrupt security register behind.',
   );
+
+  // -------------------------------------------------------------------------
+  // AND THE SHIPPED CHECK STILL FETCHES.
+  //
+  // `--recorded-advisories` is an input substitute for callers whose subject is
+  // the register. On the shipped check it would be the thing the register exists
+  // to prevent: a security check reading a snapshot of the world and reporting
+  // it as the world. The recording goes stale by construction — that is what a
+  // recording is — so the day it is passed by `check:advisories` is the day new
+  // advisories stop being seen, silently and with a green tick.
+  //
+  // Read from the tracked `package.json` rather than from a copy of the string,
+  // so the assertion is about what actually runs (B3a).
+  // -------------------------------------------------------------------------
+  {
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    const shipped = String(manifest.scripts?.['check:advisories'] ?? '');
+    check(
+      'the SHIPPED check:advisories does not use the recorded feed',
+      shipped !== '' && !shipped.includes('--recorded-advisories'),
+      `check:advisories = ${JSON.stringify(shipped)}. A recording is a snapshot, and a security ` +
+        `check reading a snapshot reports the world as it was on the day someone ran ` +
+        `--record-advisories. The empty-string half matters too: a script that vanished would ` +
+        `satisfy "does not contain the flag" for the wrong reason.`,
+    );
+  }
 
   // -------------------------------------------------------------------------
   // THE DERIVATION IS MANDATORY IN EXACTLY ONE JOB, AND OPTIONAL IN THE OTHER.

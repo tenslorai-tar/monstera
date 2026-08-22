@@ -1,0 +1,446 @@
+[
+  {
+    "id": "DEBIAN-CVE-2011-1136",
+    "component": "Tesseract",
+    "summary": "",
+    "published": "2019-11-14T01:15:10.727Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2012-5340",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2020-01-23T22:15:09.683Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2014-2013",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2014-03-03T16:55:04.350Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2016-10246",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-03-16T14:59:00.157Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2016-10247",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-03-16T14:59:00.207Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2016-6265",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2016-09-22T15:59:01.583Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2016-6525",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2016-09-22T15:59:04.977Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2016-8674",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-02-15T21:59:00.307Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-14685",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-09-22T06:29:00.207Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-14686",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-09-22T06:29:00.267Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-14687",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-09-22T06:29:00.317Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-15587",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-10-18T08:29:00.310Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-17866",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-12-27T17:08:20.640Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-18196",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-02-23T21:29:00.243Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-5896",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-02-15T19:59:01.250Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-5991",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-02-15T06:59:00.917Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-6060",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-03-15T14:59:00.697Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2017-7264",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2017-03-26T05:59:00.243Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-1000036",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-05-24T13:29:00.337Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-1000037",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-05-24T13:29:00.430Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-1000038",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-05-24T13:29:00.667Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-1000039",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-05-24T13:29:00.807Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-1000040",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-05-24T13:29:01.133Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-1000051",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-02-09T23:29:01.777Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-10289",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-04-22T05:29:00.207Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-16647",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-09-06T23:29:01.820Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-16648",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-09-06T23:29:01.927Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-18662",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-10-26T14:29:02.817Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-19777",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-11-30T10:29:00.210Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-19881",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-12-06T00:29:00.237Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-19882",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-12-06T00:29:00.283Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-3836",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-04-24T19:29:03.970Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-5686",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-01-14T02:29:05.213Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-6187",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-01-24T10:29:01.097Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-6192",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-01-24T21:29:00.467Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-6544",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2018-02-02T09:29:00.727Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-7186",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-02-16T16:29:00.160Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-7247",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-02-19T18:29:00.367Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-7440",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-02-23T21:29:00.600Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-7441",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-02-23T21:29:00.663Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2018-7442",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2018-02-23T21:29:00.710Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2019-13290",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2019-07-04T22:15:10.807Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2019-6130",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2019-01-11T05:29:01.687Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2019-6131",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2019-01-11T05:29:01.717Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-16600",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2020-12-09T21:15:15.413Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-19609",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2021-07-21T15:15:12.570Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-21896",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-08-22T19:16:18.793Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-26519",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2020-10-02T06:15:12.487Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-26683",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-08-22T19:16:19.997Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-36277",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2021-03-11T21:15:11.827Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-36278",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2021-03-12T00:15:12.647Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-36279",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2021-03-12T00:15:12.723Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-36280",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2021-03-12T00:15:12.787Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2020-36281",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2021-03-12T01:15:12.310Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2021-3407",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2021-02-23T23:15:14.100Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2021-36081",
+    "component": "Tesseract",
+    "summary": "",
+    "published": "2021-07-01T03:15:08.620Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2021-37220",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2021-07-21T22:15:08.170Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2021-4216",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2022-08-26T16:15:09.820Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2022-38266",
+    "component": "Leptonica",
+    "summary": "",
+    "published": "2022-09-09T22:15:08.830Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2023-31794",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-10-31T01:15:07.497Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2023-51103",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-12-26T15:15:08.630Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2023-51104",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-12-26T15:15:08.670Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2023-51105",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-12-26T15:15:08.720Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2023-51106",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-12-26T15:15:08.760Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2023-51107",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2023-12-26T15:15:08.807Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2024-46657",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2024-12-10T17:15:10.287Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2025-46206",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2025-08-04T18:15:34.810Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2025-55780",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2025-09-23T18:15:34.743Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2025-71382",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2026-06-23T18:17:41.087Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2026-3308",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2026-03-31T14:16:12.560Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2026-40505",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2026-04-16T02:16:11.887Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2026-7233",
+    "component": "MuPDF",
+    "summary": "",
+    "published": "2026-04-28T07:16:04.067Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2026-73066",
+    "component": "Tesseract",
+    "summary": "",
+    "published": "2026-08-11T15:17:38.777Z"
+  },
+  {
+    "id": "DEBIAN-CVE-2026-73067",
+    "component": "Tesseract",
+    "summary": "",
+    "published": "2026-08-11T15:17:38.927Z"
+  }
+]

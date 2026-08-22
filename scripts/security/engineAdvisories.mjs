@@ -100,6 +100,69 @@ const BASELINE = (() => {
 })();
 
 /**
+ * A recorded OSV response, for callers whose subject is the register rather than
+ * the feed.
+ *
+ * ## Why this exists — a guard whose red can mean something else
+ *
+ * `advisoryRegister.proof.mjs` runs this checker against ~20 deliberately broken
+ * registers. Every one of those runs fetched OSV live, so a single proof run
+ * reached a third party dozens of times, and `fetchAdvisories` **throws on any
+ * non-OK status by design** — correctly, since a security check that passes when
+ * it could not look is a green tick meaning *did not look*. The consequence is
+ * that the proof could go red for a reason that has nothing to do with what it
+ * proves. Measured on 2026-08-22: Guards failed at `a0d2ec0` on windows-latest
+ * with ubuntu-latest green, at a step whose register, checker and proof were
+ * byte-identical to the green run three commits later on the same platform.
+ *
+ * A red that can mean something other than what it says is one people re-run,
+ * and a check people re-run is one people eventually disable. Removing a second
+ * opinion about a third party's availability from a check that was never about
+ * it is not "retrying until green" — it is deleting an input the subject never
+ * had.
+ *
+ * ## Why there is no path argument, unlike `--baseline`
+ *
+ * `--baseline` changes *which register* is read and every rule still applies to
+ * it, so pointing it somewhere lenient means writing a lenient register — as
+ * visible in a diff as editing the tracked one. **This flag is different in
+ * kind:** it substitutes what the checker *sees of the outside world*, and a
+ * stale or trimmed feed hides advisories rather than announcing them. So it
+ * takes no argument and can only ever name this one reviewed, tracked file —
+ * B5, rather than a check that the supplied path is acceptable.
+ *
+ * The shipped `check:advisories` must never pass it, and
+ * `advisoryRegister.proof.mjs` asserts that against the tracked `package.json`.
+ */
+const RECORDED_ADVISORIES = join(
+  ROOT,
+  'packages',
+  'testing',
+  'fixtures',
+  'security',
+  'osv-recorded.json',
+);
+
+/**
+ * @returns {Advisory[]}
+ */
+function readRecordedAdvisories() {
+  const parsed = JSON.parse(readFileSync(RECORDED_ADVISORIES, 'utf8'));
+  // An empty intermediate result is a broken parse, not a clean input. An empty
+  // recording would make every register look fully triaged — the reassuring
+  // answer — which is the same failure `fetchAdvisories` refuses for a live
+  // query returning nothing.
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error(
+      `The recorded advisory feed at ${RECORDED_ADVISORIES} is empty or is not an array. ` +
+        `That is a broken recording, not a clean bill of health: every watched component has a ` +
+        `published history. Re-record it with --record-advisories.`,
+    );
+  }
+  return parsed;
+}
+
+/**
  * The components this watches, and the name each is addressable by.
  *
  * OSV's Debian ecosystem is the only source carrying these in a queryable form.
@@ -780,17 +843,33 @@ async function main() {
   const requireDerivation = process.argv.includes('--require-derivation');
   const baseline = readBaseline();
 
+  // The feed, live or recorded. `--record-advisories` refreshes the recording
+  // and exits; it is the only way the fixture is written, so a recording is
+  // always something a live query produced rather than something hand-edited.
+  if (process.argv.includes('--record-advisories')) {
+    const fresh = await fetchAdvisories();
+    writeFileSync(RECORDED_ADVISORIES, `${JSON.stringify(fresh, null, 2)}\n`, 'utf8');
+    process.stdout.write(
+      `Recorded ${String(fresh.length)} advisories to ${RECORDED_ADVISORIES}.\n` +
+        `This is an INPUT SUBSTITUTE for callers whose subject is the register. The shipped ` +
+        `check must keep fetching live.\n`,
+    );
+    return 0;
+  }
+  const useRecorded = process.argv.includes('--recorded-advisories');
+
   /** @type {Advisory[]} */
   let advisories;
   try {
-    advisories = await fetchAdvisories();
+    advisories = useRecorded ? readRecordedAdvisories() : await fetchAdvisories();
   } catch (error) {
     // A network failure is NOT a pass. Saying so out loud is the whole point:
     // "could not check" and "nothing to report" must never print the same way.
     process.stderr.write(
-      `\nCould not reach the advisory database: ${String(error)}\n\n` +
+      `\n${useRecorded ? 'Could not read the RECORDED advisory feed' : 'Could not reach the advisory database'}: ${String(error)}\n\n` +
         `This is reported as a failure rather than skipped. A security check that ` +
-        `passes when it could not run is a green tick meaning "did not look".\n\n`,
+        `passes when it could not run is a green tick meaning "did not look".\n` +
+        `${useRecorded ? 'Re-record it with --record-advisories.\n' : ''}\n`,
     );
     return 1;
   }

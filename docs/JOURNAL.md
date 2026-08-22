@@ -740,6 +740,28 @@ run, and it was an abstraction until now.
 **The specific failure text was never read** and is not guessed at in the code.
 Actions serves logs to authenticated callers only — which is CCC-1.
 
+> **Correction, 2026-08-22 — "60 live requests" was calculated and written as
+> though measured.** It is `20 × 3` from reading the code, and it is an **upper
+> bound**, not a count: `readBaseline()` runs before `fetchAdvisories()`, so
+> every mutation that fails on the parse never reaches the network at all. The
+> real figure is lower and was never established.
+>
+> That is **YY-1's shape in this entry's own prose** — a number derived by
+> arithmetic and presented with the authority of a measurement — three sections
+> above a heading asking whether things were executed or asserted. It belonged
+> in the *asserted* column and it was written into the *executed* one.
+>
+> The conclusion it supported is unaffected: dozens of live third-party requests
+> per run, and a checker that throws on any non-OK status, is a flaky guard
+> whatever the exact count.
+>
+> **The figure that replaces it is directly verifiable rather than better
+> estimated.** After the fix, exactly one call site in
+> `advisoryRegister.proof.mjs` reaches the network — `liveRun()`, greppable and
+> currently called once — over the three watched components, so the live surface
+> is **three requests per run**, and the way to check that is to count call
+> sites rather than to trust this sentence.
+
 ### 4. Non-vacuous?
 
 `advisoryRegister.proof.mjs`: binding `no-witness` to the empty-scope sentence
