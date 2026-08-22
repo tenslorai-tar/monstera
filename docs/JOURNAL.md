@@ -644,6 +644,187 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — Stage audit: `4d04942..1d5e6d6` — the first host code, and a derived number that was never measured
+
+**Audited through `1d5e6d6`.** 7 commits, 23 files, **3 proofs added, 3
+modified**, 3 new instrument files and **8 changed** — from `npm run audit:scope`.
+
+Owed on the **file** threshold, and the gate fired the way it was designed to:
+the commit that would have crossed 24 was blocked at pre-commit rather than
+reported on the board a push later (Y-2). The work it blocked is stashed and
+lands after this entry.
+
+The range is the first engine-host code — the frame layer and the containment
+probe — plus WW-1's record, WW-2's fix, and Ruling 1 with XX-1's corrections.
+
+### The new column earned its place on its first run
+
+WW-2 added *source FILES CHANGED* in this very range, and the range's own report
+lists eight, of which three are instruments whose behaviour moved: `scope.mjs`
+(+32/−29), `auditWatermark.mjs` (+42/−3) and `emittedTemplates.mjs` (+18/−9).
+Under the old column every one of them would have appeared nowhere — including
+the two that implement the audit report itself.
+
+That is not proof the column was worth adding; it is the column doing on its
+first run exactly what its absence had been hiding. Noted because the opposite
+result — a first run listing nothing — would have been worth just as much and is
+the reading nobody writes down.
+
+### YY-1 (new) — a derived constant whose derivation was arithmetic, and a test band that could not tell
+
+`ENGINE_HOST_FRAME_MAX_BYTES` is derived from `LARGEST_INTENT_PAYLOAD_BYTES`,
+the worst legitimate command payload. I wrote that second number as **120,000 by
+calculation** — 20,000 five-digit page indices with separators — and the case
+asserted `payload.byteLength > CONSTANT * 0.8`.
+
+**That band cannot distinguish a measured number from a guessed one.** It reports
+that the constant is *not wildly wrong*, which is not a thing worth knowing about
+a figure another figure is derived from.
+
+What exposed it was not the case but the **shape of a mutation run**: tightening
+the maximum to 128 KiB reddened the headroom case and left the payload case
+green, which says the two numbers were not pinned to each other. Measured
+afterwards: **120,057 bytes**, 6.00 per page. The estimate was close, and being
+close is why nothing would ever have flagged it.
+
+The case now asserts **exact equality**, and the direction matters: a stated
+worst case that is an *under*-estimate makes everything derived from it too
+small, so the assertion has to be able to fail upwards.
+
+**And the measurement surfaced a bound the estimate had hidden.** At 6.00 bytes
+per page, a 256 KiB frame refuses a whole-document selection at about **43,600
+pages**. That is 2.2× the project's stated extreme and entirely defensible — but
+it is a real limit, and it was invisible while the input number was a round one.
+It is now named in the source, asserted in a case, and carries its answer: split
+the intent across frames, never raise the maximum, because raising it spends the
+property ADR-0023 §7 exists to protect on the one payload shape with a cheaper
+fix.
+
+**The general form, which is item 4a arriving in a constant rather than an
+instrument:** where one number is derived from another, assert the derivation
+*exactly*. A tolerance band is the numeric version of a search that reports
+"found nothing" — it passes for every value anybody ever writes.
+
+### YY-2 (new, process) — a decision and its implementation in one commit
+
+`1d5e6d6` carries ADR-0023 §7 (what crosses the pipe) **and**
+`packages/contract/src/hostProtocol.ts` (the number that decision produces).
+
+Not a B4 violation: B4 governs `docs/ARCHITECTURE.md`, and what changed there
+was a *correction* of a false statement, not an amendment. But it is the same
+shape, and B4's reason applies — the commit that carries a decision is what a
+reviewer reads to judge the decision, and here it arrives wearing the diff of the
+code that assumes it. The owner's instruction explicitly unblocked the number in
+the same breath as the ruling, so this is recorded as a pattern to watch rather
+than as a fix owed.
+
+### Occurrence FOUR of the backtick class, and it is the strongest version of the escape guard's argument
+
+I wrote a backtick into `hostFixture.mjs`'s emitted `MAIN` region **while
+annotating that file for WW-1** — one commit after shipping the check for the
+class, as its author, in the same session. `node --check` reported *Unexpected
+identifier 'lower'*.
+
+The rule was not merely written down. It had **just been mechanised, by me**.
+That is the sharper reading of the sentence the escape guard paid for seven
+times: *having just built the mechanism does not put the rule in reach at the
+moment a comment is composed.*
+
+Verified rather than assumed that the scan sees it — fed the broken text,
+`backtickViolations` names line 321. It ran only on the Guards job, so what
+actually stopped it reaching a commit was a hand-run syntax check, which is me
+remembering. **That gap is WW-4**, and it is fixed in the commit after this one.
+
+The new proof case is not a duplicate of occurrence 3, which the file already
+carries verbatim. What is new is the **position**: occurrence 4 landed in the
+*second* of two emitted regions, and the existing two-region case expects zero
+violations, so a scan that finds both regions and walks only the first passes it.
+
+### Item 4 — three mutation runs, and one summary line that was already lying
+
+Every proof added here was mutation-tested, each reddening only its own cases:
+the frame codec three ways (maximum checked after accumulation → 2 red; poison
+flag removed → 1; allocation sized by the declared length → 1), the containment
+classifier three ways (validity check removed → 1; positive side consulted first
+→ 4; `origin` ignored → 1), the scope column one way (→ 3).
+
+**`proof:emittedtemplates` printed `14 emitted-template cases passed` while 13
+ran.** A hardcoded total, already wrong, and adding a case made it accidentally
+right — which is the failure mode rather than the fix. Both it and
+`proof:win32handle` now count what ran and refuse to print the reassuring line
+when nothing did, since zero cases and every case passing are otherwise the same
+output. The class was checked rather than the instance: those two were the only
+proofs in the repository with a literal total, and both were mine.
+
+### Item 4a — the one instrument here is a memory reading, and it carries its resolution test in the same run
+
+The frame codec's central property — *nothing is sized by the declared length* —
+is structural and no functional assertion can see it. It is measured through
+`process.memoryUsage().arrayBuffers`, and the measurement is worthless without
+knowing the instrument can see an allocation at all, so the same case allocates a
+real 128 MiB immediately afterwards and requires the reading to move.
+
+It resolves exactly: the mutant that allocates by the declared length reported
+**134,217,736 bytes**.
+
+### Item 2 — what was verified against the easy shape, and what was not
+
+Stated in both directions because only one of them is comfortable.
+
+- **Hard shape covered:** the frame decoder is exercised one byte at a time,
+  which crosses every boundary that exists — inside the header, between header
+  and body, inside the body — and pins the frame to the last byte rather than to
+  some byte. The `audit:scope` fixture is a file created *before* the watermark,
+  because a file created inside the range is `A` however often it is edited and
+  could not show the defect at all.
+- **Hard shape NOT covered, and said in the file:** the containment probe's
+  `refused` outcome is never produced by a real access denial. That needs an ACL
+  edit, which is machine state, and it belongs to the spike and to RR-3's proof
+  on the shim job. What the unit tests do cover is the distinction the classifier
+  leans on hardest — a missing path reports `absent`, never `refused` — with a
+  present file beside it in the same directory so that "absent" is a reading and
+  not a broken probe.
+
+### Item 5 — executed against asserted
+
+**Executed:** every proof and every mutation above; the payload measurement; the
+resolution test on the backtick scan against `hostFixture.mjs`'s real text; the
+advisory register's own refusal of five malformed additions.
+
+**Asserted, and not re-run in this range:** ADR-0023 §7's budget argument quotes
+`perf:gate`'s 2.00× figure for two resident images from the record rather than
+from a run made here. The ruling is the owner's and the figure is theirs; it is
+listed here because an audit that lets a quoted number pass as a measured one is
+how the distinction gets spent.
+
+### Item 7 — a stale sentence this range is about to create
+
+`emittedTemplates.mjs`'s occurrence-4 row ends *"it runs on the Guards job … that
+gap is finding WW-4"*. WW-4 lands in the very next commit, which makes that
+clause false one commit after it was written — the compound-claim shape, caught
+before it existed rather than after. It is corrected in the commit that closes
+WW-4.
+
+### Open after this range
+
+**YY-1** and **YY-2** are recorded, not owed — the first is fixed, the second is
+a pattern.
+
+**WW-1's consolidation** is owed and gated: `hostFixture.mjs` measures a process
+type the architecture withdrew, its header and its printed output both say so,
+and **no containment assertion may be written against it** until the variant
+matrix and the four-state classifier move into `lowboxSpike.mjs`.
+
+**P1** is unmeasured, with an expiry at packaging, an elevated read, or Stage 7.
+**WW-4** is fixed in the next commit. Older: OO-1, MM-1, AA-3, CC-3, DD-2, BB-6,
+Y-3, the MuPDF cache's restore-without-reverify, and **II-2's hard trigger before
+Stage 0 exit**.
+
+**AA-1** is narrowed rather than open — see the correction appended to its entry
+below.
+
+---
+
 ## 2026-08-22 — Stage audit: `0548ad6..4d04942` — the decision range, and two guards that were blind in the direction they were pointed
 
 **Audited through `4d04942`.** 8 commits, 21 files, **2 proofs added, 0
