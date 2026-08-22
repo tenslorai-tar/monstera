@@ -410,3 +410,42 @@ a 512 MB literal and §2 of this ADR makes the shipped limit a derivation — so
 measurement belongs with the derivation, at RR-3.
 
 Left as written above, because what this ADR said at the time is the record.
+
+## Re-verification, 2026-08-22 — §1's reading, taken again on a fully lit instrument (EEE-1)
+
+§1 withdrew finding PP-6's handshake on one measurement: the LowBox token is
+**Low at creation**, read by main while the process is still suspended. BBB-1
+then established that both contained cells of `scripts/research/lowboxSpike.mjs`
+had been **dark from `56f77f7` onward** — the commit that introduced §1's own
+ordering probe. §1's evidence was taken inside that window.
+
+**The argument that the reading survived was sound and was not sufficient.**
+`integrityBeforeResume` is read by main from the parent process, not reported by
+the host, so it sits outside the blinded set — and *plausible* is the wrong
+standard for a measurement that deleted a designed guard. QQ-2's discipline
+applies to this project's own record: a conclusion about the host is only about
+the host if it was measured on a host that was not partly dark at the time.
+
+**Re-run on the repaired instrument, 2026-08-22.** All four `CreateProcessW`
+cells completed their full probe chain — every probe reported and every report
+was written, so no cell was dark — and the table printed **zero unreadable
+rows**, exiting 0:
+
+| cell | LowBox | job | `integrityBeforeResume` |
+|---|---|---|---|
+| `route` | no | yes | `0x2000` (Medium) |
+| `route-no-job` | no | no | `0x2000` (Medium) |
+| `lowbox` | **yes** | yes | **`0x1000` (Low)** |
+| `lowbox-no-job` | **yes** | no | **`0x1000` (Low)** |
+
+§1's reading reproduces, and the job axis WW-1 added strengthens it beyond a
+re-run: the value is **identical in both contained cells regardless of the
+job**, which is what a property of the token at creation looks like and is not
+what a property of anything applied afterwards would look like. The withdrawal
+of PP-6's handshake for this window stands.
+
+**ADR-0022 was never exposed to this, and the order is worth stating so nobody
+reconstructs it.** Its evidence came from `36caf21`; ADR-0022 itself is
+`9741cc3`; the blinding arrived in `56f77f7`. So the decision rests on a
+measurement taken **two commits before** the blinding, and the ADR was written
+one commit before it.

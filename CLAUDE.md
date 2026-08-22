@@ -419,7 +419,7 @@ These were given directly and bind every agent on this project.
 - **An emitted-source template carries no backtick — and that is now a check, not
   a rule.** A `String.raw` holding a program we write to disk is the one place
   prose and code share a delimiter, and a backtick pair inside closes the literal
-  and reopens it, so the parser blames whatever follows. It has happened **five
+  and reopens it, so the parser blames whatever follows. It has happened **six
   times**: the third in a file whose own header carried the rule against it, and
   the fourth **one commit after the check shipped, by the agent that wrote the
   check, in the same session**. **Written down is not a mechanism** — the same
@@ -436,6 +436,15 @@ These were given directly and bind every agent on this project.
   so it could not have reached a commit. **Expect a sixth.** The count is not
   going to stop rising, and it does not need to — the point of the move was that
   the count stops mattering.
+
+  **The sixth arrived one commit later**, two backtick pairs in a single comment
+  recording a negative result about something else entirely, both caught by
+  `node --check` before anything was staged. The prediction cost nothing to make
+  and was right within a commit, which is the argument finished rather than a
+  joke at my expense: occurrences 1–4 were stopped by luck or by someone
+  remembering, 5 and 6 by mechanisms, instantly. **Read a rising count as the
+  guard being load-bearing, and be suspicious of a stretch where it stops
+  rising.**
 
   **That reading is the argument for where the check runs, and it moved
   (WW-4).** The scan does see occurrence 4 — fed the broken text it names the

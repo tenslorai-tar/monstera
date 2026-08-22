@@ -1000,6 +1000,26 @@ function readReport(reportPath) {
 
 const runs = [];
 
+// A KNOWN HARNESS FLAKE, open, and recorded here because the obvious fix does
+// not work and the next person will otherwise try it.
+//
+// This harness opens no window, yet Chromium starts a GPU process anyway, and
+// on 2026-08-22 it crash-looped with exit_code=-2147483645 until the app hit
+// its crash limit and printed "GPU process isn't usable. Goodbye." one second
+// in — killing a run before any cell finished.
+//
+// MEASURED NEGATIVE RESULT, so nobody repeats it: disableHardwareAcceleration()
+// plus commandLine.appendSwitch of disable-gpu, applied before ready, did NOT
+// stop the GPU process spawning or crashing — five crash lines in the very run
+// that verified the fix had not worked. They were removed rather than left in
+// place, because a call that does not do what its comment claims is the
+// available-true shape with a Chromium switch on it.
+//
+// WHAT PROTECTS THE READING is not a fix, it is the instrument's behaviour under
+// the failure: no report line, no verdict printed, non-zero exit. A run that
+// dies this way says so. The reason to keep hunting it anyway is that a red
+// meaning something other than what it says is a red people learn to re-run —
+// the same class as the OSV fetch inside the advisory-register proof.
 app.whenReady().then(() => {
   // The two servers the host probes reach for, started before any cell so a
   // refusal cannot be "nothing was listening yet".
