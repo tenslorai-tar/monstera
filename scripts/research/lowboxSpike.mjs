@@ -1020,6 +1020,35 @@ const runs = [];
 // dies this way says so. The reason to keep hunting it anyway is that a red
 // meaning something other than what it says is a red people learn to re-run —
 // the same class as the OSV fetch inside the advisory-register proof.
+//
+// RECURRED 2026-08-23, AND THE ANSWER IS NOT TO HUNT IT (finding LLL-1). The
+// whole run died again before the property table printed, on the developing
+// machine, with the same crash loop.
+//
+// The blocker is the ELECTRON APP, and the app exists for exactly one cell.
+// The electron import here supplies app and utilityProcess, and the fork call
+// appears once — the baseline cell. The four cells the PROPERTIES table reads
+// all go through our own process-creation route, and a parent that only needs
+// koffi, Win32 and node:net is plain Node with no GPU process to crash.
+//
+// So the fix for RR-3's proof is a REMOVAL rather than a Chromium switch: the
+// proof asserts the four properties and their route control, none of which
+// touches the fork route, and it never starts an Electron app. ADR-0022 already
+// made the forked host historical — it decided the hosts are processes we
+// create — so the baseline is a research comparison this file may keep and a
+// proof has no reason to carry.
+//
+// That does not discharge finding TT-1: the cells still run the Electron BINARY
+// in Node mode, so the shim job's provisioning step still has a consumer, which
+// is the thing RR-3 says that step exists for.
+//
+// BACKTICK OCCURRENCE 7 happened writing this paragraph — four pairs, quoting
+// API names in prose, in a comment recording a finding about a GPU flake. Third
+// in a row while documenting something else entirely. The scan named all four
+// lines before anything was staged.
+//
+// Prove the limit has to exist before designing around it — the standing rule
+// on limits, applied to a flake instead of a bound.
 app.whenReady().then(() => {
   // The two servers the host probes reach for, started before any cell so a
   // refusal cannot be "nothing was listening yet".

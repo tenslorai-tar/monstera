@@ -419,7 +419,7 @@ These were given directly and bind every agent on this project.
 - **An emitted-source template carries no backtick — and that is now a check, not
   a rule.** A `String.raw` holding a program we write to disk is the one place
   prose and code share a delimiter, and a backtick pair inside closes the literal
-  and reopens it, so the parser blames whatever follows. It has happened **six
+  and reopens it, so the parser blames whatever follows. It has happened **seven
   times**: the third in a file whose own header carried the rule against it, and
   the fourth **one commit after the check shipped, by the agent that wrote the
   check, in the same session**. **Written down is not a mechanism** — the same
@@ -445,6 +445,17 @@ These were given directly and bind every agent on this project.
   remembering, 5 and 6 by mechanisms, instantly. **Read a rising count as the
   guard being load-bearing, and be suspicious of a stretch where it stops
   rising.**
+
+  **A seventh followed on 2026-08-23** — four pairs in one comment, quoting API
+  names in prose, written while recording a finding about a GPU flake. The scan
+  named all four lines from the pre-commit set before anything was staged.
+
+  **Three in a row (5, 6, 7) were composed while documenting something else**,
+  and that is the sharpest thing this list says. The occurrences do not happen
+  while writing emitted source; they happen while writing PROSE about an
+  unrelated finding, in a file that happens to contain an emitted region. The
+  attention is on the finding, and the backtick is a habit of writing about
+  code — which no amount of the rule being on the page interrupts.
 
   **That reading is the argument for where the check runs, and it moved
   (WW-4).** The scan does see occurrence 4 — fed the broken text it names the

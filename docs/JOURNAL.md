@@ -801,6 +801,60 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — LLL-1: the containment spike's blocker is a cell no property reads
+
+RR-3 is the research→proof transition: promote the spike's four-property
+differential into a proof that runs on the shim job. The first step is to run
+the instrument, and on this machine **it produces no property table at all**.
+
+Chromium's GPU process crash-loops until the app gives up — *"GPU process isn't
+usable. Goodbye."* — about one second in, and the run dies with `no report
+line` and exit 1. The instrument behaves correctly under the failure; it simply
+cannot measure here.
+
+That flake was already recorded as an open negative result, with
+`disableHardwareAcceleration()` and `--disable-gpu` **measured not to work**, and
+the note ended by saying the reason to keep hunting it is that a red meaning
+something other than what it says gets re-run. Hunting it is the wrong move.
+
+### The blocker is the Electron app, and the app exists for one cell
+
+Executed rather than reasoned: `require('electron')` in the spike supplies `app`
+and `utilityProcess`, and `utilityProcess.fork` appears **once** — the `baseline`
+cell. Every cell the PROPERTIES table reads goes through our own
+process-creation route. A parent needing only koffi, Win32 and `net` is plain
+Node, and plain Node starts no GPU process.
+
+So RR-3's proof asserts the four properties and their route control with **no
+Electron app anywhere in it**. The fix is a removal, not a Chromium switch —
+*prove the limit has to exist before designing around it*, applied to a flake
+instead of a bound.
+
+This is not a coverage cut. ADR-0022 decided the hosts are processes we create,
+which made the forked baseline a historical comparison; it stays in the research
+file as a second opinion from a different route, and it was never the
+attribution for any property — the spike's own comments say so, and WW-1's
+matrix is what made that true by giving every property a same-route pair.
+
+**TT-1 is still discharged.** The cells run the Electron *binary* under
+`ELECTRON_RUN_AS_NODE`, so the shim job's Electron provisioning step keeps the
+consumer RR-3 says it must have. What goes away is the Electron *app*, not the
+Electron dependency.
+
+### What this says about the spike as an instrument
+
+A known flake in a cell that **no property reads** takes the whole measurement
+down, because all five cells run inside one app that emits one report line. That
+is a coupling worth naming on its own: the instrument's blast radius is the app,
+not the cell, so the least important cell can silence the most important table.
+
+Not fixed in the research file, deliberately — the proof is where the reduction
+belongs, and changing the spike now would edit the instrument that produced
+every reading ADR-0023 rests on. Recorded as the reason the proof is shaped
+differently from the spike it comes from.
+
+---
+
 ## 2026-08-23 — KKK-1: the register's scan cannot tell naming a symbol from using it, and the third time is the one to record
 
 The pre-push gate did its job on its second real push and blocked the engine

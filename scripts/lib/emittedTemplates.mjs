@@ -20,11 +20,20 @@
  * | 4 | the same, one commit after this scan shipped, written by the author of this scan | `node --check`; **this scan reports it at the right line** — verified by mutation, not assumed |
  * | 5 | a comment quoting a property name, written while documenting a *different* finding in the same file | `node --check` AND this scan, live, naming the line — the first occurrence caught by the mechanism rather than by someone remembering |
  * | 6 | **two** pairs in one comment — an API name and a script name quoted in prose — written while recording a *negative result* about something else entirely, one commit after the note below predicted it | `node --check`, twice in a row |
+ * | 7 | **four** pairs in one comment, quoting API names in prose, written while recording a finding about a GPU flake — the third in a row composed while documenting something else | this scan, in the pre-commit set, naming all four lines before anything was staged |
  *
  * Each time the remedy was the same and each time it was a remedy applied to the
  * instance: move the prose out, or drop the backticks. **Written down is not a
  * mechanism** — that sentence has now been paid for by the escape guard seven
- * times and by this six, so the rule gets a check.
+ * times and by this seven, so the rule gets a check.
+ *
+ * **Three in a row were composed while documenting something else** (5, 6, 7),
+ * and that is the sharpest thing the table says. The occurrences do not happen
+ * while writing emitted source — they happen while writing PROSE about an
+ * unrelated finding, in a file that happens to contain an emitted region. The
+ * author's attention is on the finding, and the backtick is a habit of writing
+ * about code. No amount of knowing the rule is on the page interrupts that,
+ * which is the whole argument for the scan and for it running pre-commit.
  *
  * **Occurrence 5 is the first one this scan caught in anger**, and it is worth
  * separating from occurrence 4. Both were written by the author of the check.
