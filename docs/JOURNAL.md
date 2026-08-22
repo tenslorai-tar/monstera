@@ -644,6 +644,206 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-22 — Stage audit: `1d5e6d6..d3ea661` — the instrument that was dark for four commits, and the column that cannot see a deletion
+
+**Audited through `d3ea661`.** 7 commits, 17 files, **0 proofs added, 3
+modified**, 1 new instrument file and **5 changed** — from `npm run audit:scope`.
+
+The range is AAA-1's comment, ZZ-1's residual, WW-1's consolidation, BBB-1, and
+CCC-1. Two findings came out of *using* instruments rather than reading them,
+which is the whole argument for the scoped audit.
+
+### 1. Root cause or workaround
+
+Six fixes, all root, and two of them named the workaround they refused.
+
+**BBB-1** is the one worth reading. The contained cells of `lowboxSpike.mjs` had
+measured nothing since `56f77f7`, because `spawnAtStartup` was a *synchronous*
+`execFileSync` as the host's first action and inside an AppContainer the child is
+created but does not exit inside main's 60-second wait. Two workarounds were
+available and both were refused in writing: **moving the probe later** destroys
+the ordering evidence it exists to produce, and **exempting the contained cells**
+is special-casing the input that failed. The fix is that the probe now arms **its
+own** timer and settles once — which every other probe in that host already did.
+It was the only one borrowing somebody else's timeout and the only one that hung.
+
+**CCC-1** does not fix `a0d2ec0`'s red and says so in its own commit message. It
+buys the ability to see the next one.
+
+No override was added, no check loosened, no type widened, nothing exempted.
+
+### 2. Verified against the easy shape only?
+
+The hard shape here is the *contained* cell, and it is precisely what was broken
+and is now measured. `lowboxSpike.mjs` was run five times against a real
+AppContainer with the shim built.
+
+**One axis was checked rather than assumed, in the right direction.** CCC-1
+moves 24 Guards steps from `npm run` to a direct `node` spawn, which strips the
+npm-run environment — the *rich ambient environment versus the bare one* axis.
+Exactly two proofs in the repository touch npm variables:
+`rendererPolicy.proof.mjs`, which already runs wrapped in `ci.yml` and passes,
+and `preCommit.proof.mjs`, which deletes `npm_execpath` deliberately because
+inheriting it hid the branch a real committer takes. Both were run wrapped
+before the claim was made.
+
+**And one axis was missed, in the way this seat keeps missing it.** After
+deleting `hostFixture.mjs` I ran `check:advisories` and **assumed**
+`proof:advisories`. Guards found it. That is the same miss as ZZ-1, in the same
+file, in the same session — *ran the neighbour, not the thing whose name is on
+the CI step*.
+
+### 2a. Changes to HOW something is proven
+
+Three, and the first is a reduction.
+
+**(b) memory left the coverage.** `hostFixture.mjs` measured it against a job
+carrying a **512 MB literal** that its own comment flagged as PP-4's shape.
+ADR-0023 §2 makes the shipped limit a derivation from §9.17's absolute cap, so
+carrying the literal here would carry PP-4 and carrying the derivation would
+implement that rule twice (B3a). The row is **printed as NOT MEASURED at the
+point of use** with RR-3 named as its trigger, rather than dropped. A reduction
+nobody prints is a reduction nobody reviews.
+
+**Two advisory cases were strengthened.** `no-witness` and `empty-scope` bound on
+`!ok` alone, so each passed on the other's output and on any failure neither had
+caused. Both now bind to a diagnostic naming the located verdict, with a
+RESOLUTION case asserting the two are not interchangeable.
+
+**The 24 Guards steps gained a public failure channel** and lost the npm
+environment. Net strengthening, measured as above.
+
+### 3. Would CI have caught it — and can THIS machine see it?
+
+Both directions fired in one range, which is why the question is asked both ways.
+
+**BBB-1: no CI could ever have caught it.** `lowboxSpike.mjs` is research, runs
+on no runner, and needs a built shim and a real AppContainer. It was caught by
+running the surviving instrument after the consolidation — which is the reason
+WW-1's ruling said to consolidate and then read the result.
+
+**`a0d2ec0`: CI caught what this machine could not.** Guards went red on
+windows-latest with ubuntu-latest green. Local Windows passes 31 cases, and the
+Guards world — reproduced by hiding `node_modules/electron/electron.d.ts` —
+passes 30 with 1 not applicable, so it is **not** ZZ-1's derivable branch.
+
+**The register, the checker and the proof are byte-identical between `a0d2ec0`
+and `d3ea661`, and `d3ea661` is green on the same platform.** So the failure is
+not in the code under test. The step's only non-deterministic input is the live
+fetch: `proof:advisories` spawns the checker **20 times** and the checker POSTs
+`api.osv.dev` once per watched package, so **one run is 60 live requests per
+runner**, and it throws on any non-OK status by design. This journal already
+carries *"`check:advisories` and the OSV query"* as the first of two checks
+depending on a live third-party fetch; 60 is what that carried item costs per
+run, and it was an abstraction until now.
+
+**The specific failure text was never read** and is not guessed at in the code.
+Actions serves logs to authenticated callers only — which is CCC-1.
+
+### 4. Non-vacuous?
+
+`advisoryRegister.proof.mjs`: binding `no-witness` to the empty-scope sentence
+reddens **that case and only that case**. The spike's removed-contained-reading
+control runs on every invocation and is mutated on the contained side, because
+two absences agree and the other direction never reaches the defect.
+
+**Gap, recorded rather than papered over:** the spike's four-state classifier
+gained validation of the outcome *value* — anything that is not
+`allowed`/`refused`/`error` becomes `unreadable` — and **that path has no
+mutation test**. The control exercises a *missing* reading, not an *invalid* one.
+
+### 4a / 4b. Instruments
+
+The spike's behaviour moved substantially and it was re-run before its own header
+was rewritten. One run now prints `DIFFERS`, `same` and `UNREADABLE` in the same
+table, which is a resolution demonstration rather than a claim. Its route control
+and the backtick scan's positive control both ran and both reported.
+
+### 5. Executed or asserted
+
+**Executed:** every run above, the no-electron world, the wrapped Guards steps,
+the mutation, and the stashed pre-consolidation control that excluded WW-1 as
+BBB-1's cause.
+
+**Asserted, and labelled as such where written:** the OSV mechanism for
+`a0d2ec0`; and AAA-1's bitmap arithmetic, which is stated in the source as
+arithmetic with no encoding measured.
+
+### 6. Architecture
+
+Nothing changed. ADR-0023 took an appended dated correction for the deleted
+fixture; `docs/ARCHITECTURE.md` was untouched.
+
+### 7. Documents against code
+
+The cross-reference sweep for a deleted file was done by hand (UU-1), because a
+reference to a file that no longer exists cannot be link-checked into
+correctness: ADR-0023 appended a correction, the advisory register's three `why`
+texts were edited as live spec, and `win32Handle.proof.mjs` names the fixture as
+retired. `check:advisories` still reports 22 verified, 0 unverifiable, so no
+witness rested on the deleted file.
+
+**Item 7 fired at instrument scale, which is where it had not been applied.**
+`lowboxSpike.mjs`'s header displayed a measured property table taken at
+`36caf21` while the column it described had produced nothing since `56f77f7`. A
+dated reading is exactly the kind of claim that goes stale silently, and the
+block even said *"re-run it rather than trusting this block"* — which is the
+instruction that found it.
+
+### DDD-1 (new, open) — the source columns have two states and the proofs columns have three
+
+**`hostFixture.mjs`, a 636-line research instrument, was deleted in this range
+and appears in no column of the report that scopes this audit.**
+`scripts/lib/auditWatermark.mjs` computes `proofsRemoved` from
+`state === 'D' && isProof(path)` and there is **no equivalent for source files**:
+the source side has *added* (`newScripts`) and *changed* (`changedScripts`) and
+nothing for deleted.
+
+This is the **fifth** axis of this classifier to fail, after pattern (W-1), root
+(X-1), state (Z-1) and added-vs-changed (WW-2). The general form is worth more
+than the instance: **when one half of a classifier carries three states and the
+other half carries two, the asymmetry is the finding.** Nobody audits for a
+missing column — they read the columns that exist, and an instrument leaving is
+coverage leaving exactly as a proof leaving is.
+
+It is not fixed here, because an audit-recording commit is docs-only and alone.
+It is the first commit after this entry.
+
+### Backtick occurrence 5, and the first one a mechanism stopped
+
+Mine, in `lowboxSpike.mjs`, writing a comment about BBB-1's classifier inside the
+emitted `String.raw` — the same shape as 3 and 4. The difference is what stopped
+it. Occurrence 4 was stopped by a hand-run `node --check`, which is a person
+remembering; this one was **reported by `check:emittedtemplates` at the right
+line** during an ordinary check run, and WW-4 had already put that scan in
+pre-commit against the index, so it could not have reached a commit either way.
+The scan header now says to expect a sixth: the point of moving the check was
+that the count stops mattering.
+
+### Operational
+
+The unauthenticated GitHub API allows **60 requests per hour** and `npm run
+board` polls up to **40 per invocation**. Two board runs plus diagnosis exhausted
+it and blinded both the board reader and the annotation reader for an hour. The
+board reader reported *"a timeout, not a verdict"* on 403 rather than inventing a
+green, which is that instrument working as designed.
+
+### Carried forward
+
+- **DDD-1**, above — first commit after this entry.
+- **`a0d2ec0`'s red is unattributed.** Not in the code under test; the live OSV
+  fetch is the only candidate input and remains a hypothesis.
+- **`proof:advisories` makes 60 live third-party requests per run.** A guard
+  whose red can mean something other than what it says trains people to re-run.
+  The proof's subject is register logic, not what OSV says today, so recorded
+  payloads for the mutation cases with **one** live case retained would remove
+  the flakiness without losing the fetch-path coverage. Not to be done as
+  "retry until green".
+- The spike's **invalid-outcome path has no mutation test** (item 4 above).
+- **(b) memory** is unmeasured until RR-3.
+
+---
+
 ## 2026-08-22 — Stage audit: `4d04942..1d5e6d6` — the first host code, and a derived number that was never measured
 
 **Audited through `1d5e6d6`.** 7 commits, 23 files, **3 proofs added, 3
