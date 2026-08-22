@@ -36,7 +36,7 @@ const BUILT = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'budget.js');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 3 });
+const roster = createRoster(failures, { cases: 5 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -85,6 +85,37 @@ try {
     `the cap and the derivation are the same number, so this comparison would accept a ceiling ` +
       `that forgot to subtract the baseline. That is the shape where a guard agrees with ` +
       `everything and reads as though it checked something.`,
+  );
+
+  // ---------------------------------------------------------------------------
+  // The engine host's job memory limit, from the same line and by the OPPOSITE
+  // arithmetic (ADR-0023 §2).
+  //
+  // `MAIN_DOCUMENT_BYTES_CEILING` subtracts the baseline because it bounds
+  // document bytes. A job's `ProcessMemoryLimit` bounds the whole process
+  // commit — runtime, statically linked engine and document — so it is the
+  // absolute cap with nothing taken off. Two constants from two terms of one
+  // line, and the difference between them is the thing worth checking.
+  // ---------------------------------------------------------------------------
+  const host = assertableBudget(memoryBudgets(), 'mupdf-host');
+  /** @type {number} */
+  const declaredHostLimit = module.ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES;
+
+  check(
+    "the engine host's job limit is §9.17's absolute cap, with NOTHING subtracted",
+    declaredHostLimit === host.absoluteBytes,
+    `declared ${String(declaredHostLimit)} bytes, §9.17 caps mupdf-host at ` +
+      `${String(host.absoluteBytes)}. A job's limit bounds the process commit, so subtracting ` +
+      `the ${String(host.baselineBytes)}-byte baseline would enforce a limit tighter than the ` +
+      `one the invariant declares and kill the host inside its own budget.`,
+  );
+
+  check(
+    'CONTROL: and it is NOT main-style arithmetic, which would silently be tighter',
+    declaredHostLimit !== host.absoluteBytes - host.baselineBytes,
+    `the cap and the cap-minus-baseline are the same number for mupdf-host, so this comparison ` +
+      `would accept either rule. The two constants exist to differ, and a check that cannot ` +
+      `tell them apart agrees with both.`,
   );
 
   process.stdout.write(

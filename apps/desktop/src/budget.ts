@@ -28,3 +28,30 @@
  * feel safe is the thing ADR-0007 exists to refuse.
  */
 export const MAIN_DOCUMENT_BYTES_CEILING = 1_610_612_736 - 100_663_296;
+
+/**
+ * The engine host job's `ProcessMemoryLimit`, from the same line and by a
+ * different rule (ADR-0023 §2).
+ *
+ * §9.17 declares `mupdf-host = 6x, 3 GB, base 128 MB`, and this is the **whole
+ * absolute cap with nothing subtracted** — the opposite arithmetic to main's
+ * ceiling above, from the same two terms, which is why the difference is stated
+ * rather than left for a reader to infer from two similar-looking constants.
+ *
+ * `MAIN_DOCUMENT_BYTES_CEILING` bounds *document bytes*, so the baseline — the
+ * runtime and the process itself — is subtracted to leave what documents may
+ * occupy. A job's `ProcessMemoryLimit` bounds the **process commit**: the
+ * runtime, the statically linked engine and the document, all of it. Subtracting
+ * the baseline there would enforce a limit 128 MB tighter than the one §9.17
+ * declares, and the host would die inside its own budget.
+ *
+ * **Undefaulted at the call site, which is the part ADR-0023 §2 insists on.**
+ * The factory takes the limit as a required argument and this is what the shell
+ * passes; a default in the factory is how a number nobody chose becomes the
+ * number in force, and a `0` there means *no limit* to Win32 rather than an
+ * obviously missing value.
+ *
+ * §9.17 is the writer of record and `proof:composition` recomputes both
+ * constants from it, in the same direction and for the same reason.
+ */
+export const ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES = 3_221_225_472;
