@@ -1,0 +1,213 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import {
+  type ContainmentProbeRequest,
+  type ContainmentReport,
+  type ProbeOutcome,
+  classifyContainment,
+  outcomeForErrorCode,
+  probeContainment,
+  probePath,
+} from './containment.js';
+
+/**
+ * ADR-0023 §5's table, and the fixtures are built so the classifier's likely
+ * bugs cannot produce them.
+ *
+ * The recurring shape here: **every negative-side case carries a positive probe
+ * that READ.** A classifier that consults the positive side first, or that
+ * skips the request-validity check, answers `contained` for those inputs — and
+ * a fixture whose positive side had also failed would let that bug through
+ * while looking like coverage.
+ */
+
+const REFUSED: ProbeOutcome = { kind: 'refused', code: 'EACCES' };
+const READ: ProbeOutcome = { kind: 'read', bytes: 64 };
+
+/** A request whose negative side is valid: main read it just before. */
+function request(overrides: Partial<ContainmentProbeRequest> = {}): ContainmentProbeRequest {
+  return {
+    positive: { path: 'C:\\install\\koffi.node', origin: 'install-root' },
+    negative: { path: 'C:\\elsewhere\\secret.txt', origin: 'app-created', readableBytes: 4096 },
+    ...overrides,
+  };
+}
+
+const report = (positive: ProbeOutcome, negative: ProbeOutcome): ContainmentReport => ({
+  positive,
+  negative,
+});
+
+describe('classifyContainment', () => {
+  it('reports contained when the host reached what it must and was refused what it must not', () => {
+    expect(classifyContainment(request(), report(READ, REFUSED))).toEqual({ kind: 'contained' });
+  });
+
+  it('reports containment-absent when the negative path was reachable, even though the positive one was too', () => {
+    const verdict = classifyContainment(request(), report(READ, { kind: 'read', bytes: 4096 }));
+    expect(verdict.kind).toBe('containment-absent');
+  });
+
+  /**
+   * The fixture is otherwise a clean `contained`: negative refused, positive
+   * read. Only the missing evidence separates them, which is the point — a
+   * classifier that trusted the refusal answers `contained` here.
+   */
+  it('refuses to conclude when main never read the negative path', () => {
+    const verdict = classifyContainment(
+      request({ negative: { path: 'C:\\gone.txt', origin: 'app-created', readableBytes: 0 } }),
+      report(READ, REFUSED),
+    );
+    expect(verdict.kind).toBe('unreadable');
+    expect(verdict.kind === 'unreadable' && verdict.detail).toMatch(/did not read/u);
+  });
+
+  it('refuses to conclude when the negative path was absent to the host but readable to main', () => {
+    const verdict = classifyContainment(
+      request(),
+      report(READ, { kind: 'absent', code: 'ENOENT' }),
+    );
+    expect(verdict.kind).toBe('unreadable');
+  });
+
+  it('refuses to conclude when the negative probe errored in some third way', () => {
+    const verdict = classifyContainment(request(), report(READ, { kind: 'error', code: 'EMFILE' }));
+    expect(verdict.kind).toBe('unreadable');
+  });
+
+  /**
+   * The two rows that differ only by `origin`, and the difference is the whole
+   * of UU-2: one is a premise failing on a condition the app cannot fix, the
+   * other is a grant the app owns not taking. Same observation, opposite
+   * responses, so a classifier that ignored `origin` passes either case alone.
+   */
+  it('names premise P1 when the refused positive path is in the install root', () => {
+    const verdict = classifyContainment(
+      request({ positive: { path: 'C:\\Program Files\\WindowsApps\\x\\koffi.node', origin: 'install-root' } }),
+      report({ kind: 'refused', code: 'EACCES' }, REFUSED),
+    );
+    expect(verdict.kind).toBe('premise-p1-false');
+    expect(verdict.kind === 'premise-p1-false' && verdict.detail).toMatch(/cannot repair it/u);
+  });
+
+  it('names the grant when the refused positive path is one the app created', () => {
+    const verdict = classifyContainment(
+      request({ positive: { path: 'C:\\Users\\me\\AppData\\handed\\in.pdf', origin: 'app-created' } }),
+      report({ kind: 'refused', code: 'EACCES' }, REFUSED),
+    );
+    expect(verdict.kind).toBe('grant-did-not-take');
+  });
+
+  it('refuses to conclude when the positive path was absent', () => {
+    const verdict = classifyContainment(
+      request(),
+      report({ kind: 'absent', code: 'ENOENT' }, REFUSED),
+    );
+    expect(verdict.kind).toBe('unreadable');
+  });
+
+  /**
+   * No input produces `contained` except the one above, and that is worth an
+   * assertion of its own: the reassuring verdict is the one a broken classifier
+   * drifts towards, so it is checked as an exhaustive property rather than only
+   * as a happy path.
+   */
+  it('produces contained for exactly one combination out of every pair of outcomes', () => {
+    const outcomes: ProbeOutcome[] = [
+      READ,
+      REFUSED,
+      { kind: 'absent', code: 'ENOENT' },
+      { kind: 'error', code: 'EMFILE' },
+    ];
+    const contained = outcomes.flatMap((positive) =>
+      outcomes
+        .filter(
+          (negative) => classifyContainment(request(), report(positive, negative)).kind === 'contained',
+        )
+        .map((negative) => `${positive.kind}/${negative.kind}`),
+    );
+    expect(contained).toEqual(['read/refused']);
+  });
+});
+
+describe('outcomeForErrorCode', () => {
+  it.each([
+    ['ENOENT', 'absent'],
+    ['ENOTDIR', 'absent'],
+    ['EACCES', 'refused'],
+    ['EPERM', 'refused'],
+  ])('maps %s to %s', (code, kind) => {
+    expect(outcomeForErrorCode(code).kind).toBe(kind);
+  });
+
+  /**
+   * An unrecognised code must NOT fold into `refused`. That fold would be a
+   * guess in the reassuring direction — `refused` is the answer a containment
+   * probe hopes for, so an error class nobody anticipated would arrive as
+   * evidence of containment.
+   */
+  it('leaves an unrecognised code as error rather than folding it into refused', () => {
+    expect(outcomeForErrorCode('EMFILE').kind).toBe('error');
+    expect(outcomeForErrorCode('UNKNOWN').kind).toBe('error');
+  });
+});
+
+/**
+ * The probe against a real filesystem.
+ *
+ * `refused` is NOT exercised here, and saying so is better than a case that
+ * pretends: producing a genuine access denial needs an ACL edit, which is
+ * machine state and belongs to the spike and to RR-3's proof on the shim job
+ * (ADR-0023 §6). What is covered here is the distinction the classifier depends
+ * on most — that a missing path reports `absent` and never `refused` — with a
+ * present file beside it so "absent" is a reading and not a broken probe.
+ */
+describe('probePath against a real filesystem', () => {
+  let directory: string;
+  let present: string;
+  let empty: string;
+
+  beforeAll(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'monstera-containment-'));
+    present = join(directory, 'present.bin');
+    empty = join(directory, 'empty.bin');
+    await writeFile(present, new Uint8Array([1, 2, 3, 4]));
+    await writeFile(empty, new Uint8Array(0));
+  });
+
+  afterAll(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it('reads a file that is there', async () => {
+    expect(await probePath({ path: present, origin: 'app-created' })).toEqual({
+      kind: 'read',
+      bytes: 4,
+    });
+  });
+
+  it('reports a zero-length file as read, not as a failure', async () => {
+    expect(await probePath({ path: empty, origin: 'app-created' })).toEqual({
+      kind: 'read',
+      bytes: 0,
+    });
+  });
+
+  it('reports a missing path as absent, in the same directory a present one reads from', async () => {
+    const outcome = await probePath({ path: join(directory, 'nope.bin'), origin: 'app-created' });
+    expect(outcome.kind).toBe('absent');
+  });
+
+  it('runs both probes and reports both, without deciding anything', async () => {
+    const observed = await probeContainment({
+      positive: { path: present, origin: 'app-created' },
+      negative: { path: join(directory, 'nope.bin'), origin: 'app-created', readableBytes: 1 },
+    });
+    expect(observed.positive.kind).toBe('read');
+    expect(observed.negative.kind).toBe('absent');
+  });
+});

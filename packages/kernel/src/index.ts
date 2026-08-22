@@ -67,3 +67,15 @@ export {
   type WriteTargetVerdict,
 } from './documentService.js';
 export { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
+export {
+  type ContainmentProbeRequest,
+  type ContainmentReport,
+  type ContainmentVerdict,
+  type NegativeTarget,
+  type ProbeOutcome,
+  type ProbeTarget,
+  classifyContainment,
+  outcomeForErrorCode,
+  probeContainment,
+  probePath,
+} from './host/containment.js';
