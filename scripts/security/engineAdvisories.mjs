@@ -183,6 +183,26 @@ async function fetchAdvisories() {
 }
 
 /**
+ * ## What belongs in the `reachability` register, and what does not
+ *
+ * **Use this register when the expiry is a CODE MOVEMENT. Use a
+ * `docs/FEATURES.md` row when the expiry is an EVENT.**
+ *
+ * The whole mechanism here is *"the day shipped code names X, this verdict
+ * expires and the build goes red"*. That is a symbol scan, so it can only see
+ * something a scan can see. A claim waiting on packaging, on a release, on an
+ * elevated read, or on a stage beginning has nothing for it to look at — and
+ * parking one here produces the worst object this file can hold: a verdict that
+ * will never fire, sitting green, reading as coverage.
+ *
+ * Measured against this file's own history. `engine-host-containment` watched
+ * `utilityProcess`; ADR-0022 then moved the hosts to `CreateProcessW`, so the
+ * symbol could no longer appear and the trigger went dead without changing.
+ * It was re-pointed on 2026-08-22. Premise P1 — whether the Store install root
+ * grants application packages read and execute — was considered for this
+ * register at the same time and **refused**, because its three expiry
+ * conditions are all events; it lives on the packaging row instead.
+ *
  * @typedef {{
  *   version: string,
  *   bundledVersions?: Record<string, string>,

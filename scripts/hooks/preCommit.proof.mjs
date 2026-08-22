@@ -188,6 +188,74 @@ check('clean staged change passes the gate', () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// WW-4: the emitted-source backtick scan, moved from the Guards job into the
+// gate. Written numerically, so this file cannot contain the thing it tests for.
+// ---------------------------------------------------------------------------
+const TICK = String.fromCharCode(96);
+
+/** @param {string} comment The emitted body's one comment line. */
+const emittedModule = (comment) =>
+  [`const BODY = String.raw${TICK}`, `  ${comment}`, `  return 1;`, `${TICK};`, ''].join('\n');
+
+check('a backtick inside an emitted-source template blocks the commit', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'emit.mjs', emittedModule(`// the ${TICK}lower${TICK} flag, which closes this`));
+    const { ok, output } = runHook(root);
+    if (ok) return `expected the gate to block occurrence four's shape, it passed.`;
+    return output.includes('emitted-source')
+      ? null
+      : `blocked, but not by this check — nothing named the class:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * THE LOAD-BEARING CASE, and the fixture is built so a disk-reading guard
+ * cannot produce it: the violation is STAGED and then repaired in the working
+ * tree.
+ *
+ * A guard reading the working copy sees a clean file and passes a commit whose
+ * content is broken — `git add -p`, or any edit after staging. The two guards
+ * are indistinguishable on every other input, which is why the ordinary case
+ * above separates nothing here.
+ */
+check('CONTROL: the scan reads the INDEX, so repairing the working tree does not unblock it', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'emit.mjs', emittedModule(`// the ${TICK}lower${TICK} flag, which closes this`));
+    writeFileSync(join(root, 'emit.mjs'), emittedModule('// repaired on disk, not in the index'));
+    const { ok, output } = runHook(root);
+    return ok
+      ? 'the gate passed a commit whose STAGED content carries the violation, because it read ' +
+          'the working copy. A pre-commit guard that checks something other than what is being ' +
+          'committed is checking the wrong bytes.'
+      : output.includes('emitted-source')
+        ? null
+        : `blocked, but not by this check:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The other direction. Without it, "bans backticks in emitted templates" and
+ * "bans backticks" pass the two cases above identically — and the second would
+ * reject most of this repository.
+ */
+check('CONTROL: a backtick in ordinary code, outside any emitted region, still commits', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'plain.mjs', `export const greet = (who) => ${TICK}hello \${who}${TICK};\n`);
+    const { ok, output } = runHook(root);
+    return ok ? null : `expected an ordinary template literal to pass, it blocked:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 check('staged secret blocks the commit and is printed redacted', () => {
   const root = makeRepo();
   try {

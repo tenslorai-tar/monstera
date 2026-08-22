@@ -1,9 +1,10 @@
 // @ts-check
 /**
- * The pre-commit gate. Two checks, both blocking:
+ * The pre-commit gate. Three checks, all blocking:
  *
  *   1. Staged content policy (guardFiles.mjs).
- *   2. Secret scan of the staged diff (gitleaks).
+ *   2. Emitted-source templates carry no backtick (emittedTemplates.mjs, WW-4).
+ *   3. Secret scan of the staged diff (gitleaks).
  *
  * Both fail *closed*. If gitleaks cannot be found, the commit is rejected with
  * instructions rather than allowed through with a warning: a scanner that
@@ -14,6 +15,7 @@
  */
 
 import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
+import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import {
@@ -45,6 +47,33 @@ async function main() {
   const failures = guardFiles('staged');
   if (failures.length > 0) {
     process.stderr.write(formatFailures(failures, 'staged'));
+    return 1;
+  }
+
+  // WW-4. This scan lived only on the Guards job, and that is the wrong place
+  // for it by the escape guard's own argument: a backtick in an emitted template
+  // is composed at authoring time, and a check that runs at review time catches
+  // it after the commit is public — which B10 makes permanent.
+  //
+  // Not a lament about occurrence four, which was mine, one commit after I
+  // shipped the check, as its author. That is the ARGUMENT: what stopped it was
+  // a hand-run `node --check`, which is me remembering, and remembering is the
+  // thing a mechanism replaces. The escape guard is the precedent and it is
+  // exact — the rule was written down for seven occurrences before a hook made
+  // the path unavailable rather than forbidden.
+  //
+  // Scanned against the INDEX. Reading the working tree would pass a commit
+  // whose staged content is broken.
+  const templates = scanEmittedTemplates({ source: 'staged' });
+  if (templates !== 0) {
+    process.stderr.write(
+      `\nCommit blocked — an emitted-source template carries a backtick (reported above).\n\n` +
+        `A backtick pair inside a String.raw that holds a program we write to disk CLOSES the\n` +
+        `literal and reopens it, so the parser blames whatever follows and names a line that is\n` +
+        `fine. Four occurrences, the third in a file whose own header carried the rule and the\n` +
+        `fourth one commit after this scan shipped.\n\n` +
+        `Concatenate with + instead, or move the prose out of the emitted body.\n\n`,
+    );
     return 1;
   }
 

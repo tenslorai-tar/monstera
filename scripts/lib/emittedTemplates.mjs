@@ -30,8 +30,13 @@
  * anyway while annotating a *different* finding. **What is in reach at the
  * moment a comment is composed is not what is written in the file.** The scan
  * caught it in the sense that matters — fed the broken text it names line 321 —
- * but it runs on the Guards job, so what actually stopped it reaching a commit
- * was a syntax check run by hand. That gap is finding WW-4.
+ * but at the time it ran only on the Guards job, so what actually stopped it
+ * reaching a commit was a syntax check run by hand: me remembering, which is the
+ * thing a mechanism replaces. **That was finding WW-4, and it is closed**: this
+ * scan is now in the pre-commit set, against the index. The escape guard's
+ * argument transfers whole — the mechanism belongs at the point of composition,
+ * not at review time, and a CI-only guard catches the defect after the commit is
+ * public, which B10 makes permanent.
  *
  * ## Why the rule bans backticks in the emitted CODE too, not only in comments
  *
@@ -74,7 +79,7 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { filesInCommit, repoRoot } from './gitScope.mjs';
+import { filesInCommit, readStagedBlob, repoRoot } from './gitScope.mjs';
 
 /** Written numerically, so this file cannot contain the thing it bans. */
 const TICK = String.fromCharCode(96);
@@ -265,11 +270,40 @@ export function scannedFiles() {
 }
 
 /**
- * Runs the scan over the repository, control first.
+ * One file's text, from the scope being scanned.
  *
+ * **`staged` reads the INDEX, never the disk**, and the difference decides
+ * whether a pre-commit gate is checking the thing being committed. A guard that
+ * reads the working tree passes a commit whose staged content is broken — stage
+ * the violation, fix the file, commit — and it fails one whose staged content is
+ * fine. `guardFiles` already draws this line the same way and for the same
+ * reason; there is one resolver for "the bytes as staged" and this uses it.
+ *
+ * @param {string} relative @param {'tree' | 'staged'} source @param {string} root
+ * @returns {string | null} null when the path is not in the scope at all
+ */
+function textFor(relative, source, root) {
+  if (source === 'staged') {
+    const blob = readStagedBlob(relative);
+    return blob === null ? null : blob.toString('utf8');
+  }
+  try {
+    return readFileSync(`${root}/${relative}`, 'utf8');
+  } catch {
+    // Staged-but-deleted, or a path the index knows and the tree does not.
+    return null;
+  }
+}
+
+/**
+ * Runs the scan, control first.
+ *
+ * @param {{ source?: 'tree' | 'staged' }} [options] `tree` — the working copy,
+ *   which is what someone running this by hand is looking at, and what CI has.
+ *   `staged` — the index, for the pre-commit gate.
  * @returns {number} the process exit code
  */
-export function scan() {
+export function scan({ source = 'tree' } = {}) {
   const control = backtickViolations(CONTROL_FIXTURE);
   const found = control.violations.length === 1 && control.violations[0]?.line === CONTROL_LINE;
   if (!found) {
@@ -288,7 +322,8 @@ export function scan() {
   let regionCount = 0;
 
   for (const relative of scannedFiles()) {
-    const text = readFileSync(`${root}/${relative}`, 'utf8');
+    const text = textFor(relative, source, root);
+    if (text === null) continue;
     // A file with no backtick at all cannot hold a template. Anything narrower
     // here would be a SECOND opinion about what opens one, held one level above
     // `opensTemplate` — and that is exactly how VV-1 survived its own first fix:

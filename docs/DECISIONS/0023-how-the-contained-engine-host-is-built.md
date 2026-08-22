@@ -287,6 +287,19 @@ cannot execute on any real installation. It would fail on every machine, not
 some — which is why the branch had to be chosen now rather than discovered at
 packaging.
 
+## Note, 2026-08-22 — where P1's expiry is carried
+
+§5 states P1's three expiry conditions and does not say what watches them.
+It is carried on **`docs/FEATURES.md`'s packaging-skeleton row**, which already
+owns *"an MSIX application cannot write to its install directory"* — the
+constraint P1 is the other half of.
+
+Deliberately **not** in `docs/security/engine-advisories.json`. That register's
+mechanism is a symbol scan — *"the day shipped code names X"* — and P1's three
+conditions are all **events**. A claim whose expiry no scan can see becomes a
+verdict that never fires, sitting green and reading as coverage, which is the
+state `engine-host-containment` was in until it was re-pointed on the same day.
+
 ## Correction, 2026-08-22 — `defineWorkerContract` does not exist (finding XX-1)
 
 §4 above instructs that *"`defineWorkerContract` is extended to carry a

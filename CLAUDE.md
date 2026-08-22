@@ -425,10 +425,16 @@ These were given directly and bind every agent on this project.
   check, in the same session**. **Written down is not a mechanism** — the same
   sentence the escape guard paid for seven times, and occurrence 4 says the
   stronger version: *having just mechanised a rule does not put it in reach at
-  the moment a comment is composed either.* The scan does see it — fed the broken
-  text it names the exact line, verified by mutation — but it runs on the Guards
-  job, so what stopped occurrence 4 reaching a commit was a hand-run
-  `node --check` (finding WW-4).
+  the moment a comment is composed either.*
+
+  **That reading is the argument for where the check runs, and it moved
+  (WW-4).** The scan does see occurrence 4 — fed the broken text it names the
+  exact line — but it ran only on the Guards job, so what actually stopped that
+  commit was a hand-run `node --check`: me remembering, which is the thing a
+  mechanism replaces. And a CI-only guard catches the defect *after* the commit
+  is public, which B10 makes permanent. It is now **in the pre-commit set**,
+  scanning the **index** rather than the working tree — a guard reading the disk
+  passes a commit whose staged content is broken.
   `check:emittedtemplates` scans the region and `proof:emittedtemplates`
   proves it can see; the scan carries its own positive control and refuses to
   report when blinded, because it is run by hand on the day someone needs an
@@ -939,6 +945,21 @@ check is the part that is still true.
 A wholly false sentence is caught by the next person who reads it. A half-true
 one is not caught by anybody, which is why it is the shape worth searching for
 by hand.
+
+**Where a claim's EXPIRY lives is decided by what expires it.** Both mechanisms
+exist and putting a claim in the wrong one is how it stops being watched:
+
+| the claim expires when | it belongs in |
+|---|---|
+| shipped code names a symbol | `docs/security/engine-advisories.json` — the register's whole mechanism is *"the day shipped code names X"* |
+| an event happens — packaging, a release, an elevated read, a stage beginning | a `docs/FEATURES.md` row, with the trigger written into the body |
+
+A symbol scan cannot see an event, so an event-expiring claim parked in the
+register becomes a verdict that will never fire — green, and reading as
+coverage. That is not hypothetical: `engine-host-containment` watched
+`utilityProcess` until ADR-0022 made it a symbol shipped code can never name,
+and it sat green for a range. Premise P1 was considered for the register at the
+same time and refused for this reason; it lives on the packaging row.
 
 ## Commands
 

@@ -114,7 +114,7 @@
       "guards": [
         "INVARIANT-25"
       ],
-      "why": "Invariant 25 requires every document-parsing process to run at the lowest workable integrity level, under a job object bounding memory and process creation, with NO NETWORK, and with no filesystem reach beyond what it was handed. The hosts do not exist yet — electron is not a dependency and apps/desktop is a bare index.ts — so this is policy before mechanism, declared here so it cannot decay into a note. The day shipped code names utilityProcess or MessageChannelMain, this verdict expires and the build fails naming the invariant. WHAT THIS TRIGGER DOES NOT DO: it catches 'a utility host was written', not 'and it was contained'. It is a prompt to implement, and the thing it prompts is the runtime assertion recorded as a docs/FEATURES.md row — integrity level, job limits and network denial asserted against a RUNNING process, not against the options passed to it. This mechanism is a git grep over path globs (scripts/lib/verdict.mjs), not the C walker that derives the OCR doors, so it reads TypeScript exactly as it reads C — verified against packages/*/src/**.",
+      "why": "Invariant 25 requires every document-parsing process to run at the lowest workable integrity level, under a job object bounding memory and process creation, with NO NETWORK, and with no filesystem reach beyond what it was handed. The hosts are not built yet, so this is policy before mechanism, declared here so it cannot decay into a note. The day shipped code names one of the symbols below, this verdict expires and the build fails naming the invariant. WHAT THIS TRIGGER DOES NOT DO: it catches 'a host was created', not 'and it was contained'. It is a prompt to implement, and the thing it prompts is the runtime assertion recorded as a docs/FEATURES.md row — integrity level, job limits and network denial asserted against a RUNNING process, not against the options passed to it. This mechanism is a git grep over path globs (scripts/lib/verdict.mjs), not the C walker that derives the OCR doors, so it reads TypeScript exactly as it reads C — verified against packages/*/src/**. RE-POINTED 2026-08-22 (ruling on WW-2's sibling question). Two clauses of the paragraph above were dead and are corrected in place rather than left standing: electron IS a dependency and apps/desktop/src is no longer a bare index.ts, both false since 2026-08-20. And the trigger itself had gone dead in the way that matters — ADR-0022 moved the hosts to CreateProcessW, so shipped code will NEVER name utilityProcess, and a trigger watching a symbol that cannot appear sits green and reads as coverage. That is the available:true shape at the register level, which is worse than no trigger at all.",
       "shippedPaths": [
         "native/**",
         "packages/*/src/**",
@@ -123,9 +123,61 @@
       "symbols": [
         "utilityProcess",
         "UtilityProcess",
-        "MessageChannelMain"
+        "MessageChannelMain",
+        "CreateProcessW",
+        "CreateAppContainerProfile",
+        "AssignProcessToJobObject",
+        "STARTUPINFOEXW"
       ],
-      "symbolsWhy": "NO witness entry, deliberately: these are DERIVED from electron.d.ts by the TypeScript compiler (scripts/security/electronSurface.mjs), and a derivation is stronger than a witness — the same reason the OCR doors carry none. The three consequences the old in: null predicted all landed together on 2026-08-20: electron became a dependency, the condition failed, and the list stopped being hand-picked. THE DERIVATION IMMEDIATELY PROVED THE LIST SHORT. It reports the spawn surface by TYPE — every declaration typed as the utility-process factory — and that is utilityProcess AND UtilityProcess. The class was missing from a pair picked by hand, exactly as this verdict's own why warned: a correctly spelt list can still be short. WHY NOT A WITNESS, since one is now possible: the witness shape digests a file, and a digest of a 1.1 MB .d.ts says the file changed rather than that the symbol is still declared in it — finding T-1, which cost a verdict that stayed green with a misspelt symbol. WHY A PARSE AND NOT A SEARCH: electron.d.ts is 56% comments, and on electron@43.4.1 utilityProcess occurs once in prose and MessagePortMain ten times. A text search would witness a symbol that had been REMOVED, which is worse than missing one, and is the reassuring answer. WHAT IT WITNESSES: declarations, and nothing else. Every workflow installs with --ignore-scripts, which fetches electron.d.ts at 1,125,720 bytes and NO BINARY — no dist/, nothing spawnable. Nothing here may be read as evidence that an Electron process can start. MessageChannelMain remains witnessed as a declaration but is NOT part of the derived spawn surface: it is the messaging trigger, picked by hand, and deriving it would need a name pattern rather than a type — a hand-picked rule wearing a derivation's clothes. That limit is stated rather than papered over."
+      "symbolsWhy": "NO witness entry, deliberately: these are DERIVED from electron.d.ts by the TypeScript compiler (scripts/security/electronSurface.mjs), and a derivation is stronger than a witness — the same reason the OCR doors carry none. The three consequences the old in: null predicted all landed together on 2026-08-20: electron became a dependency, the condition failed, and the list stopped being hand-picked. THE DERIVATION IMMEDIATELY PROVED THE LIST SHORT. It reports the spawn surface by TYPE — every declaration typed as the utility-process factory — and that is utilityProcess AND UtilityProcess. The class was missing from a pair picked by hand, exactly as this verdict's own why warned: a correctly spelt list can still be short. WHY NOT A WITNESS, since one is now possible: the witness shape digests a file, and a digest of a 1.1 MB .d.ts says the file changed rather than that the symbol is still declared in it — finding T-1, which cost a verdict that stayed green with a misspelt symbol. WHY A PARSE AND NOT A SEARCH: electron.d.ts is 56% comments, and on electron@43.4.1 utilityProcess occurs once in prose and MessagePortMain ten times. A text search would witness a symbol that had been REMOVED, which is worse than missing one, and is the reassuring answer. WHAT IT WITNESSES: declarations, and nothing else. Every workflow installs with --ignore-scripts, which fetches electron.d.ts at 1,125,720 bytes and NO BINARY — no dist/, nothing spawnable. Nothing here may be read as evidence that an Electron process can start. MessageChannelMain remains witnessed as a declaration but is NOT part of the derived spawn surface: it is the messaging trigger, picked by hand, and deriving it would need a name pattern rather than a type — a hand-picked rule wearing a derivation's clothes. That limit is stated rather than papered over. RE-POINTED 2026-08-22, AND THE COVERAGE MOVE IS STATED RATHER THAN ABSORBED (audit item 2a, in the WEAKENING direction). The four Win32 names are HAND-PICKED. Nothing derives them: there is no .d.ts for kernel32, and a list of Win32 entry points is not the kind of thing a compiler can enumerate for us. Everything above about derivation being stronger than a witness is still true and now applies to only three of the seven symbols. WHY THIS IS A SMALLER LOSS THAN IT SOUNDS: T-1's rule is that a symbol is derived, witnessed, or printed as unverifiable — and a hand-picked list carrying a witness is stronger than a derived list without one. Each of the four carries a WITNESS pointing at scripts/research/**, where lowboxSpike.mjs and hostFixture.mjs name every one of them in working code. A typo in this list therefore fails its witness, which is exactly the failure the derivation was bought to prevent. Hand-picking is not the failure mode; an unwitnessed list is. AND THE REGISTER ENFORCED THIS AGAINST ITS OWN AUTHOR: the four names first arrived here carrying reachabilityControl entries instead, which prove a GLOB RESOLVES and say nothing about whether a string could ever match. check:advisories refused all five additions by name. The two mechanisms look alike and do different jobs, and the one that was reached for is the one that reads as coverage. WHY THE ELECTRON SYMBOLS STAY, rather than being replaced: their MEANING changed rather than expiring. They used to mean 'a utility host was written'; they now mean 'ADR-0022 was reverted and somebody went back to the fork route', which is still a thing worth failing the build over. Dropping them would have discarded a live check to fix a dead one.",
+      "witness": {
+        "CreateProcessW": {
+          "in": [
+            "scripts/research/**"
+          ],
+          "why": "T-1 for the first of the four hand-picked names. lowboxSpike.mjs and hostFixture.mjs both CALL this function in measured code, so the spelling recorded here is the spelling that ran. The witness scope is a different tree from the one the verdict scans, so a typo cannot satisfy both."
+        },
+        "CreateAppContainerProfile": {
+          "in": [
+            "scripts/research/**"
+          ],
+          "why": "T-1 for the AppContainer half. lowboxSpike.mjs created a real profile with it and deleted it again — executed, not transcribed from documentation."
+        },
+        "AssignProcessToJobObject": {
+          "in": [
+            "scripts/research/**"
+          ],
+          "why": "T-1 for the job-object half, invariant 25(b). Three research instruments name it and all three assigned a real job to a real process."
+        },
+        "STARTUPINFOEXW": {
+          "in": [
+            "scripts/research/**"
+          ],
+          "why": "T-1 for the extended attribute list, which is how a security capability reaches CreateProcessW at all. Listed as a symbol in its own right because a factory could plausibly avoid naming CreateAppContainerProfile — by reusing a profile created earlier — and still cannot avoid this struct."
+        }
+      }
+    },
+    "engine-host-factory-wired": {
+      "guards": [
+        "INVARIANT-25",
+        "INVARIANT-26"
+      ],
+      "why": "THE PATH KEY, beside engine-host-containment's SYMBOL key, because the two have different silent failures and neither covers the other. A symbol set is evaded by reaching Win32 through a wrapper or under a different name; a path key is evaded by putting the factory somewhere nobody is watching. This one fires when the ENGINE HOST FACTORY IS WIRED INTO MAIN, whatever it chooses to call the Win32 functions it uses. The trigger is classifyContainment — ADR-0023 section 5's startup check, which lives in packages/kernel and which the factory must call, because the factory is the side that can kill the process and the kernel is the side that may not name Electron. A factory that creates a contained host without consulting it is a host nobody verified, which is the one shape invariant 25 cannot tolerate. WHAT THIS DOES NOT DO, said plainly: it catches 'the factory was wired', not 'and the host it makes is contained'. Same prompt-to-implement status as its sibling, and the same docs/FEATURES.md row is what discharges it. SCOPED TO apps/*/src/** deliberately: classifyContainment is defined and tested under packages/kernel/src/**, so scanning that glob would fire on the day it was written rather than on the day it was used.",
+      "shippedPaths": [
+        "apps/*/src/**"
+      ],
+      "symbols": [
+        "classifyContainment"
+      ],
+      "symbolsWhy": "One symbol, hand-picked, and witnessed the same way the Win32 four are. WHY NOT THE FACTORY'S OWN MODULE PATH, which was the first idea: a glob matching no files is indistinguishable from a glob that is wrong, and the pre-state of this trigger is precisely 'that directory does not exist yet' — so the witness and the subject would have been the same absence. Keying on a symbol that DOES exist somewhere is what makes the walk's silence checkable.",
+      "witness": {
+        "classifyContainment": {
+          "in": [
+            "packages/kernel/src/**"
+          ],
+          "why": "Defined in packages/kernel/src/host/containment.ts, exported from the package index and exercised by containment.test.ts. The verdict scans apps/*/src/**; this scans where the symbol lives, so 'no references' over there means the factory is unwired rather than that the walk is blind."
+        }
+      }
     },
     "renderer-facing-errors-carry-no-text": {
       "guards": [
