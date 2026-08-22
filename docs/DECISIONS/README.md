@@ -23,6 +23,23 @@ One file per decision, numbered sequentially, never renumbered:
 NNNN-short-kebab-case-title.md
 ```
 
+**"Never renumbered" is not tidiness, and here is the mechanism** (finding
+UU-1). A renumber cannot be caught by link-checking, because **both targets
+exist**: `check:docs` verifies that a link resolves, and no check can verify it
+resolves to the *decision the sentence means*. The reader lands on a real ADR
+that says something else, which reads as authoritative — **strictly worse than a
+broken link, because a broken link announces itself.**
+
+So a renumber is a **manual sweep of every prose reference**, done in the same
+commit and never deferred, and it is a cost to weigh before splitting or merging
+an ADR rather than a chore afterwards. It has been paid once: ADR-0022 was split
+into 0022 (the process type) and 0023 (the mechanism), and three references in
+`scripts/research/` still pointed at 0022 for questions 0023 answers.
+
+The cheapest way to avoid the sweep is not to need it: **number a decision when
+it is written, and split by writing a NEW number rather than by moving an old
+one.**
+
 Each contains:
 
 - **Status** — Proposed / Accepted / Superseded by ADR-NNNN. ADRs are never

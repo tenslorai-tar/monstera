@@ -523,6 +523,34 @@ const CreateJobObjectW = kernel.func('void *CreateJobObjectW(void *attrs, const 
 const SetInformationJobObject = kernel.func('bool SetInformationJobObject(void *job, int cls, void *info, uint32 len)');
 const AssignProcessToJobObject = kernel.func('bool AssignProcessToJobObject(void *job, void *proc)');
 const IsProcessInJob = kernel.func('bool IsProcessInJob(void *proc, void *job, _Out_ bool *result)');
+const advapi = koffi.load('advapi32.dll');
+const OpenProcessToken = advapi.func('bool OpenProcessToken(void *proc, uint32 access, _Out_ void **token)');
+const GetTokenInformation = advapi.func(
+  'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
+);
+
+/**
+ * The child's integrity level, read BY MAIN against the child's token.
+ *
+ * Not by the host against its own: a process that has lowered itself can no
+ * longer open its own token, so a self-read is a could-not-look dressed as a
+ * reading (finding PP-2).
+ *
+ * TokenIntegrityLevel is class 25, and the RID is the last four bytes of the
+ * returned SID structure. 0x1000 is Low, 0x2000 Medium.
+ */
+function childIntegrity(handle) {
+  const tokenOut = [null];
+  if (!OpenProcessToken(handle, 0x0008, tokenOut)) return 'OpenProcessToken failed: ' + GetLastError();
+  const sizeOut = [0];
+  GetTokenInformation(tokenOut[0], 25, null, 0, sizeOut);
+  if (!sizeOut[0]) return 'sized 0: ' + GetLastError();
+  const buffer = Buffer.alloc(sizeOut[0]);
+  if (!GetTokenInformation(tokenOut[0], 25, buffer, sizeOut[0], sizeOut)) {
+    return 'GetTokenInformation failed: ' + GetLastError();
+  }
+  return '0x' + buffer.readUInt32LE(buffer.length - 4).toString(16);
+}
 const CreateFileW = kernel.func(
   'void *CreateFileW(const char16_t *name, uint32 access, uint32 share, void *sa, uint32 disp, uint32 flags, void *tmpl)',
 );
@@ -685,6 +713,13 @@ function spawnDirect(reportPath, cell, contained) {
   IsProcessInJob(info.hProcess, job, inJobOut);
   const inJobBeforeResume = inJobOut[0];
 
+  // PROPERTY (a) WHILE THE PROCESS IS STILL SUSPENDED. This is the second window
+  // and it deserves the same evidence the first one got: if the token is already
+  // Low here, the host never runs at Medium and never lowers itself, so there is
+  // no interval and nothing the host is permitted to do inside one. If it is
+  // Medium, (a) is NOT in force at instruction one and the window is real.
+  const integrityBeforeResume = childIntegrity(info.hProcess);
+
   // ONLY NOW does the host run its first instruction.
   const resumed = ResumeThread(info.hThread);
 
@@ -706,7 +741,10 @@ function spawnDirect(reportPath, cell, contained) {
     // count BEFORE the call. A value of 1 is the proof the process really was
     // created suspended, because a running thread reports 0 — which separates
     // "we asked for CREATE_SUSPENDED" from "it took effect".
-    ordering: { limitsSet, assigned, inJobBeforeResume, previousSuspendCount: resumed },
+    ordering: {
+      limitsSet, assigned, inJobBeforeResume, integrityBeforeResume,
+      previousSuspendCount: resumed,
+    },
   };
 }
 
@@ -798,14 +836,21 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-lowbox-'));
  * and *reaches the runtime, the FFI, its platform package, the engine and what it
  * was handed* are different properties, and ADR-0022 §6 names the second.
  *
- * **This list is measured in a DEVELOPMENT CHECKOUT and is not known to be the
- * shipped one.** `C:\Program Files` grants `ALL APPLICATION PACKAGES`
- * read+execute, so under the install root these paths may need no grant of ours
- * at all — and `icacls "C:\Program Files\WindowsApps"` returns *Access is
- * denied* without elevation, so this seat cannot tell. That is a could-not-look
- * and not a looked-and-found-nothing. ADR-0023 §5 makes the host verify its own
- * reach at startup and fail closed, so the mechanism does not depend on the
- * answer; measuring the Store layout is owed separately, before Stage 10.
+ * **THIS LIST IS A DEVELOPMENT ACCOMMODATION AND IS NOT THE SHIPPED MECHANISM**
+ * (ADR-0023 §5). A checkout under a user directory grants application packages
+ * nothing, so the spike supplies by hand what the install root is expected to
+ * supply by inheritance. The shipped design cannot use these grants at all:
+ * MSIX-installed files are read-only to the app itself, so an application that
+ * needed a runtime grant on an install-root path would fail on every real
+ * installation rather than on some.
+ *
+ * The shipped app grants only what it CREATES — the handed directory — and rests
+ * on premise P1, that the install root already grants `ALL APPLICATION
+ * PACKAGES`. P1 is unmeasured: `icacls "C:\Program Files\WindowsApps"` returns
+ * *Access is denied* without elevation, which is a could-not-look and not a
+ * looked-and-found-nothing. It is carried with an expiry and verified by a
+ * startup probe whose diagnostic distinguishes "P1 is false" from "a grant we
+ * own did not take", because only the second is something the app can fix.
  */
 const GRANTS = [
   { path: join(ROOT, '.tools', 'electron', '43.4.1'), rights: 'RX', why: 'the runtime binary and its resources' },

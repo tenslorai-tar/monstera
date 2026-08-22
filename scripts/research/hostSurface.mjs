@@ -2,11 +2,14 @@
 /**
  * What a utility process actually IS on the pinned Electron, measured.
  *
- * ADR-0022 has to choose mechanisms for invariant 25's four properties, and
- * `ForkOptions` on 43.4.1 offers none of them — no integrity level, no job
- * object, no sandbox, no filesystem restriction. So the mechanisms have to come
- * from somewhere else, and every candidate depends on facts about the host
- * process that this repository has never established:
+ * **ADR-0023** has to choose mechanisms for invariant 25's four properties —
+ * ADR-0022 chose the process type — and `ForkOptions` on 43.4.1 offers none of
+ * them: no integrity level, no job object, no sandbox, no filesystem
+ * restriction. That emptiness is what this file measured, and it is the first
+ * step of the argument the two ADRs finished: the mechanisms have to come from
+ * somewhere else, every candidate depends on facts about the host process that
+ * this repository had never established, and the ones that survive are not
+ * reachable through `fork` at all.
  *
  * - which Node the host runs, since Node's permission model is a candidate for
  *   the filesystem property and its flags differ by version;

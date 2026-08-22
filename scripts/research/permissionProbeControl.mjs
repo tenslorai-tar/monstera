@@ -26,7 +26,8 @@
  * The anchor runs plain `node`; the subject is Electron's embedded Node. Those
  * are different builds, so the anchor shows the probe is not broken and does
  * **not** show why the flag is inert. Two causes remain, with different
- * consequences for ADR-0022:
+ * consequences for **ADR-0023**, which chooses the mechanisms — ADR-0022 chose
+ * the process type:
  *
  *   1. `utilityProcess.fork` does not apply `execArgv` early enough for the
  *      permission model's initialisation — the model is alive, just unreachable
@@ -137,7 +138,7 @@ try {
           `process, not about Electron's Node.\n`
         : `CAUSE 2: Electron's own Node does not carry the permission model either, with no\n` +
           `utility process anywhere in the path. No Electron process of any kind can have it,\n` +
-          `which is the durable sentence for ADR-0022 — and it is a claim about Electron\n` +
+          `which is the durable sentence for ADR-0023 — and it is a claim about Electron\n` +
           `43.4.1 specifically, so it expires when the pin moves.\n`),
   );
 } finally {

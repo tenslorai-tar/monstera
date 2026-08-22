@@ -36,7 +36,7 @@ creation* by the token itself.
 | window | with `utilityProcess.fork` | with our route |
 |---|---|---|
 | created → job assigned | real; needs a handshake so the host runs nothing first | **closed by construction** — assign the job, then `ResumeThread` |
-| created → contained | real; the host lowered its own integrity, after running | **closed by construction** — the LowBox token exists before the first instruction |
+| created → integrity lowered | real; the host had to RUN in order to lower itself, so (a) was not in force at instruction one | **there is no window** — the LowBox token is Low at creation |
 | contained → first document byte | needs the host to refuse work until told | still real, and it is the only one left |
 
 So: **the host is created suspended, the job is assigned, and only then is the
@@ -49,7 +49,9 @@ withdraws a designed mechanism and a decision to remove a guard should not stand
 on an inference:
 
 ```
-route    {"limitsSet":true,"assigned":true,"inJobBeforeResume":true,"previousSuspendCount":1}
+route   {"assigned":true,"inJobBeforeResume":true,"integrityBeforeResume":"0x2000","previousSuspendCount":1}
+lowbox  {"assigned":true,"inJobBeforeResume":true,"integrityBeforeResume":"0x1000","previousSuspendCount":1}
+
 baseline (no job from us)  allowed   spawned before doing anything else
 route    (job, suspended)  refused   spawnSync ... UNKNOWN
 ```
@@ -64,12 +66,32 @@ point afterwards; the baseline, forked by Electron with no job of ours, spawns �
 which is what separates the ordering from the container, since a LowBox refuses
 process creation for its own reasons too.
 
-**The second window is structural rather than measured, and that is stated
-rather than blurred.** `PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES` is consumed
-by `CreateProcessW` itself, so the primary token is a LowBox token from creation
-and no interval exists in which the process is running uncontained. That is a
-property of the API, not an observation of ours, and there is nothing to sample
-between two events that never occur in that order.
+**The second window gets the same treatment, and the honest question sharpened
+it.** Calling it "structural" was about to be a weaker claim than it needed to
+be: **the second window is integrity, and integrity is property (a) — so if the
+host has to run in order to lower itself, (a) is not in force at instruction
+one.** A window with no stated permissible action is one somebody later puts work
+into, so it needed either a reading or a rule.
+
+It got a reading, and there is no window: `integrityBeforeResume` is read by main
+against the child's token **while the process is still suspended**, and the
+container's token is already **Low**.
+
+| cell | integrity before the first instruction |
+|---|---|
+| `route` — our route, no container | `0x2000` (Medium) |
+| `lowbox` — our route, container | **`0x1000` (Low)** |
+
+Two readings differing across the one variable, which is the same shape that
+made the utility-process integrity measurement a reading rather than a hope.
+
+**So the host never lowers itself, and that removes a mechanism rather than
+scheduling one.** `hostFixture.mjs` had the host call `SetTokenInformation` on
+its own token because a utility process has no other route — and finding PP-2 is
+the consequence: afterwards it cannot open its own token at all, so the
+verification had to come from main. None of that exists here. (a) arrives with
+the process, it is read from outside, and there is no interval to write rules
+about.
 
 The third window survives and keeps its handshake: the host accepts no document
 byte until main has confirmed the host is contained, because "the container was
@@ -140,44 +162,73 @@ ADR-0022 decided the discipline. The mechanism:
   not to write a second one (B3a).
 - Errors cross structurally, as §5 already requires.
 
-### 5. The container's lifecycle, and one thing this seat could not measure
+### 5. The container's lifecycle, and the premise the shipped design rests on
 
 - The profile is created if absent at first host creation, named from the
   application's own identity, and **never deleted** — deleting it would silently
   drop every ACE that names it.
-- Grants are applied at **runtime, on first launch**, because a Store app runs no
-  install script.
 
-**And here is what is NOT known.** The spike measured five grants in a
-development checkout. In the shipped layout the runtime, the FFI and the shim all
-live under the install root, and `C:\Program Files` grants `ALL APPLICATION
-PACKAGES` read+execute — which would supply them with no grant of ours at all.
-Whether the Store's own root does the same is **unmeasured and unmeasurable from
-this seat**: `icacls "C:\Program Files\WindowsApps"` returns *Access is denied*
-without elevation.
+#### THE NO-RUNTIME-GRANT BRANCH IS PRIMARY, and it is a premise with an expiry
 
-That is a *could-not-look*, not a *looked-and-found-nothing*, and the two must
-not share an output. It matters in both directions: if the install root already
-grants app packages, our grants are redundant; if it does not, and a packaged app
-also cannot modify ACLs on its own installed files, **the contained host cannot
-load the FFI in the shipped configuration at all** and ADR-0022's branch fails
-where it counts.
+**Premise P1:** *under the shipped install root, the runtime, the FFI and the
+engine shim are reachable by an AppContainer without any grant this application
+makes — because MSIX-installed files inherit read+execute for `ALL APPLICATION
+PACKAGES`, and every AppContainer is a member of it.*
 
-So the mechanism does not depend on the answer:
+**Why this is primary rather than the five grants.** MSIX-installed files under
+`C:\Program Files\WindowsApps\<package>` are **read-only to the app itself** — a
+packaged application cannot modify ACLs on its own installed files — and
+distribution is Store-only (ADR-0018). So a design that *needs* a runtime grant
+on an install-root path cannot execute on a real install at all. It would not
+degrade; it would fail on every machine.
 
-> **The host factory verifies the container's reach at startup and fails closed.
-> It never assumes a grant, whoever supplied it.**
+That reframes what the spike measured. **The five grants are a development
+accommodation, not the shipped mechanism.** A checkout under
+`C:\Users\…\Desktop` grants application packages nothing, so the spike had to
+supply by hand what the install root is expected to supply by inheritance. The
+only ACL the shipped app sets at runtime is on a path **it creates** — the handed
+directory — which it fully controls, and which is not an install-root path.
 
-One positive probe (a file the host must reach) and one negative probe (a file it
-must not, built from a path the *uncontained* cell reads successfully, so refusal
-and impossibility cannot share an observation). A host that cannot prove both
-does not start. This is the same rule as everything else here — assert against
-the running thing, not against the configuration — and it makes the unmeasured
-question a runtime fact rather than a planning assumption.
+Saying this now rather than later changes which path carries the tests, which is
+the whole reason it belongs in the decision and not in a follow-up.
 
-**Owed regardless, and it is a scheduled item and not a note:** measure the Store
-layout before Stage 10, on a packaged build or from an elevated read. If it comes
-back wrong, this is a branch-level finding and not a bug.
+#### P1 is not measured, and the failure mode is named rather than discovered
+
+`icacls "C:\Program Files\WindowsApps"` returns **Access is denied** without
+elevation, so this seat cannot read it. That is a *could-not-look*, not a
+*looked-and-found-nothing*, and the two must not share an output.
+
+Nor is it settled by building a package to find out: **installers are built only
+when the owner asks** (B8), and that is the owner's call.
+
+**The expiry.** P1 is carried as a named premise, and it expires the first time
+any of these happens: the app is packaged for the Store; an elevated read of the
+install root becomes available; or Stage 7 begins, whichever is first. **It is
+not "owed before Stage 10"** — if P1 is false it does not add work to this ADR,
+it **invalidates the mechanism**, and a premise that can invalidate a decision has
+to be checked while the decision is still cheap to change.
+
+**What the probe reports when P1 is false**, so the failure names its cause
+instead of being mute. The host factory verifies the container's reach at startup
+and fails closed — one positive probe (a path the host must reach) and one
+negative probe (a path it must not, built from one the *uncontained* cell reads
+successfully, so refusal and impossibility cannot share an observation). Failing
+closed is right. **Failing closed on a condition the app has no power to fix is
+not a guard, it is a guaranteed outage with a good diagnostic** — so the
+diagnostic has to distinguish the two:
+
+| what the probe sees | what it means | what it says |
+|---|---|---|
+| positive probe refused, on an **install-root** path | **P1 is false.** The app cannot fix this by granting, because it cannot write its own ACLs | names P1, names the path, and says the containment branch is unavailable on this installation — a branch-level failure, reported as such and not as a document error |
+| positive probe refused, on a path the app **created** | a grant this app is responsible for did not take | names the path and the grant, because this one *is* actionable |
+| negative probe **allowed** | the container is not containing | the loudest case: containment is absent while the host appears healthy |
+
+The first row is the one this section exists for. **A product that cannot open a
+document is not an acceptable outcome of a security mechanism**, so if P1 comes
+back false the answer is a decision to retake — the utility-process host with (a)
+and (b), or a different route to the install root — and not a retry loop or a
+silently disabled container. Recorded here so that whoever meets it knows it is a
+premise failing and not a bug.
 
 ### 6. The research→proof transition (finding RR-3)
 
@@ -224,6 +275,14 @@ window between creation and adjustment is exactly the shape §1 above spends
 effort closing everywhere else, and it would be the only one left open for no
 reason but convenience.
 
-**Assuming the Store install root grants `ALL APPLICATION PACKAGES`.** Rejected
-because it is unmeasured from this seat, and an assumption in this position
-converts a startup failure into a silent loss of containment.
+**Assuming the Store install root grants `ALL APPLICATION PACKAGES`, silently.**
+The inheritance is the *primary branch* (P1), but assuming it without a startup
+check would convert a premise failure into a silent loss of containment. It is
+carried as a named premise with an expiry and verified at runtime instead.
+
+**Making the five measured grants the shipped mechanism.** Rejected on the
+constraint rather than on preference: MSIX-installed files are read-only to the
+app itself, so a design that needs a runtime grant on an install-root path
+cannot execute on any real installation. It would fail on every machine, not
+some — which is why the branch had to be chosen now rather than discovered at
+packaging.

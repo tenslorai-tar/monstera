@@ -857,6 +857,16 @@ Both halves have been got wrong in one day, in opposite directions — an edit t
 already-recorded audit text that had to be reverted, and a false FEATURES body
 left standing under two corrections. Ask which kind of document it is first.
 
+**A CROSS-REFERENCE THAT STILL RESOLVES CAN STILL BE WRONG, and no check can see
+it** (finding UU-1). When a document is split, renumbered or given a sibling,
+every prose reference to it must be swept **by hand, in the same commit**.
+Link-checking cannot help: both targets exist, so `check:docs` passes while the
+reader lands on a real document that says something else — **worse than a broken
+link, which at least announces itself.** Weigh that sweep before splitting an
+ADR; the way to avoid it is to split by writing a *new* number rather than by
+moving an old one. `docs/DECISIONS/README.md` carries the same rule where the
+next renumber will be considered.
+
 **Ask it of the changed function's own comment first, and ask it precisely:
 when a commit removes a behaviour, does that comment still assert the behaviour
 EARLIER IN ITS OWN TEXT?** This is where the answer has hidden twice, and it is
