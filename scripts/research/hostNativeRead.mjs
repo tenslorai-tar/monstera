@@ -36,8 +36,16 @@
  * unconstrained one produce different outputs only when both halves are run.
  *
  * If the native read succeeds where the JavaScript read was refused, the
- * permission model does not deliver (d), and the property goes back to having no
- * mechanism.
+ * permission model does not deliver (d).
+ *
+ * **It did, and the answer that followed is not the one this sentence predicted.**
+ * The clause used to continue *"and the property goes back to having no
+ * mechanism"*, which was true the day it was written and false eight commits
+ * later: (d) is delivered by an AppContainer, measured in `lowboxSpike.mjs`
+ * against a route control (ADR-0022). What this file established is narrower and
+ * still stands — *no USERLAND mechanism can deliver it* — and that is the half
+ * that generalised into the rule the ADR carries: only kernel-enforced
+ * mechanisms contain native code.
  *
  * ## Why this file exists rather than another variant
  *

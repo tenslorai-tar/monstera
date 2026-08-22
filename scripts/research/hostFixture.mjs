@@ -40,10 +40,16 @@
  * opposite outcome, that property is unasserted no matter what this prints** —
  * and the report says so by name rather than leaving a reader to notice.
  *
- * That is why (c) and (d) come out UNASSERTED here. Nothing yet delivers them,
- * so there is no mechanism to remove and no differential to read; their probes
- * still run, and their answers are recorded as the uncontained baseline the
- * eventual mechanism must move.
+ * That is why (c) and (d) come out UNASSERTED here: **nothing a utility process
+ * can be given delivers them**, so there is no mechanism to remove and no
+ * differential to read. Their probes still run, and their answers are the
+ * uncontained baseline.
+ *
+ * **They ARE delivered, by an AppContainer, and `lowboxSpike.mjs` measures the
+ * differential** (ADR-0022). This sentence used to end at *nothing yet delivers
+ * them*, which was true when it was written and false eight commits later — the
+ * live half of the claim, that a utility process cannot, kept vouching for the
+ * dead half beside it.
  *
  * **Research, not a proof** — it asserts nothing and gates nothing. The
  * transition to a proof, and where it runs, is stated in
