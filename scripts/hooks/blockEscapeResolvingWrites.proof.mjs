@@ -39,6 +39,21 @@ const HOOK = join(dirname(fileURLToPath(import.meta.url)), 'blockEscapeResolving
  * @returns {{ denied: boolean, reason: string, status: number }}
  */
 function ask(command, toolName = 'Bash') {
+  // THE THIRD ARGUMENT IS A TOOL NAME, and five call sites had passed prose
+  // there — a rationale for the case, in the slot that selects the rule set.
+  // They were not vacuous, but only because `firstViolation` treats every name
+  // that is not `PowerShell` as a shell, so the wrong argument fell to the right
+  // default. A PowerShell case written the same way would have silently been
+  // asserted against SHELL_RULES and passed for the wrong reason.
+  //
+  // B5 over a comment: refuse the value rather than describe the slot. A
+  // rationale now belongs above the call, where the other twenty are.
+  if (toolName !== 'Bash' && toolName !== 'PowerShell') {
+    throw new Error(
+      `ask() got ${JSON.stringify(toolName)} as a tool name. The third argument selects the ` +
+        `rule set and takes 'Bash' or 'PowerShell' only; put a rationale in a comment.`,
+    );
+  }
   const result = spawnSync(
     process.execPath,
     [HOOK],
@@ -274,29 +289,77 @@ mustAllow('grep for a literal >= in source', "grep -rn 'x >= 1' packages/kernel/
 mustAllow('echo, then an unrelated command whose output is redirected', 'echo "step" ; git show HEAD --stat > /dev/null');
 mustAllow('echo, then a redirect in a && chain', 'echo "step" && git show HEAD:package.json > out.json');
 mustAllow('printf, then an unrelated redirect after a semicolon', "printf 'x' ; git log --oneline > log.txt");
-mustBlock('echo piped to tee', 'echo "content" | tee out.txt', 'tee writes what echo resolved');
-mustBlock('printf piped to tee -a', "printf 'a\\n' | tee -a out.txt", 'append is still a write');
+// `tee` writes what echo resolved, and `-a` is still a write.
+mustBlock('echo piped to tee', 'echo "content" | tee out.txt');
+mustBlock('printf piped to tee -a', "printf 'a\\n' | tee -a out.txt");
 // `>>=` is the case that showed excluding `=` alone was not enough: with `>>?`
 // greedy the engine matched `>>`, saw `=`, backtracked to a single `>` and
 // accepted the SECOND `>` as a one-character filename.
 mustAllow('a shift-assign inside a quoted program', "awk 'BEGIN { x = 1; x >>= 2; print x }'");
 // Inline perl is banned in its own right, whatever follows it. Kept as a BLOCK
 // so the exclusion above is never mistaken for a general amnesty on comparisons.
-mustBlock(
-  'an inline perl script containing a comparison',
-  "perl -ne 'print if $. >= 10' notes.txt",
-  'the inline-interpreter rule is independent of the redirect test',
-);
-mustBlock(
-  'printf redirected to a file whose name follows an unrelated =',
-  'printf "a=b\\n" > out.txt',
-  'a `=` elsewhere on the line must not disarm the redirect test',
-);
+// The inline-interpreter rule is independent of the redirect test.
+mustBlock('an inline perl script containing a comparison', "perl -ne 'print if $. >= 10' notes.txt");
+// A `=` elsewhere on the line must not disarm the redirect test.
+mustBlock('printf redirected to a file whose name follows an unrelated =', 'printf "a=b\\n" > out.txt');
+// The comparison and the redirect are different operators; only one is a write.
 mustBlock(
   'printf redirected to a file, with a comparison earlier in the command',
   "awk 'NR>=2' in.txt && printf 'x\\n' > out.txt",
-  'the comparison and the redirect are different operators and only one is a write',
 );
+
+// ---------------------------------------------------------------------------
+// CONSERVATISM ON A COMPOUND — pinned so it is a decision rather than a
+// surprise (finding SSS-2).
+//
+// These deny, they are false positives, and they STAY. Pinned because the
+// alternative is that the next person to hit one reads it as a parsing bug and
+// the pressure lands on adding an override, which the standing rule says has no
+// route. A disposition nobody wrote down is one that gets relitigated by
+// whoever it inconveniences.
+//
+// MECHANISM, because "the scan crosses a separator" is NOT it — f84c686 fixed
+// that and the three `mustAllow` cases above still hold. SAME_COMMAND_QUOTED
+// consumes a quoted span whole, so a separator inside quotes is text; what it
+// cannot do is decide WHICH quote opens the span. Given `echo "a"; cmd "b" >f`
+// the engine pairs the CLOSING quote of the first argument with the OPENING
+// quote of the second, swallows the `;` between them as quoted text, and
+// reaches the redirect. The two controls below delete one of the two quoted
+// arguments each, leaving nothing to pair with, and both then allow — which is
+// what makes this an observation about quote pairing rather than a guess.
+//
+// Deciding it properly means attributing a redirect to a command, which is
+// shell parsing: a second opinion about what a shell does, in the one file
+// whose whole subject is what a shell does to bytes on the way past (B3a).
+// Failing closed is the correct direction for THIS guard — the cost of a false
+// positive is splitting a command in two, and the cost of a false negative is
+// occurrence 8.
+// ---------------------------------------------------------------------------
+mustBlock(
+  'a quoted argument either side of a separator, with the redirect on the second command',
+  'echo "a"; git rev-parse "$REF" >/dev/null',
+);
+mustAllow(
+  'CONTROL: the same command with the SECOND argument unquoted, so no pair spans the `;`',
+  'echo "a"; git rev-parse $REF >/dev/null',
+);
+mustAllow(
+  "CONTROL: the same command with the PRODUCER's argument unquoted",
+  'echo a; git rev-parse "$REF" >/dev/null',
+);
+
+// A byte-faithful reader with a REAL redirect. `sed -n '1,5p' f > out` copies
+// lines and resolves nothing, so this is a false positive too — and unlike the
+// pair above there is no ambiguity to blame: the guard simply does not read
+// sed's script to see whether it substitutes.
+//
+// It stays for the reason the rule exists at all. `sed -n` and
+// `sed 's/x/a\nb/'` differ by one argument, the second resolves escapes, and a
+// guard that separates them has to parse sed's language — the same second
+// opinion one level down. The cost is `sed -n '1,5p' f` and reading the output,
+// which is what a range read wanted anyway.
+mustBlock('a sed range read redirected into a file', "sed -n '390,450p' notes.md > extract.txt");
+mustAllow('CONTROL: the same range read with no redirect', "sed -n '390,450p' notes.md");
 
 // The historical occurrences are stdout redirects and must stay caught. These
 // are the reason the descriptor test is a lookbehind rather than a blanket

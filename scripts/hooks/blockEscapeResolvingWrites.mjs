@@ -299,6 +299,31 @@ const SAME_LINE = String.raw`[^\n]*`;
  * All three halves were measured against real shell semantics rather than
  * assumed, and both historical occurrences remain caught: occurrence 5 and
  * occurrence 7 are stdout redirects to ordinary filenames.
+ *
+ * **OPEN, and it is this exclusion's other half: a bare `>` inside a quoted
+ * program is still read as a redirect.** Measured 2026-08-23 —
+ * `awk 'index($0, "x") > 0 {print NR}' f` denies, `awk '$2 > 100 {print $1}' f`
+ * denies, and so does a `sed` substitution whose REPLACEMENT text contains a
+ * `>`, such as rewriting a value to the literal `<set>`. None of them redirects
+ * anything; there is no `>` outside quotes in any of the three, and nothing is
+ * written by any command in the line.
+ *
+ * That is a different class from the compound-attribution false positives
+ * pinned in the proof, and the argument for those does not reach it. There the
+ * guard fails closed on a real redirect whose OWNER is ambiguous; here there is
+ * no redirect to own. It is this paragraph's own fix, stopped one character
+ * short: `>=` was excluded because `awk 'NR>=386'` was denied and writes
+ * nothing, and `awk 'NR>386'` writes nothing either.
+ *
+ * The proof shows it from the inside. Its case list carries
+ * `mustAllow("awk printing when a field exceeds a bound", "awk '$2 >= 100 …'")`
+ * — a case whose NAME is about exceeding a bound, written with the one operator
+ * the fix had already handled. The variant that reads more naturally denies, and
+ * the fixture was built from the shape the defect handles correctly (item 4b).
+ *
+ * Not fixed here, because the fix is a change to what this guard denies and
+ * that is not a decision to take inside a comment. Recorded at the exclusion it
+ * belongs to so the next reader of the `>=` argument sees where it stops.
  */
 const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-]|[=>])\S`;
 

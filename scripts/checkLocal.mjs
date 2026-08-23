@@ -183,24 +183,59 @@ try {
 const filtered = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
 
 /**
- * Cheapest first, and **never-measured LAST**.
+ * Three buckets, and the middle one is the whole point (finding SSS-1).
+ *
+ *   measured under budget, ascending → never measured → measured at or over
+ *   budget, ascending
  *
  * The stop-at-first-timeout stranded 44 scripts alphabetically, most of which
  * would have finished in seconds. Ascending order makes the strand set the
  * expensive tail instead of an arbitrary remainder.
  *
- * An unmeasured script sorts last on purpose: it is the most likely next
- * `proof:cff`, and putting it first would let one new expensive script strand
- * everything again. "Never measured" is reported as its own state below, because
- * it must not read as "cheap".
+ * **Never-measured sorted LAST, and that stranded new scripts permanently.**
+ * Three facts interlocked: unmeasured sorts behind everything, the sweep stops
+ * at the first timeout, and `proof:cff` times out on every run for a reason no
+ * bound accommodates — it runs MSBuild over a patched MuPDF tree. So a newly
+ * added proof sorted behind a script that always strands the queue, was reported
+ * *never measured*, and therefore sorted last again next time. It was not "not
+ * yet measured", it was "will never be measured", and the two printed
+ * identically — the exact collapse the three-state reporting below refuses.
+ *
+ * The cost landed in precisely the wrong place: a cheap new proof, the kind most
+ * worth running before a push, stranded by a rule protecting against an
+ * expensive one.
+ *
+ * Sorting the unknown FIRST is still wrong — one new expensive script would
+ * strand everything again — but that argument never reached the middle. A script
+ * whose last recorded cost hit the budget is one this sweep already knows it
+ * cannot finish, so the unknown gets its one chance after all the cheap work has
+ * completed and ahead only of the portion that was going to strand anyway. The
+ * risk is confined to the doomed tail, and the never-measured set is bounded to
+ * one sweep's worth instead of growing without limit.
+ *
+ * The buckets are distinguishable because a timeout's elapsed time is recorded
+ * like any other — see the note at the `known[name]` assignment below, which
+ * exists for a different reason and makes this one possible.
+ *
+ * "Never measured" is still reported as its own state, because it must not read
+ * as "cheap".
  */
+const BUDGET_SECONDS = TIMEOUT_MS / 1000;
+
+/** @param {string} name @returns {0 | 1 | 2} */
+function costBucket(name) {
+  const cost = known[name];
+  if (cost === undefined) return 1;
+  return cost >= BUDGET_SECONDS ? 2 : 0;
+}
+
 const selected = [...filtered].sort((a, b) => {
-  const left = known[a];
-  const right = known[b];
-  if (left === undefined && right === undefined) return a.localeCompare(b);
-  if (left === undefined) return 1;
-  if (right === undefined) return -1;
-  return left - right;
+  const left = costBucket(a);
+  const right = costBucket(b);
+  if (left !== right) return left - right;
+  // Within the unknown bucket there is nothing to order by, so keep it stable.
+  if (left === 1) return a.localeCompare(b);
+  return (known[a] ?? 0) - (known[b] ?? 0);
 });
 
 process.stdout.write(

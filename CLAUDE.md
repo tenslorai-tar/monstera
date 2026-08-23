@@ -356,9 +356,13 @@ These were given directly and bind every agent on this project.
      equivalents (`Set-Content`, `Out-File`, `@"` here-strings). It fails closed
      on an unreadable payload, and there is no override — an escape hatch here
      would be a workaround with a config flag on it. `npm run proof:escapeguard`
-     covers 51 cases, including the exact command that caused occurrence 6 and
-     the ordinary commands this project runs constantly, because a guard that
-     blocks `echo` or `sed -n` is a guard someone turns off.
+     covers over 250 cases in both directions, including the exact command that
+     caused occurrence 6 and the ordinary commands this project runs constantly,
+     because a guard that blocks `echo` or `sed -n` is a guard someone turns
+     off. It also **pins the false positives that stay** — a redirect whose
+     owner is ambiguous across a compound is refused deliberately, and a
+     disposition nobody wrote down is one that gets relitigated by whoever it
+     inconveniences.
 
   This paragraph used to say that for the classes the control-character scan
   cannot see, "the rule is the only defence, so it is written as an absolute
@@ -376,8 +380,21 @@ These were given directly and bind every agent on this project.
 
   Its parts were already proven — the script denies, the tracked settings
   register it for both shells, and the configured command string run verbatim
-  denies (`npm run proof:escapeguard`, 51 cases). What no proof could reach was
-  the agent's own hook table. That is now executed rather than asserted.
+  denies (`npm run proof:escapeguard`). What no proof could reach was the
+  agent's own hook table. That is now executed rather than asserted.
+
+  **And it fires constantly, which is the number that was never counted.** One
+  session's transcript, read on 2026-08-23: **65 denials**, of which 27 were
+  `node -e`/`-p`, 15 `sed -i`, 6 `python -c` and 5 a heredoc into a file. Four
+  were false positives the guard has since been corrected for, and about four
+  are live ones it refuses on purpose. Everything else was the reflex the rule
+  names, reached for without thinking, and stopped.
+
+  The point is not the total. It is that both the handoff note and the reviewing
+  seat had carried the figure as **six**, recalled rather than counted, and were
+  wrong by an order of magnitude in the direction that makes the guard look
+  incidental. **Count from the transcript.** Anything else is a memory of the
+  denials that happened to be memorable.
 
   **There has now been a seventh: `printf` with a redirect, 2026-08-18.** This
   paragraph previously ended by telling you to treat the rule as the only thing

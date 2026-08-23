@@ -49,7 +49,7 @@ const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLoc
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 12 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -204,7 +204,7 @@ try {
   );
 
   // -------------------------------------------------------------------------
-  // 9-11. ORDERING BY MEASURED COST (finding RRR-1). Harness properties again:
+  // 9-12. ORDERING BY MEASURED COST (findings RRR-1, SSS-1). Harness properties:
   // the same scripts pass in any order, so no assertion about RESULTS can see
   // these. What they buy is that a stop strands the expensive TAIL rather than
   // an alphabetical remainder.
@@ -265,11 +265,33 @@ try {
       ['a-unknown', 'b-known'],
     );
     check(
-      'a never-measured script runs LAST, because it is the most likely next proof:cff',
+      'a never-measured script runs after every measured one that fits the budget',
       unmeasured.order.join(',') === 'proof:b-known,proof:a-unknown',
       `ran ${unmeasured.order.join(', ')}. Sorting an unknown cost as cheap lets one new ` +
         `expensive script strand the whole queue again, which is the failure the ordering ` +
         `exists to prevent. Output:\n${unmeasured.output}`,
+    );
+
+    // The middle bucket (finding SSS-1). Sorting the unknown behind EVERYTHING
+    // stranded new scripts permanently: it sat behind a script that times out on
+    // every run, was reported "never measured", and so sorted last again next
+    // time — "will never be measured" printed as "not yet measured".
+    //
+    // Alphabetical order here is a-doomed, b-unknown, c-cheap, which is neither
+    // the expected order nor a rotation of it, so neither an unsorted run nor
+    // the old two-bucket sort (c-cheap, a-doomed, b-unknown) can pass by luck.
+    const bucketed = withTable(
+      { 'proof:a-doomed': 400, 'proof:c-cheap': 1 },
+      ['a-doomed', 'b-unknown', 'c-cheap'],
+    );
+    check(
+      'a never-measured script runs BEFORE one whose last cost hit the budget',
+      bucketed.order.join(',') === 'proof:c-cheap,proof:b-unknown,proof:a-doomed',
+      `ran ${bucketed.order.join(', ')}, expected proof:c-cheap, proof:b-unknown, ` +
+        `proof:a-doomed. A script already measured at or over the bound is one this sweep ` +
+        `knows it cannot finish, so putting the unknown behind it too is what made "never ` +
+        `measured" permanent. The unknown belongs after the cheap work and ahead of the ` +
+        `portion that was going to strand anyway. Output:\n${bucketed.output}`,
     );
 
     // The table is written BEFORE the summary, so a run that stopped early still
