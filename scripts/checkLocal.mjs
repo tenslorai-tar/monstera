@@ -46,10 +46,18 @@
  * exactly, and the third time in one stretch that the easy shape was the one
  * measured.
  *
- * The `proof:*` half is where the defect lived and is the slow one. It is
- * swept separately and the result recorded in `docs/JOURNAL.md` rather than
- * assumed; a run of this tool over `--only proof:` is not something to skip on
- * the grounds that the `check:` half was green.
+ * The `proof:*` half is where the defect lived, and it was swept: **it does not
+ * complete, and no timeout makes it.** `proof:cff` rebuilds libmupdf from source
+ * with two patches reverted, because its control has to reproduce the
+ * out-of-bounds read the pinned build fixes. The sweep stopped there and named
+ * the 44 scripts it never reached as not-passes, which is correct behaviour and
+ * also the answer: **the proof half is not a pre-push operation.**
+ *
+ * So this tool is useful over `check:*` and is not a sweep of everything. Which
+ * proofs are local-capable is already stated in the workflows — one registered
+ * in a job that provisions something is, by construction, not one to run before
+ * a push — and deriving that is the fix. A hand-maintained slow-list is the
+ * classifier shape this repository has fixed five separate defects in.
  *
  * ## Three states, because two would lie
  *

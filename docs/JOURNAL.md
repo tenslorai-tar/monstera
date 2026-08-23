@@ -969,6 +969,54 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — QQQ-1's sweep, measured: the proof half is not a local operation at all
+
+The `proof:*` sweep promised in the entry below has run. **It did not complete,
+and the result is better than a green one would have been.**
+
+```
+8 passed, 0 failed, 1 timed out, 0 not run — 9 of 53 attempted.
+44 script(s) were never reached and are NOT passes.
+Timed out is NOT passed: proof:cff
+```
+
+`proof:cff` hit the 240s bound. It is not hung and it is not slow by accident:
+`cffOobProof.mjs` **rebuilds libmupdf from a copy of the source with two patches
+reverted**, because its control has to reproduce the out-of-bounds read the
+pinned build fixes. That is a C library build, and it belongs to a job that
+provisions MuPDF — `ci.yml:591`, in the shim job, and in no Guards job.
+
+So the honest finding is sharper than *the sweep is slow*: **the derived
+`proof:*` set is not a pre-push operation, and no timeout makes it one.** Raising
+the bound until a MuPDF rebuild fits would be bumping a timeout to make a red go
+away, which is a banned reflex, and it would still leave the sweep taking longer
+than the review it precedes.
+
+That narrows `checkLocal.mjs` a third time, and the narrowing is the point. It is
+useful over `check:*` — ten scripts, all fast, all green — and that is precisely
+**the half where the defect it was built after could not occur** (QQQ-1). The
+tool is worth having and it is not a mechanism, which is what the reviewing seat
+said before any of this was measured.
+
+**The fix, named and not built, and it is a derivation rather than a hand-list.**
+Which proofs are local-capable is already stated in the workflows: a proof
+registered in a job that provisions something is by construction not one to run
+before a push. `check:jobplacement` already reads job membership out of that same
+YAML to answer a different question. A hand-maintained "slow list" is the
+classifier shape this project has now fixed five separate defects in — pattern,
+root, state, added-vs-changed, changed-vs-removed — and it would be a sixth.
+
+**Two things the harness got right under its own first real failure**, both
+recorded because they were designed after the previous version got them wrong:
+it **stopped** at the timeout rather than reporting results measured against its
+own orphans, and it counted from what it attempted, so the 44 unreached scripts
+are named as *not passes* instead of vanishing from the arithmetic. Its exit code
+was 1; the `0` in the task notification was a trailing `echo` in the shell line I
+wrapped it in, which is the same read-the-real-exit-code mistake as the
+`| tail` one earlier today, in a third shape.
+
+---
+
 ## 2026-08-23 — QQQ-1 to QQQ-3: a wrapper with no proof, a rule still living in prose, and evidence from the half that could not fail
 
 ### QQQ-2 — nothing proved the local sweep could report a failure at all
