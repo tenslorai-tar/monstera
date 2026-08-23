@@ -523,27 +523,39 @@ jobs:
           # and is asserted against this file by proof:toolchain.
           node-version: 24.19.0
 
-      # MuPDF's static libraries take ~10 minutes to build and change only when
-      # the pinned version does, so the key is the version itself. A miss costs
-      # the build; a stale hit is impossible because the version is in the key.
+      # MuPDF's static libraries take **336 seconds** to build on this runner and
+      # change only when the pinned version does, so the key is the version
+      # itself. A miss costs the build; a stale hit is impossible because the
+      # version is in the key.
       #
-      # THE KEY IS IMAGE-AGNOSTIC BY CONSTRUCTION, and that is a trap for the
-      # change XXX-1 contemplates. `runner.os` is `Windows` for every Windows
-      # image, so a second image added to prove containment on more than one
-      # Windows build would RESTORE THIS ENTRY rather than build its own — and
-      # the artefact is MSVC output whose toolchain comes from the image. The
-      # sentence above is true of the MuPDF version and says nothing about the
-      # compiler that produced the libraries.
+      # That figure said "~10 minutes" until 2026-08-23, when it was read from
+      # the Actions API rather than carried: the first shim run after this step
+      # landed, at `4579645`, was necessarily a miss and took 336s. Warm runs
+      # since have been 62-105s. XXX-1's decision turned on the number, and the
+      # inherited one was nearly twice the measured one.
       #
-      # Not a defect while one image exists, which is why it is written here
-      # rather than fixed: fixing it today costs one ~10-minute cold build and
-      # buys nothing. Whoever adds the second image puts the image label in this
-      # key in the same commit.
+      # THE IMAGE LABEL IS IN THE KEY, and `runner.os` alone was not enough.
+      # `runner.os` is `Windows` for every Windows image, so the moment a second
+      # one exists — `containment-2022` below — it would have RESTORED THIS
+      # ENTRY rather than building its own, and the artefact is MSVC output
+      # whose toolchain comes from the image. That is a wrong-artifact class,
+      # not a slow build.
+      #
+      # The label is a literal rather than `${{ env.ImageOS }}`, because an
+      # expression that resolves to nothing collapses two keys into one
+      # SILENTLY, which is the failure this line exists to prevent. A literal
+      # cannot be empty.
+      #
+      # `ImageVersion` is deliberately NOT in the key. It changes on every image
+      # release, so including it would spend a cold build on both jobs every few
+      # weeks to guard against within-image toolchain drift — which is finding
+      # Y-3's territory (the cache restores without re-verifying) and wants a
+      # verification, not a key that misses more often.
       - name: Cache the MuPDF build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools/mupdf
-          key: mupdf-${{ runner.os }}-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
+          key: mupdf-windows-latest-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
 
       # THIS JOB IS THE ONLY PLACE THE ENGINE HOST CAN BE PROVEN, and until now
       # it could not run one (finding RR-1).
@@ -608,14 +620,18 @@ jobs:
 
       # INVARIANT 25, ASSERTED AGAINST FOUR RUNNING PROCESSES (RR-3, ADR-0023 §6).
       #
-      # THE ONLY JOB THAT CAN RUN IT, and every clause of that is load-bearing:
-      # windows-latest, because AppContainer and job objects are Windows kernel
-      # objects; it builds MuPDF, because the point is a host with the ENGINE in
-      # it rather than whether Node starts in a container (QQ-2); it provisions
-      # Electron, because every cell is the Electron binary in Node mode; and it
-      # now compiles TypeScript, which is what puts the SHIPPED surface on disk
-      # for the cells to be created by. This step is what discharges finding
+      # A job has to carry four things at once to run this, and every clause is
+      # load-bearing: Windows, because AppContainer and job objects are Windows
+      # kernel objects; a built MuPDF, because the point is a host with the
+      # ENGINE in it rather than whether Node starts in a container (QQ-2); a
+      # provisioned Electron, because every cell is the Electron binary in Node
+      # mode; and compiled TypeScript, which is what puts the SHIPPED surface on
+      # disk for the cells to be created by. This step is what discharges finding
       # TT-1 — the Electron provisioning above has a consumer.
+      #
+      # This was the only such job until `containment-2022` below, which carries
+      # the same four on a second Windows image. See that job for why one image
+      # is a sample of one.
       #
       # `--require-containment` turns could-not-look into a hard failure. Without
       # it the proof reports UNVERIFIABLE and exits 0 where Windows, the shim or
@@ -752,3 +768,119 @@ jobs:
       # to the proof that needed it most.
       - name: Prove the performance gate follows the declared budgets
         run: node scripts/ci/annotate.mjs scripts/proofs/perfBudget.proof.mjs
+
+  # ---------------------------------------------------------------------------
+  # INVARIANT 25 ON A SECOND WINDOWS IMAGE (finding XXX-1).
+  #
+  # ## What this buys, and it is NOT what raised the finding
+  #
+  # XXX-1 came from the `(b) process creation — LowBox alone` row, which split
+  # between `windows-latest` and Windows 11 and now asserts `either`. A second
+  # image can no longer change that row's verdict, so it buys nothing there. Do
+  # not let this job's stated reason expire with the row that prompted it.
+  #
+  # What it buys is the DIFFERS rows: (c) network, both (d) filesystem rows, IPC
+  # and (b)-with-job. Those are the rows the design rests on — they are what
+  # ADR-0023's Decision 8 and invariant 25 actually claim — and their
+  # build-dependence has never been measured. One Windows image is a sample of
+  # one, and the `either` row is the standing demonstration that this sample size
+  # hides real variation.
+  #
+  # ## A separate job, not a matrix leg
+  #
+  # A matrix would put `proof:cff` on both legs: its own skip at
+  # `cffOobProof.mjs:82` is keyed on `process.platform !== 'win32'`, and both
+  # legs are Windows, so excluding one needs a workflow-level `if:`. That
+  # conditional fails in the reassuring direction — the day a label goes stale
+  # the expression matches neither leg, the proof skips on both, and the job is
+  # green. A CVE proof that can silently not run is the green-check-that-verifies
+  # -nothing shape, guarding the one thing here that is a real vulnerability.
+  #
+  # A separate job has no conditional to get wrong, keeps the shim job's
+  # `runs-on` a literal so `check:jobplacement` keeps deriving a real image name
+  # at exactly the place UUU-1 fired, and pays instead in duplicated provisioning
+  # steps. That is the cheaper price.
+  #
+  # ## What it costs, measured rather than estimated
+  #
+  # Read from the Actions API, 2026-08-23. A COLD MuPDF build is **336s** — the
+  # first shim run after the cache step landed, at `4579645`, which was
+  # necessarily a miss. Warm runs since have been 62-105s. So this job costs
+  # ~375s on its first run and on every rotation of the MuPDF key, and ~110s
+  # steady state. `proof:cff` is deliberately absent, and it is 339s of the shim
+  # job's 521s.
+  #
+  # The workflow comment above the shim job's cache step said "~10 minutes",
+  # which was inherited rather than measured. It is 5.6.
+  #
+  # ## Why windows-2022
+  #
+  # Read from `actions/runner-images` rather than recalled: `windows-latest` IS
+  # Windows Server 2025, so `windows-2025` would be the same image under another
+  # name. `windows-2022` is Server 2022, a genuinely different kernel build.
+  # `windows-11-arm` is arm64 and would need an arm64 MuPDF and an arm64
+  # Electron — a different measurement, not a second sample of this one.
+  #
+  # A retired label fails LOUDLY here: the job finds no runner. That is the
+  # opposite direction from the `if:` expression rejected above, and it is why
+  # the label is allowed to be a literal.
+  containment-2022:
+    name: Prove invariant 25's containment on Windows Server 2022
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Held in step with the shim job deliberately. If these two ever
+          # disagree, a containment difference between the images could be a
+          # Node difference instead, and the job stops being a second sample of
+          # the thing under test.
+          node-version: 24.19.0
+
+      # ITS OWN CACHE ENTRY. See the shim job's key for why the image label is a
+      # literal here rather than an expression.
+      - name: Cache the MuPDF build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/mupdf
+          key: mupdf-windows-2022-1.28.0-${{ hashFiles('scripts/provision/mupdf.mjs') }}
+
+      # The Electron archive is a downloaded, hash-verified artefact rather than
+      # something this image builds, so it is image-independent and SHARES the
+      # shim job's key on purpose — one pinned archive, one entry. The archive is
+      # re-verified against the pin after restore; the cache optimises the
+      # download, never the verification.
+      - name: Cache the pinned Electron archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/electron-archives
+          key: electron-archive-${{ runner.os }}-${{ hashFiles('scripts/provision/electron.mjs') }}
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Provision the pinned Electron runtime
+        run: node scripts/ci/annotate.mjs scripts/provision/electron.mjs
+
+      - name: Provision MuPDF and build the shim
+        run: node scripts/ci/annotate.mjs scripts/provision/mupdf.mjs
+
+      # Puts the SHIPPED surface on disk. The cells are created by
+      # `apps/desktop/dist/win32HostSurface.js`, not by anything this instrument
+      # hand-rolls, which is what makes the reading a statement about the
+      # product rather than about the spike.
+      - name: Compile TypeScript, which puts the shipped surface on disk
+        run: npm run typecheck
+
+      # `--require-containment`, for the same reason it is on the shim job:
+      # without it the proof reports UNVERIFIABLE and exits 0 wherever Windows,
+      # the shim or the build is missing, and this job would go green having
+      # measured nothing. Since the whole point of the job is a SECOND reading,
+      # a silent could-not-look here would be worse than on the first — it would
+      # look like agreement.
+      - name: Prove invariant 25's containment against running processes
+        run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment
