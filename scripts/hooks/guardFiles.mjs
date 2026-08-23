@@ -554,6 +554,23 @@ function violations(path, sha, size, scope) {
             `and they are invisible in most viewers — the surrounding text simply appears to lose ` +
             `characters.`,
       );
+      // HOW TO REPAIR IT, printed here because this is where you meet the
+      // problem and every obvious move fails silently. All three facts measured
+      // 2026-08-23 against a file carrying one NUL:
+      //
+      //   - reading the file renders the byte as nothing, so the corruption is
+      //     invisible in the text you are looking at;
+      //   - a search-and-replace edit CANNOT match a span containing it, because
+      //     the search text would have to contain the byte and no keyboard emits
+      //     one. The report is "string to replace not found" for text you can
+      //     see on screen, which reads as a stale file rather than a corrupt one;
+      //   - a whole-file rewrite DOES clear it.
+      reasons.push(
+        `To repair it: rewrite the whole file, or — for a file too large to retype — ` +
+          `\`git checkout HEAD -- <path>\` and re-apply the change. Do not try to edit the ` +
+          `byte out in place: the edit cannot name it, and the failure looks like a stale ` +
+          `file rather than a corrupt one.`,
+      );
     }
 
     // The same purpose, one codepoint range further out. The scan above reads

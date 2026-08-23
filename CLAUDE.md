@@ -457,6 +457,26 @@ These were given directly and bind every agent on this project.
   (`0x07`, byte arrays), because nothing in that path resolves an escape. That
   is how `docs/JOURNAL.md` was repaired: the corrupt bytes are invisible to
   every editor, so there was no string to match on.
+
+  **And the tool this rule sends you TO is not exempt.** Three `Write` calls on
+  2026-08-23 emitted a control character into a string literal — `0x01` once and
+  `0x00` twice, always where a space belonged, always invisible. The hook cannot
+  see them: it governs shell tools, and this is a byte nobody typed appearing in
+  a file-editing tool's output. `guardFiles.mjs` blocked the third at commit; the
+  first two were found by **luck** — an `Edit` that could not match text a `Read`
+  had just displayed, and a `grep` that reported a source file as binary. So the
+  guard's coverage is sound and its LATENCY is the gap: nothing looks between the
+  write and `git add`, which is the window in which you run the file and
+  misdiagnose the symptom.
+
+  Three tells and the repair, all measured 2026-08-23 against a file carrying one
+  NUL: reading it renders the byte as nothing, so the text on screen looks
+  correct; **an edit cannot match a span containing it**, because the search text
+  would have to contain the byte, and the failure reads as a stale file rather
+  than a corrupt one; a whole-file rewrite clears it. So the repair is to rewrite
+  the file whole, or — where it is too large to retype — `git checkout HEAD --
+  <path>` and re-apply. `guardFiles.mjs` prints this at the point of rejection,
+  which is where you meet it.
 - **An emitted-source template carries no backtick — and that is now a check, not
   a rule.** A `String.raw` holding a program we write to disk is the one place
   prose and code share a delimiter, and a backtick pair inside closes the literal
