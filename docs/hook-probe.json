@@ -1,21 +1,27 @@
 {
-  "outcome": "denied",
-  "command": "node -e \"console.log('hook test')\"",
-  "recordedAt": "2026-08-23T10:39:33.284Z",
-  "sessionStartedAt": "2026-08-16T06:29:43.686Z",
-  "inputsLastChangedAt": "2026-08-23T12:34:17+02:00",
-  "note": "The guard blocked the command. The mechanism CLAUDE.md describes is live.",
-  "verdict": {
-    "digest": "95afdb0ed5117d02542b46275baef8f5f8ef7b710ea8ae75d9b17a618877b9cb",
-    "inputs": [
-      {
-        "name": "file:.claude/settings.json",
-        "digest": "e65ec60d560dfbafc9e7eb0bf1f23517c898e65e228bc38c1ad9938baf049abf"
-      },
-      {
-        "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-        "digest": "29beb6ccf6f45bcb9d9e69fdfe66cc8b44bee77e8bbe5e0f43e9468ea74d4354"
+  "mechanisms": {
+    "blockEscapeResolvingWrites": {
+      "script": "scripts/hooks/blockEscapeResolvingWrites.mjs",
+      "event": "PreToolUse",
+      "outcome": "fired",
+      "exercise": "node -e \"console.log('hook test')\"",
+      "evidence": "The guard blocked the command, unprompted, during ordinary work. The mechanism CLAUDE.md describes is live. A denial is self-certifying: nothing that failed to load the guard can be blocked by it, which is why this is accepted despite the session predating the configuration.",
+      "recordedAt": "2026-08-23T10:39:33.284Z",
+      "sessionStartedAt": "2026-08-16T06:29:43.686Z",
+      "inputsLastChangedAt": "2026-08-23T12:34:17+02:00",
+      "verdict": {
+        "digest": "95afdb0ed5117d02542b46275baef8f5f8ef7b710ea8ae75d9b17a618877b9cb",
+        "inputs": [
+          {
+            "name": "file:.claude/settings.json",
+            "digest": "e65ec60d560dfbafc9e7eb0bf1f23517c898e65e228bc38c1ad9938baf049abf"
+          },
+          {
+            "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
+            "digest": "29beb6ccf6f45bcb9d9e69fdfe66cc8b44bee77e8bbe5e0f43e9468ea74d4354"
+          }
+        ]
       }
-    ]
+    }
   }
 }

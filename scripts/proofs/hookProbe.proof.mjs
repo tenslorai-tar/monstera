@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * Proof that the Stage 0 gate on the tool-use guard cannot be satisfied by
- * anything short of the guard actually firing (rule B2).
+ * anything short of the guard actually firing (rule B2), and that a hook
+ * registered later cannot inherit that evidence (finding AAAA-13).
  *
  * The gate exists because `CLAUDE.md` asserts a mechanism whose only unproven
  * part is the part that matters — that the hook is ever loaded — and because the
@@ -9,18 +10,26 @@
  * appeared to. So the cases here are mostly about the ways a record can look
  * like evidence and not be one:
  *
- *   - no record at all;
- *   - a record about a different guard, because its inputs have since changed;
- *   - a record taken in a session whose process predates the configuration, so
- *     the guard could not have been loaded and "it ran" is indistinguishable
- *     from "there is no guard" — this is attempt 1, and it is the case the whole
- *     record format exists to reject;
- *   - a record that honestly says the guard did not fire.
+ *   - no entry at all;
+ *   - an entry about a different hook, because its inputs have since changed;
+ *   - an entry taken in a session whose process predates the configuration, so
+ *     the hook could not have been loaded and "it did nothing" is
+ *     indistinguishable from "there is no hook" — this is attempt 1, and it is
+ *     the case the whole record format exists to reject;
+ *   - an entry that honestly says the hook did not act;
+ *   - an entry for a mechanism nothing registers;
+ *   - **a registered hook with no entry of its own**, which is the shape the
+ *     single-outcome record could not express at all.
  *
- * The load-bearing control is the last section: marking the gate done in
- * docs/FEATURES.md must turn `check:docs` red. Without it, every case above
- * could pass while nothing consulted them — a correct checker nobody calls,
- * which is the display-only sin this project names.
+ * Two load-bearing controls, and neither is about a state:
+ *
+ *   1. `registeredHooks` must REFUSE when it cannot see its anchor. It is a
+ *      search, and every way of breaking a search produces the same reassuring
+ *      empty list — after which the roster requires nothing of anybody.
+ *   2. Both halves of rule 5 must turn `check:docs` red against the real
+ *      repository. Without that, every case above could pass while nothing
+ *      consulted them — a correct checker nobody calls, which is the
+ *      display-only sin this project names.
  *
  * Usage: node scripts/proofs/hookProbe.proof.mjs
  */
@@ -31,10 +40,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
-import { PROBE_INPUTS, RECORD_FILE, probeState } from '../lib/hookProbe.mjs';
+import { RECORD_FILE, mechanismInputs, probeCoverage, probeState } from '../lib/hookProbe.mjs';
+import { ANCHOR_SCRIPT, SETTINGS_FILE, mechanismName, registeredHooks } from '../lib/registeredHooks.mjs';
 import { digestInputs } from '../lib/verdict.mjs';
 
 const ROOT = repoRoot();
+const ANCHOR = mechanismName(ANCHOR_SCRIPT);
 
 /** @type {string[]} */
 const failures = [];
@@ -48,7 +59,7 @@ function check(label, condition, detail) {
 }
 
 /**
- * A throwaway tree carrying copies of the probe's declared inputs, so a record
+ * A throwaway tree carrying copies of the anchor mechanism's inputs, so an entry
  * can be fabricated against known bytes without touching this repository.
  *
  * @returns {string}
@@ -60,133 +71,288 @@ function makeRoot() {
   // fail-closed, but it would let the refusal case below pass for a reason that
   // has nothing to do with the session start it is meant to be testing.
   spawnSync('git', ['init', '--quiet'], { cwd: root, encoding: 'utf8' });
-  for (const input of PROBE_INPUTS) {
-    if (!('file' in input)) continue;
-    const destination = join(root, input.file);
+  for (const file of [SETTINGS_FILE, ANCHOR_SCRIPT]) {
+    const destination = join(root, file);
     mkdirSync(dirname(destination), { recursive: true });
-    copyFileSync(join(ROOT, input.file), destination);
+    copyFileSync(join(ROOT, file), destination);
   }
   mkdirSync(join(root, 'docs'), { recursive: true });
+  // COMMITTED, and that is load-bearing rather than tidiness. The recorder
+  // checks the inputs' git history BEFORE it checks the session start, so an
+  // uncommitted tree makes every refusal below come out as "not tracked by
+  // git" — and the case named for the session start would pass without ever
+  // reaching it. The assertion could not tell its two refusals apart.
+  spawnSync('git', ['add', '-A'], { cwd: root, encoding: 'utf8' });
+  spawnSync(
+    'git',
+    ['-c', 'user.name=probe', '-c', 'user.email=probe@invalid', 'commit', '--quiet', '-m', 'fixture'],
+    { cwd: root, encoding: 'utf8' },
+  );
   return root;
 }
 
 /**
  * @param {string} root
- * @param {Partial<import('../lib/hookProbe.mjs').ProbeRecord>} overrides
+ * @param {Partial<import('../lib/hookProbe.mjs').MechanismEntry>} overrides
+ * @param {Record<string, import('../lib/hookProbe.mjs').MechanismEntry>} [others]
  */
-function writeRecordIn(root, overrides) {
-  const digest = digestInputs(PROBE_INPUTS, { root });
-  /** @type {import('../lib/hookProbe.mjs').ProbeRecord} */
-  const record = {
-    outcome: 'denied',
-    command: 'node -e "console.log(\'hook test\')"',
+function writeEntryIn(root, overrides, others = {}) {
+  const digest = digestInputs(mechanismInputs(ANCHOR_SCRIPT), { root });
+  /** @type {import('../lib/hookProbe.mjs').MechanismEntry} */
+  const entry = {
+    script: ANCHOR_SCRIPT,
+    event: 'PreToolUse',
+    outcome: 'fired',
+    exercise: 'node -e "console.log(\'hook test\')"',
+    evidence: 'fixture',
     recordedAt: '2026-09-01T12:00:00.000Z',
     // A session that started well AFTER its inputs last changed: the healthy
     // shape, which each case below then breaks in exactly one way.
     sessionStartedAt: '2026-09-01T10:00:00.000Z',
     inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
-    note: 'fixture',
     verdict: {
       digest: digest.digest,
       inputs: digest.inputs.map((input) => ({ name: input.name, digest: input.digest })),
     },
     ...overrides,
   };
-  writeFileSync(join(root, RECORD_FILE), `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+  writeFileSync(
+    join(root, RECORD_FILE),
+    `${JSON.stringify({ mechanisms: { [ANCHOR]: entry, ...others } }, null, 2)}\n`,
+    'utf8',
+  );
 }
 
 // ---------------------------------------------------------------------------
-// The states a record can be in.
+// The states an entry can be in.
 // ---------------------------------------------------------------------------
 {
   const root = makeRoot();
   try {
-    check('no record at all reads as unrecorded', probeState(root).state === 'unrecorded', probeState(root).detail);
+    check('no entry at all reads as unrecorded', probeState(ANCHOR, root).state === 'unrecorded', probeState(ANCHOR, root).detail);
 
-    writeRecordIn(root, {});
+    writeEntryIn(root, {});
     check(
-      'a complete record of a denial is accepted',
-      probeState(root).state === 'denied',
+      'a complete entry recording a firing is accepted',
+      probeState(ANCHOR, root).state === 'fired',
       // The positive case has to exist, or every rejection below is satisfied by
       // a checker that rejects everything.
-      probeState(root).detail,
+      probeState(ANCHOR, root).detail,
     );
 
-    writeRecordIn(root, { outcome: 'executed' });
+    writeEntryIn(root, { outcome: 'silent' });
     check(
-      'a record saying the command RAN is not a satisfied gate',
-      probeState(root).state === 'executed',
-      probeState(root).detail,
+      'an entry saying the hook did NOTHING is not a satisfied gate',
+      probeState(ANCHOR, root).state === 'silent',
+      probeState(ANCHOR, root).detail,
+    );
+
+    writeEntryIn(root, { outcome: 'unobserved', sessionStartedAt: null });
+    check(
+      'and neither is one saying it was never exercised',
+      probeState(ANCHOR, root).state === 'unobserved',
+      `"registered" must not read as "observed"; that gap is the whole of finding AAAA-11. ` +
+        `${probeState(ANCHOR, root).detail}`,
     );
 
     // The asymmetry, which this proof originally had backwards.
     //
-    // A denial cannot be produced by a session that never loaded the guard, so
-    // its own timing cannot weaken it. An "it ran" is the ambiguous one. The
-    // first denial this project ever observed came from a session that predated
-    // its configuration by forty hours, and a symmetric rule would have thrown
-    // that evidence away for being suspiciously old.
-    writeRecordIn(root, {
-      outcome: 'denied',
+    // A hook that never loaded cannot produce its own output, so a firing's own
+    // timing cannot weaken it. A silence is the ambiguous one. The first denial
+    // this project ever observed came from a session that predated its
+    // configuration by forty hours, and a symmetric rule would have thrown that
+    // evidence away for being suspiciously old.
+    //
+    // This is also the property finding AAAA-12 turned on: the gate is keyed on
+    // whether an observation is self-certifying, NOT on which hook kind produced
+    // it. A PostToolUse report certifies itself exactly as a denial does.
+    writeEntryIn(root, {
+      outcome: 'fired',
       sessionStartedAt: '2026-08-16T08:29:43.000Z',
       inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
     });
     check(
-      'a DENIAL is accepted even from a session older than the guard',
-      probeState(root).state === 'denied',
-      `A denial is self-certifying: nothing that failed to load the guard can be blocked by it. ` +
-        `${probeState(root).detail}`,
+      'a FIRING is accepted even from a session older than the hook',
+      probeState(ANCHOR, root).state === 'fired',
+      `A firing is self-certifying: nothing that failed to load the hook can produce its output. ` +
+        `${probeState(ANCHOR, root).detail}`,
     );
 
-    writeRecordIn(root, {
-      outcome: 'executed',
+    writeEntryIn(root, {
+      outcome: 'silent',
       sessionStartedAt: '2026-08-16T08:29:43.000Z',
       inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
     });
     check(
-      'but an EXECUTED from a session older than the guard is rejected',
-      probeState(root).state === 'stale-session',
-      `This is the confound that produced attempt 1's result: "it ran" cannot be told apart from ` +
-        `"there is no guard". ${probeState(root).detail}`,
+      'but a SILENCE from a session older than the hook is rejected',
+      probeState(ANCHOR, root).state === 'stale-session',
+      `This is the confound that produced attempt 1's result: "it did nothing" cannot be told ` +
+        `apart from "there is no hook". ${probeState(ANCHOR, root).detail}`,
     );
 
     // Resolution test for the boundary itself: one second later must be enough
     // to be a different session, or the comparison is decorative. Run against
     // the ambiguous outcome, because that is the only one the boundary governs.
-    writeRecordIn(root, {
-      outcome: 'executed',
+    writeEntryIn(root, {
+      outcome: 'silent',
       sessionStartedAt: '2026-08-18T00:18:40.000Z',
       inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
     });
     check(
-      'and one second AFTER the configuration reads as executed, not stale',
-      probeState(root).state === 'executed',
-      `the comparison must distinguish its two inputs, not merely reject. ${probeState(root).detail}`,
+      'and one second AFTER the configuration reads as silent, not stale',
+      probeState(ANCHOR, root).state === 'silent',
+      `the comparison must distinguish its two inputs, not merely reject. ${probeState(ANCHOR, root).detail}`,
     );
 
-    // The verdict half: a record is about the guard it was taken against.
-    writeRecordIn(root, {});
-    const settings = join(root, '.claude', 'settings.json');
+    // A silence with no session recorded at all must not slip past the boundary
+    // by having nothing to compare. Absence is the ambiguous case, not an exempt
+    // one.
+    writeEntryIn(root, { outcome: 'silent', sessionStartedAt: null });
+    check(
+      'a silence with NO session recorded is stale, not exempt',
+      probeState(ANCHOR, root).state === 'stale-session',
+      probeState(ANCHOR, root).detail,
+    );
+
+    check(
+      'a mechanism nothing registers reads as unregistered',
+      probeState('notAHookAnybodyWiredUp', root).state === 'unregistered',
+      'an entry for an unwired hook is a certificate with no mechanism behind it',
+    );
+
+    // The verdict half: an entry is about the hook it was taken against.
+    writeEntryIn(root, {});
+    const settings = join(root, SETTINGS_FILE);
     const original = readFileSync(settings, 'utf8');
     writeFileSync(settings, `${original}\n`, 'utf8');
     check(
-      'changing the settings by ONE byte invalidates the record',
-      probeState(root).state === 'inputs-changed',
-      probeState(root).detail,
+      'changing the settings by ONE byte invalidates the entry',
+      probeState(ANCHOR, root).state === 'inputs-changed',
+      probeState(ANCHOR, root).detail,
     );
     writeFileSync(settings, original, 'utf8');
 
-    const guard = join(root, 'scripts', 'hooks', 'blockEscapeResolvingWrites.mjs');
+    const guard = join(root, ANCHOR_SCRIPT);
     const guardSource = readFileSync(guard, 'utf8');
     writeFileSync(guard, `${guardSource}\n`, 'utf8');
     check(
-      'and so does changing the guard script',
-      probeState(root).state === 'inputs-changed',
+      'and so does changing the hook script',
+      probeState(ANCHOR, root).state === 'inputs-changed',
       'a probe run against a different script is not evidence about this one',
     );
     writeFileSync(guard, guardSource, 'utf8');
 
-    check('restoring both bytes restores the verdict', probeState(root).state === 'denied', probeState(root).detail);
+    check('restoring both bytes restores the verdict', probeState(ANCHOR, root).state === 'fired', probeState(ANCHOR, root).detail);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The roster is DERIVED, and the resolver refuses rather than returning empty.
+// ---------------------------------------------------------------------------
+{
+  const root = makeRoot();
+  try {
+    // Positive control, on every run: the resolver locates something it is known
+    // to be able to find. Everything below asserts an absence, and an absence is
+    // worthless from an instrument that cannot see.
+    const hooks = registeredHooks(root);
+    check(
+      'the resolver LOCATES the hook it is known to be able to find',
+      hooks.some((hook) => hook.script === ANCHOR_SCRIPT),
+      `found: ${hooks.map((hook) => hook.script).join(', ') || '(nothing)'}`,
+    );
+
+    writeEntryIn(root, {});
+    check(
+      'with every registered hook recorded, nothing is missing',
+      probeCoverage(root).missing.length === 0,
+      `missing: ${probeCoverage(root).missing.join(', ')}`,
+    );
+
+    // Register a SECOND hook and record nothing about it. Under the single
+    // outcome this record used to hold, this state was not expressible: the file
+    // said "denied" and the new hook was covered by it. Now it owes its own
+    // entry, derived from the file that registered it.
+    const settings = join(root, SETTINGS_FILE);
+    const original = readFileSync(settings, 'utf8');
+    const parsed = JSON.parse(original);
+    parsed.hooks.PostToolUse = [
+      {
+        matcher: 'Write|Edit',
+        hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/scripts/hooks/somethingElse.mjs"' }],
+      },
+    ];
+    writeFileSync(settings, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+    check(
+      'registering a second hook makes it OWE an entry of its own',
+      probeCoverage(root).missing.includes('somethingElse'),
+      `missing: ${probeCoverage(root).missing.join(', ') || '(nothing — the second hook inherited the first one\'s evidence)'}`,
+    );
+    // ...and it must not be satisfied by the first hook's entry, which is still
+    // present and still valid for the first hook.
+    check(
+      'while the first hook keeps its own, unaffected by the second existing',
+      probeCoverage(root).states.find((entry) => entry.name === ANCHOR)?.state === 'inputs-changed',
+      `Registering anything rewrites the settings, which is an input to every entry, so the ` +
+        `anchor's verdict must go stale rather than carrying over: ` +
+        `${probeCoverage(root).states.map((entry) => `${entry.name}=${entry.state}`).join(' ')}`,
+    );
+    writeFileSync(settings, original, 'utf8');
+
+    // An entry for a hook nothing registers any more.
+    writeEntryIn(root, {}, {
+      retiredHook: /** @type {import('../lib/hookProbe.mjs').MechanismEntry} */ ({
+        script: 'scripts/hooks/retiredHook.mjs',
+        event: 'PreToolUse',
+        outcome: 'fired',
+        exercise: 'whatever it used to be',
+        evidence: 'fixture',
+        recordedAt: '2026-09-01T12:00:00.000Z',
+        sessionStartedAt: '2026-09-01T10:00:00.000Z',
+        inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
+        verdict: { digest: 'stale', inputs: [] },
+      }),
+    });
+    check(
+      'and evidence about a hook nothing registers is reported, not ignored',
+      probeCoverage(root).unrecognised.includes('retiredHook'),
+      `unrecognised: ${probeCoverage(root).unrecognised.join(', ') || '(nothing)'}`,
+    );
+
+    // THE CONTROL for the resolver itself: blind it, and it must refuse rather
+    // than report a clean empty roster. Item 4b — every way of breaking a search
+    // produces the reassuring answer, and here the reassuring answer would make
+    // the roster requirement vacuous for every hook at once.
+    const blinded = JSON.parse(original);
+    blinded.hooks.PreToolUse[0].hooks[0].command = 'node "${CLAUDE_PROJECT_DIR}/scripts/hooks/elsewhere.mjs"';
+    writeFileSync(settings, `${JSON.stringify(blinded, null, 2)}\n`, 'utf8');
+    let refused = false;
+    try {
+      registeredHooks(root);
+    } catch (error) {
+      refused = /did not find/u.test(String(error));
+    }
+    check(
+      'CONTROL: the resolver REFUSES when it cannot see its anchor',
+      refused,
+      'a blinded search reports an empty roster, and an empty roster requires nothing of anybody',
+    );
+
+    writeFileSync(settings, '{ not json', 'utf8');
+    let refusedParse = false;
+    try {
+      registeredHooks(root);
+    } catch (error) {
+      refusedParse = /not readable JSON/u.test(String(error));
+    }
+    check(
+      'and refuses an unreadable settings file rather than parsing it as empty',
+      refusedParse,
+      'an empty intermediate result is a broken parse, not a clean input',
+    );
+    writeFileSync(settings, original, 'utf8');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -197,31 +363,77 @@ function writeRecordIn(root, overrides) {
 // ---------------------------------------------------------------------------
 {
   const root = makeRoot();
+  const recorder = join(ROOT, 'scripts', 'hooks', 'recordHookProbe.mjs');
   try {
     // No agent session transcript corresponds to this throwaway root, so the
     // session start cannot be established. Recording anyway would produce
     // exactly the unverifiable pass the format exists to prevent.
-    const result = spawnSync(
-      process.execPath,
-      [join(ROOT, 'scripts', 'hooks', 'recordHookProbe.mjs'), 'denied'],
-      { cwd: root, encoding: 'utf8' },
-    );
+    const result = spawnSync(process.execPath, [recorder, ANCHOR, 'fired', '--exercise', 'x'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
     const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
     check(
       'the recorder refuses when it cannot establish the session start',
-      result.status !== 0 && /cannot determine|not tracked by git/iu.test(output),
-      `exit ${result.status}, output:\n${output.slice(0, 500)}`,
+      result.status !== 0 && /cannot determine when this session/iu.test(output),
+      `The refusal must be the SESSION one. This asserted on two alternatives for a range, and ` +
+        `the tree it ran against produced the other one — so the case never reached what it is ` +
+        `named for.\nexit ${result.status}, output:\n${output.slice(0, 500)}`,
     );
 
-    const usage = spawnSync(
-      process.execPath,
-      [join(ROOT, 'scripts', 'hooks', 'recordHookProbe.mjs')],
-      { cwd: ROOT, encoding: 'utf8' },
-    );
+    const usage = spawnSync(process.execPath, [recorder], { cwd: ROOT, encoding: 'utf8' });
     check(
       'and refuses an outcome it was not given',
       usage.status !== 0,
       'an unrecorded outcome must not default to the happy one',
+    );
+
+    const unwired = spawnSync(process.execPath, [recorder, 'notAHook', 'fired', '--exercise', 'x'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
+    check(
+      'and refuses to record a mechanism nothing registers',
+      unwired.status !== 0 && /not registered/u.test(`${unwired.stdout ?? ''}${unwired.stderr ?? ''}`),
+      `exit ${unwired.status}; an entry can only exist for a hook that is wired up`,
+    );
+
+    // Against the throwaway root, which carries no record, so nothing can be
+    // inherited. Run against this repository it would inherit the real entry's
+    // exercise, succeed, and overwrite the real record with an `unobserved`.
+    const noExercise = spawnSync(process.execPath, [recorder, ANCHOR, 'unobserved'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    check(
+      'and refuses an entry nobody could reproduce',
+      noExercise.status !== 0 && /exercise is required/u.test(`${noExercise.stdout ?? ''}${noExercise.stderr ?? ''}`),
+      `exit ${noExercise.status}; provenance nobody can check is not provenance`,
+    );
+
+    // ...but once a mechanism HAS an exercise, a later recording inherits it.
+    // The settings file is an input to every entry, so registering any hook
+    // invalidates them all and each must be re-established; if that meant
+    // retyping a shell command with nested quotes, the tool would get run some
+    // other way. `unobserved` is used here because it is the one outcome that
+    // needs no session, which a throwaway root cannot supply.
+    writeEntryIn(root, { exercise: 'the-distinctive-exercise-text' });
+    const inherited = spawnSync(process.execPath, [recorder, ANCHOR, 'unobserved'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    const carried = JSON.parse(readFileSync(join(root, RECORD_FILE), 'utf8'));
+    check(
+      'and a later recording inherits the exercise it already had',
+      inherited.status === 0 && carried.mechanisms[ANCHOR].exercise === 'the-distinctive-exercise-text',
+      `exit ${inherited.status}, exercise now ${JSON.stringify(carried.mechanisms?.[ANCHOR]?.exercise)}\n` +
+        `${`${inherited.stdout ?? ''}${inherited.stderr ?? ''}`.slice(0, 400)}`,
+    );
+    check(
+      'while the OUTCOME it was given replaces the one that was there',
+      carried.mechanisms[ANCHOR].outcome === 'unobserved',
+      `Inheriting the exercise must not inherit the verdict. outcome now ` +
+        `${JSON.stringify(carried.mechanisms?.[ANCHOR]?.outcome)}, and it was "fired" before this ran.`,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -229,7 +441,7 @@ function writeRecordIn(root, overrides) {
 }
 
 // ---------------------------------------------------------------------------
-// THE CONTROL: claiming the gate turns the document check red.
+// THE CONTROL: both halves of the rule turn the document check red.
 // ---------------------------------------------------------------------------
 {
   const featuresPath = join(ROOT, 'docs', 'FEATURES.md');
@@ -244,11 +456,10 @@ function writeRecordIn(root, overrides) {
 
   /** @returns {{ ok: boolean, output: string }} */
   const runDocs = () => {
-    const result = spawnSync(
-      process.execPath,
-      [join(ROOT, 'scripts', 'hooks', 'documentConsistency.mjs')],
-      { cwd: ROOT, encoding: 'utf8' },
-    );
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts', 'hooks', 'documentConsistency.mjs')], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    });
     return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
   };
 
@@ -256,21 +467,23 @@ function writeRecordIn(root, overrides) {
    * Whether `check:docs` is complaining about THIS gate, as opposed to about
    * anything else it checks.
    *
-   * The three cases below used to assert `check:docs` exited 0, which couples a
-   * proof about the hook gate to every other consistency check in the
-   * repository. Measured: the stage-audit gate went red for an unrelated range
-   * being over budget, and this proof failed on both platforms — reporting the
-   * hook gate as broken when it was fine.
+   * The cases below used to assert `check:docs` exited 0, which couples a proof
+   * about the hook gate to every other consistency check in the repository.
+   * Measured: the stage-audit gate went red for an unrelated range being over
+   * budget, and this proof failed on both platforms — reporting the hook gate as
+   * broken when it was fine.
    *
-   * Asserting on the gate's own message decouples them. **Absence is only
+   * Asserting on the rule's own messages decouples them. **Absence is only
    * meaningful because its sibling asserts presence in the same run**: if the
-   * checker printed nothing at all, the induced-failure case below fails. That
+   * checker printed nothing at all, the induced-failure cases below fail. That
    * pairing is what stops "the message is gone" from being satisfied by "the
    * checker is broken".
    *
    * @param {string} output
    */
-  const complainsAboutTheGate = (output) => /observed to fire|unrecorded/iu.test(output);
+  const complainsAboutTheGate = (output) => /observed to fire/iu.test(output);
+  /** @param {string} output */
+  const complainsAboutTheRoster = (output) => /has no\s+entry for it/iu.test(output);
 
   try {
     const quiet = runDocs();
@@ -278,6 +491,11 @@ function writeRecordIn(root, overrides) {
       'with the gate unclaimed the check does not complain about it',
       !complainsAboutTheGate(quiet.output),
       `a gate that fails from the day it is written is a red build people learn to read past.\n${quiet.output.slice(-600)}`,
+    );
+    check(
+      'and with every registered hook recorded it does not complain about the roster',
+      !complainsAboutTheRoster(quiet.output),
+      `the roster half must be quiet when it is satisfied.\n${quiet.output.slice(-600)}`,
     );
 
     // Rewrites the status cell to done whatever it currently says. Matching only
@@ -307,12 +525,18 @@ function writeRecordIn(root, overrides) {
       `exit ok=${red.ok}. If this passes, the gate is a sentence in a table that nothing reads.\n` +
         `${red.output.slice(-800)}`,
     );
+    check(
+      'CONTROL: a registered hook with no entry fails check:docs',
+      !red.ok && complainsAboutTheRoster(red.output),
+      `exit ok=${red.ok}. If this passes, the derived roster is a correct list nothing consults, ` +
+        `and the next hook registered inherits this one's certificate.\n${red.output.slice(-800)}`,
+    );
 
     if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
     const green = runDocs();
     check(
       'and stops complaining once the evidence is back',
-      !complainsAboutTheGate(green.output),
+      !complainsAboutTheGate(green.output) && !complainsAboutTheRoster(green.output),
       `The control must restore what it removed, or every later run of check:docs is measuring ` +
         `this proof's leftovers.\n${green.output.slice(-600)}`,
     );

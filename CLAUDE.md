@@ -445,9 +445,8 @@ These were given directly and bind every agent on this project.
      guard can always be repaired through the very tools the rule prefers.
 
   **This is a Stage 0 exit gate**, not a note someone carries forward — it was
-  the latter, and the handoff is exactly what failed. In a session whose process
-  started after `.claude/settings.json` last changed, run the probe verbatim and
-  record it either way; `executed` is the finding, and it means this section
+  the latter, and the handoff is exactly what failed. Run the probe verbatim and
+  record it either way; `silent` is the finding, and it means this section
   overstates what is in place and is corrected in the same commit.
 
   ```
@@ -455,12 +454,19 @@ These were given directly and bind every agent on this project.
   ```
 
   ```
-  npm run probe:hook -- denied
+  npm run probe:hook -- blockEscapeResolvingWrites fired
   ```
 
+  **The record holds one entry per registered hook, and the set of entries that
+  must exist is derived from `.claude/settings.json`** — so a hook registered
+  later arrives owing its own evidence instead of inheriting the escape guard's.
+  A single outcome was right while one hook was registered and became a widening
+  the moment a second was, with no sentence anywhere overstating anything: the
+  claim was in the data shape.
+
   The recorder reads the session's start time from its own transcript rather
-  than taking your word for it, and refuses a session older than the
-  configuration. `docs/FEATURES.md` carries the gate; claiming it done without
+  than taking your word for it, and refuses a **silent** result from a session
+  older than the configuration. `docs/FEATURES.md` carries the gate; claiming it done without
   the evidence turns `check:docs` red.
 
   The one safe exception is a script that manipulates bytes **numerically**

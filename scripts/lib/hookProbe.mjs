@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * The record of whether the PreToolUse guard has ever been observed to fire.
+ * The record of whether each registered hook has ever been observed to act.
  *
  * ## Why a record, and why it gates Stage 0
  *
@@ -17,6 +17,22 @@
  * rather than a note in a handoff: the handoff was already tried, and the one
  * session that could have run it read `/compact` as a new session.
  *
+ * ## One entry per mechanism, and the roster is derived (finding AAAA-13)
+ *
+ * This held a single outcome for a long time, which was right while one hook was
+ * registered and became a widening the moment a second was. The record would
+ * have said `denied` about `node -e` — evidence about the escape guard and
+ * nothing else — while the gate row it backs named two mechanisms. That is the
+ * quiet kind of widening: not a sentence overstating anything, a **data shape**
+ * with no room to tell two things apart.
+ *
+ * So each registered hook has its own entry, with its own exercise, its own
+ * outcome and its own inputs, and the set of entries that must exist is derived
+ * from `.claude/settings.json` by {@link registeredHooks} rather than listed
+ * here. A third hook cannot inherit the second's certificate, because the thing
+ * that decides which certificates are required is the same file that registers
+ * the hook.
+ *
  * ## The confound this exists to make unrepresentable
  *
  * Attempt 1 (2026-08-18) ran the probe and it was NOT denied — because the
@@ -27,17 +43,50 @@
  *
  * A record therefore carries the session's start time and the moment its inputs
  * last changed, and a record whose session predates its own configuration is
- * **rejected rather than believed**. That is the whole point: the failure mode
- * is not "someone forgot to run it", it is "someone ran it and got an answer
- * that could not mean what it appeared to mean".
+ * **rejected rather than believed** — for the one outcome where that matters.
+ *
+ * ## The three outcomes, and why they are not two
+ *
+ * The vocabulary is about the mechanism, not about the tool call, because two
+ * hook kinds now share it and a PreToolUse denial has no PostToolUse analogue:
+ *
+ *   - **`fired`** — the mechanism was observed acting: the guard denied, the
+ *     reporter reported. **Self-certifying, and accepted at any session age.**
+ *     Nothing that failed to load a hook can produce that hook's own output, so
+ *     no fact about when the session started can weaken it.
+ *   - **`silent`** — the mechanism was exercised and did not act. **Ambiguous**,
+ *     because a hook that is absent is silent too, so this needs a session newer
+ *     than the configuration or it establishes nothing.
+ *   - **`unobserved`** — registered, never exercised. Not an observation in
+ *     either direction, and never a satisfied gate. It exists so that a hook can
+ *     be registered honestly before anyone has seen it act, instead of the
+ *     absence of an entry standing in for it.
+ *
+ * The asymmetry between the first two is the whole point, and it was written
+ * symmetric at first — which would have rejected the first denial this project
+ * ever observed, on the grounds that the session predated the config. It did;
+ * the guard fired anyway.
+ *
+ * **`fired` is not a synonym for the old `denied`, and the difference is what
+ * finding AAAA-12 turned on.** A row claimed that registering the PostToolUse
+ * reporter could not be recorded from an older session, reasoning that a
+ * reporter cannot deny, so its evidence must be `executed`-shaped, so the age
+ * gate applies. The premise is about a *name*. The property the gate is keyed on
+ * is whether the observation is self-certifying, and a report is exactly as
+ * self-certifying as a denial.
  *
  * ## Why the verdict machinery
  *
  * This is a cached point-in-time verdict, which is the class `verdict.mjs` was
- * built for after three of them went stale unnoticed. Its inputs are the two
- * things that decide whether the configured guard denies: the settings that wire
- * it, and the script that answers. Change either and the record stops counting,
- * because a probe run against a different guard is not evidence about this one.
+ * built for after three of them went stale unnoticed. An entry's inputs are the
+ * two things that decide whether that hook acts: the settings that wire it, and
+ * the script that answers. Change either and the entry stops counting, because
+ * a probe run against a different guard is not evidence about this one.
+ *
+ * The settings file is an input to **every** entry, so registering a new hook
+ * invalidates them all and each must be re-established. That is deliberate
+ * over-invalidation: this cannot tell a settings edit that repoints one hook
+ * from one that adds an unrelated one, and the safe direction is to ask again.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -46,31 +95,40 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { SETTINGS_FILE, registeredHooks } from './registeredHooks.mjs';
 import { changedInputs, digestInputs } from './verdict.mjs';
 
 /** Repo-relative path of the tracked record. */
 export const RECORD_FILE = 'docs/hook-probe.json';
 
 /**
- * The command the probe runs. Deliberately the most ordinary possible use of the
- * banned path: if the guard does not stop this, it stops nothing.
+ * The command that exercises the escape guard, quoted verbatim by `CLAUDE.md`.
+ *
+ * Deliberately the most ordinary possible use of the banned path: if the guard
+ * does not stop this, it stops nothing. It is one mechanism's exercise rather
+ * than the probe's, which is why the recorder takes the exercise as an argument
+ * instead of assuming this one.
  */
 export const PROBE_COMMAND = `node -e "console.log('hook test')"`;
 
 /**
- * What this verdict's truth rests on. Two inputs and no more — the wiring, and
- * the script it wires up. The guard's PROOF is not an input: a proof changing
- * does not change what the guard does.
+ * What one mechanism's verdict rests on: the wiring, and the script it wires up.
  *
- * @type {readonly import('./verdict.mjs').Input[]}
+ * The hook's PROOF is not an input — a proof changing does not change what the
+ * hook does.
+ *
+ * @param {string} script Repo-relative path of the hook script.
+ * @returns {readonly import('./verdict.mjs').Input[]}
  */
-export const PROBE_INPUTS = [
-  { file: '.claude/settings.json', why: 'registers the hook; a change can unregister or repoint it' },
-  {
-    file: 'scripts/hooks/blockEscapeResolvingWrites.mjs',
-    why: 'decides deny or allow; a probe against a different script is not evidence about this one',
-  },
-];
+export function mechanismInputs(script) {
+  return [
+    { file: SETTINGS_FILE, why: 'registers the hook; a change can unregister or repoint it' },
+    {
+      file: script,
+      why: 'decides whether the hook acts; a probe against a different script is not evidence about this one',
+    },
+  ];
+}
 
 /**
  * When the current agent session's process started.
@@ -110,21 +168,18 @@ export function currentSessionStart(root) {
 }
 
 /**
- * When the probe's inputs last changed, according to git.
+ * When one mechanism's inputs last changed, according to git.
  *
- * The committer date of the most recent commit touching any declared input. A
+ * The committer date of the most recent commit touching either of them. A
  * session that started before this cannot have loaded the configuration the
- * record claims to be about.
+ * entry claims to be about.
  *
  * @param {string} root
- * @returns {string | null} ISO timestamp, or null if none are tracked yet.
+ * @param {string} script
+ * @returns {string | null} ISO timestamp, or null if neither is tracked yet.
  */
-export function inputsLastChangedAt(root) {
-  /** @type {string[]} */
-  const paths = [];
-  for (const input of PROBE_INPUTS) if ('file' in input) paths.push(input.file);
-
-  const result = spawnSync('git', ['log', '-1', '--format=%cI', '--', ...paths], {
+export function inputsLastChangedAt(root, script) {
+  const result = spawnSync('git', ['log', '-1', '--format=%cI', '--', SETTINGS_FILE, script], {
     cwd: root,
     encoding: 'utf8',
   });
@@ -134,15 +189,21 @@ export function inputsLastChangedAt(root) {
 }
 
 /**
+ * @typedef {'fired' | 'silent' | 'unobserved'} ProbeOutcome
+ *
  * @typedef {{
- *   outcome: 'denied' | 'executed',
- *   command: string,
+ *   script: string,
+ *   event: string,
+ *   outcome: ProbeOutcome,
+ *   exercise: string,
+ *   evidence: string,
  *   recordedAt: string,
- *   sessionStartedAt: string,
+ *   sessionStartedAt: string | null,
  *   inputsLastChangedAt: string,
- *   note: string,
  *   verdict: { digest: string, inputs: Array<{ name: string, digest: string }> },
- * }} ProbeRecord
+ * }} MechanismEntry
+ *
+ * @typedef {{ mechanisms: Record<string, MechanismEntry> }} ProbeRecord
  */
 
 /**
@@ -164,83 +225,138 @@ export function writeRecord(record, root = repoRoot()) {
 }
 
 /**
- * @typedef {'unrecorded' | 'inputs-changed' | 'stale-session' | 'executed' | 'denied'} ProbeState
+ * @typedef {'unregistered' | 'unrecorded' | 'inputs-changed' | 'stale-session'
+ *   | 'unobserved' | 'silent' | 'fired'} ProbeState
  */
 
 /**
- * Whether the guard has been observed to fire, and if not, why the record does
- * not establish it.
+ * Whether one mechanism has been observed to act, and if not, why the record
+ * does not establish it.
  *
  * The order of the checks is the order in which an answer stops meaning
- * anything: no record at all, then a record about a different guard, then a
- * record taken where the guard could not have been loaded, and only then the
- * outcome itself.
+ * anything: not registered at all, then no entry, then an entry about a
+ * different hook, then never exercised, then an exercise taken where the hook
+ * could not have been loaded, and only then the outcome itself.
  *
+ * @param {string} mechanism
  * @param {string} [root]
  * @returns {{ state: ProbeState, detail: string }}
  */
-export function probeState(root = repoRoot()) {
-  const record = readRecord(root);
-  if (record === null) {
+export function probeState(mechanism, root = repoRoot()) {
+  const hook = registeredHooks(root).find((entry) => entry.name === mechanism);
+  if (hook === undefined) {
     return {
-      state: 'unrecorded',
+      state: 'unregistered',
       detail:
-        `No ${RECORD_FILE}. The guard has never been observed to fire. Run it in a session whose ` +
-        `process started AFTER its inputs last changed, then record with: npm run probe:hook -- <denied|executed>`,
+        `${SETTINGS_FILE} registers no hook named ${mechanism}. A mechanism that is not ` +
+        `registered cannot have been observed, whatever the record says about it.`,
     };
   }
 
-  const moved = changedInputs(record.verdict.inputs, PROBE_INPUTS, { root });
+  const entry = readRecord(root)?.mechanisms?.[mechanism];
+  if (entry === undefined) {
+    return {
+      state: 'unrecorded',
+      detail:
+        `No entry for ${mechanism} in ${RECORD_FILE}. It has never been observed to act. Exercise ` +
+        `it, then record with: npm run probe:hook -- ${mechanism} <fired|silent> --exercise "..."`,
+    };
+  }
+
+  const moved = changedInputs(entry.verdict.inputs, mechanismInputs(hook.script), { root });
   if (moved.length > 0) {
     return {
       state: 'inputs-changed',
       detail:
-        `The recorded probe is about a different guard. Changed since it was taken: ` +
-        `${moved.map((entry) => entry.name).join(', ')}. Re-run the probe.`,
+        `The recorded probe for ${mechanism} is about a different hook. Changed since it was ` +
+        `taken: ${moved.map((item) => item.name).join(', ')}. Re-run the probe.`,
+    };
+  }
+
+  if (entry.outcome === 'unobserved') {
+    return {
+      state: 'unobserved',
+      detail:
+        `${mechanism} is registered and has never been exercised. That is an honest entry, not ` +
+        `evidence: it must not satisfy any gate. Exercise it with: ${entry.exercise}`,
     };
   }
 
   // The session-age check applies to ONE outcome, not both, and the asymmetry is
   // the whole point.
   //
-  // A denial is self-certifying: a session that had not loaded the guard cannot
-  // produce one, so no fact about when that session started can weaken it. "It
-  // ran" is the ambiguous outcome — indistinguishable from a guard that is
-  // simply absent — and that is the only one needing the session to be newer
-  // than the configuration.
-  //
-  // This was symmetric when first written, which would have rejected the first
-  // denial this project ever observed, on the grounds that the session predated
-  // the config. It did; the guard fired anyway.
-  if (record.outcome !== 'denied') {
-    if (Date.parse(record.sessionStartedAt) <= Date.parse(record.inputsLastChangedAt)) {
+  // A hook that was never loaded cannot produce its own output, so `fired` is
+  // self-certifying and no fact about when the session started can weaken it.
+  // `silent` is the ambiguous one — indistinguishable from a hook that is simply
+  // absent — and that is the only outcome needing the session to be newer than
+  // the configuration.
+  if (entry.outcome === 'silent') {
+    if (
+      entry.sessionStartedAt === null ||
+      Date.parse(entry.sessionStartedAt) <= Date.parse(entry.inputsLastChangedAt)
+    ) {
       return {
         state: 'stale-session',
         detail:
-          `The probe RAN, in a session that started ${record.sessionStartedAt} — at or before its ` +
-          `inputs last changed (${record.inputsLastChangedAt}). That session may never have loaded ` +
-          `this configuration, so "it ran" cannot be told apart from "there is no guard". Re-run ` +
-          `where the session is newer than the configuration.`,
+          `${mechanism} was exercised and stayed SILENT, in a session that started ` +
+          `${entry.sessionStartedAt ?? '(unknown)'} — at or before its inputs last changed ` +
+          `(${entry.inputsLastChangedAt}). That session may never have loaded this ` +
+          `configuration, so "it did nothing" cannot be told apart from "there is no hook". ` +
+          `Re-run where the session is newer than the configuration.`,
       };
     }
     return {
-      state: 'executed',
+      state: 'silent',
       detail:
-        `The probe RAN rather than being denied, in a session that could have loaded the guard ` +
-        `(started ${record.sessionStartedAt}, inputs last changed ${record.inputsLastChangedAt}). ` +
-        `The mechanism does not work. CLAUDE.md must not claim it does.`,
+        `${mechanism} was exercised and did NOT act, in a session that could have loaded it ` +
+        `(started ${entry.sessionStartedAt}, inputs last changed ${entry.inputsLastChangedAt}). ` +
+        `The mechanism does not work. No document may claim it does.`,
     };
   }
 
   return {
-    state: 'denied',
-    detail: `Observed denied at ${record.recordedAt}, session started ${record.sessionStartedAt}.`,
+    state: 'fired',
+    detail: `Observed acting at ${entry.recordedAt}; exercised by ${entry.exercise}. ${entry.evidence}`,
   };
 }
 
-/** @returns {Resolved} */
-export function currentInputDigest() {
-  return digestInputs(PROBE_INPUTS);
+/**
+ * Every registered hook, its recorded state, and the entries that are missing.
+ *
+ * The `missing` list is what makes a newly registered hook loud: it is derived
+ * from the settings file, so a third hook arrives already owing evidence rather
+ * than quietly covered by the second one's.
+ *
+ * @param {string} [root]
+ * @returns {{
+ *   hooks: readonly import('./registeredHooks.mjs').RegisteredHook[],
+ *   states: Array<{ name: string, state: ProbeState, detail: string }>,
+ *   missing: string[],
+ *   unrecognised: string[],
+ * }}
+ */
+export function probeCoverage(root = repoRoot()) {
+  const hooks = registeredHooks(root);
+  const states = hooks.map((hook) => ({ name: hook.name, ...probeState(hook.name, root) }));
+  const recorded = Object.keys(readRecord(root)?.mechanisms ?? {});
+
+  return {
+    hooks,
+    states,
+    missing: states.filter((entry) => entry.state === 'unrecorded').map((entry) => entry.name),
+    // An entry for a hook nothing registers any more. Not a failure on its own —
+    // it is stale evidence, and saying so beats deleting it silently.
+    unrecognised: recorded.filter((name) => !hooks.some((hook) => hook.name === name)),
+  };
+}
+
+/**
+ * @param {string} script
+ * @param {string} [root]
+ * @returns {Resolved}
+ */
+export function currentInputDigest(script, root = repoRoot()) {
+  return digestInputs(mechanismInputs(script), { root });
 }
 
 /** @typedef {import('./verdict.mjs').Resolved} Resolved */

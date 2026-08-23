@@ -1,26 +1,36 @@
 // @ts-check
 /**
- * Records the outcome of the PreToolUse guard probe.
+ * Records what one registered hook was observed to do.
  *
  * Usage:
- *   1. Run this, verbatim, as an ordinary shell command in the session:
+ *   node scripts/hooks/recordHookProbe.mjs <mechanism> <fired|silent|unobserved>
+ *     [--exercise "<what exercises it>"]   required only the first time
+ *     [--evidence "<what was observed>"]
  *
- *        node -e "console.log('hook test')"
+ * The mechanism names must come from `.claude/settings.json` — this refuses a
+ * name nothing registers, because an entry for a hook that is not wired up is a
+ * certificate with no mechanism behind it.
  *
- *   2. node scripts/hooks/recordHookProbe.mjs denied     (it was blocked)
- *      node scripts/hooks/recordHookProbe.mjs executed   (it ran)
+ * Record whichever outcome happened. `silent` is not a reason to skip the
+ * record — it is the finding, and it means the documents overstate what is in
+ * place and must be corrected in the same commit.
  *
- * Record either outcome. `executed` is not a reason to skip the record — it is
- * the finding, and it means `CLAUDE.md` overstates what is in place and must be
- * corrected in the same commit.
+ * ## What this refuses to do
  *
- * What this refuses to do is record something it cannot stand behind. The
- * session's start time is read from its own transcript rather than supplied, and
- * a session that started before the guard's configuration is rejected outright:
+ * Record something it cannot stand behind. The session's start time is read from
+ * its own transcript rather than supplied, and a **silent** result from a
+ * session that started before the hook's configuration is rejected outright:
  * hooks are read at process start, so such a session cannot have loaded the
  * configuration, and its result cannot mean what it appears to mean. That is not
  * hypothetical — it is what happened on the first attempt, where the process
  * predated its own settings file by forty hours and the probe ran unimpeded.
+ *
+ * A **fired** result is accepted at any session age, deliberately. Nothing that
+ * failed to load a hook can produce that hook's own output, so the observation
+ * certifies itself and refusing it on timing grounds would throw away the only
+ * evidence that matters. That asymmetry is keyed on whether the observation is
+ * self-certifying, not on which hook kind produced it: a PostToolUse report is
+ * exactly as self-certifying as a PreToolUse denial (finding AAAA-12).
  */
 
 import { repoRoot } from '../lib/gitScope.mjs';
@@ -31,83 +41,143 @@ import {
   currentSessionStart,
   inputsLastChangedAt,
   probeState,
+  readRecord,
   writeRecord,
 } from '../lib/hookProbe.mjs';
+import { registeredHooks } from '../lib/registeredHooks.mjs';
 
 const ROOT = repoRoot();
-const outcome = process.argv[2];
 
-if (outcome !== 'denied' && outcome !== 'executed') {
-  process.stderr.write(
-    `Usage: node scripts/hooks/recordHookProbe.mjs <denied|executed>\n\n` +
-      `Run this first, verbatim, as an ordinary shell command:\n\n  ${PROBE_COMMAND}\n\n` +
-      `Then record what happened. Record it either way — "executed" is the finding, not a\n` +
-      `reason to wait for a better answer.\n`,
-  );
+/** @param {readonly string[]} argv @param {string} flag @returns {string | null} */
+function flagValue(argv, flag) {
+  const index = argv.indexOf(flag);
+  if (index === -1) return null;
+  return argv[index + 1] ?? null;
+}
+
+const argv = process.argv.slice(2);
+const positional = argv.filter((value, index) => !value.startsWith('--') && !argv[index - 1]?.startsWith('--'));
+const [mechanism, outcome] = positional;
+const exercise = flagValue(argv, '--exercise');
+const evidence = flagValue(argv, '--evidence');
+
+const hooks = registeredHooks(ROOT);
+const known = hooks.map((hook) => hook.name).join(', ');
+
+/** @param {string} message @returns {never} */
+function refuse(message) {
+  process.stderr.write(`${message}\n`);
   process.exit(2);
 }
 
-const session = currentSessionStart(ROOT);
-if (session === null) {
-  process.stderr.write(
-    `Cannot determine when this session's process started, so the stale-session confound cannot\n` +
-      `be ruled out and this refuses to record an unverifiable pass.\n\n` +
-      `The session transcript is the only artefact carrying that time. If this is running outside\n` +
-      `an agent session, there is nothing to record: the probe is about whether the agent's own\n` +
-      `tool calls are blocked.\n`,
+if (outcome !== 'fired' && outcome !== 'silent' && outcome !== 'unobserved') {
+  refuse(
+    `Usage: node scripts/hooks/recordHookProbe.mjs <mechanism> <fired|silent|unobserved> --exercise "..."\n\n` +
+      `Registered mechanisms: ${known}\n\n` +
+      `  fired       the hook was observed acting (denied, reported). Self-certifying.\n` +
+      `  silent      it was exercised and did nothing. THE FINDING — record it.\n` +
+      `  unobserved  registered, never exercised. Honest, and satisfies no gate.\n\n` +
+      `The escape guard is exercised by running this verbatim as an ordinary shell command:\n\n  ${PROBE_COMMAND}\n`,
   );
-  process.exit(1);
 }
 
-const changedAt = inputsLastChangedAt(ROOT);
+const hook = hooks.find((entry) => entry.name === mechanism);
+if (hook === undefined) {
+  refuse(
+    `${mechanism ?? '(no mechanism named)'} is not registered in .claude/settings.json.\n\n` +
+      `Registered mechanisms: ${known}\n\n` +
+      `An entry for an unregistered hook is a certificate with no mechanism behind it. Register ` +
+      `it first, in the same commit as this record.`,
+  );
+}
+
+// How a mechanism is exercised is a property of the mechanism, not of each
+// observation, so it is required once and inherited by every later recording.
+// Re-probing after a settings change — which invalidates every entry — must not
+// mean retyping a command; a tool that is tedious to run correctly is one that
+// gets run some other way.
+const existing = readRecord(ROOT)?.mechanisms?.[hook.name];
+const exerciseText = exercise ?? existing?.exercise ?? null;
+if (exerciseText === null || exerciseText.trim() === '') {
+  refuse(
+    `--exercise is required the first time a mechanism is recorded. It says what was done to make ` +
+      `the hook act, or — for unobserved — what WOULD. An entry nobody can reproduce is ` +
+      `provenance nobody can check.\n\n` +
+      `Later recordings inherit it; pass --exercise again only when the way you exercise it changed.`,
+  );
+}
+
+const changedAt = inputsLastChangedAt(ROOT, hook.script);
 if (changedAt === null) {
-  process.stderr.write(
-    `The probe's inputs are not tracked by git yet, so there is no moment to compare the session\n` +
-      `start against. Commit .claude/settings.json and the guard script first.\n`,
+  refuse(
+    `${mechanism}'s inputs are not tracked by git yet, so there is no moment to compare the ` +
+      `session start against. Commit .claude/settings.json and ${hook.script} first.`,
   );
-  process.exit(1);
 }
 
-// Only an "executed" outcome needs the session to be newer than the guard it is
-// reporting on. A denial cannot be produced by a session that never loaded the
-// guard, so its own timing cannot weaken it — and refusing one on those grounds
-// would throw away the only evidence that matters.
-if (outcome === 'executed' && Date.parse(session.startedAt) <= Date.parse(changedAt)) {
-  process.stderr.write(
-    `REFUSING to record.\n\n` +
-      `  session started        ${session.startedAt}\n` +
-      `  inputs last changed    ${changedAt}\n\n` +
-      `The probe RAN in a session that started at or before the guard's configuration last changed.\n` +
-      `That session may never have loaded it, so "it ran" cannot be told apart from "there is no\n` +
-      `guard", and recording it would assert something this run cannot establish.\n\n` +
-      `Re-run where the session is newer than the configuration. Note that /compact does not start a\n` +
-      `new process; it clears context inside the same session.\n`,
-  );
-  process.exit(1);
+/** @type {string | null} */
+let sessionStartedAt = null;
+if (outcome !== 'unobserved') {
+  const session = currentSessionStart(ROOT);
+  if (session === null) {
+    refuse(
+      `Cannot determine when this session's process started, so the stale-session confound cannot\n` +
+        `be ruled out and this refuses to record an unverifiable observation.\n\n` +
+        `The session transcript is the only artefact carrying that time. If this is running outside\n` +
+        `an agent session, there is nothing to record: the probe is about whether the agent's own\n` +
+        `tool calls meet the hook.`,
+    );
+  }
+  sessionStartedAt = session.startedAt;
+
+  if (outcome === 'silent' && Date.parse(sessionStartedAt) <= Date.parse(changedAt)) {
+    process.stderr.write(
+      `REFUSING to record.\n\n` +
+        `  session started        ${sessionStartedAt}\n` +
+        `  inputs last changed    ${changedAt}\n\n` +
+        `${mechanism} stayed SILENT in a session that started at or before its configuration last\n` +
+        `changed. That session may never have loaded it, so "it did nothing" cannot be told apart\n` +
+        `from "there is no hook", and recording it would assert something this run cannot\n` +
+        `establish.\n\n` +
+        `Re-run where the session is newer than the configuration. Note that /compact does not start\n` +
+        `a new process; it clears context inside the same session.\n`,
+    );
+    process.exit(1);
+  }
 }
 
-const digest = currentInputDigest();
+const digest = currentInputDigest(hook.script, ROOT);
+const record = readRecord(ROOT) ?? { mechanisms: {} };
 
-writeRecord(
-  {
-    outcome,
-    command: PROBE_COMMAND,
-    recordedAt: new Date().toISOString(),
-    sessionStartedAt: session.startedAt,
-    inputsLastChangedAt: changedAt,
-    note:
-      outcome === 'denied'
-        ? 'The guard blocked the command. The mechanism CLAUDE.md describes is live.'
-        : 'The command RAN in a session that could have loaded the guard. The mechanism does not ' +
-          'work; correct CLAUDE.md in the same commit.',
-    verdict: {
-      digest: digest.digest,
-      inputs: digest.inputs.map((input) => ({ name: input.name, digest: input.digest })),
-    },
+record.mechanisms[hook.name] = {
+  script: hook.script,
+  event: hook.event,
+  outcome,
+  exercise: exerciseText,
+  evidence:
+    evidence ??
+    (outcome === 'fired'
+      ? 'The hook produced its own output. Nothing that failed to load it can do that.'
+      : outcome === 'silent'
+        ? 'The hook did nothing in a session that could have loaded it. It does not work.'
+        : 'Registered and never exercised. This is not evidence and satisfies no gate.'),
+  recordedAt: new Date().toISOString(),
+  sessionStartedAt,
+  inputsLastChangedAt: changedAt,
+  verdict: {
+    digest: digest.digest,
+    inputs: digest.inputs.map((input) => ({ name: input.name, digest: input.digest })),
   },
-  ROOT,
+};
+
+// Sorted, so the file's order is the resolver's order and a diff shows the
+// change rather than the reshuffle.
+record.mechanisms = Object.fromEntries(
+  Object.entries(record.mechanisms).sort(([a], [b]) => a.localeCompare(b)),
 );
 
-const { state, detail } = probeState(ROOT);
-process.stdout.write(`Recorded ${outcome} in ${RECORD_FILE}\n  state: ${state}\n  ${detail}\n`);
-process.exit(state === 'denied' ? 0 : 1);
+writeRecord(record, ROOT);
+
+const { state, detail } = probeState(hook.name, ROOT);
+process.stdout.write(`Recorded ${outcome} for ${hook.name} in ${RECORD_FILE}\n  state: ${state}\n  ${detail}\n`);
+process.exit(state === 'fired' || state === 'unobserved' ? 0 : 1);

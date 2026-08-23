@@ -32,9 +32,10 @@ import { join } from 'node:path';
 
 import { auditRecordDisagreement, auditScope, stagedWatermark } from '../lib/auditWatermark.mjs';
 import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
-import { probeState } from '../lib/hookProbe.mjs';
+import { probeCoverage, probeState } from '../lib/hookProbe.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
+import { ANCHOR_SCRIPT, mechanismName } from '../lib/registeredHooks.mjs';
 import { THREAT_MODEL_TOPICS, unraisedTopics } from '../lib/threatModelTopics.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
@@ -420,20 +421,48 @@ registerRule({
 });
 
 // ---------------------------------------------------------------------------
-// 5. The Stage 0 gate on the tool-use guard is marked done only when the guard
-//    has actually been observed to fire.
+// 5. Every registered hook owes its own evidence, and the Stage 0 gate on the
+//    tool-use guard is marked done only when that guard was seen to fire.
 // ---------------------------------------------------------------------------
 registerRule({
-  name: 'the tool-use guard gate is not claimed before the guard was seen to fire',
-  // docs/FEATURES.md against docs/hook-probe.json — the claim and its evidence
-  // are two files, and either one moving changes the answer.
+  name: 'every registered hook has its own probe entry, and the gate is not claimed without one',
+  // docs/FEATURES.md against docs/hook-probe.json against .claude/settings.json
+  // — the claim, its evidence, and the roster of what owes evidence. Any of the
+  // three moving changes the answer.
   scope: 'whole-corpus',
   documents: [],
   run(failures) {
-  // Deliberately quiet until someone claims the gate. Failing from the moment
-  // the row exists would put the build permanently red for work that is
-  // correctly outstanding, and a red build nobody caused is a red build people
-  // learn to read past — which is how this gate would come to mean nothing.
+  // The roster half is loud from the moment a hook is registered, and that is
+  // deliberate: it goes red only for a real, momentary, actionable condition —
+  // somebody wired up a hook and recorded nothing about it. Finding AAAA-13 is
+  // what it exists to make impossible. While the record held ONE outcome, a
+  // second hook inherited the first one's certificate without a sentence
+  // anywhere overstating anything; the widening was in the data shape. So the
+  // set of entries that must exist is derived from the settings file, and a
+  // third hook arrives already owing evidence.
+  const coverage = probeCoverage(ROOT);
+  for (const name of coverage.missing) {
+    const hook = coverage.hooks.find((entry) => entry.name === name);
+    failures.push(
+      `.claude/settings.json registers ${name} (${hook?.event}) and docs/hook-probe.json has no ` +
+        `entry for it. A hook with no entry of its own is one covered by somebody else's ` +
+        `evidence.\n      Record it — "unobserved" is an honest entry and satisfies no gate: ` +
+        `npm run probe:hook -- ${name} unobserved --exercise "..."`,
+    );
+  }
+  for (const name of coverage.unrecognised) {
+    failures.push(
+      `docs/hook-probe.json carries an entry for ${name}, which .claude/settings.json no longer ` +
+        `registers. Delete the entry in the commit that unregistered the hook rather than ` +
+        `leaving evidence about a mechanism that is not in force.`,
+    );
+  }
+
+  // The gate half is deliberately quiet until someone claims it. Failing from
+  // the moment the row exists would put the build permanently red for work that
+  // is correctly outstanding, and a red build nobody caused is a red build
+  // people learn to read past — which is how this gate would come to mean
+  // nothing.
   //
   // What it does close is the route that actually worries: marking the row done
   // because the mechanism is BUILT. Every part of it is built and proven. The
@@ -451,8 +480,12 @@ registerRule({
         'rather than leaving one that inspects nothing.',
     );
   } else if (/\|\s*\*\*done\*\*\s*\|?\s*$/.test(row)) {
-    const { state, detail } = probeState(ROOT);
-    if (state !== 'denied') {
+    // The gate names ONE mechanism — the escape guard — and says nothing about
+    // any other hook. Naming it through the resolver's anchor keeps that
+    // narrow: a row claiming this gate can never come to vouch for a hook
+    // registered later.
+    const { state, detail } = probeState(mechanismName(ANCHOR_SCRIPT), ROOT);
+    if (state !== 'fired') {
       failures.push(
         `docs/FEATURES.md marks the tool-use guard gate done, but the guard has not been ` +
           `observed to fire (${state}).\n      ${detail}`,
