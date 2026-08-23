@@ -340,13 +340,37 @@ import { pathToFileURL } from 'node:url';
 import koffi from 'koffi';
 
 import { createRoster } from '../lib/passRoster.mjs';
+import { buildLargeFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
 
 const ROOT = repoRoot();
 const SHIM = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
-const FIXTURE = join(ROOT, 'packages', 'testing', 'fixtures', 'generated', 'perf-baseline.pdf');
+/**
+ * The document the host IS handed — GENERATED here, not assumed to exist.
+ *
+ * This named `packages/testing/fixtures/generated/perf-baseline.pdf`, which the
+ * performance gate happens to produce. On a developing machine that file is
+ * always there and the dependency was invisible; on the shim job's fresh
+ * checkout it is not, and the first CI run of this proof died on `ENOENT
+ * copyfile` after taking five ACL grants and creating a container.
+ *
+ * **Audit item 3's inverse, and the plainest instance of it yet**: a branch keyed
+ * on the presence of something, where the developed-in world is the one that has
+ * it. Nothing here was wrong on this machine and nothing could be.
+ *
+ * `buildLargeFixture` caches against a digest of its own source plus the
+ * parameters, so this costs one 64 KB write on a cold machine and nothing after.
+ * Its own name and parameters rather than the gate's: sharing a filename with a
+ * caller that may change its parameters is a cache two things thrash.
+ */
+const FIXTURE = buildLargeFixture({
+  root: ROOT,
+  targetBytes: 64 * 1024,
+  pages: 1,
+  name: 'containment-handed.pdf',
+}).path;
 
 /**
  * A FIXED name, deliberately, so a leftover from a crashed run is detectable.
