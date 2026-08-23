@@ -644,6 +644,252 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-23 — Stage audit: `e84538d..52edb0f` — a scan CI could not tell had scanned nothing, and a correction that created the defect it was correcting
+
+**Audited through `52edb0f`.** 9 commits, 17 files, **1 proof added, 2
+modified**, 2 new source files and **4 changed** — from `npm run audit:scope`.
+
+The range is YYY-1 to YYY-3, ZZZ-1 and ZZZ-2, XXX-1's discharge and XXX-3, the
+NUL repair text, and AAAA-1 raised. Findings **AAAA-2** to **AAAA-5**.
+
+### The range's headline
+
+**Three of this range's defects were in the instruments written to close the
+previous defect, and one of them was created by the correction of the one before
+it.** That is the premise the range-scoped audit exists on, arriving four times
+in nine commits.
+
+The sharpest is ZZZ-1. YYY-2 closed a contract that lived in a comment; the
+comment written to explain the fix stated the opposite of the measurement, in
+the position a reader takes as the contract, and the true sentence sat eighteen
+lines below the false one. Item 7's exact shape — **inside the fix for the
+finding that item 7 had just been applied to.** NNN-4's sweep compensation was
+run for YYY-1 and it worked; it does not prevent a *new* false statement being
+written a commit later, and nothing does.
+
+### 1. Root cause, or workaround?
+
+Classified one at a time.
+
+**Root cause, mechanism named:** YYY-1 and XXX-3 (a correction landed in one
+place while the file that produced the reading kept the superseded claim) ·
+YYY-2's brand (the contract was prose; it is a type where a type can reach) ·
+ZZZ-1 (an ambiguous clause, split into two statements that cannot be read
+against each other) · ZZZ-2 (a search with no complement) · the main-guard fix
+(`pathToFileURL` is the resolver; a hand-built `file://` string is a second
+opinion about URL encoding).
+
+**NOT a root-cause fix, and it says so: YYY-3.** The sweep printed 35 failures
+at 0.0s that each pass alone, and **the mechanism is not established.** The
+broken mode is refused rather than repaired. That is the right direction — it
+makes the mode unavailable with no override, and prints what would unblock it —
+but it is a containment, and calling it a fix would be the workaround wearing a
+fix's clothes that item 1 asks about. The unblocking condition is written into
+the refusal: find the mechanism, then a job object per script.
+
+**Partial, and named as such: the NUL repair text.** It reduces the cost of
+diagnosing a control character; it does nothing about the window between the
+write and `git add` in which the file is corrupt and the symptom is
+unattributed. The PostToolUse hook is the owed mechanism and is a deliberate
+unit, because registering it invalidates `docs/hook-probe.json` and reopens a
+Stage 0 gate.
+
+**No check was loosened anywhere in the range.** Both modified proofs are
+strictly additive; the only deletion in either is `cases: 14` becoming
+`cases: 19`, which is coverage arriving. Read rather than assumed — the
+modified-proofs column is the one that cannot be skimmed.
+
+**No override or escape hatch was added.** The sweep refusal deliberately has
+none, on the escape hook's precedent.
+
+### AAAA-5 — a scan wired into CI that had scanned nothing, and CI could not have told
+
+`electronBinaryCallers.mjs`'s first run exited 0 having printed nothing: the
+main guard compared `import.meta.url` against a hand-built `file://` string,
+which on Windows is `file://C:/...` against `file:///C:/...` and never matches.
+
+**The part that matters is not the bug, it is what would have caught it.**
+Nothing would. The scan is invoked in Guards through `annotate.mjs`, which
+re-emits output only on failure — so a scan whose main guard never fires exits 0
+silently and the step is green. `check:proofcoverage` proves the proof is
+*invoked*; nothing proves the scan *ran*. And its own proof calls `report()`
+directly, so the CLI path — the one CI uses — is exercised by no case at all.
+
+Caught by the absence of output, which is luck: the same defect in a scan whose
+normal output is a single quiet line would not have been noticed.
+
+This is *configured is not run* at the level of a check's entry point, and it
+generalises past this file — every `check:*` in this repository is a module with
+a main guard, and the guard is what CI actually enters. The remedy is one case
+per scan that spawns it as a CLI and requires non-empty output beside exit 0.
+Owed.
+
+### 2. Verified against the easy shape only?
+
+**The brand was, and the easy shape was the finding.** `Win32HostSurfaceConfig.
+executablePath` is branded, and `npm run typecheck` stayed green — because both
+callers import the surface through a computed `import()`, which types as `any`.
+Had the measurement not been taken the range would have shipped a type that
+protects only the callers that were already correct. The scan exists because of
+what that measurement said.
+
+**The board reader was not.** `npm run board` had only ever been run with a
+healthy API quota. With the quota exhausted it polled 40 times against HTTP 403
+and reported *"that is a timeout, not a verdict"* — correctly, and returning 2.
+The hard shape appeared and I misread it, which is AAAA-2 and AAAA-3 below.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Two reductions, both deliberate, both stated at the point of change.**
+
+`npm run local` can no longer sweep the proof half at all. That is a capability
+this tool had and has lost, and the argument is that what it produced was 35
+invented failures with a note attached — but a reduction is a reduction and it is
+recorded as one.
+
+The `either` row's contained outcome has **no recorder** (AAAA-1). It was always
+printed-for-a-reader, and CI has no reader; the row that exists *because* the
+fact varies by Windows build reports that variation where nobody outside the
+organisation can look. Raised in-range, ruled, and being closed by pinning the
+expectation per image rather than by widening the annotation wrapper.
+
+**One gain, and it is the direction that goes unrecorded:** the second Windows
+image asserts every DIFFERS row on Server 2022 as well as Server 2025.
+
+### 3. Would CI have caught it, and is there a defect this machine cannot see?
+
+**AAAA-5 is the first question answering no**, and it is worse than a gap in
+coverage: the check was green *because* it had scanned nothing.
+
+**The cold-build figure is the second question inverted.** `~10 minutes` had sat
+in `ci.yml` since the cache step was written and XXX-1's whole decision turned on
+it. Measured from the Actions API it is **336s**, and the two cold builds this
+range then paid confirmed it — 340s and 294s. A number this machine could never
+have produced, carried as fact for six days, and nearly used to reject the job.
+
+### 4. Are the proofs non-vacuous?
+
+Mutation-tested, each reddening a specific named case: widening the sweep
+boundary from one proof to two reddens exactly the refusal case; removing the
+fixture-root exemption reddens nine, because every earlier case in that file
+builds a fixture declaring several proofs; blinding the assignment pattern
+reddens four including both controls; blinding the creator derivation reddens
+four and leaves the scan printing `all 0 file(s) creating a host name the
+property`, which reads as coverage.
+
+**The last one is the range's best argument for a second control.** ZZZ-2's
+creator derivation is a second search inside an instrument that already had a
+positive control, and the existing control stayed green while the new search was
+blind. *One control per search, not one per instrument.*
+
+**The end-to-end sweep-refusal case carries its own vacuity guard**, because the
+obvious assertion is satisfiable by the defect: a harness that refused only
+*after* sweeping would produce exit 78 while still costing twenty minutes and
+inventing the failures. The case also requires that nothing was executed.
+
+### 4a / 4b. Resolution tests and positive controls
+
+Both new instruments were resolution-tested before they measured anything:
+`sweepScope.mjs` at the boundary that decides it (0, 1 and 2 proofs, plus a
+fixture root), `electronBinaryCallers.mjs` against a fixture carrying the bad and
+the good shape side by side so *reports everything* cannot pass.
+
+Both carry positive controls in the instrument, not only in the proof, and one
+of them refuses when blinded. The empty-walk case throws rather than reporting a
+clean tree.
+
+**And 4b arrived a third time, in a helper written this range.** The first
+attempt to read the cold-build figure returned nothing at all — not an absence,
+an HTTP 403. It was checked instead of accepted, which is the only reason the
+number exists. The scratch board helpers have no positive control of any kind,
+and that is the class AAAA-3 closes.
+
+### AAAA-2 — the piped exit code
+
+`npm run board -- <sha> | tail -4` reports the exit code of `tail`. The board
+returned 2 — *no verdict* — and the wrapper printed `exited with code 0`, and I
+came within one step of filing a defect against `board.mjs`, which is correct.
+
+The rule *never pipe away an exit code* is already written down, in this
+project's own memory, and it did not reach the moment the command was composed —
+which is the escape hook's argument verbatim. **The remedy is not to remember
+it.** The reason for the pipe is that the output is long: forty poll lines to
+reach one verdict. Make the board print short by default, detail behind a flag,
+and there is nothing to pipe. Ruled; owed.
+
+### AAAA-3 — one resolver for the API budget
+
+The unauthenticated GitHub quota is 60 requests an hour and shared by every
+helper. Walking 50 runs to find the cold-build figure spent it, and the board —
+the caller that must never be starved — had nothing left. **Measurement starved
+verification**, and the ordering was accidental rather than chosen.
+
+Two scratch helpers make unbounded per-run requests today, which means the next
+one will too. One fetch wrapper reading `x-ratelimit-remaining` and refusing
+below a reserve puts the class behind a single door and makes the priority
+explicit. Ruled; owed.
+
+### 5. Executed, or asserted?
+
+**Executed:** the mint in both parents, twice, including the re-measurement that
+corrected ZZZ-1 · a NUL's three properties against a real file — invisible to a
+read, unmatchable by an edit, cleared by a whole-file rewrite · the brand's
+failure to reach the `.mjs` callers, via a green typecheck · every mutation
+above · the real defect reintroduced into `hostSurfaceProbe.mjs` and named by
+the scan at the right line · the cold build, from the Actions API, and confirmed
+twice by the builds this range paid · `containment-2022` running on Server 2022,
+step-level, 2s, under `--require-containment` · the check-run annotation count
+for that job, which is 0.
+
+**Asserted:** that `windows-2022` remains available — a retired label fails
+loudly, which is why the literal is safe · that the DIFFERS rows' agreement
+across two images generalises to a third · that the escape hook's denial count
+this session is *about* 70, which is recalled and not parsed, and this project
+has already been wrong about that figure by an order of magnitude.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No architecture change. The second Windows job is CI configuration; the brand and
+the scan register into existing seams; the sweep refusal is a tool refusing a
+mode. No B4 was owed and none was taken.
+
+### 7. Do the documents still match the code?
+
+`FEATURES.md` row 285 was corrected twice inside this range — once to state
+XXX-1's justification, once because *"its first reading is not yet taken"* stopped
+being true the moment the board landed. `ci.yml`'s `~10 minutes` and its
+`THE ONLY JOB THAT CAN RUN IT` were both falsified by commits in this range and
+corrected in them. `lowboxSpike.mjs`'s header table and its paragraph were the
+YYY-1 finding itself.
+
+**The cross-document sweep was run and it is not sufficient.** ZZZ-1 is the
+proof: the sweep finds existing statements of a changed fact and cannot prevent a
+new false one being written into a fix a commit later.
+
+### AAAA-4 — the range diff is not the change history, and the audit reads the range diff
+
+`audit:scope` reports `win32HostSurface.ts` at +79/−2 with a note that **4
+deletions do not appear in the range diff**. They are exactly the ZZZ-1
+correction: lines added at `9812349` and rewritten at `fd69856`. A two-point
+comparison cannot show a file corrected mid-range, and **the one file in this
+range where I corrected myself is the one file whose corrections vanish from the
+figures.**
+
+Ruled a stated limitation rather than a defect, with one line of output: the
+changed-source column says the figures are net and that a file corrected
+mid-range needs `git log -p` over the range. A compensation the instrument
+prints at the point of use is a mechanism; one you must recall is not. It becomes
+a defect the first time something is found late that reading those per-commit
+diffs would have surfaced.
+
+### What is owed out of this range
+
+AAAA-1's per-image pin · AAAA-2's short board output · AAAA-3's budgeted fetch ·
+AAAA-4's one line · AAAA-5's CLI case per scan · the (b) memory probe · the
+PostToolUse hook as its own unit.
+
+---
+
 ## 2026-08-23 — Stage audit: `bc8d94b..e84538d` — three findings a machine could not have produced, and a guard that runs in one place
 
 **Audited through `e84538d`.** 9 commits, 21 files, **2 proofs added, 5
