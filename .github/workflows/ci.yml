@@ -185,10 +185,20 @@ jobs:
       # MessagePortMain ten times, MessageChannelMain not at all.
       #
       # HERE rather than in the shim job, which is where it first landed. This
-      # job installs on BOTH platforms; the shim job is ubuntu-only. The parse
-      # itself is platform-independent, but locating the compiler is not —
-      # `file://` + backslash replacement is Windows-specific code that no CI job
-      # would otherwise execute.
+      # job is a MATRIX over both platforms; the shim job is a single runner,
+      # `windows-latest` (see its `runs-on` below). The parse itself is
+      # platform-independent, but locating the compiler is not — `file://` plus
+      # backslash replacement is a Windows branch and a plain path is the other,
+      # and only a job that runs both executes both.
+      #
+      # CORRECTED 2026-08-23 (finding UUU-1): this said "the shim job is
+      # ubuntu-only", which is false and was false when written — the shim job
+      # has always been windows-latest, as a comment forty lines below its own
+      # `runs-on` already said. The conclusion survives for a DIFFERENT reason
+      # than the one given: both-platforms beats one-platform because it
+      # exercises both branches, not because the other platform is the wrong one.
+      # Item 7's compound claim — "this job installs on BOTH platforms" is true
+      # and vouched for the false clause beside it.
       - name: Prove the Electron surface is parsed, not searched
         run: node scripts/ci/annotate.mjs scripts/proofs/electronSurface.proof.mjs
 

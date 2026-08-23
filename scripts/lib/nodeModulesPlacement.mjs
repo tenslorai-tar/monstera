@@ -99,6 +99,20 @@ const CONTROL_SCRIPT = 'scripts/proofs/preloadSurface.proof.mjs';
  * then have reported a clean tree over the exact defect this scan was built for.
  */
 const INSTALL = /^\s*[^#\n]*\bnpm ci\b/u;
+/**
+ * A job's runner, from its own `runs-on:` line (finding UUU-1).
+ *
+ * NOT matched inside a comment: `[^#\n]*` on the INSTALL line above is there for
+ * the same reason, and this rule needs it more, since prose about placement
+ * quotes runner names constantly — which is the very thing that went wrong.
+ *
+ * A matrix expression (`${{ matrix.os }}`) is captured verbatim rather than
+ * resolved. Resolving it means reading the `strategy` block, which is a second
+ * structural parser for a fact the raw text already states usefully: "this job
+ * is a matrix" is exactly the distinction UUU-1's comments got wrong, and it
+ * survives being unresolved.
+ */
+const RUNS_ON = /^\s{4}runs-on:\s*([^#\n]+?)\s*$/u;
 /** A node invocation of a repository script on a workflow line. */
 const NODE_INVOCATION = /(?:^|[^\w-])node\s+scripts\/[\w./-]+\.mjs/u;
 /** Every repository script named on a line. */
@@ -384,6 +398,7 @@ export async function scriptsNeedingModules(root) {
  * @property {number} from 1-indexed first line of the job.
  * @property {number} to 1-indexed last line of the job.
  * @property {boolean} installs Whether any of its lines runs `npm ci`.
+ * @property {string} runsOn Its `runs-on:` value verbatim, or `(none found)`.
  */
 
 /**
@@ -430,11 +445,14 @@ export function workflowJobs(root) {
           from: index + 1,
           to: lines.length,
           installs: false,
+          runsOn: '(none found)',
         };
         jobs.push(current);
         continue;
       }
       if (current !== undefined && INSTALL.test(text)) current.installs = true;
+      const runner = RUNS_ON.exec(text);
+      if (current !== undefined && runner?.[1] !== undefined) current.runsOn = runner[1];
     }
   }
 
@@ -466,6 +484,30 @@ export function workflowJobs(root) {
         'case this control needs replacing rather than deleting.',
     );
   }
+  // THE SAME CONTROL FOR THE RUNNER, because the same failure is available to it
+  // (finding UUU-1). A `runs-on` pattern that matches nothing leaves every job
+  // reading `(none found)`, and a pattern that matches comments gives every job
+  // whichever runner the nearest paragraph mentions. Both produce a report that
+  // reads fine. Requiring the derivation to have found a runner for every job,
+  // and to have found more than one distinct value, separates them.
+  //
+  // The second half has a stated expiry, like its sibling above: the day every
+  // job runs the same runner, this fires and wants replacing rather than
+  // deleting.
+  const runnerless = jobs.filter((job) => job.runsOn === '(none found)');
+  if (runnerless.length > 0) {
+    throw new Error(
+      `No \`runs-on\` was found for: ${runnerless.map((job) => `${job.file}:${job.name}`).join(', ')}. ` +
+        'Every GitHub job has one, so this is the pattern failing rather than the workflows.',
+    );
+  }
+  if (new Set(jobs.map((job) => job.runsOn)).size < 2) {
+    throw new Error(
+      'Every workflow job reported the SAME runner. That is what a pattern matching a comment ' +
+        'or the first line of the file produces, and it reads exactly like a single-platform ' +
+        'repository. If the workflows genuinely converged on one runner, replace this control.',
+    );
+  }
   return jobs;
 }
 
@@ -485,6 +527,7 @@ export function workflowJobs(root) {
  * @property {PlacedStep[]} violations Those in a job that does not install.
  * @property {string[]} needing Repo-relative scripts that need `node_modules`.
  * @property {boolean} blind Whether the control could not be located.
+ * @property {WorkflowJob[]} jobs Every job, with its runner and whether it installs.
  */
 
 /**
@@ -537,6 +580,7 @@ export async function scan(options = {}) {
     violations: steps.filter((step) => !step.installs),
     needing: [...needing].sort(),
     blind: !located,
+    jobs,
   };
 }
 
@@ -553,11 +597,38 @@ export function report(result) {
       `        read is broken. Reporting nothing here would mean "could not look".\n`
     );
   }
+  // THE DERIVED JOB TABLE, printed on every run (finding UUU-1).
+  //
+  // Two workflow comments stated the wrong operating system for the shim job —
+  // "ubuntu-only" for a job that is and always was `windows-latest` — and it was
+  // the stated reason for a step's placement. Nothing was hiding: the field is
+  // in the same file, and this parser was already walking every one of those
+  // lines for a neighbouring question.
+  //
+  // So the runner is derived beside `installs` and PRINTED, because the failure
+  // is somebody reasoning about placement from memory. A table nobody has to ask
+  // for is the cheapest available answer to that; a check that reads prose and
+  // decides whether it agrees would be a second opinion about English.
+  //
+  // What this deliberately does NOT do: assert that a Windows-only script sits
+  // in a Windows job. That needs a classifier for "Windows-only", which is a
+  // search with its own blind spots, and this file already carries the lesson
+  // about what a classifier's silence looks like.
+  const table = result.jobs
+    .map(
+      (job) =>
+        `        ${`${job.file}:${job.name}`.padEnd(44)} ${job.runsOn.padEnd(24)} ` +
+        `${job.installs ? 'installs' : 'no npm ci'}\n`,
+    )
+    .join('');
+
   if (result.violations.length === 0) {
     return (
       `  ok  ${String(result.steps.length)} workflow step(s) run one of ` +
       `${String(result.needing.length)} scripts needing node_modules, all in jobs that install\n` +
-      `  ok  and the control step was located, so that result means something\n`
+      `  ok  and the control step was located, so that result means something\n` +
+      `  ok  every job's runner was derived from its own \`runs-on\`, and they are not all one\n` +
+      table
     );
   }
   return (

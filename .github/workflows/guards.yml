@@ -343,11 +343,17 @@ jobs:
       #
       # proof:electronsurface runs in ci.yml's BUILD job, not the shim job and
       # not here. It needs the TypeScript compiler, which this job has no
-      # node_modules to load from — and the build job installs on both platforms,
-      # where the shim job is ubuntu-only. That matters because the parse is
-      # platform-independent but LOCATING THE COMPILER IS NOT: `file://` plus
-      # backslash replacement is Windows-specific code no other job would
-      # execute.
+      # node_modules to load from — and the build job is a MATRIX over both
+      # platforms, where the shim job is a single runner, windows-latest. That
+      # matters because the parse is platform-independent but LOCATING THE
+      # COMPILER IS NOT: `file://` plus backslash replacement is a Windows
+      # branch and a plain path is the other, so only a job running both
+      # executes both.
+      #
+      # CORRECTED 2026-08-23 (finding UUU-1): this said "the shim job is
+      # ubuntu-only". It is windows-latest and always has been. The placement
+      # still holds, for the branch-coverage reason above rather than the
+      # platform one that was given.
       #
       # This sentence previously said the shim job was the only one that runs it,
       # which stopped being true in the commit that moved it — and the half

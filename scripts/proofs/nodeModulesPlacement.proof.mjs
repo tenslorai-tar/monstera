@@ -35,7 +35,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 25 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -95,12 +95,24 @@ function workflow(buildSteps, guardsSteps) {
     'name: Fixture',
     'jobs:',
     '  build:',
+    // TWO DIFFERENT RUNNERS, and the comment naming a third is the point
+    // (finding UUU-1). `workflowJobs` refuses a set where every job reports the
+    // same runner, because that is what a pattern matching prose or the wrong
+    // line produces — so a fixture with one runner would make that control
+    // fire on every case in this file rather than on the defect.
+    //
+    // The comment on the guards job below says `runs-on: macos-latest`, which
+    // is true of nothing here. A parser that reads comments picks it up, and
+    // UUU-1 is exactly a comment stating the wrong runner.
+    '    runs-on: ubuntu-latest',
     '    steps:',
     '      - run: npm ci --ignore-scripts',
     ...buildSteps.map((step) => `      - run: ${step}`),
     '  guards:',
+    '    runs-on: windows-latest',
     '    steps:',
     '      # This job runs no `npm ci`, deliberately.',
+    '      # It is not runs-on: macos-latest either, whatever this line says.',
     ...guardsSteps.map((step) => `      - run: ${step}`),
     '',
   ].join('\n');
@@ -419,6 +431,89 @@ try {
       jobs.find((job) => job.name === 'build')?.installs === true,
       `jobs = ${JSON.stringify(jobs)}. Without this, the case above is satisfied by a parser ` +
         `that classifies everything as not installing.`,
+    );
+
+    // THE RUNNER, derived for the same reason and with the same failure
+    // available to it (finding UUU-1). Two workflow comments stated the wrong
+    // operating system for a job, and it was the stated reason for a step's
+    // placement — the field was one line away from something already parsed.
+    check(
+      "each job's runner is read from its own `runs-on`, not from a comment",
+      jobs.find((job) => job.name === 'guards')?.runsOn === 'windows-latest',
+      `jobs = ${JSON.stringify(jobs)}. The guards job carries a comment mentioning ` +
+        `macos-latest, which is the shape UUU-1 had: prose about placement naming a runner. ` +
+        `A parser that reads comments answers with whichever paragraph is nearest.`,
+    );
+    check(
+      'CONTROL: and the OTHER job reports its own, so the read is not one constant',
+      jobs.find((job) => job.name === 'build')?.runsOn === 'ubuntu-latest',
+      `jobs = ${JSON.stringify(jobs)}. Without this, the case above is satisfied by a parser ` +
+        `that answers "windows-latest" for everything — which is what matching the wrong line ` +
+        `once and reusing it looks like.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // THE RUNNER DERIVATION REFUSES, in both of its directions.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture({
+      'scripts/lib/quiet.mjs': 'export const quiet = 1;\n',
+      '.github/workflows/a.yml': [
+        'jobs:',
+        '  one:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: npm ci',
+        '  two:',
+        '    steps:',
+        '      - run: echo nothing',
+        '',
+      ].join('\n'),
+    });
+    let threw = false;
+    try {
+      workflowJobs(root);
+    } catch {
+      threw = true;
+    }
+    check(
+      'a job with NO runs-on THROWS rather than reporting a blank runner',
+      threw,
+      'Every GitHub job has a runner, so a job without one means the pattern failed. A blank ' +
+        'in a table reads as "no constraint" rather than as "could not look", which is the ' +
+        'collapse every third state in this repository exists to prevent.',
+    );
+  }
+
+  {
+    const root = fixture({
+      'scripts/lib/quiet.mjs': 'export const quiet = 1;\n',
+      '.github/workflows/a.yml': [
+        'jobs:',
+        '  one:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: npm ci',
+        '  two:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - run: echo nothing',
+        '',
+      ].join('\n'),
+    });
+    let threw = false;
+    try {
+      workflowJobs(root);
+    } catch {
+      threw = true;
+    }
+    check(
+      'and so does a set where EVERY job reports the same runner',
+      threw,
+      'That is what a pattern matching a comment, or the first `runs-on` in the file, produces ' +
+        '— and it reads exactly like a single-platform repository. The throw says which, and ' +
+        'names the genuine case as one that replaces this control rather than deletes it.',
     );
   }
 
