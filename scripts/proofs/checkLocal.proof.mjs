@@ -38,7 +38,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +49,7 @@ const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLoc
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 11 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -202,6 +202,101 @@ try {
     `exit ok=true. "Everything I could run passed" and "everything passed" are different ` +
       `claims, and an exit code that cannot tell them apart is the one this proof exists for.`,
   );
+
+  // -------------------------------------------------------------------------
+  // 9-11. ORDERING BY MEASURED COST (finding RRR-1). Harness properties again:
+  // the same scripts pass in any order, so no assertion about RESULTS can see
+  // these. What they buy is that a stop strands the expensive TAIL rather than
+  // an alphabetical remainder.
+  // -------------------------------------------------------------------------
+  {
+    /** @param {Record<string, number>} table @param {string[]} names */
+    const withTable = (table, names) => {
+      /** @type {Record<string, string>} */
+      const files = {};
+      /** @type {Record<string, string>} */
+      const manifest = {};
+      for (const name of names) {
+        files[`${name}.mjs`] = EXIT_ZERO;
+        manifest[`proof:${name}`] = `node scripts/${name}.mjs`;
+      }
+      const root = mkdtempSync(join(scratch, 'ordered '));
+      mkdirSync(join(root, 'scripts'), { recursive: true });
+      mkdirSync(join(root, '.cache'), { recursive: true });
+      for (const [file, body] of Object.entries(files)) {
+        writeFileSync(join(root, 'scripts', file), body, 'utf8');
+      }
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({ name: 'fixture', scripts: manifest }, null, 2),
+        'utf8',
+      );
+      writeFileSync(
+        join(root, '.cache', 'checkLocal-durations.json'),
+        JSON.stringify(table, null, 2),
+        'utf8',
+      );
+      const run = spawnSync(process.execPath, [HARNESS, '--root', root, '--floor', '1'], {
+        encoding: 'utf8',
+      });
+      const order = `${run.stdout ?? ''}`
+        .split('\n')
+        .map((line) => /^ {2}ok {2}(proof:[\w-]+)/u.exec(line)?.[1])
+        .filter((name) => name !== undefined);
+      return { root, order, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
+    };
+
+    // Alphabetical order is a-slow, b-mid, c-fast. Cost order is the reverse, so
+    // a run that happens to be alphabetical cannot pass this by luck.
+    const ordered = withTable(
+      { 'proof:a-slow': 90, 'proof:b-mid': 10, 'proof:c-fast': 1 },
+      ['a-slow', 'b-mid', 'c-fast'],
+    );
+    check(
+      'the sweep runs cheapest-measured FIRST, not alphabetically',
+      ordered.order.join(',') === 'proof:c-fast,proof:b-mid,proof:a-slow',
+      `ran ${ordered.order.join(', ')}. The fixture's alphabetical order is the exact reverse ` +
+        `of its cost order, so an unsorted run reads as a-slow first. Output:\n${ordered.output}`,
+    );
+
+    // `a-unknown` sorts FIRST alphabetically and is absent from the table.
+    const unmeasured = withTable(
+      { 'proof:b-known': 5 },
+      ['a-unknown', 'b-known'],
+    );
+    check(
+      'a never-measured script runs LAST, because it is the most likely next proof:cff',
+      unmeasured.order.join(',') === 'proof:b-known,proof:a-unknown',
+      `ran ${unmeasured.order.join(', ')}. Sorting an unknown cost as cheap lets one new ` +
+        `expensive script strand the whole queue again, which is the failure the ordering ` +
+        `exists to prevent. Output:\n${unmeasured.output}`,
+    );
+
+    // The table is written BEFORE the summary, so a run that stopped early still
+    // improves the next one's ordering — which is precisely the run that needs
+    // it most.
+    const partial = runFixture(
+      { 'a-hangs.mjs': HANGS, 'b-marks.mjs': EXIT_ZERO },
+      { 'proof:a-hangs': 'node scripts/a-hangs.mjs', 'proof:b-marks': 'node scripts/b-marks.mjs' },
+      ['--timeout', '2'],
+    );
+    check(
+      'a run that STOPPED early still records what it measured',
+      (() => {
+        try {
+          const table = JSON.parse(
+            readFileSync(join(partial.root, '.cache', 'checkLocal-durations.json'), 'utf8'),
+          );
+          return typeof table['proof:a-hangs'] === 'number';
+        } catch {
+          return false;
+        }
+      })(),
+      'the timed-out script has no recorded cost, so the next run sorts it first again and ' +
+        'strands the queue in exactly the same place. A partial sweep is the one whose ' +
+        'ordering most needs the measurement it just took.',
+    );
+  }
 } finally {
   rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

@@ -1006,6 +1006,52 @@ YAML to answer a different question. A hand-maintained "slow list" is the
 classifier shape this project has now fixed five separate defects in — pattern,
 root, state, added-vs-changed, changed-vs-removed — and it would be a sixth.
 
+### Correction, 2026-08-23 — RRR-1: the fix named above is false, and wrong in the reassuring direction
+
+The reviewing seat refused the derivation proposed below, and it was right.
+
+*"A proof in a provisioning job is by construction not a pre-push proof"*
+confuses **what a proof needs with what it costs**. A developer machine IS
+provisioned — that is what provisioning is for. What excludes `proof:cff` is not
+its job; it is that `cffOobProof.mjs` copies the MuPDF source, strips the bounds
+checks and runs MSBuild over the patched tree. **The cost is inside the script
+and it is not in the YAML.**
+
+Applied literally it takes out far more than intended. `ci.yml:123` provisions
+Electron in the build job, so composition, contract, boundaries, kernelload,
+stackOwnership, jobPlacement, win32Handle, lintRules, lintIgnores,
+electronImports, preloadSurface and testResolution all go with it; the shim job
+provisions twice over and takes pageGeometry, purgeCensus, pathDispatch,
+documentHandlers, licenceProvenance and shimReach. The local set collapses to
+the Guards proofs — roughly thirty fast, unit-shaped checks dropped, and those
+are precisely the ones most likely to catch something before a push.
+
+**And it shrinks in the direction that looks good.** A smaller set finishes
+sooner and prints all-green sooner, and nothing in the output separates
+*excluded correctly* from *excluded by a wrong premise*. That is the classifier
+shape this repository has fixed five separate defects in — pattern, root, state,
+added-vs-changed, changed-vs-removed — arriving inside the derivation I proposed
+to replace a hand-list, using the argument I had just made against the list.
+
+**The discriminator is measured cost, and the tool already measures it.** That
+keeps GG-1's distinction intact: a hand-maintained slow-list is a list; a
+duration table produced by running the sweep is data. Two changes and it is
+done — record per-script duration as an output, and order the run by it
+ascending. The stop at `proof:cff` stranded 44 scripts alphabetically, most of
+which finish in seconds; ascending order makes the strand set the expensive
+tail. No YAML parsing, no premise to be wrong about, and it stays honest on a
+machine faster or slower than this one.
+
+Never-measured scripts sort **last**, not first: an unmeasured script is the most
+likely next `proof:cff`, and the report prints *never measured* as its own state
+so a blank cannot read as cheap. Measured on the real repository — the second
+run reorders `check:*` from alphabetical to 0.3s-first — and mutation-tested:
+restoring alphabetical order reddens exactly the two ordering cases.
+
+The narrowed conclusion below stands and never depended on the derivation:
+`checkLocal.mjs` is useful over `check:*`, it is not a mechanism, and no timeout
+makes the proof half a pre-push operation.
+
 **Two things the harness got right under its own first real failure**, both
 recorded because they were designed after the previous version got them wrong:
 it **stopped** at the timeout rather than reporting results measured against its

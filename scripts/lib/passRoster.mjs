@@ -2,6 +2,35 @@
 /**
  * The roster of what a check actually ran, so its `ok` lines cannot outlive it.
  *
+ * ## THE OUTPUT CONTRACT, first because it is what adopters get wrong
+ *
+ * **`format` prints the passing cases. Do not also write them per case.** Your
+ * `check` helper records and returns; the one write happens at the end. Adopting
+ * the roster while keeping the per-case `process.stdout.write` it replaces
+ * prints every passing line twice.
+ *
+ * That is not hypothetical and it is not rare: it happened **twice in one day**,
+ * in `win32Handle.proof.mjs` and in `checkLocal.proof.mjs`, both by an author who
+ * had `composition.proof.mjs` open as the model and took half its shape. Nothing
+ * at the call site said the roster prints, and the duplication is invisible to
+ * every assertion in the file — the case count stays right, so only a reader
+ * notices. `composition.proof.mjs` is the shape to copy:
+ *
+ * ```
+ * function check(label, condition, detail) {
+ *   const mark = roster.mark();
+ *   if (!condition) failures.push(`${label}\n      ${detail}`);
+ *   roster.record(mark, label);
+ * }
+ * ```
+ *
+ * A failing case is deliberately NOT recorded — `record` returns early when a
+ * failure was pushed since the mark, and `format` is reached only on the success
+ * path, so a red run prints its failures and exits with no tally to be wrong
+ * about. A case that could not run is `record(mark, label, false)`, which the
+ * summary renders apart from the passes; write its REASON yourself, because that
+ * line cannot carry one.
+ *
  * ## Why this exists, measured rather than reasoned
  *
  * Four scripts here accumulated failures and then, if the failure list was

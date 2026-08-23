@@ -53,11 +53,12 @@
  * the 44 scripts it never reached as not-passes, which is correct behaviour and
  * also the answer: **the proof half is not a pre-push operation.**
  *
- * So this tool is useful over `check:*` and is not a sweep of everything. Which
- * proofs are local-capable is already stated in the workflows — one registered
- * in a job that provisions something is, by construction, not one to run before
- * a push — and deriving that is the fix. A hand-maintained slow-list is the
- * classifier shape this repository has fixed five separate defects in.
+ * So this tool is useful over `check:*` and is not a sweep of everything. What
+ * separates a runnable script from `proof:cff` is **measured cost**, not job
+ * membership — see the note on {@link DURATIONS} for why the job-based version
+ * of that rule is false and fails in the reassuring direction. The sweep records
+ * what each script cost and runs cheapest-first, so a stop strands the expensive
+ * tail rather than an alphabetical remainder.
  *
  * ## Three states, because two would lie
  *
@@ -76,7 +77,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -137,7 +138,70 @@ if (derived.length < FLOOR_REQUIRED) {
   process.exit(1);
 }
 
-const selected = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
+/**
+ * Measured cost per script, from previous runs. DATA, not a list.
+ *
+ * ## Why ordering by duration and not by job (finding RRR-1)
+ *
+ * The obvious idea — *a proof registered in a job that provisions something is
+ * not a pre-push proof* — is false, and false in the reassuring direction. A
+ * developer machine IS provisioned; that is what provisioning is for. What makes
+ * `proof:cff` unrunnable here is not its job, it is that `cffOobProof.mjs`
+ * copies the MuPDF source, strips the bounds checks and runs MSBuild over the
+ * patched tree. **The cost is inside the script and it is not in the YAML.**
+ *
+ * Applied literally that rule also takes out far more than intended: the build
+ * job provisions Electron, so composition, contract, boundaries, kernelload,
+ * stackOwnership, jobPlacement, win32Handle, lintRules, lintIgnores,
+ * electronImports, preloadSurface and testResolution all go with it, and the
+ * shim job takes six more. The local set collapses to the Guards proofs —
+ * roughly thirty fast, unit-shaped checks dropped, and those are exactly the
+ * ones most likely to catch something before a push. It shrinks in the direction
+ * that looks good: fewer scripts finish sooner and print all-green sooner, and
+ * nothing in the output separates *excluded correctly* from *excluded by a wrong
+ * premise*. That is the classifier shape this repository has fixed five separate
+ * defects in, arriving inside the derivation meant to replace a hand-list.
+ *
+ * A hand-maintained slow-list is a list. A duration table produced by running
+ * the sweep is data, so this measures rather than models — and it stays honest
+ * on a machine faster or slower than the one it was written on.
+ *
+ * Untracked and rebuildable: losing it costs one unordered run.
+ */
+const DURATIONS = join(ROOT_DIR, '.cache', 'checkLocal-durations.json');
+
+/** @type {Record<string, number>} */
+let known = {};
+try {
+  known = JSON.parse(readFileSync(DURATIONS, 'utf8'));
+} catch {
+  // No table yet, or an unreadable one. Both mean "nothing measured", which the
+  // ordering below treats as expensive rather than cheap.
+  known = {};
+}
+
+const filtered = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
+
+/**
+ * Cheapest first, and **never-measured LAST**.
+ *
+ * The stop-at-first-timeout stranded 44 scripts alphabetically, most of which
+ * would have finished in seconds. Ascending order makes the strand set the
+ * expensive tail instead of an arbitrary remainder.
+ *
+ * An unmeasured script sorts last on purpose: it is the most likely next
+ * `proof:cff`, and putting it first would let one new expensive script strand
+ * everything again. "Never measured" is reported as its own state below, because
+ * it must not read as "cheap".
+ */
+const selected = [...filtered].sort((a, b) => {
+  const left = known[a];
+  const right = known[b];
+  if (left === undefined && right === undefined) return a.localeCompare(b);
+  if (left === undefined) return 1;
+  if (right === undefined) return -1;
+  return left - right;
+});
 
 process.stdout.write(
   `${String(selected.length)} of ${String(derived.length)} declared check/proof script(s), ` +
@@ -183,6 +247,11 @@ for (const name of selected) {
   });
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;
   const took = `${seconds.toFixed(1)}s`;
+  // Recorded for EVERY outcome, including a timeout: a script killed at the
+  // bound cost at least that much, so the figure still sorts it late next time.
+  // Recording only successes would put a repeatedly-timing-out script back at
+  // the front of the queue on every run.
+  known[name] = Number(seconds.toFixed(1));
 
   // `signal` is how spawnSync reports a timeout kill, and it must not be read
   // as an ordinary non-zero exit: one is "this check says no", the other is
@@ -241,10 +310,30 @@ process.stdout.write(
     `${String(timedOut.length)} timed out, ${String(notNode.length)} not run — ` +
     `${String(attempted)} of ${String(selected.length)} attempted.\n`,
 );
+// WRITTEN EVEN ON A PARTIAL RUN, and before the summary. A sweep that stopped
+// early still measured everything up to the stop, and that is exactly the run
+// whose ordering most needs improving next time.
+try {
+  mkdirSync(dirname(DURATIONS), { recursive: true });
+  writeFileSync(DURATIONS, `${JSON.stringify(known, null, 2)}\n`, 'utf8');
+} catch (cause) {
+  process.stdout.write(`\nCould not record durations to ${DURATIONS}: ${String(cause)}\n`);
+}
+
 if (attempted < selected.length) {
+  const unreached = selected.slice(attempted);
   process.stdout.write(
-    `${String(selected.length - attempted)} script(s) were never reached and are NOT passes.\n`,
+    `${String(unreached.length)} script(s) were never reached and are NOT passes:\n`,
   );
+  for (const name of unreached) {
+    const cost = known[name];
+    // "never measured" is its own state and is printed as one. Ordering puts
+    // these last precisely because nothing is known about them, and a blank
+    // where a duration should be reads as cheap to anyone skimming.
+    process.stdout.write(
+      `      ${name} — ${cost === undefined ? 'never measured' : `last took ${String(cost)}s`}\n`,
+    );
+  }
 }
 if (notNode.length > 0) {
   process.stdout.write(`Not a bare node invocation: ${notNode.join(', ')}\n`);
