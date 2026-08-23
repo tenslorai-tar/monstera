@@ -644,6 +644,199 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-23 — Stage audit: `52edb0f..51d3da8` — four of my own errors, two of them mechanised and neither of them fixed
+
+**Audited through `51d3da8`.** 9 commits, 21 files, **2 proofs added, 2
+modified**, 3 new source files and **4 changed** — from `npm run audit:scope`.
+
+The range is AAAA-1 to AAAA-7 and the (b) memory probe. Finding **AAAA-8**.
+
+### The range's headline
+
+**Four defects in this range were mine and none of them were in the code under
+test.** A hand-built `file://` guard, a piped exit code, an API budget spent on
+measurement, and one `|` character in a table cell. Three of the four were
+mechanised in the same range; the fourth produced AAAA-7.
+
+That is not a change of subject from the usual headline — it is the same one at a
+different level. This project's record says defects arrive in the instruments
+written to close the previous defect; this range says they also arrive in **how
+the instruments are driven**, which nothing was watching.
+
+### 1. Root cause, or workaround?
+
+**AAAA-2 and AAAA-3 are mechanised, and calling them FIXED would be wrong.**
+
+The piped exit code and the spent API quota were both produced by the same root
+cause, and it is one this repository has documented seven times: **a rule that
+has to be recalled at the moment a command is composed.** *Never pipe away an
+exit code* was already written down — in this project's own memory — and it did
+not reach me. Neither did *measurement must not starve verification*, which
+nobody had written down at all.
+
+The mechanisms replace the recall. They do not repair the habit, and there is no
+repair for the habit; that is the whole argument the escape hook is built on. So
+these are recorded as **the rule being replaced by a mechanism**, not as the
+defect being fixed — because a range that reports two fixes here would be
+reporting the count as stopping, and the count is not going to stop.
+
+**Root cause, mechanism named:** the `file://` main guard — `pathToFileURL` is
+the authority and `isMain` is the named thing that ends the re-derivation.
+
+**Not a fix at all, correctly: the `|` in the FEATURES cell.** The character was
+a typo. **The finding is AAAA-7**, one level up: six local checks read the INDEX,
+so running them before `git add` inspects the previous content and passes. Fixing
+the character and stopping would have left that untouched.
+
+**No check was loosened.** Both modified proofs are strictly additive — the only
+deletions in either are two roster counts rising and one unused import removed.
+
+**No override was added.** The sweep refusal, the budget reserve and the
+mandatory pin all deliberately have none.
+
+### AAAA-8 — the client/server reading is under-determined, and I wrote it into four places
+
+The AppContainer process-creation split was recorded as **client versus server**
+on three points: Windows 11 client allows, Server 2025 refuses, Server 2022
+refuses.
+
+**Two of those points are GitHub-hosted CI images and the third is this
+machine.** So the single client point is confounded — it is not only a client
+SKU, it is also *not a CI image*: a different install, different local policy,
+different security software, a different AppContainer profile history. **Client
+versus server and this-machine versus a-CI-image survive all three readings
+equally**, and the recorded claim picks one without saying so.
+
+It does not touch the design. Decision 8 rests on *the container cannot be relied
+on for (b)*, which every point supports and which a confounded split supports
+just as well. It touches the **prediction**, which was recorded as though a
+routine image bump would settle it.
+
+**And the correction has a correction of its own, which is why it was checked
+rather than accepted.** The reviewing seat's ruling said the discriminating test
+is unreachable on GitHub-hosted infrastructure because the Windows runners are
+Server SKUs only. Read from `actions/runner-images` this afternoon, that is not
+so: **`windows-11-arm` is Windows 11 — a client SKU — and it is
+GitHub-hosted.** (The same table no longer lists a 2019 image at all.)
+
+So the test IS reachable, and the honest statement is about its price rather than
+its impossibility: `windows-11-arm` is **arm64**, so running it swaps the
+image-provenance confounder for an architecture one and costs an arm64 MuPDF
+build and an arm64 Electron. A prediction that is expensive is a different thing
+from one that can never fire, and only one of them is safe to leave unfired.
+
+### 2. Verified against the easy shape only?
+
+**The main-guard scan was, and its own resolution test caught it.** Written to
+match any mention of `import.meta.url`, it reported 38 files — nearly all of them
+`fileURLToPath(import.meta.url)` locating a module's own directory, which is
+unrelated and correct. Narrowed to a comparison **before it measured anything**.
+A scan that cries wolf is a scan someone turns off.
+
+**`githubFetch`'s missing-header guard was, and its own proof caught it on the
+first run.** It tested `Number.isFinite` of the *converted* value, and
+`Number(null)` is `0`, which is finite. An absent header would have been recorded
+as a measured zero — refusing every bulk caller for the rest of the run. A
+missing measurement presented as a measured emergency, which is the reassuring
+answer's mirror image and just as wrong.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Gains, all stated:** the `either` row asserts both halves now rather than one,
+so a pin is a hard failure; (b) memory moved from *no probe* to *measured*; every
+DIFFERS row is asserted on a second Windows image.
+
+**One reduction, deliberate and stated at the point of change:** the (b) memory
+differential does **not** run against §9.17's 3 GB cap. A differential needs the
+uncontained side to succeed, and committing past 3 GB on a runner fails for
+memory pressure as readily as for the job — the instrument would report the
+runner's RAM as this project's defect. The figure is a derivation and
+`proof:composition` owns it. Written into the instrument's own output, because a
+scope a reader has to infer is a scope nobody applies.
+
+### 3. Would CI have caught it, and is there a defect this machine cannot see?
+
+**The `|` is the first question answering yes, loudly, and that is the problem.**
+CI caught it because CI is the only thing that could: `check:docs` is in Guards
+and not in pre-commit, and the local run I made before committing read the old
+index. So the guard worked and the latency was the whole defect — B10 makes a
+public commit permanent.
+
+**The second question has a new answer this range: `--expect-lowbox-spawn`.** The
+pin makes a per-image fact a hard failure, so a difference this machine cannot
+see now reddens the board rather than printing into a log nobody reads.
+
+### 4. Are the proofs non-vacuous?
+
+Mutation-tested, each reddening a specific named case: setting the budget reserve
+to zero reddens exactly the two refusal cases; blinding the creator derivation
+reddens four and leaves the scan printing `all 0 file(s) creating a host name the
+property`, which reads as coverage; forcing the unstaged list empty reddens only
+the unstaged case; restoring the broken main guard reddens only the CLI case;
+giving the memory cell the real 3 GB cap reddens only the memory differential.
+
+**The best of them is the creator derivation**, because the pre-existing positive
+control stayed GREEN while the new search was blind. *One control per search, not
+one per instrument.*
+
+**The CLI case is built the only way it can separate anything:** against a
+fixture carrying a known violation, requiring exit 1 and the violation text. A
+case that ran the CLI against this repository and expected exit 0 would be
+satisfied by a scan that scanned nothing — AAAA-5 living inside AAAA-5's fix.
+
+### 4a / 4b. Resolution tests and positive controls
+
+All three new instruments were resolution-tested before they measured anything,
+and two of them failed that test and were corrected first (§2 above). The memory
+probe's resolution test is the mutation that gives its cell the real cap.
+
+**The (b) memory probe took two constraints from the record rather than
+rediscovering them.** It runs **last** and **releases**, because the retired
+`hostFixture.mjs` committed 768 MB before its reads and the 235 MB document read
+then failed with `ERR_MEMORY_ALLOCATION_FAILED` — which its table read as the
+*filesystem* property being enforced. And it allocates Buffers rather than a
+typed array, because an allocation V8 cannot satisfy aborts the process, and an
+aborted host writes no report — arriving as *no report*, indistinguishable from a
+host that never started.
+
+### 5. Executed, or asserted?
+
+**Executed:** every mutation above · the memory differential on this machine and
+on both CI images · a NUL's three properties against a real file · both mints
+against each other · the cold MuPDF build, confirmed twice by the builds this
+range paid (340s and 294s against 336s predicted) · the Server 2022 pin, landed
+as a probe and resolved on its first run · the runner-image table, read twice.
+
+**Asserted:** that the DIFFERS rows' agreement across two images generalises to a
+third · that `windows-2022` remains available — a retired label fails loudly,
+which is why the literal is safe · that the escape hook's denial count is *about*
+70, which is recalled and not parsed.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No architecture change. Every unit registered into an existing seam.
+
+### 7. Do the documents still match the code?
+
+Three live specs were corrected **in the same turn the run falsified them**: the
+workflow comment that still said the pin might be wrong; the spike's header table
+that said `build-dependent` where the reading had narrowed; the FEATURES row that
+said AAAA-1's measurement was invisible to CI after it had stopped being. And the
+`NOT MEASURED — the probe is missing` block was replaced rather than corrected
+underneath, because it sat in the position a reader takes as the current state.
+
+**AAAA-8 is item 7 arriving through a different door**, and it is worth naming as
+its own shape: not a document falsified by a later commit, but **a claim recorded
+more strongly than its evidence supported at the moment it was written**. No
+sweep finds that, because nothing changed.
+
+### What is owed out of this range
+
+AAAA-8's correction · the scoped `check:docs` split · folding `NODE_INVOCATION`
+with a corpus equivalence control · the PostToolUse hook.
+
+---
+
 ## 2026-08-23 — Stage audit: `e84538d..52edb0f` — a scan CI could not tell had scanned nothing, and a correction that created the defect it was correcting
 
 **Audited through `52edb0f`.** 9 commits, 17 files, **1 proof added, 2
