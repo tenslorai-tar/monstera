@@ -44,12 +44,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
+import { multiProofSweepRefusal } from '../lib/sweepScope.mjs';
 
 const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 14 });
+const roster = createRoster(failures, { cases: 19 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -388,6 +390,73 @@ try {
       'the timed-out script has no recorded cost, so the next run sorts it first again and ' +
         'strands the queue in exactly the same place. A partial sweep is the one whose ' +
         'ordering most needs the measurement it just took.',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 15-19. THE MULTI-PROOF SWEEP IS REFUSED (finding WWW-2).
+  //
+  // Four of these drive the judgement directly and one drives the harness,
+  // because the BOUNDARY has a side the harness cannot exercise cheaply: the
+  // refusing side costs nothing, and the permitted side costs whatever the
+  // selected scripts cost. Testing only the refusing side would leave the
+  // question *does this guard block the pre-push sweep* answered by nobody —
+  // and a guard that blocks ordinary work is the one that gets turned off,
+  // which this project has already paid for in the escape hook.
+  // -------------------------------------------------------------------------
+  check(
+    'two proofs selected in THIS repository is refused, and the message names the finding',
+    (() => {
+      const refusal = multiProofSweepRefusal({
+        rootDir: REPO,
+        repoRoot: REPO,
+        selected: ['check:docs', 'proof:one', 'proof:two'],
+      });
+      return refusal !== null && refusal.includes('WWW-2') && refusal.includes('job object');
+    })(),
+    'a refusal that does not name the finding or what would unblock it is read as a bug in ' +
+      'the tool, and the pressure lands on adding an override.',
+  );
+  check(
+    'CONTROL: ONE proof is permitted — the boundary is where contamination cannot occur',
+    multiProofSweepRefusal({
+      rootDir: REPO,
+      repoRoot: REPO,
+      selected: ['proof:hostcontainment'],
+    }) === null,
+    'a single proof has no earlier script in the same run to be contaminated by. A guard ' +
+      'that refuses it is refusing the ordinary way to run one proof.',
+  );
+  check(
+    'CONTROL: `--only check:` selects no proofs and is permitted',
+    multiProofSweepRefusal({
+      rootDir: REPO,
+      repoRoot: REPO,
+      selected: ['check:docs', 'check:lockfile', 'check:emittedtemplates'],
+    }) === null,
+    'this is the habitual pre-push sweep. If it ever refuses, the guard has widened past ' +
+      'the measurement behind it.',
+  );
+  check(
+    'CONTROL: a FIXTURE repository is exempt, whatever it declares',
+    multiProofSweepRefusal({
+      rootDir: join(scratch, 'somewhere-else'),
+      repoRoot: REPO,
+      selected: ['proof:a', 'proof:b', 'proof:c', 'proof:d'],
+    }) === null,
+    'every case above this line builds a fixture repository declaring several proofs. A ' +
+      'guard scoped to the tree rather than to this one would make the harness untestable ' +
+      'by its own proof (QQQ-2).',
+  );
+  {
+    const swept = spawnSync(process.execPath, [HARNESS], { encoding: 'utf8' });
+    const output = `${swept.stdout ?? ''}${swept.stderr ?? ''}`;
+    check(
+      'the harness itself refuses the real sweep, and refuses it BEFORE running anything',
+      swept.status === 78 && /WWW-2/u.test(output) && !/declared check\/proof script/u.test(output),
+      `exit=${String(swept.status)}. The second half is the vacuity guard: a harness that ` +
+        `refused only after sweeping would satisfy the exit code while still costing twenty ` +
+        `minutes and inventing the failures. Output:\n${output}`,
     );
   }
 } finally {

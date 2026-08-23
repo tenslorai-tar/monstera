@@ -53,7 +53,11 @@
  * the 44 scripts it never reached as not-passes, which is correct behaviour and
  * also the answer: **the proof half is not a pre-push operation.**
  *
- * So this tool is useful over `check:*` and is not a sweep of everything. What
+ * So this tool is useful over `check:*` and is not a sweep of everything — and
+ * as of finding WWW-2 that is enforced rather than said: a run selecting more
+ * than one `proof:*` script in THIS repository is refused before it starts, with
+ * no flag to turn it off. The measurement and the boundary are on the refusal
+ * itself, below `filtered`. What
  * separates a runnable script from `proof:cff` is **measured cost**, not job
  * membership — see the note on {@link DURATIONS} for why the job-based version
  * of that rule is false and fails in the reassuring direction. The sweep records
@@ -81,6 +85,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { multiProofSweepRefusal } from './lib/sweepScope.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -214,6 +219,56 @@ try {
 }
 
 const filtered = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
+
+/**
+ * THE MULTI-PROOF SWEEP IS REFUSED, NOT DOCUMENTED (finding WWW-2).
+ *
+ * A full sweep of this repository prints failures it invented. Measured
+ * 2026-08-23, fourth pass at a 90-second bound: **35 scripts failed in 0.0
+ * seconds each, and every one of them passed when run alone.** The tool's own
+ * output then carried a note explaining them, which is the worse of the two
+ * available states — a reader who trusts the note learns to discount red, and a
+ * reader who does not gets 35 false diagnoses. This project already wrote that
+ * a scan which cries wolf is a scan someone relaxes.
+ *
+ * The earlier repair confined this to TIMEOUTS: a timeout kills the shell and
+ * orphans the real process, so the sweep stops at the first one rather than
+ * measuring against its own wreckage. That is not the whole class. The 35 above
+ * followed scripts that **completed**, so something a finished script leaves
+ * behind is enough, and **the mechanism is not established.** Naming an
+ * unproven mechanism here would be worse than saying so (Rule 0).
+ *
+ * So the mode is made unavailable rather than forbidden — the same move the
+ * escape-write hook made over a rule that had been written down seven times.
+ * There is no override for the same reason there is none there: an escape hatch
+ * would be a workaround with a flag on it.
+ *
+ * THE BOUNDARY IS WHERE THE DEFECT CANNOT OCCUR, not a round number. The
+ * failures are cross-script contamination, so a run that executes at most one
+ * `proof:*` script has nothing to be contaminated BY. `--only check:` — the
+ * habitual pre-push sweep, eleven scripts, repeatedly green — is unaffected
+ * because it selects no proofs at all, which is evidence the check half does not
+ * contaminate.
+ *
+ * Scoped to THIS repository. A fixture repository built by
+ * `checkLocal.proof.mjs` has three trivial scripts and no wreckage, and the
+ * measurement was never taken there; refusing it would block the only way this
+ * file's own failure paths can be exercised (QQQ-2).
+ *
+ * WHAT WOULD UNBLOCK IT: find the mechanism, then give each script its own job
+ * object so its children die with it. Killing a process tree properly on Windows
+ * needs one, which is a real unit and not something to bury in a convenience
+ * script.
+ *
+ * The decision and its message live in {@link multiProofSweepRefusal} — the
+ * boundary has a side this end-to-end path cannot exercise cheaply, and that
+ * side is the one whose failure gets a guard disabled.
+ */
+const refusal = multiProofSweepRefusal({ rootDir: ROOT_DIR, repoRoot: ROOT, selected: filtered });
+if (refusal !== null) {
+  process.stderr.write(refusal);
+  process.exit(78);
+}
 
 /**
  * Three buckets, and the middle one is the whole point (finding SSS-1).
