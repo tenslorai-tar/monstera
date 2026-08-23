@@ -1095,6 +1095,25 @@ when a commit removes a behaviour, does that comment still assert the behaviour
 EARLIER IN ITS OWN TEXT?** This is where the answer has hidden twice, and it is
 checkable in the diff you are already reading.
 
+**AND ASK IT OF THE CLAIM YOU ARE WRITING, IN THE COMMIT YOU ARE WRITING IT —
+because a claim can be false the moment it is made, and nothing looks at that.**
+Every sweep in this section hunts a statement that *became* false: NNN-4's
+cross-document sweep, the ADR-split reference sweep, the compound-claim reading
+above. All of them need something to have changed. **A claim recorded more
+strongly than its evidence supported was never true, so no sweep will ever find
+it** (finding AAAA-8).
+
+Measured: three readings of an AppContainer behaviour were written up as a
+*client versus server* split. Two of the three came from CI images and the third
+from a developer machine, so the one client point was also the one
+not-a-CI-image point and both explanations fitted equally. It went into four
+documents in one commit and was caught by review, not by any check — and could
+not have been, since nothing about it changed.
+
+The tell is a claim that names ONE axis where the evidence varies on two, and
+the question is the cheapest in this section: **what else is different about the
+odd point?** Ask it while writing, or nobody asks it at all.
+
 The shape is always the same, and it is not carelessness — it is what writing a
 good explanation does to you. The author adds a new section saying what changed
 and why, and leaves the original paragraph standing. The stale half then sits in

@@ -204,7 +204,7 @@
  * | property | contained | uncontained | |
  * |---|---|---|---|
  * | (b) process creation — job alone | `route` refused `UNKNOWN` | `route-no-job` spawned | **differs** |
- * | (b) process creation — LowBox alone | spawned on Windows 11 client, refused `EPERM` on Server 2025 AND Server 2022 | `route-no-job` spawned | **either — client vs server** |
+ * | (b) process creation — LowBox alone | spawned on a Windows 11 client dev machine, refused `EPERM` on Server 2025 AND Server 2022 (both CI images) | `route-no-job` spawned | **either — axis under-determined** |
  * | (d) filesystem, JS | refused `EPERM` | read 6250 bytes | **differs** |
  * | (d) filesystem, native | refused `CreateFileW: error 5` | read 4096 bytes | **differs** |
  * | (c) network, loopback | refused `ETIMEDOUT` | connected | **differs** |
@@ -227,16 +227,55 @@
  * Decision 8 rests on. The split reading is better evidence for that decision
  * than a uniform `same` would have been.
  *
- * **THREE POINTS NOW, AND THE SPLIT IS CLIENT VERSUS SERVER** — measured
- * 2026-08-23 at `0909970`, CI run 32659310667. Windows 11 client allows; Windows
- * Server 2025 (`windows-latest`) refuses; Windows Server 2022 (`windows-2022`)
- * refuses. That was a prediction before it was a reading: the pin for the second
- * server image was landed as a deliberate probe against the competing
- * chronological hypothesis, and resolved on its first run.
+ * **THREE POINTS, AND THE READING IS UNDER-DETERMINED** (finding AAAA-8) —
+ * measured 2026-08-23 at `0909970`, CI run 32659310667. Windows 11 client
+ * allows; Windows Server 2025 (`windows-latest`) refuses; Windows Server 2022
+ * (`windows-2022`) refuses. The second server reading was a prediction before it
+ * was a measurement: its pin was landed as a deliberate probe against the
+ * competing chronological hypothesis, and resolved on its first run.
  *
- * The hypothesis has predictive content, which is the useful part — **a fourth
- * CLIENT image would test it and another server image would not.** Do not read a
- * third agreeing server as confirmation.
+ * This was recorded as *client versus server* for one day, and that claim is
+ * stronger than the evidence. **Two of the three points are GitHub-hosted CI
+ * images and the third is a developer machine**, so the single client point is
+ * also the single not-a-CI-image point: a different install, different local
+ * policy, different security software, a different AppContainer profile history.
+ * *Client versus server* and *this machine versus a CI image* survive all three
+ * readings equally.
+ *
+ * ## The discriminating test, its price, and what it can and cannot say
+ *
+ * It is reachable. `windows-11-arm` is Windows 11 — a client SKU — and it is
+ * GitHub-hosted (read from `actions/runner-images` 2026-08-23; the same table no
+ * longer lists a 2019 image). It is **arm64**, so it swaps the image-provenance
+ * confounder for an architecture one and costs an arm64 MuPDF build and an arm64
+ * Electron.
+ *
+ * **THE TEST IS ASYMMETRIC, and anyone spending that money should know which
+ * answer they are buying.** Client SKU and arm64 move together there, so:
+ *
+ *   - a **refusal** kills the client/server reading outright unless architecture
+ *     explains it — genuinely informative;
+ *   - an **allow** confirms nothing, because client and arm64 are one variable
+ *     in that run.
+ *
+ * It can falsify and it cannot confirm. Buying it to confirm the hypothesis is
+ * buying an outcome the design cannot produce.
+ *
+ * ## And what the answer would change, which today is nothing
+ *
+ * ADR-0023 Decision 8 rests on *the container cannot be relied on for (b)*, and
+ * all three points support that. This row asserts `either` across images and
+ * pins per image, so no verdict here moves whichever way the axis falls.
+ *
+ * What the axis actually bears on is the SHIPPING configuration: real users run
+ * Windows 11 client **x64** — the one point where the container allows the spawn
+ * — so if the reading holds, the job object carries invariant 25(b) on every
+ * machine this product will ever run on, which is what Decision 8 already
+ * asserts.
+ *
+ * **So this is worth recording and not worth scheduling.** It becomes worth
+ * buying the day a design leans on the container for (b), and not before. A
+ * price with no consequence beside it is an open question nobody can rank.
  *
  * So the row asserts `either`, and the assertion has not gone away: the
  * UNCONTAINED half must still be allowed, or two dead cells would satisfy it.

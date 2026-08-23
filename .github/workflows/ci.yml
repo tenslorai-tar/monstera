@@ -904,13 +904,21 @@ jobs:
       # It was landed as a deliberate probe — Server 2022's contained answer had
       # never been read, because this job's first run asserted only the
       # uncontained half — and the probe resolved on its first run rather than
-      # going red. The prediction that produced it is now worth more than the
-      # value: Windows 11 client ALLOWS, Server 2025 refuses, Server 2022
-      # refuses, so the split is **client versus server**, not chronological.
+      # going red. That killed the chronological hypothesis: Windows 11 ALLOWS,
+      # Server 2025 refuses, Server 2022 refuses.
       #
-      # Three points, one hypothesis, and it has predictive content: a fourth
-      # CLIENT image is the one that would test it. Another server image would
-      # not.
+      # IT DID NOT ESTABLISH client-versus-server, which is how it was recorded
+      # for a day (finding AAAA-8). Two of the three points are GitHub-hosted CI
+      # images and the third is a developer machine, so the one client point is
+      # also the one not-a-CI-image point and both explanations survive.
+      #
+      # The discriminating test is `windows-11-arm` — Windows 11 is a client SKU
+      # and is GitHub-hosted — at the price of an arm64 MuPDF and an arm64
+      # Electron, and it is ASYMMETRIC: client and arm64 move together there, so
+      # a refusal falsifies the reading and an allow confirms nothing. Worth
+      # recording, not worth scheduling: no verdict in the proof moves either
+      # way, and shipping runs Windows 11 client x64, where Decision 8 already
+      # says the job carries (b). See the instrument's header.
       #
       # A red board on this step remains a MEASUREMENT rather than a defect —
       # see the failure text, which names the image and sends the reader to
