@@ -481,6 +481,48 @@ if (treeBefore !== null) {
     '  --  the tree was not witnessed: this root is not a git repository\n',
   );
 }
+
+// WHAT THESE CHECKS ACTUALLY READ (finding AAAA-7).
+//
+// Six of them read the INDEX rather than the working tree, deliberately, so they
+// answer about the tree the commit will leave: check:docs, the emitted-template
+// scan, the stack-owner scan, the staged-syntax parse, the file policy and the
+// secret scan. Run before `git add`, every one of them inspects the PREVIOUS
+// content and passes — correctly, about a question the reader did not ask.
+//
+// Measured: a `|` added inside a FEATURES table cell split the row, `check:docs`
+// was run immediately afterwards and printed nine passes, and Guards went red on
+// the next push. The check was not wrong; it had read the old blob.
+//
+// A count of differing paths, not a list of which checks care, because a
+// hand-kept list of index-reading scripts is the second wiring place — and the
+// statement is true of the run as a whole whatever the set contained.
+//
+// NOT folded into the exit code. Editing and sweeping before staging is
+// ordinary, and a harness that failed on it would be turned off; the tree
+// witness above fails because a tree that moved makes the results meaningless,
+// which is a different fact.
+const unstaged = spawnSync('git', ['diff', '--name-only'], {
+  cwd: ROOT_DIR,
+  encoding: 'utf8',
+});
+if (unstaged.status === 0) {
+  const differing = unstaged.stdout.split('\n').filter((line) => line.trim() !== '');
+  process.stdout.write(
+    differing.length === 0
+      ? '  ok  the index matches the working tree, so index-reading checks saw your edits\n'
+      : `\n  !!  ${String(differing.length)} file(s) differ between your working tree and the ` +
+          `index,\n      so every index-reading check above inspected the PREVIOUS content:\n` +
+          `${differing
+            .slice(0, 8)
+            .map((path) => `        ${path}\n`)
+            .join('')}` +
+          (differing.length > 8 ? `        ... and ${String(differing.length - 8)} more\n` : '') +
+          `      Stage them and run again before trusting a pass. check:docs, the\n` +
+          `      emitted-template scan, the stack-owner scan, the staged-syntax parse, the\n` +
+          `      file policy and the secret scan all read the index by design.\n`,
+  );
+}
 if (notNode.length > 0) {
   process.stdout.write(`Not a bare node invocation: ${notNode.join(', ')}\n`);
 }

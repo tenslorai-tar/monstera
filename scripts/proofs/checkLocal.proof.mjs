@@ -51,7 +51,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 19 });
+const roster = createRoster(failures, { cases: 21 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -390,6 +390,64 @@ try {
       'the timed-out script has no recorded cost, so the next run sorts it first again and ' +
         'strands the queue in exactly the same place. A partial sweep is the one whose ' +
         'ordering most needs the measurement it just took.',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 20-21. WHAT THE CHECKS ACTUALLY READ (finding AAAA-7).
+  //
+  // Six checks in the real set read the INDEX, so a sweep run before `git add`
+  // inspects the previous content and passes about a question nobody asked.
+  // Measured: a `|` inside a FEATURES cell split a table row, `check:docs` was
+  // run straight afterwards and printed nine passes, and Guards went red.
+  //
+  // Both directions, because "always warns" is as useless as "never warns" —
+  // and the warning is the one that would get the harness ignored.
+  // -------------------------------------------------------------------------
+  {
+    const root = mkdtempSync(join(scratch, 'staged '));
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    const git = (/** @type {string[]} */ args) =>
+      spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+    git(['init', '--quiet']);
+    git(['config', 'user.email', 'proof@example.invalid']);
+    git(['config', 'user.name', 'proof']);
+    writeFileSync(join(root, 'tracked.txt'), 'content\n', 'utf8');
+    writeFileSync(join(root, 'scripts', 'ok.mjs'), EXIT_ZERO, 'utf8');
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'fixture', scripts: { 'check:ok': 'node scripts/ok.mjs' } }, null, 2),
+      'utf8',
+    );
+    git(['add', '-A']);
+    git(['commit', '--quiet', '-m', 'base']);
+
+    const runHarness = () =>
+      spawnSync(process.execPath, [HARNESS, '--root', root, '--floor', '1'], {
+        encoding: 'utf8',
+      });
+
+    const clean = runHarness();
+    check(
+      'CONTROL: with the index matching the tree, the sweep says the checks saw your edits',
+      /index matches the working tree/u.test(`${clean.stdout ?? ''}${clean.stderr ?? ''}`),
+      `a warning that always fires is one people stop reading, and this is the case that ` +
+        `catches it. Output:\n${clean.stdout ?? ''}${clean.stderr ?? ''}`,
+    );
+
+    // The edit is to a TRACKED file and is left unstaged — which is exactly the
+    // state the FEATURES row was in when check:docs passed over it.
+    writeFileSync(join(root, 'tracked.txt'), 'edited\n', 'utf8');
+    const dirty = runHarness();
+    const dirtyOutput = `${dirty.stdout ?? ''}${dirty.stderr ?? ''}`;
+    check(
+      'an unstaged change makes the sweep say the index-reading checks read the OLD content',
+      /differ between your working tree and the index/u.test(dirtyOutput) &&
+        /tracked\.txt/u.test(dirtyOutput) &&
+        dirty.status === 0,
+      `The exit code must stay 0: editing and sweeping before staging is ordinary work, and a ` +
+        `harness that failed on it would be turned off. exit=${String(dirty.status)}. ` +
+        `Output:\n${dirtyOutput}`,
     );
   }
 
