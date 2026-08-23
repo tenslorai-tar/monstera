@@ -481,9 +481,20 @@ These were given directly and bind every agent on this project.
   a file-editing tool's output. `guardFiles.mjs` blocked the third at commit; the
   first two were found by **luck** — an `Edit` that could not match text a `Read`
   had just displayed, and a `grep` that reported a source file as binary. So the
-  guard's coverage is sound and its LATENCY is the gap: nothing looks between the
-  write and `git add`, which is the window in which you run the file and
+  guard's coverage is sound and its LATENCY is the gap: nothing looked between
+  the write and `git add`, which is the window in which you run the file and
   misdiagnose the symptom.
+
+  **`scripts/hooks/reportControlCharacters.mjs` now closes that window, and it
+  REPORTS rather than prevents.** A PostToolUse hook runs after the write, so
+  `guardFiles.mjs` at commit remains the only fail-closed gate on this class and
+  is unchanged by the reporter existing. It is registered for `Write` and `Edit`
+  as of 2026-08-24 and its `docs/hook-probe.json` entry says **`unobserved`**:
+  registered, never seen to act. That is the honest state and it satisfies no
+  gate. Exercising it needs a payload carrying the byte, and one deliberate
+  attempt on 2026-08-23 emitted two ordinary spaces where `0x01` and `0x00` were
+  intended — so the observation waits on the defect recurring, which is the one
+  producer known to work.
 
   Three tells and the repair, all measured 2026-08-23 against a file carrying one
   NUL: reading it renders the byte as nothing, so the text on screen looks

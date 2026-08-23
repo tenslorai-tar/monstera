@@ -71,7 +71,12 @@ function makeRoot() {
   // fail-closed, but it would let the refusal case below pass for a reason that
   // has nothing to do with the session start it is meant to be testing.
   spawnSync('git', ['init', '--quiet'], { cwd: root, encoding: 'utf8' });
-  for (const file of [SETTINGS_FILE, ANCHOR_SCRIPT]) {
+  // Every registered hook's script, not just the anchor's: the settings file is
+  // copied whole, so the throwaway root registers whatever this repository does,
+  // and a fixture that knew about one hook would start reporting the others as
+  // missing the moment a second was registered. Derived here for the same reason
+  // it is derived in the checker.
+  for (const file of [SETTINGS_FILE, ...registeredHooks(ROOT).map((hook) => hook.script)]) {
     const destination = join(root, file);
     mkdirSync(dirname(destination), { recursive: true });
     copyFileSync(join(ROOT, file), destination);
@@ -264,7 +269,37 @@ function writeEntryIn(root, overrides, others = {}) {
       `found: ${hooks.map((hook) => hook.script).join(', ') || '(nothing)'}`,
     );
 
-    writeEntryIn(root, {});
+    // An entry for every hook the copied settings register — derived, so this
+    // stays true as hooks are added. It caught itself the day the reporter was
+    // registered: the fixture wrote one entry and the settings named two.
+    writeEntryIn(
+      root,
+      {},
+      Object.fromEntries(
+        registeredHooks(root)
+          .filter((hook) => hook.name !== ANCHOR)
+          .map((hook) => [
+            hook.name,
+            /** @type {import('../lib/hookProbe.mjs').MechanismEntry} */ ({
+              script: hook.script,
+              event: hook.event,
+              outcome: 'unobserved',
+              exercise: 'fixture',
+              evidence: 'fixture',
+              recordedAt: '2026-09-01T12:00:00.000Z',
+              sessionStartedAt: null,
+              inputsLastChangedAt: '2026-08-18T00:18:39.000Z',
+              verdict: {
+                digest: digestInputs(mechanismInputs(hook.script), { root }).digest,
+                inputs: digestInputs(mechanismInputs(hook.script), { root }).inputs.map((input) => ({
+                  name: input.name,
+                  digest: input.digest,
+                })),
+              },
+            }),
+          ]),
+      ),
+    );
     check(
       'with every registered hook recorded, nothing is missing',
       probeCoverage(root).missing.length === 0,

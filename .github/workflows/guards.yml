@@ -319,14 +319,13 @@ jobs:
       # typecheck` on the matrix job; this half exists because the plain-Node
       # callers reach the surface through a computed `import()`, which types as
       # `any`, so no brand can constrain them.
-      # The control-character reporter. NOT REGISTERED anywhere yet — see the
-      # FEATURES row. Registering it invalidates every docs/hook-probe.json
-      # entry, since the settings file is an input to all of them, but that
-      # re-record is available from any session: a firing is self-certifying and
-      # only a SILENCE needs a session newer than the configuration. What waits
-      # is the reporter being observed to act, which needs a Write or Edit
-      # payload carrying a control character. The proof runs regardless, because
-      # a mechanism that is not in force must still be the one that will work
+      # The control-character reporter, registered for Write and Edit since
+      # 2026-08-24 and recorded UNOBSERVED — see the FEATURES row. It reports
+      # after the write and cannot prevent one, so guardFiles.mjs at commit is
+      # still the only fail-closed gate here. Observing it act needs a payload
+      # carrying the byte, which nobody has managed to produce on purpose, so
+      # this proof is what stands behind it until the defect recurs: a mechanism
+      # that has not been seen in force must still be the one that will work
       # when it is.
       - name: Prove the control-character reporter sees, and does not cry wolf
         run: node scripts/ci/annotate.mjs scripts/proofs/reportControlCharacters.proof.mjs
