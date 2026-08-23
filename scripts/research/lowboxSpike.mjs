@@ -211,6 +211,8 @@
  * | engine | `mz_init` created a context | same | same |
  * | document it WAS handed | opened, 1 page | same | same |
  * | IPC over a named pipe | refused `EPERM` | connected | **differs** |
+ * | (b) memory — job alone | `route-small-limit` refused at 192 MB under a 256 MB cap | `route-no-job` committed 512 MB | **differs** |
+ * | (b) memory — the LIMIT, not the job | `route` committed 512 MB under §9.17's 3 GB cap | same | same |
  *
  * **The second row separates two mechanisms that were always present together,
  * and the claim that SURVIVED is a reliability one: the container cannot be
@@ -674,6 +676,44 @@ const finish = () => {
     onSpawnSettled = finish;
     return;
   }
+
+  // (b) MEMORY. LAST, AND IT RELEASES — both halves are a recorded lesson.
+  //
+  // The retired hostFixture.mjs committed 768 MB BEFORE its reads, and under the
+  // job's limit the 235 MB document read then failed with
+  // ERR_MEMORY_ALLOCATION_FAILED — which its attribution table read as the
+  // FILESYSTEM property being enforced. A probe that leaves the process at its
+  // ceiling is not measuring one property, it is changing the conditions of
+  // every property after it. So this runs after every other probe has settled,
+  // and drops its chunks before the report is written.
+  //
+  // Buffers rather than a typed array on the V8 heap: an allocation V8 cannot
+  // satisfy aborts the process, and an aborted host writes no report at all —
+  // which arrives as "no report" and is indistinguishable from a host that never
+  // started. Buffer.alloc fails by THROWING, which is a reading.
+  step('commitPastLimit');
+  if (COMMIT_TARGET > 0) {
+    var chunks = [];
+    var committed = 0;
+    try {
+      while (committed < COMMIT_TARGET) {
+        chunks.push(Buffer.alloc(COMMIT_CHUNK, 1));
+        committed += COMMIT_CHUNK;
+      }
+      report.probes.commitPastLimit = allowed('committed ' + String(committed) + ' bytes');
+    } catch (error) {
+      report.probes.commitPastLimit = refused(
+        'at ' + String(committed) + ' bytes: ' + String(error && error.message).slice(0, 70),
+      );
+    }
+    // Dropped before the write, so the report path's own allocation is not
+    // competing with this probe's ceiling.
+    chunks.length = 0;
+    chunks = null;
+  } else {
+    report.probes.commitPastLimit = errored('no commit target was handed to this host');
+  }
+
   step('writing the report');
   try {
     fs.writeFileSync(REPORT, JSON.stringify(report), 'utf8');
@@ -971,6 +1011,37 @@ const { assertableBudget, memoryBudgets } = await import(
 );
 const PROCESS_MEMORY_LIMIT = assertableBudget(memoryBudgets(), 'mupdf-host').absoluteBytes;
 
+/**
+ * The (b) MEMORY probe's numbers, and the reason they are not §9.17's cap.
+ *
+ * §9.17 puts `mupdf-host` at **3 GB**. A differential needs the UNCONTAINED side
+ * to succeed, so measuring against the real cap means committing more than 3 GB
+ * on a CI runner — and when that fails for runner memory pressure rather than
+ * for the job, both cells report `refused`, the row reads `same`, and a red
+ * board says the containment broke. **The instrument would be reporting the
+ * runner's memory as this project's defect**, which is the opposite of the
+ * attribution every other row here is built to protect.
+ *
+ * So the differential runs against a limit chosen to be provable: a cell whose
+ * job carries {@link SMALL_MEMORY_LIMIT} refuses a commit the same host with no
+ * job of ours completes.
+ *
+ * **WHAT THIS DOES AND DOES NOT ESTABLISH, stated because the difference is the
+ * whole of the owed work.** It establishes that the job's memory limit is IN
+ * FORCE — a commit past it fails, in the shipped surface, on a running process.
+ * It does not establish that 3 GB is the number, and it is not evidence about
+ * §9.17. That number is a derivation, and `proof:composition` already requires
+ * the surface's limit to equal §9.17's line; a behavioural probe cannot check a
+ * derivation and a derivation cannot check enforcement.
+ *
+ * A third cell falls out of it for free and is worth having: `route` carries the
+ * REAL 3 GB cap and allocates the same target without difficulty, so the refusal
+ * is attributable to the limit's VALUE rather than to a job existing at all.
+ */
+const SMALL_MEMORY_LIMIT = 256 * 1024 * 1024;
+const COMMIT_TARGET_BYTES = 512 * 1024 * 1024;
+const COMMIT_CHUNK_BYTES = 32 * 1024 * 1024;
+
 const kernel = koffi.load('kernel32.dll');
 const GetLastError = kernel.func('uint32 GetLastError()');
 const WaitForSingleObject = kernel.func('uint32 WaitForSingleObject(void *handle, uint32 ms)');
@@ -1046,9 +1117,10 @@ function readReport(reportPath) {
 /**
  * @param {string} hostJs @param {string} scratchDir @param {string} reportPath
  * @param {string} cell @param {boolean} contained @param {boolean} withJob
+ * @param {number} memoryLimit the job's ProcessMemoryLimit, when there is a job
  * @returns {Record<string, unknown>}
  */
-function runCell(hostJs, scratchDir, reportPath, cell, contained, withJob) {
+function runCell(hostJs, scratchDir, reportPath, cell, contained, withJob, memoryLimit) {
   // A PROCESS WHOSE FAILURE IS ANNOUNCED ON A CHANNEL NOBODY SUBSCRIBES TO IS
   // UNPROVEN, however carefully everything around it is measured.
   //
@@ -1120,7 +1192,10 @@ function runCell(hostJs, scratchDir, reportPath, cell, contained, withJob) {
   let assigned = 'NO JOB (variant)';
   let inJobBeforeResume = 'NO JOB (variant)';
   if (job !== null) {
-    limitsSet = surface.applyLimits(job, PROCESS_MEMORY_LIMIT);
+    // The limit is the CELL's, not a constant read from here. Every cell but one
+    // passes §9.17's derived cap; the memory differential needs a cell whose
+    // limit is small enough to be provable on a runner. See SMALL_MEMORY_LIMIT.
+    limitsSet = surface.applyLimits(job, memoryLimit);
     assigned = surface.assignToJob(job, handle);
     // `readJobMembership` returns 'in-job' | 'not-in-job' | 'unreadable', and
     // the three are kept apart here for the same reason the shipped factory
@@ -1231,17 +1306,29 @@ function runCells(hostJs, scratchDir) {
           // There is no cell off this route: what used to sit here was a forked
           // baseline, and ADR-0022 retired the route it referenced.
           const cells = [
-            { cell: 'lowbox', contained: true, job: true },
-            { cell: 'route', contained: false, job: true },
-            { cell: 'route-no-job', contained: false, job: false },
-            { cell: 'lowbox-no-job', contained: true, job: false },
+            { cell: 'lowbox', contained: true, job: true, limit: PROCESS_MEMORY_LIMIT },
+            { cell: 'route', contained: false, job: true, limit: PROCESS_MEMORY_LIMIT },
+            { cell: 'route-no-job', contained: false, job: false, limit: PROCESS_MEMORY_LIMIT },
+            { cell: 'lowbox-no-job', contained: true, job: false, limit: PROCESS_MEMORY_LIMIT },
+            // THE MEMORY CELL. Uncontained, so the container is not a variable
+            // in its pair, and identical to `route` in every respect except the
+            // job's ProcessMemoryLimit — which is the one thing under test.
+            { cell: 'route-small-limit', contained: false, job: true, limit: SMALL_MEMORY_LIMIT },
           ];
 
           /** @type {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} */
           const collected = [];
           for (const spec of cells) {
             const reportPath = join(scratchDir, `report-${spec.cell}.json`);
-            const spawn = runCell(hostJs, scratchDir, reportPath, spec.cell, spec.contained, spec.job);
+            const spawn = runCell(
+              hostJs,
+              scratchDir,
+              reportPath,
+              spec.cell,
+              spec.contained,
+              spec.job,
+              spec.limit,
+            );
             collected.push({ cell: spec.cell, spawn, report: readReport(reportPath) });
           }
           shut();
@@ -1332,7 +1419,7 @@ function releaseGrants(sid) {
  * the honest shape here: it is not thirteen cases with some skipped, it is a
  * run that measured nothing.
  */
-const roster = createRoster(caseFailures, { cases: 13 });
+const roster = createRoster(caseFailures, { cases: 15 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -1430,6 +1517,13 @@ try {
     `const KOFFI_PATH = ${koffiPath};\n` +
       `const SHIM_PATH = ${JSON.stringify(SHIM)};\n` +
       `const UNHANDED_PATH = ${JSON.stringify(join(ROOT, 'package.json'))};\n` +
+      // EMITTED, not passed on argv, because `argv.slice(-2)` is fixed at two
+      // and widening it would make the host's argument handling depend on how
+      // many probes exist. The target is one number for every cell — what
+      // varies is the LIMIT each cell's job carries, which is the variable
+      // under test.
+      `const COMMIT_TARGET = ${String(COMMIT_TARGET_BYTES)};\n` +
+      `const COMMIT_CHUNK = ${String(COMMIT_CHUNK_BYTES)};\n` +
       // Emitted, not copied. The child cannot import, and a hand-kept second
       // spelling of INVALID_HANDLE_VALUE is precisely what TT-2 was.
       `${INVALID_HANDLE_SOURCE}\n` +
@@ -1756,6 +1850,10 @@ function summarise(runs) {
     ['document', 'openDocument', 'lowbox', 'route', 'same', 'a document it WAS handed'],
     ['IPC', 'namedPipe', 'lowbox', 'route', 'DIFFERS',
       'a named pipe main created — the MessagePort is unreachable off the fork route'],
+    ['(b) memory — job alone', 'commitPastLimit', 'route-small-limit', 'route-no-job', 'DIFFERS',
+      'a commit past the job’s ProcessMemoryLimit, uncontained on both sides'],
+    ['CONTROL: memory is the LIMIT, not the job', 'commitPastLimit', 'route', 'route-no-job', 'same',
+      'the same commit under a job carrying §9.17’s 3 GB cap — allowed on both'],
     ['CONTROL: handed', 'readHanded', 'lowbox', 'route', 'same',
       'must be `same` and allowed on BOTH sides, or the container was handed nothing'],
   ];
@@ -1823,40 +1921,38 @@ function summarise(runs) {
   }
 
   // ---------------------------------------------------------------------------
-  // (b) MEMORY: THE BLOCKER MOVED, AND THE STATE IS DIFFERENT (audit item 2a).
+  // (b) MEMORY: MEASURED, AND WHAT THE MEASUREMENT IS ABOUT.
   //
-  // This row read "the job here sets no memory limit", and that stopped being
-  // true when the cells moved onto the shipped surface. `applyLimits` REQUIRES
-  // a limit — there is no way to use the shipped job without one — so the job
-  // now carries §9.17's absolute cap for `mupdf-host`, derived by the module
-  // that owns the rule.
-  //
-  // **The mechanism arrived as a side effect of using shipped code, not as the
-  // separate work this row anticipated**, and that is exactly the kind of
-  // improvement that goes unrecorded because nothing goes red. The two states
-  // are not the same and must not share an output:
+  // This block went through three states and printed each of them, which is the
+  // point of it existing at all:
   //
   //   was: no mechanism    — nothing set a limit, so nothing could be measured
-  //   now: no probe        — the limit is in force and nothing allocates past it
+  //   then: no probe       — the limit was in force and nothing allocated past it
+  //   now: measured        — two rows above, on running processes
   //
-  // What is still owed is a probe that commits past the cap and reports the
-  // refusal, which `hostFixture.mjs` had as `commit768MB` against a 512 MB
-  // literal its own comment flagged as PP-4. The literal is what could not come
-  // across; the limit came across on its own.
+  // The middle state arrived as a side effect of moving onto the shipped
+  // surface: `applyLimits` has no undefaulted form, so using the shipped job
+  // brought §9.17's cap with it. That is a coverage GAIN, and gains go
+  // unrecorded because nothing goes red when they happen (audit item 2a).
   //
-  // Not silently upgraded either: a reduction nobody prints is a reduction
-  // nobody reviews, and the same is true of a gain — this row is what a reader
-  // sees, so it says which state it is in.
+  // What is printed below is the SCOPE of the reading, because the two rows
+  // above prove enforcement and say nothing about the number. The line
+  // separating those is the whole of what was owed, and it is worth more than
+  // the rows: a behavioural probe cannot check a derivation, and a derivation
+  // cannot check enforcement.
   // ---------------------------------------------------------------------------
   process.stdout.write(
-    '  NOT MEASURED  (b) memory — the LIMIT is in force, the PROBE is missing\n' +
-      `              The job carries §9.17's absolute mupdf-host cap (${String(PROCESS_MEMORY_LIMIT)}\n` +
-      '              bytes), derived by scripts/lib/memoryBudgets.mjs and applied by the SHIPPED\n' +
-      '              surface — it arrived with the migration onto that surface rather than as\n' +
-      '              separate work, because applyLimits has no undefaulted form.\n' +
-      '              So this is no longer "no mechanism". What is owed is a probe that commits\n' +
-      '              past the cap and reports the refusal. hostFixture.mjs had one, against a\n' +
-      '              512 MB literal it flagged as PP-4; the literal is what could not travel.\n\n',
+    '  MEASURED, WITH A STATED SCOPE  (b) memory\n' +
+      '              The job’s ProcessMemoryLimit is IN FORCE on a running process: the two\n' +
+      '              rows above are a refusal under a small cap beside the same commit\n' +
+      '              succeeding with no job of ours, and succeeding again under a job carrying\n' +
+      `              §9.17's real ${String(PROCESS_MEMORY_LIMIT)}-byte mupdf-host cap — so the\n` +
+      '              refusal is the limit’s VALUE and not the mere presence of a job.\n\n' +
+      '              NOT evidence about the 3 GB figure. A differential needs the uncontained\n' +
+      '              side to succeed, and committing past 3 GB on a runner fails for memory\n' +
+      '              pressure as readily as for the job — which would report the runner’s RAM\n' +
+      '              as this project’s defect. The figure is a DERIVATION and\n' +
+      '              proof:composition already requires the surface to carry §9.17’s line.\n\n',
   );
 
   // ---------------------------------------------------------------------------
