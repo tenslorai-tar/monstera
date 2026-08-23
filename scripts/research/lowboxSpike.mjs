@@ -290,13 +290,40 @@
  * and is now read at creation rather than after a lowering that no longer
  * happens, so its motivation changed and its existence did not.
  *
- * **Research, not a proof.** It asserts nothing and gates nothing. What becomes a
- * proof and where it runs is stated in
- * [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
- * §6 (RR-3) — the shim job, with this file's route control and its terminal
- * `unreadable` state travelling with it.
+ * ## THIS IS A PROOF NOW, and it did not move to become one (RR-3, ADR-0023 §6)
  *
- * Usage: node scripts/research/lowboxSpike.mjs [--reset]
+ * It asserts. Every property row carries the verdict the invariant requires and
+ * fails when the measurement disagrees; the working-host control is three cases;
+ * the absence control is one. It is registered as `proof:hostcontainment` and
+ * runs in the shim job — `windows-latest`, builds MuPDF, provisions Electron,
+ * the only job that can host one.
+ *
+ * **The path did not change, and that is a decision rather than laziness.**
+ * `check:docs` requires every `scripts/` path named in a tracked document to
+ * resolve, and this file is named by `docs/JOURNAL.md` and two ADRs — records,
+ * which take appended corrections and are never edited. Moving the file would
+ * have forced a choice between a red check and editing records, to buy a tidier
+ * directory. A file's behaviour is cheap to change and its identity is not,
+ * because identity is what records point at.
+ *
+ * What `scripts/research/` means is corrected where it is stated rather than
+ * worked around: ADR-0023 §6 carries a dated note that the transition happened
+ * in place.
+ *
+ * ## Where it cannot look, it says UNVERIFIABLE and never `passed`
+ *
+ * AppContainer is a Windows kernel object, the engine is the point (QQ-2), and
+ * the surface under test has to be built. Where any of that is missing this
+ * reports UNVERIFIABLE cases and exits 0 — a proof that cannot look must not
+ * print the reassuring answer, and "containment asserted" is the most
+ * reassuring line in the build.
+ *
+ * `--require-containment` turns every one of those into a hard failure, and the
+ * shim job passes it. That is the same shape as `--require-derivation` and
+ * `--require-desktop-copy`: UNVERIFIABLE is honest where nothing is
+ * provisioned, and mandatory where something is.
+ *
+ * Usage: node scripts/research/lowboxSpike.mjs [--reset] [--require-containment]
  *
  *   --reset  delete a leftover profile and its grants from a crashed run, then
  *            exit. Explicit operator action to clear machine state; it clears
@@ -312,6 +339,7 @@ import { pathToFileURL } from 'node:url';
 
 import koffi from 'koffi';
 
+import { createRoster } from '../lib/passRoster.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
@@ -330,19 +358,61 @@ const FIXTURE = join(ROOT, 'packages', 'testing', 'fixtures', 'generated', 'perf
  */
 const CONTAINER = 'monstera-lowbox-spike';
 
+/** @type {string[]} */
+const caseFailures = [];
+
+/**
+ * Mandatory where something can look; UNVERIFIABLE where nothing can.
+ *
+ * The shim job passes it. Without it a machine with no Windows, no shim or no
+ * build reports could-not-look and exits 0, which is the honest answer there —
+ * and would be a green board for a check that never ran on the one job that
+ * exists to run it.
+ */
+const REQUIRE = process.argv.includes('--require-containment');
+
+/**
+ * Refuses to measure, in the one way that is not a pass.
+ *
+ * Exits 0 so a machine that cannot host an AppContainer is not reported as a
+ * containment failure, and prints UNVERIFIABLE so it is not reported as a pass
+ * either. Under `--require-containment` the same condition is a hard failure,
+ * because on a job that provisions everything, "could not look" means something
+ * broke.
+ *
+ * @param {string} why
+ * @returns {never}
+ */
+function unverifiable(why) {
+  if (REQUIRE) {
+    process.stderr.write(
+      `\nCONTAINMENT UNPROVEN, and --require-containment says that is a failure here.\n\n  ${why}\n\n` +
+        `  This flag is passed by the job that provisions Windows, the shim and the build, so a\n` +
+        `  could-not-look on it is something broken rather than something absent.\n`,
+    );
+    process.exit(1);
+  }
+  process.stdout.write(
+    `\n  UNVERIFIABLE  invariant 25's containment is not measured here\n      ${why}\n\n` +
+      `  NOT a pass. Nothing about containment is asserted by this run, and nothing is denied\n` +
+      `  either — the shim job passes --require-containment, where the same condition is red.\n`,
+  );
+  process.exit(0);
+}
+
 if (process.platform !== 'win32') {
-  process.stderr.write('AppContainer is a Windows kernel object. This measures nothing elsewhere.\n');
-  process.exit(1);
+  unverifiable(
+    'AppContainer is a Windows kernel object, and this measures nothing elsewhere. ' +
+      `This is ${process.platform}.`,
+  );
 }
 
 if (!existsSync(SHIM)) {
-  process.stderr.write(
-    `The MuPDF shim is not built at ${SHIM}.\n` +
-      `This spike exists to price a host that has the ENGINE in it. Without the shim it would ` +
-      `measure whether Node starts in a container, which is not the question (QQ-2). Run ` +
-      `\`npm run provision:mupdf\` first.\n`,
+  unverifiable(
+    `The MuPDF shim is not built at ${SHIM}. This exists to prove a host that has the ENGINE ` +
+      `in it; without the shim it would measure whether Node starts in a container, which is ` +
+      `not the question (QQ-2). Run \`npm run provision:mupdf\`.`,
   );
-  process.exit(1);
 }
 
 const userenv = koffi.load('userenv.dll');
@@ -763,13 +833,12 @@ if (config === null || !config.port) {
 
 const BUILT_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32HostSurface.js');
 if (!existsSync(BUILT_SURFACE)) {
-  process.stderr.write(
-    `The Win32 host surface is not built at ${BUILT_SURFACE}.\n` +
-      `This instrument drives the SHIPPED surface rather than a copy of it, so without the ` +
-      `build there is nothing to measure — and measuring a hand-rolled equivalent is the ` +
-      `defect RR-3's migration removed. Run \`npm run build\` first.\n`,
+  unverifiable(
+    `The Win32 host surface is not built at ${BUILT_SURFACE}. This drives the SHIPPED surface ` +
+      `rather than a copy of it, so without the build there is nothing to measure — and ` +
+      `measuring a hand-rolled equivalent is the defect RR-3's migration removed. Run ` +
+      `\`npm run build\`.`,
   );
-  process.exit(1);
 }
 const { createWin32HostSurface } = await import(pathToFileURL(BUILT_SURFACE).href);
 
@@ -1138,6 +1207,26 @@ function releaseGrants(sid) {
   return lines;
 }
 
+/**
+ * The cases, DECLARED so one that stops running cannot take its line and the
+ * total with it (finding Z-4).
+ *
+ * THIRTEEN: three for the working-host control, nine property rows, and the
+ * absence control. The count is constant on any machine that gets this far,
+ * because everything before it is a provisioning gate that exits rather than
+ * running fewer cases — an UNVERIFIABLE run prints no roster at all, which is
+ * the honest shape here: it is not thirteen cases with some skipped, it is a
+ * run that measured nothing.
+ */
+const roster = createRoster(caseFailures, { cases: 13 });
+
+/** @param {string} name @param {boolean} condition @param {string} detail */
+function assert(name, condition, detail) {
+  const mark = roster.mark();
+  if (!condition) caseFailures.push(`${name}\n      ${detail}`);
+  roster.record(mark, name);
+}
+
 const wantsReset = process.argv.includes('--reset');
 
 let container = null;
@@ -1275,6 +1364,23 @@ try {
   rmSync(scratch, { recursive: true, force: true });
 }
 
+// THE CASES, printed after the machine state is reversed so a failure never
+// costs the teardown. `format` throws on a count mismatch, which is what turns
+// "a case stopped running" into a red rather than into a smaller number nobody
+// notices.
+//
+// The roster is skipped entirely when the run never reached the cells —
+// `exitCode` is set by the catch and there is nothing to report about
+// containment. Printing "0 of 13" there would invite reading it as coverage.
+if (caseFailures.length > 0) {
+  process.stdout.write(
+    `\n${String(caseFailures.length)} containment case(s) FAILED:\n\n  - ${caseFailures.join('\n\n  - ')}\n`,
+  );
+  exitCode = 1;
+} else if (exitCode === 0) {
+  process.stdout.write(`\n${roster.format('containment case')}`);
+}
+
 process.exit(exitCode);
 
 /**
@@ -1395,6 +1501,13 @@ function summarise(runs) {
     process.stdout.write(
       `  ${key.padEnd(14)} route    ${route.outcome.padEnd(11)} ${route.detail}\n`,
     );
+    assert(
+      `the uncontained host can ${key}`,
+      route.outcome === 'allowed',
+      `${route.outcome}: ${route.detail}. Every property row is a comparison against this cell, ` +
+        `so a refusal measured against a host that does not work is a broken run rather than ` +
+        `containment.`,
+    );
   }
   process.stdout.write('\n');
 
@@ -1476,38 +1589,69 @@ function summarise(runs) {
   // pair in which the OTHER one is absent on both sides.
   // ---------------------------------------------------------------------------
   /** @type {Array<[string, string, string, string, string]>} */
+  // EVERY ROW CARRIES THE VERDICT IT MUST HAVE (finding RR-3, the proof half).
+  //
+  // Printing a measured verdict and printing an ASSERTED one are different
+  // things, and this file did the first for as long as it was research. A row
+  // that silently flipped from DIFFERS to `same` — containment stopping working
+  // — printed `same` and exited 0, because nothing said which answer the
+  // invariant requires.
+  //
+  // The expected value is part of the row rather than a list beside it, for the
+  // reason the registries exist: a table where the claim and its evidence sit
+  // apart is a table someone updates half of.
+  //
+  // `same` IS the correct expectation for two of these and saying so is load
+  // bearing. The LowBox alone does NOT deliver process creation — WW-1's matrix
+  // established that the job does — so asserting DIFFERS there would assert a
+  // containment this design does not have. The engine and the document must
+  // work INSIDE the container, so `same` is the property; a DIFFERS on either
+  // means the host cannot do its job.
+  /** @type {ReadonlyArray<readonly [string, string, string, string, string, string]>} */
   const PROPERTIES = [
-    ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job',
+    ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job', 'DIFFERS',
       'the job, at Medium integrity on both sides so the container cannot be the cause'],
-    ['(b) process creation — LowBox alone', 'spawnAtStartup', 'lowbox-no-job', 'route-no-job',
+    ['(b) process creation — LowBox alone', 'spawnAtStartup', 'lowbox-no-job', 'route-no-job', 'same',
       'the container, with no job of ours on either side'],
-    ['(d) filesystem, JS', 'jsReadUnhanded', 'lowbox', 'route',
+    ['(d) filesystem, JS', 'jsReadUnhanded', 'lowbox', 'route', 'DIFFERS',
       'a file the host was not handed, read through Node'],
-    ['(d) filesystem, native', 'nativeReadUnhanded', 'lowbox', 'route',
+    ['(d) filesystem, native', 'nativeReadUnhanded', 'lowbox', 'route', 'DIFFERS',
       'the same file through CreateFileW — the path the adversary has'],
-    ['(c) network', 'loopback', 'lowbox', 'route',
+    ['(c) network', 'loopback', 'lowbox', 'route', 'DIFFERS',
       'a loopback connection, so a refusal cannot be a runner with no network'],
-    ['engine', 'loadShim', 'lowbox', 'route', 'the MuPDF shim, loaded through koffi'],
-    ['document', 'openDocument', 'lowbox', 'route', 'a document it WAS handed'],
-    ['IPC', 'namedPipe', 'lowbox', 'route',
+    ['engine', 'loadShim', 'lowbox', 'route', 'same', 'the MuPDF shim, loaded through koffi'],
+    ['document', 'openDocument', 'lowbox', 'route', 'same', 'a document it WAS handed'],
+    ['IPC', 'namedPipe', 'lowbox', 'route', 'DIFFERS',
       'a named pipe main created — the MessagePort is unreachable off the fork route'],
-    ['CONTROL: handed', 'readHanded', 'lowbox', 'route',
+    ['CONTROL: handed', 'readHanded', 'lowbox', 'route', 'same',
       'must be `same` and allowed on BOTH sides, or the container was handed nothing'],
   ];
 
   process.stdout.write('PROPERTIES — each row against the cell that removes ONLY its own mechanism:\n\n');
 
   let unreadable = 0;
-  for (const [label, key, withMech, without, why] of PROPERTIES) {
+  for (const [label, key, withMech, without, expected, why] of PROPERTIES) {
     const contained = probe(withMech, key);
     const uncontained = probe(without, key);
     const decided = verdict(contained, uncontained);
     if (decided === 'UNREADABLE') unreadable += 1;
+    const mark = decided === expected ? 'ok' : 'FAIL';
     process.stdout.write(
-      `  ${decided.padEnd(11)} ${label}\n` +
+      `  ${mark.padEnd(5)}${decided.padEnd(11)} ${label} (expected ${expected})\n` +
         `              ${why}\n` +
         `              ${withMech.padEnd(13)} ${contained.outcome.padEnd(11)} ${contained.detail}\n` +
         `              ${without.padEnd(13)} ${uncontained.outcome.padEnd(11)} ${uncontained.detail}\n\n`,
+    );
+    assert(
+      `${label} is ${expected}`,
+      decided === expected,
+      `measured ${decided}. ${withMech} said ${contained.outcome} (${contained.detail}); ` +
+        `${without} said ${uncontained.outcome} (${uncontained.detail}). ` +
+        (decided === 'UNREADABLE'
+          ? 'UNREADABLE is not a verdict — could-not-look and looked-and-found-containment do ' +
+            'not share an output, so this is a broken run rather than a lost property.'
+          : 'This row measures ONE mechanism, so the pair differing or agreeing is the ' +
+            'property itself changing.'),
     );
   }
 
@@ -1580,11 +1724,19 @@ function summarise(runs) {
     );
 
     process.stdout.write(
-      `  CONTROL: with the CONTAINED reading removed, that row reads ${missing}\n` +
+      `  ${(missing === 'UNREADABLE' ? 'ok' : 'FAIL').padEnd(5)}` +
+        `CONTROL: with the CONTAINED reading removed, that row reads ${missing}\n` +
         `              It must be UNREADABLE. Classified from an absence it read as a refusal beside\n` +
         `              an allowed uncontained side, so the table printed a containment verdict for a\n` +
         `              property nothing had measured — the claim QQ-1 removed from row 283,\n` +
         `              regenerated by a missing value.\n\n`,
+    );
+    assert(
+      'CONTROL: a missing CONTAINED reading makes its row UNREADABLE',
+      missing === 'UNREADABLE',
+      `read ${missing} instead. Every row above is believed on the strength of this: an absence ` +
+        `classified as a refusal, beside an allowed uncontained side, manufactures exactly the ` +
+        `verdict a containment proof wants to see.`,
     );
     if (missing !== 'UNREADABLE') unreadable += 1;
   }

@@ -593,6 +593,35 @@ jobs:
       - name: Prove the shim's export check is not vacuous
         run: node scripts/ci/annotate.mjs scripts/provision/mupdf.proof.mjs
 
+      # INVARIANT 25, ASSERTED AGAINST FOUR RUNNING PROCESSES (RR-3, ADR-0023 §6).
+      #
+      # THE ONLY JOB THAT CAN RUN IT, and every clause of that is load-bearing:
+      # windows-latest, because AppContainer and job objects are Windows kernel
+      # objects; it builds MuPDF, because the point is a host with the ENGINE in
+      # it rather than whether Node starts in a container (QQ-2); it provisions
+      # Electron, because every cell is the Electron binary in Node mode; and it
+      # now compiles TypeScript, which is what puts the SHIPPED surface on disk
+      # for the cells to be created by. This step is what discharges finding
+      # TT-1 — the Electron provisioning above has a consumer.
+      #
+      # `--require-containment` turns could-not-look into a hard failure. Without
+      # it the proof reports UNVERIFIABLE and exits 0 where Windows, the shim or
+      # the build is missing, which is honest on a developer machine and would be
+      # a green board for a check that never ran on the one job that exists to
+      # run it.
+      #
+      # It CHANGES MACHINE STATE and reverses it: five ACL grants and an
+      # AppContainer profile, released and deleted unconditionally on the way
+      # out. The profile deletion is the instrument's job because the shipped
+      # surface deliberately never deletes one — deleting drops every ACE naming
+      # it, which is right for an application and wrong for a check that runs on
+      # every push.
+      #
+      # Measured at 5 seconds on the developing machine, which is why it sits
+      # here rather than being weighed against the sweep's budget.
+      - name: Prove invariant 25's containment against running processes
+        run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF

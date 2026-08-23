@@ -456,6 +456,45 @@ reconstructs it.** Its evidence came from `36caf21`; ADR-0022 itself is
 measurement taken **two commits before** the blinding, and the ADR was written
 one commit before it.
 
+## Note, 2026-08-23 — §6 is discharged, and the transition happened IN PLACE (finding RR-3)
+
+§6 says `scripts/research/` asserts nothing and gates nothing, on purpose, and
+describes what becomes a proof. That has now happened, and the file did not
+move.
+
+**What it asserts.** Thirteen cases: three that the uncontained host is a
+working host, nine property rows each carrying the verdict the invariant
+requires, and the absence control. Every cell is created by the shipped surface.
+Registered as `proof:hostcontainment`, invoked by the shim job with
+`--require-containment`, which turns could-not-look into a hard failure on the
+one job that provisions everything — Windows, MuPDF, Electron, and now the
+compiled TypeScript that puts the surface on disk. That step is what discharges
+finding TT-1.
+
+**Two of the nine expect `same`, and that is the substance rather than a
+concession.** The LowBox alone does not deliver process creation — WW-1's matrix
+established the job does — so asserting a difference there would assert a
+containment this design does not have. The engine and the document must work
+INSIDE the container, so `same` is the property and a difference means the host
+cannot do its job.
+
+**Why the path did not change.** `check:docs` requires every `scripts/` path
+named in a tracked document to resolve, and this file is named by
+`docs/JOURNAL.md` and by two ADRs — records, which take appended corrections and
+are never edited. Moving it would have forced a choice between a red check and
+editing records, to buy a tidier directory. A file's behaviour is cheap to
+change and its identity is not, because identity is what records point at.
+
+So the sentence at the top of §6 is now false of this one file, and this note is
+the correction rather than an edit to it. `scripts/research/` still means *does
+not gate* for everything else in it; the exception is named here and in the
+file's own header, which is a live specification and says so directly.
+
+**What §6 asked for and did not get: nothing.** The four properties are
+differentials against a cell that removes only their own mechanism; the control
+travels; `unreadable` stays terminal; UNVERIFIABLE is never `passed`; the ACL
+absence check keeps its post-grant positive control.
+
 ## Correction, 2026-08-23 — the `baseline` cell is gone, and §1's evidence block quotes a row that no longer exists (finding RR-3)
 
 §1's fenced reading above ends with a `baseline (no job from us)` row, and the
