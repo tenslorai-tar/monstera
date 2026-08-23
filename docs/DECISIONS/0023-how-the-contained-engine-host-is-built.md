@@ -456,6 +456,40 @@ reconstructs it.** Its evidence came from `36caf21`; ADR-0022 itself is
 measurement taken **two commits before** the blinding, and the ADR was written
 one commit before it.
 
+## Correction, 2026-08-23 — the container's refusal of process creation is BUILD-DEPENDENT, and Decision 8 is stronger for it
+
+WW-1's matrix established that invariant 25(b) is delivered by the **job** and
+not by the container, measured on the developing machine: a contained host with
+no job of ours spawned a process without difficulty. Decision 8 rests on that —
+a host with the container applied and the assignment failed looks contained and
+is not, so a failed assignment must kill the process.
+
+**On `windows-latest` it does not spawn.** The first CI run that reached the
+cells reported the contained no-job cell **refused `EPERM`**, where this machine
+allows it. So the AppContainer denies process creation on that Windows build and
+not on Windows 11, and WW-1's reading was true of one environment rather than of
+AppContainers.
+
+**Decision 8 does not weaken; it gets a better argument.** It rests on *the
+container cannot be relied upon for (b)*, and a mechanism present on some builds
+and absent on others is precisely something you cannot rely on — which is a
+stronger statement than *it is absent*, because a reader cannot dismiss it by
+testing one machine. Nothing about the requirement changes: read
+`IsProcessInJob`, terminate on anything but `in-job`, never resume a host with
+two of three.
+
+**What changes is what the proof asserts.** That row expected `same`. It now
+expects `either` and asserts the half that is invariant — the UNCONTAINED cell
+must still be able to spawn, which is what makes the neighbouring row's refusal
+attributable to the job. Without that half a row expecting `either` would be
+satisfied by two dead cells.
+
+Recorded as a **coverage reduction** under audit item 2a: one direction less is
+asserted than before, deliberately, because asserting either direction would
+assert something untrue somewhere. It is also the first fact this project has
+learned about containment that its own developing machine could not have
+produced.
+
 ## Note, 2026-08-23 — §6 is discharged, and the transition happened IN PLACE (finding RR-3)
 
 §6 says `scripts/research/` asserts nothing and gates nothing, on purpose, and

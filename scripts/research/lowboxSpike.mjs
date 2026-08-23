@@ -1632,17 +1632,36 @@ function summarise(runs) {
   // apart is a table someone updates half of.
   //
   // `same` IS the correct expectation for two of these and saying so is load
-  // bearing. The LowBox alone does NOT deliver process creation — WW-1's matrix
-  // established that the job does — so asserting DIFFERS there would assert a
-  // containment this design does not have. The engine and the document must
-  // work INSIDE the container, so `same` is the property; a DIFFERS on either
-  // means the host cannot do its job.
+  // bearing: the engine and the document must work INSIDE the container, so a
+  // DIFFERS on either means the host cannot do its job.
+  //
+  // ONE ROW EXPECTS `either`, AND THAT IS A COVERAGE REDUCTION WITH A
+  // MEASUREMENT BEHIND IT (audit item 2a, weakening direction).
+  //
+  // `(b) process creation — LowBox alone` expected `same`, on WW-1's finding
+  // that the container does not deliver process creation and the job does. That
+  // was measured here and it is not universal. On `windows-latest`, 2026-08-23,
+  // the contained cell with no job of ours was **refused EPERM** where this
+  // machine allows it — so the AppContainer denies process creation on that
+  // build and not on Windows 11.
+  //
+  // Neither answer can be asserted, and the design conclusion survives both,
+  // which is why this is a reduction rather than a problem: ADR-0023 Decision 8
+  // rests on *you cannot rely on the container for (b)*, and a mechanism that
+  // is present on some builds and absent on others is exactly something you
+  // cannot rely on. The row is stronger evidence for that than a uniform `same`
+  // would have been.
+  //
+  // It does not become unasserted. `either` asserts the UNCONTAINED side is
+  // allowed — the half that makes row one's refusal attributable to the job —
+  // and prints the contained side's outcome for a reader. Without that, a row
+  // expecting `either` would be satisfied by two cells that both died.
   /** @type {ReadonlyArray<readonly [string, string, string, string, string, string]>} */
   const PROPERTIES = [
     ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job', 'DIFFERS',
       'the job, at Medium integrity on both sides so the container cannot be the cause'],
-    ['(b) process creation — LowBox alone', 'spawnAtStartup', 'lowbox-no-job', 'route-no-job', 'same',
-      'the container, with no job of ours on either side'],
+    ['(b) process creation — LowBox alone', 'spawnAtStartup', 'lowbox-no-job', 'route-no-job', 'either',
+      'the container, with no job of ours on either side — MEASURED, NOT ASSERTED, see below'],
     ['(d) filesystem, JS', 'jsReadUnhanded', 'lowbox', 'route', 'DIFFERS',
       'a file the host was not handed, read through Node'],
     ['(d) filesystem, native', 'nativeReadUnhanded', 'lowbox', 'route', 'DIFFERS',
@@ -1665,7 +1684,11 @@ function summarise(runs) {
     const uncontained = probe(without, key);
     const decided = verdict(contained, uncontained);
     if (decided === 'UNREADABLE') unreadable += 1;
-    const mark = decided === expected ? 'ok' : 'FAIL';
+    // `either` asserts the UNCONTAINED half instead of the comparison. See the
+    // note on the table above for the measurement that made this row's
+    // direction environment-dependent.
+    const held = expected === 'either' ? uncontained.outcome === 'allowed' : decided === expected;
+    const mark = held ? 'ok' : 'FAIL';
     process.stdout.write(
       `  ${mark.padEnd(5)}${decided.padEnd(11)} ${label} (expected ${expected})\n` +
         `              ${why}\n` +
@@ -1673,15 +1696,21 @@ function summarise(runs) {
         `              ${without.padEnd(13)} ${uncontained.outcome.padEnd(11)} ${uncontained.detail}\n\n`,
     );
     assert(
-      `${label} is ${expected}`,
-      decided === expected,
+      expected === 'either'
+        ? `${label}: the UNCONTAINED cell is allowed, whichever way the container falls`
+        : `${label} is ${expected}`,
+      held,
       `measured ${decided}. ${withMech} said ${contained.outcome} (${contained.detail}); ` +
         `${without} said ${uncontained.outcome} (${uncontained.detail}). ` +
-        (decided === 'UNREADABLE'
-          ? 'UNREADABLE is not a verdict — could-not-look and looked-and-found-containment do ' +
-            'not share an output, so this is a broken run rather than a lost property.'
-          : 'This row measures ONE mechanism, so the pair differing or agreeing is the ' +
-            'property itself changing.'),
+        (expected === 'either'
+          ? 'This row does not assert a direction — the container denies process creation on ' +
+            'some Windows builds and not others — but the uncontained cell must still be able ' +
+            'to spawn, or two dead cells would satisfy it.'
+          : decided === 'UNREADABLE'
+            ? 'UNREADABLE is not a verdict — could-not-look and looked-and-found-containment do ' +
+              'not share an output, so this is a broken run rather than a lost property.'
+            : 'This row measures ONE mechanism, so the pair differing or agreeing is the ' +
+              'property itself changing.'),
     );
   }
 
