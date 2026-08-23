@@ -314,7 +314,7 @@ function blobBytes(sha) {
  * @param {Buffer} bytes
  * @returns {number} Index of the first offending byte, or -1.
  */
-function findControlCharacter(bytes) {
+export function findControlCharacter(bytes) {
   for (let index = 0; index < bytes.length; index += 1) {
     const byte = bytes[index];
     if (byte === undefined) continue;
@@ -323,6 +323,31 @@ function findControlCharacter(bytes) {
   }
   return -1;
 }
+
+/**
+ * HOW TO REPAIR a file carrying a control character — one writer, because two
+ * places print it.
+ *
+ * This guard meets the problem at commit time and the PostToolUse reporter meets
+ * it seconds after the write. The words must be the same words: a committer
+ * following one and an agent following the other must not be repairing the file
+ * two different ways.
+ *
+ * Every claim measured 2026-08-23 against a file carrying one NUL:
+ *
+ *   - reading the file renders the byte as nothing, so the corruption is
+ *     invisible in the text you are looking at;
+ *   - a search-and-replace edit CANNOT match a span containing it, because the
+ *     search text would have to contain the byte and no keyboard emits one. The
+ *     report is "string to replace not found" for text you can see on screen,
+ *     which reads as a stale file rather than a corrupt one;
+ *   - a whole-file rewrite DOES clear it.
+ */
+export const CONTROL_CHARACTER_REPAIR =
+  'To repair it: rewrite the whole file, or — for a file too large to retype — ' +
+  '`git checkout HEAD -- <path>` and re-apply the change. Do not try to edit the byte out in ' +
+  'place: the edit cannot name it, and the failure looks like a stale file rather than a ' +
+  'corrupt one.';
 
 /**
  * Codepoints that change how text READS without changing what it CONTAINS.
@@ -554,23 +579,7 @@ function violations(path, sha, size, scope) {
             `and they are invisible in most viewers — the surrounding text simply appears to lose ` +
             `characters.`,
       );
-      // HOW TO REPAIR IT, printed here because this is where you meet the
-      // problem and every obvious move fails silently. All three facts measured
-      // 2026-08-23 against a file carrying one NUL:
-      //
-      //   - reading the file renders the byte as nothing, so the corruption is
-      //     invisible in the text you are looking at;
-      //   - a search-and-replace edit CANNOT match a span containing it, because
-      //     the search text would have to contain the byte and no keyboard emits
-      //     one. The report is "string to replace not found" for text you can
-      //     see on screen, which reads as a stale file rather than a corrupt one;
-      //   - a whole-file rewrite DOES clear it.
-      reasons.push(
-        `To repair it: rewrite the whole file, or — for a file too large to retype — ` +
-          `\`git checkout HEAD -- <path>\` and re-apply the change. Do not try to edit the ` +
-          `byte out in place: the edit cannot name it, and the failure looks like a stale ` +
-          `file rather than a corrupt one.`,
-      );
+      reasons.push(CONTROL_CHARACTER_REPAIR);
     }
 
     // The same purpose, one codepoint range further out. The scan above reads

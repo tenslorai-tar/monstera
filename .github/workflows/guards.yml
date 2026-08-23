@@ -319,6 +319,14 @@ jobs:
       # typecheck` on the matrix job; this half exists because the plain-Node
       # callers reach the surface through a computed `import()`, which types as
       # `any`, so no brand can constrain them.
+      # The control-character reporter. NOT REGISTERED anywhere yet — see the
+      # FEATURES row: registering it invalidates docs/hook-probe.json and needs
+      # a session started after the change to re-record the probe. The proof
+      # runs regardless, because a mechanism that is not in force must still be
+      # the one that will work when it is.
+      - name: Prove the control-character reporter sees, and does not cry wolf
+        run: node scripts/ci/annotate.mjs scripts/proofs/reportControlCharacters.proof.mjs
+
       # One rule for what counts as this repository invoking its own script. Two
       # modules each had their own pattern and both were correct, which is why
       # the control is the real workflow corpus rather than unit cases: a
