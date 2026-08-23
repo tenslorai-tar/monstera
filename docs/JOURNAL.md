@@ -969,6 +969,61 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — OOO-1 closed, and PPP-2: the check written to catch a second opinion was itself a third one
+
+### OOO-1 — the register's schema was fail-open in two ways
+
+`assertVerdictShape` now refuses a key no verdict may carry, a key no witness may
+carry, and **a witness keyed on a symbol the verdict does not watch**. The last
+is the fail-open: a witness exists so a *misspelt* symbol fails — scanned for
+absence under `shippedPaths`, witnessed for presence elsewhere, so a typo cannot
+satisfy both (T-1). Drop the symbol and leave the witness and nothing is
+consulted, so a typo in `symbols` beside the right spelling in `witness` is green
+forever. T-1's own failure, reconstructed through the other door.
+
+The control the reviewing seat specified worked exactly as asked: the parked
+`witnessOrphanFinding` key turned the build red, and the fix deleted it.
+
+**And the check found a real orphan on its first run** — `pdf_subset_fonts`.
+Except it had not. That verdict carries **no `symbols` key at all**, and the rule
+is that a verdict's own key is then its symbol. The two call sites that already
+knew this spelt it `claim.symbols ?? [name]`; I wrote `?? []`.
+
+**So the check written to catch a second opinion was itself a third one, within
+minutes.** B3a does not care how well you know the rule — it cares how many
+places implement it. There is now one `watchedSymbols(name, claim)` and four
+callers. A fifth site was deliberately left alone with a comment saying why: it
+asks what the list explicitly *names*, compared against a derived Electron
+surface, where defaulting to the verdict's key would add a phantom symbol.
+
+The proof carries the false positive permanently, and as a **locator** rather
+than an invented fixture: the tracked register is asserted to pass, *and* to
+contain a verdict of that shape. Asserting only the first would not notice the
+day the shape stops being there.
+
+### PPP-2 — a counted total cannot report a case that stopped running
+
+`win32Handle.proof.mjs` printed a tally it computed from its own run, so a case
+that silently stopped running took its line and the total together. It became the
+file that most needed a roster the moment the desktop-copy cases arrived: 14 with
+the build present, 12 without. A runner-dependent count is precisely the state
+`passRoster` was built to refuse.
+
+It now declares 14 and records the two build-dependent cases as **skips** where
+the build is absent — `advisoryRegister.proof.mjs` solved the same varying-count
+problem the same way, and taking its shape was the point. All three states
+executed: 14 passed; 12 passed with 2 *not applicable*; 2 failed under
+`--require-desktop-copy`.
+
+**The general note is the one worth keeping.** The three-state UNVERIFIABLE
+discipline now has two hand-rolled implementations with two different flag names
+(`--require-derivation`, `--require-desktop-copy`). **The second opinion is the
+finding, not the wrong one** — neither is wrong today, and that is exactly the
+condition under which a third gets written. Not consolidated here; recorded so
+the next one is a consolidation rather than an addition.
+
+---
+
 ## 2026-08-23 — PPP-1: the surface commit went red on two guards, and I had run neither
 
 `63871ad` failed both jobs. Typecheck, lint, the full vitest suite, `check:docs`,
@@ -1020,6 +1075,44 @@ So the rule is not *be more careful*: it is that **selecting checks by relevance
 is a search whose reassuring answer is "nothing to run", and it needs the same
 treatment as any other search.** The Guards set is cheap, complete, and requires
 no judgement. Run it.
+
+### Correction, 2026-08-23 — the remedy above catches neither defect
+
+The reviewing seat measured the last paragraph and it is wrong. *Run the whole
+Guards set locally* would have been **green before either fix**, for two
+different reasons, and both are worth more than the remedy was.
+
+- **The Guards failure was provisioning-keyed.** The copy is
+  `apps/desktop/dist/win32HostSurface.js`, a build output, so on this machine it
+  exists and the case passes. That is audit item 3's inverse — the richer machine
+  is the one that hides it — and **no local sweep of any completeness can reach
+  it.**
+- **The CI failure cannot be reached locally at all.**
+  `electronImports.proof.mjs` appears only in `ci.yml`, at lines 263 and 436, and
+  in no Guards job. No Guards sweep would ever have run it.
+
+So the compensation does not compensate, and closing PPP-1 on it would be the
+AA-1 mistake exactly: **a remedy with an unstated scope reading as a mechanism.**
+The real mechanism for both is the board, and the discipline is the one stated
+above it — do not report before the board lands.
+
+What survives is the **selection** half, and it is worth keeping on its own:
+`npm run local` derives the set from `package.json` the way
+`annotateCoverage.mjs` derives its proof set, so no judgement enters the path.
+`scripts/checkLocal.mjs` states in its own header that it sees neither a
+provisioning-keyed branch nor a workflow-only proof, because that is the sentence
+this correction exists to have written down somewhere a reader will meet it.
+
+**And building it produced a third instance of the same class.** The first
+version spawned `npm run --silent <name>` through a shell with a timeout. On
+Windows that kills the shell and orphans the real process, so after three genuine
+timeouts, twenty scripts failed in 0.2s with no output — each of which passed in
+four seconds when run alone. A harness that invents failures is worse than none;
+this project already wrote that *a scan which cries wolf is a scan someone
+relaxes*. It now invokes the interpreter directly, and **a timeout stops the
+sweep** rather than reporting results measured against its own wreckage. Killing
+a process tree properly on Windows needs a job object, which is a real unit and
+not one to bury in a convenience script.
 
 ---
 

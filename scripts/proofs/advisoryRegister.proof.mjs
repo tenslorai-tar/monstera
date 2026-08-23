@@ -79,7 +79,7 @@ const failures = [];
  * witnessed verdict is not a derived one. That case is world-independent, so it
  * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 34 });
+const roster = createRoster(failures, { cases: 39 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -891,6 +891,113 @@ try {
       'load-bearing too: a Guards that runs the checker NOWHERE also satisfies "not with the ' +
       'flag".',
   );
+
+  // -------------------------------------------------------------------------
+  // THE VERDICT SHAPE (finding OOO-1). A key nobody declared, and a witness for
+  // a symbol nobody watches, both used to pass in silence.
+  //
+  // The fail-open is the second one. A witness exists so that a MISSPELT symbol
+  // fails — scanned for absence under shippedPaths, witnessed for presence
+  // somewhere else, so a typo cannot satisfy both (T-1). Drop the symbol and
+  // leave the witness and nothing is consulted, so a typo in `symbols` beside
+  // the right spelling in `witness` is green forever.
+  // -------------------------------------------------------------------------
+  {
+    /** @param {(reachability: Record<string, Record<string, unknown>>) => void} edit */
+    const withRegister = (edit) => {
+      const parsed = JSON.parse(pristine);
+      edit(parsed.reachability);
+      return JSON.stringify(parsed, null, 2);
+    };
+
+    const unknownKey = runAgainst(
+      'unknown-verdict-key',
+      withRegister((reachability) => {
+        const first = Object.values(reachability)[0];
+        if (first !== undefined) first['witnes'] = { some: 'thing' };
+      }),
+    );
+    check(
+      'a key no verdict may carry is REFUSED, not ignored',
+      !unknownKey.ok && unknownKey.output.includes('which no verdict may'),
+      `exit ok=${String(unknownKey.ok)}. A misspelt "witness" disarms every witness on that ` +
+        `verdict and prints nothing — an absent optional key and a mistyped one are the same ` +
+        `observation to a reader that only looks for the names it knows.`,
+    );
+
+    const orphan = runAgainst(
+      'orphan-witness',
+      withRegister((reachability) => {
+        const claim = reachability['engine-host-containment'];
+        if (claim === undefined) return;
+        claim['witness'] = {
+          NoSuchSymbol: { in: ['scripts/research/**'], why: 'watched by nothing' },
+        };
+      }),
+    );
+    check(
+      'a witness keyed on a symbol the verdict does not watch is REFUSED',
+      !orphan.ok && orphan.output.includes('is not in its symbols list'),
+      `exit ok=${String(orphan.ok)}. This is the fail-open: the register reported the same ` +
+        `confident count with four such witnesses in the file, because a witness that is never ` +
+        `consulted passes exactly as loudly as one doing its job.`,
+    );
+
+    // THE CONTROL, and it is the case this check was written wrongly without.
+    // A verdict may omit `symbols` entirely, and then its own KEY is the symbol
+    // — pdf_subset_fonts is that shape. The first version of the check spelt
+    // the rule `claim.symbols ?? []` where the two call sites that already knew
+    // it spelt `?? [name]`, and it reported a correct entry as an orphan within
+    // minutes of being written. Without this case, tightening the check back
+    // into that false positive is invisible.
+    const accepted = runAgainst('pristine', pristine);
+    check(
+      'CONTROL: the tracked register itself is ACCEPTED by the shape check',
+      accepted.ok,
+      `exit ok=false. Output: ${accepted.output.slice(-600)}\n` +
+        `The two cases above are satisfied by a check that refuses every register, which is ` +
+        `the direction a shape check fails in.`,
+    );
+
+    // THE LOCATOR, and it is what makes the case above mean anything about the
+    // shape at issue. A verdict may omit `symbols` entirely, and then its own
+    // KEY is the symbol. The first version of the shape check spelt that rule
+    // `claim.symbols ?? []` where the two call sites that already knew it spelt
+    // `?? [name]`, and it reported a correct entry as an orphan within minutes
+    // of being written — B3a inside the check written to catch a second
+    // opinion. Asserting only that the tracked register passes would not notice
+    // the day that shape stops being in it.
+    const byOwnKey = Object.entries(JSON.parse(pristine).reachability).filter(
+      ([name, claim]) =>
+        claim.symbols === undefined && claim.witness?.[name] !== undefined,
+    );
+    check(
+      'CONTROL: and it CONTAINS a verdict with no symbols list, witnessed by its own key',
+      byOwnKey.length > 0,
+      `no tracked verdict has that shape, so the case above says nothing about it and the ` +
+        `false positive it exists to catch would pass. If the last one was deliberately ` +
+        `removed, this case is what has to be rewritten — not deleted.`,
+    );
+
+    const unknownWitnessKey = runAgainst(
+      'unknown-witness-key',
+      withRegister((reachability) => {
+        const claim = reachability['engine-host-factory-wired'];
+        const witness = /** @type {Record<string, Record<string, unknown>> | undefined} */ (
+          claim?.['witness']
+        );
+        const entry = witness === undefined ? undefined : Object.values(witness)[0];
+        if (entry !== undefined) entry['acceptedWhilst'] = { absent: 'x', from: ['y'] };
+      }),
+    );
+    check(
+      'a key no WITNESS may carry is refused too, because the class is the same',
+      !unknownWitnessKey.ok && unknownWitnessKey.output.includes('which no witness may'),
+      `exit ok=${String(unknownWitnessKey.ok)}. acceptedWhile is optional, so a misspelling of ` +
+        `it reads as absent — the same silence one level down, and fixing only the outer level ` +
+        `would be half the class.`,
+    );
+  }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

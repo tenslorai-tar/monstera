@@ -69,6 +69,7 @@
     "proof:annotate": "node scripts/proofs/annotate.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
+    "local": "node scripts/checkLocal.mjs",
     "audit:scope": "node scripts/audit/scope.mjs",
     "proof:auditscope": "node scripts/proofs/auditScope.proof.mjs",
     "proof:workflowpins": "node scripts/proofs/workflowPins.proof.mjs",

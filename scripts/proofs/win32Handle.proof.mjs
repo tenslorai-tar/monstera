@@ -19,26 +19,55 @@
  * changes the representation fails here rather than silently in a probe.
  */
 
+import { createRoster } from '../lib/passRoster.mjs';
 import { INVALID_HANDLE_SOURCE, isInvalidHandle } from '../lib/win32Handle.mjs';
 
-let failures = 0;
+/** @type {string[]} */
+const failures = [];
 
-// COUNTED, not written down — the sibling guard's literal was already off by one
-// when a case was added beside it, and a summary that cannot disagree with the
-// run is the only kind worth printing.
-let ran = 0;
+/**
+ * DECLARED, not counted (finding PPP-2).
+ *
+ * This file counted its own cases and printed the tally, which cannot disagree
+ * with the run and therefore cannot report a case that STOPPED RUNNING. It
+ * became the file that most needed a roster the moment the desktop-copy cases
+ * arrived: it ran fourteen with the build present and twelve without, so a
+ * runner-dependent count was the normal state — exactly what `passRoster` was
+ * built to refuse. Twenty files already call `createRoster`; this was not one.
+ *
+ * The count is CONSTANT at fourteen because the two build-dependent cases are
+ * RECORDED AS SKIPS where the build is absent rather than silently not run —
+ * `advisoryRegister.proof.mjs` solved the same varying-count problem the same
+ * way, and taking its shape is the point rather than a convenience.
+ */
+const roster = createRoster(failures, { cases: 14 });
 
 /**
  * @param {string} name @param {boolean} condition @param {string} detail
  */
 function check(name, condition, detail) {
-  ran += 1;
-  if (condition) {
+  const mark = roster.mark();
+  if (!condition) {
+    failures.push(`${name}\n      ${detail}`);
+    process.stdout.write(`  FAIL  ${name}\n      ${detail}\n`);
+  } else {
     process.stdout.write(`  ok  ${name}\n`);
-    return;
   }
-  failures += 1;
-  process.stdout.write(`  FAIL  ${name}\n      ${detail}\n`);
+  // A FAILING case is deliberately not recorded — `record` returns early when a
+  // failure was pushed since the mark, and `format` is reached only on the
+  // success path. That is the roster's own design, not a gap: a red run prints
+  // the failures and exits, so there is no tally to be wrong about.
+  roster.record(mark, name);
+}
+
+/**
+ * A case that could not run, recorded rather than skipped in silence.
+ *
+ * @param {string} name @param {string} detail
+ */
+function unverifiable(name, detail) {
+  process.stdout.write(`  UNVERIFIABLE  ${name}\n      ${detail}\n`);
+  roster.record(roster.mark(), name, false);
 }
 
 /**
@@ -202,29 +231,36 @@ try {
 const REQUIRE_DESKTOP_COPY = process.argv.includes('--require-desktop-copy');
 const copy = desktop?.isInvalidHandleAddress;
 
+const AGREES = 'the desktop copy answers exactly as the owner does, on every value above';
+const SEES = 'CONTROL: and that comparison can SEE a disagreement when there is one';
+
 if (typeof copy !== 'function') {
-  if (REQUIRE_DESKTOP_COPY) {
-    check(
-      'the desktop copy is BUILT, because this job builds it',
-      false,
-      `${BUILT_SURFACE.pathname} did not import, or exports no isInvalidHandleAddress. ` +
-        `This job runs \`npm run build\`, so an absent copy here is a real failure and not ` +
-        `a job that could not look.`,
-    );
-  } else {
-    process.stdout.write(
-      '  UNVERIFIABLE  the desktop copy of isInvalidHandle was not read\n' +
-        `      ${BUILT_SURFACE.pathname} is absent. This job builds nothing, so this is a ` +
-        'could-not-look and NOT a pass — it is counted apart from the cases below.\n' +
-        '      Mandatory where the build exists: ci.yml passes --require-desktop-copy.\n',
-    );
+  const detail =
+    `${BUILT_SURFACE.pathname} is absent, or exports no isInvalidHandleAddress. ` +
+    `This proof reads the BUILD.`;
+  for (const name of [AGREES, SEES]) {
+    if (REQUIRE_DESKTOP_COPY) {
+      check(
+        name,
+        false,
+        `${detail} This job runs \`npm run build\`, so an absent copy here is a real failure ` +
+          `and not a job that could not look.`,
+      );
+    } else {
+      unverifiable(
+        name,
+        `${detail} This job builds nothing, so this is a could-not-look and NOT a pass — the ` +
+          `roster counts it apart. Mandatory where the build exists: ci.yml passes ` +
+          `--require-desktop-copy.`,
+      );
+    }
   }
 }
 
 if (typeof copy === 'function') {
   const cases = [MEASURED_INVALID, -1n, 0n, null, undefined, 0x1a4n, 1n, 4096n];
   check(
-    'the desktop copy answers exactly as the owner does, on every value above',
+    AGREES,
     cases.every((address) => copy(address) === isInvalidHandle(koffi, address)),
     `the copy in apps/desktop has drifted from scripts/lib/win32Handle.mjs. ` +
       `Disagreement at: ${JSON.stringify(
@@ -232,7 +268,7 @@ if (typeof copy === 'function') {
       )}`,
   );
   check(
-    'CONTROL: and that comparison can SEE a disagreement when there is one',
+    SEES,
     // Mutating the copy is not available here, so the control mutates the
     // question instead: a judgement that is wrong on exactly one value must be
     // reported as disagreeing. Without this, the case above is satisfied by two
@@ -242,15 +278,14 @@ if (typeof copy === 'function') {
   );
 }
 
-// Zero cases and every case passing are the same output otherwise.
-if (ran === 0) {
-  process.stdout.write('\nNo invalid-handle case ran. That is a broken proof, not a clean one.\n');
-  process.exit(1);
-}
-
+// `format` THROWS on a count mismatch, which is the seam every roster user
+// already reaches on the success path — so a case that stopped running cannot
+// be reported as a clean run. The zero-cases guard this file used to carry is
+// subsumed: zero recorded against fourteen declared is the loudest mismatch
+// there is.
 process.stdout.write(
-  failures === 0
-    ? `\n${ran} invalid-handle cases passed.\n`
-    : `\n${failures} of ${ran} invalid-handle case(s) FAILED.\n`,
+  failures.length > 0
+    ? `\n${String(failures.length)} invalid-handle case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
+    : roster.format('invalid-handle case'),
 );
-process.exit(failures === 0 ? 0 : 1);
+process.exit(failures.length === 0 ? 0 : 1);

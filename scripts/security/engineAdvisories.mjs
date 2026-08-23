@@ -437,7 +437,120 @@ function readBaseline() {
     }
   }
 
+  assertVerdictShape(baseline);
   return baseline;
+}
+
+/**
+ * The keys a reachability verdict and a witness may carry. THIS SET IS THE
+ * WRITER OF RECORD; the `Baseline` typedef above is a reader's summary and
+ * cannot enforce anything, because the register is `JSON.parse`d and cast.
+ *
+ * Kept as data rather than as prose for the reason {@link assertVerdictShape}
+ * exists: a hand-edited JSON file has no compiler, so the only thing standing
+ * between a mistyped key and silence is a check that reads the keys.
+ */
+const VERDICT_KEYS = new Set(['guards', 'why', 'shippedPaths', 'symbols', 'symbolsWhy', 'witness']);
+const WITNESS_KEYS = new Set(['in', 'acceptedWhile', 'why']);
+
+/**
+ * The symbols a verdict watches. ONE answer, and this function exists because
+ * there were briefly two.
+ *
+ * A verdict may omit `symbols` entirely, in which case its own key IS the
+ * symbol — `pdf_subset_fonts` is that shape, and OCR is the other, where eleven
+ * doors are listed because a verdict resting on the obvious one would survive a
+ * feature calling any of the other ten.
+ *
+ * {@link assertVerdictShape} was written with a bare `claim.symbols ?? []` and
+ * immediately reported a correct entry as an orphan witness. The two call sites
+ * that already knew the rule spelt it `claim.symbols ?? [name]`, so the check
+ * added to catch a second opinion was itself a third one, inside an hour. B3a
+ * does not care how well you know the rule; it cares how many places implement
+ * it.
+ *
+ * @param {string} name @param {{ symbols?: string[] }} claim
+ * @returns {readonly string[]}
+ */
+function watchedSymbols(name, claim) {
+  return claim.symbols ?? [name];
+}
+
+/**
+ * Rejects a key nobody declared, and a witness for a symbol nobody watches
+ * (finding OOO-1).
+ *
+ * ## Why this is a fail-open and not untidiness
+ *
+ * A witness exists so that a MISSPELT symbol fails: the symbol is scanned for
+ * absence under `shippedPaths`, and witnessed for presence somewhere else, so a
+ * typo cannot satisfy both (finding T-1). Remove that symbol from `symbols` and
+ * leave its witness, and the register reports the same confident count as
+ * before — the witness is simply never consulted. So a typo in `symbols` beside
+ * the correct spelling in `witness` is green forever, which is precisely the
+ * pair T-1 was bought to prevent, reconstructed through the other door.
+ *
+ * The unknown-key half is the same failure one level up. `witnes` or `witnesses`
+ * disarms every witness on a verdict and prints nothing, because an absent
+ * optional key and a misspelt one are the same observation to a reader that only
+ * looks for the names it knows.
+ *
+ * ## How this was found, which is the part worth keeping
+ *
+ * By accident. Removing the four Win32 symbols after the surface shipped left
+ * their witnesses behind and `check:advisories` stayed green; a placeholder key
+ * parked in the file to hold the finding was also swallowed. Nothing was looking
+ * for either, and neither has any output of its own — which is 4b's shape at the
+ * level of a schema: **a key that is never read and a key that is satisfied
+ * produce identical silence.**
+ *
+ * @param {Baseline} baseline
+ */
+function assertVerdictShape(baseline) {
+  /** @type {string[]} */
+  const problems = [];
+
+  for (const [name, claim] of Object.entries(baseline.reachability)) {
+    for (const key of Object.keys(claim)) {
+      if (!VERDICT_KEYS.has(key)) {
+        problems.push(
+          `reachability.${name} carries "${key}", which no verdict may. Permitted: ` +
+            `${[...VERDICT_KEYS].join(', ')}. A misspelt "witness" disarms every witness on ` +
+            `this verdict and prints nothing, so an unknown key is refused rather than ignored.`,
+        );
+      }
+    }
+
+    const witness = claim.witness;
+    if (witness === undefined) continue;
+    const watched = new Set(watchedSymbols(name, claim));
+    for (const [symbol, entry] of Object.entries(witness)) {
+      if (!watched.has(symbol)) {
+        problems.push(
+          `reachability.${name}.witness names "${symbol}", which is not in its symbols list. ` +
+            `A witness exists so a MISSPELT symbol fails; one keyed on a symbol the verdict ` +
+            `does not watch is never consulted and passes exactly as loudly as one doing its ` +
+            `job. Either the symbol was dropped and this witness is dead, or the symbol is ` +
+            `misspelt in symbols and this is the spelling that was meant.`,
+        );
+      }
+      for (const key of Object.keys(entry)) {
+        if (!WITNESS_KEYS.has(key)) {
+          problems.push(
+            `reachability.${name}.witness.${symbol} carries "${key}", which no witness may. ` +
+              `Permitted: ${[...WITNESS_KEYS].join(', ')}.`,
+          );
+        }
+      }
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `The advisory register at ${BASELINE} has ${String(problems.length)} shape problem(s):\n\n` +
+        `  - ${problems.join('\n\n  - ')}\n`,
+    );
+  }
 }
 
 /**
@@ -652,7 +765,7 @@ function unwitnessedSymbols(baseline, derivations) {
     // — finding T-1 exactly.
     const derivation = derivations.find((entry) => entry.claim === name);
 
-    for (const symbol of claim.symbols ?? [name]) {
+    for (const symbol of watchedSymbols(name, claim)) {
       // SCOPED TO THIS VERDICT'S OWN DERIVATION. Asking whether ANY derivation
       // verified the symbol lets one verdict's evidence stand in for another's —
       // an Electron declaration confirming an OCR door because the two sets
@@ -781,7 +894,7 @@ function expiredReachabilityVerdicts(baseline) {
     // A claim may rest on one symbol or on a whole door set. OCR is the second
     // kind: eleven public functions reach Tesseract, and a verdict resting on
     // only the obvious one would survive a feature calling any of the other ten.
-    const symbols = claim.symbols ?? [name];
+    const symbols = watchedSymbols(name, claim);
 
     // The inputs this verdict rests on, declared rather than re-implemented.
     // scripts/lib/verdict.mjs owns how an "absent symbol" input is resolved and
@@ -1106,7 +1219,7 @@ async function main() {
   }
 
   const symbolCount = Object.entries(baseline.reachability).reduce(
-    (total, [name, claim]) => total + (claim.symbols ?? [name]).length,
+    (total, [name, claim]) => total + watchedSymbols(name, claim).length,
     0,
   );
   if (symbolCount === 0) {
@@ -1161,6 +1274,11 @@ async function main() {
   // the two, for a defect the other check names exactly.
   if (electron.checked) {
     const claim = baseline.reachability['engine-host-containment'];
+    // NOT `watchedSymbols`, and the difference is the question. That helper
+    // answers "what does this verdict watch", where an omitted list means the
+    // verdict's own key. Here the question is "what does the list explicitly
+    // NAME", compared against a derived spawn surface — and defaulting to the
+    // verdict's key would add a phantom symbol that Electron can never declare.
     const named = new Set(claim?.symbols ?? []);
     const uncovered = electron.spawnSurface.filter((symbol) => !named.has(symbol));
     if (uncovered.length > 0) {
