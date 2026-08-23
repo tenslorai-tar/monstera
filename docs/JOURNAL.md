@@ -644,6 +644,230 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-23 — Stage audit: `5889f8a..167de69` — a count recalled instead of read, and a guard's own fixture built from the shape it had already fixed
+
+**Audited through `167de69`.** 8 commits, 21 files, **1 proof added, 4
+modified**, 4 new source files and **3 changed** — from `npm run audit:scope`.
+
+The range is the Win32 host surface, PPP-1, OOO-1, QQQ-1 to QQQ-3, RRR-1 and
+SSS-1/SSS-2. Findings **TTT-1** to **TTT-4**.
+
+The audit was taken at 8 of a 9-commit batch rather than waiting for the
+threshold, so the range ends cleanly before RR-3 rather than falling due partway
+through it.
+
+### 1. Root cause or workaround
+
+No workarounds in the range. Two changes are corrections that *look* like
+loosenings and were checked as such:
+
+- **`win32Handle.proof.mjs` deleted its zero-cases guard**, on the stated ground
+  that `passRoster.format` throws on a count mismatch and zero-against-fourteen
+  is the loudest mismatch there is. **Verified rather than accepted**: the throw
+  is arithmetic (`recorded !== expected`), not a lookup, so the zero case is the
+  same branch `passRoster.proof.mjs` already covers in both directions — 3
+  declared against 2 recorded, and 1 against 2. The claim holds and the guard is
+  genuinely subsumed.
+- **`electronImports.proof.mjs` gained two allowlist entries.** Widening a
+  suppression list is item 1's third bullet exactly. Each entry pins an **exact**
+  site count and the comparison rejects both directions — more sites than
+  declared is a new unreviewed suppression, fewer is a stale entry. Not a
+  loosening.
+
+### TTT-1 — the `>` exclusion was fixed one character short, and the proof's own fixture hid it
+
+`TO_FILE` excludes a redirect target beginning `=`, because `awk 'NR>=386'` was
+denied and writes nothing. Measured on 2026-08-23: a **bare** `>` inside a quoted
+program is still read as a redirect. `awk 'index($0, "x") > 0 {print NR}' f`
+denies. `awk '$2 > 100 {print $1}' f` denies. A `sed` substitution whose
+replacement text contains a `>` denies. None of the three redirects anything;
+there is no `>` outside quotes in any of them and no command in the line writes
+a file.
+
+**The proof shows it from the inside.** Its case list carries
+
+> `mustAllow('awk printing when a field exceeds a bound', "awk '$2 >= 100 {print $1}' data.txt")`
+
+— a case whose *name* is about exceeding a bound, written with the one operator
+the fix had already handled. The variant that reads more naturally denies. That
+is item 4's fixture rule: **the fixture was built from the shape the defect
+handles correctly**, so no mutation test would have found it, and its name says
+it is covered.
+
+Not fixed. It is a change to what the guard denies, and that is a decision to
+take deliberately rather than inside a comment. Recorded at the exclusion it
+belongs to, so the next reader of the `>=` argument sees where it stops.
+
+**It is a distinct class from the false positives that were pinned**, and the
+argument for those does not reach it: there the guard fails closed on a real
+redirect whose *owner* is ambiguous across a compound; here there is no redirect
+to own.
+
+### TTT-2 — the register's symbol rule has a fourth reader, and the paragraph that justified it did not travel
+
+OOO-1 consolidated two inline spellings of *what symbols does this claim name*
+into `watchedSymbols` (`?? [name]`) and `declaredSymbols` (`?? []`), after the
+check written to catch a second opinion turned out to be a third one.
+
+`scripts/proofs/ocrDoors.proof.mjs:252` still spells it inline:
+`baseline.reachability?.['ocr']?.symbols ?? []`, with its own hand-written type
+for the register's JSON shape beside it. Two files now hold two opinions about
+one format, which is the shape `scripts/lib/gitScope.mjs` exists because of.
+
+Two things make it worse than an ordinary duplicate:
+
+- **The rationale was deleted from the file that no longer has the code and was
+  not added to the file that now does.** The paragraph explaining why *this* site
+  wants `?? []` and not `?? [name]` — the question is what the list explicitly
+  NAMES, and defaulting to the verdict's key would add a phantom symbol — lived
+  in `engineAdvisories.mjs` and went out with the consolidation. A reader of
+  line 252 sees the exact spelling OOO-1's defect had, with nothing saying why it
+  is right here.
+- **Neither helper is exported**, and `engineAdvisories.mjs` calls `main()` at
+  module scope, so importing it to reach them would run the whole register check
+  as a side effect. The fix is therefore not a one-line import; it is a small
+  shared reader, and it does not belong in a docs-only audit commit.
+
+Recorded, not fixed. **The comparison itself is sound** and was checked rather
+than assumed: a broken register lookup, a broken derivation, and both broken at
+once are each caught — the third only because the two `CONTROL` cases go red when
+both sides are empty.
+
+### TTT-3 — five cases passed prose into the slot that selects the rule set
+
+Found while adding the SSS-2 cases. `ask(command, toolName)` picks
+`POWERSHELL_RULES` or `SHELL_RULES`, and five `mustBlock` call sites passed a
+one-line rationale as the third argument.
+
+They were **not vacuous**, and only by luck: `firstViolation` treats every name
+that is not `PowerShell` as a shell, so the wrong argument fell to the right
+default. A PowerShell case written the same way would have been asserted against
+the shell rules and passed for the wrong reason.
+
+Fixed in-range. The rationales are comments, and `ask` throws on a tool name that
+is not `Bash` or `PowerShell` — B5 over a comment: refuse the value rather than
+describe the slot. The throw was executed, not assumed.
+
+### TTT-4 — one roster adopter still exits with writes in flight
+
+`win32Handle.proof.mjs` ends `process.exit(status)` immediately after a
+`process.stdout.write`. That is the exact shape that made two other proofs print
+every case line twice — Node tears the process down with the write pending and
+the buffer is re-emitted, while the roster's own count stays correct, so the
+duplication is invisible to every assertion in the file.
+
+**Measured today: no duplication** — 16 lines out, 16 unique. The difference from
+the two that broke is output volume, not design, which is Rule 0's *fix the
+class, not the instance*: the file that happens to print less is not a file that
+is safe. It is the only roster adopter left on `process.exit`; the sweep across
+all 24 found no others.
+
+Not fixed in this commit for the same reason as TTT-2 — audit-recording commits
+are docs only and alone.
+
+### 2. Verified against the easy shape only?
+
+**SSS-1's three-bucket ordering is proven on a fixture, not against the real
+proof half.** That run strands and orphans processes, which is the defect the
+stop exists for, so the hard shape is deliberately not exercised — stated rather
+than left to be discovered.
+
+**`checkLocal`'s duration figures passed a resolution test on the real
+repository** (item 4a): the ten `check:*` scripts came back 0.3, 0.5, 0.8, 0.9,
+3.5, 5.8, 10.3, 18.1, 20.8, 46.2 seconds — every pair distinguishable at the
+0.1s the table records, across two orders of magnitude. The rounding only
+collides at the bucket boundary, and there it rounds a nearly-doomed script into
+the doomed bucket, which is the conservative direction.
+
+### 3. Would CI have caught it, and is there a defect this machine cannot see?
+
+**Neither TTT-1 nor TTT-2 is visible to CI.** TTT-1 is a case nobody wrote, and a
+missing case is not a red build. TTT-2 needs a check for *a second reader of a
+format*, which does not exist.
+
+**Inverse, and it is a branch this machine cannot execute.** The proof's
+`typeof copy !== 'function'` block has two arms: `unverifiable` where nothing is
+built, and a hard failure where `--require-desktop-copy` is passed. On a
+developer machine the build exists, so **neither arm runs**; on Guards only the
+first does; and the second fires only when a job that builds has no build — so
+**the arm that turns a missing copy into a red build had never executed
+anywhere.** Executed now, by moving the built file aside: without the flag it
+reports `--  … nothing to check` and exits 0 at *12 passed, 2 not applicable*;
+with the flag both cases go red naming the absent path. Both arms correct, and
+the file restored.
+
+**`checkLocal`'s ordering is itself keyed on the presence of something.** The
+durations table is untracked and machine-local, so on a cold machine every script
+is never-measured, the whole set lands in one bucket, and the order is
+alphabetical — identical to the behaviour SSS-1 replaced. That is by design and
+costs one run, but it means the ordering is a local optimisation whose interesting
+branches never execute anywhere but here. CI never runs the sweep at all, only its
+proof.
+
+### 4. Are the proofs non-vacuous?
+
+- SSS-1's new case: reverting to the two-bucket sort reddens **exactly** that
+  case and prints the order it got. The fixture's alphabetical order is neither
+  the expected order nor a rotation of it, so neither an unsorted run nor the old
+  sort can pass by luck.
+- SSS-2's two pinned false positives carry controls that delete one quoted
+  argument each and then allow — so the pinning is a *separation*, not a blanket
+  assertion that compounds are refused.
+- TTT-3's throw was fired by passing a bad tool name at a real call site.
+- The `--require-desktop-copy` arms above.
+
+### 5. Executed, or asserted?
+
+**Executed:** the 65-denial count and its breakdown, by parsing this session's
+transcript and replaying every command through the guard as it stands · the three
+false-positive classes and the quote-pairing mechanism, with controls · the
+`>` versus `>=` asymmetry · TTT-3's throw · both `--require-desktop-copy` arms ·
+the two-bucket mutation · the ten real durations · `typecheck`, `eslint` on the
+four changed files, the ten `check:*` scripts, both edited proofs, and
+`check:emittedtemplates` against the index.
+
+**Asserted:** that `win32Handle.proof.mjs` would double-print at higher output
+volume — the *shape* is identical to two measured cases, the behaviour at volume
+was not reproduced here. That is why TTT-4 is recorded as a class fix rather than
+a defect observed.
+
+### 6. Architecture before the feature?
+
+Nothing architectural moved in this range. ADR-0022 and ADR-0023 both precede it.
+
+### 7. Do the documents still match the code?
+
+**`CLAUDE.md` said the escape guard covers 51 cases, twice.** The journal had
+already recorded that number going to 233 and the digest was never updated; it is
+257 now. Both statements are corrected, and the figure is gone rather than
+refreshed — a count that is false on the next commit is not worth checking by
+hand. The pinned false positives are named in its place, because a disposition
+nobody wrote down is one that gets relitigated by whoever it inconveniences.
+
+**NNN-4's cross-document sweep fired and found nothing further.** The range
+states a cross-document relationship — the digest's account of what the escape
+guard covers — so every other statement of it was swept: `docs/JOURNAL.md:7755`
+records `51 cases → 233`, which is a **record** and correctly stays as written.
+
+### The pattern the range named
+
+**A number carried in a handoff is a memory, not a measurement.** Both this seat
+and the reviewing seat had the escape guard's denial count at **six**. Parsing the
+transcript gives **65** — 27 `node -e`/`-p`, 15 `sed -i`, 6 `python -c`, 5 a
+heredoc into a file. Wrong by an order of magnitude, and wrong in the direction
+that makes the guard look incidental rather than load-bearing.
+
+Nothing was hiding. The transcript was on disk the whole time, the parse is
+thirty lines, and neither seat ran it — because the number *felt* like something
+already known. That is the same failure as the reassuring answer in item 4b, one
+level up: **the memorable denials are a biased sample of the denials, and
+remembering is a search whose recall you cannot inspect.**
+
+It also disposes of a claim SSS-2 rested on. *The first denial that was not the
+guard being right about the input* was, on the replay, at least the eighth.
+
+---
+
 ## 2026-08-23 — Stage audit: `5f07e80..5889f8a` — two guards the fixture set was one-sided about, and a document a range can never falsify
 
 **Audited through `5889f8a`.** 9 commits, 20 files, **2 proofs added, 3
