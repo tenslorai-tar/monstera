@@ -36,13 +36,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { changedPaths, readStagedBlob, readStagedBlobs, repoRoot } from '../lib/gitScope.mjs';
+import { changedPaths, readStagedBlob, readStagedBlobs } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { report, scan } from '../lib/stagedSyntax.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -172,7 +172,55 @@ try {
   }
 
   // -------------------------------------------------------------------------
-  // 7. A STAGED DELETION. Written because the filter for it was INERT and
+  // 7-9. THE OTHER TWO PARSE GOALS (finding VVV-4).
+  //
+  // Every fixture above is `.mjs`, so the `script` and `either` branches were
+  // reachable, load-bearing and exercised by nothing — item 4's second kind.
+  // Getting `either` wrong is silent in the direction that matters: a `.js`
+  // file would be reported broken under a goal it does not have.
+  //
+  // Each case is built from a program legal in ONE goal only, so it cannot pass
+  // by the goal being ignored.
+  // -------------------------------------------------------------------------
+  {
+    const root = repository({ 'commonjs.cjs': "import a from 'b';\n" });
+    const result = scan({ root });
+    check(
+      'a .cjs file is parsed as a SCRIPT, so a top-level import is reported',
+      result.blind === null && result.problems.length === 1,
+      `An import statement is legal in a module and a syntax error in a script, so this is ` +
+        `the goal being chosen by extension rather than assumed. ` +
+        `problems = ${JSON.stringify(result.problems)}`,
+    );
+  }
+  {
+    const root = repository({ 'plain.js': "import a from 'b';\nexport const c = a;\n" });
+    const result = scan({ root });
+    check(
+      'a .js file parses when it is valid as a MODULE',
+      result.blind === null && result.problems.length === 0,
+      `The nearest package.json decides a .js file's goal, and resolving that here would ` +
+        `reimplement Node's own rule — so either goal is accepted. This is the module half. ` +
+        `problems = ${JSON.stringify(result.problems)}`,
+    );
+  }
+  {
+    // `with` is legal in sloppy script and a syntax error in a module, which is
+    // the mirror of the case above: it can only pass if the SCRIPT attempt runs
+    // after the module attempt fails.
+    const root = repository({ 'sloppy.js': 'var o = {};\nwith (o) { var x = 1; }\n' });
+    const result = scan({ root });
+    check(
+      'CONTROL: and a .js file valid only as a SCRIPT parses too, so the fallback runs',
+      result.blind === null && result.problems.length === 0,
+      `Without this, "accepts either goal" is satisfied by a scan that only ever tries the ` +
+        `module one — every .js file in this repository is ESM, so nothing else would notice. ` +
+        `problems = ${JSON.stringify(result.problems)}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 10. A STAGED DELETION. Written because the filter for it was INERT and
   // nothing here would have said so.
   //
   // It read `entry.status`, and the field is `entry.state` — so the comparison
@@ -197,10 +245,28 @@ try {
   }
 
   // -------------------------------------------------------------------------
-  // 8-10. THE BATCHED BLOB READER agrees with the single one, on real content.
+  // 11-13. THE BATCHED BLOB READER agrees with the single one.
+  //
+  // AGAINST A FIXTURE, not this repository (finding VVV-5). It read the real
+  // staged set, which is whatever the person running it happens to have added —
+  // so with a clean index it compared ZERO paths and the control correctly said
+  // so. In CI, where a fresh checkout stages nothing, it would have failed on
+  // every run. It did not, because nothing in CI ran this proof at all (VVV-1):
+  // one gap hiding another.
+  //
+  // Item 2's ambient-environment axis — a harness depending on state the real
+  // caller does not supply. The fixture stages a known set, including a file
+  // whose CONTENT contains a newline, so the framing has to use the header's
+  // byte count rather than stopping at the first one it sees.
   // -------------------------------------------------------------------------
   {
-    const root = repoRoot();
+    const root = repository({
+      'one.mjs': FINE,
+      'two.mjs': 'export const b = 2;\n',
+      'three.cjs': 'module.exports = 3;\n',
+      'nested/four.js': 'export const d = 4;\n',
+      'multiline.mjs': 'export const e = 5;\nexport const f = 6;\nexport const g = 7;\n',
+    });
     const staged = changedPaths(['--cached'], { cwd: root })
       .filter((entry) => entry.state !== 'D')
       .map((entry) => entry.path);

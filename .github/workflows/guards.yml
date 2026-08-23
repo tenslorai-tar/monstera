@@ -304,6 +304,31 @@ jobs:
       - name: No emitted-source template carries a backtick
         run: node scripts/ci/annotate.mjs scripts/lib/emittedTemplates.mjs
 
+      # The syntax parse and its blob reader. Same job as the backtick scan
+      # because they are the same class one delimiter apart — a `*/` inside a
+      # JSDoc block is what the parse was added for, and the backtick scan
+      # cannot see it. Needs no node_modules: it builds throwaway git
+      # repositories and spawns node on them.
+      - name: Prove the staged-syntax parse sees, refuses and reads the index
+        run: node scripts/ci/annotate.mjs scripts/proofs/stagedSyntax.proof.mjs
+
+      # UUU-3. Both of these were registered in package.json and invoked by no
+      # job until check:proofcoverage went looking — which is the finding, not
+      # the fix: the wiring closes two instances and the check closes the class.
+      - name: Prove the tree witness can tell a still tree from a moving one
+        run: node scripts/ci/annotate.mjs scripts/proofs/treeWitness.proof.mjs
+
+      # A proof CI never executes is a green board that verified nothing. This
+      # is the wired-tools rule at the level of registration, and no other check
+      # here looks at ABSENCE — annotateCoverage examines invocations that
+      # exist, jobPlacement examines steps that exist.
+      # The proof first, so the check's silence is worth something when it runs.
+      - name: Prove the proof-coverage search sees, refuses and matches by path
+        run: node scripts/ci/annotate.mjs scripts/proofs/proofCoverage.proof.mjs
+
+      - name: Every proof script is invoked by some job
+        run: node scripts/ci/annotate.mjs scripts/lib/proofCoverage.mjs
+
       # EEE-3, and it closes Y-3's shape rather than adding a third list. The
       # annotate wrapper was rolled out by enumeration — three steps in ci.yml,
       # none here — and nothing made that list complete. This derives the set of

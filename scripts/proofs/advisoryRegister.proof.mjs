@@ -47,6 +47,12 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import { DERIVED_CLAIMS } from '../security/derivedClaims.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { treeMovedSince, witnessTree } from '../lib/treeWitness.mjs';
+
+// TAKEN BEFORE ANY CASE RUNS, and compared after the last one. See the check at
+// the foot of this file for why a proof that spawns subprocesses reading the
+// working tree needs it.
+const TREE_BEFORE = witnessTree();
 
 const ROOT = repoRoot();
 const CHECKER = join(ROOT, 'scripts', 'security', 'engineAdvisories.mjs');
@@ -1024,15 +1030,38 @@ try {
 // The mechanism is worth the sentence: a new failure path was added beside a
 // check that already existed, and the check did not cover the new path. Caught by
 // running the mutation rather than by reading the diff.
-let reportFailed = false;
-try {
-  process.stdout.write(
-    failures.length > 0
-      ? `${failures.length} case(s) FAILED:\n\n${failures.map((entry) => `  -  ${entry}`).join('\n\n')}\n\n`
-      : roster.format('advisory-register case'),
+// THE TREE MOVED — a third state, ahead of pass and fail (finding UUU-3).
+//
+// This file spawns the checker about twenty times over four minutes, and every
+// spawn imports modules from the working tree. On 2026-08-23 a module was edited
+// while a run was in flight and four cases failed; the failures were attributed
+// to the commit under test by a stash-versus-HEAD comparison, which is about the
+// strongest evidence available and was wrong. A control produced a false
+// positive, convincingly.
+//
+// So a result taken over a tree that changed underneath it is not reported as a
+// failure. Non-hermetic by construction is a property of this proof, not an
+// accident of that afternoon, and the honest output for it is "cannot be read".
+const moved = treeMovedSince(TREE_BEFORE);
+if (moved !== null) {
+  process.stderr.write(
+    `\nUNREADABLE — ${moved}\n\n` +
+      `  ${String(failures.length)} case(s) had failed and are NOT reported as failures, because\n` +
+      `  this run measured a moving target. That is a different answer from "the register is\n` +
+      `  broken", and the two must not share an exit code.\n\n`,
   );
-} catch (error) {
-  process.stderr.write(`\n${formatError(error)}\n`);
-  reportFailed = true;
+  process.exitCode = 1;
+} else {
+  let reportFailed = false;
+  try {
+    process.stdout.write(
+      failures.length > 0
+        ? `${failures.length} case(s) FAILED:\n\n${failures.map((entry) => `  -  ${entry}`).join('\n\n')}\n\n`
+        : roster.format('advisory-register case'),
+    );
+  } catch (error) {
+    process.stderr.write(`\n${formatError(error)}\n`);
+    reportFailed = true;
+  }
+  process.exitCode = failures.length > 0 || reportFailed ? 1 : 0;
 }
-process.exitCode = failures.length > 0 || reportFailed ? 1 : 0;
