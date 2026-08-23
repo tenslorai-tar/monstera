@@ -343,6 +343,11 @@
  * provisioned, and mandatory where something is.
  *
  * Usage: node scripts/research/lowboxSpike.mjs [--reset] [--require-containment]
+ *          [--expect-lowbox-spawn=refused|allowed]
+ *
+ * `--expect-lowbox-spawn` is MANDATORY under `--require-containment` and pins
+ * what the AppContainer does about process creation on this runner image — the
+ * one value this file deliberately does not assert. See {@link lowboxSpawnPin}.
  *
  *   --reset  delete a leftover profile and its grants from a crashed run, then
  *            exit. Explicit operator action to clear machine state; it clears
@@ -413,6 +418,55 @@ const caseFailures = [];
  * exists to run it.
  */
 const REQUIRE = process.argv.includes('--require-containment');
+
+/**
+ * THE PER-IMAGE PIN for the one row this proof deliberately does not assert
+ * (finding AAAA-1).
+ *
+ * `(b) process creation — LowBox alone` expects `either`, because the container
+ * refuses process creation on some Windows builds and permits it on others. That
+ * is the right verdict for a cross-image statement and it left the value with no
+ * recorder at all: the row printed the contained outcome for a reader, CI has no
+ * reader, and so the only event anybody cares about — **the outcome changing on
+ * an image** — was unobservable. A claim with no expiry, inside the one row that
+ * exists because the fact varies.
+ *
+ * So the value is pinned per image, beside the `runs-on:` that chooses the
+ * image, in the diff rather than in a table someone has to map. `either` is
+ * untouched as the cross-image statement in the header table and in ADR-0023
+ * Decision 8; this pins what THIS runner must produce.
+ *
+ * **Mandatory under `--require-containment`.** Absent is a hard failure, or a
+ * future job opts out by omission — which is the reassuring direction and the
+ * exact shape of the `if:` that was rejected when this job was designed.
+ *
+ * @returns {'refused' | 'allowed' | null}
+ */
+function lowboxSpawnPin() {
+  const flag = process.argv.find((argument) => argument.startsWith('--expect-lowbox-spawn='));
+  if (flag === undefined) return null;
+  const value = flag.slice('--expect-lowbox-spawn='.length);
+  if (value !== 'refused' && value !== 'allowed') {
+    process.stderr.write(
+      `\n--expect-lowbox-spawn takes 'refused' or 'allowed'; got '${value}'.\n` +
+        `  This pins what the AppContainer does about process creation on THIS runner image.\n`,
+    );
+    process.exit(1);
+  }
+  return value;
+}
+
+const LOWBOX_SPAWN_PIN = lowboxSpawnPin();
+
+if (REQUIRE && LOWBOX_SPAWN_PIN === null) {
+  process.stderr.write(
+    `\n--require-containment without --expect-lowbox-spawn=<refused|allowed>.\n\n` +
+      `  The LowBox-alone process-creation row asserts 'either' by design, so nothing else in\n` +
+      `  this file can notice when its answer changes on an image. The pin is what records it,\n` +
+      `  and a job that omits the flag would opt out of the one reading it was added to take.\n`,
+  );
+  process.exit(1);
+}
 
 /**
  * Refuses to measure, in the one way that is not a pass.
@@ -1703,10 +1757,20 @@ function summarise(runs) {
     const uncontained = probe(without, key);
     const decided = verdict(contained, uncontained);
     if (decided === 'UNREADABLE') unreadable += 1;
-    // `either` asserts the UNCONTAINED half instead of the comparison. See the
-    // note on the table above for the measurement that made this row's
-    // direction environment-dependent.
-    const held = expected === 'either' ? uncontained.outcome === 'allowed' : decided === expected;
+    // `either` asserts BOTH halves now (AAAA-1): the uncontained cell must be
+    // allowed, so two dead cells cannot satisfy the row, AND the contained
+    // outcome must equal what this runner image was pinned to. The pin is what
+    // gives the row a recorder — without it the container's answer changing on
+    // an image is unobservable, which is a claim with no expiry inside the one
+    // row that exists because the fact varies.
+    //
+    // The pin is only absent where `--require-containment` is absent, which is a
+    // developer machine, where there is a reader.
+    const pinHeld = LOWBOX_SPAWN_PIN === null || contained.outcome === LOWBOX_SPAWN_PIN;
+    const held =
+      expected === 'either'
+        ? uncontained.outcome === 'allowed' && pinHeld
+        : decided === expected;
     const mark = held ? 'ok' : 'FAIL';
     process.stdout.write(
       `  ${mark.padEnd(5)}${decided.padEnd(11)} ${label} (expected ${expected})\n` +
@@ -1716,15 +1780,29 @@ function summarise(runs) {
     );
     assert(
       expected === 'either'
-        ? `${label}: the UNCONTAINED cell is allowed, whichever way the container falls`
+        ? `${label}: the uncontained cell is allowed, and the contained cell matches this ` +
+          `image's pin (${LOWBOX_SPAWN_PIN ?? 'unpinned — no --require-containment'})`
         : `${label} is ${expected}`,
       held,
       `measured ${decided}. ${withMech} said ${contained.outcome} (${contained.detail}); ` +
         `${without} said ${uncontained.outcome} (${uncontained.detail}). ` +
         (expected === 'either'
-          ? 'This row does not assert a direction — the container denies process creation on ' +
+          ? 'This row does not assert a DIRECTION — the container denies process creation on ' +
             'some Windows builds and not others — but the uncontained cell must still be able ' +
-            'to spawn, or two dead cells would satisfy it.'
+            'to spawn, or two dead cells would satisfy it, and the contained cell must match ' +
+            `the pin this job passed (${LOWBOX_SPAWN_PIN ?? 'none — no --require-containment'}). ` +
+            (pinHeld
+              ? ''
+              : `\n\n      THE PIN IS THE FINDING, NOT A BUG HERE. The AppContainer on this ` +
+                `runner image now says '${contained.outcome}' where the job pinned ` +
+                `'${LOWBOX_SPAWN_PIN ?? ''}'. Runner image: ImageOS=` +
+                `${process.env['ImageOS'] ?? 'unknown'} ImageVersion=` +
+                `${process.env['ImageVersion'] ?? 'unknown'}.\n\n      That is almost certainly a ` +
+                `Microsoft image change and not a defect in this repository. ADR-0023 Decision ` +
+                `8 does not depend on this row — the JOB delivers invariant 25(b) and the ` +
+                `container is explicitly not relied on for it — so nothing here is broken. THE ` +
+                `RECORD of the container's behaviour is what moved. Repair the pin beside this ` +
+                `job's runs-on: and record the new reading; do not hunt for a bug.`)
           : decided === 'UNREADABLE'
             ? 'UNREADABLE is not a verdict — could-not-look and looked-and-found-containment do ' +
               'not share an output, so this is a broken run rather than a lost property.'

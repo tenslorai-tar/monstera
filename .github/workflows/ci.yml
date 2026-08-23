@@ -648,8 +648,24 @@ jobs:
       #
       # Measured at 5 seconds on the developing machine, which is why it sits
       # here rather than being weighed against the sweep's budget.
+      # `--expect-lowbox-spawn` PINS THE ONE ROW THIS PROOF DOES NOT ASSERT
+      # (finding AAAA-1). The LowBox-alone process-creation row expects `either`,
+      # because the container's answer varies by Windows build — which left the
+      # value with no recorder at all: it was printed for a reader and CI has no
+      # reader, so the only event anybody cares about, the answer CHANGING, was
+      # unobservable. `refused` is what `windows-latest` measured on 2026-08-23.
+      #
+      # A literal beside the `runs-on:` that chose the image, for the same reason
+      # the cache key carries a literal: the pin belongs where the image is
+      # chosen, in the diff, not in a table someone has to map.
+      #
+      # THE COST IS REAL AND IT IS THE SIGNAL. A Microsoft image change turns
+      # this red for something that is not a defect here — Decision 8 does not
+      # depend on this row, because the JOB delivers invariant 25(b) — so the
+      # failure text says exactly that, names the image, and sends the reader to
+      # repair the pin and record the new reading rather than hunt a bug.
       - name: Prove invariant 25's containment against running processes
-        run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment
+        run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment --expect-lowbox-spawn=refused
 
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
@@ -882,5 +898,23 @@ jobs:
       # measured nothing. Since the whole point of the job is a SECOND reading,
       # a silent could-not-look here would be worse than on the first — it would
       # look like agreement.
+      #
+      # THIS PIN IS A DELIBERATE PROBE AND MAY BE WRONG, stated so nobody reads
+      # a red here as a defect.
+      #
+      # Server 2022's contained process-creation answer HAS NEVER BEEN MEASURED.
+      # This job's first run asserted only the uncontained half, so it passed
+      # without recording what the container did. Two data points exist and they
+      # support opposite predictions: Windows 11 client ALLOWS and Server 2025
+      # REFUSES, which reads as a server-versus-client split (predicting
+      # `refused` here) rather than a chronological one (predicting `allowed`).
+      #
+      # `refused` is the guess. If it is wrong this job goes red once and
+      # `annotate.mjs` publishes the measured value — which is the only route by
+      # which this reading becomes public at all, since logs are private and the
+      # proof prints nothing on a pass. The pin is then corrected to the measured
+      # value and the reading is recorded permanently, in the diff.
+      #
+      # A red board on this step is the MEASUREMENT, not a defect.
       - name: Prove invariant 25's containment against running processes
-        run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment
+        run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment --expect-lowbox-spawn=refused
