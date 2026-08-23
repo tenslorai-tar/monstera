@@ -34,6 +34,32 @@
  * moved here. Every cell is created the same way, so no row's verdict crosses
  * the creation route.
  *
+ * ## Every cell is created by the SHIPPED surface (RR-3)
+ *
+ * `apps/desktop/src/win32HostSurface.ts` creates each cell: the command line,
+ * the security-capabilities attribute, `CREATE_SUSPENDED`, the job, its limits,
+ * the assignment, the membership read, the resume. This file used to hand-roll
+ * all of that in an emitted `MAIN` template running under the Electron binary —
+ * a second implementation of the thing being measured, sitting beside the
+ * shipped one (B3a), and a proof built on it would have proven the wrong
+ * artefact.
+ *
+ * The rule that replaces it is one line: **creation belongs to the surface,
+ * observation belongs to this instrument.** Reading the child's token from
+ * outside and waiting for exit stay here, because no shipped host does either.
+ *
+ * Two things the migration cost, both caught by requiring every property verdict
+ * to stay byte-identical across it:
+ *
+ *   - `process.execPath` silently changed meaning. It was the Electron binary
+ *     when the driver ran under Electron; in a plain-Node parent it is system
+ *     Node, so the cells ran the wrong runtime, the container had no rights on
+ *     it, and one row went from `same` to UNREADABLE. The executable is
+ *     `electronBinaryPath()` now, named rather than inherited.
+ *   - `applyLimits` has no undefaulted form, so the job gained §9.17's memory
+ *     cap. That is a coverage GAIN and it is stated on the (b) memory row rather
+ *     than absorbed.
+ *
  * ## The control is that the uncontained host WORKS, not that it resembles a fork
  *
  * There was a fifth cell, `baseline`, forked by `utilityProcess.fork`, and the
@@ -146,7 +172,27 @@
  * **Taken with the baseline cell removed, and every property verdict is
  * byte-identical to the run immediately before the removal** — which is the
  * measurement that the fifth cell was carrying nothing the same-route pairs did
- * not already carry.
+ * not already carry. **Byte-identical again across the move onto the shipped
+ * surface**, with the single deliberate exception of the (b) memory row, whose
+ * blocker changed.
+ *
+ * ## What it COSTS, measured, because the next step is a proof
+ *
+ * **5 seconds**, wall clock, for the whole run: four cells created, every probe
+ * in each, the ACL grants taken and released, the profile created and deleted.
+ *
+ * That number matters because RR-3's proof has to live in the sweep
+ * `checkLocal.mjs` orders by measured cost, and the concern raised against it
+ * was that a Windows-only containment proof would be the next `proof:cff` —
+ * something that strands the queue and gets diagnosed twice. On the shape this
+ * file had when that was said it was a fair worry: a driver process started
+ * under the Electron binary, an app before that, and a 60-second wait armed per
+ * cell. The migration removed the intermediate process, and what is left is
+ * four `CreateProcessW` calls and their children.
+ *
+ * So the premise is measured rather than assumed, and it is the good direction:
+ * this belongs in the cheap end of the duration table, not the doomed tail.
+ * Re-measure rather than trusting this line — it is a reading.
  *
  * Every row below is against the cell that removes ONLY that row's mechanism,
  * and the run exits 0 with no unreadable row.
@@ -258,9 +304,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import koffi from 'koffi';
 
@@ -684,128 +732,126 @@ if (config === null || !config.port) {
 `;
 
 /**
- * The driver inside Electron: one cell per creation route, the middle one held
- * as the route control.
+ * THE ONE RULE THIS FILE'S WIN32 CODE FOLLOWS, and it is worth more than any
+ * individual binding below (finding RR-3).
+ *
+ *   **Process CREATION belongs to the shipped surface. OBSERVATION belongs to
+ *   this instrument.**
+ *
+ * Creating a process — the command line, the security-capabilities attribute,
+ * `CREATE_SUSPENDED`, the job, its limits, the assignment, the membership read,
+ * the resume — is `apps/desktop/src/win32HostSurface.ts`'s job, and this file
+ * calls it rather than reimplementing it. It used to reimplement it, in an
+ * emitted `MAIN` template that hand-rolled `CreateProcessW` beside the shipped
+ * code doing the same thing: B3a's exact shape, and the reason a proof built on
+ * the hand-rolled half would have proven the wrong artefact.
+ *
+ * What stays here is what the surface deliberately does not do, because it is
+ * not part of creating a host:
+ *
+ *   - reading the child's token from OUTSIDE, which is property (a) and cannot
+ *     be a self-read (finding PP-2);
+ *   - waiting for exit and reading the exit code, which no shipped host does —
+ *     a host runs until it is killed.
+ *
+ * The distinction is not aesthetic. Anything that creates has exactly one
+ * implementation; anything that merely looks may live here. **Write the next
+ * addition on the correct side of that line, or it becomes a third
+ * implementation** — which is how the count went 2, 3, 4 in the advisory
+ * register before it was made a named thing with callers.
  */
-const MAIN = String.raw`
-const fs = require('node:fs');
-const net = require('node:net');
-const path = require('node:path');
-const koffi = require(KOFFI_PATH);
+
+const BUILT_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32HostSurface.js');
+if (!existsSync(BUILT_SURFACE)) {
+  process.stderr.write(
+    `The Win32 host surface is not built at ${BUILT_SURFACE}.\n` +
+      `This instrument drives the SHIPPED surface rather than a copy of it, so without the ` +
+      `build there is nothing to measure — and measuring a hand-rolled equivalent is the ` +
+      `defect RR-3's migration removed. Run \`npm run build\` first.\n`,
+  );
+  process.exit(1);
+}
+const { createWin32HostSurface } = await import(pathToFileURL(BUILT_SURFACE).href);
+
+/**
+ * §9.17's absolute cap for `mupdf-host`, which is what the shipped factory
+ * passes and therefore what the shipped job carries.
+ *
+ * **This is a COVERAGE CHANGE and is stated rather than absorbed** (audit item
+ * 2a). The hand-rolled job set `LimitFlags` without `JOB_OBJECT_LIMIT_PROCESS_MEMORY`
+ * and its comment said so: the number belonged to ADR-0023 §2 and a literal here
+ * would be the shape that rule forbids. `applyLimits` REQUIRES a limit, so
+ * driving the shipped surface brings the derived cap with it — the mechanism
+ * arrived as a side effect of using shipped code, not as the separate work the
+ * FEATURES row anticipated.
+ *
+ * What that moves is the blocker, not the verdict: (b) memory goes from *no
+ * mechanism* to *no probe allocates yet*, which are different states and must
+ * not share an output. The row says so.
+ */
+const { assertableBudget, memoryBudgets } = await import(
+  pathToFileURL(join(ROOT, 'scripts', 'lib', 'memoryBudgets.mjs')).href
+);
+const PROCESS_MEMORY_LIMIT = assertableBudget(memoryBudgets(), 'mupdf-host').absoluteBytes;
 
 const kernel = koffi.load('kernel32.dll');
-const userenv = koffi.load('userenv.dll');
-
-koffi.struct('STARTUPINFOW', {
-  cb: 'uint32', lpReserved: 'void *', lpDesktop: 'void *', lpTitle: 'void *',
-  dwX: 'uint32', dwY: 'uint32', dwXSize: 'uint32', dwYSize: 'uint32',
-  dwXCountChars: 'uint32', dwYCountChars: 'uint32', dwFillAttribute: 'uint32',
-  dwFlags: 'uint32', wShowWindow: 'uint16', cbReserved2: 'uint16',
-  lpReserved2: 'void *', hStdInput: 'void *', hStdOutput: 'void *', hStdError: 'void *',
-});
-koffi.struct('STARTUPINFOEXW', { StartupInfo: 'STARTUPINFOW', lpAttributeList: 'void *' });
-koffi.struct('PROCESS_INFORMATION', {
-  hProcess: 'void *', hThread: 'void *', dwProcessId: 'uint32', dwThreadId: 'uint32',
-});
-koffi.struct('SECURITY_CAPABILITIES', {
-  AppContainerSid: 'void *', Capabilities: 'void *', CapabilityCount: 'uint32', Reserved: 'uint32',
-});
-koffi.struct('SECURITY_ATTRIBUTES', {
-  nLength: 'uint32', lpSecurityDescriptor: 'void *', bInheritHandle: 'int32',
-});
-koffi.struct('IO_COUNTERS', {
-  ReadOperationCount: 'uint64', WriteOperationCount: 'uint64', OtherOperationCount: 'uint64',
-  ReadTransferCount: 'uint64', WriteTransferCount: 'uint64', OtherTransferCount: 'uint64',
-});
-koffi.struct('JOBOBJECT_BASIC_LIMIT_INFORMATION', {
-  PerProcessUserTimeLimit: 'int64', PerJobUserTimeLimit: 'int64', LimitFlags: 'uint32',
-  MinimumWorkingSetSize: 'size_t', MaximumWorkingSetSize: 'size_t', ActiveProcessLimit: 'uint32',
-  Affinity: 'size_t', PriorityClass: 'uint32', SchedulingClass: 'uint32',
-});
-koffi.struct('JOBOBJECT_EXTENDED_LIMIT_INFORMATION', {
-  BasicLimitInformation: 'JOBOBJECT_BASIC_LIMIT_INFORMATION', IoInfo: 'IO_COUNTERS',
-  ProcessMemoryLimit: 'size_t', JobMemoryLimit: 'size_t',
-  PeakProcessMemoryUsed: 'size_t', PeakJobMemoryUsed: 'size_t',
-});
-
-const CreateProcessW = kernel.func(
-  'bool CreateProcessW(const char16_t *app, void *cmdline, void *pa, void *ta, bool inherit, ' +
-    'uint32 flags, void *env, const char16_t *cwd, void *si, _Out_ void *pi)',
-);
-const InitializeProcThreadAttributeList = kernel.func(
-  'bool InitializeProcThreadAttributeList(void *list, uint32 count, uint32 flags, _Inout_ size_t *size)',
-);
-const UpdateProcThreadAttribute = kernel.func(
-  'bool UpdateProcThreadAttribute(void *list, uint32 flags, size_t attribute, void *value, ' +
-    'size_t size, void *previous, void *returned)',
-);
-const DeleteProcThreadAttributeList = kernel.func('void DeleteProcThreadAttributeList(void *list)');
-const ResumeThread = kernel.func('uint32 ResumeThread(void *thread)');
-const CreateJobObjectW = kernel.func('void *CreateJobObjectW(void *attrs, const char16_t *name)');
-const SetInformationJobObject = kernel.func('bool SetInformationJobObject(void *job, int cls, void *info, uint32 len)');
-const AssignProcessToJobObject = kernel.func('bool AssignProcessToJobObject(void *job, void *proc)');
-const IsProcessInJob = kernel.func('bool IsProcessInJob(void *proc, void *job, _Out_ bool *result)');
-const advapi = koffi.load('advapi32.dll');
+const GetLastError = kernel.func('uint32 GetLastError()');
+const WaitForSingleObject = kernel.func('uint32 WaitForSingleObject(void *handle, uint32 ms)');
+const GetExitCodeProcess = kernel.func('bool GetExitCodeProcess(void *proc, _Out_ uint32 *code)');
 const OpenProcessToken = advapi.func('bool OpenProcessToken(void *proc, uint32 access, _Out_ void **token)');
 const GetTokenInformation = advapi.func(
   'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
 );
 
 /**
- * The child's integrity level, read BY MAIN against the child's token.
+ * The child's integrity level, read by the PARENT against the child's token.
  *
  * Not by the host against its own: a process that has lowered itself can no
  * longer open its own token, so a self-read is a could-not-look dressed as a
  * reading (finding PP-2).
  *
- * TokenIntegrityLevel is class 25, and the RID is the last four bytes of the
- * returned SID structure. 0x1000 is Low, 0x2000 Medium.
+ * OBSERVATION, so it lives here. TokenIntegrityLevel is class 25, and the RID is
+ * the last four bytes of the returned SID structure. 0x1000 is Low, 0x2000
+ * Medium.
+ *
+ * @param {unknown} handle
+ * @returns {string}
  */
 function childIntegrity(handle) {
   const tokenOut = [null];
-  if (!OpenProcessToken(handle, 0x0008, tokenOut)) return 'OpenProcessToken failed: ' + GetLastError();
+  if (!OpenProcessToken(handle, 0x0008, tokenOut)) {
+    return `OpenProcessToken failed: ${String(GetLastError())}`;
+  }
   const sizeOut = [0];
   GetTokenInformation(tokenOut[0], 25, null, 0, sizeOut);
-  if (!sizeOut[0]) return 'sized 0: ' + GetLastError();
-  const buffer = Buffer.alloc(sizeOut[0]);
+  if (!sizeOut[0]) return `sized 0: ${String(GetLastError())}`;
+  const buffer = Buffer.alloc(Number(sizeOut[0]));
   if (!GetTokenInformation(tokenOut[0], 25, buffer, sizeOut[0], sizeOut)) {
-    return 'GetTokenInformation failed: ' + GetLastError();
+    return `GetTokenInformation failed: ${String(GetLastError())}`;
   }
-  return '0x' + buffer.readUInt32LE(buffer.length - 4).toString(16);
-}
-const CreateFileW = kernel.func(
-  'void *CreateFileW(const char16_t *name, uint32 access, uint32 share, void *sa, uint32 disp, uint32 flags, void *tmpl)',
-);
-const WaitForSingleObject = kernel.func('uint32 WaitForSingleObject(void *handle, uint32 ms)');
-const GetExitCodeProcess = kernel.func('bool GetExitCodeProcess(void *proc, _Out_ uint32 *code)');
-const TerminateProcess = kernel.func('bool TerminateProcess(void *proc, uint32 code)');
-const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
-const GetLastError = kernel.func('uint32 GetLastError()');
-const DeriveAppContainerSidFromAppContainerName = userenv.func(
-  'int DeriveAppContainerSidFromAppContainerName(const char16_t *name, _Out_ void **sid)',
-);
-
-const PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009;
-const EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
-const CREATE_UNICODE_ENVIRONMENT = 0x00000400;
-const CREATE_SUSPENDED = 0x00000004;
-const NUL = String.fromCharCode(0);
-
-function wide(text) {
-  return Buffer.from(text + NUL, 'utf16le');
+  return `0x${buffer.readUInt32LE(buffer.length - 4).toString(16)}`;
 }
 
-// ELECTRON_RUN_AS_NODE is what makes every cell the SAME RUNTIME. A cell
-// running a different binary would be a third variable in a comparison that
-// already has one too many.
-function environmentBlock() {
-  const entries = [];
-  for (const key of Object.keys(process.env)) {
-    if (key.toUpperCase() === 'ELECTRON_RUN_AS_NODE') continue;
-    entries.push(key + '=' + process.env[key]);
+/** @param {string} logPath @returns {string} */
+function readLog(logPath) {
+  try {
+    const text = readFileSync(logPath, 'utf8').trim();
+    return text === '' ? '(the child wrote nothing to stdout or stderr)' : text.slice(0, 1200);
+  } catch (error) {
+    return `(no log file: ${String(error instanceof Error ? error.message : error)})`;
   }
-  entries.push('ELECTRON_RUN_AS_NODE=1');
-  return Buffer.from(entries.join(NUL) + NUL + NUL, 'utf16le');
+}
+
+/**
+ * @param {string} reportPath
+ * @returns {{ probes?: Record<string, { outcome: string, detail: string }> } | null}
+ */
+function readReport(reportPath) {
+  try {
+    return JSON.parse(readFileSync(reportPath, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -820,139 +866,83 @@ function environmentBlock() {
  * with the route held fixed is what makes that reading single-variable, and it
  * is why the forked cell could be dropped without losing the reading (RR-3).
  */
-function spawnDirect(reportPath, cell, contained, withJob) {
-  // --preserve-symlinks-main AND --preserve-symlinks, and the reason is measured
-  // rather than defensive.
-  //
-  // Without them the first lowbox cell died before its first line with
-  // EPERM lstat 'C:\'. MECHANISM: Node resolves the main path and every require
-  // through realpathSync, which stats each ancestor by name — and a LowBox token
-  // passes an access check only where the DACL grants the container SID or an
-  // application-package SID, so the user's own rights on C:\ do not count and
-  // the volume root grants app packages nothing.
-  //
-  // The alternative fix is an ACE on C:\, which needs administrator rights and
-  // would put a permanent grant on the volume root to run a sandbox. These flags
-  // remove the realpath instead, which is the call that was failing.
-  const commandLine = wide(
-    '"' + process.execPath + '" --preserve-symlinks --preserve-symlinks-main "' +
-      HOST_JS + '" "' + reportPath + '" ' + cell,
-  );
-
+/**
+ * @param {string} hostJs @param {string} scratchDir @param {string} reportPath
+ * @param {string} cell @param {boolean} contained @param {boolean} withJob
+ * @returns {Record<string, unknown>}
+ */
+function runCell(hostJs, scratchDir, reportPath, cell, contained, withJob) {
   // A PROCESS WHOSE FAILURE IS ANNOUNCED ON A CHANNEL NOBODY SUBSCRIBES TO IS
   // UNPROVEN, however carefully everything around it is measured.
   //
   // The first run of this spike had the lowbox cell exit 1 with no report and no
   // way to say WHY: CreateProcessW inherits no handles unless told to, so the
   // child's stderr went nowhere. That turned a diagnosable startup failure into
-  // an unattributed refusal, which is the exact shape the route control exists
-  // to prevent one layer up.
-  //
-  // An inherited handle is also the one channel a container cannot close: the
-  // access check happens when the file is OPENED, and the parent opens it.
-  const logPath = path.join(SCRATCH, 'log-' + cell + '.txt');
-  const sa = Buffer.alloc(koffi.sizeof('SECURITY_ATTRIBUTES'));
-  koffi.encode(sa, 'SECURITY_ATTRIBUTES', {
-    nLength: koffi.sizeof('SECURITY_ATTRIBUTES'), lpSecurityDescriptor: null, bInheritHandle: 1,
-  });
-  const logHandle = CreateFileW(logPath, 0x40000000, 3, sa, 2, 0x80, null);
-  const logUsable = !isInvalidHandle(koffi, logHandle);
+  // an unattributed refusal — the shape the working-host control exists to
+  // prevent one layer up. An inherited handle is also the one channel a
+  // container cannot close: the access check happens when the file is OPENED,
+  // and the parent opens it. The surface takes `diagnosticPath` for exactly
+  // this, so the handle is its business rather than ours.
+  const logPath = join(scratchDir, `log-${cell}.txt`);
 
-  let attributeList = null;
-  let sidBuffer = null;
-  if (contained) {
-    const sizeOut = [0];
-    InitializeProcThreadAttributeList(null, 1, 0, sizeOut);
-    if (!sizeOut[0]) return { error: 'InitializeProcThreadAttributeList sized 0: ' + GetLastError() };
-    attributeList = Buffer.alloc(Number(sizeOut[0]));
-    if (!InitializeProcThreadAttributeList(attributeList, 1, 0, sizeOut)) {
-      return { error: 'InitializeProcThreadAttributeList failed: ' + GetLastError() };
-    }
-    const sidOut = [null];
-    if (DeriveAppContainerSidFromAppContainerName(CONTAINER, sidOut) !== 0) {
-      return { error: 'the container SID could not be derived in main' };
-    }
-    const capabilities = { AppContainerSid: sidOut[0], Capabilities: null, CapabilityCount: 0, Reserved: 0 };
-    sidBuffer = Buffer.alloc(koffi.sizeof('SECURITY_CAPABILITIES'));
-    koffi.encode(sidBuffer, 'SECURITY_CAPABILITIES', capabilities);
-    if (!UpdateProcThreadAttribute(
-      attributeList, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-      sidBuffer, koffi.sizeof('SECURITY_CAPABILITIES'), null, null,
-    )) {
-      return { error: 'UpdateProcThreadAttribute failed: ' + GetLastError() };
-    }
-  }
-
-  const si = Buffer.alloc(koffi.sizeof('STARTUPINFOEXW'));
-  koffi.encode(si, 'STARTUPINFOEXW', {
-    StartupInfo: {
-      cb: koffi.sizeof('STARTUPINFOEXW'), lpReserved: null, lpDesktop: null, lpTitle: null,
-      dwX: 0, dwY: 0, dwXSize: 0, dwYSize: 0, dwXCountChars: 0, dwYCountChars: 0,
-      dwFillAttribute: 0, dwFlags: logUsable ? 0x00000100 : 0, wShowWindow: 0, cbReserved2: 0,
-      lpReserved2: null,
-      hStdInput: null,
-      hStdOutput: logUsable ? logHandle : null,
-      hStdError: logUsable ? logHandle : null,
-    },
-    lpAttributeList: attributeList,
+  // --preserve-symlinks-main AND --preserve-symlinks, measured rather than
+  // defensive. Without them the first lowbox cell died before its first line
+  // with EPERM lstat 'C:\': Node realpaths the main path and every require,
+  // statting each ancestor by name, and a LowBox token passes an access check
+  // only where the DACL names the container or an application-package SID — so
+  // the user's own rights on the volume root do not count and C:\ grants app
+  // packages nothing. The alternative is an ACE on C:\, which needs
+  // administrator rights and puts a permanent grant on the volume root to run a
+  // sandbox. These flags remove the realpath instead, which is the failing call.
+  const surface = createWin32HostSurface({
+    // THE ELECTRON BINARY BY PATH, never `process.execPath` (finding RR-3).
+    //
+    // The driver used to run under the Electron binary itself, so its
+    // `process.execPath` WAS the binary and passing it through was invisible.
+    // With the driver moved into a plain-Node parent that expression silently
+    // became `C:\Program Files\nodejs\node.exe`, and the cells ran the wrong
+    // runtime: the grants list names the Electron install, the container had no
+    // rights on the other one, and the contained no-job cell's spawn probe came
+    // back ENOENT where it had spawned freely. One property row went from `same`
+    // to UNREADABLE, which is how it was caught — the migration's condition was
+    // that every verdict stay byte-identical, and one did not.
+    //
+    // The cells must be the Electron binary in Node mode for two reasons that
+    // outlive this bug: it is what invariant 25's host actually is, and it is
+    // what keeps the shim job's provisioning step consuming something (TT-1).
+    // `ELECTRON_RUN_AS_NODE` is forced by the surface itself.
+    executablePath: electronBinaryPath(),
+    commandArguments: ['--preserve-symlinks', '--preserve-symlinks-main', hostJs, reportPath, cell],
+    workingDirectory: scratchDir,
+    // The ONE variable on the containment axis. A null name is an uncontained
+    // cell; a name is the AppContainer, and the surface derives the SID and
+    // sets the security-capabilities attribute itself.
+    containerName: contained ? CONTAINER : null,
+    diagnosticPath: logPath,
   });
 
-  const pi = Buffer.alloc(koffi.sizeof('PROCESS_INFORMATION'));
-  // CREATE_SUSPENDED, so the job can be assigned BEFORE the first instruction.
-  //
-  // utilityProcess.fork returns a process that is already running, so everything
-  // applied afterwards is applied to a process that has executed — which is the
-  // window finding PP-6 designed a handshake for. Owning the creation route
-  // closes it by construction instead, and the host's FIRST action is a spawn
-  // attempt so a refusal is evidence the job was in force from instruction one
-  // rather than an assertion that it was.
-  const flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
-  const ok = CreateProcessW(null, commandLine, null, null, logUsable, flags, environmentBlock(), SCRATCH, si, pi);
-  if (logUsable) CloseHandle(logHandle);
-  if (!ok) {
-    const error = GetLastError();
-    if (attributeList !== null) DeleteProcThreadAttributeList(attributeList);
-    return { error: 'CreateProcessW failed: ' + error, log: readLog(logPath) };
-  }
-
-  const info = koffi.decode(pi, 'PROCESS_INFORMATION');
+  const created = surface.createSuspended();
+  if (!created.ok) return { error: created.error, log: readLog(logPath) };
+  const { pid, process: handle, thread } = created.value;
 
   // THE JOB VARIANT. Skipped entirely rather than created-and-not-assigned: a
   // job object nobody is in still has KILL_ON_JOB_CLOSE and a process limit, and
   // the point of this cell is that no job of ours exists for the child at all.
   //
-  // CREATE_SUSPENDED stays on both sides. It is what makes integrityBeforeResume
-  // readable, and it is not the mechanism under test in either pair — dropping it
-  // here would put a second variable into the one comparison this cell exists to
-  // make single-variable.
-  const job = withJob ? CreateJobObjectW(null, null) : null;
-  const limits = {
-    BasicLimitInformation: {
-      PerProcessUserTimeLimit: 0n, PerJobUserTimeLimit: 0n,
-      // ACTIVE_PROCESS | KILL_ON_JOB_CLOSE. No memory limit here: that number is
-      // ADR-0023 §2's to derive from §9.17, and a literal in this struct is the
-      // shape it exists to forbid. This cell is about ORDER, not about budgets.
-      LimitFlags: 0x00000008 | 0x00002000,
-      MinimumWorkingSetSize: 0, MaximumWorkingSetSize: 0,
-      ActiveProcessLimit: 1, Affinity: 0, PriorityClass: 0, SchedulingClass: 0,
-    },
-    IoInfo: {
-      ReadOperationCount: 0n, WriteOperationCount: 0n, OtherOperationCount: 0n,
-      ReadTransferCount: 0n, WriteTransferCount: 0n, OtherTransferCount: 0n,
-    },
-    ProcessMemoryLimit: 0, JobMemoryLimit: 0, PeakProcessMemoryUsed: 0, PeakJobMemoryUsed: 0,
-  };
-  const limitBuffer = Buffer.alloc(koffi.sizeof('JOBOBJECT_EXTENDED_LIMIT_INFORMATION'));
-  koffi.encode(limitBuffer, 'JOBOBJECT_EXTENDED_LIMIT_INFORMATION', limits);
+  // CREATE_SUSPENDED stays on both sides — the surface always creates suspended
+  // — which is what makes `integrityBeforeResume` readable and is not the
+  // mechanism under test in either pair.
+  const job = withJob ? surface.createJob() : null;
   let limitsSet = 'NO JOB (variant)';
   let assigned = 'NO JOB (variant)';
   let inJobBeforeResume = 'NO JOB (variant)';
   if (job !== null) {
-    limitsSet = SetInformationJobObject(job, 9, limitBuffer, limitBuffer.length);
-    assigned = AssignProcessToJobObject(job, info.hProcess);
-    const inJobOut = [false];
-    IsProcessInJob(info.hProcess, job, inJobOut);
-    inJobBeforeResume = inJobOut[0];
+    limitsSet = surface.applyLimits(job, PROCESS_MEMORY_LIMIT);
+    assigned = surface.assignToJob(job, handle);
+    // `readJobMembership` returns 'in-job' | 'not-in-job' | 'unreadable', and
+    // the three are kept apart here for the same reason the shipped factory
+    // keeps them apart: could-not-read is not not-in-job.
+    inJobBeforeResume = surface.readJobMembership(handle, job);
   }
 
   // PROPERTY (a) WHILE THE PROCESS IS STILL SUSPENDED. This is the second window
@@ -960,121 +950,127 @@ function spawnDirect(reportPath, cell, contained, withJob) {
   // Low here, the host never runs at Medium and never lowers itself, so there is
   // no interval and nothing the host is permitted to do inside one. If it is
   // Medium, (a) is NOT in force at instruction one and the window is real.
-  const integrityBeforeResume = childIntegrity(info.hProcess);
+  //
+  // OBSERVATION, not creation — see this section's rule.
+  const integrityBeforeResume = childIntegrity(handle);
 
   // ONLY NOW does the host run its first instruction.
-  const resumed = ResumeThread(info.hThread);
+  const resumed = surface.resume(thread);
 
-  const waited = WaitForSingleObject(info.hProcess, 60000);
+  const waited = WaitForSingleObject(handle, 60000);
   let exitCode = null;
   if (waited === 0) {
     const codeOut = [0];
-    if (GetExitCodeProcess(info.hProcess, codeOut)) exitCode = codeOut[0];
+    if (GetExitCodeProcess(handle, codeOut)) exitCode = codeOut[0];
   } else {
-    TerminateProcess(info.hProcess, 1);
+    surface.terminate(handle);
   }
-  CloseHandle(info.hThread);
-  CloseHandle(info.hProcess);
-  if (job !== null) CloseHandle(job);
-  if (attributeList !== null) DeleteProcThreadAttributeList(attributeList);
+  surface.close(thread);
+  surface.close(handle);
+  if (job !== null) surface.close(job);
   return {
-    pid: info.dwProcessId, exitCode, waited, log: readLog(logPath),
+    pid,
+    exitCode,
+    waited,
+    log: readLog(logPath),
     // previousSuspendCount is what ResumeThread returns: the thread's suspend
     // count BEFORE the call. A value of 1 is the proof the process really was
     // created suspended, because a running thread reports 0 — which separates
     // "we asked for CREATE_SUSPENDED" from "it took effect".
     ordering: {
-      limitsSet, assigned, inJobBeforeResume, integrityBeforeResume,
+      limitsSet,
+      assigned,
+      inJobBeforeResume,
+      integrityBeforeResume,
       previousSuspendCount: resumed,
     },
   };
 }
 
-function readLog(logPath) {
-  try {
-    const text = fs.readFileSync(logPath, 'utf8').trim();
-    return text === '' ? '(the child wrote nothing to stdout or stderr)' : text.slice(0, 1200);
-  } catch (error) {
-    return '(no log file: ' + String(error && error.code || error) + ')';
-  }
-}
+/**
+ * Runs the four cells, with the two servers their probes reach for.
+ *
+ * THIS PARENT IS PLAIN NODE, and that is finding LLL-1's remedy rather than a
+ * simplification. It was an Electron app, and Chromium started a GPU process
+ * even though the harness opens no window; twice it crash-looped with
+ * exit_code=-2147483645 until the app hit its crash limit and killed the run
+ * before any cell finished. A measured negative result so nobody repeats it:
+ * `disableHardwareAcceleration` plus a disable-gpu switch, applied before ready,
+ * did NOT stop it, and were removed rather than left as a call that does not do
+ * what its comment claims.
+ *
+ * The app existed for exactly ONE cell — the forked baseline — and that cell is
+ * gone (RR-3). A parent needing only koffi, Win32 and `node:net` is plain Node
+ * with no GPU process to crash. So the answer was a removal, not a Chromium
+ * switch: prove the limit has to exist before designing around it, applied to a
+ * flake instead of a bound.
+ *
+ * The cells ALSO used to be driven from an emitted `MAIN` template running under
+ * the Electron binary, which hand-rolled `CreateProcessW`. That is gone with it:
+ * the driver is this function and the creation is the shipped surface's.
+ *
+ * This does NOT discharge finding TT-1. Every cell still runs the Electron
+ * BINARY in Node mode — the surface forces `ELECTRON_RUN_AS_NODE` — so the shim
+ * job's provisioning step keeps its consumer, which is what RR-3 says that step
+ * exists for.
+ *
+ * @param {string} hostJs @param {string} scratchDir
+ * @returns {Promise<Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>>}
+ */
+function runCells(hostJs, scratchDir) {
+  return new Promise((resolve, reject) => {
+    // Started before any cell, so a refusal cannot be "nothing was listening
+    // yet" — which would be a containment verdict read from a race.
+    const tcp = createServer((socket) => socket.end());
+    const pipeName = `\\\\.\\pipe\\${CONTAINER}-${String(process.pid)}`;
+    const pipe = createServer((socket) => socket.end());
+    const shut = () => {
+      tcp.close();
+      pipe.close();
+    };
 
-function readReport(reportPath) {
-  try {
-    return JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-  } catch (error) {
-    return null;
-  }
-}
+    tcp.on('error', reject);
+    pipe.on('error', reject);
 
-const runs = [];
+    tcp.listen(0, '127.0.0.1', () => {
+      pipe.listen(pipeName, () => {
+        try {
+          const address = tcp.address();
+          const port = typeof address === 'object' && address !== null ? address.port : 0;
+          writeFileSync(
+            join(scratchDir, 'handed.json'),
+            JSON.stringify({ port, pipe: pipeName }),
+            'utf8',
+          );
 
-// THIS PARENT IS PLAIN NODE, and that is finding LLL-1's remedy rather than a
-// simplification (RR-3).
-//
-// It was an Electron app. Chromium started a GPU process even though the
-// harness opens no window, and twice it crash-looped with
-// exit_code=-2147483645 until the app hit its crash limit and printed "GPU
-// process isn't usable. Goodbye." a second in — killing the run before any cell
-// finished. A measured negative result so nobody repeats it:
-// disableHardwareAcceleration plus a disable-gpu switch, applied before ready,
-// did NOT stop it, and were removed rather than left as a call that does not do
-// what its comment claims.
-//
-// The app existed for exactly ONE cell — the forked baseline — and that cell is
-// gone. The four cells below all go through our own process-creation route, and
-// a parent needing only koffi, Win32 and node:net is plain Node with no GPU
-// process to crash. So the answer was a removal, not a Chromium switch: prove
-// the limit has to exist before designing around it, applied to a flake instead
-// of a bound.
-//
-// This does NOT discharge finding TT-1. Every cell still runs the Electron
-// BINARY in Node mode, so the shim job's provisioning step keeps its consumer,
-// which is what RR-3 says that step exists for.
-//
-// BACKTICK OCCURRENCE 7 happened writing the paragraph this replaces — four
-// pairs, quoting API names in prose, in a comment recording a finding about the
-// GPU flake. Third in a row while documenting something else entirely. The scan
-// named all four lines before anything was staged.
+          // THE CELLS. Two axes, containment and the job, each switchable on its
+          // own, so every property has a pair that flips exactly one thing.
+          // There is no cell off this route: what used to sit here was a forked
+          // baseline, and ADR-0022 retired the route it referenced.
+          const cells = [
+            { cell: 'lowbox', contained: true, job: true },
+            { cell: 'route', contained: false, job: true },
+            { cell: 'route-no-job', contained: false, job: false },
+            { cell: 'lowbox-no-job', contained: true, job: false },
+          ];
 
-// The two servers the host probes reach for, started before any cell so a
-// refusal cannot be "nothing was listening yet".
-const tcp = net.createServer((socket) => socket.end());
-const pipeName = PIPE_NAME;
-const pipe = net.createServer((socket) => socket.end());
-
-tcp.listen(0, '127.0.0.1', () => {
-  pipe.listen(pipeName, () => {
-    const port = tcp.address().port;
-    fs.writeFileSync(path.join(SCRATCH, 'handed.json'), JSON.stringify({ port, pipe: pipeName }), 'utf8');
-
-    // THE CELLS. Two axes, containment and the job, each switchable on its own,
-    // so every property below has a pair that flips exactly one thing. There is
-    // no cell off this route: what used to sit here was a forked baseline, and
-    // ADR-0022 retired the route it referenced.
-    const DIRECT = [
-      { cell: 'lowbox', contained: true, job: true },
-      { cell: 'route', contained: false, job: true },
-      { cell: 'route-no-job', contained: false, job: false },
-      { cell: 'lowbox-no-job', contained: true, job: false },
-    ];
-
-    for (const spec of DIRECT) {
-      const reportPath = path.join(SCRATCH, 'report-' + spec.cell + '.json');
-      const outcome = spawnDirect(reportPath, spec.cell, spec.contained, spec.job);
-      runs.push({ cell: spec.cell, spawn: outcome, report: readReport(reportPath) });
-    }
-
-    process.stdout.write('MONSTERA_LOWBOX_REPORT ' + JSON.stringify({ runs }) + '\n');
-    process.exit(0);
+          /** @type {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} */
+          const collected = [];
+          for (const spec of cells) {
+            const reportPath = join(scratchDir, `report-${spec.cell}.json`);
+            const spawn = runCell(hostJs, scratchDir, reportPath, spec.cell, spec.contained, spec.job);
+            collected.push({ cell: spec.cell, spawn, report: readReport(reportPath) });
+          }
+          shut();
+          resolve(collected);
+        } catch (error) {
+          shut();
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
+    });
   });
-});
-
-setTimeout(() => {
-  process.stdout.write('MONSTERA_LOWBOX_REPORT ' + JSON.stringify({ error: 'timed out', runs }) + '\n');
-  process.exit(1);
-}, 300000);
-`;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -1237,51 +1233,43 @@ try {
       `${HOST}`,
     'utf8',
   );
-  writeFileSync(
-    join(scratch, 'main.js'),
-    `const KOFFI_PATH = ${koffiPath};\n` +
-      `${INVALID_HANDLE_SOURCE}\n` +
-      `const HOST_JS = ${JSON.stringify(hostJs)};\n` +
-      `const SCRATCH = ${JSON.stringify(scratch)};\n` +
-      `const CONTAINER = ${JSON.stringify(CONTAINER)};\n` +
-      `const PIPE_NAME = ${JSON.stringify(`\\\\.\\pipe\\${CONTAINER}-${process.pid}`)};\n` +
-      `${MAIN}`,
-    'utf8',
-  );
-  // NODE MODE, BY PATH — not an Electron app directory (finding LLL-1).
+  // NO SECOND PROCESS BETWEEN THIS FILE AND THE CELLS (finding RR-3).
   //
-  // The parent used to be launched as an app, which is what started the GPU
-  // process that crash-looped twice. With the forked cell gone nothing here
-  // needs Chromium, so it runs the same way every CELL runs: the Electron
-  // binary under ELECTRON_RUN_AS_NODE with a script path. That also keeps the
-  // parent and its children on one runtime, which is why the cells use it.
+  // A `main.js` used to be emitted here and run under the Electron binary in
+  // Node mode, and it held the driver AND a hand-rolled `CreateProcessW`. Both
+  // are gone: the driver is `runCells` in this file, and creation is the shipped
+  // surface's. What the intermediate process bought was a runtime shared with
+  // the cells, and the cells do not need their PARENT to be that runtime — the
+  // surface forces `ELECTRON_RUN_AS_NODE` on the children it creates, and
+  // `hostSurfaceProbe.mjs` has been creating Electron-binary children from plain
+  // Node since the surface landed.
   //
-  // The app's `package.json` went with the app. A `main` field pointing at a
-  // script nothing launches as an app is the dead-configuration shape.
+  // What went with it: an emitted-source template, a `package.json` whose `main`
+  // pointed at a script nothing launched as an app, and a report line parsed out
+  // of another process's stdout. The runs are now values.
   process.stdout.write('\nrunning four cells\n\n');
-  const result = spawnSync(electronBinaryPath(), [join(scratch, 'main.js')], {
-    encoding: 'utf8',
-    timeout: 360_000,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  });
-  if (`${result.stderr}`.trim() !== '') process.stdout.write(`stderr:\n${result.stderr}\n`);
-
-  const line = `${result.stdout}`.split('\n').find((entry) => entry.startsWith('MONSTERA_LOWBOX_REPORT '));
-  if (line === undefined) {
-    process.stdout.write(`no report line.\nstdout:\n${result.stdout}\n`);
-    exitCode = 1;
-  } else {
-    /** @type {{ runs?: Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }> }} */
-    const report = JSON.parse(line.slice('MONSTERA_LOWBOX_REPORT '.length));
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n\n`);
-    exitCode = summarise(report.runs ?? []);
-  }
+  const runs = await runCells(hostJs, scratch);
+  process.stdout.write(`${JSON.stringify({ runs }, null, 2)}\n\n`);
+  exitCode = summarise(runs);
 } catch (error) {
   process.stdout.write(`\n${error instanceof Error ? error.message : String(error)}\n`);
   exitCode = 1;
 } finally {
   process.stdout.write('\nreversing machine state:\n');
   for (const line of releaseGrants(sid)) process.stdout.write(`${line}\n`);
+  // THE PROFILE IS DELETED BY NAME, AND THERE ARE NOW TWO THINGS THAT CREATE IT.
+  //
+  // `ensureContainer` creates it first, because the SID is needed to grant the
+  // ACLs before any cell runs. The shipped surface then calls
+  // `CreateAppContainerProfile` too and takes ALREADY_EXISTS as its ordinary
+  // path — that is not a second opinion, it is the surface being self-contained
+  // for the application, which never runs `ensureContainer`.
+  //
+  // **The surface never deletes one, deliberately: deleting drops every ACE
+  // naming it.** That is right for shipped code and wrong for a check that runs
+  // on every push, so the deletion is this instrument's job and it is
+  // unconditional — a profile per run that nothing removes is machine state
+  // accumulating on the machine that runs the check.
   const hr = DeleteAppContainerProfile(CONTAINER);
   process.stdout.write(`  profile deleted: ${hr === 0 ? 'yes' : `0x${(hr >>> 0).toString(16)}`}\n`);
   rmSync(scratch, { recursive: true, force: true });
@@ -1524,29 +1512,40 @@ function summarise(runs) {
   }
 
   // ---------------------------------------------------------------------------
-  // (b) MEMORY IS NOT MEASURED HERE, and saying so is the point of printing it.
+  // (b) MEMORY: THE BLOCKER MOVED, AND THE STATE IS DIFFERENT (audit item 2a).
   //
-  // A COVERAGE REDUCTION AGAINST `hostFixture.mjs`, stated rather than absorbed
-  // (audit item 2a, weakening direction). That file carried a `commit768MB`
-  // probe against a job whose ProcessMemoryLimit was the literal 512 MB — which
-  // its own comment flagged as PP-4's shape: a second opinion about §9.17's
-  // mupdf-host budget, living inside a Windows struct.
+  // This row read "the job here sets no memory limit", and that stopped being
+  // true when the cells moved onto the shipped surface. `applyLimits` REQUIRES
+  // a limit — there is no way to use the shipped job without one — so the job
+  // now carries §9.17's absolute cap for `mupdf-host`, derived by the module
+  // that owns the rule.
   //
-  // Carrying the literal here would carry PP-4 with it. Carrying the DERIVATION
-  // would be a second implementation of the rule ADR-0023 §2 assigns to the
-  // shipped host — parse memoryBudgets.mjs, take the absolute cap, undefault it
-  // — which is B3a. So the limit arrives with the host that ships it, and the
-  // measurement arrives with RR-3.
+  // **The mechanism arrived as a side effect of using shipped code, not as the
+  // separate work this row anticipated**, and that is exactly the kind of
+  // improvement that goes unrecorded because nothing goes red. The two states
+  // are not the same and must not share an output:
   //
-  // Not silently dropped: a reduction nobody prints is a reduction nobody
-  // reviews, and the trigger is named so this cannot sit here indefinitely.
+  //   was: no mechanism    — nothing set a limit, so nothing could be measured
+  //   now: no probe        — the limit is in force and nothing allocates past it
+  //
+  // What is still owed is a probe that commits past the cap and reports the
+  // refusal, which `hostFixture.mjs` had as `commit768MB` against a 512 MB
+  // literal its own comment flagged as PP-4. The literal is what could not come
+  // across; the limit came across on its own.
+  //
+  // Not silently upgraded either: a reduction nobody prints is a reduction
+  // nobody reviews, and the same is true of a gain — this row is what a reader
+  // sees, so it says which state it is in.
   // ---------------------------------------------------------------------------
   process.stdout.write(
-    '  NOT MEASURED  (b) memory\n' +
-      '              The job here sets no memory limit. hostFixture.mjs measured this against a\n' +
-      '              512 MB literal it flagged as PP-4; ADR-0023 §2 makes the shipped limit a\n' +
-      "              derivation from §9.17's absolute cap, and implementing that rule twice is\n" +
-      '              B3a. TRIGGER: RR-3, where the shipped derivation runs and can be read.\n\n',
+    '  NOT MEASURED  (b) memory — the LIMIT is in force, the PROBE is missing\n' +
+      `              The job carries §9.17's absolute mupdf-host cap (${String(PROCESS_MEMORY_LIMIT)}\n` +
+      '              bytes), derived by scripts/lib/memoryBudgets.mjs and applied by the SHIPPED\n' +
+      '              surface — it arrived with the migration onto that surface rather than as\n' +
+      '              separate work, because applyLimits has no undefaulted form.\n' +
+      '              So this is no longer "no mechanism". What is owed is a probe that commits\n' +
+      '              past the cap and reports the refusal. hostFixture.mjs had one, against a\n' +
+      '              512 MB literal it flagged as PP-4; the literal is what could not travel.\n\n',
   );
 
   // ---------------------------------------------------------------------------
