@@ -801,6 +801,106 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — MMM-1: three documents named the wrong writer of record, and the tree held both readings at once
+
+The reviewing seat found that `docs/ARCHITECTURE.md` §9.27, `CLAUDE.md` and
+`apps/desktop/src/windowPolicy.ts` all state that **the code holds the pen for
+the memory budgets** and that the CSP's direction is deliberately the opposite.
+Checked: `scripts/lib/memoryBudgets.mjs` declares
+`SOURCE_FILE = 'docs/ARCHITECTURE.md'` and parses §9.17's machine-read line, and
+ADR-0012's own title is *machine-read from the invariant*. §9.17 holds the pen
+exactly as §9.27 does.
+
+`check:docs`'s restatement rule is not a code-holds-pen mechanism at all. It
+forbids §9.17's **surrounding prose** from carrying a second copy of a number the
+section states once — prose against prose, inside one section. Reading it as
+code-against-document is where the whole error came from.
+
+### There were never two opposite patterns
+
+One pattern, two shapes, and the axis that varies is whether the derived side
+keeps a **copy**:
+
+| concern | pen | copy | what checks it |
+|---|---|---|---|
+| §9.17 budgets | the document | none — the reader parses the line | `check:docs`, against a second copy in the section's prose |
+| §9.27 CSP | the document | yes — a renderer cannot parse markdown | `proof:rendererpolicy`, that the copy equals the source |
+| the host's job limit | the document | yes — `apps/desktop/` cannot import `scripts/` | `proof:composition`, recomputed from the invariant |
+
+**Make a copy only where the reader cannot reach the source, and prove every copy
+that exists.** That covers all three where the contrast covered two, which is the
+argument for preferring it beyond its being true: the replacement is a rule about
+*readers*, and the thing it replaced was a rule about taste.
+
+ADR-0019's decision is untouched — its rejected alternatives argue from what a
+`.ts` diff gets reviewed by, not from the comparison. What falls is the argument
+from contrast, and with it the standing of *"which side holds the pen is decided
+per concern"*: not shown false, but **no concern in this repository currently
+puts the pen in code**, so the sentence survives as a principle with no instance
+here. Stated in the correction so the next person to reach for it knows they will
+be the first.
+
+### Why no check could have caught it, and why review did not
+
+Every carrying sentence pairs a true clause with a false one. *"This document is
+the writer of record, and that is the opposite of the memory budgets"* — the
+first half is the half a reader is checking, and it is correct, so it vouches for
+the second. Item 7's compound claim, at document scale rather than in a function
+comment.
+
+The citation made it worse rather than better. ADR-0019 cites ADR-0012 as the
+authority for the claim ADR-0012 contradicts: a cross-reference that **resolves**,
+and therefore passes every link check in the repository, while sending the reader
+to a real document that says the opposite. UU-1 said a resolving cross-reference
+can still be wrong and no check can see it; this is that, with the resolving link
+actively lending credibility.
+
+**And the tree held both readings simultaneously.** `apps/desktop/src/budget.ts`
+says *"the same direction the CSP takes, with the document as writer of record
+and the code derived from it"*, and ADR-0023 §7 says *"the invariant holds the pen
+and code reads it"*. Both correct. Both written on 2026-08-22, by me, with
+`windowPolicy.ts`'s opposite claim sitting in the same package. Writing the true
+version twice in one day did not surface the false one — which is the same
+observation the backtick count keeps making, arriving in prose about
+architecture instead of in an emitted template.
+
+Document classes handled separately (item 7): ARCHITECTURE, CLAUDE.md and
+`windowPolicy.ts` are live specifications and their bodies are edited true;
+ADR-0019 is a record and takes a dated correction with the body left as written.
+
+### KKK-1's ruling applied: the reword keeps its vagueness and gains an expiry
+
+Neither answer I proposed was right. Re-triaging the invariant-25 verdicts today
+would **narrow a security trigger on the day it fired**, for a module whose
+subject — native code creating a process — has not occurred. Rewording is not a
+policy either: it pushes a security-relevant file's comments toward saying less,
+which is a cost paid by every reader who cannot tell which call is meant.
+
+So the reword stays and is dated. The trigger is the **Win32 surface module**:
+when it lands those symbols become genuine uses, the verdicts fire for the right
+reason, and re-triage is then correct. Written into `engineHostFactory.ts`'s own
+comment and carried on `docs/FEATURES.md`'s Decision 8 row — the row, because the
+expiry is an **event** and a symbol scan cannot see one. The real fix is priced
+and unchanged: the register's verdict half must stop greping, the way
+`stackOwnership.mjs` stopped, with `check:jobplacement` as the precedent for a
+compiler-based scan that still works where `node_modules` is absent.
+
+### The rule that separates a legitimate trigger-stopping change from a workaround
+
+Given by the reviewer and recorded because it will be needed again:
+
+> **A change that stops a trigger is legitimate when it would have been right
+> anyway, and suspect when its only benefit is that the trigger stops.**
+
+`rendererHarnessMain.ts` swapping `toStructuredError` for `util.inspect` passes
+that test and is **not** re-triaged: Node owns how a thrown value renders and how
+`cause` is walked, so calling it is B3a and would have been the right call with
+no register in existence. The factory's comments fail it — their only benefit is
+that the grep stops matching — which is exactly why they need a dated expiry and
+the harness swap does not.
+
+---
+
 ## 2026-08-23 — LLL-1: the containment spike's blocker is a cell no property reads
 
 RR-3 is the research→proof transition: promote the spike's four-property

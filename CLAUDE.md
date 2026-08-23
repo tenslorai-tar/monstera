@@ -229,10 +229,18 @@ is wrong** — fix the boundary, not the test.
   document is the writer of record.** `apps/desktop/src/windowPolicy.ts` holds
   the derived form and `proof:rendererpolicy` fails when the two differ — so
   loosening the policy is an amendment, which is the whole point of pinning it.
-  **This direction is the opposite of the memory budgets on purpose**, where the
-  code holds the pen and `check:docs` rejects prose that restates a number. Both
-  are B3; which side holds the pen is decided per concern (invariant 27,
-  [ADR-0019](docs/DECISIONS/0019-the-renderers-csp-is-pinned.md)).
+
+  **§9.17 holds the pen for the memory budgets the same way** — every
+  pen-holding concern in this repository puts it in a document, and the axis
+  that actually varies is whether the derived side keeps a **copy**.
+  `memoryBudgets.mjs` parses §9.17's line, so there is no copy and the check
+  points at prose instead (`check:docs` rejects a section that restates its own
+  number). A renderer cannot parse markdown, so the CSP is copied — and a copy
+  that exists must be proven equal, which is what `proof:rendererpolicy` and
+  `proof:composition` are. **Copy only where the reader cannot reach the source.**
+  All B3 (invariant 27,
+  [ADR-0019](docs/DECISIONS/0019-the-renderers-csp-is-pinned.md) and its
+  2026-08-23 correction).
 
 The full invariant list (L1–L27) is in `docs/ARCHITECTURE.md`. A regression
 against any of them is a defect regardless of what the tests say.

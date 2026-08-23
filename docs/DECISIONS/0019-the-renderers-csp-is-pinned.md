@@ -185,3 +185,65 @@ guard nobody could act on, and this project has already written that *a scan
 that cries wolf is a scan someone relaxes*. The remedy was neither direction but
 precision — the compiler again — which is the answer whenever the cheap version's
 error rate is high enough to make the output unreadable.
+
+## Correction, 2026-08-23 — the contrast this ADR argues from does not exist (MMM-1)
+
+**The decision stands. The argument from contrast falls.** Decision 2 above, the
+third rejected alternative, and the 2026-08-22 addendum all rest on a claim about
+the memory budgets that is false, and the body is left as written because what
+this ADR believed on 2026-08-21 is the record.
+
+**What is actually true.** `scripts/lib/memoryBudgets.mjs` declares
+`SOURCE_FILE = 'docs/ARCHITECTURE.md'` and *parses* §9.17's machine-read line.
+ADR-0012 — cited above as the authority for the opposite — says in its own title
+that the budgets are machine-read **from the invariant**. So §9.17 holds the pen
+exactly as §9.27 does, and `check:docs`'s restatement rule is not a code-holds-pen
+mechanism at all: it forbids §9.17's *surrounding prose* from carrying a second
+copy of a number the section states once. Prose versus prose, inside one section.
+
+**So there were never two opposite patterns.** There is one pattern with two
+shapes, and the axis that varies is whether the **derived side keeps a copy**:
+
+| concern | pen | copy on the derived side | what checks it |
+|---|---|---|---|
+| §9.17 memory budgets | the document | **none** — `memoryBudgets.mjs` parses the line | `check:docs`, against a second copy in the section's prose |
+| §9.27 CSP | the document | **yes** — a renderer needs a header string and cannot parse markdown | `proof:rendererpolicy`, that the copy equals the source |
+| `ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES` | the document (§9.17) | **yes** — `apps/desktop/` cannot import a `scripts/` module | `proof:composition`, recomputed from the invariant |
+
+**The rule that replaces the contrast is stronger than it was**, because it
+covers all three rather than opposing two: *make a copy only where the reader
+cannot reach the source, and prove every copy that exists.* The choice is not
+which side writes — that has been the document every time — it is whether the
+reader can read the writer.
+
+**What this costs the ADR.** Decision 2's claim *"which side holds the pen is a
+decision per concern, not a house style"* is not shown false, but this ADR's only
+evidence for it was the pair above, and the pair does not demonstrate it. **No
+concern in this repository currently puts the pen in code.** The sentence survives
+as a principle with no instance here, which is a weaker thing than it was written
+as, and the next person who reaches for it should notice they will be the first.
+The rejected alternative *"put the list in the code and have `ARCHITECTURE.md`
+reference it, matching the memory budgets"* is mislabelled for the same reason —
+it matches nothing; the budgets already do what this ADR chose — but its rejection
+reasoning is untouched, because it argues from what a `.ts` diff gets reviewed by,
+not from the comparison. The addendum's own subject, which way a scan errs, is
+independent of all of this and stands on its two measured examples.
+
+**How it survived, and it is worth more than the instance.** Every sentence
+carrying the error pairs a true clause with a false one — item 7's compound claim,
+at document scale. *"This document is the writer of record, and that is the
+opposite of the memory budgets"*: the first half is the thing a reader is checking
+and it is correct, so the second half is never checked. And the citation made it
+worse rather than better — pointing at ADR-0012, which says the opposite, is UU-1:
+a cross-reference that resolves, and therefore passes every link check, while
+sending the reader to a document that contradicts the sentence that cited it.
+
+**The tree held both readings at once and nobody noticed.**
+`apps/desktop/src/budget.ts` says *"the same direction the CSP takes, with the
+document as writer of record and the code derived from it"* and ADR-0023 §7 says
+*"the invariant holds the pen and code reads it"* — both correct, both written on
+2026-08-22, by an author who had `windowPolicy.ts`'s opposite claim in the same
+package and did not see the contradiction. Writing the true version twice in one
+day is not a mechanism for noticing the false one, and there is no check that
+could have caught this: it is a claim about a direction, and both directions
+parse.

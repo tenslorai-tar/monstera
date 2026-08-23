@@ -916,16 +916,26 @@ say**.
     frame-ancestors 'none'
     ```
 
-    **This document is the writer of record, and that is the opposite of the
-    memory budgets.** §9.17's numbers live in `scripts/lib/memoryBudgets.mjs` and
-    `check:docs` fails if this section restates them, because there the code
-    holds the pen and prose would be a second copy. Here the direction is
-    reversed deliberately: the entire value of pinning a CSP is that loosening it
-    becomes a diff in *this file* that someone has to justify, and that only
-    works if this file is the authority.
+    **This document is the writer of record**, and the entire value of pinning a
+    CSP is that loosening it becomes a diff in *this file* that someone has to
+    justify — which only works if this file is the authority.
     `CONTENT_SECURITY_POLICY` in `apps/desktop/src/windowPolicy.ts` is the
-    derived form. Both directions are B3 — one writer per concern — and which
-    side holds the pen is a decision per concern, not a house style.
+    derived form.
+
+    **§9.17 holds the pen for the memory budgets in the same direction, not the
+    opposite one.** What differs between the two concerns is not who writes but
+    whether the derived side keeps a **copy**. §9.17 states its numbers on one
+    machine-read line and `scripts/lib/memoryBudgets.mjs` parses that line, so
+    no copy exists and nothing can drift — which is why the check there points
+    at *prose*: `check:docs` fails when the section restates a number, a second
+    copy inside the section being the only way one can appear. A renderer cannot
+    parse a markdown file and needs a header string, so here a copy is
+    unavoidable, and `proof:rendererpolicy` exists because **a copy that exists
+    must be proven equal**. `ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES` is the
+    third case and the rule reaches it too: `apps/desktop/` cannot import a
+    `scripts/` module, so the number is copied and `proof:composition`
+    recomputes it. Copy only where the reader cannot reach the source; prove
+    every copy you make. All three are B3, one writer per concern.
 
     **Four links, and each one is checked** (`proof:rendererpolicy`): the block
     above equals the constant; the constant equals the header **as Chromium

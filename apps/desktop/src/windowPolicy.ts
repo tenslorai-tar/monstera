@@ -108,13 +108,16 @@ export function isPermittedPermission(permission: string): boolean {
  * that section and fails when the two differ. A change here that is not a change
  * there is a red build, and the section is the side to change first.
  *
- * That direction is the *opposite* of the memory budgets, on purpose.
- * `check:docs` fails when §9.17 restates a budget number, because there the code
- * is the writer and prose would be a second copy. Here the whole value of
- * pinning is that loosening the policy becomes an ARCHITECTURE diff someone has
- * to justify — which only works if the document holds the pen. One writer per
- * concern (B3); *which* side holds it is decided per concern rather than by
- * house style.
+ * The whole value of pinning is that loosening the policy becomes an
+ * ARCHITECTURE diff someone has to justify, which only works if the document
+ * holds the pen. §9.17 holds it the same way for the memory budgets — the axis
+ * that varies is not who writes but whether the derived side keeps a **copy**.
+ * `scripts/lib/memoryBudgets.mjs` parses §9.17's line and keeps none, so the
+ * check there points at prose (`check:docs` fails when the section restates its
+ * own number). A renderer needs a header string and cannot parse markdown, so
+ * the constant below is a copy — and a copy that exists must be proven equal,
+ * which is the entire job of `proof:rendererpolicy`. `budget.ts` is the same
+ * case for the same reason. One writer per concern (B3).
  *
  * `default-src 'none'` and then grant, so a directive nobody thought of is
  * denied rather than inherited. `connect-src 'none'` because the renderer talks

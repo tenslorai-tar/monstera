@@ -25,6 +25,18 @@ import { type Result, err, ok } from '@monstera/shared';
  * a third time. The triggers are left armed at full strength; what is priced in
  * the finding is teaching the register's scan to read code rather than prose.
  *
+ * **This vagueness is a workaround and it has an expiry: the Win32 surface
+ * module.** Naming its trigger is the whole difference between a dated
+ * workaround and occurrence four. The reword is not a policy — it pushes a
+ * security-relevant file's comments toward saying less, which is a cost paid
+ * every time someone reads this and cannot tell which call is meant. On the day
+ * the surface lands, those symbols become genuine uses, the invariant-25
+ * verdicts fire for the right reason, and **re-triaging them is then correct** —
+ * where doing it today would have narrowed a security trigger on the day it
+ * fired, for a module whose subject has not occurred. Carried on
+ * `docs/FEATURES.md`'s Decision 8 row, because the expiry is an event and a
+ * symbol scan cannot see one.
+ *
  * The split is not tidiness. Decision 8 is a claim about *sequence*: assign
  * before resume, verify membership rather than trusting a return value,
  * terminate rather than resume when it did not take. Every one of those is
