@@ -129,8 +129,10 @@ const CREATE_UNICODE_ENVIRONMENT = 0x00000400;
 const CREATE_SUSPENDED = 0x00000004;
 const STARTF_USESTDHANDLES = 0x00000100;
 
+const GENERIC_READ = 0x80000000;
 const GENERIC_WRITE = 0x40000000;
 const FILE_SHARE_READ_WRITE = 0x00000003;
+const OPEN_EXISTING = 3;
 const OPEN_ALWAYS = 4;
 const FILE_ATTRIBUTE_NORMAL = 0x00000080;
 
@@ -454,20 +456,62 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
   const createSuspended = (): Result<CreatedProcess, string> => {
     let attributeList: Buffer | null = null;
     let logHandle: unknown = null;
+    let stdinHandle: unknown = null;
+
+    /** An inheritable handle, opened BY THE PARENT so the child never asks. */
+    const inheritableAttributes = (): Buffer => {
+      const attributes = Buffer.alloc(koffi.sizeof('MONSTERA_SECURITY_ATTRIBUTES'));
+      koffi.encode(attributes, 'MONSTERA_SECURITY_ATTRIBUTES', {
+        nLength: koffi.sizeof('MONSTERA_SECURITY_ATTRIBUTES'),
+        lpSecurityDescriptor: null,
+        bInheritHandle: 1,
+      });
+      return attributes;
+    };
 
     try {
+      // THE HOST'S STDIN IS THE PARENT'S NUL HANDLE, and it is not tidiness.
+      //
+      // Measured 2026-08-23, on a windows-latest runner and on no machine here:
+      // both CONTAINED cells died before their first line with
+      //
+      //   FATAL:electron/shell/app/node_main.cc:215
+      //   Unable to open nul device needed for initialization, aborting startup
+      //
+      // at Low integrity, in their job, having been created and resumed
+      // correctly. Electron's node startup opens the NUL device to give itself
+      // the standard descriptors, and inside an AppContainer that open is
+      // refused — on that Windows build. A developing machine masked it
+      // completely, which is audit item 3's inverse: the richer world is the one
+      // that hides a provisioning-shaped defect.
+      //
+      // The fix is the one this file already uses for the diagnostic handle, and
+      // the comment there states the mechanism: **the access check happens when
+      // the file is OPENED, and the parent opens it.** An inherited handle is
+      // the one channel a container cannot close. So the host is handed a NUL it
+      // never had to reach for.
+      //
+      // NOT `--no-stdio-init`, which the fatal message suggests. That flag makes
+      // the host start without the descriptors rather than with them, so every
+      // later write goes somewhere unspecified — a workaround for a symptom,
+      // where the cause is a handle nobody supplied.
+      const nulOpened: unknown = bindings.createFile(
+        'NUL',
+        GENERIC_READ,
+        FILE_SHARE_READ_WRITE,
+        inheritableAttributes(),
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        null,
+      );
+      stdinHandle = isInvalidHandle(nulOpened) ? null : nulOpened;
+
       if (config.diagnosticPath !== null) {
-        const attributes = Buffer.alloc(koffi.sizeof('MONSTERA_SECURITY_ATTRIBUTES'));
-        koffi.encode(attributes, 'MONSTERA_SECURITY_ATTRIBUTES', {
-          nLength: koffi.sizeof('MONSTERA_SECURITY_ATTRIBUTES'),
-          lpSecurityDescriptor: null,
-          bInheritHandle: 1,
-        });
         const opened: unknown = bindings.createFile(
           config.diagnosticPath,
           GENERIC_WRITE,
           FILE_SHARE_READ_WRITE,
-          attributes,
+          inheritableAttributes(),
           OPEN_ALWAYS,
           FILE_ATTRIBUTE_NORMAL,
           null,
@@ -532,11 +576,15 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
           dwXCountChars: 0,
           dwYCountChars: 0,
           dwFillAttribute: 0,
-          dwFlags: logHandle === null ? 0 : STARTF_USESTDHANDLES,
+          // USESTDHANDLES when EITHER handle exists. It used to depend on the
+          // diagnostic handle alone, so a caller passing no `diagnosticPath`
+          // got a child with no supplied descriptors at all — which is the
+          // state the contained host could not start from.
+          dwFlags: logHandle === null && stdinHandle === null ? 0 : STARTF_USESTDHANDLES,
           wShowWindow: 0,
           cbReserved2: 0,
           lpReserved2: null,
-          hStdInput: null,
+          hStdInput: stdinHandle,
           hStdOutput: logHandle,
           hStdError: logHandle,
         },
@@ -576,10 +624,11 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
         thread: decoded.hThread as ThreadHandle,
       });
     } finally {
-      // The parent's copy of the log handle is closed either way: the child has
-      // its own, and holding ours open past creation keeps a handle alive for
-      // the life of the surface rather than the life of the call.
+      // The parent's copies are closed either way: the child has its own, and
+      // holding ours open past creation keeps handles alive for the life of the
+      // surface rather than the life of the call.
       if (logHandle !== null) bindings.closeHandle(logHandle);
+      if (stdinHandle !== null) bindings.closeHandle(stdinHandle);
       if (attributeList !== null) bindings.deleteAttributeList(attributeList);
     }
   };
