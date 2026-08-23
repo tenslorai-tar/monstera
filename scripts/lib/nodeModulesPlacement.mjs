@@ -69,6 +69,7 @@ import { fileURLToPath } from 'node:url';
 
 import { repoRoot } from './gitScope.mjs';
 import { loadTypeScript } from './loadTypeScript.mjs';
+import { invokesRepositoryScript } from './workflowInvocations.mjs';
 
 const WORKFLOW_DIR = '.github/workflows';
 const SCRIPTS_DIR = 'scripts';
@@ -113,8 +114,10 @@ const INSTALL = /^\s*[^#\n]*\bnpm ci\b/u;
  * survives being unresolved.
  */
 const RUNS_ON = /^\s{4}runs-on:\s*([^#\n]+?)\s*$/u;
-/** A node invocation of a repository script on a workflow line. */
-const NODE_INVOCATION = /(?:^|[^\w-])node\s+scripts\/[\w./-]+\.mjs/u;
+// The invocation rule comes from `workflowInvocations.mjs` (AAAA-10). This file
+// carried a non-capturing copy and `annotateCoverage.mjs` a capturing one, and
+// both were correct — a capture answers the test question for free, so there was
+// never a reason for two.
 /** Every repository script named on a line. */
 const SCRIPT_TOKEN = /scripts\/[\w./-]+\.mjs/gu;
 
@@ -553,7 +556,7 @@ export async function scan(options = {}) {
       // and never the script it exists to run, which reported zero steps across
       // four jobs — a search returning its reassuring answer because it was
       // matching the wrong half of every line.
-      if (!NODE_INVOCATION.test(text)) continue;
+      if (!invokesRepositoryScript(text)) continue;
       SCRIPT_TOKEN.lastIndex = 0;
       for (const match of text.matchAll(SCRIPT_TOKEN)) {
         const script = match[0];

@@ -319,6 +319,14 @@ jobs:
       # typecheck` on the matrix job; this half exists because the plain-Node
       # callers reach the surface through a computed `import()`, which types as
       # `any`, so no brand can constrain them.
+      # One rule for what counts as this repository invoking its own script. Two
+      # modules each had their own pattern and both were correct, which is why
+      # the control is the real workflow corpus rather than unit cases: a
+      # consolidation that silently changes one caller's answer on one line looks
+      # exactly like one that worked.
+      - name: Prove consolidating the invocation pattern changed nobody's answer
+        run: node scripts/ci/annotate.mjs scripts/proofs/workflowInvocations.proof.mjs
+
       # Every entry point CI enters guards main through the one resolver, or not
       # at all. The roster is DERIVED from the npm scripts rather than kept by
       # hand, because a hand-kept list of files-needing-a-guard would be the

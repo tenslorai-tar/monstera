@@ -95,15 +95,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { firstInvokedScriptPath, invokedScriptPaths } from './workflowInvocations.mjs';
 
 const WORKFLOW_DIR = '.github/workflows';
 const WRAPPER = 'scripts/ci/annotate.mjs';
 
-/**
- * A node invocation of a repository script, in an npm command or a workflow
- * line. `node scripts/x.mjs` matches; `hashFiles('scripts/x.mjs')` does not.
- */
-const NODE_INVOCATION = /(?:^|[^\w-])node\s+(scripts\/[\w./-]+\.mjs)/gu;
+// The invocation rule is `workflowInvocations.mjs`'s, not a copy. This file
+// used to carry its own capturing global pattern and `nodeModulesPlacement.mjs`
+// its own non-capturing one — both correct, which is precisely B3a's shape
+// (AAAA-10).
 
 /**
  * The wrappable entry points, read out of `package.json` rather than listed.
@@ -131,7 +131,7 @@ export function wrappableEntryPoints(root) {
   /** @type {Set<string>} */
   const paths = new Set();
   for (const [name, command] of Object.entries(scripts)) {
-    const invoked = [...`${command}`.matchAll(NODE_INVOCATION)].map((match) => match[1]);
+    const invoked = invokedScriptPaths(`${command}`);
     if (invoked.length === 0) continue;
     names.push(name);
     for (const path of invoked) if (path !== undefined) paths.add(path);
@@ -218,8 +218,7 @@ export function findWrappableInvocations({ root = repoRoot() } = {}) {
       // manifest-derived path set could not see it and its failures were
       // exit-code-only in public. The manifest is still the authority for what
       // `npm run x` MEANS; it is not the authority for what a workflow runs.
-      NODE_INVOCATION.lastIndex = 0;
-      const invoked = NODE_INVOCATION.exec(text)?.[1];
+      const invoked = firstInvokedScriptPath(text) ?? undefined;
       if (viaName === undefined && invoked === undefined) continue;
       // Named separately from `invoked` so the diagnostic can say whether the
       // manifest knows this script — a path nothing registers is worth seeing.

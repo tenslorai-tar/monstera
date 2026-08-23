@@ -88,6 +88,7 @@
     "check:stackowner": "node scripts/lib/stackOwnership.mjs",
     "proof:jobplacement": "node scripts/proofs/nodeModulesPlacement.proof.mjs",
     "check:jobplacement": "node scripts/lib/nodeModulesPlacement.mjs",
+    "proof:workflowinvocations": "node scripts/proofs/workflowInvocations.proof.mjs",
     "proof:mainguards": "node scripts/proofs/mainGuards.proof.mjs",
     "check:mainguards": "node scripts/lib/mainGuards.mjs",
     "proof:githubfetch": "node scripts/proofs/githubFetch.proof.mjs",
