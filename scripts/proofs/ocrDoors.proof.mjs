@@ -53,6 +53,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { mupdfSourcePath } from '../provision/mupdf.mjs';
+import { declaredSymbols } from '../security/claimSymbols.mjs';
 import { declaredIn, deriveOcrDoors, functionsIn } from '../security/ocrDoors.mjs';
 
 const ROOT = repoRoot();
@@ -249,7 +250,18 @@ if (!existsSync(join(source, 'source', 'fitz', 'tessocr.h')) || !existsSync(shim
     const baseline = JSON.parse(
       readFileSync(join(ROOT, 'docs', 'security', 'engine-advisories.json'), 'utf8'),
     );
-    const declared = baseline.reachability?.['ocr']?.symbols ?? [];
+    // `declaredSymbols`, NOT an inline `?? []`, and not `watchedSymbols`
+    // either (finding TTT-2). The question here is what the register's list
+    // explicitly NAMES, compared against a derived door set — so a missing list
+    // must read as naming nothing, where the other rule would add the verdict's
+    // own key as a phantom door no engine source can declare.
+    //
+    // It was spelt inline until the shared module existed. That is exactly the
+    // shape OOO-1's third opinion had: a bare expression whose correctness lives
+    // in a paragraph beside it, in a file that reads the register's JSON with
+    // its own hand-written type. Two named functions make the choice a pick from
+    // a list instead.
+    const declared = declaredSymbols(baseline.reachability?.['ocr']);
 
     /** @param {readonly string[]} a @param {readonly string[]} b */
     const agrees = (a, b) => a.length === b.length && a.every((entry) => b.includes(entry));

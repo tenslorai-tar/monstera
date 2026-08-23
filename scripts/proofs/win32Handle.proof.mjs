@@ -293,4 +293,15 @@ process.stdout.write(
     ? `\n${String(failures.length)} invalid-handle case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
     : roster.format('invalid-handle case'),
 );
-process.exit(failures.length === 0 ? 0 : 1);
+// `process.exitCode`, NOT `process.exit()` (finding TTT-4). Measured elsewhere:
+// with `process.exit()` immediately after a write, Node tears the process down
+// with the write still in flight and the pending stdout buffer is re-emitted —
+// two proofs printed every case line TWICE while the roster's own count stayed
+// correct, so the duplication is invisible to every assertion in the file and
+// shows up only to a reader.
+//
+// This file prints sixteen lines and has never duplicated any of them. That is
+// the reason to change it rather than a reason not to: the difference from the
+// two that broke is output volume, not design, and "small enough today" is not
+// a property anybody maintains. It was the last roster adopter on `exit()`.
+process.exitCode = failures.length === 0 ? 0 : 1;

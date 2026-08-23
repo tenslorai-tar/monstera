@@ -86,6 +86,7 @@ import { digestInputs } from '../lib/verdict.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
 import { declaredNativeComponents } from '../release/generateNotice.mjs';
+import { declaredSymbols, watchedSymbols } from './claimSymbols.mjs';
 import { DERIVED_CLAIMS } from './derivedClaims.mjs';
 import { deriveOcrDoors } from './ocrDoors.mjs';
 import { readElectronSurface } from './electronSurface.mjs';
@@ -452,53 +453,6 @@ function readBaseline() {
  */
 const VERDICT_KEYS = new Set(['guards', 'why', 'shippedPaths', 'symbols', 'symbolsWhy', 'witness']);
 const WITNESS_KEYS = new Set(['in', 'acceptedWhile', 'why']);
-
-/**
- * The symbols a verdict watches. ONE answer, and this function exists because
- * there were briefly two.
- *
- * A verdict may omit `symbols` entirely, in which case its own key IS the
- * symbol — `pdf_subset_fonts` is that shape, and OCR is the other, where eleven
- * doors are listed because a verdict resting on the obvious one would survive a
- * feature calling any of the other ten.
- *
- * {@link assertVerdictShape} was written with a bare `claim.symbols ?? []` and
- * immediately reported a correct entry as an orphan witness. The two call sites
- * that already knew the rule spelt it `claim.symbols ?? [name]`, so the check
- * added to catch a second opinion was itself a third one, inside an hour. B3a
- * does not care how well you know the rule; it cares how many places implement
- * it.
- *
- * @param {string} name @param {{ symbols?: string[] }} claim
- * @returns {readonly string[]}
- */
-function watchedSymbols(name, claim) {
-  return claim.symbols ?? [name];
-}
-
-/**
- * The symbols a verdict's list EXPLICITLY NAMES. The other question, named for
- * the same reason (finding QQQ-3).
- *
- * {@link watchedSymbols} answers *what does this verdict watch*, where an
- * omitted list means the verdict's own key. This one answers *what did someone
- * write down*, which is what a derived surface is compared against — and there
- * the fallback would be wrong, because a verdict's key is not a symbol Electron
- * can ever declare and would report as permanently uncovered.
- *
- * It existed as `claim?.symbols ?? []` inline with a paragraph beside it
- * explaining why it was not the other helper. That paragraph was correct, and it
- * is the exact shape that produced OOO-1's third opinion: **a rule that lives in
- * call sites and prose is a rule the next caller re-derives.** Two named
- * functions make the choice visible; a helper beside a bare expression makes it
- * a paragraph someone has to read and reject (B5 over a comment).
- *
- * @param {{ symbols?: string[] } | undefined} claim
- * @returns {readonly string[]}
- */
-function declaredSymbols(claim) {
-  return claim?.symbols ?? [];
-}
 
 /**
  * Rejects a key nobody declared, and a witness for a symbol nobody watches
