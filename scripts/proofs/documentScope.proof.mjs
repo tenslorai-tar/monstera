@@ -54,6 +54,42 @@ function runChecker() {
 // it and "was it inspected" is answerable from the output.
 const SUBJECT = 'docs/ENGINE-SPIKE.md';
 
+// REPAIR BEFORE MEASURING, because `finally` does not run when a process is
+// KILLED (finding WWW-1).
+//
+// The case below removes a TRACKED file from the working tree — deliberately,
+// because the property under test is that `check:docs` reads the index, and a
+// fixture would not be in the commit to read. The removal is undone in a
+// `finally`, which covers every way the case can fail and not the one way the
+// PROCESS can end: `checkLocal.mjs` bounds each script and kills the child at
+// the bound. Measured 2026-08-23 — a 90-second sweep killed this proof here and
+// left `docs/ENGINE-SPIKE.md` deleted in the working tree, where a commit about
+// something else would have carried the deletion silently.
+//
+// So the restore is not only at the end. If the subject is absent from disk and
+// present in the index, a previous run was killed mid-case and this puts it
+// back before doing anything — and says so, because a repair nobody is told
+// about is a defect that stops leaving evidence.
+{
+  const path = join(ROOT, SUBJECT);
+  if (!existsSync(path)) {
+    const blob = readStagedBlob(SUBJECT);
+    if (blob === null) {
+      process.stderr.write(
+        `${SUBJECT} is absent from BOTH the working tree and the index. This proof removes it ` +
+          `and restores it, so an absence in both places is not something it can repair — the ` +
+          `file has to come back from git before this can run.\n`,
+      );
+      process.exit(1);
+    }
+    writeFileSync(path, blob);
+    process.stdout.write(
+      `  repaired ${SUBJECT} — it was missing from the working tree and present in the index,\n` +
+        `           which is what a previous run of this proof being KILLED leaves behind.\n`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The control: with everything in place, the checker passes. Without this the
 // two cases below are satisfied by a checker that always passes.

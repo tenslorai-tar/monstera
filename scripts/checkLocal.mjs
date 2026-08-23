@@ -81,6 +81,8 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
@@ -178,6 +180,37 @@ try {
   // No table yet, or an unreadable one. Both mean "nothing measured", which the
   // ordering below treats as expensive rather than cheap.
   known = {};
+}
+
+/**
+ * What the tree looked like before any script ran (finding WWW-1).
+ *
+ * THIS HARNESS KILLS CHILDREN, and a killed process does not run its `finally`.
+ * Measured 2026-08-23: a 90-second sweep killed `documentScope.proof.mjs` inside
+ * the case that removes a TRACKED document to prove `check:docs` reads the
+ * index, and `docs/ENGINE-SPIKE.md` stayed deleted. Nothing said so. A commit
+ * about something else would have carried the deletion.
+ *
+ * The stop-at-first-timeout rule was written on the premise that wreckage
+ * accumulates through orphaned processes. It also accumulates in the FILESYSTEM,
+ * and that half had no mechanism.
+ *
+ * So the tree is witnessed here and compared at the end, and a sweep whose tree
+ * moved says so instead of printing a clean result. Same third state as
+ * everywhere else: *these scripts passed* and *these scripts passed against a
+ * tree this run damaged* must not share an output.
+ *
+ * `null` when the root is not a git repository, which is the ordinary case for
+ * the fixture repositories `checkLocal.proof.mjs` builds — there is nothing
+ * there to protect and no git to ask.
+ */
+let treeBefore = null;
+try {
+  treeBefore = witnessTree({ root: ROOT_DIR });
+} catch {
+  // Not a git repository. Reported at the end rather than silently, because
+  // "the tree did not move" and "nobody looked" are the distinction this whole
+  // file is built around.
 }
 
 const filtered = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
@@ -370,6 +403,29 @@ if (attempted < selected.length) {
     );
   }
 }
+// THE TREE, compared against the witness taken before anything ran (WWW-1).
+//
+// Printed before the exit code is decided and folded into it, because a sweep
+// that damaged the repository is not a sweep whose green means anything — and
+// the damage is silent by construction: a killed proof leaves a deleted file,
+// not a message.
+let treeMoved = null;
+if (treeBefore !== null) {
+  treeMoved = treeMovedSince(treeBefore);
+  process.stdout.write(
+    treeMoved === null
+      ? '  ok  the working tree and index are as this run found them\n'
+      : `\nTHE TREE MOVED UNDER THIS RUN — ${treeMoved}\n\n` +
+          `  A script this harness KILLED does not run its cleanup, so a proof that removes a\n` +
+          `  tracked file to make a point leaves it removed. Check \`git status\` before doing\n` +
+          `  anything else: the results above were measured against a tree that changed, and\n` +
+          `  the change may be a deletion nobody mentioned.\n`,
+  );
+} else {
+  process.stdout.write(
+    '  --  the tree was not witnessed: this root is not a git repository\n',
+  );
+}
 if (notNode.length > 0) {
   process.stdout.write(`Not a bare node invocation: ${notNode.join(', ')}\n`);
 }
@@ -384,4 +440,8 @@ process.stdout.write(
     'workflow. The board is the mechanism; this is the minute before the push.\n',
 );
 
-process.exit(failed.length === 0 && timedOut.length === 0 && notNode.length === 0 ? 0 : 1);
+process.exit(
+  failed.length === 0 && timedOut.length === 0 && notNode.length === 0 && treeMoved === null
+    ? 0
+    : 1,
+);

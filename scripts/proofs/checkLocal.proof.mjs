@@ -49,7 +49,7 @@ const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLoc
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 12 });
+const roster = createRoster(failures, { cases: 14 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -302,6 +302,77 @@ try {
       { 'proof:a-hangs': 'node scripts/a-hangs.mjs', 'proof:b-marks': 'node scripts/b-marks.mjs' },
       ['--timeout', '2'],
     );
+    // -----------------------------------------------------------------------
+    // 13 & 14. THE TREE MOVED (finding WWW-1). A harness property, and the one
+    // that cost a tracked document: this sweep KILLS a script at the bound, a
+    // killed process does not run its `finally`, and a proof that removes a
+    // tracked file to make a point leaves it removed. Measured — a 90-second
+    // sweep deleted `docs/ENGINE-SPIKE.md` and printed a clean summary.
+    //
+    // The fixture is a real git repository, because the witness asks git. The
+    // script under test deletes a tracked file and exits 0, so nothing else in
+    // the run has anything to complain about — which is the point: without the
+    // witness this sweep reports "1 passed" over a damaged tree.
+    // -----------------------------------------------------------------------
+    {
+      const root = mkdtempSync(join(scratch, 'moved '));
+      mkdirSync(join(root, 'scripts'), { recursive: true });
+      const git = (/** @type {string[]} */ args) =>
+        spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+      git(['init', '--quiet']);
+      git(['config', 'user.email', 'proof@example.invalid']);
+      git(['config', 'user.name', 'proof']);
+      writeFileSync(join(root, 'tracked.txt'), 'content\n', 'utf8');
+      writeFileSync(
+        join(root, 'scripts', 'deletes.mjs'),
+        "import { rmSync } from 'node:fs';\n" +
+          "rmSync(new URL('../tracked.txt', import.meta.url), { force: true });\n" +
+          'process.exit(0);\n',
+        'utf8',
+      );
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify(
+          { name: 'fixture', scripts: { 'check:deletes': 'node scripts/deletes.mjs' } },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+      git(['add', '-A']);
+      git(['commit', '--quiet', '-m', 'base']);
+
+      const moved = spawnSync(
+        process.execPath,
+        [HARNESS, '--root', root, '--floor', '1'],
+        { encoding: 'utf8' },
+      );
+      const output = `${moved.stdout ?? ''}${moved.stderr ?? ''}`;
+      check(
+        'a script that damages the tree makes the sweep report THE TREE MOVED',
+        moved.status !== 0 && /THE TREE MOVED/u.test(output),
+        `Every script PASSED, so nothing else in this run has a complaint — which is exactly ` +
+          `the shape that deleted a tracked document and printed a clean summary. ` +
+          `exit=${String(moved.status)}. Output:\n${output}`,
+      );
+      check(
+        'CONTROL: and a sweep that damages nothing says the tree is as it found it',
+        (() => {
+          const clean = runFixture(
+            { 'ok.mjs': EXIT_ZERO },
+            { 'check:ok': 'node scripts/ok.mjs' },
+          );
+          // The fixture repositories runFixture builds are not git repos, so
+          // this asserts the OTHER honest state rather than a clean witness —
+          // "nobody looked" and "nothing moved" are different answers and this
+          // file must not let them merge.
+          return clean.ok && /not witnessed: this root is not a git repository/u.test(clean.output);
+        })(),
+        'without this, "THE TREE MOVED" is satisfied by a harness that says it every time, and ' +
+          'a third state that always fires is one people learn to ignore.',
+      );
+    }
+
     check(
       'a run that STOPPED early still records what it measured',
       (() => {
