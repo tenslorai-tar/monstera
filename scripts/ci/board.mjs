@@ -44,6 +44,7 @@
  */
 
 import { boardVerdict } from '../lib/boardStatus.mjs';
+import { githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const REPO = 'tenslorai-tar/monstera';
@@ -100,9 +101,10 @@ async function main() {
     /** @type {unknown} */
     let body;
     try {
-      const response = await fetch(runsUrl(attempt), {
-        headers: { accept: 'application/vnd.github+json' },
-      });
+      // `critical`: this is the caller the reserve exists to protect, so the
+      // budget never refuses it. GitHub still can, and that is reported as
+      // itself — a refusal is not a board state.
+      const response = await githubFetch(runsUrl(attempt), { purpose: 'critical' });
       if (!response.ok) {
         // A refusal is not a board state. Printed as itself so an expired token
         // or a rate limit cannot spend forty polls looking like a slow run.

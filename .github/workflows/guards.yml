@@ -311,6 +311,12 @@ jobs:
       # typecheck` on the matrix job; this half exists because the plain-Node
       # callers reach the surface through a computed `import()`, which types as
       # `any`, so no brand can constrain them.
+      # The GitHub API budget. Needs no network — the property under test is the
+      # decision, and a case that hit the real API to prove a quota mechanism
+      # would spend the quota it is about.
+      - name: Prove the API budget refuses a bulk walk before it starves the board
+        run: node scripts/ci/annotate.mjs scripts/proofs/githubFetch.proof.mjs
+
       - name: Prove the Electron-binary caller scan sees, refuses and tolerates
         run: node scripts/ci/annotate.mjs scripts/proofs/electronBinaryCallers.proof.mjs
 
