@@ -288,6 +288,35 @@ try {
           'literal.',
       },
     ],
+    [
+      'scripts/proofs/win32Handle.proof.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports apps/desktop/dist/win32HostSurface.js through a file:// URL, to compare the ' +
+          'COPY of isInvalidHandle that lives in that package against the owner in ' +
+          'scripts/lib/win32Handle.mjs. The copy exists because apps/desktop cannot import ' +
+          'plain Node under scripts/, and MMM-1s rule is that a copy made for that reason must ' +
+          'be proven equal — so this proof has to reach the build, and a static import would be ' +
+          'the very edge the copy exists to avoid. Nothing electron is reachable through it: ' +
+          'the module imports koffi and @monstera/shared and its own sibling type file.',
+      },
+    ],
+    [
+      'scripts/research/hostSurfaceProbe.mjs',
+      {
+        sites: 2,
+        reason:
+          'imports apps/desktop/dist/win32HostSurface.js and scripts/lib/memoryBudgets.mjs ' +
+          'through file:// URLs. The first is the whole point of the probe — it drives the ' +
+          'SHIPPED surface against real processes rather than a copy of it, so reading the ' +
+          'build is the measurement. The second reads §9.17s absolute cap, because a memory ' +
+          'limit typed into a research file would be a second opinion about the invariant ' +
+          '(ADR-0023 §2). Both paths need Windows backslash conversion at run time. This file ' +
+          'starts an Electron BINARY in Node mode by path and never imports the electron ' +
+          'package, which is invariant 26 satisfied rather than evaded.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */

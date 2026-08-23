@@ -969,6 +969,60 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — PPP-1: the surface commit went red on two guards, and I had run neither
+
+`63871ad` failed both jobs. Typecheck, lint, the full vitest suite, `check:docs`,
+the register, its proof and `proof:win32handle` had all passed locally. **The two
+checks that went red are the two I did not run**, and that is the finding — not
+the two defects, which were both guards working exactly as designed.
+
+### What failed
+
+**Guards** — the new desktop-copy case in `proof:win32handle`. That job installs
+nothing and builds nothing, so `apps/desktop/dist/win32HostSurface.js` is absent,
+and I had written the absence as a *failing case* on the reasoning that a missing
+copy and an agreeing copy must not share an output. That reasoning is right and
+the conclusion was wrong: there are **three** states, not two — `agrees`,
+`disagrees`, and `could-not-read` — and failing on the third says *the copy is
+wrong* when the truth is *nothing looked*. Exactly ZZ-1's shape, green here and
+red there, introduced by me an hour after answering *no* to the audit's own
+question about branches keyed on provisioning.
+
+Fixed by reusing a pattern this repository already reviewed rather than inventing
+one: UNVERIFIABLE where nothing is built, counted apart from the passes, and
+`--require-desktop-copy` in `ci.yml`'s build job makes it mandatory there. The
+same shape as `--require-derivation` on the advisory register. All three states
+executed: 14 pass with the build, 12 pass plus one UNVERIFIABLE without it, and
+1 of 13 FAILS without it under the flag.
+
+**CI** — `proof:electronimports`, and it caught something better than I expected.
+Both new files reach the build through a computed `file://` specifier, and that
+scan treats a computed specifier not as a violation but as **a site where the
+rule cannot answer**, demanding the file be listed with a reason and a site
+count. Two entries added. The scan was right to stop the commit: a dynamic
+specifier is precisely where an electron import could hide from it.
+
+### The transferable part
+
+**I chose which checks to run, and I chose by what I thought I had touched.** The
+surface is a new native adapter, so I ran typecheck, lint, tests, and the proofs
+about handles and advisories. Neither failing check was on that list, and neither
+would ever have been — the connection from *a research probe importing the build*
+to *the proof that nothing can trigger an unpinned Electron download* is not one
+intuition makes.
+
+Running the whole Guards set locally afterwards took under a minute and all 34
+were green. The CI set cannot be run locally in reasonable time — several spawn
+Electron and the sweep timed out at ten minutes — which is what CI is for, and
+also why the cheap half should have been run first.
+
+So the rule is not *be more careful*: it is that **selecting checks by relevance
+is a search whose reassuring answer is "nothing to run", and it needs the same
+treatment as any other search.** The Guards set is cheap, complete, and requires
+no judgement. Run it.
+
+---
+
 ## 2026-08-23 — The Win32 surface, and OOO-1: an orphan witness passes exactly as loudly as a working one
 
 ADR-0023 Decision 8's factory has had its ordering proven against an injected

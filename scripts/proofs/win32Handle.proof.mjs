@@ -187,16 +187,41 @@ try {
   desktop = null;
 }
 
-check(
-  'the desktop copy is BUILT, so the comparison below is not skipped in silence',
-  desktop !== null && typeof desktop.isInvalidHandleAddress === 'function',
-  `${BUILT_SURFACE.pathname} did not import, or exports no isInvalidHandleAddress. ` +
-    `This proof reads the BUILD — run \`npm run typecheck\`. A missing copy and an ` +
-    `agreeing copy must not share an output, which is why this is a case and not a skip.`,
-);
+// THREE STATES, NOT TWO, and the first version of this had two — which is what
+// turned Guards red. `agrees`, `disagrees` and `could-not-read` are different
+// answers, and a proof that runs on a job installing nothing and building
+// nothing meets the third every time. Failing there says "the copy is wrong"
+// when the truth is "nothing looked", which is the distinction this whole
+// register of instruments is built on.
+//
+// So the absence is UNVERIFIABLE here and MANDATORY where the build exists:
+// `--require-desktop-copy` turns it into a failure, and ci.yml's build job
+// passes it. That is the advisory register's own shape — unverifiable on the job
+// that provisions nothing, `--require-derivation` on the one that does — reused
+// rather than reinvented.
+const REQUIRE_DESKTOP_COPY = process.argv.includes('--require-desktop-copy');
+const copy = desktop?.isInvalidHandleAddress;
 
-if (desktop !== null && typeof desktop.isInvalidHandleAddress === 'function') {
-  const copy = desktop.isInvalidHandleAddress;
+if (typeof copy !== 'function') {
+  if (REQUIRE_DESKTOP_COPY) {
+    check(
+      'the desktop copy is BUILT, because this job builds it',
+      false,
+      `${BUILT_SURFACE.pathname} did not import, or exports no isInvalidHandleAddress. ` +
+        `This job runs \`npm run build\`, so an absent copy here is a real failure and not ` +
+        `a job that could not look.`,
+    );
+  } else {
+    process.stdout.write(
+      '  UNVERIFIABLE  the desktop copy of isInvalidHandle was not read\n' +
+        `      ${BUILT_SURFACE.pathname} is absent. This job builds nothing, so this is a ` +
+        'could-not-look and NOT a pass — it is counted apart from the cases below.\n' +
+        '      Mandatory where the build exists: ci.yml passes --require-desktop-copy.\n',
+    );
+  }
+}
+
+if (typeof copy === 'function') {
   const cases = [MEASURED_INVALID, -1n, 0n, null, undefined, 0x1a4n, 1n, 4096n];
   check(
     'the desktop copy answers exactly as the owner does, on every value above',

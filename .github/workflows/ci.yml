@@ -358,6 +358,16 @@ jobs:
       - name: Prove the composition root's ceiling is ADR-0007's
         run: node scripts/ci/annotate.mjs scripts/proofs/composition.proof.mjs
 
+      # The SECOND registration of this proof, and the flag is the whole reason.
+      # Guards runs it too and builds nothing, so the desktop copy of
+      # isInvalidHandle is UNVERIFIABLE there — could-not-look, printed apart
+      # from the passes. This job builds, so here the copy is mandatory and its
+      # absence is a failure. Same shape as --require-derivation on the advisory
+      # register: unverifiable where nothing is provisioned, required on the one
+      # job that provisions.
+      - name: Prove the desktop copy of the invalid-handle rule matches its owner
+        run: node scripts/ci/annotate.mjs scripts/proofs/win32Handle.proof.mjs --require-desktop-copy
+
       # Needs the display installed above, for the same reason the renderer
       # read-back does. A composition root known only to compile is one nobody
       # has run, which is the defect this repository found twice in a week.
