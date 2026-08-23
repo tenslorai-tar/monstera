@@ -356,6 +356,48 @@ function writeEntryIn(root, overrides, others = {}) {
       `unrecognised: ${probeCoverage(root).unrecognised.join(', ') || '(nothing)'}`,
     );
 
+    // THE ROOT AXIS. A classifier fails independently on what it matches, where
+    // it looks and which states it understands, and this repository has already
+    // paid for a fix that corrected a pattern and left a directory. Hooks can be
+    // registered in an untracked sibling, where they are as in force as any and
+    // no tracked entry can ever vouch for them.
+    const localPath = join(root, '.claude', 'settings.local.json');
+    check(
+      'with no local settings file, nothing is reported as untracked',
+      probeCoverage(root).untracked.length === 0,
+      `absence must read as absence: ${probeCoverage(root).untracked.join(', ')}`,
+    );
+    writeFileSync(
+      localPath,
+      `${JSON.stringify(
+        {
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: 'Bash',
+                hooks: [{ type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/scripts/hooks/privateThing.mjs"' }],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    check(
+      'a hook registered in the UNTRACKED sibling is named, not silently uncovered',
+      probeCoverage(root).untracked.includes('privateThing'),
+      `untracked: ${probeCoverage(root).untracked.join(', ') || '(nothing — a hook is in force with no entry that could vouch for it)'}`,
+    );
+    check(
+      'and it does not join the roster, because it can never earn an entry',
+      !probeCoverage(root).missing.includes('privateThing'),
+      `Folding it into the roster would demand a tracked certificate for a file nobody else has, ` +
+        `which is a red build no commit can clear. missing: ${probeCoverage(root).missing.join(', ')}`,
+    );
+    rmSync(localPath, { force: true });
+
     // THE CONTROL for the resolver itself: blind it, and it must refuse rather
     // than report a clean empty roster. Item 4b — every way of breaking a search
     // produces the reassuring answer, and here the reassuring answer would make

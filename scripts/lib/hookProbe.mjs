@@ -95,7 +95,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
-import { SETTINGS_FILE, registeredHooks } from './registeredHooks.mjs';
+import { SETTINGS_FILE, locallyRegisteredHooks, registeredHooks } from './registeredHooks.mjs';
 import { changedInputs, digestInputs } from './verdict.mjs';
 
 /** Repo-relative path of the tracked record. */
@@ -333,6 +333,7 @@ export function probeState(mechanism, root = repoRoot()) {
  *   states: Array<{ name: string, state: ProbeState, detail: string }>,
  *   missing: string[],
  *   unrecognised: string[],
+ *   untracked: string[],
  * }}
  */
 export function probeCoverage(root = repoRoot()) {
@@ -344,6 +345,11 @@ export function probeCoverage(root = repoRoot()) {
     hooks,
     states,
     missing: states.filter((entry) => entry.state === 'unrecorded').map((entry) => entry.name),
+    // Hooks in force that no tracked entry can ever vouch for. Reported rather
+    // than added to the roster: an untracked hook cannot have a tracked
+    // certificate, so folding it in would produce the false green instead of
+    // naming it.
+    untracked: locallyRegisteredHooks(root).hooks.map((hook) => hook.name),
     // An entry for a hook nothing registers any more. Not a failure on its own —
     // it is stale evidence, and saying so beats deleting it silently.
     unrecognised: recorded.filter((name) => !hooks.some((hook) => hook.name === name)),

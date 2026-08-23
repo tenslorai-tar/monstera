@@ -457,6 +457,15 @@ registerRule({
         `leaving evidence about a mechanism that is not in force.`,
     );
   }
+  if (coverage.untracked.length > 0) {
+    failures.push(
+      `.claude/settings.local.json registers ${coverage.untracked.join(', ')}. Those hooks are in ` +
+        `force and no tracked entry can ever vouch for them, so this record would be describing ` +
+        `a smaller machine than the one you are running on.\n      Move them into ` +
+        `.claude/settings.json, where they get an entry, or remove them. The roster is what this ` +
+        `repository registers; it cannot become a claim about a file nobody else has.`,
+    );
+  }
 
   // The gate half is deliberately quiet until someone claims it. Failing from
   // the moment the row exists would put the build permanently red for work that
