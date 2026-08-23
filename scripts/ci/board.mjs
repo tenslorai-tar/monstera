@@ -21,9 +21,26 @@
  * indistinguishable. The counter in the query string defeats that; the STALE
  * verdict catches what gets through anyway.
  *
+ * ## It prints SHORT, and that is a mechanism rather than a preference (AAAA-2)
+ *
+ * This used to print one line per poll — up to forty of them to reach one
+ * verdict. So the verdict got read through `| tail -4`, and a pipe reports the
+ * exit status of its LAST command: a run that returned 2 for **no verdict**
+ * printed `exited with code 0`, and was one step from being filed as a defect in
+ * this file, which was behaving correctly.
+ *
+ * The rule *never pipe away an exit code* was already written down and did not
+ * reach the moment the command was composed — which is the escape hook's
+ * argument, and seven occurrences of it say that writing a rule down is not what
+ * stops you. **So the reason to pipe is removed instead of the pipe being
+ * forbidden.** Quiet by default: the verdict, the run numbers and the
+ * conclusions. `--verbose` restores the per-poll trace for someone watching a
+ * run in progress.
+ *
  * Usage:
- *   node scripts/ci/board.mjs <sha>          wait for it
- *   node scripts/ci/board.mjs <sha> --once   one look, no waiting
+ *   node scripts/ci/board.mjs <sha>             wait for it, print the verdict
+ *   node scripts/ci/board.mjs <sha> --verbose   one line per poll as well
+ *   node scripts/ci/board.mjs <sha> --once      one look, no waiting
  */
 
 import { boardVerdict } from '../lib/boardStatus.mjs';
@@ -45,6 +62,18 @@ function sleep(ms) {
   });
 }
 
+/**
+ * Per-poll trace. Silent unless `--verbose`, so there is nothing to pipe away.
+ *
+ * The final verdict is NOT written through this — a quiet mode that also
+ * swallows the answer would be the same defect one layer further in.
+ *
+ * @param {string} line
+ */
+function trace(line) {
+  if (process.argv.includes('--verbose')) process.stdout.write(line);
+}
+
 async function main() {
   const sha = process.argv[2];
   const once = process.argv.includes('--once');
@@ -59,6 +88,14 @@ async function main() {
   /** @type {Map<number, number>} */
   const seen = new Map();
 
+  // Refusals are collected rather than only traced, so the give-up message can
+  // say WHY it never got an answer. Quiet output must not mean a quieter
+  // diagnosis: a run that spent forty polls on HTTP 403 and one that spent them
+  // on a slow queue are different states, and the terse form has to keep them
+  // apart or it has recreated the defect it exists to remove.
+  /** @type {string[]} */
+  const refusals = [];
+
   for (let attempt = 1; attempt <= MAX_POLLS; attempt += 1) {
     /** @type {unknown} */
     let body;
@@ -69,21 +106,23 @@ async function main() {
       if (!response.ok) {
         // A refusal is not a board state. Printed as itself so an expired token
         // or a rate limit cannot spend forty polls looking like a slow run.
-        process.stdout.write(`  poll ${String(attempt)}: HTTP ${String(response.status)}\n`);
+        refusals.push(`HTTP ${String(response.status)}`);
+        trace(`  poll ${String(attempt)}: HTTP ${String(response.status)}\n`);
         if (once) return 2;
         await sleep(POLL_SECONDS * 1000);
         continue;
       }
       body = await response.json();
     } catch (error) {
-      process.stdout.write(`  poll ${String(attempt)}: request failed — ${formatError(error)}\n`);
+      refusals.push(`request failed — ${formatError(error)}`);
+      trace(`  poll ${String(attempt)}: request failed — ${formatError(error)}\n`);
       if (once) return 2;
       await sleep(POLL_SECONDS * 1000);
       continue;
     }
 
     const { verdict, reason, green } = boardVerdict(body, { sha, seen });
-    process.stdout.write(`  poll ${String(attempt)}: ${verdict.toUpperCase()} — ${reason}\n`);
+    trace(`  poll ${String(attempt)}: ${verdict.toUpperCase()} — ${reason}\n`);
 
     if (verdict === 'complete') {
       // `green` is DERIVED IN THE DECIDER, and this line is the whole reason.
@@ -104,8 +143,15 @@ async function main() {
     await sleep(POLL_SECONDS * 1000);
   }
 
+  const refused = refusals.length;
   process.stdout.write(
-    `\nGave up after ${String(MAX_POLLS)} polls. That is a timeout, not a verdict.\n`,
+    `\nNO VERDICT at ${sha}: gave up after ${String(MAX_POLLS)} polls. That is a timeout, ` +
+      `not a verdict.\n` +
+      (refused > 0
+        ? `  ${String(refused)} of them were refusals, the last being ${refusals[refused - 1] ?? ''}. ` +
+          `A refusal is not a board state — the API declined to answer, so nothing here is\n` +
+          `  evidence about the commit. Exit code 2, which is neither green nor red.\n`
+        : `  Exit code 2, which is neither green nor red.\n`),
   );
   return 2;
 }
