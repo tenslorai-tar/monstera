@@ -644,6 +644,257 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-24 — Stage audit: `51d3da8..6c2017c` — three rosters that cannot notice their own source shrinking
+
+**Audited through `6c2017c`.** 8 commits, 24 files, **3 proofs added, 1
+modified**, 3 new source files and 8 changed — from `npm run audit:scope`.
+Exactly one batch on both axes.
+
+The range is AAAA-8's correction through the hook-probe reshape. Reviewer
+findings **AAAA-12** to **AAAA-15**; my own, from reading the range's diffs,
+**AAAA-16** to **AAAA-19**.
+
+### The range's headline
+
+**Three separate mechanisms in this repository now derive a requirement from the
+very set the requirement is supposed to protect, and all three go quiet when
+that set shrinks.** They were found from three directions within one range — one
+by the reviewing seat, one by reading a diff, one by executing a shape nobody
+had built a fixture for — and none of them is visible from inside the file that
+has it.
+
+That is the same premise as previous ranges arriving at a new level. The earlier
+statement was *defects arrive in the instruments written to close the previous
+defect*. This range says: **a derivation is not automatically stronger than the
+literal it replaced.** Replacing a hand-kept list with a derivation removes one
+failure mode — the list going stale — and silently adds another, because a count
+computed from a list cannot disagree with that list. Which of the two you want
+depends on whether the danger is the set growing or the set shrinking, and that
+question was asked in none of the three cases.
+
+### 1. Root cause, or workaround?
+
+**AAAA-12 is a root-cause correction and the root was a NAME.** The FEATURES row
+said the registering commit could not come from an older session, reasoning that
+a PostToolUse reporter cannot produce a `denied`, so its evidence must be
+`executed`-shaped, so the age gate applies. Every step follows from the outcome's
+*name*. The property the gate is keyed on is whether an observation is
+**self-certifying** — nothing that failed to load a hook can produce that hook's
+own output — and a report has that property exactly as a denial does. The
+vocabulary now says the property (`fired` / `silent` / `unobserved`) rather than
+naming the tool call's fate, so the reasoning cannot be run again.
+
+The correction mattered in the direction that produces a false green: following
+the old row, someone registers the reporter, watches the escape probe pass, and
+reads the gate as satisfied while the reporter has never fired anywhere.
+
+**AAAA-13 is a root-cause fix to a DATA SHAPE, and that is why no review caught
+it.** A single-outcome record was correct while one hook was registered and would
+have become a false certificate for the second, with no sentence anywhere
+overstating anything. There was nothing for a reader to disagree with.
+
+**No override was added anywhere in the range.**
+
+**One check was loosened, deliberately, and item 2a says to state it.**
+`complainsAboutTheGate` in `hookProbe.proof.mjs` narrowed from
+`/observed to fire|unrecorded/` to `/observed to fire/`. The effect is not
+uniform: it makes the induced-failure control *stricter* (the output must now
+carry the gate's own words, not merely the word `unrecorded`) and the quiet case
+*laxer*. It is necessary because the new roster half can also print
+`unrecorded`, and if the two halves are not distinguishable neither control
+separates. Recorded because a narrowing that is right is indistinguishable in a
+diff from one that is convenient.
+
+### 2. Verified against the easy shape only?
+
+The hard shape here was **two hooks instead of one**, and it paid immediately:
+`makeRoot()` copied the settings file whole but wrote a single entry, so the case
+asserting *nothing is missing* went red the moment the reporter was registered.
+It was true only because one hook existed — **a fixture pinned to a count nobody
+had written down.** Both halves are derived from the resolver now.
+
+The shape I did **not** test is AAAA-17 below, and it is the same axis one step
+further: not two hooks, but **one hook on two events**.
+
+### 3. Would CI have caught it?
+
+**No, for AAAA-15, AAAA-16 and AAAA-18** — all three are checks that do not
+exist, and a check that does not exist is green everywhere. AAAA-17 likewise: no
+fixture reached the shape, so nothing could have gone red.
+
+### AAAA-16 — a roster derived from the set it governs cannot notice that set shrinking
+
+Two instances in this range, found from opposite directions and neither visible
+from inside its own file.
+
+**(a) The hook presence requirement, from the reviewing seat (AAAA-15).**
+`hookIntegrity.mjs` refuses when the project settings register no `PreToolUse`
+hook, naming `blockEscapeResolvingWrites.mjs` in a literal. Nothing makes the
+same demand of the reporter, and the per-hook coverage requirement introduced
+this range is derived from the settings file itself. So unregistering the
+reporter **and** deleting its entry — one plausible edit, "remove the reporter" —
+shrinks the roster by one, removes its own requirement with it, leaves
+`hookIntegrity` satisfied by the surviving `PreToolUse` entry, and every check
+goes green. Two documents would still assert the reporter is registered.
+
+**(b) The document-rule roster, from reading this range's own diff.** AAAA-9
+converted nine inline blocks to `registerRule` and replaced
+`createRoster(failures, { cases: 9 })` with `cases: chosen.length`. The literal
+was an **independent** number: delete a rule and 9 no longer matches. The
+derivation is computed from the same array being iterated, so it agrees with any
+size. `documentRuleScope.proof.mjs` does not close the gap — it asserts a
+partition identity that holds for any N and two `length > 0` floors. **Deleting a
+whole document rule is silent today, and was caught before AAAA-9.**
+
+The remedy is the same in both and it already exists in this range as a pattern:
+`registeredHooks` refuses unless it locates an anchor it is told must be there.
+**An anchor is an independent claim the shrinker has to touch separately.** A
+derivation without one is a roster that shrinks quietly; a literal without one is
+a roster that goes stale loudly. Loud staleness is the better failure, which is
+why the literal was not simply wrong.
+
+### AAAA-17 — the mechanism key is coarser than the registration it identifies
+
+**Executed, not reasoned about.** One script registered on two events produces
+two roster rows carrying **one name**:
+
+```
+rows: blockEscapeResolvingWrites@PreToolUse blockEscapeResolvingWrites@PostToolUse
+distinct names: 1
+missing: []
+```
+
+So the second registration inherits the first's certificate, and the entry's
+`event` field says `PreToolUse` while vouching for both. The mechanism key is
+derived from the script's filename; the thing actually registered is a *(script,
+event)* pair. **A key coarser than the thing it identifies is one certificate for
+two mechanisms — which is AAAA-13's finding, recurring inside AAAA-13's own fix,
+in the same commit.**
+
+It is the milder version of the class: the hook table is one file, so a firing on
+either event does establish that the script is reachable. What it does not
+establish is that the second registration is well formed — its event, its
+matcher, the tool it claims to cover. The fix is to key on script *and* event, or
+to refuse a duplicate name outright.
+
+### AAAA-18 — the untracked half is a correct checker nobody has proven is called
+
+`6c2017c` added a third state to `probeCoverage` — hooks registered by the
+untracked `.claude/settings.local.json`, in force and unvouchable — and
+`documentConsistency` refuses on it. The `missing` half of that rule is
+mutation-tested against `check:docs`: emptying it reddens exactly one control.
+**The `untracked` half is asserted only at the `probeCoverage` level.** Nothing
+proves the document check consumes it, which is the display-only sin the
+neighbouring control exists to prevent, one commit old and mine.
+
+Found by asking which branches no fixture reached, rather than by mutating the
+branches the suite already exercises.
+
+The control is awkward on purpose and that is worth writing down: it has to write
+a real `.claude/settings.local.json` into this repository for the duration of the
+run, and a hook registered there could be picked up by a live session. The way to
+make it safe is for the probe's command to name a script that is already
+registered and harmless, so that a session which does load it does exactly what
+it would have done anyway.
+
+### AAAA-19 — "registered" and "in force" are two questions, and the record answers only the first
+
+`registeredHooks` reports what the settings file registers. A settings file with
+`"disableAllHooks": true` still lists its hooks, so the roster reports them and
+the record's `fired` and `unobserved` entries read as coverage while nothing
+runs. `hookIntegrity.mjs` does check that key — separately, at commit time, for
+the project scope.
+
+Not a defect today, because the check exists. Recorded because it is two modules
+holding two opinions about whether a hook runs, which is B3a's shape, and because
+the roster's header currently invites the stronger reading. The narrow fix is one
+sentence; the wider one is for `registeredHooks` to own the whole question.
+
+### 4. Are the proofs non-vacuous?
+
+`hookProbe.proof.mjs` went from 16 cases to 34. Every deleted case has a renamed
+counterpart in the pass list; the only semantic deletion is the predicate
+narrowing recorded above.
+
+**Mutation-tested:** emptying `coverage.missing` in `documentConsistency` reddens
+exactly the roster control and nothing else, so it separates.
+
+**One case was repaired for a reason worth carrying.** *The recorder refuses when
+it cannot establish the session start* asserted on **two alternative refusals** —
+`/cannot determine|not tracked by git/` — and its throwaway tree had no commits,
+so the recorder returned the git refusal first and the case was satisfied by it
+on every run. It never once reached the refusal it is named for. This is item
+4b's shape arriving inside an assertion: two ways to be reassured, and the
+instrument cannot tell you which one it got. The fixture commits now, and the
+assertion names one refusal.
+
+**A branch nothing reaches, kept deliberately.** `mechanismName`'s non-`.mjs`
+return is unreachable, because the command pattern that feeds it requires `.mjs`.
+JJJ-1's class: kept, because the fact it encodes is true and it becomes live the
+day the pattern widens.
+
+### 5. Executed, or asserted?
+
+**Executed:** the escape guard's denial at 2026-08-23T22:28Z, run verbatim in
+this session · `od -c` on a deliberate attempt to author `0x01` and `0x00` in a
+`Write` payload, which produced two ordinary spaces · the two-event shape in
+AAAA-17 · the roster mutation · 34 hook-probe cases, 267 escape-guard cases, 13
+local checks, `tsc` and `eslint` · the board at `6c2017c`.
+
+**Asserted, and therefore unfinished:** that no settings layer outside this
+repository registers hooks on a CI runner. That is a **declared scope**, not a
+measurement — the user-level and enterprise layers are out of reach and a check
+that fired on every contributor's personal configuration is one that gets turned
+off. It is written into the resolver's header rather than left implied.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither: everything in this range registered into existing seams — the verdict
+machinery, the document-rule registry, the pass roster.
+
+### 7. Do the documents still match the code?
+
+`CLAUDE.md`, `docs/FEATURES.md` rows 317 and 318 and the `guards.yml` comment
+were all corrected in the commits that made them false. The session-age
+relationship was swept across every tracked statement of it, per NNN-4's
+compensation; only the workflow comment was stale and it was fixed in the same
+commit.
+
+**One count in my own report was recalled rather than measured**, and the
+reviewing seat caught it: I wrote *25 files* by incrementing the previous run's
+24 by hand instead of re-running the instrument. `git diff --name-only` says 24.
+The conclusion was unaffected — the next new file forces the audit either way —
+but 25 against a 24 threshold would have meant the gate was already breached and
+the board was lying about it. That is the same failure as the denial count this
+project already recorded: **a number carried in the head, in the direction that
+makes the mechanism look wrong.** The instrument was one command away.
+
+### AAAA-14 — the reporter's live-ness is unfalsifiable, and the disposition is to fix it
+
+**Accepted.** *Closes the first time the reporter catches one* makes the only
+certifying event the defect recurring, and this repository has already recorded
+what that costs: `engine-host-containment` sat green watching a symbol shipped
+code could never name. A gate that can stay open for the life of the project
+while reading as pending is a claim whose expiry never fires.
+
+The separation is right. *Does the harness invoke it* is certifiable today and is
+what the record is actually about; *does it detect and repair correctly* is
+already proven by the module's own cases with numerically-built fixtures. The
+escape guard's probe is the precedent — `console.log('hook test')` is harmless in
+effect while being the banned shape — and the reporter has no benign input of
+that kind, because its trigger is a byte neither seat can author. A reserved
+probe path supplies one on a different axis.
+
+Building it next range, with both conditions binding: **one scan, one repair
+text, one writer** — the path decides only whether a live-ness line is emitted,
+never how the scan works — and **the entry says what it certifies**, invocation
+rather than detection, in the record itself rather than in prose beside it. A
+`fired` that silently covered detection would be this range's own finding
+recurring one layer down, which by now should be the default expectation rather
+than a surprise.
+
+---
+
 ## 2026-08-23 — Stage audit: `52edb0f..51d3da8` — four of my own errors, two of them mechanised and neither of them fixed
 
 **Audited through `51d3da8`.** 9 commits, 21 files, **2 proofs added, 2
