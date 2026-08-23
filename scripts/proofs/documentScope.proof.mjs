@@ -21,6 +21,25 @@
  *   - a document absent from the commit never appears at all, however much of
  *     it is sitting on disk.
  *
+ * ## THIS PROOF MUST NOT WITNESS THE TREE, and the reason is its subject
+ *
+ * `treeWitness.mjs` gives a run a third state — *the tree moved under this run,
+ * so its result means nothing* — and the rule that arrived with it reads
+ * naturally as universal: any proof that is not hermetic should witness its
+ * tree. Applied here it is wrong, and wrong in the direction that removes a
+ * check rather than adds one.
+ *
+ * The mechanism: **this proof removes a tracked file from the working tree on
+ * purpose**, because that is the state under test. A tree witness would report
+ * `THE TREE MOVED` on every CORRECT run, so the third state would fire where
+ * there is nothing to report and the proof would refuse to answer the question
+ * it exists to answer.
+ *
+ * The repair-before-measuring block below is the other half of the same fact: a
+ * previous run killed mid-flight leaves the subject deleted, so this file
+ * restores it from the index before it starts rather than measuring a tree an
+ * earlier crash left behind.
+ *
  * Usage: node scripts/proofs/documentScope.proof.mjs
  */
 

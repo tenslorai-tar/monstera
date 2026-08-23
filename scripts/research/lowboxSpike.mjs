@@ -192,7 +192,11 @@
  *
  * So the premise is measured rather than assumed, and it is the good direction:
  * this belongs in the cheap end of the duration table, not the doomed tail.
- * Re-measure rather than trusting this line — it is a reading.
+ * Re-measure rather than trusting THAT DURATION — it is a reading of one
+ * machine, and the sentence is scoped to it deliberately. A general "re-measure
+ * rather than trust" placed above a table makes every row in it read as
+ * current-and-checked, including a row that has since been superseded; the rows
+ * below carry their own corrections in their own text (finding YYY-1).
  *
  * Every row below is against the cell that removes ONLY that row's mechanism,
  * and the run exits 0 with no unreadable row.
@@ -200,7 +204,7 @@
  * | property | contained | uncontained | |
  * |---|---|---|---|
  * | (b) process creation — job alone | `route` refused `UNKNOWN` | `route-no-job` spawned | **differs** |
- * | (b) process creation — LowBox alone | `lowbox-no-job` spawned | `route-no-job` spawned | same |
+ * | (b) process creation — LowBox alone | spawned HERE, refused `EPERM` on `windows-latest` | `route-no-job` spawned | **either — build-dependent** |
  * | (d) filesystem, JS | refused `EPERM` | read 6250 bytes | **differs** |
  * | (d) filesystem, native | refused `CreateFileW: error 5` | read 4096 bytes | **differs** |
  * | (c) network, loopback | refused `ETIMEDOUT` | connected | **differs** |
@@ -208,12 +212,27 @@
  * | document it WAS handed | opened, 1 page | same | same |
  * | IPC over a named pipe | refused `EPERM` | connected | **differs** |
  *
- * **The second row is new and it is a correction to a natural assumption:
- * invariant 25(b) is delivered by the JOB, not by the container.** A LowBox host
- * with no job of ours creates a child process without difficulty. Nothing had
- * said otherwise, but nothing had separated them either — both mechanisms were
- * always present together, which is precisely the union problem the variant
- * matrix exists to break, and it broke it on the first run that could read.
+ * **The second row separates two mechanisms that were always present together,
+ * and the claim that SURVIVED is a reliability one: the container cannot be
+ * relied on for (b).** That is stronger than *it does not deliver (b)*, which is
+ * what this paragraph asserted until 2026-08-23 and what the run on this machine
+ * had shown — a LowBox host with no job of ours spawned a child without
+ * difficulty. On `windows-latest` the same cell was refused `EPERM`. Both
+ * readings are real; neither is the mechanism. An AppContainer refuses process
+ * creation on some Windows builds and permits it on others, and something
+ * present on some builds and absent on others is precisely what a design may not
+ * depend on — which is what [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * Decision 8 rests on. The split reading is better evidence for that decision
+ * than a uniform `same` would have been.
+ *
+ * So the row asserts `either`, and the assertion has not gone away: the
+ * UNCONTAINED half must still be allowed, or two dead cells would satisfy it.
+ * The enforcing code is in `PROPERTIES` below and carries the same note.
+ *
+ * **The union problem the variant matrix exists to break is still broken by row
+ * one**, on both builds — its two cells are uncontained and Medium-integrity on
+ * both sides, so the job is the only difference between them and the container
+ * cannot be the cause of the refusal either way.
  *
  * And the ordering, added 2026-08-22 for ADR-0023 §1: `previousSuspendCount: 1`
  * and `inJobBeforeResume: true`, with the host's **first** action — a spawn
