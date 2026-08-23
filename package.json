@@ -70,6 +70,7 @@
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
     "local": "node scripts/checkLocal.mjs",
+    "proof:checklocal": "node scripts/proofs/checkLocal.proof.mjs",
     "audit:scope": "node scripts/audit/scope.mjs",
     "proof:auditscope": "node scripts/proofs/auditScope.proof.mjs",
     "proof:workflowpins": "node scripts/proofs/workflowPins.proof.mjs",

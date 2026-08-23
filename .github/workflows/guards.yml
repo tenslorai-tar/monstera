@@ -285,6 +285,15 @@ jobs:
       - name: Prove the invalid-handle check catches what four spellings missed
         run: node scripts/ci/annotate.mjs scripts/proofs/win32Handle.proof.mjs
 
+      # A wrapper's reassuring answer is "everything passed", and four different
+      # things print it — a clean tree, a misread exit code, a mis-parse of the
+      # spawn result, and an empty selected set. The first version of that tool
+      # invented failures, which announced itself in one run; inventing passes is
+      # the silent direction and was the one nothing watched (finding QQQ-2).
+      # Needs no node_modules: it spawns node on fixture files it writes itself.
+      - name: Prove the local check sweep can report a failure at all
+        run: node scripts/ci/annotate.mjs scripts/proofs/checkLocal.proof.mjs
+
       # The proof first, because it is what establishes the scan can SEE — a
       # search's silence is worthless until something known-present proves it is
       # not blind. The scan then carries the same control itself, since it gets

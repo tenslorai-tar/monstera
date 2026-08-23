@@ -81,6 +81,22 @@ patching around. Add to it; do not re-pay for it.
   Ask what that thing does, implement *its* rule in one place, and have the other
   callers take it. A partial reimplementation is the dangerous shape, because it
   agrees with the authority most of the time.
+
+  **KNOWING THE RULE IS NOT A DEFENCE, and this is the third domain to pay for
+  that sentence.** The escape guard paid seven times and the emitted-template
+  scan seven, each time by an author who had the rule on the page. B3a is the
+  same: the check written to catch a second opinion about the advisory
+  register's symbols *was itself a third one*, inside an hour, written by the
+  author who had just consolidated the other two (OOO-1). It spelt
+  `claim.symbols ?? []` where the two existing callers spelt `?? [name]`, and
+  reported a correct entry as a defect on its first run.
+
+  So the remedy is never *be careful here*; it is **make the rule a named thing
+  with callers.** A rule that lives in call sites and prose is a rule the next
+  caller re-derives — and a helper sitting beside a bare inline expression is the
+  same trap one step on, because the choice between them is a paragraph someone
+  has to read and reject rather than two names they pick from (QQQ-3). B5 over a
+  comment: make the wrong choice visible, not explained.
 - **B4 Architecture change control.** If a feature cannot be built by
   registering into an existing seam — **STOP**. Do not bend the seam in place.
   Amend `docs/ARCHITECTURE.md` first, in its own commit, with the rationale and

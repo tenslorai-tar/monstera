@@ -969,7 +969,82 @@ before Stage 0 exit**.
 
 ---
 
-## 2026-08-23 — OOO-1 closed, and PPP-2: the check written to catch a second opinion was itself a third one
+## 2026-08-23 — QQQ-1 to QQQ-3: a wrapper with no proof, a rule still living in prose, and evidence from the half that could not fail
+
+### QQQ-2 — nothing proved the local sweep could report a failure at all
+
+`checkLocal.mjs` had no proof. Its reassuring answer is **"everything passed"**,
+and four different things print it: a clean tree, a misread exit code, a
+mis-parse of `spawnSync`'s result, and a selected set that came back empty.
+4b's shape in the one tool whose whole job is to report failures.
+
+The direction is what makes it worth a proof. The first version **invented
+failures** — noisy, and it announced itself inside one run. The mirror,
+**inventing passes**, is silent, and after the fix it was the only direction
+nothing watched. `annotate.mjs` is also "just" a wrapper and carries a proof for
+exactly this reason.
+
+Eight cases. Two of them read the **harness** rather than the results, because
+item 2's own remedy rule says only such a case can catch a harness defect —
+every assertion about results stays green either way, which is precisely how the
+first version shipped with both properties wrong:
+
+- **No shell is interposed.** The fixture repository's path contains a **space**.
+  Spawned directly that is nothing; spawned through a shell the command line
+  splits and the script is not found. The input is built from something that
+  only succeeds when the property holds — the negative-probe rule inverted.
+- **A timeout stops the sweep.** The first script hangs, the second would write a
+  marker, and the marker's *absence* is the assertion — with a control run
+  proving that second script writes it when nothing times out. Without the
+  control, "no marker" is satisfied by a sweep that ran nothing at all.
+
+Plus: a failing script is reported FAILED and a passing one beside it is not; a
+derivation below the declared floor is refused; a script that is not a bare
+`node` invocation is NOT RUN **and makes the sweep exit non-zero**, because
+*everything I could run passed* and *everything passed* are different claims.
+
+`--root` and `--floor` exist so the tool can be pointed at a fixture, which is
+the only way its failure paths can be exercised. That is the convention
+`stackOwnership.mjs` and `nodeModulesPlacement.mjs` already use.
+
+**And writing that proof found a defect PPP-2 had introduced.** Its output
+printed every passing line twice. Chased as a `process.exit` flush bug, which it
+was not — the sequence numbers proved the cases ran exactly once — and the real
+cause is that `passRoster.format` **emits the whole `ok` list itself**. Adopting
+the roster while keeping the per-case writes it replaces is taking half a shape,
+which is how a second opinion gets written. `composition.proof.mjs` is the shape:
+`check` records and prints nothing. Both files now do.
+
+### QQQ-3 — the second rule was still prose
+
+`watchedSymbols(name, claim)` got a name and four callers. The *other* question —
+what a verdict's list explicitly names — stayed as `claim?.symbols ?? []` inline
+with a paragraph beside it explaining why it was not the first helper.
+
+The paragraph was correct, and that is not the point: **the reason the OOO-1 fix
+was a third opinion is that the rule lived in call sites and prose rather than in
+one named thing**, and that was now true of the second rule. It is
+`declaredSymbols(claim)` with three callers — the two OCR sites were using the
+inline form too, and naming a rule while leaving its callers is the half-fix.
+
+B5 over a comment: a future caller now picks between two names instead of
+between a helper and a bare expression they must read a paragraph to reject.
+
+### QQQ-1 — the corrected harness was verified where its defect could not occur
+
+All ten `check:*` scripts passed through the fixed sweep. Those are fast and
+spawn almost nothing — and the defect being corrected was a shell-killed timeout
+orphaning a script's *children*, which **cannot happen in that half**. The
+evidence came from the region where the bug was structurally impossible.
+
+Audit item 2, and the third time in one stretch that the easy shape was the one
+measured. The header now states this limit beside the two it already stated.
+
+**The `proof:*` sweep is RUNNING as this is written, not finished** — 53 scripts
+at up to 240s each, and `proof:advisories` alone took 136s. Its result is
+recorded in a following entry rather than predicted here, because a sweep whose
+outcome is written before it lands is the thing the board correction earlier
+today was about.
 
 ### OOO-1 — the register's schema was fail-open in two ways
 

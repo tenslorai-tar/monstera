@@ -477,6 +477,30 @@ function watchedSymbols(name, claim) {
 }
 
 /**
+ * The symbols a verdict's list EXPLICITLY NAMES. The other question, named for
+ * the same reason (finding QQQ-3).
+ *
+ * {@link watchedSymbols} answers *what does this verdict watch*, where an
+ * omitted list means the verdict's own key. This one answers *what did someone
+ * write down*, which is what a derived surface is compared against — and there
+ * the fallback would be wrong, because a verdict's key is not a symbol Electron
+ * can ever declare and would report as permanently uncovered.
+ *
+ * It existed as `claim?.symbols ?? []` inline with a paragraph beside it
+ * explaining why it was not the other helper. That paragraph was correct, and it
+ * is the exact shape that produced OOO-1's third opinion: **a rule that lives in
+ * call sites and prose is a rule the next caller re-derives.** Two named
+ * functions make the choice visible; a helper beside a bare expression makes it
+ * a paragraph someone has to read and reject (B5 over a comment).
+ *
+ * @param {{ symbols?: string[] } | undefined} claim
+ * @returns {readonly string[]}
+ */
+function declaredSymbols(claim) {
+  return claim?.symbols ?? [];
+}
+
+/**
  * Rejects a key nobody declared, and a witness for a symbol nobody watches
  * (finding OOO-1).
  *
@@ -954,7 +978,7 @@ function ocrDoorDrift(baseline) {
   }
 
   const derived = deriveOcrDoors(source, shimProject);
-  const declared = baseline.reachability['ocr']?.symbols ?? [];
+  const declared = declaredSymbols(baseline.reachability['ocr']);
   return {
     checked: true,
     missing: derived.doors.filter((door) => !declared.includes(door)),
@@ -1198,7 +1222,7 @@ async function main() {
 
   process.stdout.write(
     drift.checked
-      ? `  ok  ${(baseline.reachability['ocr']?.symbols ?? []).length} OCR doors match the engine source\n`
+      ? `  ok  ${declaredSymbols(baseline.reachability['ocr']).length} OCR doors match the engine source\n`
       : `  --  OCR door set NOT verified here — MuPDF source not provisioned\n`,
   );
 
@@ -1274,12 +1298,7 @@ async function main() {
   // the two, for a defect the other check names exactly.
   if (electron.checked) {
     const claim = baseline.reachability['engine-host-containment'];
-    // NOT `watchedSymbols`, and the difference is the question. That helper
-    // answers "what does this verdict watch", where an omitted list means the
-    // verdict's own key. Here the question is "what does the list explicitly
-    // NAME", compared against a derived spawn surface — and defaulting to the
-    // verdict's key would add a phantom symbol that Electron can never declare.
-    const named = new Set(claim?.symbols ?? []);
+    const named = new Set(declaredSymbols(claim));
     const uncovered = electron.spawnSurface.filter((symbol) => !named.has(symbol));
     if (uncovered.length > 0) {
       process.stderr.write(

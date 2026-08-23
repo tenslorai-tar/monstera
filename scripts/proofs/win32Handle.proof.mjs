@@ -46,13 +46,13 @@ const roster = createRoster(failures, { cases: 14 });
  * @param {string} name @param {boolean} condition @param {string} detail
  */
 function check(name, condition, detail) {
+  // PRINTS NOTHING. `roster.format` emits the whole `ok` list at the end, so a
+  // per-case write here prints every passing line TWICE — which is what this
+  // file did for one commit, because PPP-2 adopted the roster and kept the
+  // writes it replaces. Taking half of a shape is how the second opinion gets
+  // written; `composition.proof.mjs` is the shape, and it records and returns.
   const mark = roster.mark();
-  if (!condition) {
-    failures.push(`${name}\n      ${detail}`);
-    process.stdout.write(`  FAIL  ${name}\n      ${detail}\n`);
-  } else {
-    process.stdout.write(`  ok  ${name}\n`);
-  }
+  if (!condition) failures.push(`${name}\n      ${detail}`);
   // A FAILING case is deliberately not recorded — `record` returns early when a
   // failure was pushed since the mark, and `format` is reached only on the
   // success path. That is the roster's own design, not a gap: a red run prints
@@ -62,6 +62,11 @@ function check(name, condition, detail) {
 
 /**
  * A case that could not run, recorded rather than skipped in silence.
+ *
+ * The roster renders the case itself as `--  <label> — nothing to check`; the
+ * REASON is written here because that line cannot carry one, and a
+ * could-not-look with no reason beside it is the state this whole discipline
+ * exists to keep out of the passing column.
  *
  * @param {string} name @param {string} detail
  */

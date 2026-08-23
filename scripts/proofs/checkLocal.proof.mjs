@@ -1,0 +1,223 @@
+// @ts-check
+/**
+ * Proof that `scripts/checkLocal.mjs` can report a failure at all (finding
+ * QQQ-2).
+ *
+ * ## Why a wrapper needs a proof
+ *
+ * Its reassuring answer is **"everything passed"**, and four different things
+ * print it: a clean tree, a misread exit code, a mis-parse of `spawnSync`'s
+ * result, and a selected set that came back empty. That is 4b's shape in a tool
+ * whose whole job is to report failures.
+ *
+ * The direction matters. The first version of this harness **invented
+ * failures** — noisy, and it announced itself within one run. The mirror,
+ * **inventing passes**, is silent and is the one nothing watched. `annotate.mjs`
+ * is also "just" a wrapper and carries `annotate.proof.mjs` for exactly this
+ * reason.
+ *
+ * ## Two of these cases read the HARNESS, not the results
+ *
+ * Item 2's remedy rule: when a harness is corrected, the control asserts what
+ * the harness *passes*, not what the run produces. Every assertion about
+ * results stays green whether or not a shell is interposed and whether or not a
+ * timeout stops the sweep — which is precisely how the first version shipped
+ * with both wrong.
+ *
+ *   - **No shell.** The fixture root's path contains a SPACE. Spawned directly
+ *     that is nothing; spawned through a shell the command line splits and the
+ *     script is not found. So the input is built from something that only
+ *     succeeds when the guard is present, which is the negative-probe rule
+ *     inverted.
+ *   - **A timeout stops the sweep.** The first script hangs, the second would
+ *     write a marker. The marker's ABSENCE is the assertion, with a control run
+ *     proving the second script writes it when nothing times out — without
+ *     which "no marker" is satisfied by a sweep that ran nothing at all.
+ *
+ * Usage: node scripts/proofs/checkLocal.proof.mjs
+ */
+
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { createRoster } from '../lib/passRoster.mjs';
+
+const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
+
+/** @type {string[]} */
+const failures = [];
+const roster = createRoster(failures, { cases: 8 });
+
+/**
+ * Records, and prints nothing — `roster.format` emits the case list at the end.
+ *
+ * @param {string} name @param {boolean} condition @param {string} detail
+ */
+function check(name, condition, detail) {
+  const mark = roster.mark();
+  if (!condition) failures.push(`${name}\n      ${detail}`);
+  roster.record(mark, name);
+}
+
+// A SPACE IN THE PATH, deliberately. See the header: it is what makes the
+// no-shell case an observation rather than a reading of the source.
+const scratch = mkdtempSync(join(tmpdir(), 'monstera check local '));
+
+/**
+ * Builds a fixture repository and runs the harness against it.
+ *
+ * @param {Record<string, string>} files script name -> body
+ * @param {Record<string, string>} manifestScripts
+ * @param {string[]} extraArgs
+ */
+function runFixture(files, manifestScripts, extraArgs = []) {
+  const root = mkdtempSync(join(scratch, 'repo '));
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(root, 'scripts', name), body, 'utf8');
+  }
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'fixture', scripts: manifestScripts }, null, 2),
+    'utf8',
+  );
+  const run = spawnSync(
+    process.execPath,
+    [HARNESS, '--root', root, '--floor', '1', ...extraArgs],
+    { encoding: 'utf8' },
+  );
+  return { root, ok: run.status === 0, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
+}
+
+const EXIT_ZERO = 'process.exit(0);\n';
+const EXIT_ONE = "process.stderr.write('FAIL deliberate\\n');\nprocess.exit(1);\n";
+const HANGS = 'setInterval(() => undefined, 1000);\n';
+
+try {
+  // -------------------------------------------------------------------------
+  // 1 & 2. It can report a failure, and it does not report everything as one.
+  // -------------------------------------------------------------------------
+  const red = runFixture(
+    { 'bad.mjs': EXIT_ONE, 'good.mjs': EXIT_ZERO },
+    { 'proof:bad': 'node scripts/bad.mjs', 'proof:good': 'node scripts/good.mjs' },
+  );
+  check(
+    'a script that exits non-zero is reported FAILED, and the sweep exits non-zero',
+    !red.ok && /FAILED\s+proof:bad/u.test(red.output),
+    `exit ok=${String(red.ok)}. Output:\n${red.output}`,
+  );
+  check(
+    'CONTROL: and the passing script beside it is reported ok',
+    /\bok\s+proof:good/u.test(red.output),
+    `a harness that reports everything as failed satisfies the case above. Output:\n${red.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // 3. NO SHELL IS INTERPOSED. Reads the harness, not the results.
+  // -------------------------------------------------------------------------
+  const spaced = runFixture(
+    { 'ok.mjs': EXIT_ZERO },
+    { 'proof:spaced': 'node scripts/ok.mjs' },
+  );
+  check(
+    'the interpreter is spawned directly, so a path containing a SPACE still runs',
+    spaced.ok && /\bok\s+proof:spaced/u.test(spaced.output),
+    `The fixture root's path contains a space. Run through a shell the command line splits ` +
+      `and the script is not found; run directly it is nothing at all. This is the property ` +
+      `that made the first version orphan its children on every timeout, and no assertion ` +
+      `about RESULTS can see it. Output:\n${spaced.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // 4 & 5. A TIMEOUT STOPS THE SWEEP. Also a harness property.
+  // -------------------------------------------------------------------------
+  const marker = 'ran-second.txt';
+  const writesMarker =
+    `import { writeFileSync } from 'node:fs';\n` +
+    `writeFileSync(new URL('../${marker}', import.meta.url), 'yes', 'utf8');\n`;
+  const twoScripts = { 'a-hangs.mjs': HANGS, 'b-marks.mjs': writesMarker };
+  // Named so the sort puts the hanging one FIRST — the sweep runs in sorted
+  // order, and a fixture whose slow script sorts last would prove nothing.
+  const twoNames = {
+    'proof:a-hangs': 'node scripts/a-hangs.mjs',
+    'proof:b-marks': 'node scripts/b-marks.mjs',
+  };
+
+  const stopped = runFixture(twoScripts, twoNames, ['--timeout', '2']);
+  check(
+    'a timeout STOPS the sweep, so the script after it never runs',
+    /TIMED OUT\s+proof:a-hangs/u.test(stopped.output) &&
+      !existsSync(join(stopped.root, marker)),
+    `A timeout orphans the timed-out script's own children, so every result after one is ` +
+      `measured against a machine carrying them — twenty invented failures, once. ` +
+      `marker exists=${String(existsSync(join(stopped.root, marker)))}. Output:\n${stopped.output}`,
+  );
+  check(
+    'CONTROL: and with nothing timing out, that second script DOES run',
+    (() => {
+      const clean = runFixture(
+        { 'b-marks.mjs': writesMarker },
+        { 'proof:b-marks': 'node scripts/b-marks.mjs' },
+      );
+      return clean.ok && existsSync(join(clean.root, marker));
+    })(),
+    'without this, "the marker is absent" is satisfied by a harness that runs nothing at all, ' +
+      'or by a fixture whose second script never wrote a marker in the first place.',
+  );
+
+  // -------------------------------------------------------------------------
+  // 6. The floor is a positive control and refuses a broken derivation.
+  // -------------------------------------------------------------------------
+  const belowFloor = spawnSync(
+    process.execPath,
+    [HARNESS, '--root', runFixture({ 'ok.mjs': EXIT_ZERO }, { 'proof:one': 'node scripts/ok.mjs' }).root, '--floor', '5'],
+    { encoding: 'utf8' },
+  );
+  check(
+    'a derivation below the declared floor is REFUSED, not reported as a quiet repository',
+    belowFloor.status !== 0 && /under a floor/u.test(`${belowFloor.stdout}${belowFloor.stderr}`),
+    `A renamed "scripts" key and a filter that stopped matching both derive zero scripts and ` +
+      `then report zero failures. exit=${String(belowFloor.status)}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // 7 & 8. A script it cannot invoke is NOT a pass.
+  // -------------------------------------------------------------------------
+  const notNode = runFixture(
+    { 'ok.mjs': EXIT_ZERO },
+    { 'proof:shelled': 'npm run something-else', 'proof:fine': 'node scripts/ok.mjs' },
+  );
+  check(
+    'a script that is not a bare node invocation is reported NOT RUN',
+    /NOT RUN\s+proof:shelled/u.test(notNode.output),
+    `A script this harness cannot invoke is a hole in the derivation, and a hole that prints ` +
+      `nothing is the derivation lying about its own coverage. Output:\n${notNode.output}`,
+  );
+  check(
+    'and NOT RUN makes the sweep exit non-zero, because it is not a pass',
+    !notNode.ok,
+    `exit ok=true. "Everything I could run passed" and "everything passed" are different ` +
+      `claims, and an exit code that cannot tell them apart is the one this proof exists for.`,
+  );
+} finally {
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+}
+
+process.stdout.write(
+  failures.length > 0
+    ? `\n${String(failures.length)} checkLocal case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
+    : roster.format('checkLocal case'),
+);
+// `process.exitCode`, NOT `process.exit()`. Measured: with `process.exit()` this
+// file printed all eight case lines TWICE and the summary once — Node tears the
+// process down with writes still in flight and the pending stdout buffer is
+// re-emitted. Every case still ran exactly once, which is what makes it nasty:
+// the roster counted eight while the output claimed sixteen, so the duplication
+// is invisible to every assertion in the file and shows up only to a reader.
+//
+// This file spawns more child processes than its siblings, which is why it met
+// the condition first rather than why it is special.
+process.exitCode = failures.length === 0 ? 0 : 1;

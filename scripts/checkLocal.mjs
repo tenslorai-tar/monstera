@@ -36,6 +36,21 @@
  * **The mechanism for both is the board.** This is a way to spend a minute
  * before pushing, not a way to stop reading the board afterwards.
  *
+ * ## A third limit, and it is about the EVIDENCE for this tool (finding QQQ-1)
+ *
+ * The corrected harness was first verified against the ten `check:*` scripts —
+ * fast, spawning almost nothing. The defect it was correcting (a shell-killed
+ * timeout orphaning a script's children) **cannot occur in that half**, because
+ * nothing there times out and almost nothing spawns. So the evidence came from
+ * the region where the bug was structurally impossible, which is audit item 2
+ * exactly, and the third time in one stretch that the easy shape was the one
+ * measured.
+ *
+ * The `proof:*` half is where the defect lived and is the slow one. It is
+ * swept separately and the result recorded in `docs/JOURNAL.md` rather than
+ * assumed; a run of this tool over `--only proof:` is not something to skip on
+ * the grounds that the `check:` half was green.
+ *
  * ## Three states, because two would lie
  *
  * `ok`, `FAILED`, and `TIMED OUT`. A script this harness cut short has not
@@ -78,10 +93,22 @@ const TIMEOUT_MS =
 const onlyIndex = argv.indexOf('--only');
 const ONLY = onlyIndex === -1 ? null : (argv[onlyIndex + 1] ?? null);
 
+// `--root` and `--floor` exist so this tool can be pointed at a fixture
+// repository, which is the only way its own failure paths can be exercised
+// (finding QQQ-2). The convention is the one stackOwnership.mjs and
+// nodeModulesPlacement.mjs already use — a scan that reads a tree takes the tree
+// as an argument. `--floor` is NOT a way to disable the positive control: a
+// fixture with three scripts still has to declare a floor, and the proof carries
+// a case requiring the floor to refuse a set below it.
+const rootIndex = argv.indexOf('--root');
+const ROOT_DIR = rootIndex === -1 ? ROOT : resolve(argv[rootIndex + 1] ?? ROOT);
+const floorIndex = argv.indexOf('--floor');
+const FLOOR_REQUIRED = floorIndex === -1 ? FLOOR : Number(argv[floorIndex + 1] ?? String(FLOOR));
+
 /** @type {Record<string, string>} */
 let scripts;
 try {
-  const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(ROOT_DIR, 'package.json'), 'utf8'));
   scripts = manifest.scripts ?? {};
 } catch (cause) {
   process.stderr.write(`Could not read package.json: ${String(cause)}\n`);
@@ -92,11 +119,12 @@ const derived = Object.keys(scripts)
   .filter((name) => name.startsWith('check:') || name.startsWith('proof:'))
   .sort();
 
-if (derived.length < FLOOR) {
+if (derived.length < FLOOR_REQUIRED) {
   process.stderr.write(
     `Derived only ${String(derived.length)} check/proof scripts from package.json, under a ` +
-      `floor of ${String(FLOOR)}.\nThat is a broken derivation, not a quiet repository — a ` +
-      `renamed "scripts" key and a filter that stopped matching both report zero failures.\n`,
+      `floor of ${String(FLOOR_REQUIRED)}.\nThat is a broken derivation, not a quiet ` +
+      `repository — a renamed "scripts" key and a filter that stopped matching both report ` +
+      `zero failures.\n`,
   );
   process.exit(1);
 }
@@ -141,7 +169,7 @@ for (const name of selected) {
   }
   const started = process.hrtime.bigint();
   const run = spawnSync(process.execPath, parts.slice(1), {
-    cwd: ROOT,
+    cwd: ROOT_DIR,
     encoding: 'utf8',
     timeout: TIMEOUT_MS,
   });
@@ -182,7 +210,13 @@ for (const name of selected) {
         .split('\n')
         .find((line) => /\b(FAIL|Error|error)\b/u.test(line))
         ?.trim() ?? '(no diagnostic line found)';
-    process.stdout.write(`  FAILED  ${name} (${took})\n      ${firstProblem.slice(0, 200)}\n`);
+    // NOT TRUNCATED. This tool exists to surface failures, and cutting the
+    // failure text at 200 characters in the one place it is printed is the
+    // reflex this session already lost time to twice — a diagnostic clipped
+    // before its reason is a diagnostic that sends someone to re-run the script
+    // by hand. `firstProblem` is already ONE selected line, so there is no
+    // volume argument for the cut either.
+    process.stdout.write(`  FAILED  ${name} (${took})\n      ${firstProblem}\n`);
     continue;
   }
   passedCount += 1;
