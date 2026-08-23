@@ -107,6 +107,16 @@ patching around. Add to it; do not re-pay for it.
   that cannot name a filesystem path needs no path allowlist.
 - **B6 Comment culture.** Comment only where the *why* is non-obvious, and state
   the **mechanism**, never the history of who fixed what.
+
+  **A FIGURE IN A COMMENT CARRIES THE NUMBER, THE DATE, AND WHERE IT WAS READ.**
+  Without all three it is a guess wearing a measurement's clothes, and nothing
+  downstream can tell the two apart — which is the whole defect, not the
+  inaccuracy. Measured: `ci.yml` said MuPDF's libraries "take ~10 minutes to
+  build" from the day the cache step was written. Six days later XXX-1's decision
+  turned on that figure and it was one step from rejecting a job that turned out
+  to be affordable. Read from the Actions API it is **336s** — and the two cold
+  builds the decision then paid came in at 340s and 294s. The corrected comment
+  names the run it was read from, which is the shape to copy.
 - **B7 TypeScript strict everywhere; `any` is an error, not a warning.** React
   function components only. `eslint-plugin-react-hooks`' full recommended set is
   registered against `packages/ui` and every rule in it is an **error**,

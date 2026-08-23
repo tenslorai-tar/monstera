@@ -12,16 +12,19 @@
  * Usage: node scripts/proofs/electronBinaryCallers.proof.mjs
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { report, scanElectronBinaryCallers, SUBJECT_FILES } from '../lib/electronBinaryCallers.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
+const roster = createRoster(failures, { cases: 11 });
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -192,6 +195,36 @@ try {
       SUBJECT_FILES.includes('scripts/proofs/electronBinaryCallers.proof.mjs'),
     `a third entry is a caller being excused. Got ${JSON.stringify(SUBJECT_FILES)}`,
   );
+
+  // -------------------------------------------------------------------------
+  // 6a. THE CLI PATH — the one CI actually enters (finding AAAA-5).
+  //
+  // Every case above calls `report()` directly, so the main guard is exercised
+  // by none of them. That is how this scan shipped with a guard that never fired
+  // and a first run that scanned nothing while exiting 0.
+  //
+  // THE INPUT IS BUILT SO THAT AN ABSENT GUARD WOULD LET IT THROUGH. A case that
+  // runs the CLI against this repository and expects exit 0 is satisfied by a
+  // scan that scanned nothing — the defect, living inside its own fix. So the
+  // fixture carries a known violation and the case requires exit 1 AND the
+  // violation text: refusal and impossibility produce the same observation
+  // otherwise, and a scan that never ran cannot produce the text.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture('cli', WRONG);
+    const run = spawnSync(
+      process.execPath,
+      [join(ROOT, 'scripts', 'lib', 'electronBinaryCallers.mjs'), '--root', root],
+      { encoding: 'utf8' },
+    );
+    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
+    check(
+      'run as a PROCESS against a violating fixture, it exits 1 and prints the violation',
+      run.status === 1 && /process\.execPath/u.test(output) && /FAILED/u.test(output),
+      `exit=${String(run.status)}. A main guard that never fires exits 0 with no output, which ` +
+        `annotate.mjs does not publish and every check here reads as a pass. Output:\n${output}`,
+    );
+  }
 
   // -------------------------------------------------------------------------
   // 7. AND IT IS GREEN ON THE REAL REPOSITORY, non-vacuously.

@@ -47,9 +47,9 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** A proof known to be invoked by a workflow, used as the positive control. */
 const CONTROL_PATH = 'scripts/proofs/composition.proof.mjs';
@@ -125,12 +125,14 @@ export function report(result) {
   );
 }
 
-// `pathToFileURL`, not a hand-built `file://` string — the idiom
-// `emittedTemplates.mjs` already uses, and B3a's reason for taking it. The
-// hand-built version was written here first and produced `file://C:/…` where
-// Node produces `file:///C:/…`, so the guard never fired: no output, exit 0,
-// which is this check's own reassuring answer arriving from its main guard.
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// THE SECOND OF THREE. The hand-built version was written here first and
+// produced `file://C:/…` where Node produces `file:///C:/…`, so the guard never
+// fired: no output, exit 0, this check's own reassuring answer arriving from its
+// main guard. `emittedTemplates.mjs` had already paid for it and its comment was
+// on the page; copying the CORRECT expression is still re-deriving the rule, and
+// a third entry point got it wrong afterwards. `isMain` is the named thing
+// (AAAA-5).
+if (isMain(import.meta.url)) {
   const result = scan();
   process.stdout.write(report(result));
   process.exitCode = result.blind || result.uninvoked.length > 0 ? 1 : 0;

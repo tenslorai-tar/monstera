@@ -111,9 +111,9 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 
 import { filesInCommit, readStagedBlob, repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** Written numerically, so this file cannot contain the thing it bans. */
 const TICK = String.fromCharCode(96);
@@ -407,11 +407,17 @@ export function scan({ source = 'tree' } = {}) {
   return 0;
 }
 
-// pathToFileURL, not a hand-built `file://` prefix. The hand-built one is wrong
-// on Windows — an absolute path there starts with a drive letter, not a slash,
-// so the comparison never matched and this module ran NOTHING and exited 0. A
-// scan that does not run and a scan that finds nothing print the same thing,
-// which is the class this file exists to close, arriving in its own entry point.
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// THE FIRST OF THREE. The hand-built `file://` prefix is wrong on Windows — an
+// absolute path there starts with a drive letter, not a slash — so the
+// comparison never matched, this module ran NOTHING and exited 0. A scan that
+// does not run and a scan that finds nothing print the same thing, which is the
+// class this file exists to close, arriving in its own entry point.
+//
+// It was fixed here in place, and then written wrong again in
+// `proofCoverage.mjs` and again in `electronBinaryCallers.mjs`, each time by an
+// author who had this comment available. The rule lived in call sites, so every
+// new entry point re-derived it — B3a, and `isMain` is the named thing that ends
+// it (AAAA-5).
+if (isMain(import.meta.url)) {
   process.exit(scan());
 }

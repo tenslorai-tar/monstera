@@ -48,9 +48,9 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from './gitScope.mjs';
+import { isMain } from './isMain.mjs';
 
 /** The one resolver. Anything else assigned to the property is a violation. */
 const SANCTIONED = 'electronBinaryPath()';
@@ -216,12 +216,13 @@ export function report(options = {}) {
   return { ok: bad.length === 0 && silent.length === 0 && located && locatedCreator, output };
 }
 
-// `pathToFileURL`, not a hand-built `file://` string: on Windows the latter
-// yields `file://C:/...` against an `import.meta.url` of `file:///C:/...`, so
-// the guard never fires and the scan exits 0 having looked at nothing. Written
-// that way here first, and caught only because the run printed no output at all
-// — a main guard that never fires is a check that reports the reassuring answer.
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// THE THIRD OF THREE, and the one that made it a mechanism. Written as a
+// hand-built `file://` string here, which on Windows yields `file://C:/...`
+// against an `import.meta.url` of `file:///C:/...`, so the guard never fired and
+// this scan exited 0 having looked at nothing. Caught only because the run
+// printed no output at all — luck, and unavailable to a scan whose normal output
+// is one quiet line. `isMain` is the named thing (AAAA-5).
+if (isMain(import.meta.url)) {
   const rootIndex = process.argv.indexOf('--root');
   const result = report(rootIndex === -1 ? {} : { root: resolve(process.argv[rootIndex + 1] ?? '.') });
   process.stdout.write(result.output);

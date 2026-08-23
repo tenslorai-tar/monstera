@@ -311,6 +311,16 @@ jobs:
       # typecheck` on the matrix job; this half exists because the plain-Node
       # callers reach the surface through a computed `import()`, which types as
       # `any`, so no brand can constrain them.
+      # Every entry point CI enters guards main through the one resolver, or not
+      # at all. The roster is DERIVED from the npm scripts rather than kept by
+      # hand, because a hand-kept list of files-needing-a-guard would be the
+      # second wiring place and would be one short on the day it mattered.
+      - name: Prove the main-guard scan sees, refuses and tolerates
+        run: node scripts/ci/annotate.mjs scripts/proofs/mainGuards.proof.mjs
+
+      - name: Every entry point guards main through the one resolver
+        run: node scripts/ci/annotate.mjs scripts/lib/mainGuards.mjs
+
       # The GitHub API budget. Needs no network — the property under test is the
       # decision, and a case that hit the real API to prove a quota mechanism
       # would spend the quota it is about.

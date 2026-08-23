@@ -163,6 +163,14 @@ process.stdout.write(
     `      OTHER CARRIES TWO, THE ASYMMETRY IS THE FINDING: nobody audits for a\n` +
     `      column that does not exist, and an absent one reports nothing in\n` +
     `      exactly the voice of an empty one.\n` +
+    `      THE FIGURES ARE NET, AND THIS IS A TWO-POINT COMPARISON RATHER THAN A\n` +
+    `      HISTORY (AAAA-4). A file CORRECTED mid-range shows only the difference\n` +
+    `      between the endpoints, so the correction itself is invisible — and the\n` +
+    `      file where someone corrected themselves is exactly the file worth\n` +
+    `      reading. Measured: win32HostSurface.ts reported +79/-2 while hiding four\n` +
+    `      deletions that were a comment being rewritten one commit after it was\n` +
+    `      written. Use git log -p over the range on any file here you are relying\n` +
+    `      on these numbers to characterise.\n` +
     `      These columns list ordinary modules beside instruments; sort by churn\n` +
     `      and read the ones that could answer a question wrongly.\n` +
     `      Five axes of this classifier have now been DEFECTS and been fixed:\n` +
