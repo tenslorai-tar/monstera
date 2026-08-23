@@ -644,6 +644,173 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-23 — Stage audit: `bc8d94b..e84538d` — three findings a machine could not have produced, and a guard that runs in one place
+
+**Audited through `e84538d`.** 9 commits, 21 files, **2 proofs added, 5
+modified**, 2 new source files and **4 changed** — from `npm run audit:scope`.
+
+The range is UUU-3 and UUU-4, the VVV findings, WWW-1, RR-3's migration and its
+proof conversion, and three CI round-trips fixing what that proof found.
+Findings **XXX-1** to **XXX-3**.
+
+### The range's headline
+
+**Three separate defects were found by running shipped containment code
+somewhere other than this machine, and no amount of local care would have
+reached any of them.**
+
+1. An undeclared dependency on a **generated** fixture the performance gate
+   happens to produce. Always present here; absent on a fresh checkout.
+2. The contained host **could not start**: node opens the NUL device through the
+   CRT when the inherited descriptors are absent, and an AppContainer token
+   cannot open it on that Windows build. Starts fine here, every time.
+3. The container's **refusal of process creation is build-dependent** — `EPERM`
+   on `windows-latest`, allowed on Windows 11 — which makes WW-1's attribution
+   true of one environment rather than of AppContainers.
+
+Each was reported precisely, by an instrument whose three-state discipline kept
+*could not look* out of the passing column: the eight rows that needed a
+contained reading said UNREADABLE and the run exited non-zero, rather than
+printing a containment verdict for a host that never started.
+
+The second is the sharpest, because the FIRST attempt at it was wrong. Supplying
+`hStdInput` — the parent opens NUL and hands it in, this file's own rule for the
+diagnostic handle — produced an identical fatal. **The Win32 standard handles
+are not the CRT's file descriptors**: `CreateProcessW` sets the former and does
+not populate `lpReserved2`, so `_get_osfhandle(0)` is invalid however the Win32
+handles are set. Both halves ship, because supplying the handles is what makes
+`--no-stdio-init` safe rather than silent.
+
+### 1. Root cause or workaround
+
+**`--no-stdio-init` is the one entry that has to answer this**, and Rule 0's
+test is whether the cause is proven to lie outside this repository. It is, and
+it is named in the file: a Windows AppContainer token cannot open the NUL device
+on that build, and node opens it unconditionally when the CRT descriptors are
+absent. The alternative — fabricating an `lpReserved2` descriptor block — is a
+second opinion about a private, undocumented ABI.
+
+The flag joins two others in `INTERPRETER_FLAGS`, each carrying its own
+measurement, which is the shape that stops a flag list becoming folklore.
+
+### XXX-1 — two changes to shipped security code, guarded in exactly one place
+
+`win32HostSurface.ts` gained an inherited stdin handle and an interpreter flag.
+**Nothing local fails if either is reverted.** The containment proof is the only
+guard, it runs on one job and one platform, and it took three CI round-trips to
+establish what it now protects.
+
+That is not *no proof* — it is proof in one place, which the register's own
+vocabulary would call a verdict with a single witness. It is recorded rather
+than papered over with a source-text scan asserting the flag is present: such a
+scan would go green on a flag that is present and ignored, which is the
+`available: true` shape this project keeps finding.
+
+**The trigger is the first time either is changed by someone who cannot run the
+shim job**, and the mitigation available today is that the step is not
+`continue-on-error` and its failure is a red board on `main`.
+
+### XXX-2 — a coverage reduction, taken deliberately
+
+The LowBox-alone process-creation row asserted `same` and now asserts `either`,
+because neither direction is true everywhere. It does not become unasserted: it
+asserts the half that is invariant — the uncontained cell must still be able to
+spawn — without which two dead cells would satisfy it.
+
+Recorded under audit item 2a in the weakening direction, with ADR-0023 taking a
+dated correction and both FEATURES rows edited true, since those are live
+specifications rather than records.
+
+### XXX-3 — the tree witness has a caller that must NOT have it
+
+`treeMovedSince` is now used by `advisoryRegister.proof.mjs` and by
+`checkLocal.mjs`. The obvious next step is to give it to every proof that spawns
+subprocesses, and **`documentScope.proof.mjs` is the one that must not have it**:
+that proof deliberately removes a tracked file to prove `check:docs` reads the
+index, so a witness would report THE TREE MOVED on every correct run.
+
+Written down because the rule *any non-hermetic proof should witness its tree*
+is the kind that gets applied uniformly by whoever reads it next, and the
+exception is a proof whose whole subject is moving the tree.
+
+### 2. Verified against the easy shape only?
+
+**This range is the answer to that question in its strongest form.** Every
+finding above came from the hard shape — a fresh runner — and the local half was
+not merely easier, it was incapable of producing any of them. The instrument
+passed here at every point.
+
+### 3. Would CI have caught it, and is there a defect this machine cannot see?
+
+The first question is now backwards for this subject: **CI is the only thing
+that caught anything.** The inverse question is the live one, and XXX-1 is its
+answer — two shipped changes whose only guard is a job I cannot run.
+
+### 4. Are the proofs non-vacuous?
+
+Mutation-tested in range: the two-bucket sort (SSS-1's case), the batch reader's
+framing by one byte, the tree digest's mtime, the runner pattern, the quoted-`>`
+mask, and the containment proof's expected verdict declared backwards. Each
+reddens a specific named case.
+
+**The register proof's throw-catch survived a structural change**, and it was
+worth checking rather than assuming: the reporting block moved inside an `else`
+when the tree witness arrived, and that block is the one whose comment records a
+roster mismatch once printing its diagnosis and exiting SUCCESSFULLY. It is
+intact.
+
+**A branch no fixture reaches, kept deliberately:** `witnessTree` catches a
+`statSync` failure for a path deleted between the status and the stat. Nothing
+constructs that race and the catch is documentation of a real one — JJJ-1's
+first kind, where deleting it would produce a false positive the day someone
+hits it.
+
+### 5. Executed, or asserted?
+
+**Executed:** both provisioning directions of `--require-containment` with the
+build moved aside · every mutation above · the containment proof from a cold
+fixture cache · that `tsc --build --force` emits the surface where an
+incremental build is a no-op · that the host's stderr breadcrumbs survive
+`--no-stdio-init`, which is the channel that made all of this diagnosable · the
+350 unit tests · three CI round-trips.
+
+**Asserted:** that `--no-stdio-init` is what fixes the runner. It is consistent
+with every reading and the runner has not yet returned a green on it at the time
+this was written. The distinction matters because the previous hypothesis was
+equally consistent and wrong.
+
+### 6. Architecture before the feature?
+
+ADR-0023 took two dated corrections in range — §6's discharge and the
+build-dependence of the container's refusal — both recording measurements
+against decisions already taken, rather than changing a decision under something
+built on it.
+
+### 7. Do the documents still match the code?
+
+Both FEATURES rows stated *invariant 25(b) is delivered by the job, not the
+container* as a flat fact. That is now known to be true of the job everywhere and
+false about the container on at least one build, and both bodies are edited.
+
+**NNN-4's cross-document sweep fired** on the build-dependence claim: it is
+stated in ADR-0023 Decision 8, in FEATURES row 284 and in row 285, and all three
+were found and corrected together rather than one at a time.
+
+### The pattern the range named
+
+**A guard that has never run anywhere but the machine that wrote it has not been
+run.** The containment mechanism had been measured here for days and was correct
+here at every point; its first three executions elsewhere produced three
+findings, one of which — a host that cannot start — would have been a shipped
+defect discovered by a user.
+
+That is not an argument for more local care. It is an argument for **getting the
+thing to run somewhere else early**, which is what the research→proof transition
+bought and what a research instrument that gates nothing would never have
+forced.
+
+---
+
 ## 2026-08-23 — Stage audit: `167de69..bc8d94b` — a proof registered into no job, and two guards that were right about the wrong thing
 
 **Audited through `bc8d94b`.** 6 commits, 23 files, **1 proof added, 5
