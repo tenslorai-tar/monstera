@@ -456,6 +456,61 @@ reconstructs it.** Its evidence came from `36caf21`; ADR-0022 itself is
 measurement taken **two commits before** the blinding, and the ADR was written
 one commit before it.
 
+## Correction, 2026-08-23 — the `baseline` cell is gone, and §1's evidence block quotes a row that no longer exists (finding RR-3)
+
+§1's fenced reading above ends with a `baseline (no job from us)` row, and the
+paragraph under it explains that the forked cell separates the ordering from the
+container. **That cell has been removed from `scripts/research/lowboxSpike.mjs`.**
+The block stays as written, because it is what was measured on the day; this
+records what changed and re-states the reading from the cells that remain.
+
+**Why it went.** §6 asks the proof to carry a control on the creation route. The
+control it inherited was a differential against a process forked by
+`utilityProcess.fork`, and **ADR-0022 decided the hosts are processes this
+application creates** — so the reference is a process type nobody builds, and
+agreement with it establishes nothing about ours. A differential against a
+retired reference is a proxy whose referent is gone.
+
+It was also expensive in a way that had already cost two runs. A forked cell
+needs an Electron **app**, and that app started a GPU process which crash-looped
+and killed whole runs before any verdict printed (finding LLL-1). The parent is
+plain Node now, launched as the Electron binary under `ELECTRON_RUN_AS_NODE` by
+path — the same way every cell runs.
+
+**What replaced it, and it is not a comparison.** The uncontained `route` cell
+must be observed **loading koffi, loading the shim, and opening the document it
+was handed** on every run. If it cannot, the instrument prints `HOST NOT WORKING`
+and offers no property verdict at all: a refusal measured against a host that
+does not work is a broken run, not containment. `unreadable` remains terminal.
+
+**§1's reading is unaffected and is now single-variable.** It never depended on
+the forked row — the row was labelled *not the attribution* every time it
+printed, because it changed the creation route as well. The pair that carries it
+is `route` against `route-no-job`, same creation route on both sides, differing
+only in the job. Measured again 2026-08-23, with the cell removed:
+
+```
+route        (our route, job)      refused   spawn UNKNOWN
+route-no-job (our route, NO job)   allowed   spawned before doing anything else
+
+route         {"assigned":true,"inJobBeforeResume":true,"previousSuspendCount":1}
+route-no-job  {"assigned":"NO JOB (variant)","previousSuspendCount":1}
+```
+
+**Every property verdict in the table is byte-identical to the run taken
+immediately before the removal**, which is the evidence that the fifth cell was
+carrying nothing the same-route pairs did not already carry.
+
+**The loss, stated rather than left implicit** (audit item 2a). A differential
+can catch an **unanticipated** difference between two creation routes; a
+working-host check catches only the three things it names. If our route broke
+something that is neither koffi, nor the shim, nor opening a document — an
+inherited handle, a console mode, an environment variable a future probe comes to
+depend on — the forked cell would have shown it as a disagreement and this will
+not. That is a genuine reduction in what the instrument can see, taken
+deliberately, and the thing it cost was a reference this project no longer
+builds.
+
 ## Decision 8 — a failed job assignment kills the process, never a host running with two of three (EEE-2, decided 2026-08-22)
 
 **The measurement that forces this.** WW-1's per-property variant matrix

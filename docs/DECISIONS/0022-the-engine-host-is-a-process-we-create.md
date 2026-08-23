@@ -300,3 +300,24 @@ extend.
 **body** corrected instead. `BUILD-PROMPT.md` is untouched — it is the immutable
 founding record, and the architecture document superseding it is the document
 table working rather than a problem.
+
+## Correction, 2026-08-23 — the `baseline` cell this ADR describes no longer exists (finding RR-3)
+
+*What the spike measured* above names `baseline`, forked by Electron, as the
+first of three cells and as the route control. That is what was measured when
+this decision was taken and it stays as written. **The cell has since been
+removed from `scripts/research/lowboxSpike.mjs`**, and a reader following the
+reference will find four cells, none of them forked.
+
+**This decision is what removed it.** Deciding that the hosts are processes we
+create made the fork route historical, and a control that establishes *our route
+resembles the fork route* is then a differential against a reference nobody
+builds. The control is now that the uncontained cell is observed doing host
+things — koffi, the shim, and the document it was handed — with no property
+verdict printed when it cannot. `docs/DECISIONS/0023-…` carries the full
+correction, the re-measurement, and the loss that comes with it.
+
+Recorded here rather than only there because this is the ADR whose text names
+the cell, and a cross-reference that still resolves while the target says
+something else is the failure finding UU-1 named: worse than a broken link,
+because it announces nothing.

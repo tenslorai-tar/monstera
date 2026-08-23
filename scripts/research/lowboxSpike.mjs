@@ -20,32 +20,46 @@
  * had to be granted for it to, and which of (c) and (d) come back with a
  * mechanism.
  *
- * ## Five cells, because a comparison that crosses two variables says nothing
- *
- * A LowBox process cannot be created by `utilityProcess.fork` — that is the whole
- * premise, and it means the contained cell differs from today's host in *two*
- * ways at once: creation route and containment. A refusal in a two-variable
- * comparison is unattributable, which is the shape that has cost this project
- * three findings in as many days.
+ * ## Four cells, because a comparison that crosses two variables says nothing
  *
  * | cell | created by | LowBox | job |
  * |---|---|---|---|
- * | `baseline` | `utilityProcess.fork` | — | — |
  * | `route` | our own `CreateProcessW` | no | yes |
  * | `route-no-job` | our own `CreateProcessW` | no | **no** |
  * | `lowbox` | our own `CreateProcessW` | yes | yes |
  * | `lowbox-no-job` | our own `CreateProcessW` | yes | **no** |
  *
- * `baseline` → `route` changes the creation route with containment off, so it is
- * the control on the route. Everything below it is two independent switches —
- * containment and the job — so **every property has a pair that flips exactly
- * one thing**, which is what RR-2 asks for and what WW-1 moved here.
+ * Two independent switches — containment and the job — so **every property has a
+ * pair that flips exactly one thing**, which is what RR-2 asks for and what WW-1
+ * moved here. Every cell is created the same way, so no row's verdict crosses
+ * the creation route.
  *
- * **The route cell is the one that feels redundant while it is being written,
- * and it is the load-bearing one.** Without it, *the host could not load koffi*
- * has two explanations and no way to choose between them. So this file refuses to
- * print property verdicts at all when the route control fails: a broken spawn
- * route is reported as **ROUTE BROKEN**, terminally, rather than as containment.
+ * ## The control is that the uncontained host WORKS, not that it resembles a fork
+ *
+ * There was a fifth cell, `baseline`, forked by `utilityProcess.fork`, and the
+ * control compared it against `route` to establish that our own creation route
+ * was sound. **Removed by finding RR-3, and the reason is that its referent is
+ * gone**: ADR-0022 decided the hosts are processes this application creates, so
+ * agreeing with the fork route is agreement with a process type nobody builds.
+ * A differential against a retired reference is a proxy with nothing behind it.
+ *
+ * It also cost more than it looked. A forked cell needs an Electron **app**, and
+ * that app started a GPU process which crash-looped twice and killed whole runs
+ * (LLL-1). With the cell gone, this parent is plain Node.
+ *
+ * What replaced it is narrower and is not a comparison: the uncontained cell
+ * must be observed **loading koffi, loading the shim and opening the document it
+ * was handed** on every run. That is a positive control with a refusal — a
+ * refusal measured against a host that does not work is not containment, it is a
+ * broken run — so the file prints **HOST NOT WORKING**, terminally, and offers
+ * no property verdict rather than one it cannot attribute.
+ *
+ * **The loss is real and is stated where the control lives** (audit item 2a): a
+ * differential can catch an unanticipated difference, and a working-host check
+ * catches only the three things it names.
+ *
+ * The attribution the baseline seemed to carry was already carried by the pairs
+ * above, each flipping one mechanism with the route held fixed.
  *
  * **The job axis paid for itself before it reached a property row.** The
  * ordering evidence for ADR-0023 §1 used to be read `route` against `baseline`,
@@ -107,9 +121,12 @@
  *
  *   1. **The blinding is silent and asymmetric.** One probe added for one
  *      property took out every *other* property in that cell, and the reading it
- *      was added FOR still worked — the ordering section reads `baseline`
- *      against `route`, both uncontained. A defect that spares the thing it was
- *      introduced with is a defect nobody is looking at.
+ *      was added FOR still worked — the ordering section read the forked cell
+ *      against `route` at the time, both uncontained, so it never touched a
+ *      container. (That pair is gone with the cell; the reading is now `route`
+ *      against `route-no-job`, and both of those are uncontained too, so the
+ *      asymmetry the finding describes is unchanged.) A defect that spares the
+ *      thing it was introduced with is a defect nobody is looking at.
  *   2. **The control came before the conclusion.** The pre-consolidation file,
  *      stashed and run unmodified, hung identically — so WW-1's consolidation
  *      was excluded as the cause by measurement rather than by reading a diff.
@@ -117,13 +134,19 @@
  * The breadcrumbs below are what located it and are permanent. Before them the
  * instrument could say *unreadable* and nothing could say *unreadable where*.
  *
- * ## What it measured, 2026-08-22, on this machine
+ * ## What it measured, 2026-08-23, on this machine
  *
  * Dated because it is a reading and not a property of the file. Re-run it rather
  * than trusting this block.
  *
- * The route control passed: `baseline` and `route` agree on koffi, the shim and
- * the document, so the spawn route is sound and the lowbox column is readable.
+ * The working-host control passed: in the `route` cell koffi loaded (3.1.5), the
+ * shim created a context, and the handed document opened at 1 page. So the
+ * uncontained side is a working host and the lowbox column is readable.
+ *
+ * **Taken with the baseline cell removed, and every property verdict is
+ * byte-identical to the run immediately before the removal** — which is the
+ * measurement that the fifth cell was carrying nothing the same-route pairs did
+ * not already carry.
  *
  * Every row below is against the cell that removes ONLY that row's mechanism,
  * and the run exits 0 with no unreadable row.
@@ -444,9 +467,10 @@ const finish = () => {
 // prove nothing — by then the host has run, and "the job arrived at some point"
 // and "the job was there first" would share one observation.
 //
-// The baseline cell is forked by Electron and gets no job from us, so it is
-// expected to SPAWN. That difference is the reading: it separates the ordering
-// from the container, which refuses process creation for its own reasons.
+// The route-no-job cell runs the same creation route and gets no job from us,
+// so it is expected to SPAWN. That difference is the reading: with the route
+// held fixed across the pair, it separates the ordering from the container,
+// which refuses process creation for its own reasons.
 // ASYNCHRONOUS, AND BOUNDED BY A TIMER THIS FILE OWNS (finding BBB-1).
 //
 // It used to be execFileSync with timeout: 10000, and inside an AppContainer
@@ -664,7 +688,6 @@ if (config === null || !config.port) {
  * as the route control.
  */
 const MAIN = String.raw`
-const { app, utilityProcess } = require('electron');
 const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
@@ -792,9 +815,10 @@ function environmentBlock() {
  *
  * TWO INDEPENDENT SWITCHES, not one, and that is WW-1's matrix arriving here.
  * Every cell used to carry the job, so a job-attributable property had no
- * one-variable pair anywhere in this file and had to be read against the FORKED
- * baseline — which changes the creation route at the same time. Removing the
- * job with the route held fixed is what makes that reading single-variable.
+ * one-variable pair anywhere in this file and had to be read against a FORKED
+ * cell — which changes the creation route at the same time. Removing the job
+ * with the route held fixed is what makes that reading single-variable, and it
+ * is why the forked cell could be dropped without losing the reading (RR-3).
  */
 function spawnDirect(reportPath, cell, contained, withJob) {
   // --preserve-symlinks-main AND --preserve-symlinks, and the reason is measured
@@ -975,21 +999,6 @@ function readLog(logPath) {
   }
 }
 
-function spawnForked(reportPath, cell, done) {
-  const child = utilityProcess.fork(HOST_JS, [reportPath, cell], {
-    serviceName: 'monstera-lowbox-baseline', stdio: 'pipe',
-  });
-  if (child.stderr) child.stderr.on('data', (c) => process.stdout.write('BASELINE_STDERR ' + String(c)));
-  let settled = false;
-  const settle = (value) => {
-    if (settled) return;
-    settled = true;
-    done(value);
-  };
-  child.on('exit', (code) => settle({ pid: child.pid, exitCode: code, waited: 0 }));
-  setTimeout(() => { try { child.kill(); } catch (e) {} settle({ error: 'no exit within the window' }); }, 60000);
-}
-
 function readReport(reportPath) {
   try {
     return JSON.parse(fs.readFileSync(reportPath, 'utf8'));
@@ -1000,101 +1009,70 @@ function readReport(reportPath) {
 
 const runs = [];
 
-// A KNOWN HARNESS FLAKE, open, and recorded here because the obvious fix does
-// not work and the next person will otherwise try it.
+// THIS PARENT IS PLAIN NODE, and that is finding LLL-1's remedy rather than a
+// simplification (RR-3).
 //
-// This harness opens no window, yet Chromium starts a GPU process anyway, and
-// on 2026-08-22 it crash-looped with exit_code=-2147483645 until the app hit
-// its crash limit and printed "GPU process isn't usable. Goodbye." one second
-// in — killing a run before any cell finished.
+// It was an Electron app. Chromium started a GPU process even though the
+// harness opens no window, and twice it crash-looped with
+// exit_code=-2147483645 until the app hit its crash limit and printed "GPU
+// process isn't usable. Goodbye." a second in — killing the run before any cell
+// finished. A measured negative result so nobody repeats it:
+// disableHardwareAcceleration plus a disable-gpu switch, applied before ready,
+// did NOT stop it, and were removed rather than left as a call that does not do
+// what its comment claims.
 //
-// MEASURED NEGATIVE RESULT, so nobody repeats it: disableHardwareAcceleration()
-// plus commandLine.appendSwitch of disable-gpu, applied before ready, did NOT
-// stop the GPU process spawning or crashing — five crash lines in the very run
-// that verified the fix had not worked. They were removed rather than left in
-// place, because a call that does not do what its comment claims is the
-// available-true shape with a Chromium switch on it.
+// The app existed for exactly ONE cell — the forked baseline — and that cell is
+// gone. The four cells below all go through our own process-creation route, and
+// a parent needing only koffi, Win32 and node:net is plain Node with no GPU
+// process to crash. So the answer was a removal, not a Chromium switch: prove
+// the limit has to exist before designing around it, applied to a flake instead
+// of a bound.
 //
-// WHAT PROTECTS THE READING is not a fix, it is the instrument's behaviour under
-// the failure: no report line, no verdict printed, non-zero exit. A run that
-// dies this way says so. The reason to keep hunting it anyway is that a red
-// meaning something other than what it says is a red people learn to re-run —
-// the same class as the OSV fetch inside the advisory-register proof.
+// This does NOT discharge finding TT-1. Every cell still runs the Electron
+// BINARY in Node mode, so the shim job's provisioning step keeps its consumer,
+// which is what RR-3 says that step exists for.
 //
-// RECURRED 2026-08-23, AND THE ANSWER IS NOT TO HUNT IT (finding LLL-1). The
-// whole run died again before the property table printed, on the developing
-// machine, with the same crash loop.
-//
-// The blocker is the ELECTRON APP, and the app exists for exactly one cell.
-// The electron import here supplies app and utilityProcess, and the fork call
-// appears once — the baseline cell. The four cells the PROPERTIES table reads
-// all go through our own process-creation route, and a parent that only needs
-// koffi, Win32 and node:net is plain Node with no GPU process to crash.
-//
-// So the fix for RR-3's proof is a REMOVAL rather than a Chromium switch: the
-// proof asserts the four properties and their route control, none of which
-// touches the fork route, and it never starts an Electron app. ADR-0022 already
-// made the forked host historical — it decided the hosts are processes we
-// create — so the baseline is a research comparison this file may keep and a
-// proof has no reason to carry.
-//
-// That does not discharge finding TT-1: the cells still run the Electron BINARY
-// in Node mode, so the shim job's provisioning step still has a consumer, which
-// is the thing RR-3 says that step exists for.
-//
-// BACKTICK OCCURRENCE 7 happened writing this paragraph — four pairs, quoting
-// API names in prose, in a comment recording a finding about a GPU flake. Third
-// in a row while documenting something else entirely. The scan named all four
-// lines before anything was staged.
-//
-// Prove the limit has to exist before designing around it — the standing rule
-// on limits, applied to a flake instead of a bound.
-app.whenReady().then(() => {
-  // The two servers the host probes reach for, started before any cell so a
-  // refusal cannot be "nothing was listening yet".
-  const tcp = net.createServer((socket) => socket.end());
-  const pipeName = PIPE_NAME;
-  const pipe = net.createServer((socket) => socket.end());
+// BACKTICK OCCURRENCE 7 happened writing the paragraph this replaces — four
+// pairs, quoting API names in prose, in a comment recording a finding about the
+// GPU flake. Third in a row while documenting something else entirely. The scan
+// named all four lines before anything was staged.
 
-  tcp.listen(0, '127.0.0.1', () => {
-    pipe.listen(pipeName, () => {
-      const port = tcp.address().port;
-      fs.writeFileSync(path.join(SCRATCH, 'handed.json'), JSON.stringify({ port, pipe: pipeName }), 'utf8');
+// The two servers the host probes reach for, started before any cell so a
+// refusal cannot be "nothing was listening yet".
+const tcp = net.createServer((socket) => socket.end());
+const pipeName = PIPE_NAME;
+const pipe = net.createServer((socket) => socket.end());
 
-      const finishAll = () => {
-        process.stdout.write('MONSTERA_LOWBOX_REPORT ' + JSON.stringify({ runs }) + '\n');
-        app.exit(0);
-      };
+tcp.listen(0, '127.0.0.1', () => {
+  pipe.listen(pipeName, () => {
+    const port = tcp.address().port;
+    fs.writeFileSync(path.join(SCRATCH, 'handed.json'), JSON.stringify({ port, pipe: pipeName }), 'utf8');
 
-      // THE CELLS. Two axes now: containment and the job, each switchable on
-      // its own, so every property below has a pair that flips exactly one
-      // thing. The baseline is the route control and is not on either axis.
-      const DIRECT = [
-        { cell: 'lowbox', contained: true, job: true },
-        { cell: 'route', contained: false, job: true },
-        { cell: 'route-no-job', contained: false, job: false },
-        { cell: 'lowbox-no-job', contained: true, job: false },
-      ];
+    // THE CELLS. Two axes, containment and the job, each switchable on its own,
+    // so every property below has a pair that flips exactly one thing. There is
+    // no cell off this route: what used to sit here was a forked baseline, and
+    // ADR-0022 retired the route it referenced.
+    const DIRECT = [
+      { cell: 'lowbox', contained: true, job: true },
+      { cell: 'route', contained: false, job: true },
+      { cell: 'route-no-job', contained: false, job: false },
+      { cell: 'lowbox-no-job', contained: true, job: false },
+    ];
 
-      const baselineReport = path.join(SCRATCH, 'report-baseline.json');
-      spawnForked(baselineReport, 'baseline', (outcome) => {
-        runs.push({ cell: 'baseline', spawn: outcome, report: readReport(baselineReport) });
+    for (const spec of DIRECT) {
+      const reportPath = path.join(SCRATCH, 'report-' + spec.cell + '.json');
+      const outcome = spawnDirect(reportPath, spec.cell, spec.contained, spec.job);
+      runs.push({ cell: spec.cell, spawn: outcome, report: readReport(reportPath) });
+    }
 
-        for (const spec of DIRECT) {
-          const reportPath = path.join(SCRATCH, 'report-' + spec.cell + '.json');
-          const outcome = spawnDirect(reportPath, spec.cell, spec.contained, spec.job);
-          runs.push({ cell: spec.cell, spawn: outcome, report: readReport(reportPath) });
-        }
-
-        finishAll();
-      });
-    });
+    process.stdout.write('MONSTERA_LOWBOX_REPORT ' + JSON.stringify({ runs }) + '\n');
+    process.exit(0);
   });
 });
 
 setTimeout(() => {
   process.stdout.write('MONSTERA_LOWBOX_REPORT ' + JSON.stringify({ error: 'timed out', runs }) + '\n');
-  app.exit(1);
+  process.exit(1);
 }, 300000);
 `;
 
@@ -1270,14 +1248,22 @@ try {
       `${MAIN}`,
     'utf8',
   );
-  writeFileSync(
-    join(scratch, 'package.json'),
-    `${JSON.stringify({ name: 'monstera-lowbox-spike', version: '0.0.0', main: 'main.js' }, null, 2)}\n`,
-    'utf8',
-  );
-
-  process.stdout.write('\nrunning five cells\n\n');
-  const result = spawnSync(electronBinaryPath(), [scratch], { encoding: 'utf8', timeout: 360_000 });
+  // NODE MODE, BY PATH — not an Electron app directory (finding LLL-1).
+  //
+  // The parent used to be launched as an app, which is what started the GPU
+  // process that crash-looped twice. With the forked cell gone nothing here
+  // needs Chromium, so it runs the same way every CELL runs: the Electron
+  // binary under ELECTRON_RUN_AS_NODE with a script path. That also keeps the
+  // parent and its children on one runtime, which is why the cells use it.
+  //
+  // The app's `package.json` went with the app. A `main` field pointing at a
+  // script nothing launches as an app is the dead-configuration shape.
+  process.stdout.write('\nrunning four cells\n\n');
+  const result = spawnSync(electronBinaryPath(), [join(scratch, 'main.js')], {
+    encoding: 'utf8',
+    timeout: 360_000,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  });
   if (`${result.stderr}`.trim() !== '') process.stdout.write(`stderr:\n${result.stderr}\n`);
 
   const line = `${result.stdout}`.split('\n').find((entry) => entry.startsWith('MONSTERA_LOWBOX_REPORT '));
@@ -1376,27 +1362,62 @@ function summarise(runs) {
     return a.outcome !== b.outcome ? 'DIFFERS' : 'same';
   };
 
-  process.stdout.write('THE ROUTE CONTROL — read before anything else:\n\n');
-  let routeBroken = false;
+  // THE WORKING-HOST CONTROL, and it replaced a differential against a
+  // reference ADR-0022 retired (finding RR-3).
+  //
+  // What sat here compared the uncontained cell against a `baseline` forked by
+  // `utilityProcess.fork`, and read agreement as *our spawn route is sound*.
+  // Two things were wrong with that by the time it ran. The comparison is
+  // against a process type this project decided it does not build — a proxy
+  // whose referent is gone — and the fork route is what dragged an Electron app
+  // and its crash-looping GPU process into a measurement that needs neither
+  // (LLL-1).
+  //
+  // The safety property the baseline seemed to carry is carried by WW-1's
+  // same-route pairs instead: every property row below flips ONE mechanism with
+  // the creation route held fixed on both sides, so no row needs a second route
+  // to be attributable.
+  //
+  // What the control has to establish is narrower and is not a comparison at
+  // all: **the uncontained host is a working host.** If it cannot load koffi,
+  // cannot load the shim, or cannot open the document it was handed, then a
+  // refusal in the contained cell says nothing, because the uncontained side is
+  // not a functioning host to differ from.
+  //
+  // POSITIVE CONTROL WITH A REFUSAL. It must locate the host doing host things
+  // on EVERY run, and it prints no property verdict when it cannot — which is
+  // item 4b's rule for an instrument whose reassuring answer is available to it.
+  // `unreadable` stays terminal here for the same reason it is terminal below:
+  // removing the baseline is exactly what made this control the only thing
+  // standing between a broken run and a table of containment verdicts.
+  //
+  // THE GENUINE LOSS, stated under audit item 2a rather than left implicit. A
+  // differential can catch an UNANTICIPATED difference; a working-host check
+  // can only catch the three things it names. If our route broke something that
+  // is neither koffi, nor the shim, nor opening a document — an inherited
+  // handle, a console mode, an environment variable a future probe depends on —
+  // the baseline would have shown it as a disagreement and this will not. That
+  // is a real reduction in what the instrument can see, taken deliberately:
+  // the reference it cost was one this project no longer builds.
+  process.stdout.write('THE WORKING-HOST CONTROL — read before anything else:\n\n');
+  let hostBroken = false;
   for (const key of ['loadKoffi', 'loadShim', 'openDocument']) {
-    const base = probe('baseline', key);
     const route = probe('route', key);
-    const same = base.outcome === route.outcome;
-    if (!same || route.outcome !== 'allowed') routeBroken = true;
+    if (route.outcome !== 'allowed') hostBroken = true;
     process.stdout.write(
-      `  ${key.padEnd(14)} baseline ${base.outcome.padEnd(11)} ${base.detail}\n` +
-        `  ${''.padEnd(14)} route    ${route.outcome.padEnd(11)} ${route.detail}\n\n`,
+      `  ${key.padEnd(14)} route    ${route.outcome.padEnd(11)} ${route.detail}\n`,
     );
   }
+  process.stdout.write('\n');
 
-  if (routeBroken) {
+  if (hostBroken) {
     process.stdout.write(
-      'ROUTE BROKEN — no property verdict is printed.\n\n' +
-        '  The route cell is our own CreateProcessW with containment OFF. It should behave exactly\n' +
-        '  like the baseline. It does not, so the spawn route itself is what differs, and every\n' +
-        '  refusal in the lowbox cell has two candidate explanations — the container, or the route.\n' +
-        '  A verdict read from a two-variable comparison is the shape this cell exists to prevent,\n' +
-        '  so none is offered. Fix the route, then read the properties.\n',
+      'HOST NOT WORKING — no property verdict is printed.\n\n' +
+        '  The route cell is our own CreateProcessW with containment OFF, and it is what every\n' +
+        '  row below reads as the uncontained side. It did not load koffi, load the shim and open\n' +
+        '  the document it was handed, so it is not a working host — and a refusal measured\n' +
+        '  against a host that does not work is not containment, it is a broken run.\n' +
+        '  Every verdict below would be read from that, so none is offered.\n',
     );
     return 2;
   }
@@ -1404,17 +1425,18 @@ function summarise(runs) {
   // THE ORDERING EVIDENCE, and WW-1's matrix pays for itself here before it
   // reaches a single property row.
   //
-  // This used to be read against the BASELINE, for a reason stated honestly at
-  // the time: both CreateProcessW cells carried the job, so no one-variable pair
-  // existed and the forked baseline was the only cell without one. But the
-  // baseline also changes the creation route, so the reading crossed two
-  // variables — the exact shape this file's middle cell exists to prevent, one
+  // This used to be read against the forked BASELINE, for a reason stated
+  // honestly at the time: both CreateProcessW cells carried the job, so no
+  // one-variable pair existed and the forked cell was the only one without one.
+  // But that cell also changed the creation route, so the reading crossed two
+  // variables — the exact shape this file's matrix exists to prevent, one
   // section above where it prevents it.
   //
-  // `route-no-job` is our own CreateProcessW with no job of ours assigned. Pairs
-  // with `route` on the job alone. The baseline row is kept below it as what it
-  // actually is: a second opinion from a different route, useful for noticing
-  // that neither number is nonsense, and not the attribution.
+  // `route-no-job` is our own CreateProcessW with no job of ours assigned. It
+  // pairs with `route` on the job alone, and that pair is the whole reading now.
+  // The forked row that used to sit beneath it is gone with the cell (RR-3): it
+  // was labelled *not the attribution* every time it printed, which is a row
+  // asking the reader to discount it rather than an input to anything.
   process.stdout.write(
     'ORDERING — was the job in force at instruction ONE? (ADR-0023 §1)\n\n',
   );
@@ -1427,7 +1449,6 @@ function summarise(runs) {
       `  ${cell.padEnd(8)} ${ordering === undefined ? 'NO ORDERING RECORDED' : JSON.stringify(ordering)}\n`,
     );
   }
-  const baseSpawn = probe('baseline', 'spawnAtStartup');
   const routeSpawn = probe('route', 'spawnAtStartup');
   const noJobSpawn = probe('route-no-job', 'spawnAtStartup');
   const orderingShown =
@@ -1437,9 +1458,7 @@ function summarise(runs) {
   process.stdout.write(
     `\n  the host's FIRST action is a spawn attempt, so its outcome is the reading:\n` +
       `    route-no-job (our route, NO job)   ${noJobSpawn.outcome.padEnd(9)} ${noJobSpawn.detail}\n` +
-      `    route        (our route, job)      ${routeSpawn.outcome.padEnd(9)} ${routeSpawn.detail}\n` +
-      `    baseline     (forked, no job)      ${baseSpawn.outcome.padEnd(9)} ${baseSpawn.detail}\n` +
-      `                 not the attribution — it changes the route as well\n\n` +
+      `    route        (our route, job)      ${routeSpawn.outcome.padEnd(9)} ${routeSpawn.detail}\n\n` +
       `  ${orderingShown
         ? 'ASSIGNED BEFORE THE FIRST INSTRUCTION. previousSuspendCount 1 says the process was\n' +
           '  genuinely created suspended, and the refusal says the job was already in force when\n' +
