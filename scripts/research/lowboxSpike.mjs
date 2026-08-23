@@ -204,7 +204,7 @@
  * | property | contained | uncontained | |
  * |---|---|---|---|
  * | (b) process creation — job alone | `route` refused `UNKNOWN` | `route-no-job` spawned | **differs** |
- * | (b) process creation — LowBox alone | spawned HERE, refused `EPERM` on `windows-latest` | `route-no-job` spawned | **either — build-dependent** |
+ * | (b) process creation — LowBox alone | spawned on Windows 11 client, refused `EPERM` on Server 2025 AND Server 2022 | `route-no-job` spawned | **either — client vs server** |
  * | (d) filesystem, JS | refused `EPERM` | read 6250 bytes | **differs** |
  * | (d) filesystem, native | refused `CreateFileW: error 5` | read 4096 bytes | **differs** |
  * | (c) network, loopback | refused `ETIMEDOUT` | connected | **differs** |
@@ -224,6 +224,17 @@
  * depend on — which is what [ADR-0023](../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
  * Decision 8 rests on. The split reading is better evidence for that decision
  * than a uniform `same` would have been.
+ *
+ * **THREE POINTS NOW, AND THE SPLIT IS CLIENT VERSUS SERVER** — measured
+ * 2026-08-23 at `0909970`, CI run 32659310667. Windows 11 client allows; Windows
+ * Server 2025 (`windows-latest`) refuses; Windows Server 2022 (`windows-2022`)
+ * refuses. That was a prediction before it was a reading: the pin for the second
+ * server image was landed as a deliberate probe against the competing
+ * chronological hypothesis, and resolved on its first run.
+ *
+ * The hypothesis has predictive content, which is the useful part — **a fourth
+ * CLIENT image would test it and another server image would not.** Do not read a
+ * third agreeing server as confirmation.
  *
  * So the row asserts `either`, and the assertion has not gone away: the
  * UNCONTAINED half must still be allowed, or two dead cells would satisfy it.
