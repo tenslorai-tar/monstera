@@ -300,8 +300,8 @@ const SAME_LINE = String.raw`[^\n]*`;
  * assumed, and both historical occurrences remain caught: occurrence 5 and
  * occurrence 7 are stdout redirects to ordinary filenames.
  *
- * **OPEN, and it is this exclusion's other half: a bare `>` inside a quoted
- * program is still read as a redirect.** Measured 2026-08-23 —
+ * **CLOSED 2026-08-23, and it was this exclusion's other half: a bare `>` inside
+ * a quoted program was still read as a redirect.** Measured —
  * `awk 'index($0, "x") > 0 {print NR}' f` denies, `awk '$2 > 100 {print $1}' f`
  * denies, and so does a `sed` substitution whose REPLACEMENT text contains a
  * `>`, such as rewriting a value to the literal `<set>`. None of them redirects
@@ -321,9 +321,13 @@ const SAME_LINE = String.raw`[^\n]*`;
  * the fix had already handled. The variant that reads more naturally denies, and
  * the fixture was built from the shape the defect handles correctly (item 4b).
  *
- * Not fixed here, because the fix is a change to what this guard denies and
- * that is not a decision to take inside a comment. Recorded at the exclusion it
- * belongs to so the next reader of the `>=` argument sees where it stops.
+ * **Fixed by ordering rather than by another operator exclusion**, which is the
+ * form that does not need a third instalment: see {@link maskQuotedRedirects}.
+ * A quoted `>` is neutralised before any rule is tested, and nothing else about
+ * the text moves — so the compound cases the proof pins keep denying, because
+ * those turn on quote PAIRING and the quote characters are untouched. The
+ * condition on the change was exactly that, and it is a case: `echo "a"; cmd
+ * "b" >f` must still deny, and it does.
  */
 const TO_FILE = String.raw`(?<![02-9>])>>?\s*(?!&[0-9-]|[=>])\S`;
 
@@ -631,11 +635,67 @@ export const POWERSHELL_RULES = /** @type {readonly Rule[]} */ ([
   },
 ]);
 
+/** The stand-in for a `>` that sits inside quotes. See {@link maskQuotedRedirects}. */
+const MASKED_REDIRECT = '_';
+
+/**
+ * Neutralises every `>` that sits INSIDE a quoted run (finding TTT-1).
+ *
+ * ## The narrowest thing that fixes it
+ *
+ * `TO_FILE` excluded a target beginning `=` because `awk 'NR>=386'` writes
+ * nothing and was denied. A bare `>` inside a quoted program is the same fact
+ * one character along: `awk '$2 > 100 {print $1}'` denied, and so did a `sed`
+ * substitution whose replacement text contains a `>`. Neither redirects
+ * anything — no `>` outside quotes, no command on the line writing a file — so
+ * there is no ambiguity to fail closed on, which is exactly what separates this
+ * from the compound cases the proof pins deliberately.
+ *
+ * ## Why the quote characters are LEFT IN PLACE, which is the whole design
+ *
+ * Only the `>` is replaced, and by one character, so every offset is unchanged.
+ * Nothing else moves: not the quotes, not the separators, not a backtick or a
+ * `$` inside a double-quoted string, not a `;` in a payload. Every rule that
+ * inspects those still sees exactly what it saw.
+ *
+ * That is what keeps the compound false positives DENYING, which they must.
+ * `echo "a"; cmd "b" >f` is refused because the span pairs the closing quote of
+ * one argument with the opening quote of the next and swallows the separator —
+ * a quote-PAIRING ambiguity. Removing quote characters would end that; masking
+ * one character between them does not touch it, and the real redirect there is
+ * outside every quoted run and survives untouched.
+ *
+ * ## An unterminated run is not masked
+ *
+ * It leaves the scanner in the open state, and then the masking is discarded
+ * whole rather than trusted — a `>` after it still reads as a redirect. Half a
+ * parse is what produces a false NEGATIVE, and a false negative is the one
+ * direction this guard may not fail in.
+ *
+ * @param {string} command
+ * @returns {string}
+ */
+export function maskQuotedRedirects(command) {
+  let single = false;
+  let double = false;
+  let out = '';
+  for (const character of command) {
+    if (character === "'" && !double) single = !single;
+    else if (character === '"' && !single) double = !double;
+    const quoted = single || double;
+    out += character === '>' && quoted ? MASKED_REDIRECT : character;
+  }
+  return single || double ? command : out;
+}
+
 /** @param {string} command @param {string} toolName @returns {Rule | null} */
 function firstViolation(command, toolName) {
   const rules = toolName === 'PowerShell' ? POWERSHELL_RULES : SHELL_RULES;
+  // Tested against the MASKED text, reported against the original: the reason
+  // string a user reads must be the command they typed.
+  const masked = maskQuotedRedirects(command);
   for (const rule of rules) {
-    if (rule.pattern.test(command)) return rule;
+    if (rule.pattern.test(masked)) return rule;
   }
   return null;
 }

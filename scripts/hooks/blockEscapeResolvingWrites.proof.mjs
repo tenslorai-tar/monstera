@@ -318,6 +318,13 @@ mustBlock(
 // route. A disposition nobody wrote down is one that gets relitigated by
 // whoever it inconveniences.
 //
+// **AND THE TEST FOR WHICH ONES STAY IS WHETHER A REDIRECT EXISTS AT ALL.** A
+// third class was pinned here for one commit and should not have been: a `>`
+// inside a quoted program, with nothing on the line redirecting anything. The
+// argument below does not reach it — there is no ambiguous redirect to fail
+// closed on — and it is fixed rather than pinned, in the section further down.
+// Failing closed is a posture for a genuine ambiguity, not a blanket.
+//
 // MECHANISM, because "the scan crosses a separator" is NOT it — f84c686 fixed
 // that and the three `mustAllow` cases above still hold. SAME_COMMAND_QUOTED
 // consumes a quoted span whole, so a separator inside quotes is text; what it
@@ -360,6 +367,36 @@ mustAllow(
 // which is what a range read wanted anyway.
 mustBlock('a sed range read redirected into a file', "sed -n '390,450p' notes.md > extract.txt");
 mustAllow('CONTROL: the same range read with no redirect', "sed -n '390,450p' notes.md");
+
+// ---------------------------------------------------------------------------
+// A `>` INSIDE A QUOTED RUN IS NOT A REDIRECT — the third class, and the one
+// with no fail-closed argument behind it (finding TTT-1, fixed).
+//
+// `TO_FILE` already excluded a target beginning `=`, because `awk 'NR>=386'`
+// writes nothing and was denied. These are that same fact one character along.
+// None of them redirects anything: there is no `>` outside quotes and no
+// command on the line writes a file, so unlike the compound cases above there
+// is no ambiguity to fail closed on.
+//
+// THE CASE THAT SHOWS WHY IT SURVIVED is the fourth one. Its `>=` twin was
+// already a `mustAllow` here, named "awk printing when a field exceeds a bound"
+// — a case whose NAME describes the natural shape, written with the one
+// operator the fix had handled. The fixture was built from the shape the defect
+// handles correctly, so no mutation test could find it (item 4).
+//
+// The fix masks a quoted `>` and leaves every other character in place, which
+// is why the compound block above still denies: that one turns on quote
+// PAIRING, and nothing here changes which quotes pair.
+// ---------------------------------------------------------------------------
+mustAllow('an awk comparison inside a quoted program', 'awk \'index($0, "x") > 0 {print NR}\' notes.md');
+mustAllow('an awk field comparison, the >= twin of a case already here', "awk '$2 > 100 {print $1}' data.txt");
+mustAllow('a sed replacement whose text contains a >', "sed 's/value/<set>/' notes.md");
+mustAllow('a double-quoted awk program with a comparison', 'awk "NR > 2 { print }" notes.txt');
+// CONTROLS. Masking a quoted `>` must not reach an unquoted one, and the two
+// sit side by side in each of these.
+mustBlock('a quoted comparison AND a real redirect on the same line', "awk '$2 > 100' data.txt > out.txt");
+mustBlock('a quoted > in the payload of a producer that redirects', "printf 'a > b\\n' > out.txt");
+mustBlock('an UNTERMINATED quote does not disarm the redirect test', 'echo "a > b > out.txt');
 
 // The historical occurrences are stdout redirects and must stay caught. These
 // are the reason the descriptor test is a lookbehind rather than a blanket
