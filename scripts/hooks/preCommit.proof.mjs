@@ -256,6 +256,63 @@ check('CONTROL: a backtick in ordinary code, outside any emitted region, still c
   }
 });
 
+// ---------------------------------------------------------------------------
+// UUU-2: the syntax parse. `stagedSyntax.proof.mjs` proves the SCAN; these
+// prove the HOOK calls it, which is the other half of the wired-tools pair — a
+// correct scan nothing invokes is the display-only sin with a green check on it.
+// ---------------------------------------------------------------------------
+check('a staged file that does not parse blocks the commit', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'broken.mjs', 'export const a = ;\n');
+    const { ok, output } = runHook(root);
+    if (ok) return 'the gate passed a commit whose staged JavaScript does not parse.';
+    return output.includes('does not parse')
+      ? null
+      : `blocked, but not by this check — nothing named the class:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The same index-versus-disk shape the template scan carries, for the same
+ * reason: staged broken, repaired on disk. A guard reading the working tree
+ * passes this, and the broken bytes go into the commit.
+ */
+check('CONTROL: the parse reads the INDEX, so repairing the working tree does not unblock it', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'broken.mjs', 'export const a = ;\n');
+    writeFileSync(join(root, 'broken.mjs'), 'export const a = 1;\n');
+    const { ok, output } = runHook(root);
+    return ok
+      ? 'the gate passed a commit whose STAGED content does not parse, because it read the disk.'
+      : output.includes('does not parse')
+        ? null
+        : `blocked, but not by this check:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * The other direction, and it is the one that decides whether this guard
+ * survives contact with the repository: TypeScript must still commit. V8 refuses
+ * a type annotation, so a scope that reached `.ts` would block every commit
+ * touching one — the shape that gets a guard switched off rather than fixed.
+ */
+check('CONTROL: a staged TypeScript file with type annotations still commits', () => {
+  const root = makeRepo();
+  try {
+    stage(root, 'typed.ts', 'export const a: number = 1;\nexport function f(x: string): string { return x; }\n');
+    const { ok, output } = runHook(root);
+    return ok ? null : `expected an ordinary TypeScript file to pass, it blocked:\n${output}`;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 check('staged secret blocks the commit and is printed redacted', () => {
   const root = makeRepo();
   try {

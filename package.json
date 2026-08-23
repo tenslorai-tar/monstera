@@ -80,6 +80,7 @@
     "proof:annotatecoverage": "node scripts/proofs/annotateCoverage.proof.mjs",
     "check:annotatecoverage": "node scripts/lib/annotateCoverage.mjs",
     "proof:stackowner": "node scripts/proofs/stackOwnership.proof.mjs",
+    "proof:stagedsyntax": "node scripts/proofs/stagedSyntax.proof.mjs",
     "check:stackowner": "node scripts/lib/stackOwnership.mjs",
     "proof:jobplacement": "node scripts/proofs/nodeModulesPlacement.proof.mjs",
     "check:jobplacement": "node scripts/lib/nodeModulesPlacement.mjs",

@@ -207,11 +207,68 @@ export function changedPaths(args, options = {}) {
 }
 
 /**
- * The bytes of a path AS STAGED — from the index, never from disk.
+ * The bytes of MANY paths as staged, in ONE git invocation.
+ *
+ * {@link readStagedBlob} spawns twice per path — a `cat-file -e` probe and a
+ * `cat-file blob` — and on Windows a spawn costs more than the work. Measured
+ * 2026-08-23: reading seven staged blobs that way took 2.2 s, against 154 ms for
+ * the parser that consumed them, so the reader was fourteen times the cost of
+ * the thing it fed. A pre-commit guard is where that matters.
+ *
+ * `git cat-file --batch` answers the same question in one process: a header line
+ * per request, then the bytes, then a newline. A path that is not in the index
+ * gets `<path> missing` instead, which is how absence arrives — and it is
+ * reported as an absent entry rather than an empty one, for the same reason the
+ * single reader returns null: a missing file and an empty one are different
+ * failures.
+ *
+ * ONE PARSER FOR ONE FORMAT (B3a): this is the only place `--batch`'s framing is
+ * read, beside the only place `--name-status` is read, in the module that exists
+ * because two guards each asked git a question their own way.
+ *
+ * @param {readonly string[]} paths
+ * @param {{ cwd?: string }} [options]
+ * @returns {Map<string, Buffer>} Only the paths that are in the index.
+ */
+export function readStagedBlobs(paths, options = {}) {
+  /** @type {Map<string, Buffer>} */
+  const blobs = new Map();
+  if (paths.length === 0) return blobs;
+
+  const { stdout } = git(['cat-file', '--batch'], {
+    ...options,
+    binary: true,
+    input: `${paths.map((path) => `:${path}`).join('\n')}\n`,
+  });
+  const buffer = stdout instanceof Buffer ? stdout : Buffer.from(stdout);
+
+  let offset = 0;
+  for (const path of paths) {
+    const newline = buffer.indexOf('\n', offset);
+    if (newline === -1) break;
+    const header = buffer.toString('utf8', offset, newline);
+    offset = newline + 1;
+    // `<sha> blob <size>` for a hit, `<request> missing` for a miss. Splitting
+    // on the LAST space keeps a path containing one from breaking the size.
+    const size = /\bblob\s+(\d+)$/u.exec(header)?.[1];
+    if (size === undefined) continue;
+    const length = Number(size);
+    blobs.set(path, buffer.subarray(offset, offset + length));
+    // The bytes are followed by a newline git adds, which is not content.
+    offset += length + 1;
+  }
+  return blobs;
+}
+
+/**
+ * The bytes of ONE path AS STAGED — from the index, never from disk.
  *
  * Returns null when the path is not in the index at all, which a caller must
  * distinguish from "staged and empty": a missing declaration file and an empty
  * one are different failures and deserve different messages.
+ *
+ * For more than a couple of paths use {@link readStagedBlobs}: this spawns git
+ * twice per call, and on Windows that dominates everything downstream of it.
  *
  * @param {string} path
  * @param {{ cwd?: string }} [options]

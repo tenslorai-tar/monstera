@@ -19,6 +19,7 @@
 
 import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
 import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
+import { report as reportStagedSyntax, scan as scanStagedSyntax } from '../lib/stagedSyntax.mjs';
 import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -127,6 +128,38 @@ async function main() {
         `fine. Four occurrences, the third in a file whose own header carried the rule and the\n` +
         `fourth one commit after this scan shipped.\n\n` +
         `Concatenate with + instead, or move the prose out of the emitted body.\n\n`,
+    );
+    return 1;
+  }
+
+  // UUU-2, AND IT IS THE PARAGRAPH ABOVE APPLIED TO ITSELF.
+  //
+  // That comment says what stopped occurrence four was a hand-run `node
+  // --check` — "me remembering, and remembering is the thing a mechanism
+  // replaces" — and then does not add the parse. On 2026-08-23 a
+  // comment-closing sequence inside a JSDoc block, from a sed expression quoted
+  // in prose, broke a file. Same class as the backtick: prose and code sharing
+  // a delimiter, composed while writing about something else. The scan above
+  // cannot see it, because it looks for a different delimiter.
+  //
+  // The generalising guard is not a third delimiter-specific scan. It is ASKING
+  // THE PARSER, which catches that class and every other way a file stops being
+  // parseable, at milliseconds per file.
+  //
+  // SCOPE, stated rather than left to be discovered: JavaScript only. `.ts` is
+  // out because `node --check` reads JavaScript and would report every
+  // annotated file as broken; `tsc` covers those in `npm run typecheck`. So
+  // this closes the JavaScript half and leaves the TypeScript half exactly
+  // where it was.
+  const syntax = scanStagedSyntax();
+  if (syntax.blind !== null || syntax.problems.length > 0) {
+    process.stderr.write(`\n${reportStagedSyntax(syntax)}`);
+    process.stderr.write(
+      syntax.blind !== null
+        ? `\nCommit blocked — the syntax check could not see (reported above).\n\n`
+        : `\nCommit blocked — a staged JavaScript file does not parse (reported above).\n\n` +
+            `The file on disk may be fine: this reads the INDEX, so staging a broken file and\n` +
+            `then fixing it leaves the broken bytes in the commit. Re-stage after fixing.\n\n`,
     );
     return 1;
   }
