@@ -644,6 +644,191 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-23 — Stage audit: `167de69..bc8d94b` — a proof registered into no job, and two guards that were right about the wrong thing
+
+**Audited through `bc8d94b`.** 6 commits, 23 files, **1 proof added, 5
+modified**, 3 new source files and **6 changed** — from `npm run audit:scope`.
+
+The range is the previous audit's own recording commit, RR-3's control half,
+TTT-2 and TTT-4, then UUU-1, TTT-1's class B fix and UUU-2. Findings **VVV-1** to
+**VVV-4**.
+
+Taken because the gate blocked a commit that would have crossed the file
+threshold, which is the mechanism working: the range stood at 23 files of 24 and
+the next commit added six more.
+
+### 1. Root cause or workaround
+
+No workarounds. Two changes deserve the check anyway, because both look like
+loosenings and neither is:
+
+- **TTT-1 made the escape guard deny LESS.** That is audit item 1's third
+  bullet, and the discriminator is whether the removed denials had a safety
+  argument. They did not: a `>` inside a quoted program redirects nothing, and
+  the pinned compound cases — which do have one — were required to keep denying
+  as a condition of the change. Mutation-tested in the direction that separates:
+  removing the mask reddens exactly the four new cases and no others, so classes
+  A and C are untouched.
+- **UUU-2 replaced `node --check` with `vm.SourceTextModule`.** Different entry
+  point, same parser — both are V8 compiling the source. The alternative that
+  WOULD have been a loosening is acorn, already in the tree, and a second
+  opinion about JavaScript syntax.
+
+### VVV-1 — a proof registered in `package.json` and invoked by no job
+
+`proof:stagedsyntax` shipped in `bc8d94b` with ten cases, three more in the
+pre-commit proof, and **no workflow runs it.** It exists, it passes locally, and
+CI has never executed it.
+
+**Nothing in this repository can see that class.** `check:annotatecoverage`
+asserts that script invocations *which appear in a workflow* are wrapped by
+`annotate.mjs`; a proof appearing in no workflow at all is outside what it
+examines. `check:jobplacement` asks whether a step needing `node_modules` sits
+in a job that installs — also about steps that exist. Both are correct, and
+neither is looking at absence.
+
+Found by searching, and the search needed the lesson this project keeps paying
+for. The first attempt matched the **npm script name** against the workflow text
+and reported sixteen proofs missing, including `proof:escapeguard`, which
+plainly runs on Guards. Workflows invoke scripts by **path**. That is the
+recognition rule `annotateCoverage.mjs` was rewritten around one range earlier,
+and the same mistake I nearly filed a finding on two ranges ago. Re-run against
+the executing path, with a positive control requiring a known-present proof to
+be located, it reports exactly one.
+
+The fix is a check rather than a wiring change, because a wiring change closes
+only the instance. It lands in the next commit, not this one.
+
+### VVV-2 — a filter on a property that does not exist is always true
+
+`stagedSyntax.mjs` filtered staged entries with `entry.status !== 'D'`. The
+field is `entry.state`. So the comparison was `undefined !== 'D'`, always true,
+and staged deletions were passed through to the blob reader.
+
+The scan stayed correct, and that is the interesting half: a deleted path is not
+in the index, so the batch reader reports it absent and it is skipped anyway. A
+second mechanism was doing the work the filter claimed to do, which is why
+nothing observable changed.
+
+**TypeScript caught it; no case did.** The fixture set contained no deletion at
+all — item 4's set-level rule, where the missing input is a whole *state* rather
+than a value. A case now stages a deletion and requires `checked` to be zero, so
+the filter has something behind it besides the compiler.
+
+### VVV-3 — two Writes put control characters inside string literals
+
+`0x01` once and two `0x00` bytes once, both where a space belonged, both inside
+a template literal, both invisible in every editor and in the diff. The first
+surfaced because an `Edit` could not match text a `Read` had just displayed; the
+second because `grep` reported the file as binary.
+
+`guardFiles.mjs` scans every staged text blob for C0 controls and would have
+blocked either commit. Recorded because the standing rule about escape-resolving
+tools names shells and inline interpreters — `Write` is the tool that rule sends
+you *to*, and it is not exempt from producing a byte nobody typed. The
+mechanism, not the tool's reputation, is what protects the commit.
+
+### VVV-4 — two of the three parse goals have no case
+
+`parseSources.mjs` chooses a goal per extension: `.mjs` is a module, `.cjs` is a
+script, and `.js` is accepted if it parses under either. Every fixture in
+`stagedSyntax.proof.mjs` is `.mjs`.
+
+So the `script` branch and the `either` branch are reachable, load-bearing and
+exercised by nothing — item 4's *mutate the branches no fixture reached*, and
+the second of its three kinds: reachable, with no case at all. Getting `either`
+wrong is silent in the direction that matters, because a `.js` file would then
+be reported broken under a goal it does not have. Cases owed in the next commit.
+
+### 2. Verified against the easy shape only?
+
+**UUU-2's cost was measured twice and the design changed both times**, neither
+predicted. `node --check` costs ~330 ms per file, almost all startup — and it
+accepts several paths while silently checking only the first, exiting 0, which
+is a green tick for files nobody parsed. Then the *reader* turned out to be
+fourteen times the cost of the parse it fed, because `readStagedBlob` spawns git
+twice per path. 2234 ms for seven files became 474 ms for eight, and it no
+longer scales with file count.
+
+The second is the one worth carrying: the obvious cost was in the thing being
+measured, and the real cost was in the harness feeding it.
+
+### 3. Would CI have caught it, and is there a defect this machine cannot see?
+
+**VVV-1 is the first question in its purest form**: a proof CI cannot run,
+because nothing asked it to. It is also invisible to every guard here, which is
+why it becomes a check rather than a wiring fix.
+
+**The board went red at `bc8d94b`, and the cause was predicted with the wrong
+location.** Changing `blockEscapeResolvingWrites.mjs` in `7246bc2` invalidated
+`docs/hook-probe.json`'s recorded inputs. I said `check:docs` would fail in CI;
+CI was green and Guards failed, on `proof:hookprobe`. Both read the same
+evidence — naming the wrong one cost nothing here, and would have cost a wrong
+diagnosis if the repair had not already been in hand.
+
+### 4. Are the proofs non-vacuous?
+
+Every guard in this range was mutation-tested and each reddens a specific named
+case: loosening the runner pattern to match anywhere reddens the comment case
+only; removing the quoted-`>` mask reddens the four class-B cases only;
+advancing the batch reader's offset by one byte reddens two; dropping mtime from
+the tree digest reddens the revert case.
+
+**The runner derivation needed its fixture changed before it could be proven.**
+`workflow()` emitted jobs with no `runs-on`, so the new control rejected every
+existing case in the file. Making the fixture realistic — two jobs, two
+different runners, and a comment naming a third — is what let the control exist
+at all, and that comment is UUU-1's own shape.
+
+### 5. Executed, or asserted?
+
+**Executed:** every mutation above · the escape guard's three false-positive
+classes before and after the fix, with controls · `node --check`'s multi-file
+behaviour · both cost measurements · the batch reader against the single reader
+on ten real paths · the tree witness's five cases including its two stated
+limits · the proof-coverage search with a positive control · the hook probe,
+twice.
+
+**Asserted:** that `--experimental-vm-modules` will remain available. If it is
+withdrawn, the known-good control turns that into BLIND rather than into thirty
+false failures — which is the property that makes the dependency safe — but the
+withdrawal itself has not been rehearsed.
+
+### 6. Architecture before the feature?
+
+Nothing architectural moved. ADR-0022 and ADR-0023 took dated corrections in
+`9f553fc` for a research instrument's cell removal, which is a record catching
+up with a decision already taken rather than a change of decision.
+
+### 7. Do the documents still match the code?
+
+UUU-1 is item 7 in its compound form, fixed in both files, with the reason that
+actually holds written in place of the one that did not. `docs/FEATURES.md` row
+285 gains UUU-4's dated record of the shipped AppContainer path being executed
+for the first time.
+
+**NNN-4's cross-document sweep fired on UUU-1** and found the third statement:
+`ci.yml` says "this job is already windows-latest" forty lines below its own
+`runs-on`, so the file contradicted itself and the two paragraphs had never been
+read together.
+
+### The pattern the range named
+
+**A guard can be right about the wrong thing, and it reads exactly like being
+right.** Three instances here. The `entry.status` filter did the correct thing
+for a reason that had nothing to do with it. `check:annotatecoverage` correctly
+verifies every invocation it can see, and its silence about `proof:stagedsyntax`
+is not a failure of the check but of what the check is *about*. And the first
+proof-coverage search reported sixteen missing proofs while being wrong about
+all sixteen, because it matched the name a manifest gives a thing rather than
+the path that runs it.
+
+The common shape is that **the output was correct or plausible and the reason
+was not the one anybody would have given if asked.** A mutation test finds the
+first kind. Only asking *why is this answer right* finds the other two.
+
+---
+
 ## 2026-08-23 — Stage audit: `5889f8a..167de69` — a count recalled instead of read, and a guard's own fixture built from the shape it had already fixed
 
 **Audited through `167de69`.** 8 commits, 21 files, **1 proof added, 4
