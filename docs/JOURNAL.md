@@ -969,6 +969,108 @@ before Stage 0 exit**.
 
 ---
 
+## 2026-08-23 — The Win32 surface, and OOO-1: an orphan witness passes exactly as loudly as a working one
+
+ADR-0023 Decision 8's factory has had its ordering proven against an injected
+surface since `8935b6c`, and nothing behind that surface existed. It does now:
+`apps/desktop/src/win32HostSurface.ts`, bound with koffi.
+
+### It carries no `any`, and that was not the plan
+
+B7 permits one adapter module per native boundary to hold `any`. It does not ask
+for one, and the cheap version of this file would have had fifteen call sites the
+compiler could say nothing about. Each entry point is declared with the signature
+from the C prototype on the adjacent line instead — and **no cast is needed to do
+it**, which is the part worth knowing: koffi's `func()` returns a callable
+assignable to every signature, so those declarations are an assertion the
+compiler will never check. The adjacency is the whole review mechanism.
+
+**Four returns are `unknown` rather than `boolean`, deliberately.** Lint reported
+the fail-closed `=== true` guards as unnecessary comparisons — correctly, given
+that my own declarations had told it they were booleans. That is the runtime
+loop's stop-flag case again: *a type asserting away the case the next check exists
+for*. Every call whose wrong answer would weaken containment — process creation,
+the limits, the assignment, the membership read — is left unnarrowed, so the
+comparison is required rather than redundant. Typing them would have been the
+adapter deciding a security question.
+
+`isInvalidHandle` is a **copy** of `scripts/lib/win32Handle.mjs`, because
+`apps/desktop` cannot import plain Node under `scripts/`. MMM-1's rule decided
+it without a new argument: *make a copy only where the reader cannot reach the
+source, and prove every copy that exists*. The judgement half is factored out —
+which is also the half that was wrong three times, since all four broken
+spellings were wrong comparisons and never failures to read an address — and
+`proof:win32handle` drives the owner with an identity address reader so the two
+are the same function on the same inputs. Fifteen cases now, with a control that
+the comparison can see a disagreement.
+
+### It runs, and the differential holds
+
+`scripts/research/hostSurfaceProbe.mjs` creates two real processes through the
+shipped surface. First run, no repair needed: `in-job`, `previousSuspendCount`
+of exactly 1 — so `CREATE_SUSPENDED` took and the thread had not executed — and
+the child reaching its last line. The child under the job is **refused** a spawn;
+the same child with no job of ours is **allowed** one. One variable, so the
+refusal is evidence rather than a machine that cannot spawn.
+
+Resolution-tested rather than trusted: removing `JOB_OBJECT_LIMIT_ACTIVE_PROCESS`
+turned the verdict `UNREADABLE — job cell spawn=allowed, no-job cell
+spawn=allowed`, exit 1.
+
+**And that run found a defect in the probe.** The teardown was a `finally` around
+the measurement; the mutated run left a grandchild holding the scratch directory,
+`rmSync` threw `EPERM`, and the stack trace buried the verdict while the exit
+code stopped meaning what the verdict said. It happened to agree that time — both
+wanted 1 — which is exactly how this survives review. Cleanup now runs after the
+verdict, reports its own failure on its own line, and never touches the exit
+code: **a could-not-clean is not a measurement failure.** Demonstrated in anger
+on the next run, which failed to tidy up and still exited 0 with the verdict
+standing.
+
+The mechanism behind the `EPERM` is stated rather than bumped past: the child
+holds the diagnostic log as its stdout, and `TerminateProcess` is asynchronous,
+so the kernel releases that handle after our call returns. Waiting properly needs
+`WaitForSingleObject`, which is not part of host creation and does not belong in
+the surface.
+
+### KKK-1 discharged, on the day the ruling said it would be
+
+Staging the file expired four verdicts — `CreateProcessW`,
+`CreateAppContainerProfile`, `AssignProcessToJobObject`, `STARTUPINFOEXW` — for
+the first time on **genuine uses** rather than on prose. Three earlier firings
+were doc comments, where the reviewer's ruling said reword; the subject has now
+occurred, so re-triage is correct. The absence inputs are removed rather than
+narrowed, because a symbol that cannot be absent is not an absence claim. The
+electron three stay: their meaning changed rather than expiring, and they now
+mean *ADR-0022 was reverted and somebody went back to the fork route*.
+
+Worth noting the window the register documents about itself and which held
+exactly: `git grep` reads **tracked** files, so the surface was invisible and the
+register green until the moment it was staged.
+
+### OOO-1 — the register accepts a witness for a symbol it does not watch
+
+Found by accident, which is the only reason it was found. Removing the four Win32
+symbols left their `witness` entries behind, and `check:advisories` stayed
+**green** — eighteen symbols verified, four witnesses in the file naming symbols
+the verdict no longer lists. It also accepted a deliberately misspelt top-level
+key in silence.
+
+**This is T-1's own failure arriving through the witness side.** A witness exists
+precisely so a *misspelt symbol* fails; a witness whose symbol is absent from the
+list passes exactly as loudly as one doing its job. So a typo in `symbols` beside
+a correct spelling in `witness` would be green forever — the pair T-1 was bought
+to prevent, reconstructed from the other direction.
+
+Recorded rather than fixed, and the reason is not convenience: tightening a
+security register's schema is its own unit with its own control, and it needs the
+reviewing seat. The fix is named — reject an unknown key on a verdict, and reject
+a witness keyed on a symbol the verdict does not list. The finding is parked in
+the register **as an unknown key**, so the day the schema is tightened that line
+fails the build and is deleted by the fix that makes it obsolete.
+
+---
+
 ## 2026-08-23 — MMM-1: three documents named the wrong writer of record, and the tree held both readings at once
 
 The reviewing seat found that `docs/ARCHITECTURE.md` §9.27, `CLAUDE.md` and

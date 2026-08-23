@@ -155,6 +155,68 @@ check(
   'the text and the function disagree, so children and parent are checking different rules',
 );
 
+// ---------------------------------------------------------------------------
+// THE DESKTOP COPY, which exists because that package cannot import this one.
+//
+// `apps/desktop/src/win32HostSurface.ts` carries the same rule in TypeScript.
+// It is a copy and not a second opinion, and the difference between those two
+// words is entirely this case: MMM-1's rule is *make a copy only where the
+// reader cannot reach the source, and prove every copy that exists*. The reader
+// genuinely cannot — `scripts/` is plain Node outside every package tsconfig,
+// and the module graph forbids the edge — so the copy is legitimate and this is
+// the proof it owes.
+//
+// Compared BEHAVIOURALLY, not textually. One is TypeScript and one is JSDoc'd
+// JavaScript, so their text will never match and a text comparison would have
+// to be loosened until it stopped meaning anything. Driving the owner with an
+// identity address reader makes it the same function as the copy's judgement
+// half, over the same inputs.
+// ---------------------------------------------------------------------------
+const BUILT_SURFACE = new URL(
+  '../../apps/desktop/dist/win32HostSurface.js',
+  import.meta.url,
+);
+
+/** @type {{ isInvalidHandleAddress?: (address: unknown) => boolean } | null} */
+let desktop;
+try {
+  desktop = await import(BUILT_SURFACE.href);
+} catch {
+  // The absence is reported as a FAILING case below, never as a skip: a copy
+  // that could not be read and a copy that agrees must not share an output.
+  desktop = null;
+}
+
+check(
+  'the desktop copy is BUILT, so the comparison below is not skipped in silence',
+  desktop !== null && typeof desktop.isInvalidHandleAddress === 'function',
+  `${BUILT_SURFACE.pathname} did not import, or exports no isInvalidHandleAddress. ` +
+    `This proof reads the BUILD — run \`npm run typecheck\`. A missing copy and an ` +
+    `agreeing copy must not share an output, which is why this is a case and not a skip.`,
+);
+
+if (desktop !== null && typeof desktop.isInvalidHandleAddress === 'function') {
+  const copy = desktop.isInvalidHandleAddress;
+  const cases = [MEASURED_INVALID, -1n, 0n, null, undefined, 0x1a4n, 1n, 4096n];
+  check(
+    'the desktop copy answers exactly as the owner does, on every value above',
+    cases.every((address) => copy(address) === isInvalidHandle(koffi, address)),
+    `the copy in apps/desktop has drifted from scripts/lib/win32Handle.mjs. ` +
+      `Disagreement at: ${JSON.stringify(
+        cases.filter((address) => copy(address) !== isInvalidHandle(koffi, address)).map(String),
+      )}`,
+  );
+  check(
+    'CONTROL: and that comparison can SEE a disagreement when there is one',
+    // Mutating the copy is not available here, so the control mutates the
+    // question instead: a judgement that is wrong on exactly one value must be
+    // reported as disagreeing. Without this, the case above is satisfied by two
+    // functions that both throw, or by a comparison that never ran.
+    !cases.every((address) => copy(address) === (address === 1n)),
+    'the comparison agrees with a deliberately wrong rule, so it separates nothing',
+  );
+}
+
 // Zero cases and every case passing are the same output otherwise.
 if (ran === 0) {
   process.stdout.write('\nNo invalid-handle case ran. That is a broken proof, not a clean one.\n');
