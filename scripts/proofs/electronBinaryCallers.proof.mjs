@@ -21,7 +21,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -39,9 +39,19 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-electronbinary-'));
  * @param {string} name @param {string} body @returns {string}
  */
 function fixture(name, body) {
+  return fixtureFiles(name, { 'driver.mjs': body });
+}
+
+/**
+ * @param {string} name @param {Record<string, string>} files
+ * @returns {string}
+ */
+function fixtureFiles(name, files) {
   const root = join(scratch, name);
   mkdirSync(join(root, 'scripts', 'research'), { recursive: true });
-  writeFileSync(join(root, 'scripts', 'research', 'driver.mjs'), body, 'utf8');
+  for (const [file, body] of Object.entries(files)) {
+    writeFileSync(join(root, 'scripts', 'research', file), body, 'utf8');
+  }
   return root;
 }
 
@@ -119,6 +129,51 @@ try {
       threw,
       'reporting "no violations" for a walk that found no files is the reassuring answer ' +
         'arriving from a defect.',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // 6a-6c. THE COMPLEMENT (finding ZZZ-2): a host created without naming the
+  // property is not a clean file, it is a file this scan cannot read.
+  //
+  // The assignment scan reports the bad sites it finds and says nothing about a
+  // host built from a spread. The positive control does not reach this — it
+  // proves the walk can FIND a known file, not that the walk saw every file
+  // that creates one.
+  // -------------------------------------------------------------------------
+  {
+    const root = fixture('spread', 'const surface = createWin32HostSurface({ ...config });\n');
+    const result = report({ root, control: 'scripts/research/driver.mjs' });
+    check(
+      'a file that creates a host and names the property NOWHERE is reported, not passed',
+      !result.ok && /names executablePath nowhere/u.test(result.output),
+      `it contributes no site, so every assignment-shaped check reports it as clean. ` +
+        `Output:\n${result.output}`,
+    );
+  }
+  {
+    // The tell that separates creating from mentioning is the paren. Two proofs
+    // in this repository name the factory and create nothing; a rule keyed on
+    // the identifier alone would report both as violations for ever.
+    const root = fixtureFiles('mentions', {
+      'driver.mjs': RIGHT,
+      'reader.mjs': 'const name = "createWin32HostSurface";\nexport { name };\n',
+    });
+    const { creators } = scanElectronBinaryCallers({ root });
+    check(
+      'CONTROL: a file that MENTIONS the factory without calling it is not a creator',
+      creators.length === 1 && creators[0] === 'scripts/research/driver.mjs',
+      `a rule keyed on the identifier alone reports electronImports.proof.mjs and ` +
+        `win32Handle.proof.mjs as violations for ever. Got ${JSON.stringify(creators)}`,
+    );
+  }
+  {
+    const root = fixture('blindcreator', RIGHT);
+    const result = report({ root, control: 'scripts/research/nowhere.mjs' });
+    check(
+      'the creator derivation carries its OWN control, which the site control cannot stand in for',
+      !result.ok && /creator derivation did not locate/u.test(result.output),
+      `two searches fail independently and both report a clean tree. Output:\n${result.output}`,
     );
   }
 

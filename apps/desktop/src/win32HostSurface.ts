@@ -117,10 +117,21 @@ export type ElectronBinaryPath = string & { readonly [electronBinaryBrand]: true
  * The mint for a process that IS the Electron binary — the only mint this
  * package can offer, and exact rather than heuristic.
  *
- * `process.versions.electron` is defined when the running executable is the
- * Electron binary and undefined otherwise, including under
- * `ELECTRON_RUN_AS_NODE=1`, where `process.execPath` is still that binary. So
- * where this returns, it returns the right path; where it cannot, it throws
+ * `process.versions.electron` keys on the EXECUTABLE, never on the mode it was
+ * started in. Two facts, stated apart so no clause can be read against the
+ * other (finding ZZZ-1):
+ *
+ *   - it is PRESENT whenever the running executable is the Electron binary —
+ *     **including under `ELECTRON_RUN_AS_NODE=1`**, where `process.execPath` is
+ *     still that binary;
+ *   - it is ABSENT only when the executable is not Electron at all.
+ *
+ * Node mode being on the present side is what makes this mint usable for the
+ * engine host, which runs in exactly that mode (ADR-0022, invariant 26). A
+ * reader who concludes otherwise reaches for `process.execPath` there, which is
+ * the defect YYY-2 exists to close.
+ *
+ * So where this returns, it returns the right path; where it cannot, it throws
  * rather than handing back a plausible one.
  *
  * The plain-Node callers under `scripts/` cannot reach this — a computed

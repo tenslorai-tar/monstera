@@ -66,6 +66,27 @@ const SANCTIONED = 'electronBinaryPath()';
 const ASSIGNMENT = /executablePath\s*:\s*([^,\n]+)/gu;
 
 /**
+ * A file that CREATES a host, whether or not it names the property (ZZZ-2).
+ *
+ * The assignment scan above reports the bad sites it finds. It says nothing
+ * about a host built from a spread, a shared config object or a helper — such a
+ * file contributes no site, and the run prints `ok`. That is this instrument's
+ * own reassuring answer, one layer further out than the positive control
+ * reaches: the control proves the walk can FIND a known file, not that the walk
+ * saw every file that creates a host.
+ *
+ * So the creator set is derived independently and every member must carry at
+ * least one site. Requiring the paren is what separates creating a host from
+ * mentioning the factory: `electronImports.proof.mjs` and `win32Handle.proof.mjs`
+ * both name this module and create nothing.
+ *
+ * A config assembled in one file and passed to a call in another is reported,
+ * deliberately. The scan cannot follow it, and the alternative to a false
+ * positive there is silence about a real one.
+ */
+const CREATES_HOST = /createWin32HostSurface\s*\(/u;
+
+/**
  * The two files whose SUBJECT is this rule, rather than files that call the
  * surface.
  *
@@ -99,7 +120,11 @@ function mjsFilesUnder(dir) {
 
 /**
  * @param {{ root?: string }} [options]
- * @returns {{ sites: Array<{ file: string, line: number, value: string, ok: boolean }> }}
+ * @returns {{
+ *   sites: Array<{ file: string, line: number, value: string, ok: boolean }>,
+ *   creators: string[],
+ *   silent: string[],
+ * }}
  */
 export function scanElectronBinaryCallers(options = {}) {
   const root = options.root ?? repoRoot();
@@ -115,10 +140,13 @@ export function scanElectronBinaryCallers(options = {}) {
 
   /** @type {Array<{ file: string, line: number, value: string, ok: boolean }>} */
   const sites = [];
+  /** @type {string[]} */
+  const creators = [];
   for (const file of files) {
     const relativePath = relative(root, file).replaceAll('\\', '/');
     if (SUBJECT_FILES.includes(relativePath)) continue;
     const text = readFileSync(file, 'utf8');
+    if (CREATES_HOST.test(text)) creators.push(relativePath);
     for (const match of text.matchAll(ASSIGNMENT)) {
       const value = (match[1] ?? '').trim().replace(/,$/u, '');
       sites.push({
@@ -129,7 +157,11 @@ export function scanElectronBinaryCallers(options = {}) {
       });
     }
   }
-  return { sites };
+  // A file that creates a host and names the property nowhere. It is not a
+  // clean file; it is a file this scan cannot read, and the two must not share
+  // an output.
+  const silent = creators.filter((file) => !sites.some((site) => site.file === file));
+  return { sites, creators, silent };
 }
 
 /**
@@ -141,9 +173,13 @@ export function report(options = {}) {
   // pattern, the root or the walk breaks, this is what goes red instead of the
   // violation count quietly reaching zero.
   const control = options.control ?? 'scripts/research/lowboxSpike.mjs';
-  const { sites } = scanElectronBinaryCallers(options);
+  const { sites, creators, silent } = scanElectronBinaryCallers(options);
   const bad = sites.filter((site) => !site.ok);
+  // TWO SEARCHES, TWO CONTROLS. The assignment scan and the creator derivation
+  // fail independently and both report their failure as a clean tree, so a
+  // control on one says nothing about the other.
   const located = sites.some((site) => site.file === control);
+  const locatedCreator = creators.includes(control);
 
   let output = '';
   for (const site of bad) {
@@ -156,13 +192,28 @@ export function report(options = {}) {
   if (bad.length === 0) {
     output += `  ok  ${String(sites.length)} host executablePath site(s) name ${SANCTIONED}\n`;
   }
+  for (const file of silent) {
+    output +=
+      `  FAILED  ${file} creates a host and names executablePath nowhere\n` +
+      `          A spread, a shared config object or a helper contributes no site, so this\n` +
+      `          file would otherwise read as clean. It is not clean — it is unreadable to\n` +
+      `          this scan, and the two must not share an output. Name the property at the\n` +
+      `          call, with ${SANCTIONED}.\n`;
+  }
+  if (silent.length === 0) {
+    output += `  ok  all ${String(creators.length)} file(s) creating a host name the property\n`;
+  }
   output += located
     ? `  ok  and the scan located ${control}, so that result means something\n`
     : `  FAILED  the scan did not locate ${control}, which it is known to contain. Every way\n` +
       `          of breaking a search reports "no violations"; this run's clean result is\n` +
       `          not evidence of anything.\n`;
+  output += locatedCreator
+    ? `  ok  and the creator derivation located it too, so ITS silence means something\n`
+    : `  FAILED  the creator derivation did not locate ${control}, which calls the factory.\n` +
+      `          A derivation that finds no creators reports every file as covered.\n`;
 
-  return { ok: bad.length === 0 && located, output };
+  return { ok: bad.length === 0 && silent.length === 0 && located && locatedCreator, output };
 }
 
 // `pathToFileURL`, not a hand-built `file://` string: on Windows the latter
