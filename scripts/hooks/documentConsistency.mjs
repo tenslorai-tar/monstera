@@ -33,6 +33,7 @@ import { join } from 'node:path';
 import { auditRecordDisagreement, auditScope, stagedWatermark } from '../lib/auditWatermark.mjs';
 import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeState } from '../lib/hookProbe.mjs';
+import { isMain } from '../lib/isMain.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { THREAT_MODEL_TOPICS, unraisedTopics } from '../lib/threatModelTopics.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -93,19 +94,131 @@ function trackedFiles() {
   return filesInCommit();
 }
 
-/** @type {string[]} */
-const failures = [];
+/**
+ * A rule, and its SCOPE, which is required rather than defaulted (finding
+ * AAAA-9).
+ *
+ * ## Why the scope exists
+ *
+ * These nine rules split cleanly by what decides them, and only one class was
+ * involved in the defect that made this necessary:
+ *
+ *   - **`per-document`** — decided entirely by reading ONE staged blob. A
+ *     markdown row's cell count is the example: nothing outside that file can
+ *     make it right or wrong. These can run in pre-commit against the index, at
+ *     near-zero cost, and that closes the class that went public — a `|` inside
+ *     a table cell split a row, `check:docs` was run before `git add` so it read
+ *     the old blob and passed, and Guards was the first thing that could see it.
+ *   - **`whole-corpus`** — link resolution, the watermark sha appearing in the
+ *     journal, a withdrawn phrase surviving anywhere. These cannot be scoped,
+ *     because a DIFFERENT file's change is what breaks them. They stay in
+ *     Guards, where reading everything is affordable.
+ *
+ * Moving the whole check into pre-commit was the obvious answer and it is a
+ * false binary: 48 seconds on every commit, or nothing until CI. The scope is
+ * the third option.
+ *
+ * ## The scope is REQUIRED
+ *
+ * {@link registerRule} throws on a rule that does not choose. A default would
+ * mean the next rule silently lands in neither place — the second wiring place
+ * arriving as an omission, which is the shape this repository keeps paying for.
+ *
+ * @typedef {object} DocumentRule
+ * @property {string} name the roster line
+ * @property {'per-document' | 'whole-corpus'} scope
+ * @property {readonly string[]} documents for `per-document`: the one file it
+ *   reads, so a staged-file selection can decide whether it applies. Empty for
+ *   `whole-corpus`, which reads whatever it needs.
+ * @property {(failures: string[]) => boolean | undefined} run
+ *   pushes onto the failure list it is handed, and returns `false` where the
+ *   rule does not APPLY — see rule 7, which is conditional on a threat model
+ *   existing. The list is a parameter rather than a module-level array so a
+ *   selection can be run without the rules writing into each other's results.
+ */
 
-// Section 7 applies only when a threat model exists, and the fixed block of
-// `ok` lines this replaces claimed it either way — see scripts/lib/passRoster.mjs.
-const roster = createRoster(failures, { cases: 9 });
-const { record } = roster;
+/** @type {DocumentRule[]} */
+const RULES = [];
+
+/** The registry, for the proof that asserts the scope contract. */
+export const DOCUMENT_RULES = RULES;
+
+/** @param {DocumentRule} rule @returns {void} */
+function registerRule(rule) {
+  if (rule.scope !== 'per-document' && rule.scope !== 'whole-corpus') {
+    throw new Error(
+      `Rule "${rule.name}" declares no scope. Every rule must choose 'per-document' (decided by ` +
+        `one staged blob, so pre-commit can run it) or 'whole-corpus' (broken by a different ` +
+        `file's change, so only Guards can). There is no default: a rule that does not choose ` +
+        `would land in neither runner and be enforced by nothing.`,
+    );
+  }
+  if (rule.scope === 'per-document' && rule.documents.length !== 1) {
+    throw new Error(
+      `Rule "${rule.name}" is per-document but names ${String(rule.documents.length)} documents. ` +
+        `Per-document means decided by ONE blob; anything reading a second file is whole-corpus, ` +
+        `whatever it feels like.`,
+    );
+  }
+  RULES.push(rule);
+}
+
+/**
+ * Runs a selection of the rules and returns what failed.
+ *
+ * @param {{ scope?: 'per-document', documents?: readonly string[] }} [selection]
+ *   omitted runs everything, which is what `check:docs` does.
+ * @returns {{ failures: string[], summary: string, selected: number, registered: number }}
+ */
+export function runDocumentRules(selection = {}) {
+  /** @type {string[]} */
+  const failures = [];
+  const registered = RULES.filter(
+    (rule) => selection.scope === undefined || rule.scope === selection.scope,
+  );
+  const chosen =
+    selection.documents === undefined
+      ? registered
+      : registered.filter((rule) => rule.documents.some((path) => selection.documents?.includes(path)));
+
+  // Section 7 applies only when a threat model exists, and the fixed block of
+  // `ok` lines this replaces claimed it either way — see
+  // scripts/lib/passRoster.mjs. The count is DERIVED from the selection rather
+  // than written as a literal, because with a selection the literal would be
+  // asserting the wrong thing; `roster.format` still throws on a mismatch, so a
+  // rule that silently fails to run is still caught.
+  const roster = createRoster(failures, { cases: chosen.length });
+  for (const rule of chosen) {
+    const mark = roster.mark();
+    const applies = rule.run(failures);
+    roster.record(mark, rule.name, applies);
+  }
+  // `format` ONLY WHEN NOTHING FAILED, and this is not a style choice. A failing
+  // case is not RECORDED, so the roster's declared count and its recorded count
+  // legitimately disagree — and `format` throws on that disagreement, which is
+  // the guard against a case silently ceasing to run (Z-4). Calling it
+  // unconditionally turns every real document failure into a roster stack trace
+  // and buries the diagnosis. Written that way here first, and caught by the
+  // probe that reproduced the defect this gate exists for: the commit was
+  // refused, and for the wrong reason.
+  return {
+    failures,
+    summary: failures.length > 0 ? '' : roster.format('document consistency check'),
+    selected: chosen.length,
+    registered: registered.length,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // 1. The invariant count in the digest matches the law.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: 'CLAUDE.md cites the invariant count ARCHITECTURE §9 defines',
+  // Two documents by construction — the digest and the law — so a change to
+  // either breaks it and neither alone decides it.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   const architecture = read('docs/ARCHITECTURE.md');
   const start = architecture.indexOf('\n## 9. Invariants');
   const end = architecture.indexOf('\n## 10.', start + 1);
@@ -139,15 +252,20 @@ const { record } = roster;
       }
     }
   }
-  record(mark, 'CLAUDE.md cites the invariant count ARCHITECTURE §9 defines');
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 2. The ADR index lists every ADR, and does not assert a status the file
 //    contradicts.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: 'every ADR is indexed, and no index row contradicts its file',
+  // Enumerates every ADR to decide whether the index is complete: a new ADR
+  // added elsewhere is exactly what breaks it.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   const index = read('docs/DECISIONS/README.md');
   const adrFiles = trackedFiles()
     .filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path))
@@ -195,14 +313,19 @@ const { record } = roster;
       );
     }
   }
-  record(mark, 'every ADR is indexed, and no index row contradicts its file');
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 3. Every scripts/ path named in a tracked text document actually resolves.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: 'every scripts/ path named in a tracked document resolves',
+  // Reads every tracked document AND the filesystem: a path is broken by a
+  // script being renamed, which is not a change to the document naming it.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   const documents = trackedFiles().filter((path) =>
     /\.(md|ya?ml|json|gitattributes)$|^\.gitattributes$/.test(path),
   );
@@ -239,15 +362,21 @@ const { record } = roster;
       }
     }
   }
-  record(mark, 'every scripts/ path named in a tracked document resolves');
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 4. No document states, as a live claim, something an ADR's correction
 //    withdrew.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: 'no document states a claim an ADR correction withdrew',
+  // The canonical whole-corpus rule: a phrase declared withdrawn in ONE ADR
+  // must be absent from EVERY other document, so the file that breaks it is
+  // never the file that changed.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   // An ADR's `Amends:` field names the documents it changes, and a correction to
   // that ADR has to reach all of them. ADR-0007's correction reached
   // docs/ARCHITECTURE.md §9 and did not reach the Stage 0 exit gate in
@@ -287,15 +416,20 @@ const { record } = roster;
         `survives in a second document is the one people find.`,
     );
   }
-  record(mark, 'no document states a claim an ADR correction withdrew');
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 5. The Stage 0 gate on the tool-use guard is marked done only when the guard
 //    has actually been observed to fire.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: 'the tool-use guard gate is not claimed before the guard was seen to fire',
+  // docs/FEATURES.md against docs/hook-probe.json — the claim and its evidence
+  // are two files, and either one moving changes the answer.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   // Deliberately quiet until someone claims the gate. Failing from the moment
   // the row exists would put the build permanently red for work that is
   // correctly outstanding, and a red build nobody caused is a red build people
@@ -325,14 +459,20 @@ const { record } = roster;
       );
     }
   }
-  record(mark, 'the tool-use guard gate is not claimed before the guard was seen to fire');
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 6. §9.17 states each budget's numbers exactly once — in the declared line.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: '§9.17 states each budget value once, in the machine-read line',
+  // PER-DOCUMENT. Both the declared line and any second statement of the same
+  // numbers are inside docs/ARCHITECTURE.md; nothing outside it can make this
+  // right or wrong.
+  scope: 'per-document',
+  documents: ['docs/ARCHITECTURE.md'],
+  run(failures) {
   // ADR-0012's first condition, enforced rather than trusted. The whole value of
   // machine-reading the budgets is that a reader of the invariant sees the
   // number the build enforces; a second copy in the surrounding prose destroys
@@ -375,8 +515,8 @@ const { record } = roster;
       }
     }
   }
-  record(mark, '§9.17 states each budget value once, in the machine-read line');
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 7. The threat model, when it is written, covers the questions that were
@@ -390,21 +530,24 @@ const { record } = roster;
 //
 // Applied only when a threat model EXISTS. It is its own scheduled work, and a
 // check that fails until then is one somebody disables.
-{
-  const mark = roster.mark();
+registerRule({
+  name: `the threat model raises all ${THREAT_MODEL_TOPICS.length} carried questions`,
+  // It FINDS the document by enumerating the corpus rather than naming a path,
+  // deliberately — the document does not exist yet and its eventual name is not
+  // this rule's to fix. An enumeration is a corpus read.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   const threatModel = trackedFiles().find((path) => /docs\/security\/.*THREAT.*\.md$/iu.test(path));
   if (threatModel !== undefined) {
     for (const problem of unraisedTopics(read(threatModel), threatModel)) failures.push(problem);
   }
-  // The condition IS the third argument. This is the section that made the old
+  // The condition IS the return value. This is the section that made the old
   // roster false by construction: with no threat model there is nothing to
   // read, and the fixed block printed `ok` for it anyway.
-  record(
-    mark,
-    `the threat model raises all ${THREAT_MODEL_TOPICS.length} carried questions`,
-    threatModel !== undefined,
-  );
-}
+  return threatModel !== undefined;
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 8. The stage audit is owed for a RANGE, and the watermark cannot advance
@@ -427,8 +570,12 @@ const { record } = roster;
 // And HEAD must be within one batch of the watermark, where "one batch" is the
 // median of batches 4 to 7 measured from this repository's own history. Past
 // that, the checklist stops being applicable to a diff anybody reads.
-{
-  const mark = roster.mark();
+registerRule({
+  name: "the watermark and the journal's newest audit are the same string, and the range is within one batch",
+  // Two documents and git's own history. Nothing here is decided by one blob.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
   // FROM THE INDEX, like every other document this file compares. Left to read
   // the file, `auditScope` answers from the working tree, so this check would
   // decide about a pair no commit ever contains — a journal from the index
@@ -457,11 +604,8 @@ const { record } = roster;
         `maximum was batch 7, the one stretch that was plainly too large to audit as a unit.`,
     );
   }
-  record(
-    mark,
-    "the watermark and the journal's newest audit are the same string, and the range is within one batch",
-  );
-}
+  },
+});
 
 // ---------------------------------------------------------------------------
 // 9. Every row in a FEATURES table carries a Status cell.
@@ -480,8 +624,16 @@ const { record } = roster;
 // One occurrence, so this is an instance — the check exists because the way it
 // hid is a class.
 // ---------------------------------------------------------------------------
-{
-  const mark = roster.mark();
+registerRule({
+  name: 'every row in a FEATURES table has as many cells as its table declares',
+  // PER-DOCUMENT, and this is the rule that made the scope necessary. A row's
+  // cell count is decided entirely by its own file — measured, when a `|` inside
+  // a cell split a row and `check:docs`, run before `git add`, read the previous
+  // blob and passed. Nothing outside docs/FEATURES.md can make this right or
+  // wrong, so pre-commit can decide it against the index for nothing.
+  scope: 'per-document',
+  documents: ['docs/FEATURES.md'],
+  run(failures) {
   const lines = read('docs/FEATURES.md').split('\n');
 
   /** A table's separator: `|---|---|`, however many columns. */
@@ -532,17 +684,32 @@ const { record } = roster;
     );
   }
   failures.push(...malformed);
-  record(mark, 'every row in a FEATURES table has as many cells as its table declares');
-}
+  },
+});
 
-if (failures.length > 0) {
-  process.stderr.write(
+/**
+ * The failure report, shared by both runners so a committer and CI read the
+ * same words about the same defect.
+ *
+ * @param {string[]} failures
+ * @returns {string}
+ */
+export function explainDocumentFailures(failures) {
+  return (
     `\nDocument consistency — ${failures.length} problem(s):\n\n` +
-      failures.map((failure) => `  - ${failure}`).join('\n\n') +
-      `\n\nThese are facts one document states about another. They drifted because they were ` +
-      `maintained by hand, and reviewing the changed file never shows the stale one.\n\n`,
+    failures.map((failure) => `  - ${failure}`).join('\n\n') +
+    `\n\nThese are facts one document states about another. They drifted because they were ` +
+    `maintained by hand, and reviewing the changed file never shows the stale one.\n\n`
   );
-  process.exit(1);
 }
 
-process.stdout.write(roster.format('document consistency check'));
+// `check:docs` runs EVERYTHING — the scope selects, it does not exclude. A
+// per-document rule is cheap enough for pre-commit as well, not instead.
+if (isMain(import.meta.url)) {
+  const result = runDocumentRules();
+  if (result.failures.length > 0) {
+    process.stderr.write(explainDocumentFailures(result.failures));
+    process.exit(1);
+  }
+  process.stdout.write(result.summary);
+}

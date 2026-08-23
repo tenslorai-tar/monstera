@@ -22,6 +22,7 @@ import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
 import { report as reportStagedSyntax, scan as scanStagedSyntax } from '../lib/stagedSyntax.mjs';
 import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
+import { explainDocumentFailures, runDocumentRules } from './documentConsistency.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import {
   divergenceNotice,
@@ -192,6 +193,49 @@ async function main() {
   if (stagesAStackRead()) {
     const stack = await runStackOwnership();
     if (stack !== 0) return stack;
+  }
+
+  // THE PER-DOCUMENT DOCUMENT RULES, against the index (finding AAAA-9).
+  //
+  // `check:docs` as a whole takes ~48 seconds and stays in Guards. But its rules
+  // split by what decides them, and the ones decided entirely by ONE staged blob
+  // — a markdown row's cell count, a budget stated twice in the same file — cost
+  // nothing and close the class that went public: a `|` inside a FEATURES cell
+  // split a row, `check:docs` was run before `git add` so it read the previous
+  // blob and passed, and CI was the first thing that could see it. B10 makes
+  // that commit permanent.
+  //
+  // The whole-corpus rules cannot come with it. A withdrawn phrase surviving in
+  // a document nobody touched is broken by a DIFFERENT file's change, so
+  // scoping it to the staged set would be scoping it to the wrong thing.
+  {
+    const staged = changedPaths(['--cached'])
+      .filter((entry) => entry.state !== 'D')
+      .map((entry) => entry.path);
+    const documents = runDocumentRules({ scope: 'per-document', documents: staged });
+
+    // A SCOPING EXPRESSION THAT MATCHES NOTHING PRODUCES THE REASSURING ANSWER,
+    // and this repository has been bitten by that twice in eight commits. The
+    // REGISTERED count is what must be non-zero — a run where no per-document
+    // rule applies because neither of their documents is staged is a legitimate
+    // zero and is reported as itself.
+    if (documents.registered === 0) {
+      process.stderr.write(
+        '\nNo rule in documentConsistency.mjs declares scope per-document, so this gate ran ' +
+          'nothing.\n  That is a broken selection rather than a clean commit: the whole point ' +
+          'of the scope is that\n  some rules are cheap enough to run here, and a selection ' +
+          'matching none of them reports\n  success for a check that did not happen.\n',
+      );
+      return 1;
+    }
+    process.stdout.write(
+      `  ${String(documents.selected)} of ${String(documents.registered)} per-document ` +
+        `rule(s) apply to this commit's staged documents\n`,
+    );
+    if (documents.failures.length > 0) {
+      process.stderr.write(explainDocumentFailures(documents.failures));
+      return 1;
+    }
   }
 
   // Only when the commit touches dependency resolution — it costs a few

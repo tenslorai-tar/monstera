@@ -236,6 +236,14 @@ jobs:
       - name: Prove the document checker reads the scope it enumerates
         run: node scripts/ci/annotate.mjs scripts/proofs/documentScope.proof.mjs
 
+      # And that every rule DECLARES a scope, so the cheap ones can run in
+      # pre-commit while the whole-corpus ones stay here. The load-bearing case
+      # is that at least one rule is per-document: a scoping expression matching
+      # nothing produces the reassuring answer, and the pre-commit gate would
+      # then report success for a check that never ran.
+      - name: Prove every document rule declares a scope, and the scope selects
+        run: node scripts/ci/annotate.mjs scripts/proofs/documentRuleScope.proof.mjs
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.
