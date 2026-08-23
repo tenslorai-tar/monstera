@@ -41,6 +41,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { electronBinaryPath } from '../provision/electron.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..');
 const BUILT_SURFACE = join(REPO_ROOT, 'apps', 'desktop', 'dist', 'win32HostSurface.js');
@@ -117,7 +119,20 @@ function run(cell, withJob) {
   const reportPath = join(scratch, `${cell}.json`);
   const logPath = join(scratch, `${cell}.log`);
   const surface = createWin32HostSurface({
-    executablePath: process.execPath,
+    // THE ELECTRON BINARY, never `process.execPath`, and a second consumer of
+    // the surface caught this the same way the first one did.
+    //
+    // The surface forces `ELECTRON_RUN_AS_NODE=1` on every child it creates,
+    // which is meaningless for anything but the Electron binary — so "the
+    // executable is that binary" was always its contract, and passing the
+    // running interpreter happened to work only because system Node can also
+    // run the child script. It stopped working the moment the surface added an
+    // Electron-only flag: `node.exe: bad option: --no-stdio-init`.
+    //
+    // The same substitution cost the containment instrument a property row when
+    // its driver became plain Node. Twice now, from the same expression meaning
+    // different things in different parents.
+    executablePath: electronBinaryPath(),
     commandArguments: [CHILD, reportPath],
     workingDirectory: scratch,
     containerName: null,

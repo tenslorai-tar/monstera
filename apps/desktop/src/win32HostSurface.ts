@@ -431,7 +431,42 @@ function environmentBlock(): Buffer {
  * rights and puts a permanent grant there in order to run a sandbox. These flags
  * remove the call that was failing instead.
  */
-const INTERPRETER_FLAGS = ['--preserve-symlinks', '--preserve-symlinks-main'] as const;
+const INTERPRETER_FLAGS = [
+  '--preserve-symlinks',
+  '--preserve-symlinks-main',
+  // `--no-stdio-init`, and the WIN32 STD HANDLES ARE NOT THE CRT'S FILE
+  // DESCRIPTORS — which is the whole of it.
+  //
+  // Measured on a windows-latest runner, twice, and on no machine here: both
+  // contained cells died before their first line with
+  //
+  //   FATAL:electron/shell/app/node_main.cc:215
+  //   Unable to open nul device needed for initialization, aborting startup
+  //
+  // at Low integrity, in their job, with `previousSuspendCount: 1`. The first
+  // attempt at this was to supply `hStdInput` — the parent opens NUL and hands
+  // it in, which is this file's own rule for the diagnostic handle. **It did not
+  // help, and the reason is the mechanism.** `CreateProcessW` sets the Win32
+  // standard handles; it does not populate the CRT's inherited descriptor block
+  // (`lpReserved2`), which only a CRT parent passing its own table does. So
+  // `_get_osfhandle(0)` is invalid in the child however the Win32 handles are
+  // set, node's startup opens `nul` through the CRT to occupy descriptors 0-2,
+  // and inside an AppContainer that open is refused on that Windows build.
+  //
+  // This flag skips exactly that initialisation. It is safe HERE and not in
+  // general, because the handles the child then uses are the ones supplied
+  // above: `createSuspended` sets `STARTF_USESTDHANDLES` whenever it has a
+  // handle to set, so the host has real stdout and stderr rather than none.
+  // Supplying them was necessary and not sufficient; both halves ship.
+  //
+  // NOT a workaround for a defect of ours, and Rule 0 asks for the cause to be
+  // named: the cause is that a Windows AppContainer token cannot open the NUL
+  // device on that build, and node opens it unconditionally when the CRT
+  // descriptors are absent. Both are outside this repository, and the
+  // alternative — a CRT descriptor block — means fabricating an undocumented
+  // `lpReserved2` layout, which is a second opinion about a private ABI.
+  '--no-stdio-init',
+] as const;
 
 function commandLine(config: Win32HostSurfaceConfig): Buffer {
   const parts = [

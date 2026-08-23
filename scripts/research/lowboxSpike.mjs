@@ -1005,7 +1005,13 @@ function runCell(hostJs, scratchDir, reportPath, cell, contained, withJob) {
     // what keeps the shim job's provisioning step consuming something (TT-1).
     // `ELECTRON_RUN_AS_NODE` is forced by the surface itself.
     executablePath: electronBinaryPath(),
-    commandArguments: ['--preserve-symlinks', '--preserve-symlinks-main', hostJs, reportPath, cell],
+    // NO INTERPRETER FLAGS HERE. The surface supplies `--preserve-symlinks`,
+    // `--preserve-symlinks-main` and `--no-stdio-init` to every host it
+    // creates, with the measurement behind each on the line above it. Passing
+    // them again from a caller is a second copy of a decision that belongs to
+    // the thing creating the process, and a caller that stopped passing them
+    // would look like a caller that had changed its mind (B3a).
+    commandArguments: [hostJs, reportPath, cell],
     workingDirectory: scratchDir,
     // The ONE variable on the containment axis. A null name is an uncontained
     // cell; a name is the AppContainer, and the surface derives the SID and
