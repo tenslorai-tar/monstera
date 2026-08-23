@@ -16,7 +16,40 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 8 });
+
+/**
+ * Every rule that must be registered, by name.
+ *
+ * **A LITERAL ON PURPOSE, and this restores coverage AAAA-9 removed without
+ * noticing.** `documentConsistency` used to declare `cases: 9` — an independent
+ * number that went red if a rule stopped recording. AAAA-9 replaced it with
+ * `chosen.length`, derived from the very array being iterated, which is right
+ * for a *selection* and cannot disagree with any size. So deleting a whole rule
+ * became silent, and nothing here caught it: the partition assertion below holds
+ * for any N and the two floors only require one rule of each kind.
+ *
+ * That is finding AAAA-16 — a roster derived from the set it governs cannot
+ * notice that set shrinking — and the remedy for the class is an anchor the
+ * shrinker has to touch separately. This list is that anchor. It lives in the
+ * proof rather than beside the rules deliberately: a second file, which deleting
+ * a rule does not open.
+ *
+ * Adding a rule means adding a line here. That is the cost, and it is the one
+ * worth paying: a list that goes stale fails loudly, and a derivation that
+ * shrinks fails silently.
+ */
+const EXPECTED_RULES = [
+  'CLAUDE.md cites the invariant count ARCHITECTURE §9 defines',
+  'every ADR is indexed, and no index row contradicts its file',
+  'every registered hook has its own probe entry, and the gate is not claimed without one',
+  'every row in a FEATURES table has as many cells as its table declares',
+  'every scripts/ path named in a tracked document resolves',
+  'no document states a claim an ADR correction withdrew',
+  'the threat model raises all 3 carried questions',
+  "the watermark and the journal's newest audit are the same string, and the range is within one batch",
+  '§9.17 states each budget value once, in the machine-read line',
+];
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -27,6 +60,22 @@ function check(name, condition, detail) {
 
 const perDocument = DOCUMENT_RULES.filter((rule) => rule.scope === 'per-document');
 const wholeCorpus = DOCUMENT_RULES.filter((rule) => rule.scope === 'whole-corpus');
+
+{
+  const registered = DOCUMENT_RULES.map((rule) => rule.name).sort();
+  const expected = [...EXPECTED_RULES].sort();
+  const missing = expected.filter((name) => !registered.includes(name));
+  const extra = registered.filter((name) => !expected.includes(name));
+  check(
+    'the registered rule set is exactly the set this proof names',
+    missing.length === 0 && extra.length === 0,
+    `${missing.length > 0 ? `NO LONGER REGISTERED: ${missing.join(' | ')}. ` : ''}` +
+      `${extra.length > 0 ? `REGISTERED BUT NOT NAMED HERE: ${extra.join(' | ')}. ` : ''}` +
+      `A rule that leaves takes its own requirement with it, so nothing derived from the rule ` +
+      `list can notice. If a rule was retired on purpose, delete its line here in the same ` +
+      `commit and say why in the message.`,
+  );
+}
 
 check(
   'every registered rule declares one of the two scopes',

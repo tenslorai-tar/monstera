@@ -44,6 +44,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
+import { claimedHooks, registeredHooks } from './registeredHooks.mjs';
 
 /**
  * Settings scopes that can override the tracked project file, with where each
@@ -99,10 +100,43 @@ export function hookDisarmament(options = {}) {
     if (project.disableAllHooks === true) {
       problems.push(`${projectPath} sets disableAllHooks, which turns off the guard it registers.`);
     }
-    if ((project.hooks?.PreToolUse ?? []).length === 0) {
+    // EVERY HOOK THE REPOSITORY CLAIMS MUST BE REGISTERED, and this replaced a
+    // literal demanding a non-empty PreToolUse array (finding AAAA-15). The
+    // literal was scoped to one event and named one script in prose, so a second
+    // hook could be unregistered — along with its probe entry, whose requirement
+    // is derived from this very file — and every check stayed green while two
+    // documents went on asserting it was in force.
+    //
+    // The claim is the anchor because it is the thing a reader acts on, and
+    // because it lives in a file the person removing a hook has to edit
+    // separately. The anchor's EVENT is enforced by the resolver rather than
+    // here: one place holds that literal now.
+    /** @type {readonly { script: string, name: string, documents: string[] }[]} */
+    let claimed = [];
+    try {
+      claimed = claimedHooks(root);
+    } catch (error) {
       problems.push(
-        `${projectPath} registers no PreToolUse hook. scripts/hooks/blockEscapeResolvingWrites.mjs ` +
-          `only runs because that entry exists.`,
+        `The hook claims in the project's documents could not be read (${String(error)}), so this ` +
+          `cannot tell a hook that was removed from one that was never claimed.`,
+      );
+    }
+
+    /** @type {readonly import('./registeredHooks.mjs').RegisteredHook[]} */
+    let registered = [];
+    try {
+      registered = registeredHooks(root);
+    } catch (error) {
+      problems.push(String(error));
+    }
+
+    for (const claim of claimed) {
+      if (registered.some((hook) => hook.script === claim.script)) continue;
+      problems.push(
+        `${claim.documents.join(' and ')} name${claim.documents.length === 1 ? 's' : ''} ` +
+          `${claim.script} as a registered hook, and ${projectPath} does not register it. A ` +
+          `document that claims a mechanism nobody wired up is worse than no document, because ` +
+          `the claim is what a reader trusts. Register it, or remove the claim in this commit.`,
       );
     }
   }

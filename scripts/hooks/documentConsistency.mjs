@@ -35,7 +35,7 @@ import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeCoverage, probeState } from '../lib/hookProbe.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
-import { ANCHOR_SCRIPT, mechanismName } from '../lib/registeredHooks.mjs';
+import { ANCHOR_SCRIPT, claimedHooks, mechanismName } from '../lib/registeredHooks.mjs';
 import { THREAT_MODEL_TOPICS, unraisedTopics } from '../lib/threatModelTopics.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
@@ -457,6 +457,23 @@ registerRule({
         `leaving evidence about a mechanism that is not in force.`,
     );
   }
+  // The other direction of the same agreement. hookIntegrity refuses a CLAIMED
+  // hook that is not registered; this refuses a REGISTERED hook that no document
+  // claims. Both are needed and neither implies the other: the first stops a
+  // document lying about a mechanism, the second stops a hook existing that the
+  // claim-anchor cannot protect — because a hook nobody names can be deleted
+  // without touching anything outside the file that registers it, which is
+  // AAAA-16 all over again.
+  const claims = claimedHooks(ROOT);
+  for (const hook of coverage.hooks) {
+    if (claims.some((claim) => claim.script === hook.script)) continue;
+    failures.push(
+      `.claude/settings.json registers ${hook.script} and no document names it, so nothing ` +
+        `outside that file would notice it being removed.\n      Name it by its full path in ` +
+        `docs/FEATURES.md or CLAUDE.md — the claim is what makes unregistering it a red build.`,
+    );
+  }
+
   if (coverage.untracked.length > 0) {
     failures.push(
       `.claude/settings.local.json registers ${coverage.untracked.join(', ')}. Those hooks are in ` +

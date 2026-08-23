@@ -530,6 +530,19 @@ function writeEntryIn(root, overrides, others = {}) {
   // doing its job: its premise had changed and it said so instead of passing.
   const recordPath = join(ROOT, RECORD_FILE);
   const savedRecord = existsSync(recordPath) ? readFileSync(recordPath, 'utf8') : null;
+  const claudePath = join(ROOT, 'CLAUDE.md');
+  const savedClaude = readFileSync(claudePath, 'utf8');
+  // A contributor may legitimately have one. Never overwrite it, and never
+  // delete one this proof did not create.
+  const localSettingsPath = join(ROOT, '.claude', 'settings.local.json');
+  const hadLocalSettings = existsSync(localSettingsPath);
+  if (hadLocalSettings) {
+    throw new Error(
+      `${localSettingsPath} exists. This proof needs to write one for a moment and will not ` +
+        `touch yours. Move it aside and re-run — and note that check:docs is refusing already ` +
+        `if it registers any hook.`,
+    );
+  }
 
   /** @returns {{ ok: boolean, output: string }} */
   const runDocs = () => {
@@ -561,6 +574,10 @@ function writeEntryIn(root, overrides, others = {}) {
   const complainsAboutTheGate = (output) => /observed to fire/iu.test(output);
   /** @param {string} output */
   const complainsAboutTheRoster = (output) => /has no\s+entry for it/iu.test(output);
+  /** @param {string} output */
+  const complainsAboutAnUnclaimedHook = (output) => /and no document names it/iu.test(output);
+  /** @param {string} output */
+  const complainsAboutALocalHook = (output) => /settings\.local\.json registers/iu.test(output);
 
   try {
     const quiet = runDocs();
@@ -610,6 +627,7 @@ function writeEntryIn(root, overrides, others = {}) {
     );
 
     if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
+    writeFileSync(featuresPath, original, 'utf8');
     const green = runDocs();
     check(
       'and stops complaining once the evidence is back',
@@ -617,9 +635,78 @@ function writeEntryIn(root, overrides, others = {}) {
       `The control must restore what it removed, or every later run of check:docs is measuring ` +
         `this proof's leftovers.\n${green.output.slice(-600)}`,
     );
+
+    // ---------------------------------------------------------------------
+    // THE OTHER TWO BRANCHES OF THE SAME RULE. Both were written with unit
+    // coverage and no proof that check:docs consumes them — a correct checker
+    // nobody calls, which is the display-only sin the control above exists for,
+    // found by asking which branches no fixture reached (finding AAAA-18).
+    // ---------------------------------------------------------------------
+    check(
+      'with every registered hook claimed, the check is quiet about claims',
+      !complainsAboutAnUnclaimedHook(green.output),
+      `the claim half must be silent when it is satisfied.\n${green.output.slice(-600)}`,
+    );
+
+    // Strip ONE hook's claim — not the anchor's, which claimedHooks refuses to
+    // proceed without. That refusal is the positive control, and removing it
+    // here would test the blinded path instead of this one.
+    const stripped = 'scripts/hooks/reportControlCharacters.mjs';
+    writeFileSync(featuresPath, original.replaceAll(stripped, 'the reporter'), 'utf8');
+    writeFileSync(claudePath, savedClaude.replaceAll(stripped, 'the reporter'), 'utf8');
+    const unclaimed = runDocs();
+    check(
+      'CONTROL: a registered hook that no document names fails check:docs',
+      !unclaimed.ok && complainsAboutAnUnclaimedHook(unclaimed.output),
+      `exit ok=${unclaimed.ok}. Without this the claim anchor protects only the hooks somebody ` +
+        `remembered to write down, and a hook nobody names can be deleted without opening a ` +
+        `second file.\n${unclaimed.output.slice(-800)}`,
+    );
+    writeFileSync(featuresPath, original, 'utf8');
+    writeFileSync(claudePath, savedClaude, 'utf8');
+
+    check(
+      'with no local settings file, the check is quiet about untracked hooks',
+      !complainsAboutALocalHook(runDocs().output),
+      'the untracked half must be silent when there is nothing to say',
+    );
+
+    // HARMLESS IF LOADED, which is why the command names a hook that is already
+    // registered rather than an invented one. This file is real for the length
+    // of one check:docs run, and a session that picks it up in that window runs
+    // exactly what it would have run anyway.
+    writeFileSync(
+      localSettingsPath,
+      `${JSON.stringify(
+        {
+          hooks: {
+            PostToolUse: [
+              {
+                matcher: 'Write',
+                hooks: [
+                  { type: 'command', command: 'node "${CLAUDE_PROJECT_DIR}/scripts/hooks/reportControlCharacters.mjs"' },
+                ],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    const local = runDocs();
+    check(
+      'CONTROL: a hook registered in the untracked sibling fails check:docs',
+      !local.ok && complainsAboutALocalHook(local.output),
+      `exit ok=${local.ok}. A hook in force that no tracked entry can vouch for must not read as ` +
+        `covered.\n${local.output.slice(-800)}`,
+    );
   } finally {
     writeFileSync(featuresPath, original, 'utf8');
+    writeFileSync(claudePath, savedClaude, 'utf8');
     if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
+    if (!hadLocalSettings) rmSync(localSettingsPath, { force: true });
   }
 }
 

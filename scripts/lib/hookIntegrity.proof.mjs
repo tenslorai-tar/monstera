@@ -20,6 +20,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { hookDisarmament } from './hookIntegrity.mjs';
+import { ANCHOR_EVENT, ANCHOR_SCRIPT } from './registeredHooks.mjs';
 
 /** @type {string[]} */
 const failures = [];
@@ -35,27 +36,46 @@ function check(label, condition, detail) {
 const workspace = mkdtempSync(join(tmpdir(), 'monstera-hookint-'));
 
 /**
- * A repository whose tracked settings register the guard properly.
+ * A repository whose tracked settings register the guard properly AND whose
+ * documents claim it.
  *
+ * Both halves are load-bearing now, and the fixture said neither. It registered
+ * `node guard.mjs` — a command naming no repository script — and carried no
+ * documents at all, which was harmless while the check only counted entries in a
+ * `PreToolUse` array. The moment the requirement became *what the documents
+ * claim must be registered*, the fixture was modelling a repository that cannot
+ * exist, and four cases went red for the fixture rather than for the code.
+ *
+ * @param {{ registerAnchor?: boolean, anchorEvent?: string, claim?: boolean }} [shape]
  * @returns {string}
  */
-function makeRoot() {
+function makeRoot(shape = {}) {
+  const { registerAnchor = true, anchorEvent = ANCHOR_EVENT, claim = true } = shape;
   const root = mkdtempSync(join(workspace, 'root-'));
   mkdirSync(join(root, '.claude'), { recursive: true });
+  mkdirSync(join(root, 'docs'), { recursive: true });
   writeFileSync(
     join(root, '.claude', 'settings.json'),
     JSON.stringify({
-      hooks: {
-        PreToolUse: [
-          {
-            matcher: 'Bash|PowerShell',
-            hooks: [{ type: 'command', command: 'node guard.mjs' }],
-          },
-        ],
-      },
+      hooks: registerAnchor
+        ? {
+            [anchorEvent]: [
+              {
+                matcher: 'Bash|PowerShell',
+                hooks: [{ type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/${ANCHOR_SCRIPT}"` }],
+              },
+            ],
+          }
+        : {},
     }),
     'utf8',
   );
+  writeFileSync(
+    join(root, 'CLAUDE.md'),
+    claim ? `The guard is \`${ANCHOR_SCRIPT}\`, registered as a PreToolUse hook.\n` : 'No hooks here.\n',
+    'utf8',
+  );
+  writeFileSync(join(root, 'docs', 'FEATURES.md'), '| row | status |\n', 'utf8');
   return root;
 }
 
@@ -149,17 +169,66 @@ try {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // THE CLAIM IS THE ANCHOR (finding AAAA-16). The requirement used to be a
+  // literal — a non-empty PreToolUse array, one script named in prose — which
+  // was scoped to one event and could not speak about any other hook. What
+  // replaced it is derived from what the repository CLAIMS, so a hook cannot be
+  // removed without opening a second file.
+  // -------------------------------------------------------------------------
   {
     const root = makeRoot();
-    writeFileSync(
-      join(root, '.claude', 'settings.json'),
-      JSON.stringify({ hooks: { PreToolUse: [] } }),
-      'utf8',
-    );
+    writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [] } }), 'utf8');
+    const problems = hookDisarmament({ root, scopes: [] });
     check(
       'a project settings file registering NO PreToolUse hook is refused',
-      hookDisarmament({ root, scopes: [] }).some((problem) => problem.includes('registers no')),
+      problems.length > 0,
       'emptying the array is the quiet way to remove a hook while leaving the file in place',
+    );
+    check(
+      '  ...and the refusal names the CLAIM, so the fix is to register or retract',
+      problems.some((problem) => problem.includes(ANCHOR_SCRIPT)),
+      `reported: ${problems.join(' / ') || 'nothing'}`,
+    );
+  }
+
+  {
+    // A SECOND hook, claimed and unregistered. This is the case the old literal
+    // could not express at all: it asked only whether the PreToolUse array was
+    // non-empty, which stays true when a different hook is removed.
+    const root = makeRoot();
+    writeFileSync(
+      join(root, 'docs', 'FEATURES.md'),
+      `| the reporter is \`scripts/hooks/reportControlCharacters.mjs\` | done |\n`,
+      'utf8',
+    );
+    const problems = hookDisarmament({ root, scopes: [] });
+    check(
+      'a SECOND hook claimed by a document and not registered is refused',
+      problems.some((problem) => problem.includes('reportControlCharacters')),
+      `reported: ${problems.join(' / ') || 'nothing'}\n      Deleting a hook and its probe entry ` +
+        `together leaves every settings-derived requirement satisfied. The document is the one ` +
+        `thing that still disagrees.`,
+    );
+    check(
+      '  ...and the anchor, which IS registered, is not reported alongside it',
+      !problems.some((problem) => problem.includes(ANCHOR_SCRIPT)),
+      `reported: ${problems.join(' / ')}\n      A check that names every claim whenever any one ` +
+        `is broken cannot be acted on.`,
+    );
+  }
+
+  {
+    // The anchor moved off PreToolUse. Same script, still registered, still
+    // claimed — and unable to refuse anything, because a PostToolUse hook runs
+    // after the command. The event literal lives in the resolver now, which is
+    // what makes this reachable from here at all.
+    const root = makeRoot({ anchorEvent: 'PostToolUse' });
+    check(
+      'the guard registered on the WRONG EVENT is refused, not counted as present',
+      hookDisarmament({ root, scopes: [] }).some((problem) => problem.includes('PreToolUse')),
+      `reported: ${hookDisarmament({ root, scopes: [] }).join(' / ') || 'nothing'}\n      A ` +
+        `PostToolUse escape guard reports on writes it has already permitted.`,
     );
   }
 
