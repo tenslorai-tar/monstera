@@ -772,6 +772,32 @@ class, subscribing to it is part of shipping the thing that can fail — and the
 diagnostic that catches it in a harness has not been shipped until the product
 subscribes too.
 
+**MUTATE THE BRANCHES NO FIXTURE REACHED, NOT THE ONES THE SUITE EXERCISES.**
+Mutation testing naturally aims where the cases already go, and those are the
+guards least likely to be unproven. The ones worth checking are the branches
+nothing arrives at — so **disable each branch in turn and see whether anything
+notices**, rather than picking the ones that look important. Three found that
+way and each was a different animal: a branch **no code in the repository can
+reach** (JJJ-1's `.catch()` chain — kept, because the fact it encodes is true
+and deleting it would produce a false positive the day someone writes that
+shape); a branch **reachable and load-bearing with no case at all** (NNN-2's
+terminate-once guard, where the second call would also overwrite the reason and
+blame this build for the peer's bytes); and a branch whose **effect no assertion
+on that module's surface can observe** (NNN-3). Only the second is a missing
+case. The first is documentation, the third is a property that belongs one layer
+out — and *all three look identical* until you ask why the mutation stayed
+green, which is the step to not skip.
+
+**AND ASK IT OF THE FIXTURE SET, NOT ONLY OF EACH FIXTURE.** A case is
+one-sided when it is wrong; a **set** is one-sided when every case holds the
+same argument constant, and then no individual case looks wrong at all.
+Measured (NNN-1): every case in the host factory's file held the assign call at
+`true`, so the file asked thoroughly whether a *yes* can be overruled by the
+membership read and never once whether a *no* can be. A factory that trusts a
+no and never reads passed all twenty-one. **The tell is an input that is a
+constant across an entire file** — especially one the code under test claims not
+to trust.
+
 **4a. Has every instrument passed a resolution test — BEFORE it measured
 anything real?**
 Not after, and not "it looked plausible". Feed it two values you know differ by
@@ -952,6 +978,23 @@ it never announces itself: it arrives as one reasonable-looking exception.
 **7. Do the documents still match the code?**
 `docs/FEATURES.md` rows, `docs/ARCHITECTURE.md`, `CLAUDE.md`, and any ADR whose
 evidence has since changed.
+
+**This item is range-scoped like every other, and that has a hole no amount of
+care closes: a document can be falsified by a commit that never touches it.**
+Measured (NNN-4). Three documents stated the memory budgets' writer of record
+backwards; the claim became false the day `memoryBudgets.mjs` was written, and
+**no range has ever changed both the sentence and the code that refutes it**, so
+no range-scoped sweep could reach it. It was found by review, not by an audit.
+Nor could a check help: it is a claim about a *direction*, and both directions
+parse — and the citation made it worse, since pointing at an ADR that says the
+opposite **resolves**, and therefore passes every link check (UU-1).
+
+The compensation is narrow enough to actually run: **a range that STATES a
+cross-document relationship must sweep every other statement of that
+relationship.** It fires on an addition the scope columns already name — here
+`budget.ts` asserted the correct version inside the same range as the false ones
+— and the sweep is a few greps. It becomes a defect the first time a false
+cross-document claim is found late that this sweep would not have surfaced.
 
 **How you correct one depends on what kind of document it is, and getting this
 backwards damages the thing you were trying to protect.**

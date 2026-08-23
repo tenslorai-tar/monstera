@@ -644,6 +644,174 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-23 — Stage audit: `5f07e80..5889f8a` — two guards the fixture set was one-sided about, and a document a range can never falsify
+
+**Audited through `5889f8a`.** 9 commits, 20 files, **2 proofs added, 3
+modified**, 2 new source files and **7 changed** — from `npm run audit:scope`.
+
+The range is the host runtime loop, ADR-0023 Decision 8's factory, KKK-1, LLL-1
+and MMM-1. Findings **NNN-1** to **NNN-4**.
+
+### 1. Root cause or workaround
+
+One workaround, and it is labelled as one. `engineHostFactory.ts` names no Win32
+entry point so that the register's `git grep` triggers do not expire two
+invariant-25 verdicts on a module that creates no process. Under the reviewer's
+ruling that stays — re-triaging today would narrow a security trigger on the day
+it fired, for a subject that has not occurred — and it is now **dated against
+the Win32 surface**, written into the comment and carried on the FEATURES row,
+because the expiry is an event and a symbol scan cannot see one.
+
+**And the previous range's overturnable call is now settled, in the other
+direction.** The `util.inspect` swap in `rendererHarnessMain.ts` was recorded as
+the one call most likely to be overturned. The rule that separates it is the
+reviewer's:
+
+> A change that stops a trigger is legitimate when it would have been right
+> anyway, and suspect when its only benefit is that the trigger stops.
+
+Node owns how a thrown value renders and how `cause` is walked, so calling it is
+B3a and would have been right with no register in existence. The factory's
+comments fail that test — their only benefit is that the grep stops matching —
+which is exactly why one needed a dated expiry and the other did not. The
+previous entry stands as written; this is the correction underneath it.
+
+### NNN-1 — the whole fixture set only ever asked half the question
+
+`createContainedHost` reads `IsProcessInJob` rather than trusting
+`AssignProcessToJobObject`'s boolean, and the code says so: *the read is what
+decides*. Replacing the read with `assigned ? read : 'not-in-job'` — a factory
+that trusts a **no** and does not look — **passed all twenty-one cases.**
+
+Every case held `assignToJob` at `true`, including the one explicitly labelled
+CONTROL. So the file asked, thoroughly, whether a *yes* from the assign call can
+be overruled by the read, and never once asked whether a *no* can be. Those are
+different programs: the mutant refuses a host that is genuinely in its job under
+our limits, on the word of a boolean the design exists to distrust.
+
+This is item 4's fixture rule at the level of a **set** rather than a case. Each
+case here is fine; what is one-sided is the inputs, and no individual case looks
+wrong. The tell is that one argument is a constant across an entire file.
+
+Closed with three cases holding assign at `false` and varying only the read:
+`in-job` creates the host, `not-in-job` refuses — that is the control, without
+which the first is satisfied by a factory that ignores both — and
+`could-not-read` is named `job-membership` rather than `job-assign`, because the
+tempting shortcut is to blame the assign call that did in fact fail.
+
+### NNN-2 — reachable, load-bearing, and proven by nothing
+
+`stop` guards against terminating twice. Deleting the guard reddened no case.
+
+It is reachable. Every other caller of `stop` sits behind an `isStopped()`
+check — `receive`, the frame loop, `answer` — and the **handler-rejection path
+does not**. So: a protocol violation terminates the loop; a wrapper rejection
+lands afterwards; without the guard `transport.terminate` fires a second time
+**and `state.stopped` is overwritten**. A peer's malformed frame would then be
+reported as our own `unsendable-response` — this build blaming itself for the
+peer's bytes, which is the precise confusion that code names a separate
+termination code to prevent.
+
+Reaching the path took a moment's care, and the care is the reusable part:
+`wrapHandler` catches a *handler's* throw and turns it into an incident, so the
+handler throwing is not enough. The **wrapper** has to throw, which happens when
+`incidents.record` throws — it runs outside the wrapper's `try`. A handler that
+throws plus a sink that throws does it.
+
+A control asserts the rejection alone **does** terminate, so the case cannot pass
+on a build where the wrapper never rejects and the second termination is never
+attempted.
+
+### NNN-3 — the one that is stated rather than fixed, and why that is not a dodge
+
+Deleting the `isStopped()` guard at the top of `receive` also reddens nothing,
+and this one is **not** a missing case.
+
+Its entire effect is that the frame decoder stops accumulating a refused peer's
+bytes. The loop below it already refuses to dispatch, so `written`,
+`terminations`, `termination` and `inFlight` are identical either way, and
+nothing on this module's surface can see the decoder. There is no assertion to
+write that does not first widen the API for the test.
+
+The honest reading is that **the property belongs to the transport**: a pipe that
+has been terminated should stop being read. This line is what survives a
+transport that keeps calling anyway, which is why it stays. It becomes measurable
+when a real transport exists — memory held against a peer that keeps writing
+after refusal — and **that is the trigger**, written into the code beside the
+line rather than carried in someone's head.
+
+Recorded because the alternative was to leave it looking covered. A guard with
+no case is indistinguishable from a guard with a missing case until someone
+mutates it, and the next person to mutate this file deserves to find the answer
+already there.
+
+### NNN-4 — item 7 is range-scoped, and a document can be falsified by a commit that never touches it
+
+MMM-1 — three documents stating the memory budgets' writer of record backwards —
+was found by the reviewing seat. **No stage audit could have found it**, and that
+is a property of how item 7 is run rather than of how carefully it was run.
+
+Item 7 asks whether the documents still match the code, and like every other item
+it is applied to the range. `windowPolicy.ts`'s false claim became false the day
+`memoryBudgets.mjs` was written, and **no range has ever changed both** the
+sentence and the code that refutes it. A range-scoped sweep cannot reach it by
+construction.
+
+The compensation is narrow enough to be usable, and it would have worked here:
+**a range that STATES a cross-document relationship must sweep every other
+statement of that relationship.** `budget.ts` asserted the correct version of the
+pen-holding relationship *inside this very range* — so the trigger fires on an
+addition the columns already name, and the sweep is three greps.
+
+It becomes a defect the first time a false cross-document claim is found late
+that this sweep would not have surfaced.
+
+### 2, 2a, 3 — the shape, the coverage, and what this machine cannot see
+
+The hard shape for both new modules is named and not reached: the factory is
+exercised against an injected surface and never a real process, the loop against
+fed chunks and never a pipe. Both are recorded as **not done** on their FEATURES
+rows rather than implied by a green test.
+
+No derivation moved this range, so item 2a has nothing to declare. Nor does the
+provisioning axis: neither new module has a branch keyed on something being
+installed, and `composition.proof.mjs` **throws** when the build is absent rather
+than skipping — the failure mode that would have been green here and red on
+Guards does not exist in this range.
+
+**Item 3 answers itself unusually here: CI could not have caught NNN-1 or NNN-2,
+and not because of a gap.** Both are missing cases, and a missing case is
+invisible to every runner by construction — the suite is green, and it is green
+honestly. Only mutation finds them. That is the argument for item 4 being a
+manual step that cannot be delegated to a workflow.
+
+### 4a and 4b, applied to the audit's own tools
+
+Two things happened to the mutation harness written for this audit, and both are
+the checklist landing on the instrument rather than on the subject.
+
+It reported **"1 failing"** for a mutation that reddened **2**. The first match
+for a failure count in vitest's output is the *Test Files* line, not the *Tests*
+line. The RED/GREEN verdict was sound because it came from the process exit code
+— but the number beside it was wrong, and a number that is wrong in the
+reassuring direction is what 4a exists for. Anchored to the `Tests` line in the
+second harness, with the reason in its header.
+
+And it **refused** an anchor that matched twice rather than reporting a result
+for whichever occurrence it happened to hit. That is 4b's positive control
+arriving in a mutation tool: an anchor that matches two places tests nothing
+reliable, and reporting GREEN there would have read exactly like a proven guard.
+
+**One more, on me rather than on a tool.** I searched the workflows for
+`proof:composition`, got nothing, and was a step away from filing a finding that
+the proof runs in no job. CI invokes it **by path**, at `ci.yml:359`, after
+`npm run build`. That is precisely the recognition rule `annotateCoverage.mjs`
+was rewritten around one range earlier — *the invocation is the path, not the
+manifest name* — and I searched by the name anyway. Item 4b's reassuring answer,
+in the hands of the person who had just shipped the fix for it.
+
+---
+
 ## 2026-08-22 — Stage audit: `d55b893..5f07e80` — a branch nothing executed, and four instruments that were wrong before they measured
 
 **Audited through `5f07e80`.** 5 commits, 23 files, **2 proofs added, 4
