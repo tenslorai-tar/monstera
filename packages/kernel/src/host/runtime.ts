@@ -283,6 +283,19 @@ export function createHostRuntime<TMap extends ChannelMap>(
 
   return {
     receive: (chunk: Uint8Array): void => {
+      // UNPROVEN AT THIS LAYER, AND SAID SO RATHER THAN LEFT LOOKING COVERED
+      // (finding NNN-3). Deleting this line reddens no case, and that is not a
+      // missing case: its whole effect is that the decoder does not accumulate
+      // a refused peer's bytes, and nothing on this surface can see the
+      // decoder. The loop after it already refuses to dispatch, so `written`,
+      // `terminations`, `termination` and `inFlight` are identical either way.
+      //
+      // The property is real and belongs to the TRANSPORT. A pipe that has been
+      // terminated should stop being read; this line is what survives a
+      // transport that keeps calling anyway, which is why it stays. It becomes
+      // measurable the day a real transport exists — memory held against a peer
+      // that keeps writing after refusal — and that is the trigger, not a
+      // reason to widen this module's surface for a test.
       if (isStopped()) return;
       const pushed = frames.push(chunk);
       if (!pushed.ok) {

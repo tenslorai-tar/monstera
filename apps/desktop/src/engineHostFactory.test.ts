@@ -153,6 +153,59 @@ describe('a failed job assignment kills the process, never resumes it', () => {
     expect(win32.calls).not.toContain('resume');
   });
 
+  // ---------------------------------------------------------------------------
+  // THE OTHER DIRECTION, and it was proven by nothing until the stage audit
+  // (finding NNN-1).
+  //
+  // Every case above holds `assignToJob` at TRUE, so the whole fixture set only
+  // ever asks whether a yes from the assign call can be overruled. Replacing
+  // the read with `assigned ? read : 'not-in-job'` — a factory that trusts a NO
+  // and does not look — passed all twenty-one of them. That is a materially
+  // different program: it refuses a host that IS in its job, correctly limited,
+  // because one boolean said otherwise.
+  //
+  // The claim in the code is "the read decides", not "a true assign is not
+  // enough". Holding assign at FALSE across the next two cases and varying only
+  // the read is what makes the read the variable.
+  // ---------------------------------------------------------------------------
+  it('creates the host when assign reported FALSE and the process is in the job', () => {
+    const win32 = surface({ assignToJob: () => false, membership: 'in-job' });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    // `IsProcessInJob` was asked about OUR handle, so an in-job answer means the
+    // process is in the job carrying our limits. The containment property is a
+    // fact about the kernel's state, and the assign call's return value is a
+    // report about it — when they disagree, the state is what is true.
+    expect(result.ok).toBe(true);
+    expect(win32.calls).toContain('resume');
+    expect(win32.calls).not.toContain('terminate');
+  });
+
+  it('CONTROL: with assign still FALSE, a not-in-job read refuses', () => {
+    // Without this, the case above is satisfied by a factory that ignores the
+    // assign call *and* the read — one that always proceeds. Both cases hold
+    // assign at false, so the read is the only thing that moved.
+    const win32 = surface({ assignToJob: () => false, membership: 'not-in-job' });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    expect(result.ok).toBe(false);
+    expect(win32.calls).not.toContain('resume');
+    expect(win32.calls).toContain('terminate');
+  });
+
+  it('names job-membership, not job-assign, when assign said no and nothing could look', () => {
+    const win32 = surface({ assignToJob: () => false, membership: 'could-not-read' });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // The tempting shortcut is to report `job-assign` here because the assign
+    // call did fail — and it sends the reader to repair an assignment when the
+    // truth is that the membership read never answered. Could-not-look keeps
+    // its own name whatever else went wrong beside it.
+    expect(result.error.stage).toBe('job-membership');
+  });
+
   it('terminates when membership COULD NOT BE READ, which is not a yes', () => {
     const win32 = surface({ membership: 'could-not-read' });
     const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);

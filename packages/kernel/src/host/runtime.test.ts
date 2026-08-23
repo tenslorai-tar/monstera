@@ -297,6 +297,75 @@ describe('after termination the loop is over', () => {
   });
 
   /**
+   * TERMINATION IS IDEMPOTENT, and nothing proved it until the stage audit
+   * (finding NNN-2).
+   *
+   * Every other caller of `stop` is behind an `isStopped()` check — `receive`,
+   * the frame loop, `answer`. The handler REJECTION path is not, so the guard
+   * inside `stop` is the only thing standing between a late rejection and a
+   * second `transport.terminate`. Deleting that guard reddened no case.
+   *
+   * What it costs is worse than a double call. `state.stopped` would be
+   * overwritten, so a peer's protocol violation would be reported as
+   * `unsendable-response` — this build blaming itself for the peer's frame, and
+   * sending whoever reads the log to the wrong side of the pipe, which is the
+   * exact confusion that code names a separate termination code to avoid.
+   *
+   * Reaching the rejection path needs the WRAPPER to throw, not the handler:
+   * `wrapHandler` catches a handler's throw and turns it into an incident. So
+   * the handler throws AND the incident sink throws, which is where `record`
+   * runs — outside the wrapper's try.
+   */
+  const rejectingRuntime = (): {
+    runtime: ReturnType<typeof createHostRuntime>;
+    terminations: HostTermination[];
+  } => {
+    const terminations: HostTermination[] = [];
+    const runtime = createHostRuntime({
+      channels: fixture,
+      handlers: {
+        ...handlers,
+        'fixture.echo': () => {
+          throw new Error('the handler failed');
+        },
+      },
+      incidents: () => {
+        throw new Error('and recording that failure failed too');
+      },
+      maxFrameBytes: ENGINE_HOST_FRAME_MAX_BYTES,
+      maxInFlight: 4,
+      transport: { write: () => undefined, terminate: (reason) => terminations.push(reason) },
+    });
+    return { runtime, terminations };
+  };
+
+  const frameOf = (request: unknown): Uint8Array =>
+    encodeFrame(encoder.encode(JSON.stringify(request)), ENGINE_HOST_FRAME_MAX_BYTES);
+
+  it('CONTROL: a rejecting wrapper does terminate, so the path below is live', async () => {
+    const { runtime, terminations } = rejectingRuntime();
+    runtime.receive(frameOf({ id: 'c1', channel: 'fixture.echo', params: { text: 'a' } }));
+    await settle();
+
+    // Without this, the case below passes on a build where the wrapper never
+    // rejects at all — one termination, and the second one never attempted.
+    expect(terminations).toHaveLength(1);
+    expect(terminations[0]?.code).toBe('unsendable-response');
+  });
+
+  it('keeps the FIRST reason when a late rejection tries to terminate again', async () => {
+    const { runtime, terminations } = rejectingRuntime();
+    runtime.receive(frameOf({ id: 'c1', channel: 'fixture.echo', params: { text: 'a' } }));
+    // Synchronous, so the violation lands while that handler is still pending.
+    runtime.receive(frameOf({ id: 'c2', channel: 'fixture.absent', params: {} }));
+    await settle();
+
+    expect(terminations).toHaveLength(1);
+    expect(terminations[0]?.code).toBe('unknown-channel');
+    expect(runtime.termination()?.code).toBe('unknown-channel');
+  });
+
+  /**
    * The assertion is that the second frame's HANDLER never ran.
    *
    * The first version asserted one termination and no output, and it separated
