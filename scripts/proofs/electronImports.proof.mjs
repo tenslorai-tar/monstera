@@ -303,6 +303,23 @@ try {
       },
     ],
     [
+      'scripts/research/lowboxSpike.mjs',
+      {
+        sites: 2,
+        reason:
+          'imports apps/desktop/dist/win32HostSurface.js and scripts/lib/memoryBudgets.mjs ' +
+          'through file:// URLs, for the same two reasons hostSurfaceProbe.mjs does and with ' +
+          'more at stake: RR-3 moved every cell of this instrument onto the SHIPPED surface, ' +
+          'so reading the build IS the measurement — a hand-rolled equivalent beside it was ' +
+          'the B3a defect that move removed. The second reads §9.17s absolute cap, because ' +
+          'applyLimits requires a memory limit and a number typed into a research file would ' +
+          'be a second opinion about the invariant (ADR-0023 §2). Both paths need Windows ' +
+          'backslash conversion at run time. This file starts the Electron BINARY by path ' +
+          'under ELECTRON_RUN_AS_NODE and never imports the electron package, which is ' +
+          'invariant 26 satisfied rather than evaded.',
+      },
+    ],
+    [
       'scripts/research/hostSurfaceProbe.mjs',
       {
         sites: 2,
