@@ -526,6 +526,19 @@ jobs:
       # MuPDF's static libraries take ~10 minutes to build and change only when
       # the pinned version does, so the key is the version itself. A miss costs
       # the build; a stale hit is impossible because the version is in the key.
+      #
+      # THE KEY IS IMAGE-AGNOSTIC BY CONSTRUCTION, and that is a trap for the
+      # change XXX-1 contemplates. `runner.os` is `Windows` for every Windows
+      # image, so a second image added to prove containment on more than one
+      # Windows build would RESTORE THIS ENTRY rather than build its own — and
+      # the artefact is MSVC output whose toolchain comes from the image. The
+      # sentence above is true of the MuPDF version and says nothing about the
+      # compiler that produced the libraries.
+      #
+      # Not a defect while one image exists, which is why it is written here
+      # rather than fixed: fixing it today costs one ~10-minute cold build and
+      # buys nothing. Whoever adds the second image puts the image label in this
+      # key in the same commit.
       - name: Cache the MuPDF build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

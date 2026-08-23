@@ -91,10 +91,76 @@ export function isInvalidHandle(handle: unknown): boolean {
   return isInvalidHandleAddress(koffi.address(handle));
 }
 
+declare const electronBinaryBrand: unique symbol;
+
+/**
+ * A path that has been ESTABLISHED to name the Electron binary, not merely
+ * claimed to (finding YYY-2).
+ *
+ * `executablePath: string` was a contract living in a comment, and two callers
+ * broke it — both by writing `process.execPath`, which is the Electron binary
+ * under Electron and system Node everywhere else. Once silently, costing a
+ * property row that only a byte-identical comparison caught; once loudly, on an
+ * interpreter flag. The parameter existed to be got wrong: the surface forces
+ * `ELECTRON_RUN_AS_NODE` on every child it creates, so it already depends on the
+ * answer, and a plain Node binary ignores that variable rather than failing.
+ *
+ * There is no single expression that is correct in both parents, which is why
+ * the surface cannot simply resolve this itself: under Electron the answer is
+ * this process, and under the plain-Node driver that proves containment it is
+ * the pinned install, which only `scripts/provision/electron.mjs` can locate.
+ * So the type restricts WHO MAY MINT instead.
+ */
+export type ElectronBinaryPath = string & { readonly [electronBinaryBrand]: true };
+
+/**
+ * The mint for a process that IS the Electron binary — the only mint this
+ * package can offer, and exact rather than heuristic.
+ *
+ * `process.versions.electron` is defined when the running executable is the
+ * Electron binary and undefined otherwise, including under
+ * `ELECTRON_RUN_AS_NODE=1`, where `process.execPath` is still that binary. So
+ * where this returns, it returns the right path; where it cannot, it throws
+ * rather than handing back a plausible one.
+ *
+ * The plain-Node callers under `scripts/` cannot reach this — a computed
+ * `import()` of the build output types as `any`, so no signature here constrains
+ * them. Their side of the rule is `check:electronbinary`, which reads the value
+ * they write.
+ *
+ * **The two mints were run against each other, 2026-08-23, and agree.** From a
+ * plain-Node parent this throws; from the pinned binary under
+ * `ELECTRON_RUN_AS_NODE=1` it returned
+ * `.tools/electron/43.4.1/electron.exe` — the same string
+ * `scripts/provision/electron.mjs` resolves. Executed rather than reasoned
+ * about, because two resolvers for one authority that have never been compared
+ * are two opinions (B3a).
+ */
+export function electronBinaryOfThisProcess(): ElectronBinaryPath {
+  // `in`, not `=== undefined`. `NodeJS.ProcessVersions` carries an index
+  // signature, so `process.versions.electron` types as `string` and the
+  // comparison lint rejects is one the compiler believes can never be true — on
+  // a machine where it is true every time this package runs outside Electron.
+  // The presence test is both honest about the runtime and accurate to the type.
+  if (!('electron' in process.versions)) {
+    throw new Error(
+      'electronBinaryOfThisProcess() was called from a process that is not the Electron ' +
+        'binary. A host created with this path would run the wrong runtime and start ' +
+        'successfully, which is the failure this mint exists to make impossible.',
+    );
+  }
+  return process.execPath as ElectronBinaryPath;
+}
+
 /** How the host process is created. */
 export interface Win32HostSurfaceConfig {
-  /** The executable to run — the Electron binary, started in Node mode. */
-  readonly executablePath: string;
+  /**
+   * The executable to run — the Electron binary, started in Node mode.
+   *
+   * Branded, so a bare `process.execPath` is a compile error rather than a
+   * comment somebody read. See {@link ElectronBinaryPath}.
+   */
+  readonly executablePath: ElectronBinaryPath;
   /** Arguments after the interpreter flags. The first is the host's entry script. */
   readonly commandArguments: readonly string[];
   /** The child's working directory. */

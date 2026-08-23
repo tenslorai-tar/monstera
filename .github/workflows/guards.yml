@@ -304,6 +304,19 @@ jobs:
       - name: No emitted-source template carries a backtick
         run: node scripts/ci/annotate.mjs scripts/lib/emittedTemplates.mjs
 
+      # The Electron-binary caller scan, here rather than on the shim job
+      # because it reads source text and needs no Windows, no node_modules and
+      # no built surface. Its TypeScript half — the brand on
+      # `Win32HostSurfaceConfig.executablePath` — is enforced by `npm run
+      # typecheck` on the matrix job; this half exists because the plain-Node
+      # callers reach the surface through a computed `import()`, which types as
+      # `any`, so no brand can constrain them.
+      - name: Prove the Electron-binary caller scan sees, refuses and tolerates
+        run: node scripts/ci/annotate.mjs scripts/proofs/electronBinaryCallers.proof.mjs
+
+      - name: Every host caller names the Electron binary through the one resolver
+        run: node scripts/ci/annotate.mjs scripts/lib/electronBinaryCallers.mjs
+
       # The syntax parse and its blob reader. Same job as the backtick scan
       # because they are the same class one delimiter apart — a `*/` inside a
       # JSDoc block is what the parse was added for, and the backtick scan

@@ -87,6 +87,8 @@
     "check:stackowner": "node scripts/lib/stackOwnership.mjs",
     "proof:jobplacement": "node scripts/proofs/nodeModulesPlacement.proof.mjs",
     "check:jobplacement": "node scripts/lib/nodeModulesPlacement.mjs",
+    "proof:electronbinary": "node scripts/proofs/electronBinaryCallers.proof.mjs",
+    "check:electronbinary": "node scripts/lib/electronBinaryCallers.mjs",
     "check:workflowpins": "node scripts/lib/workflowPins.mjs",
     "proof:toolchain": "node scripts/proofs/toolchainPin.proof.mjs",
     "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",
