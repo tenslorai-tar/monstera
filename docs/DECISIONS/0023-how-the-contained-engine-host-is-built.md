@@ -698,3 +698,51 @@ measured.
 The row `IPC — Win32 pipe, the SHIPPED DACL` builds that exact descriptor on
 every run of the spike, so the day it stops admitting the container is a red
 rather than a discovery during integration.
+
+## Correction, 2026-08-24 — "handed to Node" cannot be done, and the limit is the CRT
+
+§4 also says the pipe is *"created through Win32 with an explicit security
+descriptor and handed to Node, not created by Node."* The first half is measured
+and stands. **The second half is not achievable from this process**, and every
+reading this ADR was written from was an access check at a *client's* open — the
+spike created pipe instances and never accepted a connection or carried a byte
+over the server half, so *handed to Node* was an inference about the half that
+does the work.
+
+Measured, in the run that added `echoWin32` and its control:
+
+| | |
+|---|---|
+| a pipe **Node** created, same client code | echoed — the control |
+| a pipe `CreateNamedPipeW` created, adopted via `_open_osfhandle` | `Unsupported fd type: UNKNOWN` |
+
+That message is what `net.Socket({ fd })` says both for a handle it cannot drive
+and for a descriptor that resolves to nothing, so it was not an answer. Two more
+readings separated them:
+
+- `_get_osfhandle(3)` in `ucrtbase.dll` returns a handle whose `GetFileType` is
+  `FILE_TYPE_PIPE`. The descriptor is sound in the runtime that created it.
+- `fstatSync(3)` — node's own C runtime — answers **`EBADF`** for the same
+  number.
+
+The descriptor tables are not shared: `node.exe` links its CRT statically, so an
+fd minted by any DLL an FFI can reach is meaningless to it. **No handle this
+process obtains through an FFI can become an fd node will accept.** The limit is
+the CRT and it has nothing to do with pipes, which is why no other pipe flag,
+descriptor or instance count would move it.
+
+So the transport's server half belongs to the surface: it owns the overlapped
+reads and writes and feeds bytes to `createHostRuntime`. **The architecture
+already had this shape and only this ADR's wording did not** — `HostRuntimeTransport`
+takes `write(frame)` and the loop takes `receive(chunk)`, deliberately, so that
+"a test that must fake a window bridge is evidence the boundary is wrong" applies
+to sockets too. What changes is the surface's size, not the seam.
+
+The rejected alternative in this ADR's own list — *creating the pipe with Node
+and adjusting its DACL afterwards* — is **not** revived by this. It was rejected
+for a window in which the pipe exists with the wrong descriptor, and that window
+is unaffected by anything above.
+
+`echoWin32`'s assertion pins the negative result **and its mechanism**: outcome
+`error` and a detail naming `EBADF`. A change in either is a red, because a
+message-only pin would survive the mechanism moving underneath it.

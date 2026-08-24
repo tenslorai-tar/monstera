@@ -422,8 +422,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
+import {
+  copyFileSync,
+  existsSync,
+  fstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { Socket, connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -1118,6 +1126,19 @@ const GetTokenInformation = advapi.func(
   'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
 );
 const GetCurrentProcess = kernel.func('void *GetCurrentProcess()');
+const ConnectNamedPipe = kernel.func('bool ConnectNamedPipe(void *pipe, void *overlapped)');
+// The CRT, not kernel32: turning a Win32 HANDLE into a C runtime file
+// descriptor is the CRT's question, and `net.Socket({ fd })` takes the second.
+const ucrt = koffi.load('ucrtbase.dll');
+const openOsfHandle = ucrt.func('int _open_osfhandle(void *handle, int flags)');
+const getOsfHandle = ucrt.func('void *_get_osfhandle(int fd)');
+const GetFileType = kernel.func('uint32 GetFileType(void *handle)');
+
+/** `GetFileType` for a named pipe. */
+const FILE_TYPE_PIPE = 0x0003;
+
+/** `ConnectNamedPipe` when a client is already at the other end. */
+const ERROR_PIPE_CONNECTED = 535;
 
 /** `TOKEN_QUERY`. */
 const TOKEN_QUERY = 0x0008;
@@ -1286,6 +1307,136 @@ function createWin32Pipe(name, sddl, instances) {
     handles.push(handle);
   }
   return { handles };
+}
+
+/**
+ * One round trip over a pipe, with the SERVER side supplied by the caller.
+ *
+ * ## The question, and why it decides the shape of a module nobody has written
+ *
+ * ADR-0023 §4 says the pipe is "created through Win32 with an explicit security
+ * descriptor and handed to Node". Everything measured so far is the ACCESS CHECK
+ * AT A CLIENT'S OPEN: the cells connect with `net.connect`, and the parent has
+ * never accepted a connection or read a byte on a Win32-created pipe. So
+ * *handed to Node* is an inference about the half that carries the bytes.
+ *
+ * If libuv can adopt a `CreateNamedPipeW` handle, the surface creates the pipe
+ * and hands it over, and `HostRuntimeTransport` sits on an ordinary Node stream.
+ * If it cannot, the surface owns overlapped reads and writes itself — far more
+ * code inside the one module allowed an `any`. Two materially different modules,
+ * and the difference is one measurement.
+ *
+ * ## Its control is the other server
+ *
+ * The same client code, the same assertion, against Node's own `createServer`
+ * pipe. Without it a silent echo says *libuv cannot drive this handle* and *my
+ * harness is broken* in one breath — AAAA-39's ambiguity, in the unit
+ * immediately after it.
+ *
+ * @param {string} name pipe name
+ * @param {(client: import('node:net').Socket) => void} serve Attaches an echo to
+ *   the server side once a client has connected. Called from the client's
+ *   `connect` event, which is when `ConnectNamedPipe` can complete without
+ *   blocking — a synchronous-mode handle with no client waiting would block the
+ *   only thread this process has.
+ * @returns {Promise<{ outcome: string, detail: string }>}
+ */
+function echoOnce(name, serve) {
+  return new Promise((settle) => {
+    let settled = false;
+    /** @param {string} outcome @param {string} detail */
+    const done = (outcome, detail) => {
+      if (settled) return;
+      settled = true;
+      settle({ outcome, detail });
+    };
+    const client = connect(name);
+    client.on('error', (error) => done('refused', `client: ${String(error.message)}`));
+    client.on('connect', () => {
+      try {
+        serve(client);
+      } catch (error) {
+        done('error', error instanceof Error ? error.message : String(error));
+        client.destroy();
+        return;
+      }
+      client.write(Buffer.from('monstera'));
+    });
+    client.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      client.destroy();
+      if (text === 'monstera') done('allowed', `${name} echoed ${text}`);
+      else done('error', `echoed ${JSON.stringify(text)}, not what was written`);
+    });
+    setTimeout(() => {
+      client.destroy();
+      done('error', 'no echo within the window');
+    }, 5000).unref();
+  });
+}
+
+/**
+ * Adopts one Win32 pipe instance into Node and echoes on it.
+ *
+ * Three steps, each of which can fail differently and is reported as itself:
+ * complete the server side of the connection, turn the handle into a C runtime
+ * descriptor, and hand that to `net.Socket`. A single "it did not work" would
+ * make the next reader guess which.
+ *
+ * @param {unknown} handle a `CreateNamedPipeW` instance with a client attached
+ * @returns {import('node:net').Socket}
+ */
+function adoptPipeHandle(handle) {
+  // A client is already connected, so this returns FALSE with
+  // ERROR_PIPE_CONNECTED rather than waiting. On a synchronous-mode handle with
+  // no client it would block this process's only thread, which is why it is
+  // called from the client's own connect event and never before.
+  const connected = ConnectNamedPipe(handle, null);
+  const why = GetLastError();
+  if (!connected && why !== ERROR_PIPE_CONNECTED) {
+    throw new Error(`ConnectNamedPipe refused the already-attached client: GetLastError ${String(why)}`);
+  }
+  const fd = openOsfHandle(handle, 0);
+  if (fd < 0) throw new Error('_open_osfhandle gave no descriptor for the pipe handle');
+
+  // THE DESCRIPTOR IS PROVEN TO POINT AT THE PIPE BEFORE NODE IS ASKED ABOUT IT.
+  //
+  // Node answers `Unsupported fd type: UNKNOWN` both when it cannot drive a
+  // handle of this kind and when the descriptor points at nothing — which is
+  // what a mis-marshalled pointer produces. The echo's control separates broken
+  // CLIENT code from an impossible server half and says nothing about this step,
+  // so the step carries its own: `_get_osfhandle` must give a handle whose
+  // `GetFileType` is FILE_TYPE_PIPE.
+  const roundTripped = getOsfHandle(fd);
+  const kind = GetFileType(roundTripped);
+  if (kind !== FILE_TYPE_PIPE) {
+    throw new Error(
+      `the descriptor does not point at the pipe: GetFileType(_get_osfhandle(${String(fd)})) = ` +
+        `${String(kind)}, wanted ${String(FILE_TYPE_PIPE)} (GetLastError ${String(GetLastError())}). ` +
+        `That is a marshalling failure in this harness, NOT an answer about what libuv can adopt.`,
+    );
+  }
+  // AND WHETHER NODE'S OWN C RUNTIME KNOWS THE DESCRIPTOR, which is a different
+  // question from whether ucrtbase does. `fstatSync` resolves the fd through the
+  // CRT `node.exe` is linked against; EBADF here means the two tables are not
+  // the same one, and THAT — not anything about pipes — is why Node cannot adopt
+  // it. Asked before `net.Socket`, whose own message for both cases is the same
+  // `Unsupported fd type: UNKNOWN`.
+  let nodeSees = 'the descriptor';
+  try {
+    fstatSync(fd);
+  } catch (error) {
+    nodeSees = error instanceof Error && 'code' in error ? String(error['code']) : 'nothing';
+  }
+  if (nodeSees !== 'the descriptor') {
+    throw new Error(
+      `ucrtbase gave descriptor ${String(fd)} and GetFileType(_get_osfhandle(${String(fd)})) is ` +
+        `FILE_TYPE_PIPE, but node's own C runtime answers ${nodeSees} for it. The descriptor ` +
+        `tables are not shared, so no handle this process obtains through an FFI can be turned ` +
+        `into an fd node will accept. The limit is the CRT, not the pipe.`,
+    );
+  }
+  return new Socket({ fd, readable: true, writable: true });
 }
 
 /**
@@ -1573,25 +1724,45 @@ function runCells(hostJs, scratchDir) {
     // processes. What this spelling buys over `BU` is other USERS of the
     // machine, which cannot be measured on a single-account runner and is
     // stated rather than claimed as measured.
-    const sidOnly = createWin32Pipe(
-      sidOnlyName,
-      `D:(A;;GA;;;${currentUserSid()})(A;;GA;;;${sid})`,
-      PIPE_INSTANCES,
-    );
+    const SHIPPED_DACL = `D:(A;;GA;;;${currentUserSid()})(A;;GA;;;${sid})`;
+    const sidOnly = createWin32Pipe(sidOnlyName, SHIPPED_DACL, PIPE_INSTANCES);
     const userOnly = createWin32Pipe(userOnlyName, 'D:(A;;GA;;;BU)', PIPE_INSTANCES);
+
+    // THE ECHO PAIR. Two pipes nothing else touches, so a round trip cannot be
+    // confused with a cell's reachability probe on the same instance.
+    //
+    // One instance each: exactly one client, which is this process. The question
+    // is whether libuv can drive the SERVER side of a handle Win32 created, and
+    // a second client would only add a way for the answer to be about something
+    // else. The Win32 one carries the shipped descriptor because that is the
+    // pipe the surface will build; the Node one is the control.
+    const echoWin32Name = `${pipeName}-w32echo`;
+    const echoNodeName = `${pipeName}-nodeecho`;
+    const echoWin32 = createWin32Pipe(echoWin32Name, SHIPPED_DACL, 1);
+    const echoNode = createServer((socket) => {
+      socket.on('data', (chunk) => socket.write(chunk));
+    });
 
     const shut = () => {
       tcp.close();
       pipe.close();
-      for (const handle of [...granted.handles, ...sidOnly.handles, ...userOnly.handles]) {
+      echoNode.close();
+      for (const handle of [
+        ...granted.handles,
+        ...sidOnly.handles,
+        ...userOnly.handles,
+        ...echoWin32.handles,
+      ]) {
         CloseHandle(handle);
       }
     };
 
     tcp.on('error', reject);
     pipe.on('error', reject);
+    echoNode.on('error', reject);
 
     tcp.listen(0, '127.0.0.1', () => {
+      echoNode.listen(echoNodeName, () => {
       pipe.listen(pipeName, () => {
         void (async () => {
         try {
@@ -1626,6 +1797,29 @@ function runCells(hostJs, scratchDir) {
 
           /** @type {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} */
           const collected = [];
+
+          // THE PARENT IS A CELL, so the readings it produces are read by the
+          // same classifier as every other and no second mechanism appears
+          // beside the table. It creates no process; `spawn` says so rather
+          // than carrying a shape that would read as one.
+          //
+          // The control runs FIRST. If Node's own pipe cannot echo, nothing
+          // below it means anything, and finding that out after the interesting
+          // reading is how a broken harness gets written up as a finding.
+          collected.push({
+            cell: 'parent',
+            spawn: { note: 'this process — no cell was created for these readings' },
+            report: {
+              probes: {
+                echoNode: await echoOnce(echoNodeName, () => undefined),
+                echoWin32: await echoOnce(echoWin32Name, () => {
+                  const server = adoptPipeHandle(echoWin32.handles[0]);
+                  server.on('data', (chunk) => server.write(chunk));
+                }),
+              },
+            },
+          });
+
           for (const spec of cells) {
             const reportPath = join(scratchDir, `report-${spec.cell}.json`);
             const spawn = runCell(
@@ -1646,6 +1840,7 @@ function runCells(hostJs, scratchDir) {
           reject(error instanceof Error ? error : new Error(String(error)));
         }
         })();
+      });
       });
     });
   });
@@ -1728,7 +1923,7 @@ function releaseGrants(sid) {
  * the honest shape here: it is not thirteen cases with some skipped, it is a
  * run that measured nothing.
  */
-const roster = createRoster(caseFailures, { cases: 19 });
+const roster = createRoster(caseFailures, { cases: 21 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -2508,6 +2703,56 @@ function summarise(runs) {
     // "N row(s) could not be read" about rows that were read fine. A failed
     // assert already exits non-zero on its own.
   }
+
+  // ---------------------------------------------------------------------------
+  // CAN NODE DRIVE THE SERVER SIDE OF A PIPE WIN32 CREATED?
+  //
+  // Not a row: both readings come from the same cell, because the property is
+  // about this process's own stream machinery and no containment boundary is
+  // crossed. Reported here rather than in the table so nothing pretends a
+  // differential exists where there is none.
+  //
+  // The CONTROL is first and it is not decoration. A silent Win32 echo says
+  // *libuv cannot adopt this handle* and *the harness is broken* in one breath,
+  // and a Node pipe echoing under the identical client code separates them.
+  // ---------------------------------------------------------------------------
+  process.stdout.write('THE TRANSPORT’S SERVER HALF:\n\n');
+  const echoNodeRead = probe('parent', 'echoNode');
+  const echoWin32Read = probe('parent', 'echoWin32');
+  process.stdout.write(
+    `  echoNode   parent   ${echoNodeRead.outcome.padEnd(11)} ${echoNodeRead.detail}\n` +
+      `  echoWin32  parent   ${echoWin32Read.outcome.padEnd(11)} ${echoWin32Read.detail}\n\n`,
+  );
+
+  assert(
+    'CONTROL: a pipe Node created round-trips under this client code',
+    echoNodeRead.outcome === 'allowed',
+    `${echoNodeRead.outcome}: ${echoNodeRead.detail}. The reading below is a NEGATIVE result, and ` +
+      `a negative result whose harness is broken is worth nothing. This is what separates "libuv ` +
+      `will not adopt that handle" from "my echo does not work".`,
+  );
+
+  // THE RECORDER FOR A MEASURED LIMIT, in the shape the `either` row uses: the
+  // reading is pinned, so the day it changes this goes red and somebody re-reads
+  // the design rather than discovering it during integration.
+  //
+  // EBADF is part of the pin because it is the MECHANISM. `net.Socket({ fd })`
+  // answers `Unsupported fd type: UNKNOWN` for a handle it cannot drive and for
+  // a descriptor that resolves to nothing, and only the second is what happens
+  // here — ucrtbase's `_get_osfhandle` gives back a handle whose `GetFileType`
+  // is FILE_TYPE_PIPE, while node's own runtime answers EBADF for the same
+  // number. A pin on the message alone would survive the mechanism changing.
+  assert(
+    'a Win32 pipe handle cannot be adopted into node, and the limit is the CRT',
+    echoWin32Read.outcome === 'error' && echoWin32Read.detail.includes('EBADF'),
+    `${echoWin32Read.outcome}: ${echoWin32Read.detail}. This assertion is a RECORDER, not a ` +
+      `requirement: it pins a measured negative so a change becomes visible. Two ways to reach ` +
+      `it. If the outcome is now 'allowed', node has gained a route this design was told it did ` +
+      `not have — ADR-0023 §4's second 2026-08-24 correction rests on this, and handing a stream ` +
+      `to the runtime loop is back on the table. If it is still an error but no longer EBADF, ` +
+      `the failure has moved and the correction's stated mechanism is no longer what is ` +
+      `happening; read the detail before believing either.`,
+  );
 
   // ---------------------------------------------------------------------------
   // (b) MEMORY: MEASURED, AND WHAT THE MEASUREMENT IS ABOUT.

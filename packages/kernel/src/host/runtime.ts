@@ -27,8 +27,14 @@ import {
  * chunks and gives it somewhere to write; the factory in `apps/desktop` owns
  * the Win32 pipe, whose DACL names this user AND the container SID — the
  * container's ACE alone refuses the contained host, because an AppContainer's
- * access check is conjunctive (ADR-0023 §4's 2026-08-24 correction). That
- * boundary is not
+ * access check is conjunctive (ADR-0023 §4's 2026-08-24 correction).
+ *
+ * That factory also owns the pipe's overlapped reads and writes, because a
+ * Win32 handle **cannot** be adopted into Node: `node.exe` links its CRT
+ * statically, so an fd minted by any DLL an FFI can reach answers `EBADF` in
+ * node's own runtime (measured). The chunks this loop receives therefore arrive
+ * from the surface rather than from a stream — which is the shape it already
+ * had. That boundary is not
  * tidiness — a loop that owned a socket could only be tested by opening one,
  * and CLAUDE.md's rule is that a test needing a fake window bridge is evidence
  * the boundary is wrong.
