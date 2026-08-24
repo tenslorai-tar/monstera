@@ -644,6 +644,151 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-24 — Stage audit: `71deb64..b0a1da4` — one paragraph corrected three times, each version weaker and truer
+
+**Audited through `b0a1da4`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 71deb64..HEAD
+
+  commits: 9 (one batch is 9)
+  files:   10 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (1 more) or 25 files (15 more).
+```
+
+0 proofs added, **3 modified**, 0 new source files and 3 changed. The range is
+AAAA-21 to AAAA-27; **AAAA-28** was found by the reviewing seat against
+`b0a1da4` and is fixed in the commit after this one.
+
+### The range's headline
+
+**The same paragraph in `sweepScope.mjs` was rewritten three times in nine
+commits, and every version was believed when it was written.** The 27 deletions
+the range diff hides in that file are almost entirely those rewrites:
+
+| version | what it claimed | how it died |
+|---|---|---|
+| before this range | wreckage comes from scripts that **complete** | measurement: the wreckage I could produce came from scripts that were **killed** |
+| after the measurement | sequence **doubles** wall time; orphans accumulate | `proof:shim` measured 1.5s and 9.4s at the **same** position, so machine state was never isolated |
+| after that | four **orphaned** node processes prove nothing kills a tree | their command lines: an MCP server with **living parents**, spawned by the editor |
+
+Each correction was a narrowing, and that direction is the only reassuring thing
+here. But the useful reading is the other one: **a correction is not a terminal
+state.** Two of those three versions were written as the *result* of an audit
+finding, reviewed, and passed — and were wrong. The range's own lesson is that
+the paragraph a range has just corrected is among the likeliest places for the
+next range's defect, which is this project's founding premise arriving one level
+up: not in the proof written to close the defect, but in the **sentence**.
+
+### 1. Root cause, or workaround?
+
+**No check was loosened.** The three modified proofs are additive apart from
+rewrites in place: `auditScope.proof.mjs` gained the within-budget fixture and
+the arithmetic assertion, `checkLocal.proof.mjs` the per-script tree witness
+case, `hookProbe.proof.mjs` the repair-before-measuring guard. Every deletion in
+`sweepScope.mjs` is prose being corrected, listed above.
+
+**Root cause, mechanism named:** AAAA-21 (a boundary-specific claim replaced by a
+**distance**, which cannot be accidentally true at one point) · AAAA-22 (live
+specs edited true rather than corrected underneath — the document-class rule
+applied where I had applied the record rule) · AAAA-25 (one slot is destroyed by
+the act of investigating it; the filename now carries the run's state).
+
+**Explicitly NOT a fix, and it says so: AAAA-23's run log.** It is a **capture
+mechanism**. The 0.0s mechanism remains unknown and the log does nothing about
+it; what it changes is that the next occurrence keeps its own evidence, which the
+founding one did not.
+
+**Explicitly a rule and not a mechanism: AAAA-26.** B6's new sentence — *a label
+carries the command that established it* — cannot fire on its own. Its whole
+claim to usefulness is that a **missing citation is visible in review** where *be
+careful* is not. Recording it as a mechanism would be the overstatement the rule
+itself is about.
+
+**No override was added anywhere in the range.**
+
+### 2. Verified against the easy shape only?
+
+The hard shapes this range actually exercised, each of which had been the
+unexercised side of a branch: a run **killed mid-flight** with SIGKILL · a run
+whose **first** script times out · a **clone** as root · a **within-budget**
+range for a report whose only fixture was over budget.
+
+The last two both found defects on their first use, which is the argument for
+building the awkward fixture rather than reasoning about the branch.
+
+### 3. Would CI have caught it?
+
+**No, and structurally so: none of this range runs in CI.** `checkLocal.mjs` is a
+local harness, the run log is written under a gitignored `.cache/`, and the
+clone route is a thing a person types. Every defect here was found by running
+something by hand or by the reviewing seat reading a file. That is worth stating
+plainly rather than leaving as an absence — this is the part of the repository
+where the board is not the mechanism.
+
+### 4. Are the proofs non-vacuous?
+
+**Three mutations run, each reddening exactly its own case:** renaming a
+`registerRule` name reddens the rule-roster anchor in both directions ·
+disabling the per-script tree witness reddens the new case while `/THE TREE
+MOVED/` still matches, which is why it is a separate case · changing `fileLimit`
+to `BATCH.files` reddens the arithmetic trigger assertion.
+
+**THREE FIXTURES THE DEFECT ALSO PRODUCES, IN THREE CONSECUTIVE COMMITS**, all in
+cases written to enforce the specificity rule: a header assertion matching
+`/one batch/`, which the counts' own parenthetical satisfies · a trigger
+assertion matching `\d+`, which any number satisfies · that same assertion
+guarded by an escape clause its over-budget fixture never got past. The pattern
+is the finding: **a case about specificity keeps checking that specificity is
+PRESENT rather than CORRECT**, because presence survives every mutation that
+changes a value.
+
+### 5. Executed, or asserted?
+
+**Executed:** SIGKILL 45s into a permitted sweep, leaving
+`2026-08-24T11-59-14-19788-running.json` with 11 rows, last `check:advisories` ·
+`node scripts/checkLocal.mjs --root <clone> --only proof:`, which selected **64
+scripts and began executing** rather than refusing · a killed `proof:advisories`
+writing `signal: SIGTERM, bytes: 0` after the timeout row was added ·
+`git merge-base --is-ancestor f7dc5fb 7b7824e` · `Get-CimInstance Win32_Process`
+for the command lines and parents · the board at `b0a1da4`.
+
+**Asserted and unfinished, named in the row and the refusal:** the 0.0s
+mechanism. Nothing in this range explains it.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. Everything registered into existing seams.
+
+### 7. Do the documents still match the code?
+
+**AAAA-28, found by the reviewing seat and not by me.** `sweepScope.mjs` names
+`.cache/checkLocal-lastrun.json` — a file deleted one commit earlier *for being
+the defect* — ten lines above the correct `checkLocal-runs/` in the same string.
+Item 7's compound shape exactly: the clause written this commit is right, the
+clause beside it is a commit old, and nothing about reading it feels wrong
+because the part you check is the part that is still true. It tells an
+investigator that the rows they came for are in the single slot AAAA-25 removed.
+
+No check can see it: the only case on that message asserts two substrings, which
+also makes the module header's *"the proof asserts the text a reader will
+actually meet"* broader than the case backing it — an over-claim in the file that
+gained the over-claim rule.
+
+**And one I introduced myself, found while reading the row for this audit.** The
+AAAA-25 edit to `docs/FEATURES.md` row 319 spliced into the middle of an existing
+sentence and orphaned its tail, leaving *"…that copying step is exactly what was
+missed for the 35-at-0.0s pass, and Rule 0 permits a workaround only where the
+root cause is proven to lie outside this repository."* — a non-sequitur joining
+two unrelated clauses. A long row edited by substring is a row where the
+surrounding sentence is invisible at the moment of editing.
+
+Both are repaired in the AAAA-28 commit, which is also the commit the gate forced
+this audit ahead of.
+
+---
+
 ## 2026-08-24 — Stage audit: `6c2017c..71deb64` — a figure composed instead of read, twice, in the direction that makes the gate look breached
 
 **Audited through `71deb64`.** Quoted verbatim from `npm run audit:scope` rather
