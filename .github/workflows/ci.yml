@@ -272,6 +272,19 @@ jobs:
       - name: Prove nothing can trigger the unpinned Electron download
         run: node scripts/ci/annotate.mjs scripts/proofs/electronImports.proof.mjs
 
+      # HERE rather than on Guards, for the reason the three steps above are: it
+      # spawns the TypeScript compiler against two fixture projects, and Guards
+      # runs no `npm ci`. A case needing node_modules does not belong in that job
+      # however much it belongs with those ones.
+      #
+      # What it covers is the gate that compiles this repository being reachable
+      # from the local sweep at all. `npm run typecheck` is not a `check:*` name
+      # and not a `node` command line, so `checkLocal.mjs` could invoke neither —
+      # and a JSDoc block inserted between a function's documentation and the
+      # function reddened `main` at 073e6d9 with nothing local able to see it.
+      - name: Prove the typecheck runner separates a broken project from a clean one
+        run: node scripts/ci/annotate.mjs scripts/proofs/typecheck.proof.mjs
+
       # The FIRST check in this repository that starts Electron and reads
       # something back out of a running renderer. Two claims, split so a
       # provisioning failure costs the cheap half nothing: the directive list is
