@@ -1788,6 +1788,18 @@ process.exit(exitCode);
  *
  * @param {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} runs
  */
+/**
+ * What a row requires of EACH of its two cells, by name.
+ *
+ * Not a verdict about whether they agreed: agreement is what absence produces,
+ * so a row expecting it was satisfiable by a probe that failed on both sides.
+ * See {@link judgeRow} for the whole of that reasoning.
+ *
+ * `either` is the single row whose contained outcome genuinely varies by runner
+ * image. It carries a pin rather than an outcome, and keeps its own shape.
+ *
+ * @typedef {{ readonly withMechanism: 'allowed' | 'refused', readonly without: 'allowed' | 'refused' } | 'either'} Expectation
+ */
 function summarise(runs) {
   /**
    * A probe's own verdict, or `unreadable` — NEVER a verdict inferred from an
@@ -1853,27 +1865,73 @@ function summarise(runs) {
   };
 
   /**
-   * Whether one row holds, and why — a named function rather than an expression
-   * in the loop, because the control below has to be able to ask it about a pair
-   * no run produced.
+   * Whether one row holds, and which half of it did not.
    *
-   * The pin gives the `either` row a recorder: without it the container's answer
-   * changing on a runner image is unobservable, which is a claim with no expiry
-   * inside the one row that exists because the fact varies. It is absent only
-   * where `--require-containment` is, which is a developer machine, where there
-   * is a reader.
+   * A named function rather than an expression in the loop, because the control
+   * below has to be able to ask it about pairs no run produced.
    *
-   * @param {{ outcome: string }} contained @param {{ outcome: string }} uncontained
-   * @param {string} expected @param {'DIFFERS' | 'same' | 'UNREADABLE'} decided
-   * @returns {{ held: boolean, uncontainedRan: boolean, pinHeld: boolean }}
+   * ## The expectation is the PAIR, and `verdict` no longer decides
+   *
+   * A row used to expect `DIFFERS` or `same`, which are statements about whether
+   * the two cells agreed. Agreement is also what ABSENCE produces — refused
+   * beside refused is `same` — so `same` was satisfiable by a probe that failed
+   * on both sides, and that is how the row certifying ADR-0023 §4's transport
+   * passed for a pipe neither cell could open (AAAA-40).
+   *
+   * The first repair required the uncontained cell to be allowed on every row.
+   * Correct for all thirteen rows that existed and wrong as a rule: it forbids
+   * the first row whose POINT is that the uncontained cell is excluded — a pipe
+   * whose DACL names the container SID and nothing else, which is the spelling
+   * the product ships. An expectation that cannot say *contained allowed,
+   * uncontained refused* would have made that row an exception, and item 6's
+   * retrofit arrives as exactly one reasonable-looking exception.
+   *
+   * So each row now declares the expected outcome of EACH CELL by name. A token
+   * naming one side would leave the reader inferring what it required of the
+   * other, and an expectation that did not say what it required of both sides is
+   * the defect being fixed. `verdict` is unchanged and still prints DIFFERS/same
+   * for a reader; it decides nothing.
+   *
+   * `unreadable` and `error` cannot equal an expected outcome, so a broken
+   * reading fails its row rather than being compared — the classifier's third
+   * state arriving where it is load-bearing rather than beside it.
+   *
+   * ## `either` keeps its pin, and is not folded into the pair vocabulary
+   *
+   * It exists because a fact genuinely varies by runner image, and the pin is
+   * its recorder: without it the container's answer changing is unobservable,
+   * which is a claim with no expiry inside the one row that exists because the
+   * fact varies. Expressing it as a pair would delete the recorder to gain
+   * uniformity. It is absent only where `--require-containment` is, which is a
+   * developer machine, where there is a reader.
+   *
+   * @param {{ outcome: string }} contained The cell WITH the mechanism.
+   * @param {{ outcome: string }} uncontained The cell without it.
+   * @param {Expectation} expected
+   * @returns {{ held: boolean, containedHeld: boolean, uncontainedHeld: boolean, pinHeld: boolean }}
    */
-  const judgeRow = (contained, uncontained, expected, decided) => {
-    const uncontainedRan = uncontained.outcome === 'allowed';
+  const judgeRow = (contained, uncontained, expected) => {
     const pinHeld = LOWBOX_SPAWN_PIN === null || contained.outcome === LOWBOX_SPAWN_PIN;
-    const held =
-      uncontainedRan && (expected === 'either' ? pinHeld : decided === expected);
-    return { held, uncontainedRan, pinHeld };
+    const containedHeld =
+      expected === 'either' ? pinHeld : contained.outcome === expected.withMechanism;
+    const uncontainedHeld =
+      expected === 'either'
+        ? uncontained.outcome === 'allowed'
+        : uncontained.outcome === expected.without;
+    return { held: containedHeld && uncontainedHeld, containedHeld, uncontainedHeld, pinHeld };
   };
+
+  /**
+   * One row's expectation, rendered so the line names both cells.
+   *
+   * @param {Expectation} expected @param {string} withMech @param {string} without
+   * @returns {string}
+   */
+  const describeExpectation = (expected, withMech, without) =>
+    expected === 'either'
+      ? `${withMech} either (pinned ${LOWBOX_SPAWN_PIN ?? 'nothing — no --require-containment'}), ` +
+        `${without} allowed`
+      : `${withMech} ${expected.withMechanism}, ${without} ${expected.without}`;
 
   // THE WORKING-HOST CONTROL, and it replaced a differential against a
   // reference ADR-0022 retired (finding RR-3).
@@ -2007,28 +2065,36 @@ function summarise(runs) {
   // container that already refuses. Each mechanism is therefore read against the
   // pair in which the OTHER one is absent on both sides.
   // ---------------------------------------------------------------------------
-  /** @type {Array<[string, string, string, string, string]>} */
-  // EVERY ROW CARRIES THE VERDICT IT MUST HAVE (finding RR-3, the proof half).
+  // EVERY ROW CARRIES THE OUTCOME EACH OF ITS CELLS MUST REPORT (finding RR-3,
+  // the proof half; AAAA-40 for the shape).
   //
-  // Printing a measured verdict and printing an ASSERTED one are different
+  // Printing a measured result and printing an ASSERTED one are different
   // things, and this file did the first for as long as it was research. A row
-  // that silently flipped from DIFFERS to `same` — containment stopping working
-  // — printed `same` and exited 0, because nothing said which answer the
-  // invariant requires.
+  // that silently flipped — containment stopping working — printed its new
+  // reading and exited 0, because nothing said which answer the invariant
+  // requires.
+  //
+  // What a row asserts is a PAIR OF OUTCOMES, not a verdict about whether the
+  // two cells agreed. A verdict cannot distinguish *both cells did the thing*
+  // from *neither cell could*, and this table certified ADR-0023 §4's transport
+  // for a range on exactly that ambiguity. `verdict` still prints DIFFERS/same
+  // beside each row for a reader; it decides nothing. See {@link judgeRow}.
   //
   // The expected value is part of the row rather than a list beside it, for the
   // reason the registries exist: a table where the claim and its evidence sit
   // apart is a table someone updates half of.
   //
-  // `same` IS the correct expectation for two of these and saying so is load
-  // bearing: the engine and the document must work INSIDE the container, so a
-  // DIFFERS on either means the host cannot do its job.
+  // ALLOWED ON BOTH SIDES IS THE CORRECT EXPECTATION for five of these, and
+  // saying so is load bearing: the engine, the document, the handed file and the
+  // §4 transport must all work INSIDE the container, so a refusal there means
+  // the host cannot do its job.
   //
   // ONE ROW EXPECTS `either`, AND THAT IS A COVERAGE REDUCTION WITH A
   // MEASUREMENT BEHIND IT (audit item 2a, weakening direction).
   //
-  // `(b) process creation — LowBox alone` expected `same`, on WW-1's finding
-  // that the container does not deliver process creation and the job does. That
+  // `(b) process creation — LowBox alone` expected a refusal from the contained
+  // cell, on WW-1's finding that the container does not deliver process
+  // creation and the job does. That
   // was measured here and it is not universal. On `windows-latest`, 2026-08-23,
   // the contained cell with no job of ours was **refused EPERM** where this
   // machine allows it — so the AppContainer denies process creation on that
@@ -2038,45 +2104,70 @@ function summarise(runs) {
   // which is why this is a reduction rather than a problem: ADR-0023 Decision 8
   // rests on *you cannot rely on the container for (b)*, and a mechanism that
   // is present on some builds and absent on others is exactly something you
-  // cannot rely on. The row is stronger evidence for that than a uniform `same`
-  // would have been.
+  // cannot rely on. The row is stronger evidence for that than a uniform
+  // refusal would have been.
   //
-  // It does not become unasserted. `either` still asserts a pin for the
-  // contained side, so a change in the container's behaviour on an image has a
-  // recorder, and it prints that outcome for a reader.
+  // It does not become unasserted, and it KEEPS ITS OWN SHAPE rather than being
+  // folded into the pair vocabulary. `either` pins the contained outcome to what
+  // this runner image was measured at, so a change in the container's behaviour
+  // has a recorder; expressing it as a pair would delete that recorder to gain
+  // uniformity across a table of thirteen.
+  // EACH EXPECTATION BELOW WAS DERIVED FROM THE ROW'S `why` — its stated intent
+  // — AND NEVER FROM WHAT THE ROW CURRENTLY PRINTS.
   //
-  // EVERY ROW ASSERTS ITS UNCONTAINED SIDE IS ALLOWED (AAAA-40), which is what
-  // makes each verdict a statement about the mechanism rather than about the
-  // probe. That condition lived on the `either` row alone for a range, on
-  // reasoning that applies to all three expected values — see the loop below.
-  /** @type {ReadonlyArray<readonly [string, string, string, string, string, string]>} */
+  // That is the whole risk of this remap and it is invisible afterwards: reading
+  // the expectation off the current output canonises any row that has silently
+  // been wrong, and one of them just was. `IPC — Win32 pipe` printed `same` for
+  // a transport nothing could open; its `why` says the contained host must be
+  // able to talk, so its pair is allowed/allowed and the wrong reading has no
+  // route into the new table.
+  //
+  // DENIED is written as `refused` and ALLOWED as `allowed` — the probe's own
+  // vocabulary, so no third spelling of an outcome enters here (B3a).
+  /** @type {ReadonlyArray<readonly [string, string, string, string, Expectation, string]>} */
   const PROPERTIES = [
-    ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job', 'DIFFERS',
+    ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job',
+      { withMechanism: 'refused', without: 'allowed' },
       'the job, at Medium integrity on both sides so the container cannot be the cause'],
     ['(b) process creation — LowBox alone', 'spawnAtStartup', 'lowbox-no-job', 'route-no-job', 'either',
       'the container, with no job of ours on either side — MEASURED, NOT ASSERTED, see below'],
-    ['(d) filesystem, JS', 'jsReadUnhanded', 'lowbox', 'route', 'DIFFERS',
+    ['(d) filesystem, JS', 'jsReadUnhanded', 'lowbox', 'route',
+      { withMechanism: 'refused', without: 'allowed' },
       'a file the host was not handed, read through Node'],
-    ['(d) filesystem, native', 'nativeReadUnhanded', 'lowbox', 'route', 'DIFFERS',
+    ['(d) filesystem, native', 'nativeReadUnhanded', 'lowbox', 'route',
+      { withMechanism: 'refused', without: 'allowed' },
       'the same file through CreateFileW — the path the adversary has'],
-    ['(c) network', 'loopback', 'lowbox', 'route', 'DIFFERS',
+    ['(c) network', 'loopback', 'lowbox', 'route',
+      { withMechanism: 'refused', without: 'allowed' },
       'a loopback connection, so a refusal cannot be a runner with no network'],
-    ['engine', 'loadShim', 'lowbox', 'route', 'same', 'the MuPDF shim, loaded through koffi'],
-    ['document', 'openDocument', 'lowbox', 'route', 'same', 'a document it WAS handed'],
-    ['IPC — Node createServer', 'namedPipe', 'lowbox', 'route', 'DIFFERS',
+    ['engine', 'loadShim', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'the MuPDF shim, loaded through koffi — it must load INSIDE the container'],
+    ['document', 'openDocument', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'a document it WAS handed, which the contained host must be able to open'],
+    ['IPC — Node createServer', 'namedPipe', 'lowbox', 'route',
+      { withMechanism: 'refused', without: 'allowed' },
       'a pipe Node created, which sets no DACL — the MessagePort is unreachable off this route'],
-    ['IPC — Win32 pipe, container in its DACL', 'namedPipeWin32Granted', 'lowbox', 'route', 'same',
-      'ADR-0023 §4’s transport. `same` IS the result: the contained host must be able to talk. ' +
-        'A red here on another Windows image is a finding, not a flake — unlike the LowBox ' +
-        'spawn row, an ACE naming a SID is not a policy that varies by build'],
+    ['IPC — Win32 pipe, container in its DACL', 'namedPipeWin32Granted', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'ADR-0023 §4’s transport. The contained host MUST be able to talk, so allowed is the ' +
+        'reading on both sides — and stating the contained side is what the old `same` did ' +
+        'not do, which is how two refusals satisfied this row. A red here on another Windows ' +
+        'image is a finding, not a flake: unlike the LowBox spawn row, an ACE naming a SID is ' +
+        'not a policy that varies by build'],
     ['CONTROL: the container ACE is what admits it', 'namedPipeWin32UserOnly', 'lowbox', 'route',
-      'DIFFERS', 'the same Win32 route with Built-in Users only — separates the ACE from the route'],
-    ['(b) memory — job alone', 'commitPastLimit', 'route-small-limit', 'route-no-job', 'DIFFERS',
+      { withMechanism: 'refused', without: 'allowed' },
+      'the same Win32 route with Built-in Users only — separates the ACE from the route'],
+    ['(b) memory — job alone', 'commitPastLimit', 'route-small-limit', 'route-no-job',
+      { withMechanism: 'refused', without: 'allowed' },
       'a commit past the job’s ProcessMemoryLimit, uncontained on both sides'],
-    ['CONTROL: memory is the LIMIT, not the job', 'commitPastLimit', 'route', 'route-no-job', 'same',
+    ['CONTROL: memory is the LIMIT, not the job', 'commitPastLimit', 'route', 'route-no-job',
+      { withMechanism: 'allowed', without: 'allowed' },
       'the same commit under a job carrying §9.17’s 3 GB cap — allowed on both'],
-    ['CONTROL: handed', 'readHanded', 'lowbox', 'route', 'same',
-      'must be `same` and allowed on BOTH sides, or the container was handed nothing'],
+    ['CONTROL: handed', 'readHanded', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'allowed on BOTH sides, or the container was handed nothing'],
   ];
 
   process.stdout.write('PROPERTIES — each row against the cell that removes ONLY its own mechanism:\n\n');
@@ -2087,63 +2178,47 @@ function summarise(runs) {
     const uncontained = probe(without, key);
     const decided = verdict(contained, uncontained);
     if (decided === 'UNREADABLE') unreadable += 1;
-    // THE UNCONTAINED CELL MUST HAVE SUCCEEDED, ON EVERY ROW (AAAA-40).
-    //
-    // This condition was written for the `either` row alone (AAAA-1), on the
-    // reasoning that two dead cells must not satisfy a row whose expected value
-    // is the reassuring one. That reasoning was never specific to `either`.
-    // `same` is the reassuring answer too — it is what `verdict` returns for
-    // refused/refused — so the row certifying ADR-0023 §4's transport was
-    // satisfied by allowed/allowed and equally by a pipe neither cell could
-    // open. A mutation breaking that pipe for BOTH sides left the row green.
-    //
-    // `DIFFERS` is less exposed and not immune: contained-allowed beside
-    // uncontained-refused is also DIFFERS, and is nonsense on every row here.
-    // Each `without` cell removes exactly one mechanism, so the thing being
-    // probed must work there or the pair measures nothing.
-    //
-    // The condition is therefore uniform rather than a branch, and that is the
-    // point rather than a tidiness: a guard one row carries and its neighbours
-    // do not is a guard the next reader takes as specific to that row — which
-    // is how it stayed on `either` for a range. CLAUDE.md item 4's direction
-    // rule states the general form: when the property under test is *these two
-    // agree*, mutate towards disagreement, because agreement is also what
-    // ABSENCE produces.
-    //
     // MEASURED, on this machine, 2026-08-24, by pointing `win32Granted` at a
-    // name nothing created so both cells are refused it:
+    // name nothing created so both cells are refused it — against the version of
+    // this loop that expected a VERDICT rather than a pair:
     //
     //   before  ok   same  IPC — Win32 pipe, container in its DACL   17 passed, exit 0
     //   after   FAIL same  IPC — Win32 pipe, container in its DACL   1 FAILED, exit 1
     //
-    // The verdict column reads `same` in both. That is the whole defect in one
-    // line: the row certifying ADR-0023 §4 across three Windows builds was
-    // reporting the same word for a working transport and for no transport at
-    // all. The control below runs that shape on every run rather than leaving
-    // it to a mutation someone remembers to make.
-    const { held, uncontainedRan, pinHeld } = judgeRow(contained, uncontained, expected, decided);
+    // The verdict column reads `same` in both, which is the whole defect in one
+    // line: the row certifying ADR-0023 §4 across three Windows builds reported
+    // the same word for a working transport and for no transport at all. The
+    // control below poses that shape on every run rather than leaving it to a
+    // mutation somebody remembers to make.
+    const { held, containedHeld, uncontainedHeld, pinHeld } = judgeRow(
+      contained,
+      uncontained,
+      expected,
+    );
     const mark = held ? 'ok' : 'FAIL';
     process.stdout.write(
-      `  ${mark.padEnd(5)}${decided.padEnd(11)} ${label} (expected ${expected})\n` +
+      `  ${mark.padEnd(5)}${decided.padEnd(11)} ${label}\n` +
+        `              expected ${describeExpectation(expected, withMech, without)}\n` +
         `              ${why}\n` +
         `              ${withMech.padEnd(13)} ${contained.outcome.padEnd(11)} ${contained.detail}\n` +
         `              ${without.padEnd(13)} ${uncontained.outcome.padEnd(11)} ${uncontained.detail}\n\n`,
     );
     assert(
-      expected === 'either'
-        ? `${label}: ${without} is allowed, and the contained cell matches this ` +
-          `image's pin (${LOWBOX_SPAWN_PIN ?? 'unpinned — no --require-containment'})`
-        : `${label} is ${expected}, with ${without} allowed`,
+      `${label}: ${describeExpectation(expected, withMech, without)}`,
       held,
       `measured ${decided}. ${withMech} said ${contained.outcome} (${contained.detail}); ` +
         `${without} said ${uncontained.outcome} (${uncontained.detail}). ` +
-        (uncontainedRan
+        (uncontainedHeld
           ? ''
-          : `\n\n      THE UNCONTAINED SIDE DID NOT SUCCEED, so this row separates nothing and ` +
-            `its verdict is not about containment. ${without} exists to remove ONE mechanism; ` +
-            `if it cannot do the thing either, then "${decided}" describes the probe being ` +
-            `broken everywhere rather than the mechanism being present. Repair that cell first ` +
-            `— no verdict on this row means anything until it is allowed.\n\n      `) +
+          : `\n\n      THE ${without.toUpperCase()} CELL IS NOT WHAT THIS ROW REQUIRES OF IT. ` +
+            `That cell exists to remove ONE mechanism, so its outcome is half the measurement ` +
+            `and not a backdrop: with it wrong, "${decided}" describes the probe rather than ` +
+            `the mechanism. Repair that cell before reading anything into this row.\n\n      `) +
+        (expected !== 'either' && !containedHeld
+          ? `\n\n      THE ${withMech.toUpperCase()} CELL IS NOT WHAT THIS ROW REQUIRES OF IT ` +
+            `— the mechanism's own side. This is the half a verdict could not state, and the ` +
+            `half two dead cells used to satisfy.\n\n      `
+          : '') +
         (expected === 'either'
           ? 'This row does not assert a DIRECTION — the container denies process creation on ' +
             'some Windows builds and not others — but the uncontained cell must still be able ' +
@@ -2163,51 +2238,141 @@ function summarise(runs) {
                 `job's runs-on: and record the new reading; do not hunt for a bug.`)
           : decided === 'UNREADABLE'
             ? 'UNREADABLE is not a verdict — could-not-look and looked-and-found-containment do ' +
-              'not share an output, so this is a broken run rather than a lost property.'
-            : 'This row measures ONE mechanism, so the pair differing or agreeing is the ' +
-              'property itself changing.'),
+              'not share an output, so this is a broken run rather than a lost property. An ' +
+              'unreadable outcome matches no expected outcome, which is why it fails here ' +
+              'rather than being compared.'
+            : 'This row measures ONE mechanism, and it asserts what EACH cell must report ' +
+              'rather than whether they agreed. An outcome that moved is the property itself ' +
+              'changing.'),
     );
   }
 
   // ---------------------------------------------------------------------------
-  // THE CONTROL FOR AAAA-40, posed on every run rather than by a mutation
-  // somebody remembers to make.
+  // THE PREDICATE'S CONTROL — EXHAUSTIVE OVER THE VOCABULARY, posed on every run
+  // rather than by a mutation somebody remembers to make.
   //
-  // THE DIRECTION IS THE WHOLE OF IT (CLAUDE.md item 4). What these rows test
-  // is *the two cells agree*, and agreement is also what ABSENCE produces:
-  // refused/refused is `same`, and `same` is the answer a `same` row wants. So
-  // the pair posed here is the pair the defect makes — two refusals on a row
-  // expecting `same` — and not the pair a broken container makes, which the
-  // table already catches.
+  // WHAT IT ASSERTS IS NOT THE IMPLEMENTATION RESTATED. Re-deriving `contained
+  // matches AND uncontained matches` here would be a second opinion about a rule
+  // one function already owns (B3a), and it would agree with a broken `judgeRow`
+  // written the same broken way. The property posed instead is DISCRIMINATION:
   //
-  // The second half is not symmetry for its own sake. A `judgeRow` that refused
-  // everything would satisfy the first half while quietly failing every real
-  // row, so the same call with the uncontained side allowed must still hold.
-  // Without it this control could not tell a working predicate from a dead one,
-  // which is the failure it exists to name one layer up.
+  //   for each expectation, exactly ONE of the sixteen actual pairs holds,
+  //   and it is that expectation's own pair.
+  //
+  // That is a statement about the vocabulary rather than about the code, and it
+  // fails for every way this predicate can plausibly break: ignoring a side
+  // (four pairs would hold), comparing the wrong side (one pair holds, the wrong
+  // one), holding always (sixteen), holding never (zero). The last of those is
+  // the vacuity guard, and it is not decoration — a predicate that refused
+  // everything would satisfy a control that only asked what must NOT hold, while
+  // failing every real row.
+  //
+  // THE ACTUAL PAIRS INCLUDE `unreadable` AND `error`, because the classifier
+  // produces them and a row must fail rather than compare them. Sixteen pairs is
+  // four outcomes squared; the four expectations are the three the table uses
+  // plus `allowed/refused`, which nothing uses YET — it is the shape a pipe whose
+  // DACL names the container SID and nothing else will need, and the reason this
+  // table stopped expecting verdicts.
+  //
+  // `either` is posed separately below: it pins one side and requires `allowed`
+  // on the other, so "exactly one pair" is the wrong question to ask of it.
+  //
+  // MUTATED, on this machine, 2026-08-24, and the first result is why this
+  // control exists rather than being trusted to the rows:
+  //
+  //   containedHeld := true          this control FAILED — and all 13 rows PASSED
+  //   containedHeld reads `without`  this control FAILED, 8 cases red
+  //   held := false                  this control FAILED, every row red
+  //
+  // A predicate that ignores the mechanism's own side is invisible to every row
+  // in the table, on a green run, on real readings. Nothing else here can see
+  // it, because each row supplies only one actual pair and it is the matching
+  // one.
+  //
+  // WHAT NO CONTROL HERE CAN SEE is a row whose expectation was translated
+  // WRONGLY — a mistranslation is a correct predicate given a wrong claim, and
+  // it passes exhaustively. That is why the expectations above were derived from
+  // each row's `why` rather than from what it printed, and why a green run after
+  // this remap is necessary and not sufficient.
   // ---------------------------------------------------------------------------
   {
-    const refused = { outcome: 'refused', detail: 'synthesised: neither cell opened it' };
-    const allowed = { outcome: 'allowed', detail: 'synthesised: both cells opened it' };
-    const dead = judgeRow(refused, refused, 'same', verdict(refused, refused));
-    const alive = judgeRow(allowed, allowed, 'same', verdict(allowed, allowed));
-    const separates = !dead.held && alive.held;
+    /** @type {ReadonlyArray<'allowed' | 'refused' | 'unreadable' | 'error'>} */
+    const OUTCOMES = ['allowed', 'refused', 'unreadable', 'error'];
+    /** @type {ReadonlyArray<{ withMechanism: 'allowed' | 'refused', without: 'allowed' | 'refused' }>} */
+    const EXPECTATIONS = [
+      { withMechanism: 'refused', without: 'allowed' },
+      { withMechanism: 'allowed', without: 'allowed' },
+      { withMechanism: 'allowed', without: 'refused' },
+      { withMechanism: 'refused', without: 'refused' },
+    ];
 
+    /** @type {string[]} */
+    const wrong = [];
+    for (const expectation of EXPECTATIONS) {
+      /** @type {string[]} */
+      const holding = [];
+      for (const containedOutcome of OUTCOMES) {
+        for (const withoutOutcome of OUTCOMES) {
+          const { held: doesHold } = judgeRow(
+            { outcome: containedOutcome, detail: 'synthesised' },
+            { outcome: withoutOutcome, detail: 'synthesised' },
+            expectation,
+          );
+          if (doesHold) holding.push(`${containedOutcome}/${withoutOutcome}`);
+        }
+      }
+      const itsOwn = `${expectation.withMechanism}/${expectation.without}`;
+      if (holding.length !== 1 || holding[0] !== itsOwn) {
+        wrong.push(
+          `expecting ${itsOwn} was satisfied by [${holding.join(', ') || 'nothing'}]`,
+        );
+      }
+    }
+
+    // `either`, posed on its own terms: it must never hold with the uncontained
+    // side anything but allowed — which is the two-dead-cells case for the one
+    // row that cannot state its own contained outcome — and it must hold when
+    // the uncontained side is allowed and the contained side matches the pin.
+    // With no pin (a developer machine) every contained outcome matches, which
+    // is what `--require-containment` exists to remove.
+    /** @type {string[]} */
+    const eitherWrong = [];
+    for (const containedOutcome of OUTCOMES) {
+      for (const withoutOutcome of OUTCOMES) {
+        const { held: doesHold } = judgeRow(
+          { outcome: containedOutcome, detail: 'synthesised' },
+          { outcome: withoutOutcome, detail: 'synthesised' },
+          'either',
+        );
+        const shouldHold =
+          withoutOutcome === 'allowed' &&
+          (LOWBOX_SPAWN_PIN === null || containedOutcome === LOWBOX_SPAWN_PIN);
+        if (doesHold !== shouldHold) {
+          eitherWrong.push(
+            `either with ${containedOutcome}/${withoutOutcome} held ${String(doesHold)}`,
+          );
+        }
+      }
+    }
+
+    const discriminates = wrong.length === 0 && eitherWrong.length === 0;
     process.stdout.write(
-      `  ${(separates ? 'ok' : 'FAIL').padEnd(5)}` +
-        `CONTROL: two refusals do not satisfy a row expecting 'same'\n` +
-        `              refused/refused reads ${verdict(refused, refused)} and holds: ` +
-        `${String(dead.held)} — it must not, or a transport nothing can open is\n` +
-        `              indistinguishable from one that works. allowed/allowed holds: ` +
-        `${String(alive.held)} — it must, or this control passes on a dead predicate.\n\n`,
+      `  ${(discriminates ? 'ok' : 'FAIL').padEnd(5)}` +
+        `CONTROL: every expectation is satisfied by exactly its own pair\n` +
+        `              ${String(EXPECTATIONS.length)} expectation(s) against ` +
+        `${String(OUTCOMES.length * OUTCOMES.length)} actual pair(s) each, plus 'either' ` +
+        `against all ${String(OUTCOMES.length * OUTCOMES.length)}\n` +
+        `              exactly one must hold and it must be the expectation itself — so a ` +
+        `predicate that ignores a side,\n` +
+        `              reads the wrong side, holds always or holds never is red here rather ` +
+        `than in a row.\n\n`,
     );
     assert(
-      "CONTROL: two refusals do not satisfy a row expecting 'same', and two allows do",
-      separates,
-      `refused/refused held: ${String(dead.held)} (must be false); allowed/allowed held: ` +
-        `${String(alive.held)} (must be true). Every 'same' row above is believed on the ` +
-        `strength of this. Measured on this machine 2026-08-24: pointing win32Granted at a ` +
-        `name nothing created printed 'ok same' and exited 0 before this condition existed.`,
+      'CONTROL: every expectation is satisfied by exactly its own pair, and by nothing else',
+      discriminates,
+      `${[...wrong, ...eitherWrong].join('; ')}. Every row above is believed on the strength ` +
+        `of this. Measured on this machine 2026-08-24: before the expectation was a pair, ` +
+        `pointing win32Granted at a name nothing created printed 'ok same' and exited 0.`,
     );
     // No `unreadable` increment here, unlike its sibling below: a failed
     // predicate is not an unread row, and counting it as one would print
