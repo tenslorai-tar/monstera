@@ -84,7 +84,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 32 });
+const roster = createRoster(failures, { cases: 33 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -168,6 +168,25 @@ function runLogRows(root, name) {
 function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
+
+/**
+ * How long a case will wait for a spawned harness to reach the state it tests,
+ * and how much longer than that its fixtures must live (finding AAAA-30).
+ *
+ * These are ONE relationship, so only one of them is chosen. A fixture that
+ * expires before the wait ends produces a RED for a case that never reached the
+ * state under test — a *could not look* wearing a *looked and it was wrong*,
+ * which is the distinction this repository refuses to let merge anywhere else.
+ * Deriving the fixture's lifetime from the budget makes the ordering a property
+ * of the code; two literals side by side make it a coincidence that survives
+ * until somebody tightens one of them for a perfectly good reason.
+ */
+const SETUP_POLL_MS = 50;
+const SETUP_BUDGET_MS = 10000;
+const SETUP_MARGIN_MS = 5000;
+
+/** Long enough for a killed child's last write to land before the directory is read. */
+const SETTLE_MS = 250;
 
 const EXIT_ZERO = 'process.exit(0);\n';
 const EXIT_ONE = "process.stderr.write('FAIL deliberate\\n');\nprocess.exit(1);\n";
@@ -602,12 +621,36 @@ try {
     //   - it CHDIRs out of the fixture first, because the harness spawns every
     //     script with the repository root as its cwd, and on Windows a
     //     directory that is a live process's cwd cannot be removed. Without
-    //     this line the `finally` below races a 15-second orphan for the
-    //     scratch tree, which is a flake that would land on one platform only.
+    //     this line the `finally` below races the orphan for the scratch tree,
+    //     which is a flake that would land on one platform only.
+    //
+    // ITS LIFETIME IS DERIVED FROM THE WAIT BELOW, NOT CHOSEN BESIDE IT
+    // (finding AAAA-30). The case only reaches the state under test while the
+    // fixture is still running, so the two numbers must stay ordered — and each
+    // is individually reasonable to change: bound the orphan more tightly, or
+    // allow a slow runner more attempts, and the fixture starts expiring before
+    // the wait ends. That failure arrives as a RED for a case that never got
+    // set up, which is exactly the "could not look" this repository refuses to
+    // let merge with "looked and it was wrong". A margin on one named budget
+    // makes the ordering a property of the code instead of a coincidence.
     writeFileSync(
       join(root, 'scripts', 'b-hangs.mjs'),
-      "import { tmpdir } from 'node:os';\nprocess.chdir(tmpdir());\nsetTimeout(() => process.exit(0), 15000);\n",
+      "import { tmpdir } from 'node:os';\nprocess.chdir(tmpdir());\nsetTimeout(() => process.exit(0), " +
+        String(SETUP_BUDGET_MS + SETUP_MARGIN_MS) +
+        ');\n',
       'utf8',
+    );
+    check(
+      'SETUP: the hanging fixture outlives the wait, so a red here cannot be a fixture expiring',
+      (() => {
+        const written = readFileSync(join(root, 'scripts', 'b-hangs.mjs'), 'utf8');
+        const match = /process\.exit\(0\), (\d+)\)/u.exec(written);
+        return match !== null && Number(match[1]) > SETUP_BUDGET_MS;
+      })(),
+      `Read off the file this case just WROTE, not off the expression above it, so a future ` +
+        `edit that puts a literal back is caught as well as a margin that goes to zero. The ` +
+        `derivation makes the ordering structural; this makes it observable, which is what ` +
+        `separates a case that could not be set up from a mechanism that misbehaved.`,
     );
     writeFileSync(
       join(root, 'package.json'),
@@ -633,21 +676,25 @@ try {
     });
     /** @type {string[]} */
     let midFlight = [];
-    for (let attempt = 0; attempt < 200 && midFlight.length === 0; attempt += 1) {
-      sleepSync(50);
+    let waited = 0;
+    while (waited < SETUP_BUDGET_MS && midFlight.length === 0) {
+      sleepSync(SETUP_POLL_MS);
+      waited += SETUP_POLL_MS;
       midFlight = runLogs(root);
     }
     child.kill('SIGKILL');
-    sleepSync(250);
+    sleepSync(SETTLE_MS);
     const after = runLogs(root);
 
     check(
       'a run KILLED mid-sweep leaves its log named -running, because it could not rename it',
       after.length === 1 && runLogState(after[0] ?? '') === 'running',
       `A harness that seals on exit, or one whose log is a single slot the next run ` +
-        `overwrites, cannot produce this. Ten seconds were allowed for the first row to ` +
-        `appear; found mid-flight ${JSON.stringify(midFlight)}, after the kill ` +
-        `${JSON.stringify(after)}.`,
+        `overwrites, cannot produce this. ${String(SETUP_BUDGET_MS)}ms were allowed for the ` +
+        `first row to appear and the wait ended after ${String(waited)}ms; found mid-flight ` +
+        `${JSON.stringify(midFlight)}, after the kill ${JSON.stringify(after)}. An EMPTY ` +
+        `mid-flight list means the harness never got that far, which is a setup that did not ` +
+        `complete rather than a mechanism that misbehaved.`,
     );
     check(
       '  ...and the rows it had already written are still in it',
