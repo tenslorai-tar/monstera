@@ -1607,7 +1607,7 @@ function releaseGrants(sid) {
  * the honest shape here: it is not thirteen cases with some skipped, it is a
  * run that measured nothing.
  */
-const roster = createRoster(caseFailures, { cases: 17 });
+const roster = createRoster(caseFailures, { cases: 18 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -1852,6 +1852,29 @@ function summarise(runs) {
     return a.outcome !== b.outcome ? 'DIFFERS' : 'same';
   };
 
+  /**
+   * Whether one row holds, and why — a named function rather than an expression
+   * in the loop, because the control below has to be able to ask it about a pair
+   * no run produced.
+   *
+   * The pin gives the `either` row a recorder: without it the container's answer
+   * changing on a runner image is unobservable, which is a claim with no expiry
+   * inside the one row that exists because the fact varies. It is absent only
+   * where `--require-containment` is, which is a developer machine, where there
+   * is a reader.
+   *
+   * @param {{ outcome: string }} contained @param {{ outcome: string }} uncontained
+   * @param {string} expected @param {'DIFFERS' | 'same' | 'UNREADABLE'} decided
+   * @returns {{ held: boolean, uncontainedRan: boolean, pinHeld: boolean }}
+   */
+  const judgeRow = (contained, uncontained, expected, decided) => {
+    const uncontainedRan = uncontained.outcome === 'allowed';
+    const pinHeld = LOWBOX_SPAWN_PIN === null || contained.outcome === LOWBOX_SPAWN_PIN;
+    const held =
+      uncontainedRan && (expected === 'either' ? pinHeld : decided === expected);
+    return { held, uncontainedRan, pinHeld };
+  };
+
   // THE WORKING-HOST CONTROL, and it replaced a differential against a
   // reference ADR-0022 retired (finding RR-3).
   //
@@ -2018,10 +2041,14 @@ function summarise(runs) {
   // cannot rely on. The row is stronger evidence for that than a uniform `same`
   // would have been.
   //
-  // It does not become unasserted. `either` asserts the UNCONTAINED side is
-  // allowed — the half that makes row one's refusal attributable to the job —
-  // and prints the contained side's outcome for a reader. Without that, a row
-  // expecting `either` would be satisfied by two cells that both died.
+  // It does not become unasserted. `either` still asserts a pin for the
+  // contained side, so a change in the container's behaviour on an image has a
+  // recorder, and it prints that outcome for a reader.
+  //
+  // EVERY ROW ASSERTS ITS UNCONTAINED SIDE IS ALLOWED (AAAA-40), which is what
+  // makes each verdict a statement about the mechanism rather than about the
+  // probe. That condition lived on the `either` row alone for a range, on
+  // reasoning that applies to all three expected values — see the loop below.
   /** @type {ReadonlyArray<readonly [string, string, string, string, string, string]>} */
   const PROPERTIES = [
     ['(b) process creation — job alone', 'spawnAtStartup', 'route', 'route-no-job', 'DIFFERS',
@@ -2060,20 +2087,41 @@ function summarise(runs) {
     const uncontained = probe(without, key);
     const decided = verdict(contained, uncontained);
     if (decided === 'UNREADABLE') unreadable += 1;
-    // `either` asserts BOTH halves now (AAAA-1): the uncontained cell must be
-    // allowed, so two dead cells cannot satisfy the row, AND the contained
-    // outcome must equal what this runner image was pinned to. The pin is what
-    // gives the row a recorder — without it the container's answer changing on
-    // an image is unobservable, which is a claim with no expiry inside the one
-    // row that exists because the fact varies.
+    // THE UNCONTAINED CELL MUST HAVE SUCCEEDED, ON EVERY ROW (AAAA-40).
     //
-    // The pin is only absent where `--require-containment` is absent, which is a
-    // developer machine, where there is a reader.
-    const pinHeld = LOWBOX_SPAWN_PIN === null || contained.outcome === LOWBOX_SPAWN_PIN;
-    const held =
-      expected === 'either'
-        ? uncontained.outcome === 'allowed' && pinHeld
-        : decided === expected;
+    // This condition was written for the `either` row alone (AAAA-1), on the
+    // reasoning that two dead cells must not satisfy a row whose expected value
+    // is the reassuring one. That reasoning was never specific to `either`.
+    // `same` is the reassuring answer too — it is what `verdict` returns for
+    // refused/refused — so the row certifying ADR-0023 §4's transport was
+    // satisfied by allowed/allowed and equally by a pipe neither cell could
+    // open. A mutation breaking that pipe for BOTH sides left the row green.
+    //
+    // `DIFFERS` is less exposed and not immune: contained-allowed beside
+    // uncontained-refused is also DIFFERS, and is nonsense on every row here.
+    // Each `without` cell removes exactly one mechanism, so the thing being
+    // probed must work there or the pair measures nothing.
+    //
+    // The condition is therefore uniform rather than a branch, and that is the
+    // point rather than a tidiness: a guard one row carries and its neighbours
+    // do not is a guard the next reader takes as specific to that row — which
+    // is how it stayed on `either` for a range. CLAUDE.md item 4's direction
+    // rule states the general form: when the property under test is *these two
+    // agree*, mutate towards disagreement, because agreement is also what
+    // ABSENCE produces.
+    //
+    // MEASURED, on this machine, 2026-08-24, by pointing `win32Granted` at a
+    // name nothing created so both cells are refused it:
+    //
+    //   before  ok   same  IPC — Win32 pipe, container in its DACL   17 passed, exit 0
+    //   after   FAIL same  IPC — Win32 pipe, container in its DACL   1 FAILED, exit 1
+    //
+    // The verdict column reads `same` in both. That is the whole defect in one
+    // line: the row certifying ADR-0023 §4 across three Windows builds was
+    // reporting the same word for a working transport and for no transport at
+    // all. The control below runs that shape on every run rather than leaving
+    // it to a mutation someone remembers to make.
+    const { held, uncontainedRan, pinHeld } = judgeRow(contained, uncontained, expected, decided);
     const mark = held ? 'ok' : 'FAIL';
     process.stdout.write(
       `  ${mark.padEnd(5)}${decided.padEnd(11)} ${label} (expected ${expected})\n` +
@@ -2083,12 +2131,19 @@ function summarise(runs) {
     );
     assert(
       expected === 'either'
-        ? `${label}: the uncontained cell is allowed, and the contained cell matches this ` +
+        ? `${label}: ${without} is allowed, and the contained cell matches this ` +
           `image's pin (${LOWBOX_SPAWN_PIN ?? 'unpinned — no --require-containment'})`
-        : `${label} is ${expected}`,
+        : `${label} is ${expected}, with ${without} allowed`,
       held,
       `measured ${decided}. ${withMech} said ${contained.outcome} (${contained.detail}); ` +
         `${without} said ${uncontained.outcome} (${uncontained.detail}). ` +
+        (uncontainedRan
+          ? ''
+          : `\n\n      THE UNCONTAINED SIDE DID NOT SUCCEED, so this row separates nothing and ` +
+            `its verdict is not about containment. ${without} exists to remove ONE mechanism; ` +
+            `if it cannot do the thing either, then "${decided}" describes the probe being ` +
+            `broken everywhere rather than the mechanism being present. Repair that cell first ` +
+            `— no verdict on this row means anything until it is allowed.\n\n      `) +
         (expected === 'either'
           ? 'This row does not assert a DIRECTION — the container denies process creation on ' +
             'some Windows builds and not others — but the uncontained cell must still be able ' +
@@ -2112,6 +2167,52 @@ function summarise(runs) {
             : 'This row measures ONE mechanism, so the pair differing or agreeing is the ' +
               'property itself changing.'),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CONTROL FOR AAAA-40, posed on every run rather than by a mutation
+  // somebody remembers to make.
+  //
+  // THE DIRECTION IS THE WHOLE OF IT (CLAUDE.md item 4). What these rows test
+  // is *the two cells agree*, and agreement is also what ABSENCE produces:
+  // refused/refused is `same`, and `same` is the answer a `same` row wants. So
+  // the pair posed here is the pair the defect makes — two refusals on a row
+  // expecting `same` — and not the pair a broken container makes, which the
+  // table already catches.
+  //
+  // The second half is not symmetry for its own sake. A `judgeRow` that refused
+  // everything would satisfy the first half while quietly failing every real
+  // row, so the same call with the uncontained side allowed must still hold.
+  // Without it this control could not tell a working predicate from a dead one,
+  // which is the failure it exists to name one layer up.
+  // ---------------------------------------------------------------------------
+  {
+    const refused = { outcome: 'refused', detail: 'synthesised: neither cell opened it' };
+    const allowed = { outcome: 'allowed', detail: 'synthesised: both cells opened it' };
+    const dead = judgeRow(refused, refused, 'same', verdict(refused, refused));
+    const alive = judgeRow(allowed, allowed, 'same', verdict(allowed, allowed));
+    const separates = !dead.held && alive.held;
+
+    process.stdout.write(
+      `  ${(separates ? 'ok' : 'FAIL').padEnd(5)}` +
+        `CONTROL: two refusals do not satisfy a row expecting 'same'\n` +
+        `              refused/refused reads ${verdict(refused, refused)} and holds: ` +
+        `${String(dead.held)} — it must not, or a transport nothing can open is\n` +
+        `              indistinguishable from one that works. allowed/allowed holds: ` +
+        `${String(alive.held)} — it must, or this control passes on a dead predicate.\n\n`,
+    );
+    assert(
+      "CONTROL: two refusals do not satisfy a row expecting 'same', and two allows do",
+      separates,
+      `refused/refused held: ${String(dead.held)} (must be false); allowed/allowed held: ` +
+        `${String(alive.held)} (must be true). Every 'same' row above is believed on the ` +
+        `strength of this. Measured on this machine 2026-08-24: pointing win32Granted at a ` +
+        `name nothing created printed 'ok same' and exited 0 before this condition existed.`,
+    );
+    // No `unreadable` increment here, unlike its sibling below: a failed
+    // predicate is not an unread row, and counting it as one would print
+    // "N row(s) could not be read" about rows that were read fine. A failed
+    // assert already exits non-zero on its own.
   }
 
   // ---------------------------------------------------------------------------
