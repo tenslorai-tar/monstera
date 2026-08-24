@@ -130,10 +130,48 @@ if (process.argv.includes('--record')) {
   process.exit(0);
 }
 
+/**
+ * The verdict, as lines, from one writer (finding AAAA-20).
+ *
+ * Printed BESIDE the counts at the top and again at the bottom, because it used
+ * to live only at the bottom — sixty lines of disclosure away from the numbers it
+ * is about. Quoting the answer therefore meant assembling two fragments, and
+ * assembling is where composing starts: a report of this instrument gave 8
+ * commits and 26 files where it printed 7 and 24, and concluded *past a batch*
+ * where it printed *within one batch*. Wrong on both axes and on the conclusion,
+ * twice in two ranges, in the direction that makes the gate look breached.
+ *
+ * **A report that restates an instrument is a second opinion about it**, which is
+ * B3a arriving in prose. The fix is not care, it is making the whole answer one
+ * contiguous block a reader can paste — B5 over a note: remove the reason for the
+ * habit rather than forbidding it.
+ *
+ * The trigger line is computed from THIS run, deliberately. A sentence that could
+ * have been printed before you made your change is a disclaimer, and by the third
+ * reading it is furniture — which is exactly how the sweep's blind-spot sentence
+ * failed. `10` and the file count are this range's, so the line cannot be
+ * furniture.
+ *
+ * @param {typeof scope} range
+ * @returns {string[]}
+ */
+function verdictLines(range) {
+  if (range.commits === 0) return ['Nothing to audit.'];
+  if (range.overBudget.length > 0) return [`OVER ONE BATCH: ${range.overBudget.join('; ')}`];
+  return [
+    'Within one batch. An audit is not yet owed.',
+    `Fires at ${BATCH.commits + 1} commits, or on the next commit touching a file outside these ` +
+      `${range.files.length}.`,
+  ];
+}
+
 process.stdout.write(
   `Unaudited range: ${scope.watermark}..HEAD\n\n` +
     `  commits: ${scope.commits} (one batch is ${BATCH.commits})\n` +
-    `  files:   ${scope.files.length} (one batch is ${BATCH.files})\n\n` +
+    `  files:   ${scope.files.length} (one batch is ${BATCH.files})\n` +
+    `${verdictLines(scope)
+      .map((line) => `  ${line}\n`)
+      .join('')}\n` +
     section('proofs ADDED — new coverage', scope.proofsAdded) +
     churnSection(
       'proofs MODIFIED — read each diff; a loosened check looks like a corrected one',
@@ -190,17 +228,20 @@ process.stdout.write(
     `\n`,
 );
 
-if (scope.commits === 0) {
-  process.stdout.write('  Nothing to audit.\n');
-} else if (scope.overBudget.length > 0) {
+// The same lines as the header block, from the same writer, because a long output
+// is read from the end as often as from the top and two hand-kept copies of a
+// verdict are two verdicts.
+process.stdout.write(
+  verdictLines(scope)
+    .map((line) => `  ${line}\n`)
+    .join(''),
+);
+if (scope.overBudget.length > 0) {
   process.stdout.write(
-    `  OVER ONE BATCH: ${scope.overBudget.join('; ')}\n` +
-      `  Audit now. The threshold is the median of batches 4-7 rather than the maximum, because\n` +
+    `  Audit now. The threshold is the median of batches 4-7 rather than the maximum, because\n` +
       `  the maximum was batch 7 — the one stretch everyone agrees was too large to audit as a\n` +
       `  unit, and the reason this gate exists.\n`,
   );
-} else {
-  process.stdout.write('  Within one batch. An audit is not yet owed.\n');
 }
 
 process.stdout.write(

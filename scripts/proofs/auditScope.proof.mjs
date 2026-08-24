@@ -359,6 +359,48 @@ try {
         `A column that says "none" and a column that cannot see are the same output.\n${output}`,
     );
 
+    // AAAA-20. THE VERDICT MUST SIT WITH THE COUNTS, because it used to live
+    // sixty lines below them and quoting the answer meant assembling two
+    // fragments — which is where composing starts. Two reports of this
+    // instrument gave figures it never printed, and one of them stated the
+    // opposite conclusion to the one at the end of its own output.
+    //
+    // Asserted on ADJACENCY rather than on presence: the verdict was always
+    // present somewhere, so "the output contains it" is satisfied by the broken
+    // version too. That is item 4's direction rule — mutate towards the defect,
+    // and assert something only the fixed arrangement produces.
+    const header = output.split('\n').slice(0, 6).join('\n');
+    check(
+      'THE VERDICT SITS WITH THE COUNTS, in one block a report can paste whole',
+      /commits:/u.test(header) &&
+        /files:/u.test(header) &&
+        // The VERDICT's own words. Written first as /one batch/, which the counts'
+        // own parenthetical — "(one batch is 24)" — already satisfies, so the
+        // case passed with the verdict removed. A fixture the defect also
+        // produces separates nothing, and this one was written in the same commit
+        // as the rule against it.
+        /An audit is not yet owed|OVER ONE BATCH|Nothing to audit/u.test(header),
+      `The first six lines must carry the range, both counts and the verdict. Presence anywhere ` +
+        `is not enough: the verdict was always present, sixty lines away, and a reader who has to ` +
+        `assemble two fragments is a reader who will restate them instead.\n${header}`,
+    );
+
+    check(
+      '  ...and the same verdict appears at the end, from the same writer',
+      (output.match(/Within one batch\.|OVER ONE BATCH|Nothing to audit\./gu) ?? []).length === 2,
+      `A long report is read from the end as often as from the top, so the verdict prints twice — ` +
+        `and two hand-kept copies of a verdict are two verdicts. Exactly two occurrences means one ` +
+        `writer produced both.`,
+    );
+
+    check(
+      '  ...and the trigger line names THIS run, so it cannot become furniture',
+      !/Within one batch/u.test(output) || /Fires at \d+ commits, or on the next commit touching a file outside these \d+/u.test(output),
+      `A sentence that could have been printed before you made your change is a disclaimer, and ` +
+        `by the third reading it is ignored — which is how the sweep's blind-spot sentence failed. ` +
+        `The trigger must carry this range's own file count.\n${output}`,
+    );
+
     // The report must also NAME the changed column, not merely compute it. V-2's
     // finding was that every case here tested auditScope's data while the thing
     // a human reads went unasserted, and deleting a whole section passed.
