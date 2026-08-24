@@ -317,6 +317,7 @@ interface Bindings {
     sid: unknown[],
   ) => number;
   readonly deriveAppContainerSid: (name: string, sid: unknown[]) => number;
+  readonly convertSidToStringSid: (sid: unknown, out: unknown[]) => boolean;
 }
 
 /**
@@ -401,6 +402,7 @@ function registerStructs(): void {
 function bind(): Bindings {
   const kernel = koffi.load('kernel32.dll');
   const userenv = koffi.load('userenv.dll');
+  const advapi = koffi.load('advapi32.dll');
   // NO CAST IS NEEDED HERE, AND THAT IS THE POINT WORTH KNOWING. koffi's
   // `func()` returns a callable that accepts and returns anything, so it is
   // assignable to every signature in `Bindings` without one — which means those
@@ -443,6 +445,9 @@ function bind(): Bindings {
     deriveAppContainerSid: userenv.func(
       'int DeriveAppContainerSidFromAppContainerName(const char16_t *name, _Out_ void **sid)',
     ),
+    convertSidToStringSid: advapi.func(
+      'bool ConvertSidToStringSidW(void *sid, _Out_ char16_t **out)',
+    ),
   };
   return bound;
 }
@@ -472,6 +477,44 @@ function containerSid(bindings: Bindings, name: string): Result<unknown, string>
   const derived: number = bindings.deriveAppContainerSid(name, out);
   if (derived !== 0) {
     return err(`the container profile exists but its SID could not be derived: 0x${(derived >>> 0).toString(16)}`);
+  }
+  return ok(out[0]);
+}
+
+/**
+ * The container's SID in string form, for a security descriptor.
+ *
+ * ## Why this is here and not beside its one caller
+ *
+ * *What is this container's SID* is a question `containerSid` above already
+ * answers, including the part everybody gets wrong — that
+ * `CreateAppContainerProfile` returning `ERROR_ALREADY_EXISTS` is the ordinary
+ * path and not a failure. A second module deriving it would be a second opinion
+ * about an answer this one owns (B3a), and the register's own history is that
+ * such a count goes 2, 3, 4 before anybody names it.
+ *
+ * The pipe needs the TEXT because a DACL is written in SDDL, and the process
+ * creation path needs the POINTER because `SECURITY_CAPABILITIES` carries one.
+ * Two forms of one answer, so the conversion lives at the resolver rather than
+ * at whichever caller happened to need it first.
+ *
+ * This module still owns no pipe. It resolves an identity; what a caller writes
+ * into a descriptor is the caller's business, which is why nothing here names a
+ * DACL.
+ *
+ * @param name The AppContainer profile name.
+ * @returns The SID as `S-1-15-2-…`, or why it could not be resolved.
+ */
+export function containerSidText(name: string): Result<string, string> {
+  const bindings = bind();
+  const sid = containerSid(bindings, name);
+  if (!sid.ok) return sid;
+  const out: unknown[] = [null];
+  if (!bindings.convertSidToStringSid(sid.value, out) || typeof out[0] !== 'string') {
+    return err(
+      `the container SID was resolved but ConvertSidToStringSidW gave no string for it ` +
+        `(GetLastError ${String(bindings.lastError())}), so nothing can name the principal`,
+    );
   }
   return ok(out[0]);
 }

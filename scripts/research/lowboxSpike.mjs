@@ -442,7 +442,11 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { buildLargeFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
-import { INVALID_HANDLE_SOURCE, isInvalidHandle } from '../lib/win32Handle.mjs';
+// `isInvalidHandle` is no longer imported here: the only caller was this file's
+// own `CreateNamedPipeW`, and the shipped surface answers that question now —
+// through `win32HostSurface.ts`'s derived copy, which `proof:win32handle`
+// requires to agree with this module on every value.
+import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
 
 const ROOT = repoRoot();
 const SHIM = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
@@ -1066,6 +1070,37 @@ if (!existsSync(BUILT_SURFACE)) {
 const { createWin32HostSurface } = await import(pathToFileURL(BUILT_SURFACE).href);
 
 /**
+ * THE PIPE IS CREATED BY THE SHIPPED SURFACE TOO, for the reason stated above
+ * about the host: **anything that creates has exactly one implementation.**
+ *
+ * This file held the only one until `enginePipeFactory.ts` and
+ * `win32PipeSurface.ts` existed, and the note above says to write the next
+ * addition on the correct side of that line. Creating a pipe is creating.
+ *
+ * The split that survives is between the SHIPPED descriptor and the control
+ * ones. `createHostPipe` assembles its DACL from two branded SIDs and cannot
+ * express `D:(A;;GA;;;BU)` — which is the point of it — so the control pipes,
+ * whose descriptors are deliberately wrong, drive the same surface directly
+ * through `describe` and `createInstance`. One set of Win32 calls, two callers,
+ * and the wrong descriptors are unrepresentable in the shipped path.
+ */
+const BUILT_PIPE_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js');
+const BUILT_PIPE_FACTORY = join(ROOT, 'apps', 'desktop', 'dist', 'enginePipeFactory.js');
+for (const built of [BUILT_PIPE_SURFACE, BUILT_PIPE_FACTORY]) {
+  if (!existsSync(built)) {
+    unverifiable(
+      `The Win32 pipe surface is not built at ${built}. Every pipe below is created through the ` +
+        `SHIPPED module rather than a copy of it, so without the build there is nothing to ` +
+        `measure. Run \`npm run build\`.`,
+    );
+  }
+}
+const { createWin32PipeSurface, currentUserSid, hostContainerSid } = await import(
+  pathToFileURL(BUILT_PIPE_SURFACE).href
+);
+const { createHostPipe } = await import(pathToFileURL(BUILT_PIPE_FACTORY).href);
+
+/**
  * §9.17's absolute cap for `mupdf-host`, which is what the shipped factory
  * passes and therefore what the shipped job carries.
  *
@@ -1125,7 +1160,6 @@ const OpenProcessToken = advapi.func('bool OpenProcessToken(void *proc, uint32 a
 const GetTokenInformation = advapi.func(
   'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
 );
-const GetCurrentProcess = kernel.func('void *GetCurrentProcess()');
 const ConnectNamedPipe = kernel.func('bool ConnectNamedPipe(void *pipe, void *overlapped)');
 // The CRT, not kernel32: turning a Win32 HANDLE into a C runtime file
 // descriptor is the CRT's question, and `net.Socket({ fd })` takes the second.
@@ -1140,10 +1174,6 @@ const FILE_TYPE_PIPE = 0x0003;
 /** `ConnectNamedPipe` when a client is already at the other end. */
 const ERROR_PIPE_CONNECTED = 535;
 
-/** `TOKEN_QUERY`. */
-const TOKEN_QUERY = 0x0008;
-/** `TokenUser`. */
-const TOKEN_USER_CLASS = 1;
 
 /**
  * This process's own user SID, as a string.
@@ -1165,30 +1195,17 @@ const TOKEN_USER_CLASS = 1;
  * The tightening that remains real is this SID instead of `BU`: Built-in Users
  * is every user of the machine, and the user's own SID is one of them.
  *
- * @returns {string}
+ * ## MOVED, and this note is what is left of it
+ *
+ * The reader itself is `currentUserSid` in `apps/desktop/src/win32PipeSurface.ts`
+ * and this file imports it. It was written here first — the measurement above is
+ * why it exists at all — and moving it is the same rule the host surface's
+ * migration followed: **anything that creates has exactly one implementation**,
+ * and a SID that goes into a shipped descriptor is part of creating.
+ *
+ * What stays here is the MEASUREMENT, because that is an observation and
+ * observations belong in the instrument that took them.
  */
-function currentUserSid() {
-  const tokenOut = [null];
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, tokenOut)) {
-    throw new Error(`OpenProcessToken failed: ${String(GetLastError())}`);
-  }
-  const sizeOut = [0];
-  GetTokenInformation(tokenOut[0], TOKEN_USER_CLASS, null, 0, sizeOut);
-  if (!sizeOut[0]) {
-    throw new Error(`GetTokenInformation sized 0: ${String(GetLastError())}`);
-  }
-  const buffer = Buffer.alloc(Number(sizeOut[0]));
-  if (!GetTokenInformation(tokenOut[0], TOKEN_USER_CLASS, buffer, sizeOut[0], sizeOut)) {
-    throw new Error(`GetTokenInformation failed: ${String(GetLastError())}`);
-  }
-  // TOKEN_USER is a SID_AND_ATTRIBUTES, whose first member is the SID pointer.
-  const sidPointer = koffi.decode(buffer, 'void *');
-  const stringOut = [null];
-  if (!ConvertSidToStringSidW(sidPointer, stringOut) || typeof stringOut[0] !== 'string') {
-    throw new Error('ConvertSidToStringSidW gave no string for this process user');
-  }
-  return stringOut[0];
-}
 
 // ---------------------------------------------------------------------------
 // A NAMED PIPE CREATED THROUGH WIN32 WITH AN EXPLICIT DACL (finding AAAA-39).
@@ -1219,24 +1236,20 @@ function currentUserSid() {
 // ---------------------------------------------------------------------------
 
 const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
-const CreateNamedPipeW = kernel.func(
-  'void *CreateNamedPipeW(const char16_t *name, uint32 openMode, uint32 pipeMode, ' +
-    'uint32 maxInstances, uint32 outBuf, uint32 inBuf, uint32 timeout, void *security)',
-);
-const ConvertStringSecurityDescriptorToSecurityDescriptorW = advapi.func(
-  'bool ConvertStringSecurityDescriptorToSecurityDescriptorW(const char16_t *sddl, ' +
-    'uint32 revision, _Out_ void **sd, _Out_ uint32 *size)',
-);
-koffi.struct('MONSTERA_PIPE_SECURITY_ATTRIBUTES', {
-  nLength: 'uint32',
-  lpSecurityDescriptor: 'void *',
-  bInheritHandle: 'int',
-});
 
-const PIPE_ACCESS_DUPLEX = 0x00000003;
-const SDDL_REVISION_1 = 1;
 /** Enough instances for every cell to open every pipe once, with margin. */
 const PIPE_INSTANCES = 8;
+
+/**
+ * The shipped surface, created once. Every pipe below goes through it.
+ *
+ * What used to sit here was this file's own `CreateNamedPipeW`,
+ * `ConvertStringSecurityDescriptorToSecurityDescriptorW` and
+ * `MONSTERA_PIPE_SECURITY_ATTRIBUTES` — a second implementation of creating a
+ * pipe, which the host-surface migration's own note said to avoid the moment a
+ * shipped one existed. It now exists.
+ */
+const pipeSurface = createWin32PipeSurface();
 
 /**
  * Create one named pipe's instances with the DACL named by `sddl`.
@@ -1268,45 +1281,98 @@ const PIPE_INSTANCES = 8;
  * one instance cannot be connected to twice, so an impostor racing the host for
  * the channel is unrepresentable rather than guarded against.
  *
+ * ## CONTROL PIPES ONLY, and the shipped factory is what makes that a rule
+ *
+ * This takes an SDDL STRING, which `createHostPipe` deliberately cannot: the
+ * shipped path assembles its descriptor from two branded SIDs so that no caller
+ * can hand it text. The pipes that need a deliberately wrong descriptor —
+ * Built-in Users alone, Built-in Users plus the container — cannot go through
+ * that path, which is the design working rather than a gap in it.
+ *
+ * The Win32 calls are the shipped surface's either way. What is here is the
+ * loop and a throw, both of which the shipped path expresses as a `Result`.
+ *
  * @param {string} name
  * @param {string} sddl
  * @param {number} instances How many instances to create. See above: this
  *   decides whether the creator is access-checked against its own DACL.
  * @returns {{ handles: unknown[] }}
  */
-function createWin32Pipe(name, sddl, instances) {
-  const sdOut = [null];
-  const sizeOut = [0];
-  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, sdOut, sizeOut)) {
+function createControlPipe(name, sddl, instances) {
+  const descriptor = pipeSurface.describe(sddl);
+  if (descriptor === null) {
     // A DESCRIPTOR THAT DID NOT PARSE MUST NOT REACH THE MEASUREMENT. This is
     // the failure that would otherwise be indistinguishable from "the container
     // cannot reach a Win32 pipe" — the reading that would send someone into an
     // amendment they do not owe.
     throw new Error(
       `the security descriptor did not parse, so nothing below would measure the DACL: ` +
-        `${sddl} (GetLastError ${String(GetLastError())})`,
+        `${sddl} (GetLastError ${String(pipeSurface.lastError())})`,
     );
   }
-  const attributes = Buffer.alloc(koffi.sizeof('MONSTERA_PIPE_SECURITY_ATTRIBUTES'));
-  koffi.encode(attributes, 'MONSTERA_PIPE_SECURITY_ATTRIBUTES', {
-    nLength: koffi.sizeof('MONSTERA_PIPE_SECURITY_ATTRIBUTES'),
-    lpSecurityDescriptor: sdOut[0],
-    bInheritHandle: 0,
-  });
-
   /** @type {unknown[]} */
   const handles = [];
   for (let instance = 0; instance < instances; instance += 1) {
-    const handle = CreateNamedPipeW(name, PIPE_ACCESS_DUPLEX, 0, instances, 4096, 4096, 0, attributes);
-    if (isInvalidHandle(koffi, handle)) {
+    const handle = pipeSurface.createInstance(name, descriptor, instances);
+    if (handle === null) {
+      for (const open of handles) pipeSurface.close(open);
+      pipeSurface.freeDescriptor(descriptor);
       throw new Error(
         `CreateNamedPipeW failed for ${name} at instance ${String(instance)}: ` +
-          `GetLastError ${String(GetLastError())}`,
+          `GetLastError ${String(pipeSurface.lastError())}`,
       );
     }
     handles.push(handle);
   }
+  pipeSurface.freeDescriptor(descriptor);
   return { handles };
+}
+
+/**
+ * The SHIPPED pipe, through the shipped factory, or a throw naming the stage.
+ *
+ * A thin adapter to this file's `{ handles }` shape and nothing else: the
+ * ordering, the descriptor, the every-instance-or-none rule and the descriptor's
+ * lifetime are all `createHostPipe`'s, which is the point of calling it.
+ *
+ * @param {string} name @param {number} instances
+ * @param {unknown} user @param {unknown} container Branded SIDs from the
+ *   shipped resolvers — see `resolveShippedSids`.
+ * @returns {{ handles: unknown[] }}
+ */
+function createShippedPipe(name, instances, user, container) {
+  const result = createHostPipe(pipeSurface, name, user, container, instances);
+  if (!result.ok) {
+    throw new Error(
+      `the shipped pipe factory refused at stage '${result.error.stage}': ${result.error.detail}`,
+    );
+  }
+  return { handles: [...result.value.instances] };
+}
+
+/**
+ * The two branded SIDs the shipped factory needs, from the shipped resolvers.
+ *
+ * Resolved here rather than at module scope because `hostContainerSid` creates
+ * the AppContainer profile when it is absent, and `ensureContainer` above wants
+ * to be the one that reports whether THIS run created it. Called after that, the
+ * shipped resolver takes its ALREADY_EXISTS path — which is the ordinary one on
+ * every machine after first run, and therefore the path worth exercising.
+ *
+ * @returns {{ user: unknown, container: unknown }}
+ */
+function resolveShippedSids() {
+  const user = currentUserSid();
+  if (!user.ok) {
+    throw new Error(`the shipped user-SID resolver failed, so no DACL can name this user: ${user.error}`);
+  }
+  const container = hostContainerSid(CONTAINER);
+  if (!container.ok) {
+    throw new Error(
+      `the shipped container-SID resolver failed, so no DACL can name the container: ${container.error}`,
+    );
+  }
+  return { user: user.value, container: container.value };
 }
 
 /**
@@ -1704,7 +1770,8 @@ function runCells(hostJs, scratchDir) {
     const grantedName = `${pipeName}-w32grant`;
     const sidOnlyName = `${pipeName}-w32sid`;
     const userOnlyName = `${pipeName}-w32user`;
-    const granted = createWin32Pipe(grantedName, `D:(A;;GA;;;BU)(A;;GA;;;${sid})`, PIPE_INSTANCES);
+    const shipped = resolveShippedSids();
+    const granted = createControlPipe(grantedName, `D:(A;;GA;;;BU)(A;;GA;;;${sid})`, PIPE_INSTANCES);
     // THE SHIPPED SPELLING: this user and the container, and no group.
     //
     // Three measurements narrowed it to this, and the third one closed a design
@@ -1724,9 +1791,18 @@ function runCells(hostJs, scratchDir) {
     // processes. What this spelling buys over `BU` is other USERS of the
     // machine, which cannot be measured on a single-account runner and is
     // stated rather than claimed as measured.
-    const SHIPPED_DACL = `D:(A;;GA;;;${currentUserSid()})(A;;GA;;;${sid})`;
-    const sidOnly = createWin32Pipe(sidOnlyName, SHIPPED_DACL, PIPE_INSTANCES);
-    const userOnly = createWin32Pipe(userOnlyName, 'D:(A;;GA;;;BU)', PIPE_INSTANCES);
+    //
+    // BUILT BY THE SHIPPED FACTORY, not spelt here. `createHostPipe` assembles
+    // this descriptor from the two branded SIDs and there is no route by which
+    // a caller can hand it a string, so what the cells measure below IS what a
+    // host will be handed rather than a copy that agrees today.
+    const sidOnly = createShippedPipe(
+      sidOnlyName,
+      PIPE_INSTANCES,
+      shipped.user,
+      shipped.container,
+    );
+    const userOnly = createControlPipe(userOnlyName, 'D:(A;;GA;;;BU)', PIPE_INSTANCES);
 
     // THE ECHO PAIR. Two pipes nothing else touches, so a round trip cannot be
     // confused with a cell's reachability probe on the same instance.
@@ -1738,7 +1814,7 @@ function runCells(hostJs, scratchDir) {
     // pipe the surface will build; the Node one is the control.
     const echoWin32Name = `${pipeName}-w32echo`;
     const echoNodeName = `${pipeName}-nodeecho`;
-    const echoWin32 = createWin32Pipe(echoWin32Name, SHIPPED_DACL, 1);
+    const echoWin32 = createShippedPipe(echoWin32Name, 1, shipped.user, shipped.container);
     const echoNode = createServer((socket) => {
       socket.on('data', (chunk) => socket.write(chunk));
     });
