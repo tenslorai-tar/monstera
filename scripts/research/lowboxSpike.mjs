@@ -210,7 +210,9 @@
  * | (c) network, loopback | refused `ETIMEDOUT` | connected | **differs** |
  * | engine | `mz_init` created a context | same | same |
  * | document it WAS handed | opened, 1 page | same | same |
- * | IPC over a named pipe | refused `EPERM` | connected | **differs** |
+ * | IPC — a pipe Node created | refused `EPERM` | connected | **differs** |
+ * | IPC — a Win32 pipe with the container in its DACL | **connected** | connected | same |
+ * | IPC — the same Win32 pipe, Built-in Users only | refused `EPERM` | connected | **differs** |
  * | (b) memory — job alone | `route-small-limit` refused at 192 MB under a 256 MB cap | `route-no-job` committed 512 MB | **differs** |
  * | (b) memory — the LIMIT, not the job | `route` committed 512 MB under §9.17's 3 GB cap | same | same |
  *
@@ -312,10 +314,23 @@
  *      only where the DACL names the container or an application-package SID, so
  *      the user's own rights on the volume root do not count. `C:\Program Files`
  *      grants `ALL APPLICATION PACKAGES`; `C:\` and `C:\Users` grant it nothing.
- *   3. **IPC is not free.** Node's named-pipe server sets no DACL for the
- *      container, so the contained host cannot connect to it — and a MessagePort
- *      is unreachable off the fork route by construction. Whatever the host talks
- *      through has to be created with the container in its DACL.
+ *   3. **IPC is not free, AND THE REMEDY IS NOW MEASURED (finding AAAA-39).**
+ *      Node's named-pipe server sets no DACL for the container, so the contained
+ *      host cannot connect to it — and a MessagePort is unreachable off the fork
+ *      route by construction. That was the negative half, and until 2026-08-24
+ *      it was the only half: ADR-0023 §4 fixed the transport as a Win32-created
+ *      pipe with the container SID in its DACL, an inference standing beside a
+ *      measurement of something else, and nothing in this repository had ever
+ *      built a security descriptor at all.
+ *
+ *      It is measured now, in one run, three pipes differing only in creation
+ *      route and DACL. The contained cells **open** the Win32 pipe whose DACL
+ *      names the container, are **refused** the identical Win32 pipe carrying
+ *      Built-in Users alone, and are **refused** Node's. The uncontained cells
+ *      open all three, which is what makes a refusal readable rather than
+ *      ambiguous with a malformed descriptor. So the ACE is the cause, not the
+ *      creation route, and the job is not a variable — `lowbox` and
+ *      `lowbox-no-job` agree on every one of the three.
  *
  * ## What this does NOT answer, stated so nobody reads it as covered
  *
@@ -419,7 +434,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { buildLargeFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
-import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
+import { INVALID_HANDLE_SOURCE, isInvalidHandle } from '../lib/win32Handle.mjs';
 
 const ROOT = repoRoot();
 const SHIM = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
@@ -951,22 +966,34 @@ const afterNetwork = () => {
   // AND THE IPC QUESTION, which is what a contained host would actually need:
   // a MessagePort is unreachable because this process was not forked by Electron,
   // so a named pipe is the realistic candidate and its reachability is the price.
-  if (config === null || !config.pipe) {
-    report.probes.namedPipe = errored('no handed config, so no pipe name to try');
-    finish();
-    return;
-  }
-  let settled = false;
-  const done = (value) => {
-    if (settled) return;
-    settled = true;
-    report.probes.namedPipe = value;
-    finish();
+  // THREE PIPES, EACH REPORTED BY THE CELL THAT OPENED IT. The access check
+  // happens here, at the client's open, so no native code is needed on this
+  // side and nothing counts connections on the other: this report says whether
+  // THIS cell got in, which is what makes an uncontained connection unable to
+  // read as a contained one.
+  const tryPipe = (probe, name, next) => {
+    if (!name) {
+      report.probes[probe] = errored('no handed config, so no pipe name to try');
+      next();
+      return;
+    }
+    let settled = false;
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      report.probes[probe] = value;
+      next();
+    };
+    const socket = net.connect(name);
+    socket.on('connect', () => { socket.end(); done(allowed(CELL + ' opened ' + name)); });
+    socket.on('error', (error) => done(refused(String(error && error.code || error))));
+    setTimeout(() => done(errored('no result within the window')), 5000);
   };
-  const socket = net.connect(config.pipe);
-  socket.on('connect', () => { socket.end(); done(allowed('connected to the pipe main created')); });
-  socket.on('error', (error) => done(refused(String(error && error.code || error))));
-  setTimeout(() => done(errored('no result within the window')), 5000);
+
+  const handed = config === null ? {} : config;
+  tryPipe('namedPipe', handed.pipe, () =>
+    tryPipe('namedPipeWin32Granted', handed.win32Granted, () =>
+      tryPipe('namedPipeWin32UserOnly', handed.win32UserOnly, finish)));
 };
 
 step('loopback');
@@ -1089,6 +1116,96 @@ const OpenProcessToken = advapi.func('bool OpenProcessToken(void *proc, uint32 a
 const GetTokenInformation = advapi.func(
   'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
 );
+
+// ---------------------------------------------------------------------------
+// A NAMED PIPE CREATED THROUGH WIN32 WITH AN EXPLICIT DACL (finding AAAA-39).
+//
+// ADR-0023 §4 fixes the transport as "a named pipe main creates with the
+// container SID in its DACL", because Node's `net.createServer` sets no DACL
+// for the container — measured, and the measurement is the NEGATIVE half. The
+// positive half has never been taken: nothing in this repository had ever built
+// a security descriptor at all (the one `SECURITY_ATTRIBUTES` in the tree sets
+// `lpSecurityDescriptor: null` to mark a handle inheritable), so the shipped
+// mechanism rested on an inference standing beside a measurement of something
+// else.
+//
+// This is the instrument that measures it, and `engineHostFactory.ts` says why
+// it has to exist before the surface does: a native surface's shape comes from
+// a call this spike already makes, not from a reading of the API.
+//
+// THE ACCESS CHECK HAPPENS CLIENT-SIDE, which is what makes this cheap. A
+// client's `CreateFile` against a listening instance is where the DACL is
+// evaluated, so the cells need no native code — each opens the pipe with the
+// same `net.connect` they already use and reports its OWN result. Identification
+// is therefore structural rather than counted: there is no server-side tally in
+// which an uncontained connection could read as a contained one.
+//
+// The parent never calls `ConnectNamedPipe`. It does not need to — an instance
+// in listening state is connectable — and the question is whether the client is
+// permitted to open it, not what is said afterwards.
+// ---------------------------------------------------------------------------
+
+const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
+const CreateNamedPipeW = kernel.func(
+  'void *CreateNamedPipeW(const char16_t *name, uint32 openMode, uint32 pipeMode, ' +
+    'uint32 maxInstances, uint32 outBuf, uint32 inBuf, uint32 timeout, void *security)',
+);
+const ConvertStringSecurityDescriptorToSecurityDescriptorW = advapi.func(
+  'bool ConvertStringSecurityDescriptorToSecurityDescriptorW(const char16_t *sddl, ' +
+    'uint32 revision, _Out_ void **sd, _Out_ uint32 *size)',
+);
+koffi.struct('MONSTERA_PIPE_SECURITY_ATTRIBUTES', {
+  nLength: 'uint32',
+  lpSecurityDescriptor: 'void *',
+  bInheritHandle: 'int',
+});
+
+const PIPE_ACCESS_DUPLEX = 0x00000003;
+const SDDL_REVISION_1 = 1;
+/** Enough instances for every cell to open every pipe once, with margin. */
+const PIPE_INSTANCES = 8;
+
+/**
+ * Create one named pipe's instances with the DACL named by `sddl`.
+ *
+ * @param {string} name
+ * @param {string} sddl
+ * @returns {{ handles: unknown[] }}
+ */
+function createWin32Pipe(name, sddl) {
+  const sdOut = [null];
+  const sizeOut = [0];
+  if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, sdOut, sizeOut)) {
+    // A DESCRIPTOR THAT DID NOT PARSE MUST NOT REACH THE MEASUREMENT. This is
+    // the failure that would otherwise be indistinguishable from "the container
+    // cannot reach a Win32 pipe" — the reading that would send someone into an
+    // amendment they do not owe.
+    throw new Error(
+      `the security descriptor did not parse, so nothing below would measure the DACL: ` +
+        `${sddl} (GetLastError ${String(GetLastError())})`,
+    );
+  }
+  const attributes = Buffer.alloc(koffi.sizeof('MONSTERA_PIPE_SECURITY_ATTRIBUTES'));
+  koffi.encode(attributes, 'MONSTERA_PIPE_SECURITY_ATTRIBUTES', {
+    nLength: koffi.sizeof('MONSTERA_PIPE_SECURITY_ATTRIBUTES'),
+    lpSecurityDescriptor: sdOut[0],
+    bInheritHandle: 0,
+  });
+
+  /** @type {unknown[]} */
+  const handles = [];
+  for (let instance = 0; instance < PIPE_INSTANCES; instance += 1) {
+    const handle = CreateNamedPipeW(name, PIPE_ACCESS_DUPLEX, 0, PIPE_INSTANCES, 4096, 4096, 0, attributes);
+    if (isInvalidHandle(koffi, handle)) {
+      throw new Error(
+        `CreateNamedPipeW failed for ${name} at instance ${String(instance)}: ` +
+          `GetLastError ${String(GetLastError())}`,
+      );
+    }
+    handles.push(handle);
+  }
+  return { handles };
+}
 
 /**
  * The child's integrity level, read by the PARENT against the child's token.
@@ -1321,9 +1438,36 @@ function runCells(hostJs, scratchDir) {
     const tcp = createServer((socket) => socket.end());
     const pipeName = `\\\\.\\pipe\\${CONTAINER}-${String(process.pid)}`;
     const pipe = createServer((socket) => socket.end());
+
+    // THREE PIPES, ONE NAME SCHEME, differing only in the creation route and the
+    // DACL — so the name is not a second variable beside the thing under test.
+    //
+    //   pipe          Node's createServer. RE-MEASURED IN THIS RUN rather than
+    //                 cited: "already known to be refused" is a historical
+    //                 figure, and this repository has been wrong twice about
+    //                 machine state it did not re-read.
+    //   win32Granted  Win32, DACL naming Built-in Users AND the container SID.
+    //                 The claim under test.
+    //   win32UserOnly Win32, DACL naming Built-in Users ONLY. The discriminator:
+    //                 without it, a contained cell connecting to win32Granted
+    //                 could be explained by "a Win32 pipe is reachable" rather
+    //                 than by the container ACE. It separates my descriptor is
+    //                 wrong from the container grant is what did it.
+    //
+    // The UNCONTAINED cells connecting to win32Granted is the positive control,
+    // and it is the one that makes a refusal readable: a red without it says
+    // "the DACL approach does not work" and "I built a malformed descriptor"
+    // in the same breath, on a first attempt at code nobody here has written
+    // before.
+    const grantedName = `${pipeName}-w32grant`;
+    const userOnlyName = `${pipeName}-w32user`;
+    const granted = createWin32Pipe(grantedName, `D:(A;;GA;;;BU)(A;;GA;;;${sid})`);
+    const userOnly = createWin32Pipe(userOnlyName, 'D:(A;;GA;;;BU)');
+
     const shut = () => {
       tcp.close();
       pipe.close();
+      for (const handle of [...granted.handles, ...userOnly.handles]) CloseHandle(handle);
     };
 
     tcp.on('error', reject);
@@ -1336,7 +1480,12 @@ function runCells(hostJs, scratchDir) {
           const port = typeof address === 'object' && address !== null ? address.port : 0;
           writeFileSync(
             join(scratchDir, 'handed.json'),
-            JSON.stringify({ port, pipe: pipeName }),
+            JSON.stringify({
+              port,
+              pipe: pipeName,
+              win32Granted: grantedName,
+              win32UserOnly: userOnlyName,
+            }),
             'utf8',
           );
 
@@ -1458,7 +1607,7 @@ function releaseGrants(sid) {
  * the honest shape here: it is not thirteen cases with some skipped, it is a
  * run that measured nothing.
  */
-const roster = createRoster(caseFailures, { cases: 15 });
+const roster = createRoster(caseFailures, { cases: 17 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -1887,8 +2036,14 @@ function summarise(runs) {
       'a loopback connection, so a refusal cannot be a runner with no network'],
     ['engine', 'loadShim', 'lowbox', 'route', 'same', 'the MuPDF shim, loaded through koffi'],
     ['document', 'openDocument', 'lowbox', 'route', 'same', 'a document it WAS handed'],
-    ['IPC', 'namedPipe', 'lowbox', 'route', 'DIFFERS',
-      'a named pipe main created — the MessagePort is unreachable off the fork route'],
+    ['IPC — Node createServer', 'namedPipe', 'lowbox', 'route', 'DIFFERS',
+      'a pipe Node created, which sets no DACL — the MessagePort is unreachable off this route'],
+    ['IPC — Win32 pipe, container in its DACL', 'namedPipeWin32Granted', 'lowbox', 'route', 'same',
+      'ADR-0023 §4’s transport. `same` IS the result: the contained host must be able to talk. ' +
+        'A red here on another Windows image is a finding, not a flake — unlike the LowBox ' +
+        'spawn row, an ACE naming a SID is not a policy that varies by build'],
+    ['CONTROL: the container ACE is what admits it', 'namedPipeWin32UserOnly', 'lowbox', 'route',
+      'DIFFERS', 'the same Win32 route with Built-in Users only — separates the ACE from the route'],
     ['(b) memory — job alone', 'commitPastLimit', 'route-small-limit', 'route-no-job', 'DIFFERS',
       'a commit past the job’s ProcessMemoryLimit, uncontained on both sides'],
     ['CONTROL: memory is the LIMIT, not the job', 'commitPastLimit', 'route', 'route-no-job', 'same',
