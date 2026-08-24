@@ -191,10 +191,20 @@ export function inputsLastChangedAt(root, script) {
 /**
  * @typedef {'fired' | 'silent' | 'unobserved'} ProbeOutcome
  *
+ * @typedef {'invocation' | 'detection'} Certifies
+ *   What a firing established. **A FIELD RATHER THAN A SENTENCE, deliberately**
+ *   (finding AAAA-14). A hook can be shown to be loaded by a benign trigger
+ *   without anything being shown about whether it answers correctly, and those
+ *   are the two questions a record like this gets asked. `invocation` is the
+ *   harness ran it; `detection` is it also recognised the thing it exists to
+ *   recognise. Left out of prose because a `fired` that quietly came to stand
+ *   for both is the same widening one layer down.
+ *
  * @typedef {{
  *   script: string,
  *   event: string,
  *   outcome: ProbeOutcome,
+ *   certifies: Certifies | null,
  *   exercise: string,
  *   evidence: string,
  *   recordedAt: string,
@@ -226,7 +236,7 @@ export function writeRecord(record, root = repoRoot()) {
 
 /**
  * @typedef {'unregistered' | 'unrecorded' | 'inputs-changed' | 'stale-session'
- *   | 'unobserved' | 'silent' | 'fired'} ProbeState
+ *   | 'unobserved' | 'silent' | 'unstated' | 'fired'} ProbeState
  */
 
 /**
@@ -314,9 +324,22 @@ export function probeState(mechanism, root = repoRoot()) {
     };
   }
 
+  if (entry.certifies !== 'invocation' && entry.certifies !== 'detection') {
+    return {
+      state: 'unstated',
+      detail:
+        `${mechanism} is recorded as fired without saying what the firing certified. A hook can ` +
+        `be shown to be LOADED without anything being shown about whether it ANSWERS correctly, ` +
+        `and an entry that does not choose is one a reader takes for both. Re-record with ` +
+        `--certifies invocation or --certifies detection.`,
+    };
+  }
+
   return {
     state: 'fired',
-    detail: `Observed acting at ${entry.recordedAt}; exercised by ${entry.exercise}. ${entry.evidence}`,
+    detail:
+      `Observed acting at ${entry.recordedAt}, certifying ${entry.certifies.toUpperCase()}; ` +
+      `exercised by ${entry.exercise}. ${entry.evidence}`,
   };
 }
 

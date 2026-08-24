@@ -65,10 +65,82 @@ export function writtenText(toolInput) {
 }
 
 /**
+ * A directory whose every write makes this hook say that it ran.
+ *
+ * ## Why a second trigger exists at all (finding AAAA-14)
+ *
+ * Without one, the only event that could ever certify this hook is loaded is the
+ * defect recurring — and a gate whose expiry may never fire is one that reads as
+ * pending for the life of the project while covering nothing. This repository
+ * has already sat in that state once: `engine-host-containment` stayed green
+ * watching a symbol shipped code could never name.
+ *
+ * The escape guard has no such problem because its probe input is *harmless in
+ * effect while being the banned shape* — `console.log('hook test')` is an
+ * ordinary command that the guard must refuse. This hook has no equivalent,
+ * because its trigger is a byte nobody can author on purpose: a deliberate
+ * attempt on 2026-08-23 to write `0x01` and `0x00` through the tool produced two
+ * ordinary spaces. So the benign trigger is supplied on a different axis — a
+ * path instead of a payload.
+ *
+ * ## IT IS A SECOND TRIGGER AND NEVER A SECOND DETECTOR
+ *
+ * The path decides one thing: whether a live-ness line is emitted. It does not
+ * choose a scanner, skip the scan, or change what a finding looks like. Every
+ * write goes through {@link findControlCharacter} exactly once and gets
+ * {@link CONTROL_CHARACTER_REPAIR} exactly as it would anywhere else — a probe
+ * file carrying a real control character is reported as one. A second path with
+ * its own detection logic would be the very shape B3a is about, arriving inside
+ * the fix for a finding about shared certificates.
+ *
+ * ## What a firing here certifies, and what it does not
+ *
+ * **Invocation only.** That the harness ran this hook for a write in this
+ * session. It says nothing whatever about whether the scan is correct — that is
+ * `proof:reportControlCharacters`, whose fixtures build the bytes numerically
+ * because no keyboard emits them. The distinction is carried in the record as a
+ * field rather than as prose beside it, so a `fired` entry cannot quietly come
+ * to stand for both.
+ */
+export const PROBE_DIRECTORY = '.claude/hookprobe/';
+
+/**
  * @typedef {object} Inspection
  * @property {'clean' | 'found' | 'nothing-to-scan'} state
+ * @property {boolean} live whether the write was under {@link PROBE_DIRECTORY}
  * @property {string} report empty when there is nothing to say
  */
+
+/**
+ * Whether a written path sits under the reserved probe directory.
+ *
+ * Separators are normalised because the harness reports a native path and this
+ * runs on Windows, where a check written against forward slashes would answer
+ * "no" for every real write and the probe would look permanently dead.
+ *
+ * @param {string} path
+ * @returns {boolean}
+ */
+export function isProbePath(path) {
+  return path.replaceAll('\\', '/').includes(PROBE_DIRECTORY);
+}
+
+/**
+ * What the probe path emits, and it states its own limit.
+ *
+ * The wording is load-bearing rather than decorative: this is the sentence
+ * someone reads before recording a `fired`, and if it did not say *invocation*
+ * the entry would be the widening this whole mechanism exists to prevent.
+ */
+export const LIVENESS_REPORT =
+  `\nreportControlCharacters IS LOADED. The harness invoked this hook for a write under ` +
+  `${PROBE_DIRECTORY}\n\n` +
+  `  THIS CERTIFIES INVOCATION AND NOTHING ELSE — that the hook ran, in this session, for a\n` +
+  `  real tool call. It says nothing about whether the scan is correct; that is\n` +
+  `  proof:reportControlCharacters, whose fixtures build the bytes numerically because no\n` +
+  `  keyboard emits them.\n\n` +
+  `  Record it with:\n` +
+  `    npm run probe:hook -- reportControlCharacters@PostToolUse fired --certifies invocation\n`;
 
 /**
  * @param {unknown} payload the harness's JSON, already parsed
@@ -81,19 +153,21 @@ export function inspectPayload(payload) {
   );
   const path = typeof toolInput['file_path'] === 'string' ? toolInput['file_path'] : '(unknown path)';
   const text = writtenText(toolInput);
+  const live = isProbePath(path);
 
   // NOT reported as clean. A payload shape this does not understand is a
   // question that was never asked, and the two must not share an output — which
   // is the distinction every instrument in this repository is built around.
-  if (text === null) return { state: 'nothing-to-scan', report: '' };
+  if (text === null) return { state: 'nothing-to-scan', live, report: '' };
 
   const at = findControlCharacter(Buffer.from(text, 'utf8'));
-  if (at === -1) return { state: 'clean', report: '' };
+  if (at === -1) return { state: 'clean', live, report: '' };
 
   const byte = Buffer.from(text, 'utf8')[at] ?? 0;
   const line = text.slice(0, at).split('\n').length;
   return {
     state: 'found',
+    live,
     report:
       `\nA CONTROL CHARACTER WAS JUST WRITTEN, and it is invisible.\n\n` +
       `  ${path}\n` +
@@ -122,9 +196,13 @@ if (isMain(import.meta.url)) {
     process.exit(0);
   }
   const inspection = inspectPayload(payload);
-  if (inspection.state === 'found') {
-    process.stderr.write(inspection.report);
-    process.exit(2);
-  }
-  process.exit(0);
+  // The scan's own result first, unconditionally, so a probe file carrying a
+  // real control character is reported as one. The probe path adds a line; it
+  // never replaces or suppresses a finding.
+  if (inspection.state === 'found') process.stderr.write(inspection.report);
+  if (inspection.live) process.stderr.write(LIVENESS_REPORT);
+  // Exit 2 is how a PostToolUse hook's stderr reaches the agent at all, so the
+  // live-ness line needs it as much as a finding does. An observation nobody
+  // can see is not an observation.
+  process.exit(inspection.state === 'found' || inspection.live ? 2 : 0);
 }

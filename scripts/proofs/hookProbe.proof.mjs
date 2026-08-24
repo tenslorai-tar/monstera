@@ -114,6 +114,7 @@ function writeEntryIn(root, overrides, others = {}) {
     script: ANCHOR_SCRIPT,
     event: 'PreToolUse',
     outcome: 'fired',
+    certifies: 'detection',
     exercise: 'node -e "console.log(\'hook test\')"',
     evidence: 'fixture',
     recordedAt: '2026-09-01T12:00:00.000Z',
@@ -158,12 +159,31 @@ function writeEntryIn(root, overrides, others = {}) {
       probeState(ANCHOR, root).detail,
     );
 
-    writeEntryIn(root, { outcome: 'unobserved', sessionStartedAt: null });
+    writeEntryIn(root, { outcome: 'unobserved', certifies: null, sessionStartedAt: null });
     check(
       'and neither is one saying it was never exercised',
       probeState(ANCHOR, root).state === 'unobserved',
       `"registered" must not read as "observed"; that gap is the whole of finding AAAA-11. ` +
         `${probeState(ANCHOR, root).detail}`,
+    );
+
+    // WHAT A FIRING CERTIFIED IS ITS OWN STATE (finding AAAA-14). A hook shown to
+    // be loaded by a benign trigger has established invocation and nothing about
+    // its answer, and an entry that declines to say which is one a reader takes
+    // for both.
+    writeEntryIn(root, { outcome: 'fired', certifies: null });
+    check(
+      'a firing that does not say WHAT it certified is not a satisfied gate',
+      probeState(ANCHOR, root).state === 'unstated',
+      probeState(ANCHOR, root).detail,
+    );
+    writeEntryIn(root, { outcome: 'fired', certifies: 'invocation' });
+    check(
+      '  ...and one certifying INVOCATION is accepted, and says so where it is read',
+      probeState(ANCHOR, root).state === 'fired' &&
+        probeState(ANCHOR, root).detail.includes('INVOCATION'),
+      `A hook can be reached without being right, and the reader of this line is the one ` +
+        `deciding whether a gate closes. ${probeState(ANCHOR, root).detail}`,
     );
 
     // The asymmetry, which this proof originally had backwards.
@@ -290,6 +310,7 @@ function writeEntryIn(root, overrides, others = {}) {
               script: hook.script,
               event: hook.event,
               outcome: 'unobserved',
+              certifies: null,
               exercise: 'fixture',
               evidence: 'fixture',
               recordedAt: '2026-09-01T12:00:00.000Z',
@@ -348,6 +369,7 @@ function writeEntryIn(root, overrides, others = {}) {
         script: 'scripts/hooks/retiredHook.mjs',
         event: 'PreToolUse',
         outcome: 'fired',
+        certifies: 'detection',
         exercise: 'whatever it used to be',
         evidence: 'fixture',
         recordedAt: '2026-09-01T12:00:00.000Z',
@@ -485,10 +507,15 @@ function writeEntryIn(root, overrides, others = {}) {
     // No agent session transcript corresponds to this throwaway root, so the
     // session start cannot be established. Recording anyway would produce
     // exactly the unverifiable pass the format exists to prevent.
-    const result = spawnSync(process.execPath, [recorder, ANCHOR, 'fired', '--exercise', 'x'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
+    // --certifies is supplied so the recorder gets PAST the argument checks and
+    // reaches the session question. Without it the refusal is the certifies one,
+    // and the case would again be satisfied by a refusal it is not named for —
+    // which is what the tightened assertion below caught within the hour.
+    const result = spawnSync(
+      process.execPath,
+      [recorder, ANCHOR, 'fired', '--exercise', 'x', '--certifies', 'invocation'],
+      { cwd: root, encoding: 'utf8' },
+    );
     const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
     check(
       'the recorder refuses when it cannot establish the session start',

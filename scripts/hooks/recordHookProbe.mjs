@@ -60,6 +60,7 @@ const positional = argv.filter((value, index) => !value.startsWith('--') && !arg
 const [mechanism, outcome] = positional;
 const exercise = flagValue(argv, '--exercise');
 const evidence = flagValue(argv, '--evidence');
+const certifies = flagValue(argv, '--certifies');
 
 const hooks = registeredHooks(ROOT);
 const known = hooks.map((hook) => hook.name).join(', ');
@@ -75,6 +76,8 @@ if (outcome !== 'fired' && outcome !== 'silent' && outcome !== 'unobserved') {
     `Usage: node scripts/hooks/recordHookProbe.mjs <mechanism> <fired|silent|unobserved> --exercise "..."\n\n` +
       `Registered mechanisms: ${known}\n\n` +
       `  fired       the hook was observed acting (denied, reported). Self-certifying.\n` +
+      `              Requires --certifies <invocation|detection>: whether the harness merely\n` +
+      `              RAN it, or it also recognised what it exists to recognise.\n` +
       `  silent      it was exercised and did nothing. THE FINDING — record it.\n` +
       `  unobserved  registered, never exercised. Honest, and satisfies no gate.\n\n` +
       `The escape guard is exercised by running this verbatim as an ordinary shell command:\n\n  ${PROBE_COMMAND}\n`,
@@ -104,6 +107,26 @@ if (exerciseText === null || exerciseText.trim() === '') {
       `the hook act, or — for unobserved — what WOULD. An entry nobody can reproduce is ` +
       `provenance nobody can check.\n\n` +
       `Later recordings inherit it; pass --exercise again only when the way you exercise it changed.`,
+  );
+}
+
+// WHAT A FIRING CERTIFIED IS NOT OPTIONAL AND HAS NO DEFAULT (finding AAAA-14).
+// A benign trigger can show a hook is loaded while showing nothing about whether
+// it answers correctly. Defaulting to either would be the recorder deciding, on
+// no evidence, which of two questions was answered.
+if (outcome === 'fired' && certifies !== 'invocation' && certifies !== 'detection') {
+  refuse(
+    `--certifies is required for a firing, and must be one of:\n\n` +
+      `  invocation   the harness ran the hook. It was reached; nothing is claimed about its answer.\n` +
+      `  detection    it also recognised the thing it exists to recognise, on a real instance.\n\n` +
+      `${mechanism} has no default here. A hook exercised through a benign trigger certifies ` +
+      `invocation only, and an entry that does not say so is one a reader takes for both.`,
+  );
+}
+if (outcome !== 'fired' && certifies !== null) {
+  refuse(
+    `--certifies applies to a firing. A ${outcome} entry establishes nothing to qualify, and ` +
+      `recording a qualification beside it would describe evidence that does not exist.`,
   );
 }
 
@@ -153,6 +176,7 @@ record.mechanisms[hook.name] = {
   script: hook.script,
   event: hook.event,
   outcome,
+  certifies: outcome === 'fired' ? /** @type {'invocation' | 'detection'} */ (certifies) : null,
   exercise: exerciseText,
   evidence:
     evidence ??

@@ -4,6 +4,7 @@
       "script": "scripts/hooks/blockEscapeResolvingWrites.mjs",
       "event": "PreToolUse",
       "outcome": "fired",
+      "certifies": "detection",
       "exercise": "node -e \"console.log('hook test')\"",
       "evidence": "Denied at 2026-08-23T22:28Z, in the session that registered the PostToolUse reporter, by running the probe command verbatim as an ordinary shell call. The refusal named the rule and offered no override. A denial is self-certifying: nothing that failed to load the guard can be blocked by it, so this is accepted whatever the session's age.",
       "recordedAt": "2026-08-23T22:29:05.713Z",
@@ -26,14 +27,15 @@
     "reportControlCharacters@PostToolUse": {
       "script": "scripts/hooks/reportControlCharacters.mjs",
       "event": "PostToolUse",
-      "outcome": "unobserved",
-      "exercise": "A Write or Edit whose payload carries a C0 control character. All three real occurrences on 2026-08-23 were accidental bytes nobody typed, so this waits on one rather than being produced on purpose.",
-      "evidence": "Registered and never exercised. This is not evidence and satisfies no gate.",
-      "recordedAt": "2026-08-23T22:29:13.079Z",
-      "sessionStartedAt": null,
-      "inputsLastChangedAt": "2026-08-23T23:43:36+02:00",
+      "outcome": "fired",
+      "certifies": "invocation",
+      "exercise": "Any Write under .claude/hookprobe/, which makes the hook emit a live-ness line and then continue into the ordinary scan unchanged. That certifies INVOCATION only. Detection cannot be exercised on demand: its trigger is a byte nobody can author, and a deliberate attempt on 2026-08-23 to write 0x01 and 0x00 through the tool produced two ordinary spaces.",
+      "evidence": "The hook emitted its live-ness line on a Write to .claude/hookprobe/live.txt and the harness surfaced it as a PostToolUse blocking error, so the exit 2 and the stderr both reached the agent. Self-certifying: nothing that failed to load the hook can produce the hook's own output, which is why the session's age does not weaken it. INVOCATION only — the scan's correctness is proof:reportControlCharacters.",
+      "recordedAt": "2026-08-24T00:19:30.895Z",
+      "sessionStartedAt": "2026-08-16T06:29:43.686Z",
+      "inputsLastChangedAt": "2026-08-24T00:41:52+02:00",
       "verdict": {
-        "digest": "226453b1896e31757a50a36aad1358f2d7f9e02d7ed4f0f7853881ae4e582506",
+        "digest": "33986b485eb22dab3ac7b2c5b198f4558a81be1ad3137f0b35509335121cea0a",
         "inputs": [
           {
             "name": "file:.claude/settings.json",
@@ -41,7 +43,7 @@
           },
           {
             "name": "file:scripts/hooks/reportControlCharacters.mjs",
-            "digest": "eca61813e79f1b836313692ee6ac1682de59c0fd2aa0454593fa557e4489ddb8"
+            "digest": "c7cd0387e353ee3b1bb07f2f1f613a69165cc5f5cb8201c7440c9b7187590f97"
           }
         ]
       }

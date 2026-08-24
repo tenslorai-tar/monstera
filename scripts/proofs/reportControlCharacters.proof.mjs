@@ -23,7 +23,7 @@ import { inspectPayload, writtenText } from '../hooks/reportControlCharacters.mj
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 14 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -152,6 +152,78 @@ for (const byte of [0x00, 0x01, 0x1f]) {
     'run as a PROCESS on a payload carrying the byte, it exits 2 and prints the report',
     run.status === 2 && /CONTROL CHARACTER WAS JUST WRITTEN/u.test(output),
     `exit=${String(run.status)}. Output:\n${output}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 9-13. THE PROBE PATH: a second TRIGGER and never a second DETECTOR
+//       (finding AAAA-14).
+//
+// The hook's real trigger is a byte nobody can author on purpose, so without a
+// benign one the only event that could ever show it is loaded is the defect
+// recurring — a gate that reads as pending for the life of the project while
+// covering nothing. The path supplies that trigger on a different axis.
+//
+// The condition that makes it safe is the one these cases are about: the path
+// decides ONLY whether a live-ness line is emitted. It does not choose a
+// scanner, skip the scan, or change what a finding looks like.
+// ---------------------------------------------------------------------------
+{
+  const probe = writePayload('nothing unusual here\n', 'C:/repo/.claude/hookprobe/live.txt');
+  const inspection = inspectPayload(probe);
+  check(
+    'an ordinary write under the probe path is LIVE, and still scans clean',
+    inspection.live && inspection.state === 'clean',
+    `live=${String(inspection.live)} state=${inspection.state}. The point of the probe is to be ` +
+      `exercisable with harmless content; if it had to carry a finding it would be no easier to ` +
+      `run than the defect.`,
+  );
+
+  const ordinary = inspectPayload(writePayload('nothing unusual here\n'));
+  check(
+    'CONTROL: the same content OUTSIDE the probe path is not live',
+    !ordinary.live && ordinary.state === 'clean',
+    `live=${String(ordinary.live)}. If every write were live the line would mean nothing, and ` +
+      `the record would be certifying that the hook ran on some write, somewhere, ever.`,
+  );
+
+  // Windows reports a native path. A check written against forward slashes would
+  // answer "no" for every real write and the probe would look permanently dead —
+  // which is the reassuring answer, arriving through a separator.
+  const native = inspectPayload(writePayload('x\n', 'C:\\repo\\.claude\\hookprobe\\live.txt'));
+  check(
+    'and a BACKSLASH path is live too, because the harness reports a native one',
+    native.live,
+    'a probe that only recognises forward slashes is dead on the platform this ships to',
+  );
+
+  // The load-bearing one. A probe file carrying a real control character must be
+  // reported as one: the path adds a line, it never replaces or suppresses a
+  // finding.
+  const both = inspectPayload(
+    writePayload(carrying(0x00), 'C:/repo/.claude/hookprobe/live.txt'),
+  );
+  check(
+    'a probe file carrying a real byte is STILL a finding, not just a live-ness line',
+    both.live && both.state === 'found' && both.report.includes(CONTROL_CHARACTER_REPAIR),
+    `live=${String(both.live)} state=${both.state}. A path that suppressed the scan would be a ` +
+      `second detector, which is the shape B3a is about, inside the fix for a finding about ` +
+      `shared certificates.`,
+  );
+}
+
+{
+  const run = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify(writePayload('ordinary\n', 'C:/repo/.claude/hookprobe/live.txt')),
+    encoding: 'utf8',
+  });
+  const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
+  check(
+    'run as a PROCESS on a probe write, it exits 2 and states that it certifies INVOCATION',
+    run.status === 2 && /IS LOADED/u.test(output) && /CERTIFIES INVOCATION AND NOTHING ELSE/u.test(output),
+    `exit=${String(run.status)}. Exit 2 is how a PostToolUse hook's stderr reaches the agent at ` +
+      `all, so an observation nobody can see is not one. And the line must name its own limit, ` +
+      `because it is the sentence somebody reads before recording a firing.\nOutput:\n${output}`,
   );
 }
 

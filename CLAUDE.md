@@ -490,13 +490,22 @@ These were given directly and bind every agent on this project.
   **`scripts/hooks/reportControlCharacters.mjs` now closes that window, and it
   REPORTS rather than prevents.** A PostToolUse hook runs after the write, so
   `guardFiles.mjs` at commit remains the only fail-closed gate on this class and
-  is unchanged by the reporter existing. It is registered for `Write` and `Edit`
-  as of 2026-08-24 and its `docs/hook-probe.json` entry says **`unobserved`**:
-  registered, never seen to act. That is the honest state and it satisfies no
-  gate. Exercising it needs a payload carrying the byte, and one deliberate
-  attempt on 2026-08-23 emitted two ordinary spaces where `0x01` and `0x00` were
-  intended — so the observation waits on the defect recurring, which is the one
-  producer known to work.
+  is unchanged by the reporter existing. Registered for `Write` and `Edit` on
+  2026-08-24, and **observed being invoked by the harness the same day**.
+
+  **Its trigger cannot be produced on purpose, so it was given a second one.**
+  The byte is one nobody can author — a deliberate attempt on 2026-08-23 emitted
+  two ordinary spaces where `0x01` and `0x00` were intended — which would have
+  left the only certifying event the defect recurring, and a gate whose expiry
+  may never fire reads as pending while covering nothing. **Any `Write` under
+  `.claude/hookprobe/` makes the hook say it ran**, then continues into the
+  ordinary scan unchanged: a second *trigger*, never a second detector, so a
+  probe file carrying a real byte is still reported as one.
+
+  What that certifies is **invocation** — the harness ran it — and the record
+  says so in a field rather than in prose, because a firing that quietly came to
+  stand for detection as well is the same widening one layer down. Detection is
+  `proof:reportControlCharacters`, whose fixtures build the bytes numerically.
 
   Three tells and the repair, all measured 2026-08-23 against a file carrying one
   NUL: reading it renders the byte as nothing, so the text on screen looks

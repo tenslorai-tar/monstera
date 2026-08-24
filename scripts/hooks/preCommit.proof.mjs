@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { CLAIM_DOCUMENTS } from '../lib/registeredHooks.mjs';
 import { CONFIG_FILE, configPathFor } from '../lib/secretScan.mjs';
 import { provisionGitleaks } from '../provision/gitleaks.mjs';
 import { NPM_VERSION } from '../lib/toolchain.mjs';
@@ -79,6 +80,21 @@ function makeRepo() {
   // pass against settings this project does not ship.
   mkdirSync(join(root, '.claude'), { recursive: true });
   copyFileSync(join(REAL_ROOT, '.claude', 'settings.json'), join(root, '.claude', 'settings.json'));
+
+  // And the documents that CLAIM those hooks, because the gate's requirement is
+  // now that the two agree: a hook a document names must be registered, which is
+  // the anchor that makes unregistering one a red build (finding AAAA-16).
+  //
+  // Copied for the third time for the same reason, and the repetition is the
+  // point — a stand-in claim file would drift from what this project actually
+  // asserts, and the fixture would then be exercising an agreement between two
+  // things nobody ships. The list comes from the resolver so that adding a
+  // claim document does not silently leave this fixture behind.
+  for (const document of CLAIM_DOCUMENTS) {
+    const destination = join(root, document);
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(join(REAL_ROOT, document), destination);
+  }
 
   writeFileSync(join(root, 'README.md'), '# scratch\n');
   git(root, ['add', 'README.md', CONFIG_FILE]);

@@ -1,0 +1,10 @@
+Probe write for the PostToolUse control-character reporter.
+
+Any Write under this directory makes the hook emit a live-ness line and then
+continue into the ordinary scan unchanged. A firing here certifies INVOCATION
+only — that the harness ran the hook — and says nothing about whether the scan
+is correct, which is what proof:reportControlCharacters is for.
+
+This file's content is deliberately unremarkable. If the probe needed a finding
+to fire, it would be no easier to run than the defect it exists to make
+observable.
