@@ -34,16 +34,49 @@
  *     proving the second script writes it when nothing times out — without
  *     which "no marker" is satisfied by a sweep that ran nothing at all.
  *
+ * ## The run log, and the one part of it still off the board (finding AAAA-29)
+ *
+ * The run log shipped on the strength of a single hand-run kill, and an audit
+ * then described this whole area as one where "the board is not the mechanism"
+ * — which was false of the harness (three proofs run in Guards on two
+ * platforms) and true of exactly one thing: the run-log FILES. Three of the
+ * four pieces are cheap, so they are asserted here rather than left as a gap:
+ *
+ *   - **retention**, a decision over a directory listing, needing no processes
+ *     at all — see `lib/runLog.mjs`, which exists so that a proof can reach it;
+ *   - **the `-failed` seal on a timeout**, read off the fixture repository the
+ *     timeout case already builds;
+ *   - **`-running` surviving a kill**, which is the state the log exists for
+ *     and the one nothing had ever asserted. The harness is spawned, killed
+ *     with SIGKILL mid-sweep, and its log must still be there, still named
+ *     `-running`, with the completed script's row in it.
+ *
+ * **STATED LIMITATION: the clone route is not exercised here.** `npm run local
+ * -- --root <clone>` needs a real clone and a provisioned tree, which is an
+ * order of magnitude more than the rest of this file costs. It is the route an
+ * investigator types by hand on the day something is wrong, and it is the one
+ * piece of the run log whose failure would be discovered by that person rather
+ * than by CI.
+ *
  * Usage: node scripts/proofs/checkLocal.proof.mjs
  */
 
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
+import { retention, runLogState } from '../lib/runLog.mjs';
 import { multiProofSweepRefusal } from '../lib/sweepScope.mjs';
 
 const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
@@ -51,7 +84,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 23 });
+const roster = createRoster(failures, { cases: 32 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -92,6 +125,48 @@ function runFixture(files, manifestScripts, extraArgs = []) {
     { encoding: 'utf8' },
   );
   return { root, ok: run.status === 0, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
+}
+
+/**
+ * A fixture repository's run logs, newest last.
+ *
+ * Returns `[]` for a directory that is not there, which is the reassuring shape
+ * — so every case below requires a file to be PRESENT and named, and none of
+ * them is satisfied by an absence.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+function runLogs(root) {
+  try {
+    return readdirSync(join(root, '.cache', 'checkLocal-runs'))
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @param {string} root
+ * @param {string} name
+ * @returns {Array<Record<string, unknown>>}
+ */
+function runLogRows(root, name) {
+  const parsed = JSON.parse(readFileSync(join(root, '.cache', 'checkLocal-runs', name), 'utf8'));
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/**
+ * Sleep without a timer, because every case here is synchronous.
+ *
+ * `Atomics.wait` on a `SharedArrayBuffer` blocks this thread; a `setTimeout`
+ * would need the event loop this file never yields to.
+ *
+ * @param {number} ms
+ */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 const EXIT_ZERO = 'process.exit(0);\n';
@@ -399,6 +474,189 @@ try {
       'the timed-out script has no recorded cost, so the next run sorts it first again and ' +
         'strands the queue in exactly the same place. A partial sweep is the one whose ' +
         'ordering most needs the measurement it just took.',
+    );
+
+    // A TIMED-OUT run is sealed `-failed`, not left `-running`: the harness got
+    // to decide, so the run finished even though a script did not. That
+    // distinction is the whole design — `-running` must mean "nobody was left
+    // to rename this" and nothing else, or the state loses its meaning exactly
+    // where it is needed.
+    check(
+      'a run stopped by a TIMEOUT seals its log as -failed, with the timed-out script in it',
+      (() => {
+        const logs = runLogs(partial.root);
+        if (logs.length !== 1 || runLogState(logs[0] ?? '') !== 'failed') return false;
+        return runLogRows(partial.root, logs[0] ?? '').some(
+          (row) => row['name'] === 'proof:a-hangs',
+        );
+      })(),
+      `The timeout path returned early before this was fixed, so the one run that orphans ` +
+        `processes wrote NOTHING — a log with a hole at its own subject, whose silence reads ` +
+        `as a quiet run. Logs found: ${JSON.stringify(runLogs(partial.root))}`,
+    );
+    check(
+      'CONTROL: a run that PASSES seals as -ok, so -failed is not simply what sealing prints',
+      (() => {
+        const logs = runLogs(spaced.root);
+        return logs.length === 1 && runLogState(logs[0] ?? '') === 'ok';
+      })(),
+      `Without this, the case above is satisfied by a harness that names every log -failed, ` +
+        `and the state in the filename would carry no information. ` +
+        `Logs found: ${JSON.stringify(runLogs(spaced.root))}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // RETENTION, as a decision over a listing (finding AAAA-29).
+  //
+  // No processes, no repository, no kill. This is the piece that could not be
+  // asserted while it lived inside the harness, and it is the piece that
+  // decides which evidence still exists when somebody comes looking.
+  //
+  // The fixture deliberately pairs a `-running` and an `-ok` log at the SAME
+  // timestamp, because the defect worth catching is a prune that goes by age
+  // and ignores the state in the name — which is what the filename is for.
+  // -------------------------------------------------------------------------
+  {
+    const listing = [
+      '2026-08-01T00-00-00-1-ok.json',
+      '2026-08-02T00-00-00-1-ok.json',
+      '2026-08-03T00-00-00-1-ok.json',
+      '2026-08-01T00-00-00-2-failed.json',
+      '2026-08-01T00-00-00-3-running.json',
+      'notes.txt',
+    ];
+    const split = retention(listing, { keepOk: 1, keepEvidence: 5 });
+
+    check(
+      'the OLDEST -ok logs are pruned and the newest survives',
+      split.remove.includes('2026-08-01T00-00-00-1-ok.json') &&
+        split.remove.includes('2026-08-02T00-00-00-1-ok.json') &&
+        split.keep.includes('2026-08-03T00-00-00-1-ok.json'),
+      `A prune that keeps the wrong end deletes exactly the runs somebody is about to read. ` +
+        `remove=${JSON.stringify(split.remove)} keep=${JSON.stringify(split.keep)}`,
+    );
+    check(
+      'a -running and a -failed log outlive an -ok log OLDER THAN NEITHER',
+      split.keep.includes('2026-08-01T00-00-00-3-running.json') &&
+        split.keep.includes('2026-08-01T00-00-00-2-failed.json') &&
+        split.remove.includes('2026-08-01T00-00-00-1-ok.json'),
+      `All three carry the same date, so age cannot separate them and only the state in the ` +
+        `filename can. This is the case that fails if the two budgets are ever collapsed into ` +
+        `one. keep=${JSON.stringify(split.keep)}`,
+    );
+    check(
+      'an entry that is not a .json log is neither kept nor deleted',
+      !split.keep.includes('notes.txt') && !split.remove.includes('notes.txt'),
+      `This prunes a directory. A classifier that does not recognise a name must leave it ` +
+        `alone rather than sweep it up. keep=${JSON.stringify(split.keep)} ` +
+        `remove=${JSON.stringify(split.remove)}`,
+    );
+    check(
+      'keeping NONE removes all of them, rather than keeping all of them',
+      (() => {
+        const none = retention(listing, { keepOk: 0, keepEvidence: 0 });
+        return none.remove.length === 5 && none.keep.length === 0;
+      })(),
+      `The inline version spelt this \`slice(0, -keep)\`, and \`-0\` is \`0\`: asking to keep ` +
+        `nothing kept everything. It was safe only because its one caller passed a literal 5, ` +
+        `which is the property that stops being true the moment a rule has two callers.`,
+    );
+    check(
+      'CONTROL: within budget it prunes NOTHING, so "remove" is not simply everything',
+      (() => {
+        const roomy = retention(listing, { keepOk: 9, keepEvidence: 9 });
+        return roomy.remove.length === 0 && roomy.keep.length === 5;
+      })(),
+      `Deleting nothing is what every broken version of this produces, so the cases above ` +
+        `need their mirror: a listing under budget must survive intact, or "prunes the right ` +
+        `files" is satisfied by a function that prunes them all.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // A KILLED RUN'S LOG STAYS `-running`, FOR EVER (finding AAAA-29).
+  //
+  // This is the state the whole mechanism exists for and the one nothing had
+  // ever asserted — it shipped on a single hand-run kill. A killed process
+  // cannot rename its own file, so `-running` is not a transient state: it is
+  // the permanent record of a run that did not finish, and it is what makes
+  // the hardest case to reconstruct afterwards self-identifying in a listing.
+  //
+  // The seal cases above are this one's control: a run that finishes leaves
+  // `-ok` or `-failed` and no `-running` at all, so "the file says -running" is
+  // not something every run produces.
+  // -------------------------------------------------------------------------
+  {
+    const root = mkdtempSync(join(scratch, 'killed '));
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'a-fast.mjs'), EXIT_ZERO, 'utf8');
+    // Two properties, and BOTH are about the orphan this case creates on
+    // purpose. Killing the harness orphans the script it was running, and
+    // nothing in this file can reap it: `taskkill /T` and a POSIX process group
+    // are two implementations of tree-killing, each with a side that never
+    // executes on the other platform — an unexercised branch inside a proof
+    // about unexercised branches.
+    //
+    //   - it EXPIRES, so the orphan is bounded without that branch;
+    //   - it CHDIRs out of the fixture first, because the harness spawns every
+    //     script with the repository root as its cwd, and on Windows a
+    //     directory that is a live process's cwd cannot be removed. Without
+    //     this line the `finally` below races a 15-second orphan for the
+    //     scratch tree, which is a flake that would land on one platform only.
+    writeFileSync(
+      join(root, 'scripts', 'b-hangs.mjs'),
+      "import { tmpdir } from 'node:os';\nprocess.chdir(tmpdir());\nsetTimeout(() => process.exit(0), 15000);\n",
+      'utf8',
+    );
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'fixture',
+          scripts: {
+            'proof:a-fast': 'node scripts/a-fast.mjs',
+            'proof:b-hangs': 'node scripts/b-hangs.mjs',
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    // Unmeasured scripts sort alphabetically, so `a-fast` completes and writes
+    // the first row while `b-hangs` is still running. That is the state this
+    // case needs: a log with rows in it, mid-flight, at the moment of the kill.
+    const child = spawn(process.execPath, [HARNESS, '--root', root, '--floor', '1'], {
+      stdio: 'ignore',
+    });
+    /** @type {string[]} */
+    let midFlight = [];
+    for (let attempt = 0; attempt < 200 && midFlight.length === 0; attempt += 1) {
+      sleepSync(50);
+      midFlight = runLogs(root);
+    }
+    child.kill('SIGKILL');
+    sleepSync(250);
+    const after = runLogs(root);
+
+    check(
+      'a run KILLED mid-sweep leaves its log named -running, because it could not rename it',
+      after.length === 1 && runLogState(after[0] ?? '') === 'running',
+      `A harness that seals on exit, or one whose log is a single slot the next run ` +
+        `overwrites, cannot produce this. Ten seconds were allowed for the first row to ` +
+        `appear; found mid-flight ${JSON.stringify(midFlight)}, after the kill ` +
+        `${JSON.stringify(after)}.`,
+    );
+    check(
+      '  ...and the rows it had already written are still in it',
+      after.length === 1 &&
+        runLogRows(root, after[0] ?? '').some((row) => row['name'] === 'proof:a-fast'),
+      `An empty file named -running proves the name and nothing else. What the killed run is ` +
+        `kept FOR is the account of what completed immediately before it stopped, which is ` +
+        `the question WWW-2 turns on. Rows: ` +
+        `${after.length === 1 ? JSON.stringify(runLogRows(root, after[0] ?? '')) : '(no log)'}`,
     );
   }
 

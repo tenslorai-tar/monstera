@@ -86,6 +86,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
+import { retention, runLogName } from './lib/runLog.mjs';
 import { multiProofSweepRefusal } from './lib/sweepScope.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 
@@ -215,6 +216,10 @@ const DURATIONS = join(ROOT_DIR, '.cache', 'checkLocal-durations.json');
  * Pruning follows from that: `-ok` logs are ordinary and the newest few are
  * enough; `-failed` and `-running` are the evidence and are kept far longer.
  *
+ * Both rules — how the name is composed and which files survive — live in
+ * `lib/runLog.mjs` rather than here, because this file starts a sweep on import
+ * and so nothing can assert a function inside it without running one.
+ *
  * ## THIS IS A CAPTURE MECHANISM, NOT A RECORD
  *
  * `.cache/` is gitignored, so nothing here can ever reach a commit — which is
@@ -224,11 +229,6 @@ const DURATIONS = join(ROOT_DIR, '.cache', 'checkLocal-durations.json');
  * on somebody's screen and never written anywhere durable.
  */
 const RUN_LOG_DIR = join(ROOT_DIR, '.cache', 'checkLocal-runs');
-
-/** Newest-first `-ok` logs to keep; the failing and killed ones are kept far longer. */
-const KEEP_OK = 5;
-/** A bound on the evidence, so a repeatedly failing sweep cannot fill the cache. */
-const KEEP_EVIDENCE = 40;
 
 /** @type {Record<string, number>} */
 let known = {};
@@ -409,7 +409,7 @@ const runLog = [];
 // Colons are illegal in a Windows filename, so the timestamp is dashed. The pid
 // disambiguates two runs started inside the same second.
 const RUN_STAMP = `${new Date().toISOString().replace(/\..*$/u, '').replaceAll(':', '-')}-${process.pid}`;
-let runLogPath = join(RUN_LOG_DIR, `${RUN_STAMP}-running.json`);
+let runLogPath = join(RUN_LOG_DIR, runLogName(RUN_STAMP, 'running'));
 
 /** @param {Record<string, unknown>} row */
 function recordRow(row) {
@@ -434,17 +434,11 @@ function recordRow(row) {
 function sealRunLog(clean) {
   try {
     if (runLog.length === 0) return;
-    const sealed = join(RUN_LOG_DIR, `${RUN_STAMP}-${clean ? 'ok' : 'failed'}.json`);
+    const sealed = join(RUN_LOG_DIR, runLogName(RUN_STAMP, clean ? 'ok' : 'failed'));
     renameSync(runLogPath, sealed);
     runLogPath = sealed;
 
-    const entries = readdirSync(RUN_LOG_DIR).filter((name) => name.endsWith('.json')).sort();
-    // Timestamp-prefixed, so a lexical sort is chronological and the tail is the
-    // newest. Evidence — anything that failed or never finished — is kept on its
-    // own, much longer budget than the ordinary green runs.
-    const ok = entries.filter((name) => name.endsWith('-ok.json'));
-    const evidence = entries.filter((name) => !name.endsWith('-ok.json'));
-    for (const name of [...ok.slice(0, -KEEP_OK), ...evidence.slice(0, -KEEP_EVIDENCE)]) {
+    for (const name of retention(readdirSync(RUN_LOG_DIR)).remove) {
       rmSync(join(RUN_LOG_DIR, name), { force: true });
     }
   } catch {
