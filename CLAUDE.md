@@ -1076,6 +1076,43 @@ is a broken parse, not a clean input.** Throw. A seed set, a symbol table, a fil
 list or a root set that comes back empty must never be allowed to look like an
 answer.
 
+**4c. Does this check DERIVE its extent from the set it governs?**
+
+> **Derive from a set only when the failure you fear makes that set BIGGER. When
+> the failure makes it SMALLER, the count must come from somewhere the failure
+> cannot reach.**
+
+A hand-kept list fails loudly on growth and cannot see shrinkage. A derived count
+is the exact inverse: it tracks growth perfectly and agrees with any shrink,
+because a number computed from a collection cannot disagree with that collection.
+Neither is stronger; they are opposites, and **the defect is not the derivation —
+it is that nobody asked which direction the danger ran.** That question was asked
+in none of the three instances below.
+
+Three in one range (2026-08-24), and none was visible from inside its own file:
+
+| the roster | what it derived from | what went quiet |
+|---|---|---|
+| the hook presence requirement | the settings file that registers the hooks | unregister a hook and delete its entry: the requirement leaves with it |
+| `runDocumentRules`' pass count | the rule array it iterates (`cases: chosen.length`, replacing a literal `9`) | delete a whole document rule and the count agrees |
+| the mechanism key | the script filename, where a *(script, event)* pair registers | one script on two events, one certificate |
+
+The remedy in each case is an **anchor**: an independent claim the shrinker has
+to touch separately — the documents for the first, a named set in the proof for
+the second, a wider key for the third.
+
+**This is deliberately NOT a scan, and the reasoning is recorded so the next
+reader does not assume the class is watched.** Measured: 37 `createRoster` call
+sites, **three** with a non-literal `cases:`, of which two derive from a literal
+array declared eight lines above them under a provisioning condition — visible in
+the same diff hunk, and correct. So a scan for that shape would be quiet and
+cheap. It would also have caught **one of the three findings above**, because the
+other two involve no roster and no count, and the three share no textual shape at
+all. A check covering the shape that has already been found, over a class that is
+two-thirds undecidable, is a class that **reads as watched and is not** — which is
+precisely what the first row of that table was. The rule above is what transfers;
+ask it of every roster you write.
+
 **5. Executed, or asserted?**
 Separate the two explicitly. Anything in the "asserted" column is not a finding,
 whatever confidence it was written with. (Content composition was moved to a
