@@ -862,6 +862,54 @@ and nothing at all asserts the rest. No mechanism is proposed here, because the
 honest ones are the two that already exist — turn a claim into a case when it
 can be, and read this file's diff in every audit when it cannot.
 
+### Correction, 2026-08-24 (findings AAAA-32, AAAA-33)
+
+**The run named under item 3 is the wrong one, and the wrong one is green.**
+The entry says *Guards run 323 for `7f77999`*. Guards 323 is `32743980238`,
+head sha `8814e59` — **the parent**, the commit before the AAAA-31 case existed.
+`7f77999`'s Guards run is **324, id `32747634647`**, and that is where the four
+step lines quoted above actually come from; they are correct.
+
+So the label resolves, to a real green run, and that run is the one a reader
+would open to check *"`7f77999` is its first run on Linux, and it passed"* — a
+run that could not have executed the case. **UU-1's shape exactly**: no link
+check can see it and no sweep could, because nothing is broken.
+
+**The corroboration is better evidence than a run number and cannot be mistyped
+into being wrong.** The proof step's duration jumped in the run where the case
+landed, read from the jobs API:
+
+| | ubuntu | windows |
+|---|---|---|
+| Guards 323 (`8814e59`) | 15:18:40 → 15:18:46, **6s** | 15:20:57 → 15:21:06, **9s** |
+| Guards 324 (`7f77999`) | 15:54:37 → 15:54:47, **10s** | 15:56:19 → 15:56:31, **12s** |
+
+**The transferable part is where the two halves came from.** The step lines were
+pasted from the instrument; the run number was written from memory, in the same
+sentence, having been read off a review comment about the *previous* commit. One
+is now wrong and it is not the pasted one. **Take the identifier out of the same
+output the lines came from** — `readStepsTimed.mjs` now prints `run_id` and
+`head_sha` beside every step for that reason.
+
+**And the mutation count is wrong in the same entry.** Item 4 says *"Seven
+mutations run this range"* over a table with **eight** rows, and item 5 repeats
+*seven*. The figure appears verbatim in an earlier entry for a different range,
+which is where it came from — a number recalled rather than counted, which is
+this journal's standing complaint about itself.
+
+Two smaller corrections to that same table, both in the direction of
+understating the result: *"each reddening its own case"* is not what it shows —
+**two of the eight rows reddened two cases each**, which is stronger than the
+sentence claims. The accurate summary is: eight mutations, six reddening exactly
+one case and two reddening two.
+
+**The audit was run VOLUNTARILY, before the gate fired.** The scope block quoted
+at the top of this entry says so in its own words — *"Within one batch. An audit
+is not yet owed. Fires at 10 commits (2 more)"* — but the entry does not, and
+this journal is what anyone measuring audit cadence counts from. A range
+containing a withdrawn requirement was worth auditing early; an entry that reads
+as gate-driven when it was chosen makes the cadence look tighter than it is.
+
 ---
 
 ## 2026-08-24 — Stage audit: `71deb64..b0a1da4` — one paragraph corrected three times, each version weaker and truer

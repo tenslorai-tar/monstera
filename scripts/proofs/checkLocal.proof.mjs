@@ -201,6 +201,41 @@ const SETTLE_MS = 250;
  */
 const DETACHED_KEY = `deta${'ched'}`;
 
+/**
+ * How long a teardown fixture must stay alive (finding AAAA-35).
+ *
+ * AAAA-30's lesson one commit later, in a harder shape. There the ordering was
+ * one fixture against one wait; here the ORDINARY probe's grandchild has to
+ * outlive its own probe, then the whole of the DETACHED probe, then the
+ * cleanup differential — because that grandchild is only killed at the end,
+ * and a survivor that expired on its own is indistinguishable from one that
+ * was torn down. So the quantity is not a budget, it is the SPAN:
+ *
+ *   two probes, each at most SETUP_BUDGET_MS of waiting plus SETTLE_MS plus a
+ *   600ms second sample, then a cleanup that samples, waits and samples again.
+ *
+ * Written as that sum rather than as a number, so tightening the budget cannot
+ * silently move the fixture underneath it.
+ *
+ * THE HEADROOM IS SEPARATE AND NAMED, because it is not derived. The span is
+ * computed from this file's own budgets; the fixture's timer is wall-clock and
+ * does not stretch when a runner is slow, so a slow machine spends longer in
+ * the probes against a fixed deadline. Four times the span is the margin for
+ * that, and it is a judgement rather than a measurement — which is why it is a
+ * factor with a reason instead of a bigger number.
+ *
+ * MEASURED 2026-08-24 by running this file with the value overridden: at
+ * 1200ms the cleanup differential goes RED naming the survivor it could not see
+ * advancing, and at 2000ms everything still passes. So the real boundary on
+ * this machine is around 1.5s against a derived value of ~89s. That gap is the
+ * point — the derivation exists so nobody has to know where the edge is, and
+ * the observable half is the pre-kill advance check, which fires instead of the
+ * run passing by absence.
+ */
+const PROBE_SPAN_MS = 2 * (SETUP_BUDGET_MS + SETTLE_MS + 600) + SETTLE_MS + 400;
+const TEARDOWN_HEADROOM = 4;
+const TEARDOWN_FIXTURE_MS = PROBE_SPAN_MS * TEARDOWN_HEADROOM;
+
 const EXIT_ZERO = 'process.exit(0);\n';
 const EXIT_ONE = "process.stderr.write('FAIL deliberate\\n');\nprocess.exit(1);\n";
 const HANGS = 'setInterval(() => undefined, 1000);\n';
@@ -766,7 +801,7 @@ try {
           'process.chdir(tmpdir());\n' +
           'let n = 0;\n' +
           `setInterval(() => { n += 1; writeFileSync('${marker}', String(n), 'utf8'); }, 100);\n` +
-          'setTimeout(() => process.exit(0), 120000);\n',
+          `setTimeout(() => process.exit(0), ${String(TEARDOWN_FIXTURE_MS)});\n`,
         'utf8',
       );
       writeFileSync(
@@ -776,7 +811,7 @@ try {
           "const gc = fileURLToPath(new URL('./grandchild.mjs', import.meta.url));\n" +
           `const c = spawn(process.execPath, [gc], { stdio: 'ignore', ${DETACHED_KEY}: ${String(detachChild)} });\n` +
           (detachChild ? 'c.unref();\n' : '') +
-          'setTimeout(() => process.exit(0), 120000);\n',
+          `setTimeout(() => process.exit(0), ${String(TEARDOWN_FIXTURE_MS)});\n`,
         'utf8',
       );
       writeFileSync(
@@ -883,38 +918,63 @@ try {
       );
     }
 
-    // CLEANUP IS ALSO THE CONTROL THAT THIS PROBE CAN SEE A STOP AT ALL.
-    // Everything still advancing has to be killed — a proof about survivors
-    // that leaves survivors is the joke version of this file — and killing them
-    // is the one moment we can confirm the counter goes still on demand.
+    // CLEANUP IS ALSO THE CONTROL THAT THIS PROBE CAN SEE A STOP AT ALL, and
+    // it is a DIFFERENTIAL rather than a single reading (finding AAAA-34).
+    //
+    // The first version sampled, killed, sampled again and required stillness.
+    // A process killed a second ago produces that — and so does one that died
+    // four minutes ago, because a stale file reads identically to a stilled
+    // one. `stillAdvancing` is not the protection it looks like: it was
+    // measured at PROBE time, and for the ordinary survivor on the non-win32
+    // leg that is a whole second probe earlier. Had it died in between,
+    // `process.kill` throws ESRCH, the catch swallows it, and the control
+    // passes having proven nothing.
+    //
+    // That is this file's own sentence — "it stopped" and "it never started"
+    // are the same observation — reappearing INSIDE the control added to close
+    // it. The placement is the finding, not the odds. So the rule
+    // `probeGrandchild` applies to itself is applied here too: require the
+    // counter to ADVANCE before the kill, then require stillness after.
     /** @type {Array<{ label: string, probe: ReturnType<typeof probeGrandchild> }>} */
     const survivors = [
       { label: 'ordinary', probe: ordinary },
       { label: 'detached', probe: detachedGrandchild },
     ].filter((entry) => entry.probe.stillAdvancing);
-    for (const { probe } of survivors) {
-      if (probe.pid === null) continue;
-      try {
-        process.kill(probe.pid, 'SIGKILL');
-      } catch {
-        // Already gone between the sample and here; the assertion below is what
-        // decides whether that matters.
+
+    /** @type {string[]} */
+    const stopped = [];
+    for (const { label, probe } of survivors) {
+      const before = probe.tick();
+      sleepSync(SETUP_POLL_MS * 3);
+      const advancing = probe.tick();
+      const wasAlive = before !== null && advancing !== null && advancing > before;
+
+      if (probe.pid !== null) {
+        try {
+          process.kill(probe.pid, 'SIGKILL');
+        } catch {
+          // Already gone. `wasAlive` above is what decides whether that is a
+          // problem, and it is read below rather than swallowed here.
+        }
       }
+      sleepSync(SETTLE_MS);
+      const settled = probe.tick();
+      sleepSync(400);
+      const later = probe.tick();
+      const wentStill = settled !== null && later !== null && later === settled;
+
+      if (wasAlive && wentStill) stopped.push(label);
     }
-    sleepSync(SETTLE_MS);
+
     check(
-      'CONTROL: the probe observes a STOP when one is made to happen',
-      survivors.length > 0 &&
-        survivors.every(({ probe }) => {
-          const before = probe.tick();
-          sleepSync(400);
-          const after = probe.tick();
-          return before !== null && after !== null && after === before;
-        }),
+      'CONTROL: a survivor is seen ADVANCING, then killed, then seen still',
+      survivors.length > 0 && stopped.length === survivors.length,
       `A probe that can only ever report "advancing" would pass every case above on the ` +
-        `platform where survival is the expected answer. This kills the survivors — which it ` +
-        `must do anyway — and requires the counter to go still. Survivors: ` +
-        `${String(survivors.length)}.`,
+        `platform where survival is the expected answer, so this kills the survivors — which ` +
+        `it must do anyway — and requires the counter to go still. The ADVANCE half is what ` +
+        `stops a process that died minutes ago from satisfying it: a stale file is still a ` +
+        `still one. Survivors: ${String(survivors.length)}, of which seen alive then stilled: ` +
+        `${String(stopped.length)} (${stopped.join(', ') || 'none'}).`,
     );
   }
 
@@ -934,11 +994,21 @@ try {
   // growth perfectly (item 4c). A hand-kept list would be the wrong instrument
   // here for exactly the reason it is the right one elsewhere.
   //
-  // STATED LIMIT: the pattern sees a literal option KEY. A spread, or an
-  // options object assembled somewhere else and passed in, escapes it — the
-  // same textual reach ZZZ-2 has, in a cheaper setting. It is not closed
-  // because the realistic way somebody adds a detached spawn is by typing the
-  // option where the spawn is, and a scan that tried to follow an object
+  // STATED LIMIT: the pattern sees a literal option KEY. Three things escape
+  // it — a spread, an options object assembled somewhere else and passed in,
+  // and A KEY ASSEMBLED FROM FRAGMENTS. The same textual reach ZZZ-2 has, in a
+  // cheaper setting.
+  //
+  // The third one is not hypothetical: `DETACHED_KEY` at the top of this file
+  // does exactly that, deliberately, so that the scanner is not itself a hit.
+  // The limit was first written with only the first two clauses, every one of
+  // them true, which is why nobody re-reads such a sentence (finding AAAA-36) —
+  // and the escape it omitted was in the same file, 700 lines up. A reader
+  // should learn the reach from the limit, not from a constant they happen to
+  // meet later.
+  //
+  // Not closed, because the realistic way somebody adds a detached spawn is by
+  // typing the option where the spawn is, and a scan that followed an object
   // through a call would be a second, worse implementation of the type checker
   // that already reads these files.
   // -------------------------------------------------------------------------
