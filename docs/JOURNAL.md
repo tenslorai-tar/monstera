@@ -644,6 +644,166 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-24 — Stage audit: `6c2017c..71deb64` — a figure composed instead of read, twice, in the direction that makes the gate look breached
+
+**Audited through `71deb64`.** Quoted verbatim from `npm run audit:scope` rather
+than restated, which is this range's finding:
+
+```
+Unaudited range: 6c2017c..HEAD
+
+  commits: 7 (one batch is 9)
+  files:   24 (one batch is 24)
+
+  Within one batch. An audit is not yet owed.
+```
+
+1 proof added, **6 modified**, 1 new source file and 8 changed. The range closes
+AAAA-14 through AAAA-19 and adds **AAAA-20**.
+
+### The range's headline
+
+**A number I reported was wrong on both axes, and the correction round caught
+one.** I wrote *8 commits / 26 files … the file axis is past a batch*. The
+instrument printed 7, 24, and *within one batch* — the opposite conclusion, in
+words, at the end of its own output. The reviewing seat corrected the file count
+and carried my commit count forward unchanged, because it too was reasoning about
+my figures rather than reading the instrument's.
+
+That is the second time in two ranges, both in the same direction — the one that
+makes the gate look breached. The first was 25 against a measured 24, and I wrote
+then that it was the correction to sit with. Sitting with it did nothing, which is
+the finding: **this is the class where a resolution to be careful has already been
+tried and has already failed.**
+
+**The remedy is not accuracy, it is provenance: paste the instrument's line.** A
+pasted line cannot be off by two and it carries the verdict sentence with it, so
+the conclusion travels with the numbers instead of being re-derived beside them.
+Same shape as *count from the transcript*, which this repository wrote down after
+being wrong about the denial count by an order of magnitude.
+
+### 1. Root cause, or workaround?
+
+**No check was loosened, and the modified-proofs column is why that is a
+statement rather than a hope.** Six proofs moved. Two carried deletions that read
+like removed coverage and are not:
+
+- `hookIntegrity.proof.mjs` deleted *"a project settings file registering NO
+  PreToolUse hook is refused"* — and the same label is at line 184 today, rewritten
+  in place with a new sibling asserting the refusal now names the **claim**. The
+  literal it used to test was replaced by the claim-derived requirement, and the
+  case follows the mechanism rather than dying with it.
+- `documentRuleScope.proof.mjs` deleted `cases: 7`. That is the roster count
+  rising to 8 for `EXPECTED_RULES`, which is AAAA-16's anchor arriving.
+
+**Every fix in the range is a root-cause fix** and each names its mechanism:
+AAAA-15 made the documents the anchor; AAAA-16b pinned the rule set in a file the
+shrinker must edit separately; AAAA-17 widened the mechanism key to *script@event*
+because that pair is what registers; AAAA-16 deleted a failed disclaimer rather
+than keeping it beside its replacement; the `prePush` repair made a provisioning
+fact **unverifiable** rather than deleting the case.
+
+**No override was added.** The one deliberate weakening in the previous range
+(`complainsAboutTheGate`) is not repeated here.
+
+### 2. Verified against the easy shape only?
+
+Hard shapes exercised this range, each of which had been the blind side of a
+branch: two hooks rather than one · one script on two events · a guard registered
+on the **wrong event** · an unparseable settings file · a claimed hook that is not
+registered · **a fresh clone with nothing installed**.
+
+That last one is the range's other real find and it is recorded below.
+
+### 3. Would CI have caught it?
+
+**It did, on the first run, which is the whole point of what was wired.**
+`prePush.proof.mjs` had never executed outside a developer machine — it is chained
+inside `proof:guards` and the workflow step named three of its four scripts, never
+the fourth, since the step was written. Wiring it in reddened `main` immediately.
+
+Asked the other way round: **this machine could not have seen it.**
+`core.hooksPath` is set by `prepare`; the Guards job runs no `npm ci`; the proof
+read the key with `execFileSync`, an unset key exits 1 and `execFileSync` throws,
+so it did not fail one case — it killed the file before any case ran. Every
+previous run had been on a machine where `prepare` had run.
+
+### 4. Are the proofs non-vacuous?
+
+**Mutation-tested, this turn:** renaming one `registerRule` name reddens
+`documentRuleScope.proof.mjs` and the message names both directions — *NO LONGER
+REGISTERED: …* and *REGISTERED BUT NOT NAMED HERE: …*. The anchor separates.
+
+**Resolution-tested before it measured anything:** `affectedProofs` was fed the
+exact change that reddened `main` at `3a903fd` and named three proofs, none of
+them `proof:guards` — the one that had failed. `proof:guards` chains four scripts
+and `proofScripts` took the first, so `preCommit.proof.mjs` sat in **no entry's
+path set at all**. The report read identically either way. Widening it found that
+`prePush.proof.mjs` ran in no job at all, which is section 3 above.
+
+**Both branches of a provisioning decision now have cases on every runner.** The
+unset side is unreachable on any machine where `prepare` has run — which is every
+machine that file had ever run on — so the decision was separated from the ambient
+answer. The distinction it protects is the whole defect in miniature: an unset key
+must be `null`, never the empty string, because an empty string compares unequal
+to `.githooks` and reports a **failure** where the honest answer is *nobody
+installed this checkout*.
+
+### AAAA-20 — a report that restates an instrument is a second opinion about it
+
+The class is B3a's, arriving in prose rather than in code: the instrument computed
+the number and the conclusion, and the report contained a *second* computation of
+both. As always, **the finding is the second opinion, not the wrong one** —
+patching the figure would have left the next report free to compose a third, which
+is exactly what happened between the two ranges.
+
+The trigger is written down so nobody carries it: **the audit fires on the next
+commit touching a file not already among the 24, or at 10 commits, whichever comes
+first.** A commit touching only files already in the range leaves it at one batch.
+Read from `auditWatermark.mjs`, where both comparisons are strictly greater
+against `BATCH = { commits: 9, files: 24 }` — not inferred from the printed line.
+
+**And the ordering of this audit was decided by the mechanism, not by me.**
+`scripts/audit/scope.mjs` is not among the 24, so the change that makes its verdict
+quotable would have taken the range to 25 files and the pre-commit gate blocks
+exactly that. The audit had to come first. A gate that decides the order of work is
+worth more than one that merely reports.
+
+### 5. Executed, or asserted?
+
+**Executed:** the mutation of the rule roster · the resolution test against
+`3a903fd` · `prePush.proof.mjs` in both worlds, 17 cases provisioned and 16 plus an
+`UNVERIFIABLE` line in a fresh clone · the reporter's live-ness line, recorded as
+**invocation** and not as detection · `git diff --name-only 6c2017c..HEAD | grep -c
+.` returning 24 · the strictly-greater comparisons in `auditWatermark.mjs` · the
+board at `71deb64`.
+
+**Asserted, and therefore unfinished:** that the two claim documents name hook
+scripts by full path *only* for tool-use hooks. That was measured once, on
+2026-08-24, and is now a convention the check pins going forward rather than a law
+about the documents. The disposition is written into `claimedHooks`' header.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. Everything registered into existing seams — the verdict machinery, the
+document-rule registry, the proof roster, the pass roster.
+
+### 7. Do the documents still match the code?
+
+`CLAUDE.md` line 457 already carries the new `blockEscapeResolvingWrites@PreToolUse`
+key, so AAAA-17's rename did not leave a stale command behind.
+
+**One correction made in this commit's own range-mate**, and it is item 7 applied
+to text written last round: item 4c's table of three instances stated what each
+roster *derived from* with no sentence saying all three had been fixed in the same
+range. The remedy line said *"the remedy in each case **is** an anchor"*, which
+reads as prescription rather than as record. A reader arriving at that table would
+have taken three closed defects for three open ones. Corrected to name what each
+one got, and to say the table is kept for the **shape**, which has recurred in a
+different form every time.
+
+---
+
 ## 2026-08-24 — Stage audit: `51d3da8..6c2017c` — three rosters that cannot notice their own source shrinking
 
 **Audited through `6c2017c`.** 8 commits, 24 files, **3 proofs added, 1
