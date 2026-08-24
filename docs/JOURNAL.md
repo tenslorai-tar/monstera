@@ -670,6 +670,17 @@ words, at the end of its own output. The reviewing seat corrected the file count
 and carried my commit count forward unchanged, because it too was reasoning about
 my figures rather than reading the instrument's.
 
+> **Correction, 2026-08-24 — the last sentence above is false about what the
+> review round did, and it is a claim about evidence, so it is corrected here
+> rather than edited away.** The reviewing seat *did* run the instrument and
+> quoted its block, and that block carried `commits: 7`. Its prose then named
+> only the file axis because that was the half that changed the conclusion — not
+> because it was reasoning from my figures. I inferred a mechanism from an
+> omission and wrote the inference down as an observation, which is this range's
+> own finding pointed at the wrong party. The lesson the entry draws is unchanged
+> and rests on my own error alone: I reported two numbers the instrument never
+> printed.
+
 That is the second time in two ranges, both in the same direction — the one that
 makes the gate look breached. The first was 25 against a measured 24, and I wrote
 then that it was the correction to sit with. Sitting with it did nothing, which is

@@ -393,13 +393,80 @@ try {
         `writer produced both.`,
     );
 
-    check(
-      '  ...and the trigger line names THIS run, so it cannot become furniture',
-      !/Within one batch/u.test(output) || /Fires at \d+ commits, or on the next commit touching a file outside these \d+/u.test(output),
-      `A sentence that could have been printed before you made your change is a disclaimer, and ` +
-        `by the third reading it is ignored — which is how the sweep's blind-spot sentence failed. ` +
-        `The trigger must carry this range's own file count.\n${output}`,
-    );
+    // AAAA-21. THE ARITHMETIC, NOT THE SHAPE.
+    //
+    // This asserted `/Fires at \d+ commits, or on the next commit touching a
+    // file outside these \d+/` — the line's SHAPE. `\d+` matches whatever the
+    // formula produced, so a wrong number passed, and one did: the sentence
+    // claimed the file axis fired on the next new file, which is true only at
+    // exactly BATCH.files and was false by twenty everywhere else.
+    //
+    // That is the second fixture-the-defect-also-produces in two commits, and
+    // both were in cases enforcing the specificity rule. The pattern is worth
+    // more than either instance: **a case about specificity kept checking that
+    // specificity was PRESENT rather than CORRECT.** A number is present in the
+    // broken version too.
+    //
+    // So the expectation is recomputed here from BATCH and from the counts the
+    // report itself printed, and compared as an exact string. A formula error
+    // reddens; a boundary-only truth cannot survive, because headroom is a
+    // distance rather than a prediction.
+    // ...AGAINST A RANGE THAT IS ACTUALLY WITHIN ONE BATCH, which `scratch` is
+    // not: it carries BATCH.commits + 1 commits so the over-budget branch can be
+    // tested, and the trigger line never prints there. Written first against
+    // `scratch` with a `!/Within one batch/ ||` escape, and the mutation found
+    // it green — a case guarded by a condition its own fixture never satisfies.
+    //
+    // Third fixture-the-defect-also-produces in three commits, all three in
+    // cases enforcing the specificity rule. The pattern is the finding: **a case
+    // about specificity keeps checking that specificity is PRESENT rather than
+    // CORRECT**, and presence survives every mutation that changes a value.
+    const small = mkdtempSync(join(tmpdir(), 'monstera-audit-small-'));
+    try {
+      git(small, ['init', '--quiet']);
+      git(small, ['config', 'user.email', 'proof@example.invalid']);
+      git(small, ['config', 'user.name', 'proof']);
+      mkdirSync(join(small, 'docs'), { recursive: true });
+      writeFileSync(join(small, 'base.txt'), 'base\n', 'utf8');
+      git(small, ['add', '-A']);
+      git(small, ['commit', '--quiet', '-m', 'base']);
+      const mark = git(small, ['rev-parse', '--short', 'HEAD']);
+      writeFileSync(
+        join(small, 'docs', 'audit-watermark.json'),
+        `${JSON.stringify({ commit: mark, audited: 'proof' }, null, 2)}\n`,
+        'utf8',
+      );
+      git(small, ['add', '-A']);
+      git(small, ['commit', '--quiet', '-m', 'watermark']);
+
+      const within = spawnSync(process.execPath, [join(repoRoot(), 'scripts', 'audit', 'scope.mjs')], {
+        cwd: small,
+        encoding: 'utf8',
+      });
+      const report = `${within.stdout ?? ''}${within.stderr ?? ''}`;
+      const printedCommits = Number(/commits:\s*(\d+)/u.exec(report)?.[1]);
+      const printedFiles = Number(/files:\s*(\d+)/u.exec(report)?.[1]);
+      const expectedTrigger =
+        `Fires at ${BATCH.commits + 1} commits (${BATCH.commits + 1 - printedCommits} more) or ` +
+        `${BATCH.files + 1} files (${BATCH.files + 1 - printedFiles} more).`;
+
+      check(
+        '  ...and on a within-budget range the trigger line is ARITHMETICALLY right',
+        // No escape clause. If this fixture stops being within budget the case
+        // must FAIL rather than pass vacuously, which is what the escape did.
+        /Within one batch/u.test(report) &&
+          Number.isFinite(printedCommits) &&
+          Number.isFinite(printedFiles) &&
+          report.includes(expectedTrigger),
+        `Both thresholds are BATCH.<axis> + 1, because auditWatermark.mjs compares with strictly ` +
+          `greater on EACH axis — so the file axis fires at ${BATCH.files + 1}, not on the next ` +
+          `new file. Stating it as the next new file is true only at exactly ${BATCH.files}, ` +
+          `which is where the range sat when that sentence was written.\n` +
+          `        expected: ${expectedTrigger}\n${report}`,
+      );
+    } finally {
+      rmSync(small, { recursive: true, force: true });
+    }
 
     // The report must also NAME the changed column, not merely compute it. V-2's
     // finding was that every case here tested auditScope's data while the thing

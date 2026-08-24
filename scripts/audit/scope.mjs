@@ -149,8 +149,22 @@ if (process.argv.includes('--record')) {
  * The trigger line is computed from THIS run, deliberately. A sentence that could
  * have been printed before you made your change is a disclaimer, and by the third
  * reading it is furniture — which is exactly how the sweep's blind-spot sentence
- * failed. `10` and the file count are this range's, so the line cannot be
- * furniture.
+ * failed. Naming this range's own numbers is what stops that.
+ *
+ * **BUT NAMING THIS RUN'S NUMBERS IS NOT THE SAME AS BEING RIGHT, and the first
+ * version of this line was wrong (AAAA-21).** It said *"or on the next commit
+ * touching a file outside these N"*, which is true only when N is exactly
+ * `BATCH.files` — the boundary the range happened to sit on when the sentence
+ * was dictated to me. I printed a boundary-specific claim as the general rule,
+ * which is AAAA-8's shape: a claim recorded more strongly than its evidence
+ * supported. It was worse than the disclaimer it replaced, because AAAA-16's own
+ * test certifies a line that names this run's numbers as the trustworthy kind.
+ * This one named them and was false by twenty.
+ *
+ * So the line states HEADROOM on both axes, arithmetically, and both thresholds
+ * are `BATCH.<axis> + 1` because `auditWatermark.mjs` compares with strictly
+ * greater on each. Headroom cannot be accidentally true at one point and false
+ * everywhere else: it is the distance, not a prediction about the next commit.
  *
  * @param {typeof scope} range
  * @returns {string[]}
@@ -158,10 +172,12 @@ if (process.argv.includes('--record')) {
 function verdictLines(range) {
   if (range.commits === 0) return ['Nothing to audit.'];
   if (range.overBudget.length > 0) return [`OVER ONE BATCH: ${range.overBudget.join('; ')}`];
+  const commitLimit = BATCH.commits + 1;
+  const fileLimit = BATCH.files + 1;
   return [
     'Within one batch. An audit is not yet owed.',
-    `Fires at ${BATCH.commits + 1} commits, or on the next commit touching a file outside these ` +
-      `${range.files.length}.`,
+    `Fires at ${commitLimit} commits (${commitLimit - range.commits} more) or ${fileLimit} files ` +
+      `(${fileLimit - range.files.length} more).`,
   ];
 }
 
