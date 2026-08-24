@@ -48,22 +48,28 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
     `stopping at the first kill — landed in f7dc5fb (2026-08-23T08:35+02:00). The 35-at-0.0s ` +
     `pass was recorded in 7b7824e (2026-08-23T17:20+02:00), nine hours LATER, on a harness that ` +
     `already had both. So this is not guarding a defect that was fixed.\n\n` +
-    `And stop-at-first-kill was already present, which means those 35 were ordinary non-zero ` +
-    `exits rather than a cascade a kill started: had a kill come first, the run would have ` +
-    `stopped there. That is why the boundary is at most one proof rather than stop at the first ` +
-    `kill — the latter exists and did not prevent it.\n\n` +
-    `WHAT WAS MEASURED 2026-08-24, with its provenance, since a doubling claim taken under a cap ` +
-    `that manufactured kills would be worthless: a 90s-capped reproduction killed ` +
-    `proof:hookprobe at 90.04s with SIGTERM, its \`finally\` never ran, and docs/hook-probe.json ` +
-    `was left DELETED in the working tree. Four orphaned node processes were alive throughout, ` +
-    `two started the previous day — nothing here kills a process tree. Both facts are direct ` +
-    `observations and neither depends on the cap.\n\n` +
-    `NOT ESTABLISHED, and previously stated here more strongly than the evidence: that running ` +
-    `in sequence slows a script down. proof:hookprobe measured 308s alone and 598s ninth, but ` +
-    `proof:shim measured 1.5s and 9.4s at the SAME position across the two runs, so position is ` +
-    `not what separates them — the second run began with the first run's orphans alive, and ` +
-    `machine state and sequence were never isolated. Nor is the 0.0s signature explained: a ` +
+    `Stop-at-first-kill rules out a cascade started by a kill INSIDE that run — the run would ` +
+    `have stopped at it. It rules out nothing about an EARLIER run: the comment above the break ` +
+    `in checkLocal.mjs says a timeout's orphans "accumulate", which is cross-run by construction, ` +
+    `and a kill also leaves tracked files deleted after its run has ended. So the boundary is at ` +
+    `most one proof because the mechanism is unknown, not because kills have been excluded.\n\n` +
+    `WHAT WAS MEASURED 2026-08-24, with provenance, since a claim taken under a cap that ` +
+    `manufactured kills would be worthless: a 90s-capped reproduction killed proof:hookprobe at ` +
+    `90.04s with SIGTERM, its \`finally\` never ran, and docs/hook-probe.json was left DELETED in ` +
+    `the working tree. That is a direct observation and does not depend on the cap.\n\n` +
+    `WITHDRAWN, both previously stated here: that sequence slows a script down, and that ` +
+    `orphaned proof processes were accumulating on the machine. proof:shim measured 1.5s and ` +
+    `9.4s at the SAME position across two runs, so position is not what separates them and ` +
+    `machine state was never isolated. And the four long-lived node processes were checked by ` +
+    `command line rather than by age: two are an MCP server with LIVING parents, spawned by the ` +
+    `editor and not by anything here, and the other two were never identified at all. No process ` +
+    `on this machine has been shown to be proof wreckage. Nor is the 0.0s signature explained: a ` +
     `missing docs/hook-probe.json makes check:docs fail in ~130s, not instantly.\n\n` +
+    `AND THE FOUNDING OBSERVATION KEPT NO EVIDENCE. The harness prints one diagnostic line per ` +
+    `failure, or "(no diagnostic line found)" when there was none, which separates a spawn that ` +
+    `never started from an import-time throw. The 2026-08-23 pass preserved the count and the ` +
+    `conclusion and not the lines, so that question cannot be asked of the only occurrence. Every ` +
+    `run now writes its rows to .cache/checkLocal-lastrun.json as it goes.\n\n` +
     `Run one of these instead:\n` +
     `  npm run local -- --only check:            the pre-push sweep, no proofs, unaffected\n` +
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +

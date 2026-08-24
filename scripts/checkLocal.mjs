@@ -178,6 +178,28 @@ if (derived.length < FLOOR_REQUIRED) {
  */
 const DURATIONS = join(ROOT_DIR, '.cache', 'checkLocal-durations.json');
 
+/**
+ * Every script's outcome from the LAST run, written as it goes (finding AAAA-23).
+ *
+ * The sweep's one-proof bound rests on a pass that printed 35 failures at 0.0
+ * seconds. Going back to ask what those 35 actually SAID — the harness prints one
+ * diagnostic line per failure, or `(no diagnostic line found)` when there was
+ * none — the answer is that nobody kept them. The commit and the journal entry
+ * preserved the count and the conclusion and not the evidence, so the question
+ * that would separate a spawn-level failure from an import-time throw cannot be
+ * asked of the only occurrence.
+ *
+ * A standing bound whose founding observation kept no evidence is a bound that
+ * can never be re-derived, only re-argued. So every run now leaves its rows
+ * behind: the next time this mode is exercised the lines exist whether or not
+ * anyone thought to capture them, which is the difference between a measurement
+ * and a memory of one.
+ *
+ * Written incrementally rather than at the end, because the run this matters for
+ * is the one that gets killed.
+ */
+const RUN_LOG = join(ROOT_DIR, '.cache', 'checkLocal-lastrun.json');
+
 /** @type {Record<string, number>} */
 let known = {};
 try {
@@ -342,6 +364,20 @@ const notNode = [];
 /** Scripts observed to move the tree, in the order they did it. */
 /** @type {string[]} */
 const treeMovers = [];
+/** Every script's outcome this run, persisted as it goes. See {@link RUN_LOG}. */
+/** @type {Array<Record<string, unknown>>} */
+const runLog = [];
+/** @param {Record<string, unknown>} row */
+function recordRow(row) {
+  runLog.push(row);
+  try {
+    mkdirSync(dirname(RUN_LOG), { recursive: true });
+    writeFileSync(RUN_LOG, `${JSON.stringify(runLog, null, 2)}\n`, 'utf8');
+  } catch {
+    // A log this cannot write is not a reason to fail the run it is describing.
+    // The rows are a diagnostic aid; the sweep's verdict does not depend on them.
+  }
+}
 /** The last reported tree state, so one deletion is not reported by every later script. */
 /** @type {string | null} */
 let lastTreeState = null;
@@ -441,6 +477,18 @@ for (const name of selected) {
         .split('\n')
         .find((line) => /\b(FAIL|Error|error)\b/u.test(line))
         ?.trim() ?? '(no diagnostic line found)';
+    // The row that would have answered AAAA-23. `bytes` separates a script that
+    // printed nothing at all from one whose output simply carried no matching
+    // line — a spawn that never started against a guard that refused quietly,
+    // which the diagnostic line alone cannot tell apart.
+    recordRow({
+      name,
+      exit: run.status,
+      signal: run.signal ?? null,
+      seconds: Number(seconds.toFixed(2)),
+      bytes: output.length,
+      firstProblem,
+    });
     // NOT TRUNCATED. This tool exists to surface failures, and cutting the
     // failure text at 200 characters in the one place it is printed is the
     // reflex this session already lost time to twice — a diagnostic clipped
@@ -451,6 +499,11 @@ for (const name of selected) {
     continue;
   }
   passedCount += 1;
+  // Passes are logged too, and that is the point rather than symmetry: the
+  // question WWW-2 turns on is what a script that COMPLETED did immediately
+  // before the next one failed in 0.0s, and a log holding only the failures
+  // cannot answer it.
+  recordRow({ name, exit: 0, signal: null, seconds: Number(seconds.toFixed(2)), bytes: null, firstProblem: null });
   process.stdout.write(`  ok  ${name} (${took})\n`);
 }
 
