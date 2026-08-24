@@ -13,7 +13,7 @@
  * one's history, so no case depends on a sha staying where it is.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -24,9 +24,50 @@ import { anyGlobResolves, decide, pushedRanges, watchedPathspecs } from './prePu
 
 const ROOT = repoRoot();
 
+/**
+ * `core.hooksPath`, or null where nothing ever set it.
+ *
+ * **A PROVISIONING FACT, NOT A REPOSITORY FACT, and this file asserted it as
+ * though it were one.** The `prepare` lifecycle script points git at
+ * `.githooks/`, so the value exists on any checkout somebody has installed and
+ * on none that nobody has. Read with `execFileSync`, an unset key exits 1 and
+ * THROWS — so on a runner that never ran `npm ci` this did not fail one case, it
+ * killed the file.
+ *
+ * That went unnoticed because the proof had never run anywhere but a developer's
+ * machine (it is chained inside `proof:guards` and the workflow step named three
+ * of the four scripts). Wiring it into CI is what exposed it, first run, which is
+ * item 3 asked the other way round: **a check keyed on provisioning has two
+ * worlds, and the developed-in one is the richer one, so it is the one that
+ * hides the defect.**
+ */
+const HOOKS_PATH = configuredHooksPath(
+  spawnSync('git', ['config', '--local', '--get', 'core.hooksPath'], { cwd: ROOT, encoding: 'utf8' }),
+);
+
+/**
+ * The decision, separated from the ambient answer so both of its branches can be
+ * exercised anywhere.
+ *
+ * A branch keyed on the presence of something never executes where that thing is
+ * always present, and the unset branch is unreachable on any machine where
+ * `prepare` has run — which is every machine this file was ever run on before
+ * 2026-08-24. Passing the result in makes both sides a case rather than a
+ * property of the runner.
+ *
+ * @param {{ status: number | null, stdout?: string }} read
+ * @returns {string | null}
+ */
+function configuredHooksPath(read) {
+  return read.status === 0 ? `${read.stdout ?? ''}`.trim() : null;
+}
+
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+// One fewer where the hooks path was never configured: that case is reported as
+// UNVERIFIABLE below rather than counted, because "nobody installed this
+// checkout" is not evidence that the repository is wrong.
+const roster = createRoster(failures, { cases: HOOKS_PATH === null ? 16 : 17 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -258,19 +299,47 @@ try {
       `A hook that skips itself when the runtime is missing reports success for a check that ` +
         `never ran, which is the shape the pre-commit shim already refuses.`,
     );
-    const configured = `${execFileSync('git', ['config', '--local', '--get', 'core.hooksPath'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-    })}`.trim();
+    // Both branches of the provisioning decision, on every runner. Without
+    // these, the unset side is a specification nobody has read on a developer
+    // machine and the set side is one nobody has read in CI.
     check(
-      'and core.hooksPath points at the directory holding it',
-      configured === '.githooks',
-      `core.hooksPath = ${JSON.stringify(configured)}. The shim being tracked is not the same ` +
-        `as git running it; \`npm run prepare\` sets this.`,
+      'a configured hooks path is read from the config output',
+      configuredHooksPath({ status: 0, stdout: '.githooks\n' }) === '.githooks',
+      'the set branch must survive on a runner where nothing sets it',
     );
+    check(
+      'CONTROL: and an UNSET key is null rather than an empty string',
+      configuredHooksPath({ status: 1, stdout: '' }) === null,
+      `An empty string would compare unequal to ".githooks" and report a FAILURE where the ` +
+        `honest answer is "nobody installed this checkout". That is the two outputs this ` +
+        `project refuses to let share a channel — and it is the branch a developer machine ` +
+        `never reaches.`,
+    );
+
+    if (HOOKS_PATH !== null) {
+      check(
+        'and core.hooksPath points at the directory holding it',
+        HOOKS_PATH === '.githooks',
+        `core.hooksPath = ${JSON.stringify(HOOKS_PATH)}. The shim being tracked is not the same ` +
+          `as git running it; \`npm run prepare\` sets this.`,
+      );
+    }
   }
 } finally {
   for (const dir of scratches) rmSync(dir, { recursive: true, force: true });
+}
+
+// Printed BEFORE the verdict, and never folded into it. "Could not look" and
+// "looked and found nothing" must not share an output, so the reduced coverage
+// is named where a reader of a green run will see it.
+if (HOOKS_PATH === null) {
+  process.stdout.write(
+    `UNVERIFIABLE — 1 case could not be evaluated here:\n` +
+      `  ??  and core.hooksPath points at the directory holding it\n` +
+      `      Nothing has set core.hooksPath on this checkout, which \`npm run prepare\` does. On a\n` +
+      `      runner that installs nothing this is the expected state and not a finding; on a\n` +
+      `      developer machine it means the hooks are not in force.\n\n`,
+  );
 }
 
 process.stdout.write(
