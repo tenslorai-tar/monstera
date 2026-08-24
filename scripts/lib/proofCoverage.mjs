@@ -54,8 +54,54 @@ import { isMain } from './isMain.mjs';
 /** A proof known to be invoked by a workflow, used as the positive control. */
 const CONTROL_PATH = 'scripts/proofs/composition.proof.mjs';
 
-/** The first repository script path on a package.json command line. */
-const SCRIPT_PATH = /scripts\/[\w./-]+\.mjs/u;
+/** Every repository script path on a package.json command line. */
+const SCRIPT_PATHS = /scripts\/[\w./-]+\.mjs/gu;
+
+/**
+ * Every `proof:*` script this repository declares, and the file it runs.
+ *
+ * The one answer to "what are the proofs" (rule B3a). `package.json` is the
+ * authority: a proof is a script whose name starts `proof:`, and its path is the
+ * first repository script on its command line. Two callers now ask — this file,
+ * which asks whether a workflow invokes each one, and `affectedProofs.mjs`,
+ * which asks which of them read a file you just changed. A second parse would be
+ * a second opinion about which entries count, and this project has paid three
+ * times for exactly that.
+ *
+ * A `proof:*` entry naming no repository script is skipped rather than counted,
+ * because it is not something either caller can answer about and including it
+ * would make the total a different number from the set actually examined.
+ *
+ * **EVERY script on the command line, not the first.** `proof:guards` runs four
+ * chained scripts, and taking only the head left `preCommit.proof.mjs` in no
+ * proof's path set at all — so a change to it, or to anything only it reads,
+ * reported "no proof affected". Measured against the exact change that reddened
+ * `main` at `3a903fd`: with the head-only version the instrument named three
+ * proofs and not `proof:guards`, which is the one that had failed. A resolution
+ * test before it measured anything is what caught that; the report reads
+ * identically either way.
+ *
+ * @param {string} [root]
+ * @returns {readonly { name: string, paths: string[] }[]}
+ */
+export function proofScripts(root = repoRoot()) {
+  const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  /** @type {{ name: string, paths: string[] }[]} */
+  const found = [];
+  for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+    if (!name.startsWith('proof:')) continue;
+    const paths = [...new Set(String(command).match(SCRIPT_PATHS) ?? [])];
+    if (paths.length === 0) continue;
+    found.push({ name, paths });
+  }
+  if (found.length === 0) {
+    throw new Error(
+      'package.json declares no proof:* script that names a repository file. An empty roster is ' +
+        'a broken parse, not an answer — every caller of this would report nothing to do.',
+    );
+  }
+  return found;
+}
 
 /**
  * @typedef {object} CoverageResult
@@ -70,7 +116,6 @@ const SCRIPT_PATH = /scripts\/[\w./-]+\.mjs/u;
  */
 export function scan(options = {}) {
   const root = options.root ?? repoRoot();
-  const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
   const directory = join(root, '.github', 'workflows');
   const files = readdirSync(directory).filter((name) => /\.ya?ml$/u.test(name));
@@ -84,19 +129,17 @@ export function scan(options = {}) {
 
   /** @type {string[]} */
   const uninvoked = [];
-  let examined = 0;
-  for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
-    if (!name.startsWith('proof:')) continue;
-    const path = SCRIPT_PATH.exec(String(command))?.[0];
-    // A `proof:*` entry that names no repository script is not something this
-    // can answer about, and counting it would make the total a different
-    // number from the set actually checked.
-    if (path === undefined) continue;
-    examined += 1;
-    if (!workflows.includes(path)) uninvoked.push(`${name}  ->  ${path}`);
+  const proofs = proofScripts(root);
+  for (const { name, paths } of proofs) {
+    // EVERY chained script must be invoked, not just the first. A compound
+    // `proof:*` whose head runs in CI and whose tail does not is a proof
+    // registered into no job wearing the head's green check — which is the
+    // defect this file exists for, one level in.
+    const missing = paths.filter((path) => !workflows.includes(path));
+    for (const path of missing) uninvoked.push(`${name}  ->  ${path}`);
   }
 
-  return { uninvoked, examined, blind: !workflows.includes(CONTROL_PATH) };
+  return { uninvoked, examined: proofs.length, blind: !workflows.includes(CONTROL_PATH) };
 }
 
 /**

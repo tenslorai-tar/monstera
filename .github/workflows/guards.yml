@@ -98,6 +98,7 @@ jobs:
         run: |
           node scripts/ci/annotate.mjs scripts/hooks/guardFiles.proof.mjs
           node scripts/ci/annotate.mjs scripts/hooks/preCommit.proof.mjs
+          node scripts/ci/annotate.mjs scripts/hooks/prePush.proof.mjs
           node scripts/ci/annotate.mjs scripts/bootstrapHooks.proof.mjs
 
       # Before the proofs that report failures, because a blind reporter turns
@@ -384,6 +385,14 @@ jobs:
 
       - name: Every proof script is invoked by some job
         run: node scripts/ci/annotate.mjs scripts/lib/proofCoverage.mjs
+
+      # The sweep's replacement for a disclaimer that failed. It NAMES the proofs
+      # a local run did not execute, derived from the changed set and the import
+      # graph, so the reader gets an instruction rather than a caveat. Its
+      # resolution test is the change that reddened main at 3a903fd, and the
+      # first version of the instrument failed it silently.
+      - name: Prove the affected-proof list sees, refuses and stays quiet
+        run: node scripts/ci/annotate.mjs scripts/proofs/affectedProofs.proof.mjs
 
       # EEE-3, and it closes Y-3's shape rather than adding a third list. The
       # annotate wrapper was rolled out by enumeration — three steps in ci.yml,

@@ -642,15 +642,36 @@ as a **function inside a file the columns do name**. The compensation is to read
 that file's diff — which the ruling assumed and, for non-proofs, did not have
 until WW-2.
 
-The distinction that made the ruling safe still stands and is the one that
-decides such rulings generally: **a compensation the instrument prints at the
-point of use is a mechanism; a compensation you must recall is not.** So does
-its trigger: **it becomes a defect the first time an instrument is found late
-that reading those diffs did not surface.** With one correction learned from
-WW-2 — **catching one by running it does not count as the limit holding.** All
-four converted instruments in the range that produced WW-2 were caught that way,
-and reading it as the trigger not firing is precisely how a stated limitation
-becomes permanent.
+The distinction that made the ruling safe was: **a compensation the instrument
+prints at the point of use is a mechanism; a compensation you must recall is
+not.** So does its trigger: **it becomes a defect the first time an instrument is
+found late that reading those diffs did not surface.** With one correction
+learned from WW-2 — **catching one by running it does not count as the limit
+holding.** All four converted instruments in the range that produced WW-2 were
+caught that way, and reading it as the trigger not firing is precisely how a
+stated limitation becomes permanent.
+
+**THAT CRITERION HAS NOW BEEN FALSIFIED ONCE, and it is written here rather than
+left absolute, because a rule shown to fail and still stated without qualification
+is the exact shape this section exists to catch.** On 2026-08-24 a printed
+compensation, at the point of use, did not stop a push that reddened `main`:
+`checkLocal.mjs` ended every run with *"This set cannot see a provisioning-keyed
+branch or a proof registered only in a workflow"*, and the break was in a proof
+registered only in a workflow.
+
+So **printed is necessary and not sufficient**, and the property that separates a
+mechanism from a note is not where the text appears — it is whether the text is
+**specific**. That sentence was true on every run, named nothing and asked for
+nothing, so by the third reading it was furniture. The version that stops you
+names the three proofs this run's changed files actually reach, which is
+derivable without running any of them.
+
+The test to apply to any printed compensation: **could it have been printed
+before you made your change?** If yes it is a disclaimer, and you are relying on
+someone reading the same sentence differently the fourth time. `check:docs`'
+budget lines, the audit-scope disclosures and the sweep's index warning all pass
+that test — each names a number or a file that this run computed. The sentence
+that failed did not.
 
 The scoping is not a convenience. A tree-wide audit run at the end of a stage was
 right for the 43-finding audit, which caught things that had sat for weeks. It is

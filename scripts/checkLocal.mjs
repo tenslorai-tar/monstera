@@ -85,6 +85,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { multiProofSweepRefusal } from './lib/sweepScope.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 
@@ -532,10 +533,33 @@ if (timedOut.length > 0) {
       `Raise --timeout, or run those on the board.\n`,
   );
 }
-process.stdout.write(
-  'This set cannot see a provisioning-keyed branch or a proof registered only in a ' +
-    'workflow. The board is the mechanism; this is the minute before the push.\n',
-);
+// WHICH PROOFS THIS SWEEP DID NOT RUN, BY NAME (finding AAAA-16).
+//
+// What used to stand here was a true sentence about the set's blind spots. It is
+// printed at the point of use, which AA-1 called the difference between a
+// mechanism and a note — and it did not stop a push that reddened main, because
+// it is true on every run, names nothing and asks for nothing. Printed is
+// necessary and not sufficient; SPECIFIC is what separates an instruction from
+// furniture.
+//
+// So the general sentence is gone rather than kept alongside. Keeping it would
+// leave the furniture in place and let a reader take it as the coverage
+// statement, which is the state the specific list exists to end.
+const changedForProofs = spawnSync('git', ['diff', '--name-only', 'HEAD'], {
+  cwd: ROOT_DIR,
+  encoding: 'utf8',
+});
+if (changedForProofs.status === 0) {
+  const changed = changedForProofs.stdout.split('\n').filter((line) => line.trim() !== '');
+  const report = affectedProofsReport(affectedProofs(changed, { root: ROOT }));
+  process.stdout.write(
+    report ??
+      (changed.length === 0
+        ? '  ok  nothing is changed against HEAD, so no proof is owed a run\n'
+        : `  ok  no proof imports any of the ${String(changed.length)} file(s) changed against HEAD\n`),
+  );
+}
+process.stdout.write('The board is the mechanism; this is the minute before the push.\n');
 
 process.exit(
   failed.length === 0 && timedOut.length === 0 && notNode.length === 0 && treeMoved === null
