@@ -305,18 +305,23 @@ try {
     [
       'scripts/research/lowboxSpike.mjs',
       {
-        sites: 2,
+        sites: 4,
         reason:
-          'imports apps/desktop/dist/win32HostSurface.js and scripts/lib/memoryBudgets.mjs ' +
-          'through file:// URLs, for the same two reasons hostSurfaceProbe.mjs does and with ' +
-          'more at stake: RR-3 moved every cell of this instrument onto the SHIPPED surface, ' +
-          'so reading the build IS the measurement — a hand-rolled equivalent beside it was ' +
-          'the B3a defect that move removed. The second reads §9.17s absolute cap, because ' +
-          'applyLimits requires a memory limit and a number typed into a research file would ' +
-          'be a second opinion about the invariant (ADR-0023 §2). Both paths need Windows ' +
-          'backslash conversion at run time. This file starts the Electron BINARY by path ' +
-          'under ELECTRON_RUN_AS_NODE and never imports the electron package, which is ' +
-          'invariant 26 satisfied rather than evaded.',
+          'imports four built modules through file:// URLs, and the count moved from 2 to 4 ' +
+          'when pipe creation followed process creation onto the shipped surface. All four ' +
+          'are the same argument: reading the build IS the measurement, and a hand-rolled ' +
+          'equivalent beside it is the B3a defect these moves remove. ' +
+          'apps/desktop/dist/win32HostSurface.js creates every cell (RR-3). ' +
+          'apps/desktop/dist/win32PipeSurface.js and dist/enginePipeFactory.js create every ' +
+          'pipe, so the row that measures the SHIPPED descriptor against a contained cell is ' +
+          'built by the shipped factory rather than by a copy that agrees today. ' +
+          'scripts/lib/memoryBudgets.mjs reads §9.17s absolute cap, because applyLimits ' +
+          'requires a memory limit and a number typed into a research file would be a second ' +
+          'opinion about the invariant (ADR-0023 §2). Every path needs Windows backslash ' +
+          'conversion at run time. This file starts the Electron BINARY by path under ' +
+          'ELECTRON_RUN_AS_NODE and never imports the electron package, which is invariant 26 ' +
+          'satisfied rather than evaded — and none of the three built modules imports it ' +
+          'either: they reach koffi, @monstera/shared and their own siblings.',
       },
     ],
     [
