@@ -117,6 +117,28 @@ patching around. Add to it; do not re-pay for it.
   to be affordable. Read from the Actions API it is **336s** — and the two cold
   builds the decision then paid came in at 340s and 294s. The corrected comment
   names the run it was read from, which is the shape to copy.
+
+  **AND A LABEL CARRIES THE COMMAND THAT ESTABLISHED IT.** Same sentence with a
+  different noun: a classification without one is a guess wearing an
+  observation's clothes. *Orphan* needs the command line that showed no living
+  parent; *contaminated* needs the reading that showed the contamination;
+  *build-dependent* needs the two builds.
+
+  Two withdrawals in two commits on 2026-08-24 were the same shape, and neither
+  was carelessness — in each, a category was assigned from **the single property
+  that had actually been measured**, and the label then travelled into documents
+  where it read as observed:
+
+  | the label | what was measured | what was assumed |
+  |---|---|---|
+  | *orphaned* processes | a start time two days old | that no parent was alive — both were, and they were the editor's MCP server |
+  | sequence *causes* the slowdown | 308s alone against 598s ninth | that position was the difference — the same script measured 1.5s and 9.4s at the **same** position |
+
+  AAAA-8's tell covers both — *what else is different about the odd point?* — and
+  was not reached at the moment of writing, twice in two commits, which is this
+  project's standing evidence that **a tell is not a mechanism**. Naming the
+  command is what makes the gap visible in review, because the reviewer can see
+  that no command is named. *Be careful* is not checkable; a missing citation is.
 - **B7 TypeScript strict everywhere; `any` is an error, not a warning.** React
   function components only. `eslint-plugin-react-hooks`' full recommended set is
   registered against `packages/ui` and every rule in it is an **error**,

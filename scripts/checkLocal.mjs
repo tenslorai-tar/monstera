@@ -81,8 +81,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
@@ -197,8 +197,38 @@ const DURATIONS = join(ROOT_DIR, '.cache', 'checkLocal-durations.json');
  *
  * Written incrementally rather than at the end, because the run this matters for
  * is the one that gets killed.
+ *
+ * ## ONE SLOT SURVIVES EXACTLY AS LONG AS NOBODY REACTS TO IT (finding AAAA-25)
+ *
+ * The first version wrote a single `checkLocal-lastrun.json`, which reproduces
+ * the sequence that lost `7b7824e`'s evidence in the first place: something
+ * anomalous happens, you re-run to look at it, and the rows you wanted are gone —
+ * replaced by the rows of the run you made to study them. A log that is destroyed
+ * by the act of investigating is not a capture mechanism.
+ *
+ * So every run gets its own file, and **the filename carries the run's state**:
+ * `-running` while in flight, renamed to `-ok` or `-failed` at the end. A run
+ * this harness KILLED can never rename itself, so it stays `-running` for ever —
+ * which makes the killed run, the single hardest case to catch after the fact,
+ * self-identifying in a directory listing.
+ *
+ * Pruning follows from that: `-ok` logs are ordinary and the newest few are
+ * enough; `-failed` and `-running` are the evidence and are kept far longer.
+ *
+ * ## THIS IS A CAPTURE MECHANISM, NOT A RECORD
+ *
+ * `.cache/` is gitignored, so nothing here can ever reach a commit — which is
+ * right, because these are working notes and not history. It also means the
+ * rows must be COPIED INTO THE ENTRY BY HAND when an occurrence happens. That is
+ * precisely the step that was missed for the 35-at-0.0s pass, whose evidence was
+ * on somebody's screen and never written anywhere durable.
  */
-const RUN_LOG = join(ROOT_DIR, '.cache', 'checkLocal-lastrun.json');
+const RUN_LOG_DIR = join(ROOT_DIR, '.cache', 'checkLocal-runs');
+
+/** Newest-first `-ok` logs to keep; the failing and killed ones are kept far longer. */
+const KEEP_OK = 5;
+/** A bound on the evidence, so a repeatedly failing sweep cannot fill the cache. */
+const KEEP_EVIDENCE = 40;
 
 /** @type {Record<string, number>} */
 let known = {};
@@ -364,18 +394,53 @@ const notNode = [];
 /** Scripts observed to move the tree, in the order they did it. */
 /** @type {string[]} */
 const treeMovers = [];
-/** Every script's outcome this run, persisted as it goes. See {@link RUN_LOG}. */
+/** Every script's outcome this run, persisted as it goes. See {@link RUN_LOG_DIR}. */
 /** @type {Array<Record<string, unknown>>} */
 const runLog = [];
+
+// Colons are illegal in a Windows filename, so the timestamp is dashed. The pid
+// disambiguates two runs started inside the same second.
+const RUN_STAMP = `${new Date().toISOString().replace(/\..*$/u, '').replaceAll(':', '-')}-${process.pid}`;
+let runLogPath = join(RUN_LOG_DIR, `${RUN_STAMP}-running.json`);
+
 /** @param {Record<string, unknown>} row */
 function recordRow(row) {
   runLog.push(row);
   try {
-    mkdirSync(dirname(RUN_LOG), { recursive: true });
-    writeFileSync(RUN_LOG, `${JSON.stringify(runLog, null, 2)}\n`, 'utf8');
+    mkdirSync(RUN_LOG_DIR, { recursive: true });
+    writeFileSync(runLogPath, `${JSON.stringify(runLog, null, 2)}\n`, 'utf8');
   } catch {
     // A log this cannot write is not a reason to fail the run it is describing.
     // The rows are a diagnostic aid; the sweep's verdict does not depend on them.
+  }
+}
+
+/**
+ * Rename this run's log to its outcome, and prune.
+ *
+ * Never called when the process is killed, which is the point: a `-running` file
+ * IS the record of a run that did not finish.
+ *
+ * @param {boolean} clean
+ */
+function sealRunLog(clean) {
+  try {
+    if (runLog.length === 0) return;
+    const sealed = join(RUN_LOG_DIR, `${RUN_STAMP}-${clean ? 'ok' : 'failed'}.json`);
+    renameSync(runLogPath, sealed);
+    runLogPath = sealed;
+
+    const entries = readdirSync(RUN_LOG_DIR).filter((name) => name.endsWith('.json')).sort();
+    // Timestamp-prefixed, so a lexical sort is chronological and the tail is the
+    // newest. Evidence — anything that failed or never finished — is kept on its
+    // own, much longer budget than the ordinary green runs.
+    const ok = entries.filter((name) => name.endsWith('-ok.json'));
+    const evidence = entries.filter((name) => !name.endsWith('-ok.json'));
+    for (const name of [...ok.slice(0, -KEEP_OK), ...evidence.slice(0, -KEEP_EVIDENCE)]) {
+      rmSync(join(RUN_LOG_DIR, name), { force: true });
+    }
+  } catch {
+    // Same reasoning as recordRow: the verdict does not depend on the log.
   }
 }
 /** The last reported tree state, so one deletion is not reported by every later script. */
@@ -648,8 +713,18 @@ if (changedForProofs.status === 0) {
 }
 process.stdout.write('The board is the mechanism; this is the minute before the push.\n');
 
-process.exit(
-  failed.length === 0 && timedOut.length === 0 && notNode.length === 0 && treeMoved === null
-    ? 0
-    : 1,
-);
+const clean =
+  failed.length === 0 && timedOut.length === 0 && notNode.length === 0 && treeMoved === null;
+// A TIMED-OUT run is sealed as `-failed`, not left `-running`: the harness got to
+// decide, so the run finished even though a script did not. `-running` is
+// reserved for the case where nothing here ran at all after the kill, which is
+// what makes it worth reading.
+sealRunLog(clean);
+if (runLog.length > 0) {
+  process.stdout.write(
+    `Rows for this run: ${relative(ROOT_DIR, runLogPath).replaceAll('\\', '/')}\n` +
+      `  .cache is gitignored, so this is a capture and not a record — copy the rows into the\n` +
+      `  entry by hand if this run is the occurrence somebody needs later.\n`,
+  );
+}
+process.exit(clean ? 0 : 1);
