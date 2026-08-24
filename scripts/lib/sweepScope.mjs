@@ -65,8 +65,23 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
   return (
     `Refusing to sweep ${String(proofs.length)} proof scripts in one run (finding WWW-2).\n\n` +
     `A full sweep of this repository invents failures: 35 scripts failed in 0.0s on one ` +
-    `measured pass and every one passed alone. The mechanism is NOT established, so this run is ` +
-    `refused rather than run with a note explaining its own false reds.\n\n` +
+    `measured pass and every one passed alone. WHAT they were is established as of 2026-08-24; ` +
+    `WHY is not. So this run is refused rather than run with a note explaining its own false ` +
+    `reds.\n\n` +
+    `THEY NEVER STARTED A PROCESS (finding AAAA-6). The harness prints seconds to one decimal, ` +
+    `so 0.0s means under 50ms — and the cheapest possible successful spawn of node on this ` +
+    `machine, a script whose entire body is process.exit(0), measured 116ms at its FASTEST over ` +
+    `15 runs: median 129ms, max 179ms, 0 of 15 under 50ms. Nothing that started node can render ` +
+    `as 0.0s here. A spawnSync that fails to CREATE the process returns in about 3ms with status ` +
+    `null and zero bytes of output, which is that signature exactly.\n\n` +
+    `WHICH ERRNO IS STILL UNKNOWN, and it is unknown for a reason that was in this harness ` +
+    `rather than in the evidence: it read spawnSync's status, signal, stdout and stderr, and ` +
+    `never once read its error — the only field that says why no process appeared. So AAAA-23's ` +
+    `question, what did those 35 actually print, has an answer: nothing, and nothing could have. ` +
+    `The harness reads that field now, reports DID NOT START as its own state rather than as a ` +
+    `failure, and stops the sweep there — for the reason it stops at a timeout, since a machine ` +
+    `that just refused to create a process will refuse the next one, and the founding ` +
+    `observation is thirty-five of those in a row.\n\n` +
     `THE BOUND IS EARNED, AND THAT IS DATED RATHER THAN ASSUMED. The obvious suspect is the ` +
     `harness defect this file's caller records at checkLocal.mjs — \`npm run\` under a shell, ` +
     `where the timeout killed the shell and left node running, after which twenty scripts failed ` +
@@ -91,11 +106,13 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
     `editor and not by anything here, and the other two were never identified at all. No process ` +
     `on this machine has been shown to be proof wreckage. Nor is the 0.0s signature explained: a ` +
     `missing docs/hook-probe.json makes check:docs fail in ~130s, not instantly.\n\n` +
-    `AND THE FOUNDING OBSERVATION KEPT NO EVIDENCE. The harness prints one diagnostic line per ` +
-    `failure, or "(no diagnostic line found)" when there was none, which separates a spawn that ` +
-    `never started from an import-time throw. The 2026-08-23 pass preserved the count and the ` +
-    `conclusion and not the lines, so that question cannot be asked of the only occurrence. Every ` +
-    `run now writes its rows to ${runLogDir} as it goes.\n\n` +
+    `AND THE FOUNDING OBSERVATION KEPT NO EVIDENCE — which cost less than it looked like, ` +
+    `because the lines it lost were empty ones. The harness prints one diagnostic line per ` +
+    `failure, or "(no diagnostic line found)" when there was none; a process that never started ` +
+    `produces no output at all, so all 35 said the same nothing. What separates that case from ` +
+    `an import-time throw is the byte count, which the rows carry and the printed lines never ` +
+    `did. Every run now writes its rows to ${runLogDir} as it goes, and a spawn that fails now ` +
+    `carries its errno into both the line and the row.\n\n` +
     `Run one of these instead:\n` +
     `  npm run local -- --only check:            the pre-push sweep, no proofs, unaffected\n` +
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +
@@ -110,8 +127,10 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
     `which is the only harm this refusal is protecting you from. It is also better evidence than ` +
     `a purpose-built reproduction, which can manufacture the kills it then measures. The rows are ` +
     `what the original 35-at-0.0s pass did not keep.\n\n` +
-    `Unblocked by: the 0.0s signature's mechanism, then a job object per script so its children ` +
-    `die with it — which the orphan count above says nothing currently does. ` +
+    `Unblocked by: the ERRNO behind the 0.0s signature — the class is settled, no process was ` +
+    `created — and then a job object per script so its children die with it. Stopping at the ` +
+    `first one bounds the damage to a single invented failure instead of thirty-five; it does ` +
+    `not explain the machine, and the next occurrence is the thing that will. ` +
     `There is no flag that turns this off.\n`
   );
 }

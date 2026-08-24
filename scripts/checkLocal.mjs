@@ -87,6 +87,7 @@ import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
+import { classifySpawn } from './lib/spawnOutcome.mjs';
 import { multiProofSweepRefusal } from './lib/sweepScope.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 
@@ -396,6 +397,9 @@ process.stdout.write(
 const failed = [];
 /** @type {string[]} */
 const timedOut = [];
+/** Spawns that never became a process. See `lib/spawnOutcome.mjs`. */
+/** @type {string[]} */
+const didNotStart = [];
 
 /** @type {string[]} */
 const notNode = [];
@@ -537,7 +541,9 @@ for (const name of selected) {
   // real unit of work and not one to bury in a convenience script. Until then
   // the honest behaviour is to stop: one unreadable measurement is a reason to
   // look, and twenty invented ones are a reason to stop using the tool.
-  if (run.signal !== null && run.signal !== undefined) {
+  const outcome = classifySpawn(run);
+
+  if (outcome.kind === 'timedOut') {
     timedOut.push(name);
     // THE ROW THE LOG EXISTS FOR, and it was missing from the first version.
     // Measured 2026-08-24 by running the sweep against a clone: the first proof
@@ -561,7 +567,41 @@ for (const name of selected) {
     );
     break;
   }
-  if (run.status !== 0) {
+
+  // A SPAWN THAT NEVER BECAME A PROCESS IS NOT A CHECK THAT SAID NO, and until
+  // 2026-08-24 this harness could not tell you the difference (finding AAAA-6).
+  //
+  // `spawnSync`'s `error` was read nowhere here, so a failure to create the
+  // process arrived as `status: null`, no output and under 50ms — which the
+  // branch below reports as `FAILED` at `0.0s` with `(no diagnostic line
+  // found)`. That is WWW-2's founding signature exactly, and the reason its
+  // 35 lines said nothing is that there was nothing for them to say.
+  //
+  // It STOPS the sweep, for the reason the timeout above does: a machine that
+  // just refused to create a process will refuse the next one, and the founding
+  // observation is thirty-five of those in a row, every one of which passed
+  // when run alone. One unreadable measurement is a reason to look; thirty-five
+  // invented ones are a reason to stop using the tool.
+  if (outcome.kind === 'didNotStart') {
+    didNotStart.push(name);
+    recordRow({
+      name,
+      exit: null,
+      signal: null,
+      seconds: Number(seconds.toFixed(2)),
+      bytes: 0,
+      firstProblem: `(never started — ${outcome.detail ?? 'no cause reported'})`,
+    });
+    process.stdout.write(
+      `  DID NOT START  ${name} (${took})\n` +
+        `      ${outcome.detail ?? 'no cause reported'}\n` +
+        `      STOPPING. No process was created, so this is not a result about ${name} —\n` +
+        `      it is a result about this machine, and everything after it would be too.\n`,
+    );
+    break;
+  }
+
+  if (outcome.exit !== 0) {
     failed.push(name);
     const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
     const firstProblem =
@@ -575,8 +615,8 @@ for (const name of selected) {
     // which the diagnostic line alone cannot tell apart.
     recordRow({
       name,
-      exit: run.status,
-      signal: run.signal ?? null,
+      exit: outcome.exit,
+      signal: null,
       seconds: Number(seconds.toFixed(2)),
       bytes: output.length,
       firstProblem,
@@ -603,10 +643,12 @@ for (const name of selected) {
 // first timeout, so `selected.length` would report every script it never
 // reached as a pass — the arithmetic quietly inventing the result the operator
 // was hoping for.
-const attempted = failed.length + timedOut.length + notNode.length + passedCount;
+const attempted =
+  failed.length + timedOut.length + didNotStart.length + notNode.length + passedCount;
 process.stdout.write(
   `\n${String(passedCount)} passed, ${String(failed.length)} failed, ` +
-    `${String(timedOut.length)} timed out, ${String(notNode.length)} not run — ` +
+    `${String(timedOut.length)} timed out, ${String(didNotStart.length)} never started, ` +
+    `${String(notNode.length)} not run — ` +
     `${String(attempted)} of ${String(selected.length)} attempted.\n`,
 );
 // WRITTEN EVEN ON A PARTIAL RUN, and before the summary. A sweep that stopped
@@ -712,6 +754,14 @@ if (timedOut.length > 0) {
       `Raise --timeout, or run those on the board.\n`,
   );
 }
+if (didNotStart.length > 0) {
+  process.stdout.write(
+    `Never started, so NOT a result about the script: ${didNotStart.join(', ')}\n` +
+      `This is WWW-2's signature. COPY THE ROWS OUT of the run log before doing anything\n` +
+      `else — .cache/ is gitignored and the next run prunes, and the founding occurrence\n` +
+      `was lost at exactly this step.\n`,
+  );
+}
 // WHICH PROOFS THIS SWEEP DID NOT RUN, BY NAME (finding AAAA-16).
 //
 // What used to stand here was a true sentence about the set's blind spots. It is
@@ -741,7 +791,11 @@ if (changedForProofs.status === 0) {
 process.stdout.write('The board is the mechanism; this is the minute before the push.\n');
 
 const clean =
-  failed.length === 0 && timedOut.length === 0 && notNode.length === 0 && treeMoved === null;
+  failed.length === 0 &&
+  timedOut.length === 0 &&
+  didNotStart.length === 0 &&
+  notNode.length === 0 &&
+  treeMoved === null;
 // A TIMED-OUT run is sealed as `-failed`, not left `-running`: the harness got to
 // decide, so the run finished even though a script did not. `-running` is
 // reserved for the case where nothing here ran at all after the kill, which is

@@ -77,6 +77,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { retention, runLogState } from '../lib/runLog.mjs';
+import { classifySpawn } from '../lib/spawnOutcome.mjs';
 import { multiProofSweepRefusal } from '../lib/sweepScope.mjs';
 
 const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
@@ -84,7 +85,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 33 });
+const roster = createRoster(failures, { cases: 38 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -704,6 +705,83 @@ try {
         `kept FOR is the account of what completed immediately before it stopped, which is ` +
         `the question WWW-2 turns on. Rows: ` +
         `${after.length === 1 ? JSON.stringify(runLogRows(root, after[0] ?? '')) : '(no log)'}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // A SPAWN THAT NEVER BECAME A PROCESS (finding AAAA-6).
+  //
+  // WWW-2's founding observation is 35 failures at 0.0s that each passed alone,
+  // and AAAA-23 asked what those 35 printed. Nothing — and nothing could have,
+  // because the harness read `status`, `signal`, `stdout` and `stderr` and
+  // never `error`, which is the only field that says why no process appeared.
+  //
+  // The measurement that makes this more than a matching shape is in
+  // `lib/spawnOutcome.mjs`: the cheapest successful node spawn on the machine
+  // that produced the founding pass is 116ms at its FASTEST over 15 runs, and
+  // `0.0s` means under 50ms. Nothing that started node can render as 0.0s
+  // there.
+  //
+  // The load-bearing case is the branch ORDER. A timed-out spawn carries
+  // `signal: 'SIGTERM'` AND `error: ETIMEDOUT` together, so a classifier that
+  // tested `error` first would call every timeout a failure-to-spawn — and
+  // that mistake is invisible in the field names, which is why it is a case.
+  // -------------------------------------------------------------------------
+  {
+    const ran = classifySpawn({ status: 3, signal: null });
+    check(
+      'an ordinary non-zero exit is a script that RAN, and keeps its exit code',
+      ran.kind === 'ran' && ran.exit === 3,
+      `A check that says no must never be reported as a machine that could not start it. ` +
+        `Got ${JSON.stringify(ran)}`,
+    );
+    check(
+      'CONTROL: a clean exit is also "ran", so "ran" is not merely what non-zero prints',
+      (() => {
+        const clean = classifySpawn({ status: 0, signal: null });
+        return clean.kind === 'ran' && clean.exit === 0;
+      })(),
+      'without this, a classifier returning "ran" for everything satisfies the case above.',
+    );
+    check(
+      'a spawn that reported an error and no signal DID NOT START, and carries the errno',
+      (() => {
+        const failure = classifySpawn({
+          status: null,
+          signal: null,
+          error: Object.assign(new Error('spawnSync node.exe ENOENT'), { code: 'ENOENT' }),
+        });
+        return failure.kind === 'didNotStart' && (failure.detail ?? '').includes('ENOENT');
+      })(),
+      'the errno is the whole point: 35 lines of "(no diagnostic line found)" is what the ' +
+        'previous version could say, and it is indistinguishable from a guard refusing ' +
+        'quietly.',
+    );
+    check(
+      'a TIMED-OUT spawn is a timeout, even though it also carries an ETIMEDOUT error',
+      (() => {
+        const killed = classifySpawn({
+          status: null,
+          signal: 'SIGTERM',
+          error: Object.assign(new Error('spawnSync node.exe ETIMEDOUT'), { code: 'ETIMEDOUT' }),
+        });
+        return killed.kind === 'timedOut';
+      })(),
+      `Measured 2026-08-24: spawnSync sets BOTH fields when it kills a child at the bound. ` +
+        `Testing \`error\` first would reclassify every timeout as a failure to spawn — the ` +
+        `sweep would still stop, so no case about stopping could see it, and the harness ` +
+        `would print the wrong reason for the rest of this project's life.`,
+    );
+    check(
+      'the summary counts scripts that never started, as their own state',
+      (() => {
+        const counted = runFixture({ 'ok.mjs': EXIT_ZERO }, { 'check:ok': 'node scripts/ok.mjs' });
+        return counted.ok && /0 never started/u.test(counted.output);
+      })(),
+      `The classifier can be perfect and reach nobody. This is the half of the wiring a ` +
+        `fixture can see: the harness's own \`didNotStart\` branch cannot be reached from a ` +
+        `fixture at all — see the stated gap in lib/spawnOutcome.mjs — so the counter ` +
+        `appearing in the summary is what is provable here.`,
     );
   }
 
