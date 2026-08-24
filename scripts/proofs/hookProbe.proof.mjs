@@ -39,7 +39,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { repoRoot } from '../lib/gitScope.mjs';
+import { readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { RECORD_FILE, mechanismInputs, probeCoverage, probeState } from '../lib/hookProbe.mjs';
 import {
   ANCHOR_EVENT,
@@ -596,6 +596,39 @@ function writeEntryIn(root, overrides, others = {}) {
   // case failed the moment the first denial was recorded, which is the control
   // doing its job: its premise had changed and it said so instead of passing.
   const recordPath = join(ROOT, RECORD_FILE);
+
+  // REPAIR BEFORE MEASURING, because `finally` does not run when the process is
+  // KILLED — the pattern `documentScope.proof.mjs` already carries for
+  // `docs/ENGINE-SPIKE.md` (finding WWW-1), and this file needed it too.
+  //
+  // Measured 2026-08-24 while investigating WWW-2: this proof takes 308s alone
+  // on a clean tree and 598s run ninth in a sequence, so a per-script bound kills
+  // it here far more readily than its solo cost suggests. A 90s bound killed it
+  // at 90.04s with SIGTERM, `finally` never ran, and `docs/hook-probe.json` was
+  // left DELETED in the working tree — where a commit about something else
+  // carries the deletion silently, and every later reader of the record is
+  // measuring the harness's leftovers rather than the repository.
+  //
+  // The saved copy alone cannot fix that: it is read at this point, so a run
+  // that starts with the file already missing records `null` and then skips its
+  // own restore, making the damage permanent instead of repairing it.
+  if (!existsSync(recordPath)) {
+    const blob = readStagedBlob(RECORD_FILE);
+    if (blob === null) {
+      process.stderr.write(
+        `${RECORD_FILE} is absent from BOTH the working tree and the index. This proof removes it ` +
+          `and restores it, so an absence in both places is not something it can repair — the ` +
+          `file has to come back from git before this can run.\n`,
+      );
+      process.exit(1);
+    }
+    writeFileSync(recordPath, blob);
+    process.stdout.write(
+      `  repaired ${RECORD_FILE} — it was missing from the working tree and present in the index,\n` +
+        `           which is what a previous run of this proof being KILLED leaves behind.\n`,
+    );
+  }
+
   const savedRecord = existsSync(recordPath) ? readFileSync(recordPath, 'utf8') : null;
   const claudePath = join(ROOT, 'CLAUDE.md');
   const savedClaude = readFileSync(claudePath, 'utf8');

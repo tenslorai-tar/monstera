@@ -39,15 +39,25 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
   return (
     `Refusing to sweep ${String(proofs.length)} proof scripts in one run (finding WWW-2).\n\n` +
     `A full sweep of this repository invents failures: 35 scripts failed in 0.0s on one ` +
-    `measured pass and every one passed alone. Something a COMPLETED script leaves behind is ` +
-    `enough, and the mechanism is not established — so this run is refused rather than run ` +
-    `with a note explaining its own false reds.\n\n` +
+    `measured pass and every one passed alone.\n\n` +
+    `PARTLY ESTABLISHED, 2026-08-24. Running proofs in sequence roughly DOUBLES them — ` +
+    `proof:hookprobe takes 308s alone on a clean tree and 598s run ninth; proof:guards was 76s ` +
+    `in one run and 153s in another. A per-script bound then kills a proof that would have ` +
+    `passed, its \`finally\` never runs, and it leaves TRACKED FILES DELETED: a 90s bound killed ` +
+    `proof:hookprobe at 90.04s and left docs/hook-probe.json removed from the working tree. ` +
+    `Four orphaned node processes were alive during that measurement, two of them started the ` +
+    `previous day — they survive every parent that spawns them.\n\n` +
+    `So the wreckage measured here comes from scripts that were KILLED, not from scripts that ` +
+    `COMPLETED, which is what this message used to assert. NOT established: the 0.0s signature ` +
+    `itself. A missing docs/hook-probe.json makes check:docs fail in ~130s, not instantly, so ` +
+    `the original 35-at-0.0s observation is still unexplained and this refusal stands.\n\n` +
     `Run one of these instead:\n` +
     `  npm run local -- --only check:            the pre-push sweep, no proofs, unaffected\n` +
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +
     `contaminated by\n` +
     `  npm run board -- <full sha>               the whole set, on a machine per job\n\n` +
-    `Unblocked by: the mechanism, then a job object per script so its children die with it. ` +
+    `Unblocked by: the 0.0s signature's mechanism, then a job object per script so its children ` +
+    `die with it — which the orphan count above says nothing currently does. ` +
     `There is no flag that turns this off.\n`
   );
 }
