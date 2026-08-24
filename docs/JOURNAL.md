@@ -727,6 +727,64 @@ something by hand or by the reviewing seat reading a file. That is worth stating
 plainly rather than leaving as an absence — this is the part of the repository
 where the board is not the mechanism.
 
+**CORRECTED 2026-08-24 (finding AAAA-29). The paragraph above is wrong, and
+wrong in the direction that makes coverage look absent.** It stands because this
+is a record; what follows is what is true.
+
+Three of the range's ten files are proofs and **all three run in CI**,
+unconditionally, on both matrix legs: `scripts/proofs/hookProbe.proof.mjs`
+(`guards.yml:214`), `scripts/proofs/auditScope.proof.mjs` (`:270`),
+`scripts/proofs/checkLocal.proof.mjs` (`:304`). That file contains no `if:` at
+all, so no step in it can be skipped, and its matrix is `[windows-latest,
+ubuntu-latest]`. Read from the **run** rather than from the file — Guards run
+318 for `247a307`, both legs `success`:
+
+```
+Secret scan and file policy (ubuntu-latest) :: success
+  success  2026-08-24T12:59:15Z  Prove the tool-use guard gate cannot be claimed unproven
+  success  2026-08-24T12:59:24Z  Prove the stage-audit watermark gate can fail
+  success  2026-08-24T12:59:30Z  Prove the local check sweep can report a failure at all
+
+Secret scan and file policy (windows-latest) :: success
+  success  2026-08-24T13:01:56Z  Prove the tool-use guard gate cannot be claimed unproven
+  success  2026-08-24T13:02:40Z  Prove the stage-audit watermark gate can fail
+  success  2026-08-24T13:02:49Z  Prove the local check sweep can report a failure at all
+```
+
+`checkLocal.proof.mjs` imports `scripts/lib/sweepScope.mjs` and asserts on the
+refusal's text directly, and it **spawns the real harness** against fixture
+repositories it builds in a temporary directory. So `sweepScope.mjs`'s
+judgement, the whole refusal message, `scripts/audit/scope.mjs` and
+`scripts/lib/hookProbe.mjs` are on the board on two platforms every push —
+including the AAAA-28 case added at `247a307`, which is the case that would have
+caught the defect this range's successor found.
+
+**What is genuinely off the board is narrower, and is worth stating as itself:**
+the run-log **files**. The proof reads back `.cache/checkLocal-durations.json`
+and nothing under `.cache/checkLocal-runs/`, so the rotation, the `-running`
+name surviving a kill, the row sealed on a timeout and the clone route are
+exercised by hand or not at all.
+
+**The difference is not pedantry.** *The board is not the mechanism here* tells
+the next reader that a case in this area buys nothing in CI, and therefore not
+to write one — while the case that caught AAAA-28 runs on two machines every
+push. The correct answer to a defect in this area is **write the case**, not
+review harder.
+
+**How the wrong answer was reached, which is the transferable part:** item 3 was
+answered from the *subject* of the range — a local harness, a gitignored cache,
+a route a person types — rather than from the workflow or from a run. This
+journal already records the 138-commit precedent in which both seats answered
+item 3 "from the workflow file rather than from a run". This is one step worse:
+from neither.
+
+**And the answer is computable, which is the remedy rather than the scolding.**
+`scripts/lib/affectedProofs.mjs` already derives the proofs a changed set
+reaches and carries its own positive control. Fed this range's changed paths it
+names `proof:hookprobe`, `proof:checklocal` and `proof:auditscope`, each of
+which resolves to `guards.yml` by path. Item 3 has an instrument; run it instead
+of recalling what the range was about.
+
 ### 4. Are the proofs non-vacuous?
 
 **Three mutations run, each reddening exactly its own case:** renaming a

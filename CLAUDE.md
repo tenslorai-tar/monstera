@@ -806,6 +806,24 @@ If not, say so and close the gap. A defect CI cannot see is waiting for a
 contributor, not for you. (Provisioning worked from PowerShell and failed from
 Git Bash; the guards job runs on Linux, so CI was structurally blind to it.)
 
+**Answer it from a RUN, and never from what the range was about.** This question
+has been answered from the workflow file rather than from a run once — for 138
+commits, in which every run died at `npm ci` — and from *neither* once, which is
+worse and is finding AAAA-29: a range whose subject was a local harness, a
+gitignored cache and a route a person types was written up as *none of this runs
+in CI*, while all three of its proofs were unconditional steps on both matrix
+legs and had been green on two platforms since the push. **The subject of a
+change does not tell you where its checks run**, and a *no* here is the answer
+that reads as candour, so nothing about writing it prompts a second look.
+
+Both halves are computable in under a minute, so compute them:
+`scripts/lib/affectedProofs.mjs` names the proofs a changed set reaches (it
+carries its own positive control), and each of those resolves to a workflow by
+path — after which the run's own step lines say whether they executed. Where the
+answer really is *no*, say which half is uncovered: *the board is not the
+mechanism here* invites the next reader to skip writing a case, and that is the
+opposite of what a genuine gap calls for.
+
 **And ask it the other way round, because the answer is not symmetric: is there
 a defect THIS MACHINE cannot see?** A check whose behaviour depends on
 provisioning has two worlds, and the developed-in one is the richer one — so it
