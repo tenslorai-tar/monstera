@@ -132,9 +132,12 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
     `Measured 2026-08-24, three runs of each variant against this harness: an ordinary ` +
     `grandchild died with it 3 of 3, and a DETACHED one survived 3 of 3. The discriminating ` +
     `variable is detached — the signature of the job object libuv already puts an ordinary ` +
-    `Windows child into — and this repository spawns nothing detached, which ` +
-    `checkLocal.proof.mjs asserts because the guarantee depends on it. What a timeout really ` +
-    `leaves behind is a CHANGED TREE, since a killed script never runs its finally.\n\n` +
+    `Windows child into — and this repository spawns nothing detached. Both halves are now ` +
+    `asserted rather than recalled: checkLocal.proof.mjs runs that differential on every push, ` +
+    `on each platform's own Guards leg, requiring the grandchild to be seen ADVANCING before ` +
+    `anything is killed — because "it stopped" and "it never started" are the same observation ` +
+    `otherwise. What a timeout really leaves behind is a CHANGED TREE, since a killed script ` +
+    `never runs its finally.\n\n` +
     `Unblocked by: the ERRNO behind the 0.0s signature, and nothing else. The class is settled ` +
     `— no process was created — and stopping at the first one bounds the damage to a single ` +
     `invented failure instead of thirty-five. That is not an explanation, and the next ` +

@@ -551,9 +551,14 @@ for (const name of selected) {
   // working tree exactly that way. Everything after a timeout is measured
   // against a CHANGED TREE, which is reason enough to stop.
   //
-  // Not measured: Linux, where nothing ties a child's lifetime to its parent's
-  // and the orphan claim would hold. This sweep is a Windows-side developer
-  // tool; the statement above is about the platform it runs on.
+  // ASSERTED, not recalled (finding AAAA-31): `checkLocal.proof.mjs` runs that
+  // differential on every push — the grandchild must be seen ADVANCING a
+  // counter before anything is killed, since "it stopped" and "it never
+  // started" are otherwise the same observation. Both halves are asserted, each
+  // on its own Guards leg: win32 tears the tree down, and on Linux nothing ties
+  // a child's lifetime to its parent's, so the orphan claim holds there. This
+  // is what gives the claim an expiry — it is a property of the RUNTIME, and a
+  // node bump is exactly the event that would take it away in silence.
   const outcome = classifySpawn(run);
 
   if (outcome.kind === 'timedOut') {

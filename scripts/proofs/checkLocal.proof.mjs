@@ -85,7 +85,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 40 });
+const roster = createRoster(failures, { cases: 44 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -188,6 +188,18 @@ const SETUP_MARGIN_MS = 5000;
 
 /** Long enough for a killed child's last write to land before the directory is read. */
 const SETTLE_MS = 250;
+
+/**
+ * The spawn option this file both WRITES INTO FIXTURES and SCANS THE TREE FOR,
+ * assembled so that the file doing the scanning is not itself a hit.
+ *
+ * Not squeamishness: written as a literal it is a real occurrence in a real
+ * source file, and the scan reported this file on its first run, twice, both
+ * times correctly. The regex meets the true shape at match time either way —
+ * how the characters became adjacent is nothing to the regex and everything to
+ * the file being read.
+ */
+const DETACHED_KEY = `deta${'ched'}`;
 
 const EXIT_ZERO = 'process.exit(0);\n';
 const EXIT_ONE = "process.stderr.write('FAIL deliberate\\n');\nprocess.exit(1);\n";
@@ -709,6 +721,204 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // WHAT THE PLATFORM DOES TO A GRANDCHILD (findings AAAA-6, AAAA-31).
+  //
+  // The job-object requirement was WITHDRAWN on the strength of a hand-run
+  // measurement written into a comment. That is the wrong home for it twice
+  // over: a withdrawal is the one kind of claim that removes a check rather
+  // than adding one, and this half is a property of the RUNTIME — whatever
+  // libuv does with an ordinary Windows child is libuv's decision, and a node
+  // bump is exactly the event that would falsify it in silence. A claim owed an
+  // expiry with nothing able to fire one.
+  //
+  // THE DIFFERENTIAL IS THE CONTROL, and without it this is unreadable: "the
+  // grandchild is gone" and "the grandchild never started" are the same
+  // observation, which is the trap this file has now caught three times. So the
+  // probe must SEE the grandchild alive and advancing a counter before anything
+  // is killed, and the same grandchild spawned `detached` must still be
+  // advancing afterwards.
+  //
+  // Scoped by platform, both sides asserted, neither vacuous: win32 tears the
+  // tree down, and on Linux nothing ties a child's lifetime to its parent's.
+  // Each leg of Guards runs its own half.
+  // -------------------------------------------------------------------------
+  {
+    /**
+     * Runs the harness against a fixture whose script spawns a grandchild that
+     * keeps writing an advancing counter, kills the harness, and reports
+     * whether that counter was moving before and after.
+     *
+     * @param {boolean} detachChild
+     */
+    const probeGrandchild = (detachChild) => {
+      const root = mkdtempSync(join(scratch, detachChild ? 'detached ' : 'ordinary '));
+      mkdirSync(join(root, 'scripts'), { recursive: true });
+      const marker = join(root, 'tick.txt').replaceAll('\\', '/');
+      const pidPath = join(root, 'gc.pid').replaceAll('\\', '/');
+      // Absolute paths captured BEFORE the chdir, and the chdir is here for the
+      // reason it is in the kill case: a survivor holding the fixture as its
+      // cwd cannot be removed on Windows.
+      writeFileSync(
+        join(root, 'scripts', 'grandchild.mjs'),
+        "import { writeFileSync } from 'node:fs';\n" +
+          "import { tmpdir } from 'node:os';\n" +
+          `writeFileSync('${pidPath}', String(process.pid), 'utf8');\n` +
+          'process.chdir(tmpdir());\n' +
+          'let n = 0;\n' +
+          `setInterval(() => { n += 1; writeFileSync('${marker}', String(n), 'utf8'); }, 100);\n` +
+          'setTimeout(() => process.exit(0), 120000);\n',
+        'utf8',
+      );
+      writeFileSync(
+        join(root, 'scripts', 'a-spawns.mjs'),
+        "import { spawn } from 'node:child_process';\n" +
+          "import { fileURLToPath } from 'node:url';\n" +
+          "const gc = fileURLToPath(new URL('./grandchild.mjs', import.meta.url));\n" +
+          `const c = spawn(process.execPath, [gc], { stdio: 'ignore', ${DETACHED_KEY}: ${String(detachChild)} });\n` +
+          (detachChild ? 'c.unref();\n' : '') +
+          'setTimeout(() => process.exit(0), 120000);\n',
+        'utf8',
+      );
+      writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify(
+          { name: 'fixture', scripts: { 'proof:a-spawns': 'node scripts/a-spawns.mjs' } },
+          null,
+          2,
+        ),
+        'utf8',
+      );
+
+      /** @returns {number | null} */
+      const tick = () => {
+        try {
+          const value = Number(readFileSync(marker, 'utf8').trim());
+          return Number.isFinite(value) ? value : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const child = spawn(process.execPath, [HARNESS, '--root', root, '--floor', '1'], {
+        stdio: 'ignore',
+      });
+
+      // ALIVE means the counter MOVED, not that a file appeared. A grandchild
+      // that wrote once and died would satisfy the weaker form, and that is the
+      // same observation as the teardown this case is trying to detect.
+      let first = null;
+      let sawAdvance = false;
+      let waited = 0;
+      while (waited < SETUP_BUDGET_MS && !sawAdvance) {
+        sleepSync(SETUP_POLL_MS);
+        waited += SETUP_POLL_MS;
+        const now = tick();
+        if (now === null) continue;
+        if (first === null) first = now;
+        else if (now > first) sawAdvance = true;
+      }
+
+      child.kill('SIGKILL');
+      sleepSync(SETTLE_MS);
+      const afterKill = tick();
+      sleepSync(600);
+      const later = tick();
+
+      /** @type {number | null} */
+      let pid;
+      try {
+        pid = Number(readFileSync(pidPath, 'utf8').trim());
+      } catch {
+        pid = null;
+      }
+      return {
+        sawAdvance,
+        stillAdvancing: afterKill !== null && later !== null && later > afterKill,
+        pid: Number.isFinite(pid) ? pid : null,
+        tick,
+      };
+    };
+
+    const ordinary = probeGrandchild(false);
+    const detachedGrandchild = probeGrandchild(true);
+
+    check(
+      'CONTROL: both grandchildren were seen ADVANCING before anything was killed',
+      ordinary.sawAdvance && detachedGrandchild.sawAdvance,
+      `"it stopped" and "it never started" are the same observation, and this is the only ` +
+        `thing separating them. ordinary advanced=${String(ordinary.sawAdvance)} ` +
+        `detached advanced=${String(detachedGrandchild.sawAdvance)}.`,
+    );
+
+    if (process.platform === 'win32') {
+      check(
+        'win32: an ORDINARY grandchild stops when the harness is killed',
+        !ordinary.stillAdvancing,
+        `This is the measurement the job-object withdrawal rests on, and it is a property of ` +
+          `the RUNTIME rather than of this repository — libuv puts an ordinary Windows child ` +
+          `in a job object, and a node bump could take that away in silence. If this is red, ` +
+          `the withdrawal in the FEATURES row is what has to be revisited, not this case.`,
+      );
+      check(
+        'win32 CONTROL: a DETACHED grandchild survives the same kill',
+        detachedGrandchild.stillAdvancing,
+        `Without this, the case above is satisfied by everything dying for any reason at all — ` +
+          `the machine going quiet, the fixture expiring, the probe losing the file. The ` +
+          `differential is what makes it teardown.`,
+      );
+    } else {
+      check(
+        'not win32: an ordinary grandchild SURVIVES, because nothing here ties it to its parent',
+        ordinary.stillAdvancing,
+        `The opposite half of the same claim, asserted on its own Guards leg so neither side ` +
+          `is a platform nobody runs. If this is red, the finding is that this platform DOES ` +
+          `tear the tree down, which would be worth knowing and is not something this ` +
+          `repository has ever measured.`,
+      );
+      check(
+        'not win32 CONTROL: a detached grandchild survives too, so the probe is not reading win32',
+        detachedGrandchild.stillAdvancing,
+        'both variants survive here, and a probe that reported teardown on this platform would ' +
+          'be reporting something other than the process tree.',
+      );
+    }
+
+    // CLEANUP IS ALSO THE CONTROL THAT THIS PROBE CAN SEE A STOP AT ALL.
+    // Everything still advancing has to be killed — a proof about survivors
+    // that leaves survivors is the joke version of this file — and killing them
+    // is the one moment we can confirm the counter goes still on demand.
+    /** @type {Array<{ label: string, probe: ReturnType<typeof probeGrandchild> }>} */
+    const survivors = [
+      { label: 'ordinary', probe: ordinary },
+      { label: 'detached', probe: detachedGrandchild },
+    ].filter((entry) => entry.probe.stillAdvancing);
+    for (const { probe } of survivors) {
+      if (probe.pid === null) continue;
+      try {
+        process.kill(probe.pid, 'SIGKILL');
+      } catch {
+        // Already gone between the sample and here; the assertion below is what
+        // decides whether that matters.
+      }
+    }
+    sleepSync(SETTLE_MS);
+    check(
+      'CONTROL: the probe observes a STOP when one is made to happen',
+      survivors.length > 0 &&
+        survivors.every(({ probe }) => {
+          const before = probe.tick();
+          sleepSync(400);
+          const after = probe.tick();
+          return before !== null && after !== null && after === before;
+        }),
+      `A probe that can only ever report "advancing" would pass every case above on the ` +
+        `platform where survival is the expected answer. This kills the survivors — which it ` +
+        `must do anyway — and requires the counter to go still. Survivors: ` +
+        `${String(survivors.length)}.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // NOTHING IN THIS REPOSITORY SPAWNS DETACHED (finding AAAA-6).
   //
   // The harness stops at a timeout, and its comment used to justify that by
@@ -723,6 +933,14 @@ try {
   // a detached spawn, which makes the set BIGGER, and a derived count tracks
   // growth perfectly (item 4c). A hand-kept list would be the wrong instrument
   // here for exactly the reason it is the right one elsewhere.
+  //
+  // STATED LIMIT: the pattern sees a literal option KEY. A spread, or an
+  // options object assembled somewhere else and passed in, escapes it — the
+  // same textual reach ZZZ-2 has, in a cheaper setting. It is not closed
+  // because the realistic way somebody adds a detached spawn is by typing the
+  // option where the spawn is, and a scan that tried to follow an object
+  // through a call would be a second, worse implementation of the type checker
+  // that already reads these files.
   // -------------------------------------------------------------------------
   {
     /** @param {string} dir @returns {string[]} */
@@ -750,12 +968,7 @@ try {
     const files = [...sources('scripts'), ...sources('packages'), ...sources('apps')];
     const detached = files.filter((file) => /\bdetached\s*:/u.test(readFileSync(file, 'utf8')));
 
-    // ASSEMBLED, not written out, and that is not squeamishness: a literal here
-    // is a real occurrence in a real source file, and the scan found it on its
-    // first run — correctly. The regex is exercised against the true shape at
-    // match time, which is all a control needs; how the characters got adjacent
-    // is nothing to the regex and everything to the file being scanned.
-    const sample = `spawn(exe, [], { deta${'ched'}: true })`;
+    const sample = `spawn(exe, [], { ${DETACHED_KEY}: true })`;
     check(
       'CONTROL: the scan reads a real file set and can match the thing it looks for',
       files.length > 50 && /\bdetached\s*:/u.test(sample),
