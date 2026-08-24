@@ -35,7 +35,7 @@ import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeCoverage, probeState } from '../lib/hookProbe.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
-import { ANCHOR_SCRIPT, claimedHooks, mechanismName } from '../lib/registeredHooks.mjs';
+import { ANCHOR_EVENT, ANCHOR_SCRIPT, claimedHooks, mechanismName } from '../lib/registeredHooks.mjs';
 import { THREAT_MODEL_TOPICS, unraisedTopics } from '../lib/threatModelTopics.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { declaredPhrases, liveClaims } from '../lib/withdrawnPhrases.mjs';
@@ -510,7 +510,7 @@ registerRule({
     // any other hook. Naming it through the resolver's anchor keeps that
     // narrow: a row claiming this gate can never come to vouch for a hook
     // registered later.
-    const { state, detail } = probeState(mechanismName(ANCHOR_SCRIPT), ROOT);
+    const { state, detail } = probeState(mechanismName(ANCHOR_SCRIPT, ANCHOR_EVENT), ROOT);
     if (state !== 'fired') {
       failures.push(
         `docs/FEATURES.md marks the tool-use guard gate done, but the guard has not been ` +

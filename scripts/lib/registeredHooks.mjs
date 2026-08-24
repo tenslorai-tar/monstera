@@ -209,8 +209,14 @@ export function locallyRegisteredHooks(root = repoRoot()) {
  * prose already does. `.proof.mjs` files are excluded outright, since a proof is
  * never a hook.
  *
+ * A claim names a SCRIPT and not an event, deliberately: prose asserts that a
+ * mechanism is wired up, and which event it is wired to is the settings file's
+ * business and the resolver's to enforce. So these carry no mechanism name —
+ * that key identifies a *(script, event)* pair, and inventing one here would be
+ * asserting something the document did not say.
+ *
  * @param {string} [root]
- * @returns {readonly { script: string, name: string, documents: string[] }[]}
+ * @returns {readonly { script: string, documents: string[] }[]}
  */
 export function claimedHooks(root = repoRoot()) {
   /** @type {Map<string, string[]>} */
@@ -243,8 +249,8 @@ export function claimedHooks(root = repoRoot()) {
   }
 
   return [...claims.entries()]
-    .map(([script, documents]) => ({ script, name: mechanismName(script), documents }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map(([script, documents]) => ({ script, documents }))
+    .sort((a, b) => a.script.localeCompare(b.script));
 }
 
 /**
@@ -273,7 +279,7 @@ function parseHooks(path, label) {
         const command = typeof entry?.command === 'string' ? entry.command : '';
         const script = SCRIPT_IN_COMMAND.exec(command)?.[1];
         if (script === undefined) continue;
-        found.push({ name: mechanismName(script), event, matcher, script, command });
+        found.push({ name: mechanismName(script, event), event, matcher, script, command });
       }
     }
   }
@@ -283,14 +289,39 @@ function parseHooks(path, label) {
 /**
  * The key a mechanism is recorded under.
  *
- * Derived from the script's own filename so that nobody chooses it, and so a
- * renamed hook reads as a new mechanism with no evidence rather than as the old
- * one with somebody else's certificate.
+ * Derived so that nobody chooses it, and so a renamed or re-pointed hook reads
+ * as a new mechanism with no evidence rather than as the old one holding
+ * somebody else's certificate.
+ *
+ * **IT NAMES THE SCRIPT AND THE EVENT, and it did not (finding AAAA-17).** The
+ * key was the filename alone, while the thing actually registered is a
+ * *(script, event)* pair — so one script wired to two events produced two roster
+ * rows carrying one name, and the second inherited the first's entry. Measured:
+ *
+ *     rows: blockEscapeResolvingWrites@PreToolUse blockEscapeResolvingWrites@PostToolUse
+ *     distinct names: 1
+ *     missing: []
+ *
+ * That is AAAA-13's finding — one certificate covering two mechanisms — arriving
+ * inside AAAA-13's own fix, in the same commit. **A key coarser than the thing
+ * it identifies is a shared certificate by construction**, and the entry's own
+ * `event` field named one of the two while vouching for both.
+ *
+ * It is the mild version of the class, and that is worth stating rather than
+ * glossing: the hook table is one file, so a firing on either event does
+ * establish that the script loads. What it does not establish is the second
+ * registration — its event, its matcher, the tools it claims to cover. Those are
+ * exactly what a probe entry is supposed to be about.
  *
  * @param {string} script
+ * @param {string} event
  * @returns {string}
  */
-export function mechanismName(script) {
+export function mechanismName(script, event) {
   const base = script.slice(script.lastIndexOf('/') + 1);
-  return base.endsWith('.mjs') ? base.slice(0, -'.mjs'.length) : base;
+  // The extension is always present: SCRIPT_IN_COMMAND cannot match without it,
+  // and claimedHooks matches the same shape. Sliced by length rather than
+  // guarded, because a branch no input can reach reads as a case somebody
+  // thought about.
+  return `${base.slice(0, -'.mjs'.length)}@${event}`;
 }

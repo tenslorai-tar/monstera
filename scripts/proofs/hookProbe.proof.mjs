@@ -41,11 +41,17 @@ import { dirname, join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { RECORD_FILE, mechanismInputs, probeCoverage, probeState } from '../lib/hookProbe.mjs';
-import { ANCHOR_SCRIPT, SETTINGS_FILE, mechanismName, registeredHooks } from '../lib/registeredHooks.mjs';
+import {
+  ANCHOR_EVENT,
+  ANCHOR_SCRIPT,
+  SETTINGS_FILE,
+  mechanismName,
+  registeredHooks,
+} from '../lib/registeredHooks.mjs';
 import { digestInputs } from '../lib/verdict.mjs';
 
 const ROOT = repoRoot();
-const ANCHOR = mechanismName(ANCHOR_SCRIPT);
+const ANCHOR = mechanismName(ANCHOR_SCRIPT, ANCHOR_EVENT);
 
 /** @type {string[]} */
 const failures = [];
@@ -322,7 +328,7 @@ function writeEntryIn(root, overrides, others = {}) {
     writeFileSync(settings, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
     check(
       'registering a second hook makes it OWE an entry of its own',
-      probeCoverage(root).missing.includes('somethingElse'),
+      probeCoverage(root).missing.includes('somethingElse@PostToolUse'),
       `missing: ${probeCoverage(root).missing.join(', ') || '(nothing — the second hook inherited the first one\'s evidence)'}`,
     );
     // ...and it must not be satisfied by the first hook's entry, which is still
@@ -356,6 +362,40 @@ function writeEntryIn(root, overrides, others = {}) {
       `unrecognised: ${probeCoverage(root).unrecognised.join(', ') || '(nothing)'}`,
     );
 
+    // ONE SCRIPT ON TWO EVENTS (finding AAAA-17). The key used to be the
+    // filename alone while the thing registered is a (script, event) pair, so
+    // this shape produced two rows carrying one name and the second inherited
+    // the first's entry — AAAA-13's one-certificate-for-two-mechanisms, inside
+    // AAAA-13's own fix. No fixture reached it, which is why it was found by
+    // building the shape rather than by anything going red.
+    {
+      const settingsPath = join(root, SETTINGS_FILE);
+      const before = readFileSync(settingsPath, 'utf8');
+      const doubled = JSON.parse(before);
+      doubled.hooks['SessionStart'] = [
+        {
+          matcher: '*',
+          hooks: [{ type: 'command', command: `node "\${CLAUDE_PROJECT_DIR}/${ANCHOR_SCRIPT}"` }],
+        },
+      ];
+      writeFileSync(settingsPath, `${JSON.stringify(doubled, null, 2)}\n`, 'utf8');
+      const names = registeredHooks(root)
+        .filter((hook) => hook.script === ANCHOR_SCRIPT)
+        .map((hook) => hook.name);
+      check(
+        'one script on TWO events is two mechanisms, not one with two homes',
+        names.length === 2 && new Set(names).size === 2,
+        `names: ${names.join(', ')}. A key coarser than the registration it identifies is a ` +
+          `shared certificate by construction.`,
+      );
+      check(
+        '  ...so the second registration owes its own entry',
+        probeCoverage(root).missing.includes(`${mechanismName(ANCHOR_SCRIPT, 'SessionStart')}`),
+        `missing: ${probeCoverage(root).missing.join(', ') || '(nothing — the second event is covered by the first one\'s evidence)'}`,
+      );
+      writeFileSync(settingsPath, before, 'utf8');
+    }
+
     // THE ROOT AXIS. A classifier fails independently on what it matches, where
     // it looks and which states it understands, and this repository has already
     // paid for a fix that corrected a pattern and left a directory. Hooks can be
@@ -387,12 +427,12 @@ function writeEntryIn(root, overrides, others = {}) {
     );
     check(
       'a hook registered in the UNTRACKED sibling is named, not silently uncovered',
-      probeCoverage(root).untracked.includes('privateThing'),
+      probeCoverage(root).untracked.includes('privateThing@PreToolUse'),
       `untracked: ${probeCoverage(root).untracked.join(', ') || '(nothing — a hook is in force with no entry that could vouch for it)'}`,
     );
     check(
       'and it does not join the roster, because it can never earn an entry',
-      !probeCoverage(root).missing.includes('privateThing'),
+      !probeCoverage(root).missing.includes('privateThing@PreToolUse'),
       `Folding it into the roster would demand a tracked certificate for a file nobody else has, ` +
         `which is a red build no commit can clear. missing: ${probeCoverage(root).missing.join(', ')}`,
     );

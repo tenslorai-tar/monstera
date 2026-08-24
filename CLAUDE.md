@@ -454,12 +454,14 @@ These were given directly and bind every agent on this project.
   ```
 
   ```
-  npm run probe:hook -- blockEscapeResolvingWrites fired
+  npm run probe:hook -- blockEscapeResolvingWrites@PreToolUse fired
   ```
 
-  **The record holds one entry per registered hook, and the set of entries that
-  must exist is derived from `.claude/settings.json`** — so a hook registered
-  later arrives owing its own evidence instead of inheriting the escape guard's.
+  **The record holds one entry per registered hook — keyed by script AND event,
+  because that pair is what a settings file registers — and the set of entries
+  that must exist is derived from `.claude/settings.json`.** So a hook registered
+  later arrives owing its own evidence instead of inheriting the escape guard's,
+  and so does the same script wired to a second event.
   A single outcome was right while one hook was registered and became a widening
   the moment a second was, with no sentence anywhere overstating anything: the
   claim was in the data shape.

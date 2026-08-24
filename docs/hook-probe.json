@@ -1,6 +1,6 @@
 {
   "mechanisms": {
-    "blockEscapeResolvingWrites": {
+    "blockEscapeResolvingWrites@PreToolUse": {
       "script": "scripts/hooks/blockEscapeResolvingWrites.mjs",
       "event": "PreToolUse",
       "outcome": "fired",
@@ -23,7 +23,7 @@
         ]
       }
     },
-    "reportControlCharacters": {
+    "reportControlCharacters@PostToolUse": {
       "script": "scripts/hooks/reportControlCharacters.mjs",
       "event": "PostToolUse",
       "outcome": "unobserved",

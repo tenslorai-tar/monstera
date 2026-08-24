@@ -111,7 +111,7 @@ export function hookDisarmament(options = {}) {
     // because it lives in a file the person removing a hook has to edit
     // separately. The anchor's EVENT is enforced by the resolver rather than
     // here: one place holds that literal now.
-    /** @type {readonly { script: string, name: string, documents: string[] }[]} */
+    /** @type {readonly { script: string, documents: string[] }[]} */
     let claimed = [];
     try {
       claimed = claimedHooks(root);
