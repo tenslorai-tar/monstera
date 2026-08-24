@@ -467,6 +467,17 @@ for (const name of selected) {
     // the derivation, and a hole that prints nothing is the derivation lying
     // about its own coverage.
     notNode.push(`${name} (${command})`);
+    // Logged as well, so the rows are a complete account of the selection rather
+    // than of the part that executed. A script missing from the log and a script
+    // that passed are otherwise the same absence.
+    recordRow({
+      name,
+      exit: null,
+      signal: null,
+      seconds: 0,
+      bytes: null,
+      firstProblem: '(not run — not a bare node invocation)',
+    });
     process.stdout.write(`  NOT RUN  ${name} — not a bare \`node\` invocation\n`);
     continue;
   }
@@ -526,6 +537,20 @@ for (const name of selected) {
   // look, and twenty invented ones are a reason to stop using the tool.
   if (run.signal !== null && run.signal !== undefined) {
     timedOut.push(name);
+    // THE ROW THE LOG EXISTS FOR, and it was missing from the first version.
+    // Measured 2026-08-24 by running the sweep against a clone: the first proof
+    // timed out, no row was ever recorded, `runLog` stayed empty, and `sealRunLog`
+    // returned early — so the one run that orphans processes and leaves wreckage
+    // wrote NOTHING. A log with a hole at its own subject is worse than none,
+    // because its silence reads as a quiet run.
+    recordRow({
+      name,
+      exit: null,
+      signal: run.signal ?? null,
+      seconds: Number(seconds.toFixed(2)),
+      bytes: `${run.stdout ?? ''}${run.stderr ?? ''}`.length,
+      firstProblem: '(killed at the bound — its own children are still running)',
+    });
     process.stdout.write(
       `  TIMED OUT  ${name} (${took})\n` +
         `      STOPPING. A timeout orphans that script's own child processes, and every\n` +

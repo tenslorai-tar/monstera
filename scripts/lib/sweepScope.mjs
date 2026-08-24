@@ -21,10 +21,27 @@
  * @returns {string | null} the refusal a caller must print, or `null` to proceed
  */
 export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
-  // Scoped to THIS repository. A fixture repository built by
-  // `checkLocal.proof.mjs` has a handful of trivial scripts and no wreckage, the
-  // measurement was never taken there, and refusing it would block the only way
-  // this harness's own failure paths can be exercised (QQQ-2).
+  // SCOPED TO THE WORKING TREE, and that is the whole of the reason — not the
+  // fixture, which is only its first use (finding AAAA-27).
+  //
+  // WWW-1's harm is to the tree the scripts run against: a killed proof leaves
+  // ITS repository with a tracked file deleted. Any root that is not the one you
+  // are working in contains that harm by construction, so refusing there would
+  // trade a real capability for no safety at all.
+  //
+  // Two things depend on this and only one was written down. The fixture
+  // `checkLocal.proof.mjs` builds is the exercised one (QQQ-2). The other is the
+  // ONLY route to the mechanism this refusal exists over: pointed at a clone,
+  // `checkLocal.mjs` runs the full multi-proof sweep through the real harness,
+  // writing real rows to the clone's `.cache/`, with nothing at stake in the
+  // working tree. Verified 2026-08-24 —
+  // `node scripts/checkLocal.mjs --root <clone> --only proof:` selected 64
+  // scripts and began executing rather than refusing.
+  //
+  // So a future narrowing of this comparison to fixtures-only would close the
+  // one path to the answer, and no check would notice, because what it removes
+  // is a capability rather than a behaviour. That is why the reason is stated
+  // this wide.
   if (rootDir !== repoRoot) return null;
 
   // THE BOUNDARY IS WHERE THE DEFECT CANNOT OCCUR, not a round number. The
@@ -75,6 +92,14 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +
     `contaminated by\n` +
     `  npm run board -- <full sha>               the whole set, on a machine per job\n\n` +
+    `AND IF YOU ARE HERE TO INVESTIGATE THIS, run the full sweep against a CLONE:\n` +
+    `  git clone . <path>\n` +
+    `  npm run local -- --root <path> --only proof:\n\n` +
+    `That is not a workaround. It is the real harness, running every proof, writing real rows ` +
+    `to <path>/.cache/checkLocal-runs/ — and a killed proof deletes a tracked file in the CLONE, ` +
+    `which is the only harm this refusal is protecting you from. It is also better evidence than ` +
+    `a purpose-built reproduction, which can manufacture the kills it then measures. The rows are ` +
+    `what the original 35-at-0.0s pass did not keep.\n\n` +
     `Unblocked by: the 0.0s signature's mechanism, then a job object per script so its children ` +
     `die with it — which the orphan count above says nothing currently does. ` +
     `There is no flag that turns this off.\n`
