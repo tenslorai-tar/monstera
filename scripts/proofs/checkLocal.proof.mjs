@@ -51,7 +51,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 22 });
+const roster = createRoster(failures, { cases: 23 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -478,6 +478,7 @@ try {
         rootDir: REPO,
         repoRoot: REPO,
         selected: ['check:docs', 'proof:one', 'proof:two'],
+        runLogDir: '.cache/checkLocal-runs/',
       });
       return refusal !== null && refusal.includes('WWW-2') && refusal.includes('job object');
     })(),
@@ -485,11 +486,37 @@ try {
       'the tool, and the pressure lands on adding an override.',
   );
   check(
+    '  ...and every path it prints is the one it was GIVEN, not one it spells itself',
+    (() => {
+      // A directory this caller would never pass, so a hardcoded path cannot
+      // satisfy the assertion by coincidence.
+      const given = '.cache/somewhere-nobody-would-hardcode/';
+      const refusal =
+        multiProofSweepRefusal({
+          rootDir: REPO,
+          repoRoot: REPO,
+          selected: ['proof:one', 'proof:two'],
+          runLogDir: given,
+        }) ?? '';
+      // Present where it was asked for, AND no `.cache/` path in the message
+      // that is not the given one — the defect was two paths in one string, so
+      // asserting only that the right one appears would have passed with the
+      // stale one still ten lines below it (AAAA-28).
+      const others = [...refusal.matchAll(/\.cache\/[\w./-]*/gu)].map((m) => m[0]);
+      return refusal.includes(given) && others.every((path) => given.startsWith(path));
+    })(),
+    'This message named .cache/checkLocal-lastrun.json — a file deleted the commit before FOR ' +
+      'BEING THE DEFECT — ten lines above the correct directory in the same string, and the ' +
+      'only case on it asserted two substrings. Nothing here may own a path: the caller has ' +
+      'the authority and passes it in.',
+  );
+  check(
     'CONTROL: ONE proof is permitted — the boundary is where contamination cannot occur',
     multiProofSweepRefusal({
       rootDir: REPO,
       repoRoot: REPO,
       selected: ['proof:hostcontainment'],
+      runLogDir: '.cache/checkLocal-runs/',
     }) === null,
     'a single proof has no earlier script in the same run to be contaminated by. A guard ' +
       'that refuses it is refusing the ordinary way to run one proof.',
@@ -500,6 +527,7 @@ try {
       rootDir: REPO,
       repoRoot: REPO,
       selected: ['check:docs', 'check:lockfile', 'check:emittedtemplates'],
+      runLogDir: '.cache/checkLocal-runs/',
     }) === null,
     'this is the habitual pre-push sweep. If it ever refuses, the guard has widened past ' +
       'the measurement behind it.',
@@ -510,6 +538,7 @@ try {
       rootDir: join(scratch, 'somewhere-else'),
       repoRoot: REPO,
       selected: ['proof:a', 'proof:b', 'proof:c', 'proof:d'],
+      runLogDir: '.cache/checkLocal-runs/',
     }) === null,
     'every case above this line builds a fixture repository declaring several proofs. A ' +
       'guard scoped to the tree rather than to this one would make the harness untestable ' +

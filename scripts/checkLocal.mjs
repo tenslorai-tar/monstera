@@ -317,7 +317,15 @@ const filtered = ONLY === null ? derived : derived.filter((name) => name.include
  * boundary has a side this end-to-end path cannot exercise cheaply, and that
  * side is the one whose failure gets a guard disabled.
  */
-const refusal = multiProofSweepRefusal({ rootDir: ROOT_DIR, repoRoot: ROOT, selected: filtered });
+const refusal = multiProofSweepRefusal({
+  rootDir: ROOT_DIR,
+  repoRoot: ROOT,
+  selected: filtered,
+  // Relative, because the message is read by someone standing in a repository
+  // and an absolute path from this machine is noise to them. Passed rather than
+  // spelt in the message: see the parameter's note (AAAA-28).
+  runLogDir: `${relative(ROOT_DIR, RUN_LOG_DIR).replaceAll('\\', '/')}/`,
+});
 if (refusal !== null) {
   process.stderr.write(refusal);
   process.exit(78);

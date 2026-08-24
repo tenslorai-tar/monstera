@@ -17,10 +17,19 @@
  */
 
 /**
- * @param {{ rootDir: string, repoRoot: string, selected: readonly string[] }} run
+ * @param {{
+ *   rootDir: string,
+ *   repoRoot: string,
+ *   selected: readonly string[],
+ *   runLogDir: string,
+ * }} run `runLogDir` is where the caller writes its rows — passed in rather than
+ *   spelt here, because this message had TWO paths in one string and one of them
+ *   named a file deleted the commit before for being the defect (AAAA-28). The
+ *   dependency runs caller-to-here, so this takes the value; deriving it would
+ *   invert the import and create the second writer again.
  * @returns {string | null} the refusal a caller must print, or `null` to proceed
  */
-export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
+export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir }) {
   // SCOPED TO THE WORKING TREE, and that is the whole of the reason — not the
   // fixture, which is only its first use (finding AAAA-27).
   //
@@ -86,7 +95,7 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
     `failure, or "(no diagnostic line found)" when there was none, which separates a spawn that ` +
     `never started from an import-time throw. The 2026-08-23 pass preserved the count and the ` +
     `conclusion and not the lines, so that question cannot be asked of the only occurrence. Every ` +
-    `run now writes its rows to .cache/checkLocal-lastrun.json as it goes.\n\n` +
+    `run now writes its rows to ${runLogDir} as it goes.\n\n` +
     `Run one of these instead:\n` +
     `  npm run local -- --only check:            the pre-push sweep, no proofs, unaffected\n` +
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +
@@ -96,7 +105,8 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
     `  git clone . <path>\n` +
     `  npm run local -- --root <path> --only proof:\n\n` +
     `That is not a workaround. It is the real harness, running every proof, writing real rows ` +
-    `to <path>/.cache/checkLocal-runs/ — and a killed proof deletes a tracked file in the CLONE, ` +
+    `to the clone's own copy of ${runLogDir} — and a killed proof deletes a tracked file in the ` +
+    `CLONE, ` +
     `which is the only harm this refusal is protecting you from. It is also better evidence than ` +
     `a purpose-built reproduction, which can manufacture the kills it then measures. The rows are ` +
     `what the original 35-at-0.0s pass did not keep.\n\n` +
