@@ -37,11 +37,17 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
-import { TSC_ENTRY, parseTypecheckScript, runInvocations, segmentsOf } from '../lib/typecheck.mjs';
+import {
+  FEWEST_INVOCATIONS,
+  TSC_ENTRY,
+  parseTypecheckScript,
+  runInvocations,
+  segmentsOf,
+} from '../lib/typecheck.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -99,6 +105,19 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+// THE ANCHOR (finding BBBB-3). The derived comparison above cannot see the
+// script SHRINK, because both of its sides come from the same string.
+// ---------------------------------------------------------------------------
+check(
+  "the anchor is not larger than what this repository's typecheck actually names",
+  authorityParsed.filter((args) => args !== null).length >= FEWEST_INVOCATIONS,
+  `FEWEST_INVOCATIONS is ${String(FEWEST_INVOCATIONS)} and the script names ` +
+    `${String(authorityParsed.filter((args) => args !== null).length)}. An anchor above the real ` +
+    `count would fail every run, which is how an anchor gets deleted rather than corrected — so ` +
+    `it is checked against the manifest here rather than trusted.`,
+);
+
+// ---------------------------------------------------------------------------
 // THE RUNNER, against two fixture projects differing by one type error.
 //
 // The resolution test item 4a demands: two inputs that differ by the smallest
@@ -153,6 +172,48 @@ try {
     `the clean fixture failed: ${JSON.stringify((cleanRun.failed[0]?.output ?? '').slice(0, 200))}. ` +
       `Without this, "a broken project is reported as failed" is satisfied by a runner that ` +
       `refuses every project — which would pass the resolution test and block every push.`,
+  );
+
+  // -------------------------------------------------------------------------
+  // MORE THAN ONE INVOCATION, which no fixture reached until finding BBBB-2 —
+  // and the branch was not merely unexercised, it was wrong. The authority
+  // joins its invocations with `&&`, so the second runs only if the first
+  // succeeded; the runner used to run them all and collect the failures.
+  //
+  // Both directions, because "stops at the first failure" and "never runs more
+  // than one" are the same observation from one case.
+  // -------------------------------------------------------------------------
+  const brokenThenClean = runInvocations(
+    tscPath,
+    [
+      ['-p', join(broken, 'tsconfig.json')],
+      ['-p', join(clean, 'tsconfig.json')],
+    ],
+    fixtureRoot,
+  );
+  check(
+    '`&&`: a failed invocation stops the ones after it',
+    brokenThenClean.ran === 1 && brokenThenClean.failed.length === 1,
+    `ran ${String(brokenThenClean.ran)} of 2 with ${String(brokenThenClean.failed.length)} ` +
+      `failure(s). package.json joins these with \`&&\`, so continuing is a second opinion about ` +
+      `what the script said — and the second project would be checked against artefacts the ` +
+      `first did not build, handing the reader cascades of the real error.`,
+  );
+
+  const cleanThenClean = runInvocations(
+    tscPath,
+    [
+      ['-p', join(clean, 'tsconfig.json')],
+      ['-p', join(clean, 'tsconfig.json')],
+    ],
+    fixtureRoot,
+  );
+  check(
+    'VACUITY GUARD: two succeeding invocations both run',
+    cleanThenClean.ran === 2 && cleanThenClean.failed.length === 0,
+    `ran ${String(cleanThenClean.ran)} of 2. Without this, "a failure stops the rest" is ` +
+      `satisfied by a runner that never reaches its second element at all — which would compile ` +
+      `only the package graph and report a clean typecheck for everything under scripts/.`,
   );
 } finally {
   rmSync(fixtureRoot, { recursive: true, force: true });

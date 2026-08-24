@@ -72,6 +72,30 @@ import { isMain } from './isMain.mjs';
 export const TSC_ENTRY = join('node_modules', 'typescript', 'bin', 'tsc');
 
 /**
+ * The fewest compiler invocations this repository's typecheck may shrink to
+ * without somebody saying so (finding BBBB-3).
+ *
+ * THE ANCHOR, and the reason there is one: every other constraint in this file
+ * is DERIVED from `package.json`'s `typecheck` script — the parse must produce
+ * one invocation per `&&` segment, and both sides of that comparison come from
+ * the same string. A derived count tracks growth perfectly and agrees with any
+ * shrink, because a number computed from a collection cannot disagree with that
+ * collection. Delete a project from the script and the check reports a clean
+ * typecheck, faithfully, having compiled less.
+ *
+ * Item 4c's rule: derive from a set only when the failure you fear makes that
+ * set BIGGER. Here it makes it smaller, so the count comes from somewhere the
+ * failure cannot reach — a literal, which a shrink has to touch separately.
+ *
+ * `<` rather than `!==` on purpose. Adding a project is a widening and needs no
+ * ceremony; removing one is the thing that must be deliberate.
+ *
+ * Two today: `tsc --build` for the package graph, `tsc -p tsconfig.scripts.json`
+ * for everything under `scripts/`.
+ */
+export const FEWEST_INVOCATIONS = 2;
+
+/**
  * The `&&`-separated segments of a command line.
  *
  * Split before anything else so the count is available to the control: the
@@ -109,35 +133,53 @@ export function parseTypecheckScript(command) {
 }
 
 /**
- * Runs each argument list under this process's own `node`.
+ * Runs each argument list under this process's own `node`, stopping at the first
+ * failure.
+ *
+ * ## `&&` IS PART OF WHAT THE AUTHORITY SAID (finding BBBB-2)
+ *
+ * The first version ran every invocation and collected the failures. That is a
+ * second opinion about the script's meaning: `tsc --build && tsc -p …` runs the
+ * second only if the first succeeded, and this file exists precisely so that
+ * `package.json` decides what the typecheck is. Continuing past a failure also
+ * produces the wrong OUTPUT — the second project is checked against artefacts
+ * the first did not build, so its errors are cascades of the real one, and the
+ * reader is handed two problems where there is one.
+ *
+ * Found by asking why no fixture reached the loop's second iteration (audit item
+ * 4, *mutate the branches no fixture reached*). The branch was not merely
+ * unexercised; it was wrong.
  *
  * Injectable rather than reading `package.json` itself, so the proof can drive
- * it against a fixture project instead of against this repository — a runner
- * that could only be exercised by compiling the whole tree would be exercised by
+ * it against fixture projects instead of against this repository — a runner that
+ * could only be exercised by compiling the whole tree would be exercised by
  * nothing.
  *
  * @param {string} tscPath Absolute path to the compiler's JS entry point.
  * @param {ReadonlyArray<string[]>} invocations
  * @param {string} cwd
- * @returns {{ failed: Array<{ args: string[], status: number | null, output: string }> }}
+ * @returns {{ failed: Array<{ args: string[], status: number | null, output: string }>, ran: number }}
  */
 export function runInvocations(tscPath, invocations, cwd) {
   /** @type {Array<{ args: string[], status: number | null, output: string }>} */
   const failed = [];
+  let ran = 0;
   for (const args of invocations) {
     const run = spawnSync(process.execPath, [tscPath, ...args], {
       cwd,
       encoding: 'utf8',
     });
+    ran += 1;
     if (run.status !== 0) {
       failed.push({
         args,
         status: run.status,
         output: `${run.stdout ?? ''}${run.stderr ?? ''}`.trim(),
       });
+      break;
     }
   }
-  return { failed };
+  return { failed, ran };
 }
 
 if (isMain(import.meta.url)) {
@@ -158,6 +200,20 @@ if (isMain(import.meta.url)) {
         `Every segment must be a \`tsc\` command line. package.json is the authority for what the ` +
         `typecheck is; this file runs what it says rather than restating it, so a segment it ` +
         `cannot read is a hole and not a shorter build.\n`,
+    );
+    process.exit(1);
+  }
+
+  if (invocations.length < FEWEST_INVOCATIONS) {
+    process.stderr.write(
+      `The typecheck script now names ${String(invocations.length)} compiler invocation(s), and ` +
+        `this repository's typecheck has never been fewer than ${String(FEWEST_INVOCATIONS)}.\n\n` +
+        `  package.json "typecheck": ${authority}\n\n` +
+        `Every other constraint here is derived from that script, so a project deleted from it ` +
+        `would leave this check agreeing with a smaller typecheck and reporting a clean tree ` +
+        `(finding BBBB-3). If the reduction is deliberate — two projects merged, or one genuinely ` +
+        `gone — say so by changing FEWEST_INVOCATIONS in the same commit. That edit is the point: ` +
+        `it makes the shrink something somebody wrote down.\n`,
     );
     process.exit(1);
   }

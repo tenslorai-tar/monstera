@@ -880,6 +880,44 @@ half, which is why nothing had flagged it.
 - **BBBB-3** — `typecheck.mjs`'s segment count is derived from the very script
   whose shrinking it should notice. **Open**, remedy named.
 
+### Correction, 2026-08-25 — BBBB-1's second half is withdrawn, and BBBB-2 was worse than recorded
+
+**BBBB-1's second row is wrong, and it was wrong when written.** It claimed that
+registering `check:types` left open a class — *a `check:*` whose command is not
+`node`-headed is still reported and skipped*. Reported, yes. **Skipped, no.**
+`checkLocal.mjs:815` puts `notNode.length === 0` in the `clean` conjunction and
+`:829` is `process.exit(clean ? 0 : 1)`, so such a script makes the sweep exit
+non-zero. The class was already closed, by that file, before `check:types`
+existed. Nothing needed to be built and nothing is owed.
+
+Recorded rather than quietly dropped because of how it was produced. The audit
+entry was written in one pass at the end of a range, and this line is the only
+claim in it that was **reasoned rather than read** — I inferred the behaviour
+from the fact that the sweep prints a message, and did not open the file. It is
+the shape a correction is most likely to have: composed at the moment of least
+scrutiny, and plausible enough to survive.
+
+**BBBB-2 upgraded from a gap to a defect, and is closed.** It was recorded as a
+branch no fixture reaches. Asking *why* — item 4's instruction, rather than
+noting the absence — showed the branch was wrong: `runInvocations` ran every
+invocation and collected failures, while the authority joins them with `&&`, so
+the second runs only if the first succeeded. Two consequences, one of principle
+and one visible: it is a second opinion about what the script said, and it checks
+the second project against artefacts the first did not build, handing the reader
+cascades of the real error. Now stops at the first failure, with a case in each
+direction — a failure must stop the rest, and two successes must both run.
+
+**BBBB-3 closed.** `FEWEST_INVOCATIONS = 2` is an anchor the derived comparison
+cannot reach, checked against the manifest by the proof so it cannot sit above
+the real count and be deleted rather than corrected. Both mutations bite:
+removing the stop reddens the `&&` case, and an anchor of 3 reddens both the
+check and the proof.
+
+**So of the three findings this audit opened, one was not real.** That is worth
+one sentence rather than a paragraph of process: the two that were real were
+found by reading diffs, and the one that was not was found by reasoning about a
+file I had not opened in that pass.
+
 ## 2026-08-24 — Stage audit: `b0a1da4..7f77999` — a requirement was withdrawn, which is the rarest thing this checklist gets to examine
 
 **Audited through `7f77999`.** Pasted from `npm run audit:scope`:
