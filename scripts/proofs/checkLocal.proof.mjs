@@ -85,7 +85,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 44 });
+const roster = createRoster(failures, { cases: 45 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -190,6 +190,52 @@ const SETUP_MARGIN_MS = 5000;
 const SETTLE_MS = 250;
 
 /**
+ * The gap between the two samples that decide *advancing* or *still*.
+ *
+ * ONE constant for one concept. The probe used 600ms and the cleanup 400ms for
+ * the same question, which is two numbers nobody chose the difference between —
+ * the shape that becomes a drift.
+ */
+const SAMPLE_GAP_MS = 600;
+
+/**
+ * How long the cleanup will keep looking for a survivor's counter to move
+ * (finding AAAA-37).
+ *
+ * It was a single 150ms window against a grandchild writing every 100ms, and
+ * one stretched tick on a loaded runner would have reported *did not advance*
+ * — a red for a case that could not be set up, which is the exact outcome the
+ * SETUP case fifty lines below refuses to let merge with a real failure. The
+ * asymmetry was the tell: `probeGrandchild` gives the same property ten seconds
+ * of polling and the cleanup gave it one look.
+ *
+ * Polled in `SETUP_POLL_MS` steps like the probe, so the assertion means *could
+ * not see it advance within this budget* rather than *did not advance in the
+ * one window I happened to open*.
+ *
+ * **NO DETERMINISTIC MUTATION EXISTS FOR WHAT THIS FIXES, and that is the
+ * reason it was worth fixing.** Tried 2026-08-24: slowing the fixture's tick to
+ * 500ms against the old 150ms window — a case that should miss 70% of the time
+ * — and the file still passed. The failure is a coin flip on phase, which is
+ * exactly why it was a latent flake and not a bug: it would have arrived once,
+ * on somebody else's runner, reading as a real teardown failure. What IS
+ * deterministic is that the poll is load-bearing at all: setting this budget to
+ * `0` reddens the cleanup control alone.
+ */
+const CLEANUP_ADVANCE_BUDGET_MS = 2000;
+
+/**
+ * How many grandchildren the teardown block probes, and therefore the most that
+ * can survive into the cleanup.
+ *
+ * A literal, and ANCHORED rather than trusted: a case below requires the probe
+ * list to be exactly this long. The failure to fear here makes the set BIGGER —
+ * a third probe added without widening the span — and a hand-kept number is
+ * silent about growth unless something compares it to the real one (item 4c).
+ */
+const MAX_SURVIVORS = 2;
+
+/**
  * The spawn option this file both WRITES INTO FIXTURES and SCANS THE TREE FOR,
  * assembled so that the file doing the scanning is not itself a hit.
  *
@@ -211,11 +257,25 @@ const DETACHED_KEY = `deta${'ched'}`;
  * and a survivor that expired on its own is indistinguishable from one that
  * was torn down. So the quantity is not a budget, it is the SPAN:
  *
- *   two probes, each at most SETUP_BUDGET_MS of waiting plus SETTLE_MS plus a
- *   600ms second sample, then a cleanup that samples, waits and samples again.
+ *   two probes, each at most SETUP_BUDGET_MS of polling plus SETTLE_MS plus one
+ *   SAMPLE_GAP_MS, then a cleanup which — PER SURVIVOR, and there can be
+ *   MAX_SURVIVORS of them — polls up to CLEANUP_ADVANCE_BUDGET_MS for the
+ *   counter to move, kills, settles, and samples once more.
  *
  * Written as that sum rather than as a number, so tightening the budget cannot
  * silently move the fixture underneath it.
+ *
+ * **CORRECTED, finding AAAA-38.** The sum first written here ended
+ * `+ SETTLE_MS + 400` and its sentence described "a cleanup that samples, waits
+ * and samples again" — the cleanup that AAAA-34 had replaced **in the same
+ * commit**. The new one is per survivor and can run twice, so the term was
+ * short by roughly a factor of four. Nothing was broken, because the headroom
+ * covered it; that is precisely the danger. AAAA-35's whole content was
+ * replacing a guess with a derivation, and **a derivation missing a term is a
+ * half-derivation** — the next person tightening `SETUP_BUDGET_MS` trusts a sum
+ * that does not cover what it says it covers. One commit changed both halves
+ * and only one half moved: item 7's shape, in the file that had just been
+ * fixed for it.
  *
  * THE HEADROOM IS SEPARATE AND NAMED, because it is not derived. The span is
  * computed from this file's own budgets; the fixture's timer is wall-clock and
@@ -227,12 +287,14 @@ const DETACHED_KEY = `deta${'ched'}`;
  * MEASURED 2026-08-24 by running this file with the value overridden: at
  * 1200ms the cleanup differential goes RED naming the survivor it could not see
  * advancing, and at 2000ms everything still passes. So the real boundary on
- * this machine is around 1.5s against a derived value of ~89s. That gap is the
- * point — the derivation exists so nobody has to know where the edge is, and
- * the observable half is the pre-kill advance check, which fires instead of the
- * run passing by absence.
+ * this machine was around 1.5s against a derived value then of ~89s. That gap
+ * is the point — the derivation exists so nobody has to know where the edge is,
+ * and the observable half is the pre-kill advance poll, which fires instead of
+ * the run passing by absence.
  */
-const PROBE_SPAN_MS = 2 * (SETUP_BUDGET_MS + SETTLE_MS + 600) + SETTLE_MS + 400;
+const PROBE_SPAN_MS =
+  2 * (SETUP_BUDGET_MS + SETTLE_MS + SAMPLE_GAP_MS) +
+  MAX_SURVIVORS * (CLEANUP_ADVANCE_BUDGET_MS + SETTLE_MS + SAMPLE_GAP_MS);
 const TEARDOWN_HEADROOM = 4;
 const TEARDOWN_FIXTURE_MS = PROBE_SPAN_MS * TEARDOWN_HEADROOM;
 
@@ -856,7 +918,7 @@ try {
       child.kill('SIGKILL');
       sleepSync(SETTLE_MS);
       const afterKill = tick();
-      sleepSync(600);
+      sleepSync(SAMPLE_GAP_MS);
       const later = tick();
 
       /** @type {number | null} */
@@ -936,18 +998,48 @@ try {
     // `probeGrandchild` applies to itself is applied here too: require the
     // counter to ADVANCE before the kill, then require stillness after.
     /** @type {Array<{ label: string, probe: ReturnType<typeof probeGrandchild> }>} */
-    const survivors = [
+    const probes = [
       { label: 'ordinary', probe: ordinary },
       { label: 'detached', probe: detachedGrandchild },
-    ].filter((entry) => entry.probe.stillAdvancing);
+    ];
+    check(
+      'SETUP: the teardown block probes exactly the number the fixture lifetime assumes',
+      probes.length === MAX_SURVIVORS,
+      `TEARDOWN_FIXTURE_MS is derived assuming at most ${String(MAX_SURVIVORS)} survivors reach ` +
+        `the cleanup, each costing an advance poll, a settle and a sample gap. A third probe ` +
+        `added without widening that sum would leave the fixtures expiring underneath it, and ` +
+        `nothing else in this file compares the two. Probes: ${String(probes.length)}.`,
+    );
+    const survivors = probes.filter((entry) => entry.probe.stillAdvancing);
+
+    /**
+     * POLLED, not sampled once (finding AAAA-37).
+     *
+     * This was one 150ms window against a counter written every 100ms, so a
+     * single stretched tick on a loaded runner reported "did not advance" — a
+     * red for a case that could not be set up, which is the outcome the SETUP
+     * case above exists to keep separate from a real failure. The probe gives
+     * this same property ten seconds of polling; the cleanup gave it one look.
+     *
+     * @param {ReturnType<typeof probeGrandchild>} probe
+     */
+    const seenAdvancing = (probe) => {
+      const before = probe.tick();
+      if (before === null) return false;
+      let waited = 0;
+      while (waited < CLEANUP_ADVANCE_BUDGET_MS) {
+        sleepSync(SETUP_POLL_MS);
+        waited += SETUP_POLL_MS;
+        const now = probe.tick();
+        if (now !== null && now > before) return true;
+      }
+      return false;
+    };
 
     /** @type {string[]} */
     const stopped = [];
     for (const { label, probe } of survivors) {
-      const before = probe.tick();
-      sleepSync(SETUP_POLL_MS * 3);
-      const advancing = probe.tick();
-      const wasAlive = before !== null && advancing !== null && advancing > before;
+      const wasAlive = seenAdvancing(probe);
 
       if (probe.pid !== null) {
         try {
@@ -959,7 +1051,7 @@ try {
       }
       sleepSync(SETTLE_MS);
       const settled = probe.tick();
-      sleepSync(400);
+      sleepSync(SAMPLE_GAP_MS);
       const later = probe.tick();
       const wentStill = settled !== null && later !== null && later === settled;
 
@@ -973,8 +1065,10 @@ try {
         `platform where survival is the expected answer, so this kills the survivors — which ` +
         `it must do anyway — and requires the counter to go still. The ADVANCE half is what ` +
         `stops a process that died minutes ago from satisfying it: a stale file is still a ` +
-        `still one. Survivors: ${String(survivors.length)}, of which seen alive then stilled: ` +
-        `${String(stopped.length)} (${stopped.join(', ') || 'none'}).`,
+        `still one — and it is POLLED for up to ${String(CLEANUP_ADVANCE_BUDGET_MS)}ms, so a ` +
+        `slow tick is not read as a dead process. Survivors: ${String(survivors.length)}, of ` +
+        `which seen alive then stilled: ${String(stopped.length)} ` +
+        `(${stopped.join(', ') || 'none'}).`,
     );
   }
 
