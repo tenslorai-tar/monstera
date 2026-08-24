@@ -1780,6 +1780,19 @@ if (caseFailures.length > 0) {
 process.exit(exitCode);
 
 /**
+ * What a row requires of EACH of its two cells, by name.
+ *
+ * Not a verdict about whether they agreed: agreement is what absence produces,
+ * so a row expecting it was satisfiable by a probe that failed on both sides.
+ * See {@link summarise}'s `judgeRow` for the whole of that reasoning.
+ *
+ * `either` is the single row whose contained outcome genuinely varies by runner
+ * image. It carries a pin rather than an outcome, and keeps its own shape.
+ *
+ * @typedef {{ readonly withMechanism: 'allowed' | 'refused', readonly without: 'allowed' | 'refused' } | 'either'} Expectation
+ */
+
+/**
  * The attribution table.
  *
  * The route control is read FIRST and is terminal: with a broken spawn route,
@@ -1787,18 +1800,6 @@ process.exit(exitCode);
  * would mean anything.
  *
  * @param {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} runs
- */
-/**
- * What a row requires of EACH of its two cells, by name.
- *
- * Not a verdict about whether they agreed: agreement is what absence produces,
- * so a row expecting it was satisfiable by a probe that failed on both sides.
- * See {@link judgeRow} for the whole of that reasoning.
- *
- * `either` is the single row whose contained outcome genuinely varies by runner
- * image. It carries a pin rather than an outcome, and keeps its own shape.
- *
- * @typedef {{ readonly withMechanism: 'allowed' | 'refused', readonly without: 'allowed' | 'refused' } | 'either'} Expectation
  */
 function summarise(runs) {
   /**
@@ -1905,8 +1906,8 @@ function summarise(runs) {
    * uniformity. It is absent only where `--require-containment` is, which is a
    * developer machine, where there is a reader.
    *
-   * @param {{ outcome: string }} contained The cell WITH the mechanism.
-   * @param {{ outcome: string }} uncontained The cell without it.
+   * @param {{ outcome: string, detail: string }} contained The cell WITH the mechanism.
+   * @param {{ outcome: string, detail: string }} uncontained The cell without it.
    * @param {Expectation} expected
    * @returns {{ held: boolean, containedHeld: boolean, uncontainedHeld: boolean, pinHeld: boolean }}
    */
