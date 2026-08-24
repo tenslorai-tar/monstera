@@ -649,3 +649,52 @@ a hypothetical: it is a real process, created the shipped way with the container
 applied and no job, and it spawns children freely on every run. A requirement
 whose counterexample is already running in an instrument is one to record before
 the code that would violate it is written, not after.
+
+## Correction, 2026-08-24 — §4's DACL sentence is necessary and NOT sufficient
+
+§4 says the transport is *"a named pipe created by main with the container SID
+in its DACL."* Every word of that is still true and it is not a specification: a
+pipe built to that sentence alone **refuses the contained host**. Measured on
+this machine, in one run of `scripts/research/lowboxSpike.mjs`, on a pipe
+differing from the working one only in its descriptor:
+
+| DACL | the contained cell |
+|---|---|
+| `D:(A;;GA;;;<container>)` | **refused, EPERM** |
+| `D:(A;;GA;;;BU)(A;;GA;;;<container>)` | allowed |
+| `D:(A;;GA;;;<user>)(A;;GA;;;<container>)` | allowed — **the shipped spelling** |
+
+An AppContainer token's access check is **conjunctive**: the DACL must grant the
+requested access to the token's ordinary identity — its user, or a group it is
+in — *and* to the package SID. The container's ACE satisfies half of a two-part
+test. What Built-in Users was doing in the spike's other pipes was standing in
+for the identity half by accident, and the sentence above was written from a run
+in which it was present.
+
+Two further readings, from the same run, because they close a design that had
+already been written down here:
+
+- **Instance 0 of a named pipe is not access-checked; every later instance is.**
+  `CreateNamedPipeW` for instance 0 creates the object. Instance 1 opens the
+  existing object by name, and with `PIPE_ACCESS_DUPLEX` it asks for read and
+  write — the same rights a client's `CreateFileW` asks for. So a descriptor
+  that does not grant main denies main its own second instance
+  (`GetLastError 5`), and `FILE_CREATE_PIPE_INSTANCE` alone is not enough
+  (`0x00000004` for `OWNER RIGHTS`: also `GetLastError 5`).
+- **Same-user exclusion is therefore not a boundary this DACL can draw.** There
+  is no ACE that admits the container and excludes other processes of the user
+  running it, because admitting the container requires admitting that identity.
+  A one-instance pipe was tried as the way around it — no second creation, so no
+  access check against main — and it fails for the same conjunctive reason.
+
+None of this weakens the decision. Invariant 25 contains the *engine*; it does
+not defend against the user's own processes, and it never claimed to. What the
+correction removes is a *tighter* claim the original sentence invited a reader
+to make. The shipped spelling is this user plus the container, and what it buys
+over `Built-in Users` is **other users of the machine** — which a single-account
+runner cannot measure, and which is stated here rather than recorded as
+measured.
+
+The row `IPC — Win32 pipe, the SHIPPED DACL` builds that exact descriptor on
+every run of the spike, so the day it stops admitting the container is a red
+rather than a discovery during integration.

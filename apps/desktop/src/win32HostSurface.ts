@@ -33,9 +33,11 @@
  * grants the spike makes are a development accommodation for a checkout under a
  * user's profile, not the shipped mechanism.
  *
- * No pipe, either. The transport is a named pipe main creates with the container
- * SID in its DACL (ADR-0023 §4), and it belongs to whoever composes this surface
- * with a runtime loop, not to the surface.
+ * No pipe, either. The transport is a named pipe main creates whose DACL names
+ * this user AND the container SID (ADR-0023 §4 with its 2026-08-24 correction —
+ * the container's ACE alone refuses the contained host, measured), and it
+ * belongs to whoever composes this surface with a runtime loop, not to the
+ * surface.
  */
 
 import { type Result, err, ok } from '@monstera/shared';
@@ -499,10 +501,13 @@ function environmentBlock(): Buffer {
  *
  * Without them the spike's first contained cell died before its first line with
  * `EPERM lstat 'C:\'`. Node resolves the main path and every require through
- * `realpathSync`, which stats each ancestor by name — and a LowBox token passes
- * an access check only where the DACL grants the container SID or an
- * application-package SID, so the user's own rights on the volume root do not
- * count and the root grants app packages nothing.
+ * `realpathSync`, which stats each ancestor by name — and a LowBox token's access
+ * check is CONJUNCTIVE: the DACL must grant the request to the token's ordinary
+ * identity AND to the container or an application-package SID. So the user's own
+ * rights on the volume root are necessary and not sufficient, and the root grants
+ * app packages nothing. (The other half of that conjunction was measured on
+ * 2026-08-24 and is ADR-0023 §4's correction: a DACL naming only the container
+ * refuses the container.)
  *
  * The alternative fix is an ACE on the volume root, which needs administrator
  * rights and puts a permanent grant there in order to run a sandbox. These flags

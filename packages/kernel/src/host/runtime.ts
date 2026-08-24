@@ -25,7 +25,10 @@ import {
  *
  * It is **not** a transport. No socket, no pipe, no `net`. The caller hands it
  * chunks and gives it somewhere to write; the factory in `apps/desktop` owns
- * the Win32 pipe with the container SID in its DACL. That boundary is not
+ * the Win32 pipe, whose DACL names this user AND the container SID — the
+ * container's ACE alone refuses the contained host, because an AppContainer's
+ * access check is conjunctive (ADR-0023 §4's 2026-08-24 correction). That
+ * boundary is not
  * tidiness — a loop that owned a socket could only be tested by opening one,
  * and CLAUDE.md's rule is that a test needing a fake window bridge is evidence
  * the boundary is wrong.

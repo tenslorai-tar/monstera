@@ -993,7 +993,8 @@ const afterNetwork = () => {
   const handed = config === null ? {} : config;
   tryPipe('namedPipe', handed.pipe, () =>
     tryPipe('namedPipeWin32Granted', handed.win32Granted, () =>
-      tryPipe('namedPipeWin32UserOnly', handed.win32UserOnly, finish)));
+      tryPipe('namedPipeWin32SidOnly', handed.win32SidOnly, () =>
+        tryPipe('namedPipeWin32UserOnly', handed.win32UserOnly, finish))));
 };
 
 step('loopback');
@@ -1116,6 +1117,57 @@ const OpenProcessToken = advapi.func('bool OpenProcessToken(void *proc, uint32 a
 const GetTokenInformation = advapi.func(
   'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
 );
+const GetCurrentProcess = kernel.func('void *GetCurrentProcess()');
+
+/** `TOKEN_QUERY`. */
+const TOKEN_QUERY = 0x0008;
+/** `TokenUser`. */
+const TOKEN_USER_CLASS = 1;
+
+/**
+ * This process's own user SID, as a string.
+ *
+ * ## Why a DACL needs it, which ADR-0023 §4's sentence does not say
+ *
+ * MEASURED 2026-08-24: a one-instance pipe carrying `D:(A;;GA;;;<container>)`
+ * and nothing else refused **the contained cell**, EPERM, on the same run in
+ * which `D:(A;;GA;;;BU)(A;;GA;;;<container>)` admitted it. An AppContainer
+ * token's access check is CONJUNCTIVE: the DACL must grant the requested access
+ * to the token's ordinary identity — its user or a group it is in — AND to the
+ * package SID. The container SID alone satisfies half of a two-part test.
+ *
+ * So *"the container SID in its DACL"* is necessary and not sufficient, and a
+ * surface built to that sentence alone produces a pipe nobody can open. What
+ * Built-in Users was doing in the spike's other two pipes was standing in for
+ * the identity half by accident.
+ *
+ * The tightening that remains real is this SID instead of `BU`: Built-in Users
+ * is every user of the machine, and the user's own SID is one of them.
+ *
+ * @returns {string}
+ */
+function currentUserSid() {
+  const tokenOut = [null];
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, tokenOut)) {
+    throw new Error(`OpenProcessToken failed: ${String(GetLastError())}`);
+  }
+  const sizeOut = [0];
+  GetTokenInformation(tokenOut[0], TOKEN_USER_CLASS, null, 0, sizeOut);
+  if (!sizeOut[0]) {
+    throw new Error(`GetTokenInformation sized 0: ${String(GetLastError())}`);
+  }
+  const buffer = Buffer.alloc(Number(sizeOut[0]));
+  if (!GetTokenInformation(tokenOut[0], TOKEN_USER_CLASS, buffer, sizeOut[0], sizeOut)) {
+    throw new Error(`GetTokenInformation failed: ${String(GetLastError())}`);
+  }
+  // TOKEN_USER is a SID_AND_ATTRIBUTES, whose first member is the SID pointer.
+  const sidPointer = koffi.decode(buffer, 'void *');
+  const stringOut = [null];
+  if (!ConvertSidToStringSidW(sidPointer, stringOut) || typeof stringOut[0] !== 'string') {
+    throw new Error('ConvertSidToStringSidW gave no string for this process user');
+  }
+  return stringOut[0];
+}
 
 // ---------------------------------------------------------------------------
 // A NAMED PIPE CREATED THROUGH WIN32 WITH AN EXPLICIT DACL (finding AAAA-39).
@@ -1168,11 +1220,40 @@ const PIPE_INSTANCES = 8;
 /**
  * Create one named pipe's instances with the DACL named by `sddl`.
  *
+ * ## THE INSTANCE COUNT IS PART OF THE SECURITY DESCRIPTOR'S MEANING, measured
+ * 2026-08-24 on this machine
+ *
+ * `CreateNamedPipeW` for instance 0 creates the object and is not access
+ * checked. Every LATER instance opens the existing object by name and IS —
+ * against the DACL just written. So a descriptor naming only the container SID
+ * denies the creating process its own second instance:
+ *
+ *   D:(A;;GA;;;<container>)                  instance 1 → GetLastError 5
+ *   D:(A;;0x00000004;;;OW)(A;;GA;;;<sid>)    instance 1 → GetLastError 5
+ *   D:(A;;GA;;;OW)(A;;GA;;;<sid>)            created — and an uncontained
+ *                                            same-user cell then CONNECTS
+ *
+ * The middle line is the informative one. `FILE_CREATE_PIPE_INSTANCE` alone is
+ * not enough, because `PIPE_ACCESS_DUPLEX` asks for read and write on the
+ * object — the same rights a client's `CreateFileW` asks for. **There is no ACE
+ * that lets the creator add an instance and does not also let any process of
+ * that user connect**, which is why the third line admits `route`.
+ *
+ * So the tightest DACL a multi-instance pipe can carry is one that admits every
+ * process of the owning user, and **the tightest pipe is a ONE-INSTANCE pipe**,
+ * where no second creation happens and no access check is ever made against the
+ * creator. That is also the shipped shape by count: one host, one connection.
+ * The single instance is a B5 property as well as a security one — a pipe with
+ * one instance cannot be connected to twice, so an impostor racing the host for
+ * the channel is unrepresentable rather than guarded against.
+ *
  * @param {string} name
  * @param {string} sddl
+ * @param {number} instances How many instances to create. See above: this
+ *   decides whether the creator is access-checked against its own DACL.
  * @returns {{ handles: unknown[] }}
  */
-function createWin32Pipe(name, sddl) {
+function createWin32Pipe(name, sddl, instances) {
   const sdOut = [null];
   const sizeOut = [0];
   if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, sdOut, sizeOut)) {
@@ -1194,8 +1275,8 @@ function createWin32Pipe(name, sddl) {
 
   /** @type {unknown[]} */
   const handles = [];
-  for (let instance = 0; instance < PIPE_INSTANCES; instance += 1) {
-    const handle = CreateNamedPipeW(name, PIPE_ACCESS_DUPLEX, 0, PIPE_INSTANCES, 4096, 4096, 0, attributes);
+  for (let instance = 0; instance < instances; instance += 1) {
+    const handle = CreateNamedPipeW(name, PIPE_ACCESS_DUPLEX, 0, instances, 4096, 4096, 0, attributes);
     if (isInvalidHandle(koffi, handle)) {
       throw new Error(
         `CreateNamedPipeW failed for ${name} at instance ${String(instance)}: ` +
@@ -1439,7 +1520,7 @@ function runCells(hostJs, scratchDir) {
     const pipeName = `\\\\.\\pipe\\${CONTAINER}-${String(process.pid)}`;
     const pipe = createServer((socket) => socket.end());
 
-    // THREE PIPES, ONE NAME SCHEME, differing only in the creation route and the
+    // FOUR PIPES, ONE NAME SCHEME, differing only in the creation route and the
     // DACL — so the name is not a second variable beside the thing under test.
     //
     //   pipe          Node's createServer. RE-MEASURED IN THIS RUN rather than
@@ -1447,7 +1528,17 @@ function runCells(hostJs, scratchDir) {
     //                 figure, and this repository has been wrong twice about
     //                 machine state it did not re-read.
     //   win32Granted  Win32, DACL naming Built-in Users AND the container SID.
-    //                 The claim under test.
+    //                 The reachability claim: a Win32 descriptor can admit the
+    //                 container at all.
+    //   win32SidOnly  Win32, DACL naming the container SID and NOTHING ELSE.
+    //                 THE SHIPPED SPELLING. ADR-0023 §4 requires the container
+    //                 SID in the DACL and says nothing about what else may be
+    //                 there, and `D:(A;;GA;;;BU)` grants GENERIC_ALL to Built-in
+    //                 Users — so the granted pipe above, shipped, would let any
+    //                 user process on the machine open the engine host's control
+    //                 channel. Built-in Users is in the other two because a
+    //                 SPIKE needs its uncontained controls to be able to
+    //                 connect; the product does not.
     //   win32UserOnly Win32, DACL naming Built-in Users ONLY. The discriminator:
     //                 without it, a contained cell connecting to win32Granted
     //                 could be explained by "a Win32 pipe is reachable" rather
@@ -1460,14 +1551,41 @@ function runCells(hostJs, scratchDir) {
     // in the same breath, on a first attempt at code nobody here has written
     // before.
     const grantedName = `${pipeName}-w32grant`;
+    const sidOnlyName = `${pipeName}-w32sid`;
     const userOnlyName = `${pipeName}-w32user`;
-    const granted = createWin32Pipe(grantedName, `D:(A;;GA;;;BU)(A;;GA;;;${sid})`);
-    const userOnly = createWin32Pipe(userOnlyName, 'D:(A;;GA;;;BU)');
+    const granted = createWin32Pipe(grantedName, `D:(A;;GA;;;BU)(A;;GA;;;${sid})`, PIPE_INSTANCES);
+    // THE SHIPPED SPELLING: this user and the container, and no group.
+    //
+    // Three measurements narrowed it to this, and the third one closed a design
+    // I had already written — see `createWin32Pipe` for the instance-count half
+    // and `currentUserSid` for the conjunctive-check half:
+    //
+    //   D:(A;;GA;;;<container>)                    the CONTAINED cell is refused
+    //   D:(A;;GA;;;OW)(A;;GA;;;<container>)        admits every process of the owner
+    //   D:(A;;GA;;;<user>)(A;;GA;;;<container>)    admits the container. SHIPPED.
+    //
+    // A one-instance pipe carrying only the container's ACE was the tightest
+    // thing this could be, and it does not work: an AppContainer's access check
+    // needs the ordinary identity granted too, and any grant that admits this
+    // user admits every process this user runs. **Same-user exclusion is not a
+    // boundary a DACL can draw here**, and invariant 25 does not ask for one —
+    // it contains the engine, it does not defend against the user's own
+    // processes. What this spelling buys over `BU` is other USERS of the
+    // machine, which cannot be measured on a single-account runner and is
+    // stated rather than claimed as measured.
+    const sidOnly = createWin32Pipe(
+      sidOnlyName,
+      `D:(A;;GA;;;${currentUserSid()})(A;;GA;;;${sid})`,
+      PIPE_INSTANCES,
+    );
+    const userOnly = createWin32Pipe(userOnlyName, 'D:(A;;GA;;;BU)', PIPE_INSTANCES);
 
     const shut = () => {
       tcp.close();
       pipe.close();
-      for (const handle of [...granted.handles, ...userOnly.handles]) CloseHandle(handle);
+      for (const handle of [...granted.handles, ...sidOnly.handles, ...userOnly.handles]) {
+        CloseHandle(handle);
+      }
     };
 
     tcp.on('error', reject);
@@ -1475,6 +1593,7 @@ function runCells(hostJs, scratchDir) {
 
     tcp.listen(0, '127.0.0.1', () => {
       pipe.listen(pipeName, () => {
+        void (async () => {
         try {
           const address = tcp.address();
           const port = typeof address === 'object' && address !== null ? address.port : 0;
@@ -1484,6 +1603,7 @@ function runCells(hostJs, scratchDir) {
               port,
               pipe: pipeName,
               win32Granted: grantedName,
+              win32SidOnly: sidOnlyName,
               win32UserOnly: userOnlyName,
             }),
             'utf8',
@@ -1525,6 +1645,7 @@ function runCells(hostJs, scratchDir) {
           shut();
           reject(error instanceof Error ? error : new Error(String(error)));
         }
+        })();
       });
     });
   });
@@ -1607,7 +1728,7 @@ function releaseGrants(sid) {
  * the honest shape here: it is not thirteen cases with some skipped, it is a
  * run that measured nothing.
  */
-const roster = createRoster(caseFailures, { cases: 18 });
+const roster = createRoster(caseFailures, { cases: 19 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -2157,6 +2278,13 @@ function summarise(runs) {
         'not do, which is how two refusals satisfied this row. A red here on another Windows ' +
         'image is a finding, not a flake: unlike the LowBox spawn row, an ACE naming a SID is ' +
         'not a policy that varies by build'],
+    ['IPC — Win32 pipe, the SHIPPED DACL', 'namedPipeWin32SidOnly', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'this user and the container, with no group — the exact descriptor the surface will build. ' +
+        '`route` is allowed and MUST be: an AppContainer’s check is conjunctive, so the ' +
+        'container’s ordinary identity has to be granted too, and any grant admitting this user ' +
+        'admits every process this user runs. What it buys over `D:(A;;GA;;;BU)` is other USERS ' +
+        'of the machine, which a single-account runner cannot measure'],
     ['CONTROL: the container ACE is what admits it', 'namedPipeWin32UserOnly', 'lowbox', 'route',
       { withMechanism: 'refused', without: 'allowed' },
       'the same Win32 route with Built-in Users only — separates the ACE from the route'],
