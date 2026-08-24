@@ -1098,8 +1098,12 @@ Three in one range (2026-08-24), and none was visible from inside its own file:
 | the mechanism key | the script filename, where a *(script, event)* pair registers | one script on two events, one certificate |
 
 The remedy in each case is an **anchor**: an independent claim the shrinker has
-to touch separately — the documents for the first, a named set in the proof for
-the second, a wider key for the third.
+to touch separately. **All three were fixed in the range that found them** — the
+documents became the anchor for the first (`claimedHooks`), `EXPECTED_RULES` in
+`documentRuleScope.proof.mjs` for the second, and the key widened to
+*script@event* for the third. The table above is a record of three defects, not a
+list of three live ones; it is kept because the **shape** is what recurs, and it
+has recurred in a different form every time.
 
 **This is deliberately NOT a scan, and the reasoning is recorded so the next
 reader does not assume the class is watched.** Measured: 37 `createRoster` call
