@@ -644,6 +644,242 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-24 — Stage audit: `7f77999..fb9731e` — two checks were fixed at instance level and re-fixed as a class one commit later
+
+**Audited through `fb9731e`.** Pasted from `npm run audit:scope`, run before the
+range's last commit was written:
+
+```
+Unaudited range: 7f77999..HEAD
+
+  commits: 9 (one batch is 9)
+  files:   12 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (1 more) or 25 files (13 more).
+```
+
+**1 proof added**, 1 modified, 0 removed; **1 source file added**, 3 changed, 0
+removed. The range closed AAAA-37 through AAAA-40 and the reviewer's ruling on
+the expectation vocabulary, added `check:types`, and corrected ADR-0023 §4 twice
+from measurements.
+
+**The audit is being paid because the gate BLOCKED a commit**, not because a
+number was noticed. The tenth commit was refused at `git commit` with *"this
+commit takes the unaudited range past one batch"*. Worth recording because
+`check:docs` measures against HEAD and would not have seen it until one push
+later — the pre-commit half is what fired, and it fired on a commit whose content
+had nothing to do with auditing.
+
+### 1. Root cause, or workaround?
+
+**Nine commits, eight fixes, all root-cause. One is a loosened check and it is
+examined below; two were fixed twice.**
+
+- **AAAA-37/38** (`e7f4fbf`): a derivation whose tail described the cleanup
+  replaced in the same commit, and a 150ms window against a 100ms tick. Both
+  mechanisms, both stated at the constant.
+- **AAAA-39** (`1661f0e`): the transport's premise was an inference sitting
+  beside a measurement of something else. Fixed by measuring it — three pipes,
+  four controls, three Windows builds.
+- **AAAA-40** (`b670010`): `verdict()` returns `same` for refused/refused, so the
+  row certifying ADR-0023 §4 passed for a pipe neither cell could open.
+- **The reviewer's ruling** (`073e6d9`): the above fix, generalised.
+- **`1ad6797`**: a `@typedef` block placed between a JSDoc and its function
+  severs the two. Mechanism, and it reddened `main`.
+- **`ea42923`**: `npm run typecheck` is not a `check:*` name and not a `node`
+  command line, so the local sweep could reach it through neither route.
+- **`fb9731e`**: ADR-0023 §4's DACL sentence, corrected from measurement.
+
+**BBBB-1 — TWO FIXES IN THIS RANGE WERE INSTANCE-LEVEL AND WERE RE-FIXED AS A
+CLASS ONE COMMIT LATER. That is Rule 0's *fix the class, not the instance*
+arriving late twice, and the second time it was the reviewer who noticed.**
+
+| the instance fix | what it missed | the class fix |
+|---|---|---|
+| `b670010`: require the uncontained cell to be allowed on every row | correct for all thirteen rows and wrong as a rule — it forbids a row whose point is that the uncontained side is excluded | `073e6d9`: each row declares the expected outcome of each cell |
+| `ea42923`: register `check:types` | closes the typecheck hole and not the class of *gates the sweep's invoker cannot reach* — a `check:*` whose command is not `node`-headed is still reported and skipped | not yet made |
+
+The first was caught within a commit and cost nothing. The second is open, and
+it is recorded rather than fixed here because the fix belongs in `checkLocal.mjs`
+and this commit is docs-only. **The tell in both is the same: a fix whose
+correctness argument mentions the specific thing it was written for.** *These
+thirteen rows* and *the typecheck* are both that sentence.
+
+**The loosened check, examined because "raising a limit" is on the banned
+list.** `e7f4fbf` widened the pre-kill liveness window from one 150ms sample to
+a 2000ms poll. That is a loosening in tolerance and it is legitimate: the check
+was **wrong**, not the code. A single window against a counter written every
+100ms produces a red on a correct build whenever a runner stretches one tick, and
+a red for a case that could not be set up is the outcome the SETUP case fifty
+lines below exists to keep separate from a real failure. The same commit ADDED a
+constraint — the probe list must be exactly `MAX_SURVIVORS` long — so the net
+movement is not toward tolerance.
+
+### 2. Verified against the easy shape only?
+
+**The hard shape here is another Windows build, and it was reached.** The DACL
+row and the pair vocabulary both ran on Server 2025 and Server 2022 under
+`--require-containment` as well as on this machine.
+
+The **rich ambient environment** axis, which is the quiet one: `runInvocations`
+spawns `tsc` with this process's environment, unfiltered. Under the local sweep
+that environment carries `npm_execpath` and the rest of npm's exports; under CI's
+`npm run build` it carries a different set. Nothing in the compiler's behaviour
+is known to depend on either, so this is stated rather than claimed as a defect —
+but it is the axis that produced the pre-commit harness's silent branch, and the
+question *what does the harness hand its child that the real caller does not* has
+not been answered here beyond "nothing we know of".
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Two moves, and they run in opposite directions.**
+
+- **Verdict → pair (`073e6d9`) is a strengthening everywhere.** A pair is
+  strictly more specific than an agreement, it has no provisioning condition, and
+  every row that could previously be satisfied by two failures now cannot. The
+  remap's risk was not coverage but **translation**, and it is handled under 4c.
+- **One-shot → poll (`e7f4fbf`) buys reliability with tolerance.** The property
+  is unchanged; the window is 13× wider. Recorded here because the commit's own
+  argument is about false reds, and a reader looking only at that argument would
+  not notice the check now accepts a build that takes two seconds to do what it
+  used to have 150ms for.
+
+### 3. Would CI have caught it?
+
+**Answered from runs, with the identifiers taken out of the same payload as the
+lines** (AAAA-32's remedy).
+
+- The `1ad6797` defect: **CI did catch it** — `npm run build` failed on every leg
+  of CI 324, which is how it was found. Nothing local could see it, which is the
+  whole content of `ea42923`.
+- `proof:typecheck` ran and passed on both platforms:
+  `run_id 32775656068 head_sha ea42923`, ubuntu `20:46:19 -> 20:46:22`, windows
+  `20:46:48 -> 20:46:50`.
+- `proof:hostcontainment` ran and passed on both Windows images with the new row:
+  `run_id 32778367851 head_sha fb9731e`, Server 2022 `21:16:08 -> 21:16:11`,
+  Server 2025 `21:16:55 -> 21:17:01`.
+
+**`check:types` itself is NOT a CI step and that is deliberate**, since CI runs
+`npm run build`, which is the same two compiler invocations plus the preload
+bundle. What CI carries is its proof. The check exists for the minute before a
+push, which is the interval that was uncovered.
+
+**And the other direction — a defect this machine cannot see?** The one branch
+keyed on provisioning in this range is `existsSync(tscPath)` in `typecheck.mjs`,
+which is false only on a tree with no `node_modules`. No runner reaches it after
+`npm ci`, and nothing exercises it. Kept and documented rather than deleted
+(JJJ-1's disposition): the fact it encodes is true, and a typecheck that cannot
+find its compiler must not report a clean tree.
+
+### 4. Are the proofs non-vacuous?
+
+**Mutated, with the results written at the constants rather than in a commit
+message:**
+
+| mutation | result |
+|---|---|
+| `judgeRow`'s `containedHeld := true` | the discrimination control FAILED — **and all 13 rows PASSED** |
+| `judgeRow` reads the wrong side | control FAILED, 8 cases red |
+| `judgeRow` always false | control FAILED, every row red |
+| `win32Granted` points at a name nothing created | before the pair: `ok same`, exit 0. After: `FAIL same`, exit 1 |
+| `@type {number}` on a string constant | `check:types` exit 1, `TS2322` with file, line and span |
+| the teardown fixture's tick slowed to 500ms | **nothing went red** — recorded at `CLEANUP_ADVANCE_BUDGET_MS` as a non-biting mutation with its reason |
+
+The first row is the load-bearing one: a predicate that ignores the mechanism's
+own side is invisible to every row in the table, because each row supplies one
+actual pair and it is the matching one. Only a control posing pairs no run
+produces can see it.
+
+**BBBB-2 — `runInvocations` is never exercised with more than one invocation.**
+`proof:typecheck` passes a single-element array in both fixtures, and the real
+caller passes two. The loop's second iteration, and the behaviour when the first
+invocation fails and the second is still attempted, are unexercised. Not a
+vacuous proof — the cases that exist separate what they claim — but a branch no
+fixture reaches, which is where item 4 says to aim.
+
+### 4a / 4b / 4c. Instruments, searches, and rosters
+
+**Resolution tests, done before the instruments measured anything real:**
+`typecheck.mjs` against a clean project and one with a single type error, and
+against a real error in the repository itself; `judgeRow` exhaustively over four
+expectations × sixteen actual pairs.
+
+**`currentUserSid()` has no resolution test of its own, and does not need a
+separate one.** Its failure mode that matters — returning a SID that is not this
+process's user — makes the shipped-DACL row's contained cell go red, because a
+descriptor built from the wrong principal denies. The row IS the instrument's
+control. What the row would NOT catch is a *different but still valid* principal
+that happens to include this user; that is recorded as a limit, not a gap, since
+the property under test is that the built descriptor admits the container.
+
+**BBBB-3 — `typecheck.mjs` derives its extent from the set it governs, and the
+failure to fear makes that set SMALLER.** The check refuses when the parsed
+invocations and the `&&` segments disagree, but both come from the same string.
+Delete a project from `package.json`'s `typecheck` script and the count agrees:
+the typecheck genuinely got smaller, faithfully, silently. That is item 4c's
+exact shape, and the remedy item 4c names is an **anchor** — a claim the shrinker
+has to touch separately, here a minimum count that is not read from the script.
+Open; the fix is one line and belongs in the file, not in this entry.
+
+**The search-shaped instrument in this range is `typecheck.mjs`'s parse**, and it
+carries a positive control that runs every time: the repository's own `typecheck`
+script must parse into at least one invocation with every segment understood. Its
+proof asserts the same thing against the live manifest rather than a fixture.
+
+### 5. Executed, or asserted?
+
+**Executed:** the three DACL spellings and their failures (`GetLastError 5` twice,
+at instance 1); `GetFileType(_get_osfhandle(3))` returning `FILE_TYPE_PIPE`; the
+container refused by a container-only descriptor; the shipped descriptor admitting
+it on three Windows builds; every mutation in the table above; the CI step lines.
+
+**Asserted, and labelled as such where it is written:** that the shipped DACL's
+advantage over `D:(A;;GA;;;BU)` is *other users of the machine*. A single-account
+runner cannot measure it. It is stated in ADR-0023's correction as reasoning, not
+as a reading, which is the disposition this project requires — and it is the one
+claim in this range that a second account would settle.
+
+### 6. Architecture before feature?
+
+**Yes, and this is the cleanest instance the checklist has had.** Both ADR-0023
+corrections were written **before** the pipe surface exists. The first would have
+produced a surface that builds a descriptor nothing can open; the second would
+have produced one shaped around handing a stream to Node. Neither error can now
+be built, because the module that would contain it has not been written — which
+is what "the architecture changes first" buys, stated for once from the side
+where it worked rather than from the side where it did not.
+
+### 7. Do the documents still match the code?
+
+**A cross-document sweep was owed and was run.** `fb9731e` states a relationship
+between the transport's DACL and what the surface must build, so NNN-4's rule
+fires: every other statement of that relationship was swept by hand. Five sites,
+of which four needed changing.
+
+| site | class | treatment |
+|---|---|---|
+| ADR-0023 §4 | record | **appended dated correction** |
+| `docs/FEATURES.md` row 282 | live spec | body edited true |
+| `packages/kernel/src/host/runtime.ts` | live spec | body edited true |
+| `apps/desktop/src/win32HostSurface.ts` (two places) | live spec | body edited true |
+| `packages/kernel/src/host/containment.ts` | unaffected — about a directory ACL, not the pipe | left |
+
+**One of the four was a compound claim of exactly the shape item 7 warns
+about.** `win32HostSurface.ts` said a LowBox token "passes an access check only
+where the DACL grants the container SID … so the user's own rights do not
+count". The first clause is true and still true. The second is false in the way
+that matters: the user's rights are **necessary and not sufficient**, and the
+sentence read as though they were irrelevant. The live half vouched for the dead
+half, which is why nothing had flagged it.
+
+### Findings
+
+- **BBBB-1** — two fixes in this range were instance-level and one was re-fixed
+  as a class a commit later; the other's class fix is not yet made. **Open.**
+- **BBBB-2** — `runInvocations`' multi-invocation path is unexercised. **Open.**
+- **BBBB-3** — `typecheck.mjs`'s segment count is derived from the very script
+  whose shrinking it should notice. **Open**, remedy named.
+
 ## 2026-08-24 — Stage audit: `b0a1da4..7f77999` — a requirement was withdrawn, which is the rarest thing this checklist gets to examine
 
 **Audited through `7f77999`.** Pasted from `npm run audit:scope`:
