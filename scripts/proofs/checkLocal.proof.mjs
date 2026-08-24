@@ -85,7 +85,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 38 });
+const roster = createRoster(failures, { cases: 40 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -705,6 +705,70 @@ try {
         `kept FOR is the account of what completed immediately before it stopped, which is ` +
         `the question WWW-2 turns on. Rows: ` +
         `${after.length === 1 ? JSON.stringify(runLogRows(root, after[0] ?? '')) : '(no log)'}`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // NOTHING IN THIS REPOSITORY SPAWNS DETACHED (finding AAAA-6).
+  //
+  // The harness stops at a timeout, and its comment used to justify that by
+  // orphaned grandchildren accumulating. Measured 2026-08-24, three runs of
+  // each variant: an ordinary grandchild died with the harness 3 of 3, and a
+  // `detached` one survived 3 of 3. So Windows already tears down the tree, and
+  // the job-object work the FEATURES row still owed has no premise left — for
+  // every spawn shape this repository actually uses.
+  //
+  // That last clause is the dependency, so it is a case rather than a sentence.
+  // DERIVED from the tree deliberately: the failure to fear is somebody ADDING
+  // a detached spawn, which makes the set BIGGER, and a derived count tracks
+  // growth perfectly (item 4c). A hand-kept list would be the wrong instrument
+  // here for exactly the reason it is the right one elsewhere.
+  // -------------------------------------------------------------------------
+  {
+    /** @param {string} dir @returns {string[]} */
+    const sources = (dir) => {
+      /** @type {string[]} */
+      const found = [];
+      /** @param {string} at */
+      const walk = (at) => {
+        for (const entry of readdirSync(at, { withFileTypes: true })) {
+          if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+          const full = join(at, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else if (/\.(mjs|js|ts|tsx)$/u.test(entry.name)) found.push(full);
+        }
+      };
+      try {
+        walk(join(REPO, dir));
+      } catch {
+        // A root that is not there contributes nothing; the count assertion
+        // below is what turns an empty total into a failure.
+      }
+      return found;
+    };
+
+    const files = [...sources('scripts'), ...sources('packages'), ...sources('apps')];
+    const detached = files.filter((file) => /\bdetached\s*:/u.test(readFileSync(file, 'utf8')));
+
+    // ASSEMBLED, not written out, and that is not squeamishness: a literal here
+    // is a real occurrence in a real source file, and the scan found it on its
+    // first run — correctly. The regex is exercised against the true shape at
+    // match time, which is all a control needs; how the characters got adjacent
+    // is nothing to the regex and everything to the file being scanned.
+    const sample = `spawn(exe, [], { deta${'ched'}: true })`;
+    check(
+      'CONTROL: the scan reads a real file set and can match the thing it looks for',
+      files.length > 50 && /\bdetached\s*:/u.test(sample),
+      `An empty file list and a pattern that matches nothing both report "no detached spawns", ` +
+        `which is the answer this case exists to trust. Files read: ${String(files.length)}.`,
+    );
+    check(
+      'no spawn in this repository is detached, which is what makes the timeout kill a TREE',
+      detached.length === 0,
+      `Measured 2026-08-24: an ordinary grandchild dies with the harness 3 of 3, a detached one ` +
+        `survives 3 of 3. So the harness's tree-kill is real and it is conditional on this. ` +
+        `If you are adding a detached spawn deliberately, the FEATURES row's job-object work ` +
+        `comes back with it. Found: ${detached.map((f) => f.slice(REPO.length + 1)).join(', ')}`,
     );
   }
 

@@ -127,10 +127,18 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
     `which is the only harm this refusal is protecting you from. It is also better evidence than ` +
     `a purpose-built reproduction, which can manufacture the kills it then measures. The rows are ` +
     `what the original 35-at-0.0s pass did not keep.\n\n` +
-    `Unblocked by: the ERRNO behind the 0.0s signature — the class is settled, no process was ` +
-    `created — and then a job object per script so its children die with it. Stopping at the ` +
-    `first one bounds the damage to a single invented failure instead of thirty-five; it does ` +
-    `not explain the machine, and the next occurrence is the thing that will. ` +
+    `AND THE JOB OBJECT IS NOT OWED. This message used to end by naming it as the second ` +
+    `condition, on the premise that a timeout leaves the killed script's children running. ` +
+    `Measured 2026-08-24, three runs of each variant against this harness: an ordinary ` +
+    `grandchild died with it 3 of 3, and a DETACHED one survived 3 of 3. The discriminating ` +
+    `variable is detached — the signature of the job object libuv already puts an ordinary ` +
+    `Windows child into — and this repository spawns nothing detached, which ` +
+    `checkLocal.proof.mjs asserts because the guarantee depends on it. What a timeout really ` +
+    `leaves behind is a CHANGED TREE, since a killed script never runs its finally.\n\n` +
+    `Unblocked by: the ERRNO behind the 0.0s signature, and nothing else. The class is settled ` +
+    `— no process was created — and stopping at the first one bounds the damage to a single ` +
+    `invented failure instead of thirty-five. That is not an explanation, and the next ` +
+    `occurrence is the thing that will be. ` +
     `There is no flag that turns this off.\n`
   );
 }

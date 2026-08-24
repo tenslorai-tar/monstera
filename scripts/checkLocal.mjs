@@ -528,19 +528,32 @@ for (const name of selected) {
   // `signal` is how spawnSync reports a timeout kill, and it must not be read
   // as an ordinary non-zero exit: one is "this check says no", the other is
   // "this harness stopped listening".
-  // A TIMEOUT STOPS THE SWEEP. Measured, and it is not caution.
+  // A TIMEOUT STOPS THE SWEEP, and the reason is TREE DAMAGE — not orphans.
   //
-  // `spawnSync`'s timeout kills the child it started and not that child's own
-  // grandchildren, and several proofs here spawn node or Electron. So every
-  // timeout leaves processes running, they accumulate, and the machine slows
-  // under them: a run with a 60s bound reported `check:docs` — which takes two
-  // seconds — as TIMED OUT, third in the list. Everything after the first
-  // timeout is measuring the harness's own wreckage.
+  // This comment used to say that a timeout leaves the killed script's own
+  // children running, that they accumulate, and that a job object was the
+  // outstanding work. MEASURED 2026-08-24 and that is false here, three runs of
+  // each variant against this harness at `--timeout 5`, identifying every
+  // survivor by its command line rather than by its age:
   //
-  // Killing a process tree properly on Windows needs a job object, which is a
-  // real unit of work and not one to bury in a convenience script. Until then
-  // the honest behaviour is to stop: one unreadable measurement is a reason to
-  // look, and twenty invented ones are a reason to stop using the tool.
+  //   grandchild spawned ordinarily   3 of 3 died with the harness
+  //   grandchild spawned `detached`   3 of 3 survived
+  //
+  // The discriminating variable is `detached`, which is the signature of the
+  // job object libuv already puts an ordinary Windows child into — so on this
+  // platform the harness gets tree-kill for free, and **this repository spawns
+  // nothing detached** (zero occurrences, and `checkLocal.proof.mjs` asserts
+  // that, because the guarantee depends on it).
+  //
+  // What survives, measured and unrelated to processes: a killed script does
+  // not run its `finally`, so a proof that removes a tracked file to make a
+  // point leaves it removed — `docs/hook-probe.json` was left deleted in the
+  // working tree exactly that way. Everything after a timeout is measured
+  // against a CHANGED TREE, which is reason enough to stop.
+  //
+  // Not measured: Linux, where nothing ties a child's lifetime to its parent's
+  // and the orphan claim would hold. This sweep is a Windows-side developer
+  // tool; the statement above is about the platform it runs on.
   const outcome = classifySpawn(run);
 
   if (outcome.kind === 'timedOut') {
