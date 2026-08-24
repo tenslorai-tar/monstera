@@ -644,6 +644,226 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-24 — Stage audit: `b0a1da4..7f77999` — a requirement was withdrawn, which is the rarest thing this checklist gets to examine
+
+**Audited through `7f77999`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: b0a1da4..HEAD
+
+  commits: 8 (one batch is 9)
+  files:   9 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (2 more) or 25 files (16 more).
+```
+
+0 proofs added, **1 modified**, **2 source files added** and 2 changed. The
+range closed AAAA-28 through AAAA-31 and both halves of AAAA-6's residue.
+
+**The unusual thing in it is a WITHDRAWAL.** Every other range in this journal
+adds coverage or corrects a claim. This one removed a requirement — the job
+object the FEATURES row had owed since WWW-2 — and item 1's question has a
+different shape when the answer is *we stopped owing this*.
+
+### 1. Root cause, or workaround?
+
+**Four fixes, all root-cause, and one of them is a removal.**
+
+- **AAAA-28** took a path out of a message rather than asserting the message.
+  Two writers existed for where the run log lives and one was already wrong.
+- **AAAA-6, first half.** `spawnSync`'s `error` was read **nowhere** in
+  `checkLocal.mjs` — zero occurrences — so a failure to create a process
+  arrived as `FAILED` at `0.0s` with `(no diagnostic line found)`. That is not
+  a symptom of the 35-at-0.0s pass; it is why the pass could not describe
+  itself. `classifySpawn` now names it and the sweep stops there.
+- **AAAA-6, second half — the withdrawal.** The row required a job object *so
+  that a killed script's children die with it*. The premise was never measured,
+  and the evidence that motivated it had been withdrawn two days earlier.
+  Measured instead of built: an ordinary grandchild dies with the harness 3 of
+  3, a `detached` one survives 3 of 3. **Removal was the first move, not a
+  footnote** — which is the shape to check when a requirement disappears,
+  because the alternative reads identically: a requirement quietly dropped
+  because it was expensive.
+- **AAAA-31** is the correction to my own withdrawal: the premise was in a
+  comment. A withdrawal REMOVES a check, so its premise is the one that must be
+  asserted, and it is a property of the runtime — a node bump would falsify it
+  in silence. Now a case, on both platforms' Guards legs.
+
+**No override, no loosened check, no widened type.** The one deletion that
+could have been a loosening is examined under item 4.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes this range reached: a spawn that produces **no process at all**
+(synthesised, because the harness cannot reach it — see the stated gap) · a
+timeout that sets **two** result fields at once · a grandchild seen **advancing**
+rather than merely present · a platform whose answer is the **opposite** of the
+development machine's.
+
+That last one had never executed here. `7f77999` is its first run on Linux, and
+it passed — so *an ordinary grandchild survives its parent's death on
+ubuntu-latest* is now measured rather than reasoned. The roster is what makes
+that readable: 44 cases must run, and on Linux the two `win32` cases cannot
+have, so a green leg is 44 including both `else` cases.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and in the direction that needs stating.** A spawn failure used to land
+in the `FAILED` branch and the sweep continued. It now lands in `didNotStart`
+and the sweep **breaks**. That is a behaviour change inside a classification
+change, and **no fixture can reach it** — the harness always spawns
+`process.execPath`, so the only failure-to-spawn available is an absent `cwd`,
+which is the harness's own root. Tried: a first script that chdirs away and
+deletes that root. It does not work, because `recordRow`'s
+`mkdirSync(..., { recursive: true })` recreates the chain the moment that script
+completes, and the next one then starts normally and reports `MODULE_NOT_FOUND`
+in 0.1s.
+
+So the classification is asserted against synthesised results and the branch
+that stops the sweep has executed **nowhere**. Stated in `spawnOutcome.mjs` and
+here rather than left as an absence.
+
+### 3. Would CI have caught it?
+
+**Computed, not recalled — which is AAAA-29's own remedy applied to the first
+range after it.** `affectedProofs.mjs` fed this range's changed paths names
+exactly one proof, `proof:checklocal`, resolving to `guards.yml` by path. Read
+from the run rather than the file — Guards run 323 for `7f77999`:
+
+```
+Secret scan and file policy (ubuntu-latest) :: success
+  success  2026-08-24T15:54:36Z  Document consistency
+  success  2026-08-24T15:54:47Z  Prove the local check sweep can report a failure at all
+
+Secret scan and file policy (windows-latest) :: success
+  success  2026-08-24T15:56:09Z  Document consistency
+  success  2026-08-24T15:56:31Z  Prove the local check sweep can report a failure at all
+```
+
+So the whole range is on the board on two platforms: the code through that
+proof, the documents through `check:docs`.
+
+**And the other way round — is there a defect THIS MACHINE cannot see?** Yes by
+construction, and it is now a case rather than a hazard: the platform branch in
+the teardown probe has a side that never runs here. That is the branch-keyed-on-
+presence shape, and the answer was to assert both sides rather than to remember.
+
+### 4. Are the proofs non-vacuous?
+
+**Seven mutations run this range, each reddening its own case:**
+
+| mutation | reddened |
+|---|---|
+| seal always `-ok` | the timeout-seal case, alone |
+| `-running` is not evidence | the same-timestamp retention case, alone |
+| restore `slice(0, -keep)` | the keep-none case, alone |
+| start the log named `-ok` | the kill case, alone |
+| `SETUP_MARGIN_MS` to 0 | the fixture-outlives-the-wait case, alone |
+| classify `error` before `signal` | the branch-order case **and** the existing timeout-stops case |
+| the ordinary probe made detached | the win32 teardown case, alone |
+| the differential removed | its control **and** the stop-check, whose survivor list goes empty |
+
+**THE MUTATION THAT DID NOT BITE IS THE ENTRY WORTH KEEPING.** AAAA-30's fix
+derives a fixture's lifetime from the wait budget so two literals cannot drift
+out of order. Setting the margin to `-9900` — a 100ms fixture against a 10s
+wait, exactly the inversion — left all 32 cases **passing**. The kill fires
+within one poll of the first row landing, about half a second in, so a healthy
+run never waits out the budget. The relationship is real and the ordinary path
+does not exercise it: item 4a's *branch nothing reaches*, in a guard rather than
+in a fixture. The remedy was to stop hoping — one case reads the fixture file
+the case just **wrote**, parses the number and requires it to exceed the budget,
+which also catches a future edit that puts a literal back.
+
+**The load-bearing column, read line by line.** `checkLocal.proof.mjs` reports
++692/−3 in the range diff while the per-commit figures say −23: twenty deletions
+are invisible because a line added and rewritten inside a range nets to an
+insertion. Every one of them read from `git log -p`: **six roster bumps (22 → 23
+→ 32 → 33 → 38 → 40 → 44, monotonically up)**, three literals replaced by
+derivations, one assembled sample promoted to a named constant, two import lines
+widened. **No check was deleted and no assertion was weakened.** For a range
+containing a withdrawal that is the number that had to be checked, because a
+withdrawal is exactly how a check leaves quietly.
+
+### 4a / 4b. Instruments and searches
+
+**Two modules added, both pure classifiers, both resolution-tested by
+construction:** `retention` is asked to separate an `-ok` from a `-running` at
+the *same timestamp* — where age cannot decide — and to distinguish keeping one
+from keeping none; `classifySpawn` is asked for all four states including the
+one where two fields contradict each other.
+
+**A search's control found the search.** The detached-spawn scan reported
+`checkLocal.proof.mjs` on its first run, **twice, in two commits**, both times
+correctly: written as a literal, the sample string and then the fixture text
+were real occurrences in a real source file. The fix is to stop being a hit
+(the key is assembled, once, in a named constant) rather than to exclude the
+file — an exclusion would also hide a genuine detached spawn added there.
+
+**The scan is DERIVED from the tree, and the direction was checked rather than
+assumed** (item 4c): the failure to fear is somebody *adding* a detached spawn,
+which makes the set bigger, and a derived count tracks growth perfectly. A
+hand-kept list would be the wrong instrument here for the same reason it is the
+right one for the roster eight lines away.
+
+**STATED LIMITATION, and it is the one this range genuinely carries.** Five
+instruments produced this range's load-bearing figures and **none of them is in
+the repository** — they were scratch files, so no column names them, not because
+the classifier is blind but because they were never tracked. Three of the five
+have since been superseded by cases: the timeout's two-field result and the
+spawn failure's shape are exactly what the `classifySpawn` cases assert, and the
+teardown differential is AAAA-31.
+
+**The fifth is not, and it is the load-bearing one:** node's startup floor —
+min 116.0ms, median 129.1ms, max 179.0ms over 15 runs, 0 of 15 under 50ms — is
+what turns *0.0s* into *never started*, and it is asserted nowhere and cannot be
+re-derived. Ranked as a limitation rather than a defect for one reason: it
+interprets a **historical** observation, so a faster node would not change what
+the 2026-08-23 machine did, and the *next* occurrence will carry an errno and
+will not need the floor argument at all. **It becomes a defect the first time
+somebody needs the floor to interpret a new observation.**
+
+### 5. Executed, or asserted?
+
+**Executed:** the startup floor (15 runs, with the instrument printing its own
+resolution check first — 3.8ms against 124.9ms — before any figure below it) ·
+the spawn-failure shape (3 variants, one an ordinary non-zero exit as control) ·
+the timeout's two-field result · the teardown differential (3 runs × 2 variants,
+each survivor identified **by command line, not by age**) · seven mutations ·
+every proof and check named above · the Guards steps quoted under item 3.
+
+**Asserted and marked as such:** that libuv's job object is the mechanism behind
+the Windows teardown — the *behaviour* is measured and the *name* is an
+inference from the discriminating variable, which no reading here establishes.
+
+### 6. Architecture before feature?
+
+No architecture change. Two new modules under `scripts/lib/`, both extractions
+made **so that something could be asserted at all**: `checkLocal.mjs` starts a
+sweep on import, so nothing inside it is reachable by a proof. That is the same
+move `runLog.mjs` made and the reason is worth keeping — an extraction whose
+purpose is reachability is not a refactor, it is coverage.
+
+### 7. Do the documents still match the code?
+
+**Five live specifications were edited true in this range, not corrected
+underneath:** `checkLocal.mjs`'s timeout comment (which asserted the orphan
+premise), the refusal message in `sweepScope.mjs` (three times), FEATURES row
+319 (twice), and CLAUDE.md item 3. The journal's `991e683` entry took an
+**appended dated correction** instead, because it is a record.
+
+**AND THE REFUSAL'S PROSE IS NOW THE FILE TO WATCH.** `sweepScope.mjs`'s
+"Unblocked by" line was rewritten **three times inside this one range**, and the
+paragraph above it had already been corrected three times in the nine commits
+before it. Every version was believed when written and each narrowed the claim,
+which is the right direction and the only reassuring thing about it. The file is
+a live specification written almost entirely in prose: `proof:checklocal`
+asserts its **paths** (AAAA-28) and one of its **claims** (nothing detached),
+and nothing at all asserts the rest. No mechanism is proposed here, because the
+honest ones are the two that already exist — turn a claim into a case when it
+can be, and read this file's diff in every audit when it cannot.
+
+---
+
 ## 2026-08-24 — Stage audit: `71deb64..b0a1da4` — one paragraph corrected three times, each version weaker and truer
 
 **Audited through `b0a1da4`.** Pasted from `npm run audit:scope`:
