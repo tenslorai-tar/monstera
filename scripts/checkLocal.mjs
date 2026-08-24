@@ -339,6 +339,12 @@ const timedOut = [];
 
 /** @type {string[]} */
 const notNode = [];
+/** Scripts observed to move the tree, in the order they did it. */
+/** @type {string[]} */
+const treeMovers = [];
+/** The last reported tree state, so one deletion is not reported by every later script. */
+/** @type {string | null} */
+let lastTreeState = null;
 let passedCount = 0;
 
 for (const name of selected) {
@@ -376,6 +382,30 @@ for (const name of selected) {
   // Recording only successes would put a repeatedly-timing-out script back at
   // the front of the queue on every run.
   known[name] = Number(seconds.toFixed(1));
+
+  // WHICH SCRIPT MOVED THE TREE, not merely that something did.
+  //
+  // WWW-1's witness was taken once before the run and read once after, so it
+  // said THE TREE MOVED UNDER THIS RUN and named nothing. Measured 2026-08-24
+  // while investigating AAAA-6: sampling after every script located the culprit
+  // — `proof:hookprobe`, killed at a bound, leaving `docs/hook-probe.json`
+  // deleted — in one pass, where the run-scoped witness would have said only
+  // that something in sixty-four scripts had done it.
+  //
+  // The cost is one `git status` per script against runtimes measured in tens of
+  // seconds, and the report goes out AS IT HAPPENS rather than at the end,
+  // because everything after this point is measured against a tree that moved.
+  if (treeBefore !== null) {
+    const movedNow = treeMovedSince(treeBefore);
+    if (movedNow !== null && movedNow !== lastTreeState) {
+      lastTreeState = movedNow;
+      treeMovers.push(name);
+      process.stdout.write(
+        `  !!  THE TREE MOVED under ${name} — ${movedNow}\n` +
+          `      Everything after this is measured against a changed tree.\n`,
+      );
+    }
+  }
 
   // `signal` is how spawnSync reports a timeout kill, and it must not be read
   // as an ordinary non-zero exit: one is "this check says no", the other is
@@ -472,6 +502,10 @@ if (treeBefore !== null) {
     treeMoved === null
       ? '  ok  the working tree and index are as this run found them\n'
       : `\nTHE TREE MOVED UNDER THIS RUN — ${treeMoved}\n\n` +
+          (treeMovers.length > 0
+            ? `  Moved under: ${treeMovers.join(', ')}.\n`
+            : `  No single script was seen to move it, so the change happened during the last\n` +
+              `  script or outside this run.\n`) +
           `  A script this harness KILLED does not run its cleanup, so a proof that removes a\n` +
           `  tracked file to make a point leaves it removed. Check \`git status\` before doing\n` +
           `  anything else: the results above were measured against a tree that changed, and\n` +

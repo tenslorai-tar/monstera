@@ -39,18 +39,31 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected }) {
   return (
     `Refusing to sweep ${String(proofs.length)} proof scripts in one run (finding WWW-2).\n\n` +
     `A full sweep of this repository invents failures: 35 scripts failed in 0.0s on one ` +
-    `measured pass and every one passed alone.\n\n` +
-    `PARTLY ESTABLISHED, 2026-08-24. Running proofs in sequence roughly DOUBLES them — ` +
-    `proof:hookprobe takes 308s alone on a clean tree and 598s run ninth; proof:guards was 76s ` +
-    `in one run and 153s in another. A per-script bound then kills a proof that would have ` +
-    `passed, its \`finally\` never runs, and it leaves TRACKED FILES DELETED: a 90s bound killed ` +
-    `proof:hookprobe at 90.04s and left docs/hook-probe.json removed from the working tree. ` +
-    `Four orphaned node processes were alive during that measurement, two of them started the ` +
-    `previous day — they survive every parent that spawns them.\n\n` +
-    `So the wreckage measured here comes from scripts that were KILLED, not from scripts that ` +
-    `COMPLETED, which is what this message used to assert. NOT established: the 0.0s signature ` +
-    `itself. A missing docs/hook-probe.json makes check:docs fail in ~130s, not instantly, so ` +
-    `the original 35-at-0.0s observation is still unexplained and this refusal stands.\n\n` +
+    `measured pass and every one passed alone. The mechanism is NOT established, so this run is ` +
+    `refused rather than run with a note explaining its own false reds.\n\n` +
+    `THE BOUND IS EARNED, AND THAT IS DATED RATHER THAN ASSUMED. The obvious suspect is the ` +
+    `harness defect this file's caller records at checkLocal.mjs — \`npm run\` under a shell, ` +
+    `where the timeout killed the shell and left node running, after which twenty scripts failed ` +
+    `in 0.2s with no output. Both remedies for it — invoking the interpreter directly, and ` +
+    `stopping at the first kill — landed in f7dc5fb (2026-08-23T08:35+02:00). The 35-at-0.0s ` +
+    `pass was recorded in 7b7824e (2026-08-23T17:20+02:00), nine hours LATER, on a harness that ` +
+    `already had both. So this is not guarding a defect that was fixed.\n\n` +
+    `And stop-at-first-kill was already present, which means those 35 were ordinary non-zero ` +
+    `exits rather than a cascade a kill started: had a kill come first, the run would have ` +
+    `stopped there. That is why the boundary is at most one proof rather than stop at the first ` +
+    `kill — the latter exists and did not prevent it.\n\n` +
+    `WHAT WAS MEASURED 2026-08-24, with its provenance, since a doubling claim taken under a cap ` +
+    `that manufactured kills would be worthless: a 90s-capped reproduction killed ` +
+    `proof:hookprobe at 90.04s with SIGTERM, its \`finally\` never ran, and docs/hook-probe.json ` +
+    `was left DELETED in the working tree. Four orphaned node processes were alive throughout, ` +
+    `two started the previous day — nothing here kills a process tree. Both facts are direct ` +
+    `observations and neither depends on the cap.\n\n` +
+    `NOT ESTABLISHED, and previously stated here more strongly than the evidence: that running ` +
+    `in sequence slows a script down. proof:hookprobe measured 308s alone and 598s ninth, but ` +
+    `proof:shim measured 1.5s and 9.4s at the SAME position across the two runs, so position is ` +
+    `not what separates them — the second run began with the first run's orphans alive, and ` +
+    `machine state and sequence were never isolated. Nor is the 0.0s signature explained: a ` +
+    `missing docs/hook-probe.json makes check:docs fail in ~130s, not instantly.\n\n` +
     `Run one of these instead:\n` +
     `  npm run local -- --only check:            the pre-push sweep, no proofs, unaffected\n` +
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +

@@ -51,7 +51,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 22 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -356,6 +356,15 @@ try {
         `Every script PASSED, so nothing else in this run has a complaint — which is exactly ` +
           `the shape that deleted a tracked document and printed a clean summary. ` +
           `exit=${String(moved.status)}. Output:\n${output}`,
+      );
+      check(
+        '  ...and NAMES THE SCRIPT that moved it, not merely the run',
+        /THE TREE MOVED under check:deletes/u.test(output) && /Moved under: check:deletes/u.test(output),
+        `The witness was taken once before the run and read once after, so it said "under this ` +
+          `run" and named nothing — across sixty-four scripts that is a starting point, not an ` +
+          `answer. Measured 2026-08-24: sampling after every script located proof:hookprobe as ` +
+          `the culprit in one pass. Asserting only /THE TREE MOVED/ is satisfied by the ` +
+          `run-scoped version, which is why this is a separate case.\nOutput:\n${output}`,
       );
       check(
         'CONTROL: and a sweep that damages nothing says the tree is as it found it',
