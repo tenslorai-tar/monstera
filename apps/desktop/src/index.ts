@@ -28,6 +28,13 @@ export {
   lockNavigation,
   senderCheckFor,
 } from './window.js';
+export {
+  type EngineHostConnection,
+  type EngineHostConnectionFailure,
+  type EngineHostConnectionOptions,
+  type EngineHostConnectionSurfaces,
+  createEngineHostConnection,
+} from './engineHostConnection.js';
 export { type AppInfo, createContractHandlers } from './contractHandlers.js';
 export { type IpcHandleTarget, registerContractHandlers } from './registerHandlers.js';
 export {
