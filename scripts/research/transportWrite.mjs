@@ -151,15 +151,25 @@ const CreateEventW = kernel.func(
 );
 const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
 const GetLastError = kernel.func('uint32 GetLastError()');
+/**
+ * Cancels every outstanding I/O on a handle, whichever thread issued it.
+ *
+ * `CancelIo` — no `Ex` — cancels only the calling thread's, which is the wrong
+ * one here: main issues the writes and the teardown may be reached from
+ * anywhere. The second parameter is the `OVERLAPPED` to cancel, or NULL for all
+ * of them.
+ */
+const CancelIoEx = kernel.func('bool CancelIoEx(void *file, void *overlapped)');
 
 const ERROR_IO_PENDING = 997;
 const ERROR_IO_INCOMPLETE = 996;
+const ERROR_OPERATION_ABORTED = 995;
 const ERROR_PIPE_CONNECTED = 535;
 const POINTER = koffi.sizeof('void *');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 14 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -412,6 +422,168 @@ process.stdout.write(
 silent.destroy();
 for (const slot of outstanding) CloseHandle(slot.event);
 for (const instance of built.value.instances) surface.close(instance);
+
+// ---------------------------------------------------------------------------
+// TEARING DOWN WITH WRITES STILL OUTSTANDING.
+//
+// The queue in `apps/desktop/src/hostWriteQueue.ts` hands every remaining write
+// back in one `abandon` call, and its contract says why: releasing an
+// `OVERLAPPED` the kernel may still be writing into is the classic overlapped-IO
+// defect. What it does NOT say is how the adapter makes that safe, because
+// nothing had measured it.
+//
+// The candidate is `CancelIoEx` then `GetOverlappedResult` with `wait` TRUE.
+// Two things have to hold or the adapter cannot use it, and each is the kind of
+// claim this project has been wrong about before:
+//
+//   the wait must RETURN — a wait on a write into a peer that never reads is
+//   the hang the read side was redesigned to avoid, arriving on the write side;
+//   the result must say the write did NOT happen, so a caller cannot mistake an
+//   abandoned frame for a delivered one.
+//
+// A second pipe, because phase 1's is drained and cancelling nothing looks
+// exactly like cancelling successfully.
+// ---------------------------------------------------------------------------
+
+/** The whole cancel-and-collect loop, not one call. */
+const CANCEL_BUDGET_MS = 250;
+
+const cancelName = `${pipeName}-cancel`;
+const cancelBuilt = createHostPipe(surface, cancelName, user.value, container.value, 1);
+if (!cancelBuilt.ok) {
+  process.stderr.write(
+    `the shipped factory refused the teardown pipe at stage '${cancelBuilt.error.stage}': ` +
+      `${cancelBuilt.error.detail}\n`,
+  );
+  process.exit(1);
+}
+const cancelPipe = cancelBuilt.value.instances[0];
+
+const stubborn = connect(cancelName);
+stubborn.pause();
+stubborn.on('error', (error) =>
+  process.stderr.write(`  the stubborn client could not connect: ${error.message}\n`),
+);
+await new Promise((ready) => stubborn.once('connect', () => ready(undefined)));
+
+const stubbornConnected = ConnectNamedPipe(cancelPipe, null);
+const whyStubborn = GetLastError();
+check(
+  'SETUP: the teardown pipe has a client attached and nothing is draining it either',
+  Boolean(stubbornConnected) || whyStubborn === ERROR_PIPE_CONNECTED,
+  `ConnectNamedPipe said ${String(stubbornConnected)} with GetLastError ${String(whyStubborn)}. ` +
+    `A cancel with nothing outstanding succeeds and returns instantly, which is the reassuring ` +
+    `answer this whole phase would otherwise report.`,
+);
+
+/** @type {Array<ReturnType<typeof pending>>} */
+const stranded = [];
+for (const frame of frames) {
+  const slot = pending(frame);
+  const written = [0];
+  const ok = WriteFile(cancelPipe, slot.payload, slot.payload.length, written, slot.overlapped);
+  if (!ok && GetLastError() !== ERROR_IO_PENDING) break;
+  stranded.push(slot);
+}
+
+const strandedPending = stranded.filter((slot) => {
+  const transferred = [0];
+  return !GetOverlappedResult(cancelPipe, slot.overlapped, transferred, false);
+}).length;
+
+check(
+  'CONTROL: writes really were outstanding at the moment of the cancel',
+  strandedPending > FRAMES / 2,
+  `${String(strandedPending)} of ${String(stranded.length)} were still pending. Cancelling an ` +
+    `empty queue succeeds, returns immediately and aborts nothing — which is indistinguishable ` +
+    `from the mechanism working, and is the state this phase would drift into if the pipe's ` +
+    `buffer ever grew.`,
+);
+
+// NOTHING BETWEEN THE COUNT ABOVE AND THIS CALL, deliberately: no await, no
+// read of the client. The control asserts what was outstanding *at the cancel*,
+// and any statement between them would make that label a guess. Measured by
+// putting a drain there: the control still passed on a figure taken before it,
+// and the two cases below were what caught the drift.
+const cancelled = CancelIoEx(cancelPipe, null);
+const whyCancel = GetLastError();
+check(
+  'CancelIoEx accepts a handle with writes outstanding',
+  Boolean(cancelled),
+  `CancelIoEx returned false with GetLastError ${String(whyCancel)}. Windows answers ` +
+    `ERROR_NOT_FOUND (1168) when there is nothing outstanding to cancel — measured — so a false ` +
+    `here is either that, or a handle the call cannot reach. Without this the adapter's abandon ` +
+    `has no way to reach a write the kernel is holding, and its only remaining option is closing ` +
+    `the handle underneath the I/O, which is the teardown the read side rejected.`,
+);
+
+// POLLED WITH `wait` FALSE, NOT WAITED ON, and that is a decision about this
+// INSTRUMENT rather than about the adapter.
+//
+// `GetOverlappedResult(…, true)` is what the adapter will call, and measured
+// against a cancelled write it returns in 0ms. Measured against an UNCANCELLED
+// one it never returns at all: with the `CancelIoEx` call replaced by `true`,
+// this probe ran to an external `timeout 25` and exited 124 — so the failure
+// mode of the case below is a HANG, and a probe that hangs in CI is a job
+// timeout rather than a named failure, which is worse than no probe (CCCC-3).
+//
+// The property the adapter needs is that the completions become AVAILABLE
+// promptly after a cancel, and a wait on an available completion returns by
+// definition. Polling measures that and cannot hang. What it gives up is
+// exercising `wait` true itself, which is stated here rather than assumed away.
+const collectStarted = Date.now();
+/** @type {number[]} */
+const abortCodes = [];
+let resolvedAll = true;
+let unresolved = 0;
+for (const slot of stranded) {
+  const transferred = [0];
+  let settled = false;
+  while (!settled && Date.now() - collectStarted < CANCEL_BUDGET_MS) {
+    if (GetOverlappedResult(cancelPipe, slot.overlapped, transferred, false)) {
+      settled = true;
+      break;
+    }
+    const why = GetLastError();
+    if (why === ERROR_IO_INCOMPLETE) continue;
+    abortCodes.push(why);
+    if (why !== ERROR_OPERATION_ABORTED) resolvedAll = false;
+    settled = true;
+  }
+  if (!settled) unresolved += 1;
+}
+const collectMs = Date.now() - collectStarted;
+
+check(
+  `every cancelled write becomes collectable within ${String(CANCEL_BUDGET_MS)}ms rather than waiting for a reader`,
+  unresolved === 0 && collectMs < CANCEL_BUDGET_MS,
+  `${String(unresolved)} of ${String(stranded.length)} were still incomplete after ` +
+    `${String(collectMs)}ms. A completion that does not arrive is one the adapter would wait for, ` +
+    `and that wait is the hang the read side was redesigned to avoid arriving on the write side — ` +
+    `in the process that must stay responsive.`,
+);
+
+check(
+  'and each says the write did NOT happen, so an abandoned frame cannot read as a delivered one',
+  resolvedAll && abortCodes.length > 0,
+  abortCodes.length === 0
+    ? `no write reported an abort, so every one of them had completed before the cancel and this ` +
+      `case observed nothing. That is the CONTROL above failing one step later.`
+    : `codes ${JSON.stringify([...new Set(abortCodes)])}; ` +
+      `${String(ERROR_OPERATION_ABORTED)} is the one the caller can act on. A cancelled write ` +
+      `reporting anything else leaves the adapter unable to tell a frame it abandoned from one ` +
+      `the peer received.`,
+);
+
+process.stdout.write(
+  `  ${String(strandedPending)} of ${String(stranded.length)} outstanding at the cancel, ` +
+    `collected in ${String(collectMs)}ms, ` +
+    `${String(abortCodes.length)} aborted\n\n`,
+);
+
+stubborn.destroy();
+for (const slot of stranded) CloseHandle(slot.event);
+for (const instance of cancelBuilt.value.instances) surface.close(instance);
 
 if (failures.length > 0) {
   process.stderr.write(

@@ -1054,3 +1054,55 @@ the channel "owns the pipe handle … and does the overlapped reads and writes".
 It will read *reads*, corrected in the commit that builds the write side rather
 than left standing beside a new section — the compound-claim shape CLAUDE.md item
 7 names, where the live clause vouches for the dead one.
+
+### Addition, 2026-08-25 — abandoning outstanding writes, and the wait that would hang main
+
+`hostWriteQueue.ts` hands every remaining write back in one `abandon` call and
+says why — releasing an `OVERLAPPED` the kernel may still be writing into is the
+classic overlapped-I/O defect. What it does not say is how the adapter makes that
+safe, because nothing had measured it. Five cases in
+`scripts/research/transportWrite.mjs`, on a second pipe with its own peer that
+never reads:
+
+| | |
+|---|---|
+| outstanding when the cancel was issued | **63 of 64** |
+| `CancelIoEx(handle, NULL)` | accepted |
+| every cancelled write collectable, polled | **0ms**, 0 unresolved |
+| reporting `ERROR_OPERATION_ABORTED` | **63** |
+
+`CancelIoEx` and not `CancelIo`: the latter cancels only the calling thread's
+I/O, and main issuing the writes while teardown may be reached from anywhere is
+exactly the case that distinction exists for.
+
+**Two things fell out of the resolution tests, and one of them changes the
+adapter.**
+
+**Windows separates *cancelled something* from *there was nothing to cancel*.**
+Draining the peer before the cancel made `CancelIoEx` return **false** with
+`GetLastError` **1168** — `ERROR_NOT_FOUND`. So the adapter does not need a
+count of its own to know whether the call did anything, and a false return is
+not automatically a failure.
+
+**And a cancel that did not happen makes the wait unbounded.** With the
+`CancelIoEx` call replaced by `true`, the probe using `GetOverlappedResult(…,
+wait: true)` ran to an external `timeout 25` and exited **124** — it hung. That
+is the hang the read side was redesigned to avoid, arriving on the write side, in
+the process that must stay responsive.
+
+Two consequences:
+
+- **The adapter's `abandon` must not wait unconditionally.** It waits only after
+  a cancel it has seen succeed, and treats any failure other than
+  `ERROR_NOT_FOUND` as terminal *without* waiting. Waiting after a failed cancel
+  is the one shape that hangs main.
+- **The probe polls with `wait` false rather than waiting.** The property the
+  adapter needs is that completions become *available* promptly after a cancel,
+  and a wait on an available completion returns by definition. Polling measures
+  the same fact and cannot hang: with the same mutation the polled version exits
+  **1** naming *63 of 64 were still incomplete after 250ms*, where the waiting
+  version produced a job timeout. A probe that hangs in CI is worse than no
+  probe, which this repository learnt from the teardown instrument (CCCC-3) and
+  applied here before being bitten rather than after. What it gives up is
+  exercising `wait` true itself, and that is stated in the file rather than
+  assumed away.
