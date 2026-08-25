@@ -1840,3 +1840,21 @@ candidate is *main writes its canonical image to a handed path once per version*
 and nothing here has written an image, timed one, or shown that doing it per
 version is affordable. This says the grants can be shaped as Decision 7 wants;
 it says nothing about what shaping them that way costs.
+
+#### Addition, same day — the table above is THREE machines, not one
+
+The rows were first read here, and the paragraph above says so. They have since
+run **elsewhere**: `lowboxSpike.mjs` is a step on two Windows jobs — `shim`
+(`windows-latest`) and the `windows-2022` job — both invoked
+`--require-containment`, and the board is green at the commit that added them.
+
+Stated because *"read on this machine"* and *"read on three Windows builds"* are
+different claims and the first is what was written. What CI adds is the
+**verdicts**, not figures: a job's log is not readable without owner
+authentication, so its contribution is that every row passed there, which is
+exactly the confirmation a containment verdict needs and is not a second
+measurement of anything numeric.
+
+It matters most for the refusal. A write refused on one machine could be that
+machine's ACL state; refused on three, under a container each job creates for
+itself, is the mechanism.
