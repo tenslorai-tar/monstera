@@ -644,6 +644,229 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `fb9731e..4a0ef5d` — the instrument that measures teardown could not tear itself down
+
+**Audited through `4a0ef5d`.** Pasted from `npm run audit:scope`, run before this
+range's last commit:
+
+```
+Unaudited range: fb9731e..HEAD
+
+  commits: 8 (one batch is 9)
+  files:   17 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (2 more) or 25 files (8 more).
+```
+
+**1 proof added**, 2 modified, 0 removed; **4 source files added**, 4 changed, 0
+removed. The range built the pipe factory, its adapter and the spike's migration
+onto both; closed the previous audit's three findings and BBBB-4; and measured
+the transport's termination.
+
+**Audited at 8 rather than at the gate**, deliberately: the next unit is the
+transport adapter, which is more than one commit, and hitting the batch gate
+halfway through it would mean auditing a range split across an unfinished
+module. Auditing early is allowed; being blocked mid-unit is avoidable.
+
+### 1. Root cause, or workaround?
+
+**Nine commits. Every fix is root-cause; two of them are corrections to my own
+previous claims, and one is a security defect.**
+
+- **BBBB-4** (`c783f9f`): `GA` for the container mapped to `FILE_ALL_ACCESS` and
+  carried `WRITE_DAC`, so the principal invariant 25 declares hostile could
+  rewrite the DACL of its own trust boundary. Not narrowed by editing the text —
+  the spelling was one three Windows builds had measured, so the narrowing went
+  back through the instrument.
+- **BBBB-2, BBBB-3** (`91b1d45`): the `&&` semantics and the `FEWEST_INVOCATIONS`
+  anchor, both closed; **BBBB-1's second half withdrawn** because it was reasoned
+  rather than read.
+- **CCCC-3** (`4a0ef5d`): the teardown probe hung instead of reporting. See item
+  4a — it is this range's sharpest finding and it was produced by the audit
+  rather than by a test.
+- `75aa17c`, `9835ea4`, `76b9379`, `7108920`: measurements and the modules they
+  produced.
+
+**THE TWO ALLOWLIST WIDENINGS ARE THE ONES TO CHECK**, because an allowlist entry
+is the shape item 1 calls *an override standing in for missing coverage*.
+`electronImports.proof.mjs` grew a count (2 → 4) and an entry
+(`transportTeardown.mjs`, sites 2). Both are bounded rather than amnesty, and the
+mechanism that makes them so was verified in the source rather than taken from
+its own failure message: the check is `every listed entry matches its live site
+count, in BOTH directions`, so an entry left behind after its loads are removed
+reds exactly as a new load does. Each entry carries a written reason naming every
+load. Not a workaround.
+
+**No check was loosened.** The one deletion that could have been is
+`isInvalidHandle`'s import leaving `lowboxSpike.mjs`, and it is coverage MOVING
+rather than leaving: the only caller was that file's own `CreateNamedPipeW`, and
+the question is now answered inside the shipped surface through the derived copy
+`proof:win32handle` requires to agree on every value.
+
+### 2. Verified against the easy shape only?
+
+**The hard shape here was the SECOND wait, and the probe's first version did not
+have it.** It issued `ReadFile` immediately and got `ERROR_PIPE_LISTENING`: a
+server instance cannot be read before a client connects. So a reader waits for a
+client and then waits for bytes, and a design stoppable only in the second would
+be stoppable only in the case that does not matter — a host that never connects
+is exactly what Decision 8 kills for. Both cells now exist.
+
+Everything in this range that could be measured off this machine was:
+`proof:hostcontainment` at 8s and `proof:teardown` at 3s and 2s, on Server 2022
+and Server 2025, read from `run_id 32807300585`'s step lines.
+
+**The rich-ambient-environment axis, restated because this range added a new
+kind of child:** a worker thread inherits the parent's entire process — handles,
+environment, loaded DLLs. That is not a variable the probe controls and not one
+the shipped adapter will control either, so it is stated rather than closed.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**One move, and it is a gain that would have gone unrecorded.** The spike's pipes
+were created by the file itself; they are now created by the shipped surface. The
+row that measures the shipped descriptor against a contained cell therefore
+measures *what a host will be handed* rather than a copy that agrees today. Gains
+go unrecorded because nothing goes red when they happen.
+
+**And a reduction that is not one.** `lowboxSpike.mjs` no longer imports
+`isInvalidHandle` — see item 1.
+
+### 3. Would CI have caught it?
+
+Answered from runs, identifiers taken from the same payload as the lines.
+
+- `proof:teardown` ran and passed on both Windows images:
+  `run_id 32807300585 head_sha 7108920`, Server 2022 `04:02:39 -> 04:02:42`,
+  Server 2025 `04:03:11 -> 04:03:13`.
+- `proof:hostcontainment` ran on both with the new DACL and the WRITE_DAC rows:
+  same run, `04:02:31 -> 04:02:39` and `04:03:03 -> 04:03:11`.
+- **CI DID catch one**, and it is the second time this session: `9835ea4`
+  reddened `main` on `proof:electronimports`, because two computed loads were
+  added to a file whose entry declares a count. The local sweep could not name
+  that proof — its reach is static imports and the proof addresses its input by
+  glob and by a literal path string.
+- **CCCC-3 would NOT have been caught by CI**, and this is the one worth stating.
+  It only appears when the probe FAILS, and the probe passes. A CI run in which
+  the overlapped flag was ever removed would have hung to the job timeout with
+  no named case — which is how it would have been found, expensively, by
+  somebody with less context than the person who made the change.
+
+**Is there a defect this machine cannot see?** The probe's own numbers. It prints
+`10ms` and `7ms`; CI asserts only that the exit is under 2000ms, and job logs
+need owner authentication to read. So the figures in every document are this
+machine's, and the containment jobs contribute a bound rather than a
+measurement. That is finding CCCC-1.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated, with the results at the constants:
+
+| mutation | result |
+|---|---|
+| the reader waits on ONE handle instead of two | both cells wedge — `code null` at 2010ms and 2015ms, against 10ms and 7ms |
+| `FILE_FLAG_OVERLAPPED` removed from the shipped surface | the probe reddens — 3 named cases — and see CCCC-3 for what else happened |
+| `hostPipeDacl` narrowed to `0x0012019B` for BOTH principals | instance 1 refused, `GetLastError 5`, factory names the stage |
+| the pipe factory's close-loop deleted | the partial-failure case reddens alone |
+
+The first is the rejected design measured rather than argued: blocking in
+`ReadFile` is what waiting on one handle amounts to.
+
+**A branch no fixture reaches**, named rather than left: the worker's `'read'`
+outcome — a wait returning because bytes arrived — is reached by no cell, because
+neither cell writes. The probe measures termination and says **nothing** about
+the transport carrying bytes. That is a scope, and it was unstated until this
+audit; it is now finding CCCC-2.
+
+### 4a. Instruments and their resolution tests
+
+`transportTeardown.mjs` was resolution-tested by the wait-count mutation before
+its readings were written into any document: two inputs differing by the smallest
+thing that changes the answer, reported differently.
+
+**AND THE RESOLUTION TEST IS WHAT FOUND CCCC-3.** Removing the overlapped flag
+made the worker block inside `ConnectNamedPipe` — the failure under
+demonstration — and `CloseHandle` on that instance then blocked as well. The
+probe tidied up before reporting and **hung for ten minutes, printing nothing**.
+Skipping the cleanup fixed that half; the process then still would not exit,
+because `process.exit(1)` does not end a process whose worker thread is inside a
+syscall (measured: `EXIT=124` under an external timeout). It now ends with
+`TerminateProcess`.
+
+**A probe whose failure mode is a hang cannot report the failure it exists to
+detect.** The instance is worth less than the shape, and the shape here is
+pointed: this instrument's entire subject is teardown, and its own teardown was
+the part that did not work. **An instrument that shares a failure mode with its
+subject will meet that failure mode first**, and it will meet it in the run where
+it is trying to report.
+
+### 4c. Rosters and anchors
+
+Three hand-kept counts fired in this range, all in the direction a derived count
+cannot see:
+
+- `transportTeardown.mjs` declared 9 cases and recorded 7 — my arithmetic, caught
+  before the first real reading.
+- `electronImports.proof.mjs`'s per-file site count caught both widenings.
+- `FEWEST_INVOCATIONS` in `typecheck.mjs`, added last range, is checked against
+  the manifest by its proof so it cannot sit above the real count.
+
+### 5. Executed, or asserted?
+
+**Executed:** the three DACL masks and their outcomes; `WRITE_DAC` allowed for
+the contained cell under `GA` and refused under `0x0012019B`; the owner allowed
+`WRITE_DAC` despite a mask that lacks it; both teardown waits at 10ms and 7ms;
+the one-handle mutation wedging at 2010ms and 2015ms; the overlapped-flag
+mutation hanging, then reporting, then failing to exit; every CI step line.
+
+**Asserted:** that the shipped DACL's advantage over `D:(A;;GA;;;BU)` is other
+USERS of the machine — a single-account runner cannot measure it, and it is
+labelled as reasoning in the ADR. Unchanged from last range and still the only
+one.
+
+### 6. Architecture before feature?
+
+**Yes, three times, and all before the adapter exists.** ADR-0023 §4 has two
+corrections and an addition; the transport's structure was decided and measured
+with nothing built on top of it. The error each avoided is concrete: a descriptor
+nothing can open, a design shaped around handing a stream to Node, and a reader
+that cannot be stopped.
+
+### 7. Do the documents still match the code?
+
+**One does not, and it is mine from this range.** ADR-0023's teardown table
+presents `10ms` and `7ms` immediately after *"seven cases on the Windows
+containment jobs"*. Both halves are true and the sentence they form is not: the
+jobs assert a bound, the figures are this machine's, and job logs are not
+readable without owner authentication. That is the compound-claim shape item 7
+warns about, in a document written an hour earlier. **Corrected by appending**,
+in this commit, because an ADR is a record.
+
+**AND THE SWEEP FOUND A SECOND INSTANCE, which is what the sweep is for.**
+NNN-4's rule fires when a range states a cross-document relationship: every other
+statement of it gets swept by hand. `docs/FEATURES.md` row 282 carried the same
+compound claim — *"runs it on both Windows containment jobs — the reader exits
+10ms and 7ms"* — written in the same commit as the ADR sentence. It is a live
+spec, so its **body was edited true** rather than corrected underneath: the jobs
+assert a bound, and the figures are labelled as one machine's in the ADR.
+
+Two documents, one wrong sentence, written an hour apart by the same author who
+then found neither by re-reading. It was found by writing the correction to the
+first one and being obliged to look for the second.
+
+### Findings
+
+- **CCCC-1** — figures measured on the developing machine were presented beside
+  a sentence about the CI jobs. **Closed in this commit** by an appended ADR
+  correction.
+- **CCCC-2** — `transportTeardown.mjs` measures termination and nothing about
+  bytes crossing; the worker's `'read'` outcome is reached by no cell. A stated
+  scope now rather than an unstated one. **Open**, and it closes when the
+  adapter's own proof carries a frame end to end.
+- **CCCC-3** — an instrument that shares a failure mode with its subject meets
+  that failure mode first, in the run where it is trying to report. **Closed in
+  `4a0ef5d`**, in two halves, both measured.
+
 ## 2026-08-24 — Stage audit: `7f77999..fb9731e` — two checks were fixed at instance level and re-fixed as a class one commit later
 
 **Audited through `fb9731e`.** Pasted from `npm run audit:scope`, run before the

@@ -851,3 +851,26 @@ adapter:
 - The stop event is **manual-reset**, because a stop is permanent: an auto-reset
   event consumed by one waiter would leave a second reader waiting on a
   transport that has already been told to stop.
+
+### Correction to the above, 2026-08-25 — the millisecond figures are one machine's
+
+The table reads *"seven cases on the Windows containment jobs"* and then gives
+`10ms` and `7ms`. Both halves are true and the sentence they form is not.
+
+The containment jobs assert a **bound** — that the reader exits within 2000ms and
+with code 0 — and that is all this project can read from them without owner
+authentication, because a job's log is not public and only its step conclusions
+are. **The figures are the developing machine's**, and they move run to run: 10ms
+and 7ms, 14ms and 8ms, 4ms and 4ms across the runs taken that day.
+
+So the correct statement is: the design is asserted on three Windows builds and
+**timed on one**. The one-handle mutation's 2010ms and 2015ms are the same — this
+machine, and against a 2000ms budget, which is where those two numbers come from
+rather than from the failure taking exactly that long.
+
+Nothing about the decision changes. What changes is that a reader could have
+taken the table as evidence that the containment images exit in single-digit
+milliseconds, which nothing here has measured. Recorded under finding CCCC-1
+because the shape is the one item 7 names: a compound claim whose live clause
+vouches for the dead one beside it, written an hour after the measurement it
+describes.
