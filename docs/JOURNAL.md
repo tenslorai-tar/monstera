@@ -644,6 +644,167 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `484460a..4880ea0` — two controls that could not see the branch they were written for
+
+**Audited through `4880ea0`.** Pasted from `npm run audit:scope`, run before this
+range's last commit:
+
+```
+Unaudited range: 484460a..HEAD
+
+  commits: 4 (one batch is 9)
+  files:   20 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (6 more) or 25 files (5 more).
+```
+
+**Audited at 4 rather than at the gate, deliberately.** Five files remain before
+it fires and the next unit — a new package plus the reader worker — is more than
+five on its own. Being blocked halfway through a package is worse than auditing a
+short range.
+
+**1 proof added**, 1 modified, 0 removed; **2 source files added**, 4 changed, 0
+removed. The range closed the lint gap that reddened `main`, took the B4
+placement amendment, and closed DDDD-8.
+
+### 1. Root cause, or workaround?
+
+Every fix root-cause, and one of them was a temptation refused.
+
+- **DDDD-7** (`c04c2de`): `check:lint` reads `package.json`'s `lint` script as
+  the authority. Mechanism: `checkLocal.mjs` derives from `check:*`/`proof:*`
+  names, so the lint sat outside the sweep.
+- **the scanner** (`c04c2de`): `check:annotatecoverage` reported a *comment*
+  quoting a command as an unwrapped step. Rewording my comment would have been
+  *special-casing the input that failed*, which Rule 0 names as a banned reflex.
+  The scanner is fixed instead: a line whose first non-space character is `#`
+  runs nothing under either reading.
+- **DDDD-8** (`2d60fea`): the cancel-failed branch had no case, and I had
+  recorded it as unreachable. It is not — I was looking for a way to make
+  `CancelIoEx` **fail** rather than a way to make the **handle** invalid.
+
+### 2. Verified against the easy shape only?
+
+`check:lint`'s fixtures use a minimal flat config with one core rule, and that is
+the easy shape. The hard one — this repository's own config, plugins and all — is
+what the check runs against on every invocation, so both are covered by
+construction rather than by a second fixture.
+
+**Stated limit:** `parseLintScript` handles `&&` chains and this repository's
+lint is one segment, so the chained path is fixture-only. It refuses rather than
+shrinking when it cannot read a segment, which is the failure that matters.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+`segmentsOf` moved to `scriptSegments.mjs` and is imported and re-exported. Pure
+move: `typecheck.proof.mjs` is unchanged and still passes its ten cases, which is
+the check on that claim rather than my reading of the diff.
+
+### 3. Would CI have caught it?
+
+**The lint gap: CI is what caught it**, in the previous range, and that is the
+finding rather than a reassurance.
+
+**The scanner false positive: yes.** `check:annotatecoverage` runs on the Guards
+job and reads the same lines; it happened to fail locally first because the sweep
+now runs before the push.
+
+**The missing ADR index row: yes** — `check:docs` caught it locally and runs in
+CI. Worth recording because it landed in the one commit whose entire subject was
+documents, which is where a document check is easiest to believe unnecessary.
+
+### 4. Are the proofs non-vacuous?
+
+| what was mutated | what went red |
+|---|---|
+| the cancel-failed branch inverted | the DDDD-8 case, on **time** — 250ms against 0ms — while the strand COUNT was identical |
+| the comment rule widened to `#` anywhere | the trailing-comment control **alone** |
+
+**Both of this range's new controls initially could not see the branch they were
+written for, and that is the range's shape.**
+
+**DDDD-10 — the count could not separate the cancel-failed branch.** Inverting
+the test made the polling path strand all 31 writes *too*, having first spent the
+full budget. A case asserting only *everything was stranded* would have passed
+against the branch being deleted. The reason is measured and is not what the code
+first claimed: with the handle closed, `GetOverlappedResult(…, wait: false)`
+keeps answering `ERROR_IO_INCOMPLETE`, because it reads the request's own status
+and the status of a request whose handle has gone away does not move. So the poll
+can never settle them, and the branch buys 250ms against no different outcome.
+**Closed in range** — the case asserts elapsed time alongside the count.
+
+**DDDD-11 — a control varying one character tests the rule at that character and
+nowhere else.** The comment-skip pair held everything constant except the leading
+`#`. That catches a scan skipping too much at the START of a line and cannot
+catch one keyed on `#` **anywhere**, which passes both cases and swallows a real
+step carrying a trailing comment — a shape these workflows use. **Closed in
+range** by a third fixture, and the mutation reddens it alone.
+
+The transferable form: **skipping is a decision with more than one way to be too
+broad, and each way needs the input it alone rejects.** A pair is not a control
+set merely because it has two members pointing in opposite directions.
+
+### 4a. Resolution-tested BEFORE it measured anything real?
+
+Yes for both. `check:lint` was run against fixture trees before it was registered
+anywhere, and its own comment was corrected by its own case — the comment claimed
+a value-taking flag would fail the anchor and refuse, and the anchor is a subset
+test, so it does not. **A comment describing a stricter guard than the code has
+is what the next reader believes**, so it was corrected rather than quietly
+fixed.
+
+### 4b. Positive control on every search?
+
+`check:lint` is not a search; `annotateCoverage.mjs` is, and it already refuses
+to report when it recognises no wrapped invocation. That control is what makes
+the comment-skip change safe to make at all: a skip that swallowed everything
+would leave the scan blind and it says so.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+`check:lint`'s extent is a literal, and the reasoning is in the previous entry.
+Nothing new in this range derives.
+
+### 5. Executed, or asserted?
+
+**Executed:** `proof:lintcheck` 9 cases · `proof:annotatecoverage` 21 ·
+`proof:writesurface` 11 · `proof:typecheck` 10 after the move · two mutations,
+above · `npm run local -- --only check:` 15 of 15 · board **GREEN at
+`ebaa95b`** and at `2d60fea`.
+
+**Asserted:** that `packages/nodemode` costs what ADR-0024 says it costs — three
+table entries, a tsconfig, a build line. Nothing has been built yet, and the
+figure came from reading `eslint.config.js` rather than from doing it.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and this is the range that did it.** `ebaa95b` is the B4 amendment and
+contains no code. The measurement it rests on was taken a range earlier,
+deliberately, so the amendment cites a reading rather than an argument.
+
+### 7. Do the documents still match the code?
+
+The amendment's own sweep covered `CLAUDE.md`'s invariant 26 paragraph and its
+repository map, `ARCHITECTURE.md` §1 and §9.26, `eslint.config.js`'s per-runtime
+comment, ADR-0022 (appended, not edited) and the FEATURES row.
+`docs/DECISIONS/README.md` was missed and `check:docs` caught it.
+
+**ARCHITECTURE §1 and §9.26 still say the host body lives in `packages/kernel`,
+and that was deliberately NOT swept up**: the host's subject and mode agree on
+the kernel, so the amendment moves nothing whose two answers already agree.
+
+### Findings
+
+| # | finding | state |
+|---|---|---|
+| DDDD-10 | the cancel-failed branch's case could not separate it by count; only the elapsed time does | **closed** `2d60fea` |
+| DDDD-11 | a control pair varying only the leading marker cannot see the other way to skip too much | **closed** `4880ea0` |
+
+Carried from the previous entry: DDDD-3 and DDDD-4 recorded rather than fixed;
+DDDD-9 answered by ADR-0024.
+
+---
+
 ## 2026-08-25 — Stage audit: `121c0ff..484460a` — the sweep said fifteen of fifteen and could not see the gate that was red
 
 **Audited through `484460a`.** Pasted from `npm run audit:scope`:
