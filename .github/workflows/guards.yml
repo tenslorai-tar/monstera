@@ -380,6 +380,17 @@ jobs:
       # here looks at ABSENCE — annotateCoverage examines invocations that
       # exist, jobPlacement examines steps that exist.
       # The proof first, so the check's silence is worth something when it runs.
+      # A probe that exits 0 having measured nothing makes "could not look" and
+      # "looked and found nothing" the same observation. Three probes decided
+      # that for themselves and two got it wrong in the permissive direction, on
+      # the jobs where a could-not-look cannot legitimately happen. The rule is
+      # one module now; this proves both of its directions.
+      #
+      # Here rather than on a Windows job: the rule is pure JavaScript and reads
+      # no platform, which is what lets it be checked where nothing is installed.
+      - name: Prove a could-not-look is not a pass, and is not a failure either
+        run: node scripts/ci/annotate.mjs scripts/proofs/unverifiable.proof.mjs
+
       - name: Prove the proof-coverage search sees, refuses and matches by path
         run: node scripts/ci/annotate.mjs scripts/proofs/proofCoverage.proof.mjs
 

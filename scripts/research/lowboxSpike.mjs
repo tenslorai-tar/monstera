@@ -447,6 +447,7 @@ import { repoRoot } from '../lib/gitScope.mjs';
 // through `win32HostSurface.ts`'s derived copy, which `proof:win32handle`
 // requires to agree with this module on every value.
 import { INVALID_HANDLE_SOURCE } from '../lib/win32Handle.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
 
 const ROOT = repoRoot();
 const SHIM = join(ROOT, 'native', 'mupdf-shim', 'out', 'monstera_mupdf.dll');
@@ -556,24 +557,23 @@ if (REQUIRE && LOWBOX_SPAWN_PIN === null) {
  * because on a job that provisions everything, "could not look" means something
  * broke.
  *
+ * THE RULE MOVED to `scripts/lib/unverifiable.mjs`, and what is left here is the
+ * subject and the flag. It was settled in this file first, and then written a
+ * second and third time — weaker both times, without the strict half — in
+ * `transportTeardown.mjs` and `transportWrite.mjs`, by the author who had this
+ * one open. A rule that lives in call sites is one the next caller re-derives
+ * (B3a).
+ *
  * @param {string} why
  * @returns {never}
  */
 function unverifiable(why) {
-  if (REQUIRE) {
-    process.stderr.write(
-      `\nCONTAINMENT UNPROVEN, and --require-containment says that is a failure here.\n\n  ${why}\n\n` +
-        `  This flag is passed by the job that provisions Windows, the shim and the build, so a\n` +
-        `  could-not-look on it is something broken rather than something absent.\n`,
-    );
-    process.exit(1);
-  }
-  process.stdout.write(
-    `\n  UNVERIFIABLE  invariant 25's containment is not measured here\n      ${why}\n\n` +
-      `  NOT a pass. Nothing about containment is asserted by this run, and nothing is denied\n` +
-      `  either — the shim job passes --require-containment, where the same condition is red.\n`,
-  );
-  process.exit(0);
+  exitUnverifiable({
+    required: REQUIRE,
+    subject: "invariant 25's containment",
+    why,
+    flag: '--require-containment',
+  });
 }
 
 if (process.platform !== 'win32') {

@@ -85,6 +85,7 @@
     "proof:treewitness": "node scripts/proofs/treeWitness.proof.mjs",
     "proof:teardown": "node scripts/research/transportTeardown.mjs",
     "proof:transportwrite": "node scripts/research/transportWrite.mjs",
+    "proof:unverifiable": "node scripts/proofs/unverifiable.proof.mjs",
     "check:types": "node scripts/lib/typecheck.mjs",
     "proof:typecheck": "node scripts/proofs/typecheck.proof.mjs",
     "check:proofcoverage": "node scripts/lib/proofCoverage.mjs",

@@ -54,6 +54,7 @@ import koffi from 'koffi';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
 
 const ROOT = repoRoot();
 
@@ -72,24 +73,40 @@ const SETUP_BUDGET_MS = 10000;
  */
 const ACK_WINDOW_MS = 750;
 
+/**
+ * Passed by the jobs that provision Windows, the modules and the build.
+ *
+ * A could-not-look THERE is something broken rather than something absent, and
+ * without this flag a missing build would exit 0 on the one job where a missing
+ * build cannot legitimately happen — making a green step and a step that
+ * measured nothing the same observation. `scripts/lib/unverifiable.mjs` owns the
+ * rule; this file only says whether it was asked for.
+ */
+const REQUIRE = process.argv.includes('--require-transport');
+/** @param {string} why @returns {never} */
+const unverifiable = (why) =>
+  exitUnverifiable({
+    required: REQUIRE,
+    subject: "the transport's teardown",
+    why,
+    flag: '--require-transport',
+  });
+
 if (process.platform !== 'win32') {
-  process.stdout.write(
-    'UNVERIFIABLE: this measures Win32 overlapped I/O and a Win32 wait. Nothing here can be ' +
-      'read on another platform, and a pass on one would be a claim about a mechanism that was ' +
-      'not exercised.\n',
+  unverifiable(
+    'this measures Win32 overlapped I/O and a Win32 wait, and neither exists on ' +
+      `${process.platform}.`,
   );
-  process.exit(0);
 }
 
 const BUILT_PIPE_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js');
 const BUILT_PIPE_FACTORY = join(ROOT, 'apps', 'desktop', 'dist', 'enginePipeFactory.js');
 for (const built of [BUILT_PIPE_SURFACE, BUILT_PIPE_FACTORY]) {
   if (!existsSync(built)) {
-    process.stdout.write(
-      `UNVERIFIABLE: ${built} is not built. This drives the SHIPPED pipe rather than a copy, so ` +
-        `without the build there is nothing to measure. Run \`npm run build\`.\n`,
+    unverifiable(
+      `${built} is not built. This drives the SHIPPED pipe rather than a copy, so without the ` +
+        'build there is nothing to measure. Run `npm run build`.',
     );
-    process.exit(0);
   }
 }
 

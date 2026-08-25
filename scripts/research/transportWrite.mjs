@@ -52,6 +52,7 @@ import koffi from 'koffi';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
 
 const ROOT = repoRoot();
 
@@ -72,23 +73,29 @@ const FRAME_BYTES = 4096;
 /** How long the draining client has to receive everything main wrote. */
 const DRAIN_BUDGET_MS = 10000;
 
+/** Passed by the jobs that provision. See `scripts/lib/unverifiable.mjs`. */
+const REQUIRE = process.argv.includes('--require-transport');
+/** @param {string} why @returns {never} */
+const unverifiable = (why) =>
+  exitUnverifiable({
+    required: REQUIRE,
+    subject: "the transport's write path",
+    why,
+    flag: '--require-transport',
+  });
+
 if (process.platform !== 'win32') {
-  process.stdout.write(
-    'UNVERIFIABLE: this measures Win32 overlapped writes. Nothing here can be read on another ' +
-      'platform, and a pass on one would be a claim about a mechanism that was not exercised.\n',
-  );
-  process.exit(0);
+  unverifiable(`this measures Win32 overlapped writes, which do not exist on ${process.platform}.`);
 }
 
 const BUILT_PIPE_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js');
 const BUILT_PIPE_FACTORY = join(ROOT, 'apps', 'desktop', 'dist', 'enginePipeFactory.js');
 for (const built of [BUILT_PIPE_SURFACE, BUILT_PIPE_FACTORY]) {
   if (!existsSync(built)) {
-    process.stdout.write(
-      `UNVERIFIABLE: ${built} is not built. This drives the SHIPPED pipe rather than a copy, so ` +
-        `without the build there is nothing to measure. Run \`npm run build\`.\n`,
+    unverifiable(
+      `${built} is not built. This drives the SHIPPED pipe rather than a copy, so without the ` +
+        'build there is nothing to measure. Run `npm run build`.',
     );
-    process.exit(0);
   }
 }
 
