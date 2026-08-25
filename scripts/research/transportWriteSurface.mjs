@@ -431,16 +431,40 @@ orphaned.client.destroy();
 const POOLED_BYTES = 512;
 const POOLED_FRAMES = 8;
 
+// SAMPLED RATHER THAN TAKEN ONCE, and the reason is a red board.
+//
+// The first version asserted that ONE `Buffer.from` of this size lands at a
+// non-zero byteOffset. It does not, reliably: the pool refills, and the first
+// allocation out of a fresh 8192-byte pool is at offset 0. Measured after CI
+// went red on both Windows jobs — 40 successive 512-byte copies gave
+// `byteOffset === 0` twice, at exactly the refills.
+//
+// So the control depended on where the pool cursor happened to sit when it ran,
+// which every earlier allocation in this file moves — including the socket
+// chunks, whose boundaries differ between machines. A premise resting on ambient
+// state, in the commit whose whole subject was a fixture that excluded the
+// defect it was written for.
+//
+// Two things are asserted instead, and both are deterministic. The SIZES are
+// pool-eligible or not by arithmetic against `Buffer.poolSize`, which is a
+// property rather than a sample. And at least one of two successive copies has a
+// non-zero offset, which holds even from a fresh pool: the first is at 0 and the
+// second is at `POOLED_BYTES`.
+const samples = [
+  Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset,
+  Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset,
+];
 check(
-  'CONTROL: a frame this size IS pooled, so the payload starts at a non-zero offset',
-  Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset !== 0 &&
+  'CONTROL: a frame this size IS pool-eligible, so payloads start at a non-zero offset',
+  POOLED_BYTES < Buffer.poolSize / 2 &&
+    FRAME_BYTES >= Buffer.poolSize / 2 &&
+    samples.some((offset) => offset !== 0) &&
     Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset === 0,
-  `a ${String(POOLED_BYTES)}-byte copy lands at byteOffset ` +
-    `${String(Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset)} and a ` +
-    `${String(FRAME_BYTES)}-byte one at ` +
-    `${String(Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset)}. If neither is pooled the ` +
-    `phase below tests nothing the phases above did not, and the premise has moved — Node's ` +
-    `pool threshold is an implementation detail and this is what notices it changing.`,
+  `poolSize ${String(Buffer.poolSize)}; ${String(POOLED_BYTES)}-byte copies landed at ` +
+    `${JSON.stringify(samples)} and a ${String(FRAME_BYTES)}-byte one at ` +
+    `${String(Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset)}. If the small size stopped ` +
+    `being pooled, the phase below would test nothing the phases above did not — Node's pool ` +
+    `threshold is an implementation detail and this is what notices it moving.`,
 );
 
 const small = await attachedPipe('pooled');
