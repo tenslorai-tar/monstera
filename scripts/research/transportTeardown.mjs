@@ -138,7 +138,7 @@ function waitFor(until, budget) {
  *
  * @param {string} label @param {'connect' | 'read'} stage
  * @param {boolean} withClient whether a client connects before the signal
- * @returns {Promise<{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, code: number | null, took: number }>}
+ * @returns {Promise<{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, code: number | null, took: number, wedged: boolean }>}
  */
 async function runCell(label, stage, withClient) {
   const pipeName = '\\\\.\\pipe\\' + `${CONTAINER}-${String(process.pid)}-${label}`;
@@ -180,14 +180,40 @@ async function runCell(label, stage, withClient) {
   const gone = /** @type {{ code: number | null, took: number }} */ (await exited);
 
   client?.destroy();
+
+  // A WEDGED READER IS REPORTED, NEVER TIDIED UP AFTER (finding CCCC-3).
+  //
+  // Measured 2026-08-25 by removing `FILE_FLAG_OVERLAPPED` from the shipped
+  // surface — the mutation this probe's whole argument rests on. With a
+  // synchronous handle the worker blocks inside `ConnectNamedPipe`, which is the
+  // failure being demonstrated; but `CloseHandle` on that instance then blocks
+  // TOO, and the probe hung for ten minutes instead of failing. A probe whose
+  // failure mode is a hang cannot report the failure it exists to detect, and on
+  // CI that arrives as a job timeout rather than as a named case.
+  //
+  // So the cleanup is skipped when the worker is still alive. The handles leak
+  // into a process that is about to exit non-zero, which is the right trade: the
+  // point of this run is the diagnosis, and a tidy exit that never happens is
+  // worth nothing.
+  if (gone.code === null) {
+    anyWedged = true;
+    process.stderr.write(
+      `\nThe reader did not exit within ${String(TEARDOWN_BUDGET_MS)}ms of the stop, so its ` +
+        `handles are deliberately NOT closed: a thread blocked in a synchronous pipe call blocks ` +
+        `CloseHandle as well, and this probe hanging is a worse outcome than a leak in a process ` +
+        `that is about to die. Cell: ${label}. It said ${JSON.stringify(said)}.\n`,
+    );
+    return { said, entered, ...gone, wedged: true };
+  }
+
   for (const instance of built.value.instances) surface.close(instance);
   CloseHandle(stopEvent);
-  return { said, entered, ...gone };
+  return { said, entered, ...gone, wedged: false };
 }
 
 /**
  * @param {string} what @param {'connect' | 'read'} stage
- * @param {{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, code: number | null, took: number }} cell
+ * @param {{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, code: number | null, took: number, wedged: boolean }} cell
  */
 function assertCell(what, stage, cell) {
   const reached = cell.said.some((m) => m.outcome === 'waiting' && m.stage === stage);
@@ -216,8 +242,55 @@ function assertCell(what, stage, cell) {
   );
 }
 
+/** Set when a reader outlived its budget, which changes how this process ends. */
+let anyWedged = false;
+
+/**
+ * Prints what failed and stops. Never returns.
+ *
+ * ## `process.exit` IS NOT ENOUGH WHEN A READER IS WEDGED (finding CCCC-3)
+ *
+ * Measured 2026-08-25, twice, by removing `FILE_FLAG_OVERLAPPED` from the
+ * shipped surface. The first version tidied up before reporting, and
+ * `CloseHandle` on an instance with a blocked synchronous `ConnectNamedPipe`
+ * blocks as well — the probe hung for ten minutes and reported nothing. Skipping
+ * the cleanup fixed that half: the three failing cases printed with their
+ * diagnoses. And then the process still did not exit. `process.exit(1)` does not
+ * end a process whose worker thread is inside a syscall.
+ *
+ * So a wedged run ends with `TerminateProcess`, which is what
+ * `process.kill(SIGKILL)` is on Windows. The exit code is non-zero either way
+ * and the diagnosis is already on stderr; what this buys is that CI sees a
+ * FAILING STEP rather than a job timeout, and a reader gets the reason rather
+ * than a wall clock.
+ *
+ * A probe whose failure mode is a hang cannot report the failure it exists to
+ * detect. That is worth more than the instance: this one's whole subject is
+ * teardown, and its own teardown was the thing that did not work.
+ */
+function bail() {
+  process.stderr.write(
+    `\nTransport teardown — ${String(failures.length)} failure(s):\n\n` +
+      failures.map((failure) => `  - ${failure}`).join('\n\n') +
+      `\n\n`,
+  );
+  if (anyWedged) {
+    process.stderr.write(
+      'A reader is still inside a syscall, so this process cannot exit normally and is being ' +
+        'terminated. The failures above are the result; the termination is not one of them.\n',
+    );
+    process.kill(process.pid, 'SIGKILL');
+  }
+  process.exit(1);
+}
+
 const waitingForClient = await runCell('noclient', 'connect', false);
 assertCell('waiting-for-a-client', 'connect', waitingForClient);
+
+// ONE WEDGED READER IS ENOUGH. Running the second cell would only produce a
+// second thread nothing can stop, and this process then exits with two of them
+// alive. The first failure is the whole diagnosis.
+if (waitingForClient.wedged) bail();
 
 const waitingForBytes = await runCell('silent', 'read', true);
 assertCell('waiting-for-bytes', 'read', waitingForBytes);
@@ -245,13 +318,6 @@ process.stdout.write(
     `exited ${String(waitingForBytes.took)}ms after the signal, code ${String(waitingForBytes.code)}\n\n`,
 );
 
-if (failures.length > 0) {
-  process.stderr.write(
-    `\nTransport teardown — ${String(failures.length)} failure(s):\n\n` +
-      failures.map((failure) => `  - ${failure}`).join('\n\n') +
-      `\n\n`,
-  );
-  process.exit(1);
-}
+if (failures.length > 0) bail();
 
 process.stdout.write(`${roster.format('teardown case')}`);
