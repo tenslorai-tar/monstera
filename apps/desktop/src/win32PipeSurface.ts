@@ -530,7 +530,15 @@ export function createWin32WriteSurface(pipe: PipeHandle): Win32WriteSurface {
       // and the contract is the documented one: the buffer must remain valid
       // until the operation completes, and *valid* is not a promise about
       // contents that this repository gets to make on the caller's behalf. The
-      // cost is one 4KB copy per frame, bounded by the queue's limit.
+      // cost is one copy per frame, bounded by the queue's limit.
+      //
+      // AND THE COPY IS POOLED for anything under `Buffer.poolSize / 2`, so
+      // `payload.byteOffset` is usually NOT zero — measured: a 512-byte copy
+      // lands at offset 528 inside a shared 8192-byte buffer, while a 4096-byte
+      // one gets offset 0 and a buffer of its own. koffi passes the view's
+      // start, which is what makes this correct, and that was UNPROVEN until a
+      // pooled frame was written: the probe's frames were 4096 bytes, the one
+      // size that is not pooled. Dropping the offset reddens that case alone.
       const payload = Buffer.from(frame);
       const written: unknown[] = [0];
       const ok = bindings.writeFile(pipe, payload, payload.length, written, overlapped);

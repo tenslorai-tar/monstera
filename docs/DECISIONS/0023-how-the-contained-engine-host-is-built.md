@@ -1265,3 +1265,38 @@ would be an active handle keeping the thread alive past its Win32 work — measu
 on the probe that first added an acknowledgement — and it could not be delivered
 anyway while the thread is inside its wait, which is where it spends its life.
 Main says one thing, *stop*, by signalling an event the wait is already watching.
+
+### Addition, 2026-08-25 — the write probe's frame size was the one that hides a pooled payload
+
+Taken because the reader's clone-size finding said the write side's copy deserved
+the same second look, and it did.
+
+The adapter copies with `Buffer.from(frame)`, and **Node pools that copy** for
+anything under `Buffer.poolSize / 2`. Measured:
+
+| copy size | `byteOffset` | underlying buffer |
+|---|---|---|
+| 64 | 416 | 8192 |
+| 512 | 528 | 8192 |
+| 2048 | 1088 | 8192 |
+| 4095 | 3184 | 8192 |
+| **4096** | **0** | **4096** |
+
+`transportWriteSurface.mjs` used `FRAME_BYTES = 4096` — **exactly the size that
+is not pooled** — so every case handed `WriteFile` a payload starting at offset
+zero. A real transport's frames are whatever a message serialises to, which is
+mostly under that.
+
+If the offset were dropped anywhere on that path, every sub-4096 frame would
+write bytes belonging to another allocation in the shared pool, and no fixture
+here could have seen it: item 2's *easy shape only* and item 4's *never build a
+fixture the bug also handles correctly*, meeting in one constant.
+
+**koffi passes the view's start, so the shipped code was right — and unproven.**
+A fifth phase writes eight 512-byte frames through the shipped queue and compares
+the bytes, with a control asserting that a frame of that size really is pooled
+while a 4096-byte one is not (the pool threshold is an implementation detail, and
+that control is what notices it moving). Mutated by passing
+`Buffer.from(payload.buffer, 0, payload.length)` — the offset dropped — the new
+case reddens **alone**, which is the demonstration that the older fixture was
+blind to the class rather than merely quiet about it.

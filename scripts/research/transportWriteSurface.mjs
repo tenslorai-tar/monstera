@@ -101,7 +101,7 @@ const { createHostWriteQueue } = await import(pathToFileURL(BUILT.writeQueue).hr
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 14 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -409,6 +409,90 @@ check(
 );
 
 orphaned.client.destroy();
+
+// ---------------------------------------------------------------------------
+// PHASE 5 — A FRAME SMALL ENOUGH TO BE POOLED, which every phase above avoided.
+//
+// The adapter copies with `Buffer.from(frame)`, and Node pools that copy for
+// anything under `Buffer.poolSize / 2`. Measured: a 512-byte copy lands at
+// byteOffset 528 inside a shared 8192-byte buffer, while a 4096-byte copy gets
+// byteOffset 0 and a buffer of its own.
+//
+// FRAME_BYTES is 4096 — exactly the size that is NOT pooled — so every case
+// above handed `WriteFile` a payload starting at offset zero. If koffi passed
+// the underlying buffer's base rather than the view's start, every sub-4096
+// frame would write the wrong bytes and the fixture could not see it: item 2's
+// easy shape and item 4's fixture-the-bug-also-handles-correctly, in one
+// constant.
+//
+// A real transport's frames are whatever a message serialises to, which is
+// mostly under 4096.
+// ---------------------------------------------------------------------------
+const POOLED_BYTES = 512;
+const POOLED_FRAMES = 8;
+
+check(
+  'CONTROL: a frame this size IS pooled, so the payload starts at a non-zero offset',
+  Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset !== 0 &&
+    Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset === 0,
+  `a ${String(POOLED_BYTES)}-byte copy lands at byteOffset ` +
+    `${String(Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset)} and a ` +
+    `${String(FRAME_BYTES)}-byte one at ` +
+    `${String(Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset)}. If neither is pooled the ` +
+    `phase below tests nothing the phases above did not, and the premise has moved — Node's ` +
+    `pool threshold is an implementation detail and this is what notices it changing.`,
+);
+
+const small = await attachedPipe('pooled');
+const smallSurface = createWin32WriteSurface(small.pipe);
+const smallQueue = createHostWriteQueue(smallSurface, ROOMY);
+
+const smallFrames = Array.from({ length: POOLED_FRAMES }, (_, index) => {
+  const frame = Buffer.alloc(POOLED_BYTES, (index + 1) % 256);
+  frame.writeUInt32LE(index, 0);
+  return frame;
+});
+const smallExpected = Buffer.concat(smallFrames);
+
+/** @type {string[]} */
+const smallRefusals = [];
+for (const frame of smallFrames) {
+  const outcome = smallQueue.write(frame);
+  if (!outcome.ok) smallRefusals.push(outcome.refusal.reason);
+}
+
+/** @type {Buffer[]} */
+const smallReceived = [];
+small.client.on('data', (chunk) => smallReceived.push(chunk));
+small.client.resume();
+
+const smallStarted = Date.now();
+while (
+  smallReceived.reduce((sum, chunk) => sum + chunk.length, 0) < smallExpected.length &&
+  Date.now() - smallStarted < DRAIN_BUDGET_MS
+) {
+  await rest(20);
+}
+const smallStream = Buffer.concat(smallReceived);
+
+check(
+  'a pooled payload is accepted by the shipped queue',
+  smallRefusals.length === 0,
+  `${String(smallRefusals.length)} refusal(s): ${JSON.stringify(smallRefusals)}.`,
+);
+
+check(
+  'AND ITS BYTES ARRIVE UNCHANGED, so the offset inside the pool is respected',
+  smallStream.equals(smallExpected),
+  `received ${String(smallStream.length)} of ${String(smallExpected.length)} bytes` +
+    `${smallStream.length === smallExpected.length ? ', differing in content' : ''}. A payload ` +
+    `whose start is ${String(Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset)} bytes into a ` +
+    `shared pool writes whatever sits at the pool's base if the offset is dropped — bytes from ` +
+    `another allocation entirely, which is the one corruption a byte COUNT cannot see either.`,
+);
+
+smallQueue.close();
+closePhase(small);
 
 process.stdout.write(
   `\n  ${String(durations.length)} frame(s) through the shipped queue, slowest ` +
