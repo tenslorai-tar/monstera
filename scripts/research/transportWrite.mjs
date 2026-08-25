@@ -32,8 +32,42 @@
  * ## What separates the cases
  *
  * The reassuring answer is *nothing blocked*, and a write that never reached the
- * pipe produces it too. So the client reads the bytes back and they are compared
- * — a control on the whole path, not just on the timings.
+ * pipe produces it too. So the client reads the bytes back and the stream is
+ * compared against the exact concatenation main issued — a control on the whole
+ * path, not just on the timings.
+ *
+ * ## And ordering, which is a second property and the one the design rests on
+ *
+ * The pipe is created in BYTE mode (`CreateNamedPipeW`'s pipe mode is 0), and
+ * ADR-0023 §4 puts length-prefixed framing on top of that stream. With N
+ * overlapped writes outstanding on one handle, whether completions preserve
+ * issue order decides whether that framing holds: a reorder desynchronises the
+ * length field from our OWN side, which is the hazard that ADR reasoned about
+ * arriving from the peer.
+ *
+ * A byte-count comparison cannot see it. 64 frames of 4096 identical bytes sum
+ * to 262144 in any order, so the defect that would sink the design produces the
+ * reassuring answer — CLAUDE.md item 4's *never build a fixture the bug also
+ * handles correctly*, sitting inside the control added to be the whole-path
+ * control. Each frame therefore names its own index, and the received stream is
+ * compared byte for byte.
+ *
+ * ## What ordering here is measured over, and what is reasoned about
+ *
+ * MEASURED: up to 63 writes outstanding at once on one handle, issued into a
+ * peer that is not reading, drained afterwards. That is the state the third
+ * design puts main in.
+ *
+ * NOT MEASURED, and the reasoning is recorded rather than the case built: a
+ * batch issued while the peer is actively draining, so that inline completions
+ * and pending ones interleave. A write completes inline only when the pipe has
+ * room, and room exists only once the bytes ahead of it have been consumed — so
+ * an inline completion cannot be issued while an earlier write of this handle's
+ * is still holding bytes in the buffer, and the interleaving the case would
+ * construct does not arise. Building it would mean starving a reader at a rate
+ * tuned to make some writes pend and others not, which is a case that passes or
+ * fails on the runner's speed. This paragraph is an ARGUMENT; the cases below
+ * are the measurement, and the two are not to be read as one.
  *
  * The blocking case is built from a client that CONNECTS AND NEVER READS, and
  * the volume is many times the pipe's buffer. A write that would block has to
@@ -125,7 +159,7 @@ const POINTER = koffi.sizeof('void *');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 9 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -199,15 +233,39 @@ check(
     `write fails for a different reason entirely and the numbers would mean nothing.`,
 );
 
+/**
+ * Frame `i` is filled with byte `i % 256` and carries `i` as a little-endian
+ * uint32 at offset 0.
+ *
+ * The uint32 rather than the fill alone: above 256 frames two would share a fill
+ * value, and a swap between exactly those two would be invisible again — a
+ * fixture that discriminates only while a constant stays small is one that stops
+ * discriminating without saying so.
+ */
+const frames = Array.from({ length: FRAMES }, (_, index) => {
+  const frame = Buffer.alloc(FRAME_BYTES, index % 256);
+  frame.writeUInt32LE(index, 0);
+  return frame;
+});
+const expectedStream = Buffer.concat(frames);
+
+check(
+  'CONTROL: no two frames carry the same bytes, so a swap between any pair is visible',
+  new Set(frames.map((frame) => frame.toString('base64'))).size === FRAMES,
+  `${String(new Set(frames.map((frame) => frame.toString('base64'))).size)} distinct frames out ` +
+    `of ${String(FRAMES)}. Two frames with identical bytes exchange places without changing the ` +
+    `stream, so the ordering case below would report agreement for a reorder it cannot see — the ` +
+    `same blindness a byte-count comparison has, one layer further in.`,
+);
+
 /** @type {Array<ReturnType<typeof pending>>} */
 const outstanding = [];
 /** @type {number[]} */
 const durations = [];
 let refusedAt = -1;
 
-for (let index = 0; index < FRAMES; index += 1) {
-  const payload = Buffer.alloc(FRAME_BYTES, index % 256);
-  const slot = pending(payload);
+for (const [index, frame] of frames.entries()) {
+  const slot = pending(frame);
   const written = [0];
   const started = Date.now();
   const ok = WriteFile(pipe, slot.payload, slot.payload.length, written, slot.overlapped);
@@ -288,13 +346,44 @@ while (
   await rest(20);
 }
 
-const delivered = received.reduce((sum, chunk) => sum + chunk.length, 0);
+const stream = Buffer.concat(received);
+const delivered = stream.length;
 check(
   'THE CONTROL: every byte main wrote arrives at the peer',
-  delivered === FRAMES * FRAME_BYTES,
-  `the client received ${String(delivered)} of ${String(FRAMES * FRAME_BYTES)} bytes. Without ` +
+  delivered === expectedStream.length,
+  `the client received ${String(delivered)} of ${String(expectedStream.length)} bytes. Without ` +
     `this, "nothing blocked" is also what a write that never reached the pipe reports — the ` +
     `timings alone cannot tell a fast path from an absent one.`,
+);
+
+/**
+ * The first offset at which the received stream differs from what main issued,
+ * or -1 for identical. A short stream differs at its own end, so a truncation
+ * is reported as a position rather than being read as agreement over the part
+ * that arrived.
+ */
+const firstDifference = (() => {
+  const shared = Math.min(stream.length, expectedStream.length);
+  for (let at = 0; at < shared; at += 1) {
+    if (stream[at] !== expectedStream[at]) return at;
+  }
+  return stream.length === expectedStream.length ? -1 : shared;
+})();
+
+check(
+  'AND IN THE ORDER MAIN ISSUED THEM: outstanding writes do not reorder the byte stream',
+  firstDifference === -1,
+  firstDifference >= expectedStream.length || firstDifference >= stream.length
+    ? `the streams agree for ${String(firstDifference)} bytes and then one of them ends. A ` +
+      `truncation is the byte-count case's finding; this one is here to say the prefix was in ` +
+      `order, so the two failures are not confused.`
+    : `first difference at byte ${String(firstDifference)}, inside frame ` +
+      `${String(Math.floor(firstDifference / FRAME_BYTES))}: expected ` +
+      `${String(expectedStream[firstDifference])}, received ${String(stream[firstDifference])}. ` +
+      `The frames were issued in index order with ${String(FRAMES)} writes outstanding on one ` +
+      `byte-mode handle. If completions do not preserve issue order, the length-prefixed framing ` +
+      `ADR-0023 §4 puts on this stream desynchronises from OUR side — and every byte still ` +
+      `arrives, so nothing else in this file can see it.`,
 );
 
 check(
@@ -316,7 +405,8 @@ process.stdout.write(
     `  slowest ${String(slowest)}ms, total ${String(total)}ms\n` +
     `  ${String(reapedBeforeDraining)} of ${String(outstanding.length)} had completed before the ` +
     `peer drained\n` +
-    `  ${String(delivered)} byte(s) delivered\n\n`,
+    `  ${String(delivered)} byte(s) delivered, ` +
+    `${firstDifference === -1 ? 'in issue order' : `first difference at byte ${String(firstDifference)}`}\n\n`,
 );
 
 silent.destroy();

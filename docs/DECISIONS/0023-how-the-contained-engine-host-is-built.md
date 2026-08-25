@@ -945,3 +945,58 @@ Two further facts, both found by the probe rather than by reasoning:
   milliseconds and it stopped reaching its wait at all. Its assertions had been
   about the stop event, which is a different handle and did work, which is why
   nothing showed.
+
+### Correction, 2026-08-25 — the whole-path control compared a byte COUNT, and ordering is the property the third candidate rests on
+
+The section above says the probe's last row is a control on the whole path. The
+row is `delivered to the peer | 262144 of 262144`, and what the case compared was
+`received.reduce((sum, chunk) => sum + chunk.length, 0)` against
+`FRAMES * FRAME_BYTES` — **a length sum**. Every clause of the sentence beside it
+was nearly true, which is why it read as a content check.
+
+That is not only a comment defect. The pipe is created in BYTE mode
+(`CreateNamedPipeW`'s pipe mode is 0) and §4 above puts length-prefixed framing on
+that stream. With 63 writes outstanding on one handle, whether completions
+preserve issue order decides whether the framing holds — a reorder desynchronises
+the length field **from our own side**, which is the hazard §4 reasoned about
+arriving from the peer. Sixty-four frames of 4096 identical bytes sum to 262144 in
+any order, so the defect that would sink the candidate produced the reassuring
+answer, inside the control added to be the whole-path control.
+
+Each frame now names its own index — filled with `index % 256` and carrying
+`index` as a little-endian uint32 at offset 0 — and the received stream is
+compared byte for byte against the concatenation main issued. Nine cases; the two
+that are new:
+
+| | |
+|---|---|
+| the stream the peer received, against what main issued | **identical**, 262144 bytes, first difference none |
+| CONTROL: no two frames carry the same bytes | 64 distinct of 64 |
+
+Both were mutated before the reading was taken:
+
+- issuing two frames in exchanged order left the byte count at 262144 and
+  reddened the new case at *byte 0, inside frame 0: expected 0, received 1* —
+  the failure the old fixture could not distinguish from success;
+- filling frames with `index % 2` and dropping the uint32 reddened the
+  distinctness control at *2 distinct frames out of 64*, while the ordering case
+  still reported *in issue order* — which is the blindness that control exists to
+  announce rather than to survive.
+
+**The reading: order is preserved.** 64 frames, 63 outstanding at the moment of
+reaping, delivered to the peer in issue order, byte for byte. The uint32 prefix
+rather than the fill alone because above 256 frames two would share a fill value,
+and a fixture that discriminates only while a constant stays small stops
+discriminating without saying so.
+
+**What that covers, stated so it is not read wider than it is.** MEASURED: up to
+63 writes outstanding at once on one handle, issued into a peer that is not
+reading, drained afterwards — the state the third candidate puts main in. NOT
+MEASURED: a batch issued while the peer is actively draining, so inline and
+pending completions interleave. The probe records the reasoning instead of
+building that case, and records it AS an argument: a write completes inline only
+when the pipe has room, and room exists only once the bytes ahead of it have been
+consumed, so an inline completion cannot be issued while an earlier write on the
+same handle still holds bytes in the buffer. Constructing the interleaving would
+mean starving a reader at a rate tuned to make some writes pend and others not,
+which is a case that passes or fails on the runner's speed.
