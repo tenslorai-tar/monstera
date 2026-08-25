@@ -874,3 +874,46 @@ milliseconds, which nothing here has measured. Recorded under finding CCCC-1
 because the shape is the one item 7 names: a compound claim whose live clause
 vouches for the dead one beside it, written an hour after the measurement it
 describes.
+
+### Addition, 2026-08-25 — a waiting reader cannot be told anything, so writes do not travel by message
+
+The reader thread blocks in `WaitForMultipleObjects`, which means it is not
+running JavaScript. **A message sent to it while it waits is not delivered until
+the wait returns** — measured, and with the control that makes the silence mean
+something:
+
+| the reader is | a message sent to it |
+|---|---|
+| idle in its own event loop, before any Win32 call | acknowledged |
+| inside either wait | **nothing within 750ms** |
+
+The acknowledgement for the second one does arrive — after the stop event fires
+and the wait returns. So the port is not broken and the message is not lost; it
+is queued behind a thread that cannot run.
+
+**This rules out the simplest write path.** `postMessage` into the reader would
+mean frames sit in a queue until something unrelated wakes it, which is the
+opposite of what a transport owes its caller. The write side therefore needs a
+mechanism that does not require the reader to run JavaScript, and the candidates
+are: a **third handle** the same thread also waits on, with the frame in shared
+memory; a **second thread** for writes; or **main issuing overlapped writes
+itself** and reaping completions when it next has business rather than on a
+timer. That choice is not made here.
+
+Two further facts, both found by the probe rather than by reasoning:
+
+- **A worker holding a `parentPort` message listener does not exit.** The
+  listener is an active handle in its event loop, so a reader that registers one
+  outlives its Win32 work. Measured by adding the acknowledgement listener: the
+  connect cell's worker then outlived its 2000ms budget with everything else
+  unchanged, and the probe reported a wedged reader that was not wedged. The
+  shipped reader must `unref` its port or end explicitly.
+- **`OVERLAPPED.hEvent` is the fourth pointer-sized field, at offset 3.** The
+  probe had it at offset 4, so `hEvent` was NULL and the kernel signalled the
+  file handle instead of an event. The read cell passed anyway for several runs,
+  because the client happened to connect before `ConnectNamedPipe` was issued and
+  the call returned `ERROR_PIPE_CONNECTED` without needing the event — the cell
+  was being SET UP by a race. Adding the handshake moved the timing by a few
+  milliseconds and it stopped reaching its wait at all. Its assertions had been
+  about the stop event, which is a different handle and did work, which is why
+  nothing showed.

@@ -65,8 +65,37 @@ const POINTER = koffi.sizeof('void *');
 /** @param {Record<string, unknown>} message */
 const say = (message) => parentPort?.postMessage(message);
 
+/**
+ * EVERY MESSAGE FROM MAIN IS ACKNOWLEDGED, and the acknowledgements are a
+ * measurement rather than a protocol.
+ *
+ * The question is whether main can TELL this thread anything while it is inside
+ * `WaitForMultipleObjects`. A worker blocked in a synchronous FFI call cannot
+ * run its JavaScript event loop, so a handler registered here should not fire
+ * until the wait returns — which, if true, means writes cannot reach a reader
+ * through `postMessage` and the write path needs a different mechanism.
+ *
+ * That is a claim about the runtime, so it is measured rather than reasoned:
+ * the handshake below is the control (an idle worker DOES acknowledge), and the
+ * message main sends during a wait is the probe.
+ */
+let acked = 0;
+parentPort?.on('message', (message) => {
+  acked += 1;
+  say({ outcome: 'ack', stage: String(message), detail: `acknowledged while ${String(acked)} seen` });
+});
+
 try {
   const { pipeAddress, stopAddress } = workerData;
+
+  // THE HANDSHAKE, and it is the control for the probe above. This thread is
+  // idle in its own event loop here — nothing Win32 has been called — so an
+  // acknowledgement must arrive. Without it, "no acknowledgement during the
+  // wait" would be indistinguishable from "acknowledgements do not work".
+  say({ outcome: 'ready', stage: 'handshake', detail: 'idle in the event loop, before any Win32 call' });
+  await new Promise((go) => {
+    parentPort?.once('message', () => go(undefined));
+  });
 
   // The address back into a pointer. koffi takes an integer for a `void *`,
   // which is the step this file confirms as much as the waits are.
@@ -78,11 +107,25 @@ try {
   // reused across the two waits, so it is reset by hand between them.
   const done = CreateEventW(null, true, false, null);
 
-  // OVERLAPPED is five pointer-sized fields and only `hEvent` is set. Built here
-  // rather than passed in: it must outlive the call, and a buffer main owns is
-  // one two threads then reference.
-  const overlapped = Buffer.alloc(POINTER * 5);
-  koffi.encode(overlapped, POINTER * 4, 'void *', done);
+  // OVERLAPPED IS FOUR POINTER-SIZED FIELDS AND `hEvent` IS THE FOURTH, at
+  // offset 3 — `Internal`, `InternalHigh`, the `Offset`/`Pointer` union, then
+  // `hEvent`. Built here rather than passed in: it must outlive the call, and a
+  // buffer main owns is one two threads then reference.
+  //
+  // WRITTEN WRONG FIRST, at five fields with `hEvent` at offset 4, and the
+  // failure is the reason this comment gives the layout. With `hEvent` left NULL
+  // the kernel signals the FILE HANDLE instead of an event, so nothing this
+  // thread waits on ever fires — and the probe still went green, because the
+  // client happened to connect before `ConnectNamedPipe` was issued and the call
+  // returned `ERROR_PIPE_CONNECTED` without ever needing the event. Adding a
+  // handshake changed that timing by a few milliseconds and the cell that had
+  // been passing stopped reaching its wait at all.
+  //
+  // So the read cell was being SET UP by a race rather than by the mechanism, on
+  // every run before this one. Its assertions were about the stop event, which
+  // is a different handle and did work — which is exactly why nothing showed.
+  const overlapped = Buffer.alloc(POINTER * 4);
+  koffi.encode(overlapped, POINTER * 3, 'void *', done);
 
   // Two contiguous pointers: index 0 is the operation completing, index 1 is
   // main asking this thread to stop.
@@ -166,6 +209,18 @@ try {
   }
 
   CloseHandle(done);
+
+  // A LISTENER KEEPS THIS THREAD ALIVE, and that is a fact about the shipped
+  // reader as much as about this probe. `parentPort.on('message')` is an active
+  // handle in the worker's event loop, so a reader that registers one does not
+  // exit when its Win32 work is done — measured here: with the acknowledgement
+  // listener added, the connect cell's worker outlived its 2000ms budget with
+  // everything else unchanged, and the probe reported a wedged reader that was
+  // not wedged at all.
+  //
+  // `unref` rather than `close`: messages already posted still flush, and the
+  // thread stops being held open by a port nobody will send to again.
+  parentPort?.unref();
 } catch (error) {
   // A throw is not a refusal and not a clean stop. Reported as itself so a
   // broken binding cannot read as a teardown that worked.

@@ -61,6 +61,16 @@ const ROOT = repoRoot();
 const TEARDOWN_BUDGET_MS = 2000;
 /** How long main waits for the worker to report the wait this cell is about. */
 const SETUP_BUDGET_MS = 10000;
+/**
+ * How long an acknowledgement has to arrive while the reader is inside its wait.
+ *
+ * Generous on purpose: this window's job is to make *no acknowledgement* mean
+ * something, and a short one would report the runtime's scheduling rather than
+ * the property. The handshake acknowledgement, taken while the worker is idle,
+ * arrives in single-digit milliseconds — so anything not seen in this window is
+ * not late, it is blocked.
+ */
+const ACK_WINDOW_MS = 750;
 
 if (process.platform !== 'win32') {
   process.stdout.write(
@@ -97,8 +107,12 @@ const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
 
 /** @type {string[]} */
 const failures = [];
-/** Three per cell — setup, the stop, the exit — plus the one handle fact. */
-const roster = createRoster(failures, { cases: 7 });
+/**
+ * Three per cell — setup, the stop, the exit — plus three facts read across
+ * both: the handle addresses, the idle acknowledgement, and the silence during
+ * the wait.
+ */
+const roster = createRoster(failures, { cases: 9 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -138,7 +152,7 @@ function waitFor(until, budget) {
  *
  * @param {string} label @param {'connect' | 'read'} stage
  * @param {boolean} withClient whether a client connects before the signal
- * @returns {Promise<{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, code: number | null, took: number, wedged: boolean }>}
+ * @returns {Promise<{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, ackedDuring: number, code: number | null, took: number, wedged: boolean }>}
  */
 async function runCell(label, stage, withClient) {
   const pipeName = '\\\\.\\pipe\\' + `${CONTAINER}-${String(process.pid)}-${label}`;
@@ -162,13 +176,30 @@ async function runCell(label, stage, withClient) {
   });
   worker.on('message', (message) => said.push(message));
 
+  // THE HANDSHAKE. The worker is idle in its own event loop until this arrives,
+  // which is what makes the acknowledgement a control rather than a race.
+  await waitFor(() => said.some((m) => m.outcome === 'ready'), SETUP_BUDGET_MS);
+  worker.postMessage('handshake');
+  await waitFor(() => said.some((m) => m.outcome === 'ack'), SETUP_BUDGET_MS);
+
   const client = withClient ? connect(pipeName) : null;
-  client?.on('error', () => undefined);
+  client?.on('error', (error) =>
+    process.stderr.write(`  the ${label} cell's client could not connect: ${error.message}\n`),
+  );
 
   const entered = await waitFor(
     () => said.some((m) => m.outcome === 'waiting' && m.stage === stage),
     SETUP_BUDGET_MS,
   );
+
+  // AND THE PROBE. The reader is inside WaitForMultipleObjects now. If a message
+  // sent here is acknowledged, writes can reach it through postMessage; if it is
+  // not, the write path needs a mechanism that does not require this thread to
+  // run JavaScript.
+  const ackedBefore = said.filter((m) => m.outcome === 'ack').length;
+  worker.postMessage('during-the-wait');
+  await waitFor(() => false, ACK_WINDOW_MS);
+  const ackedDuring = said.filter((m) => m.outcome === 'ack').length - ackedBefore;
 
   const exited = new Promise((resolve) => {
     const started = Date.now();
@@ -203,17 +234,17 @@ async function runCell(label, stage, withClient) {
         `CloseHandle as well, and this probe hanging is a worse outcome than a leak in a process ` +
         `that is about to die. Cell: ${label}. It said ${JSON.stringify(said)}.\n`,
     );
-    return { said, entered, ...gone, wedged: true };
+    return { said, entered, ackedDuring, ...gone, wedged: true };
   }
 
   for (const instance of built.value.instances) surface.close(instance);
   CloseHandle(stopEvent);
-  return { said, entered, ...gone, wedged: false };
+  return { said, entered, ackedDuring, ...gone, wedged: false };
 }
 
 /**
  * @param {string} what @param {'connect' | 'read'} stage
- * @param {{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, code: number | null, took: number, wedged: boolean }} cell
+ * @param {{ said: Array<{ outcome: string, stage: string, detail: string }>, entered: number, ackedDuring: number, code: number | null, took: number, wedged: boolean }} cell
  */
 function assertCell(what, stage, cell) {
   const reached = cell.said.some((m) => m.outcome === 'waiting' && m.stage === stage);
@@ -300,6 +331,46 @@ assertCell('waiting-for-bytes', 'read', waitingForBytes);
 // handle travelled as an address. Had it not, the shipped adapter would have to
 // create the pipe INSIDE the worker — which moves where createHostPipe is
 // called, so this is a design reading rather than a harness detail.
+// CAN MAIN TELL THE READER ANYTHING WHILE IT IS WAITING?
+//
+// This decides the WRITE path, which is the transport's last unbuilt half. If a
+// message sent during the wait is acknowledged, writes can reach the reader
+// through `postMessage` and one thread does both directions. If it is not, a
+// blocked worker cannot run JavaScript, and writes need a mechanism that does
+// not require it to — a third handle it also waits on, a second thread, or main
+// issuing overlapped writes itself.
+//
+// Its control is the handshake, taken in every cell while the worker is idle in
+// its own event loop and before any Win32 call: an acknowledgement MUST arrive
+// there, or "none during the wait" would be indistinguishable from
+// "acknowledgements do not work at all".
+//
+// THE PAIR IS THE SEPARATION, and no mutation improves on it. The two
+// measurements use the same worker, the same port and the same message, and
+// differ in exactly one thing — whether the thread is inside the wait. A
+// mutation that made the worker idle where it should be waiting would only
+// re-run the control; one that made it busy without yielding would block the
+// event loop too and prove nothing about waits.
+check(
+  'CONTROL: an idle reader acknowledges a message',
+  [waitingForClient, waitingForBytes].every((cell) =>
+    cell.said.some((m) => m.outcome === 'ack' && m.stage === 'handshake'),
+  ),
+  `the cells said ${JSON.stringify([waitingForClient.said, waitingForBytes.said])}. Without this ` +
+    `the case below is a probe that cannot observe anything, and its silence would be read as a ` +
+    `property of the runtime.`,
+);
+
+check(
+  `a reader inside its wait acknowledges NOTHING within ${String(ACK_WINDOW_MS)}ms`,
+  waitingForClient.ackedDuring === 0 && waitingForBytes.ackedDuring === 0,
+  `acknowledgements during the wait: ${String(waitingForClient.ackedDuring)} at the connect wait ` +
+    `and ${String(waitingForBytes.ackedDuring)} at the read wait. If either is non-zero the ` +
+    `runtime does deliver messages to a thread blocked in a synchronous FFI call, which would ` +
+    `mean writes CAN travel by postMessage — a materially simpler transport than the one this ` +
+    `reading rules out. Read the numbers before believing either design.`,
+);
+
 check(
   'HANDLES CROSS AS ADDRESSES: both readers drove a pipe main created',
   [waitingForClient, waitingForBytes].every((cell) =>
