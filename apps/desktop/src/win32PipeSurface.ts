@@ -515,9 +515,20 @@ export function createWin32WriteSurface(pipe: PipeHandle): Win32WriteSurface {
       if (writes.length === 0) return;
       const cancelled = bindings.cancelIoEx(pipe, null);
       if (cancelled !== true && bindings.lastError() !== ERROR_NOT_FOUND) {
-        // NOTHING IS FREED AND NOTHING IS WAITED FOR. The kernel may still own
-        // every one of these, and the wait that would find out is the one
-        // measured never to return.
+        // NOTHING IS FREED AND NOTHING IS POLLED. The kernel may still own every
+        // one of these, so freeing them is the corruption this module is
+        // arranged to avoid.
+        //
+        // AND THE POLL BELOW WOULD NEVER SETTLE THEM, measured 2026-08-25 by
+        // inverting this test: with the handle already closed,
+        // `GetOverlappedResult(…, wait: false)` keeps answering
+        // `ERROR_IO_INCOMPLETE` — it reads the structure's own status and the
+        // status of a request whose handle went away does not move. The
+        // inverted build polled to the full budget and stranded them anyway, so
+        // the branch buys 250ms per teardown and no different outcome.
+        //
+        // That is why the case separating this path asserts the TIME as well as
+        // the count. The count alone does not: both paths strand everything.
         strandedCount += writes.length;
         return;
       }

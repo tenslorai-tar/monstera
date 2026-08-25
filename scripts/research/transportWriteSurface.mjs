@@ -101,7 +101,7 @@ const { createHostWriteQueue } = await import(pathToFileURL(BUILT.writeQueue).hr
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 11 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -359,6 +359,56 @@ check(
     `in the process that must stay responsive.`,
 );
 closePhase(torn);
+
+// ---------------------------------------------------------------------------
+// PHASE 4 — A TEARDOWN WHOSE CANCEL FAILS (finding DDDD-8).
+//
+// `abandon` has two paths and only one had a case. When `CancelIoEx` fails for
+// a reason other than `ERROR_NOT_FOUND`, the writes are still the kernel's, so
+// nothing is freed and nothing is waited for — because the wait after a cancel
+// that did not happen is the one measured never to return. That branch is what
+// decides whether main hangs, and it was reached by nothing: the mutation that
+// removed the cancel exercised the POLL TIMEOUT instead, which is the other
+// path entirely.
+//
+// The fixture is one the absent guard would let through: close the pipe handle
+// first, so `CancelIoEx` is called on a handle that no longer exists and fails
+// with `ERROR_INVALID_HANDLE` rather than `ERROR_NOT_FOUND`. That is a real
+// shape — a composer that closes the pipe before tearing the queue down — and
+// not a hypothetical.
+// ---------------------------------------------------------------------------
+const orphaned = await attachedPipe('orphaned');
+const orphanedSurface = createWin32WriteSurface(orphaned.pipe);
+const orphanedQueue = createHostWriteQueue(orphanedSurface, ROOMY);
+for (const frame of frames) orphanedQueue.write(frame);
+
+const orphanedOutstanding = orphanedQueue.outstanding();
+check(
+  'CONTROL: writes were outstanding when the handle went away',
+  orphanedOutstanding > FRAMES / 2,
+  `${String(orphanedOutstanding)} of ${String(FRAMES)}. Abandoning an empty set takes the same ` +
+    `path in the same time, so without something outstanding this phase observes nothing.`,
+);
+
+// The handle goes FIRST. Everything after this point is the branch under test.
+for (const instance of orphaned.built.value.instances) pipes.close(instance);
+
+const orphanedStarted = Date.now();
+orphanedQueue.close();
+const orphanedMs = Date.now() - orphanedStarted;
+
+check(
+  'a teardown whose cancel FAILS strands rather than waiting, and says how many',
+  orphanedSurface.stranded() === orphanedOutstanding && orphanedMs < TEARDOWN_BUDGET_MS / 2,
+  `${String(orphanedSurface.stranded())} stranded of ${String(orphanedOutstanding)} outstanding, ` +
+    `in ${String(orphanedMs)}ms. THE TIME IS THE HALF THAT SEPARATES, and the count is not: ` +
+    `measured by inverting the branch, the polling path strands all of them TOO, having spent ` +
+    `the full budget first — because a request whose handle has gone away keeps answering ` +
+    `ERROR_IO_INCOMPLETE and the poll can never settle it. A cancel that SUCCEEDED is the case ` +
+    `that strands none; this one must strand everything and not wait.`,
+);
+
+orphaned.client.destroy();
 
 process.stdout.write(
   `\n  ${String(durations.length)} frame(s) through the shipped queue, slowest ` +

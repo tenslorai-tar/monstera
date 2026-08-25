@@ -1178,3 +1178,36 @@ edited true in the same commit, which is the other half of that rule.
 
 The constructability point survives only as the reason no fixture forces the mix.
 It is not the reason the state is safe, and it was standing in for one.
+
+### Addition, 2026-08-25 — the cancel-failed branch, and why the count could not separate it
+
+`abandon` has two paths and only one had a case (finding DDDD-8). When
+`CancelIoEx` fails for a reason other than `ERROR_NOT_FOUND` the writes are
+still the kernel's, so nothing is freed and nothing is polled — and nothing
+reached that branch, because the mutation that removed the cancel exercised the
+*poll timeout* instead, which is the other path.
+
+**The fixture is one the absent guard would let through:** close the pipe handle
+first, so the cancel is made against a handle that no longer exists and fails
+with `ERROR_INVALID_HANDLE` rather than `ERROR_NOT_FOUND`. That is a real
+composer ordering, not a hypothetical.
+
+| | |
+|---|---|
+| outstanding when the handle went away | **31 of 32** |
+| stranded by the failed cancel | **31** |
+| time taken | **0ms** |
+
+**And the count does not separate the branch — only the time does.** Measured by
+inverting the test: the polling path strands all 31 **too**, having first spent
+the full 250ms budget. The reason is worth having, because it is not what the
+code's first comment claimed: with the handle closed,
+`GetOverlappedResult(…, wait: false)` keeps answering `ERROR_IO_INCOMPLETE`. It
+reads the request's own status, and the status of a request whose handle has gone
+away does not move. So the poll can *never* settle those writes, and the branch
+buys 250ms per teardown against no different outcome.
+
+The case therefore asserts the elapsed time alongside the count, and the comment
+in `win32PipeSurface.ts` says which half is load-bearing. A case that asserted
+only *everything was stranded* would have passed against the branch being
+deleted.
