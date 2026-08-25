@@ -80,6 +80,30 @@ import {
  *
  * Which end can raise which is not symmetric, and the comments say so per code
  * rather than leaving a reader to work it out from where the string appears.
+ *
+ * ## Not every ending is a violation, and this type could not say so (DDDD-15)
+ *
+ * The seven codes below all name something an end did **wrong**. A connection
+ * also ends two ways in which nobody did anything wrong — the host died, or we
+ * shut it down — and until 2026-08-25 there was no code for either, so the only
+ * way to settle outstanding calls was to pick a violation that parses.
+ *
+ * `client.test.ts` picked `frame` for *"the reader thread exited"*, three times,
+ * and its cases passed because they assert only that the call rejects. Shipped,
+ * that renders as *the engine host connection ended (frame): …* for a process
+ * that simply died, sending its reader to the framing code.
+ *
+ * **The two are separate codes rather than one, because that distinction
+ * already exists one layer down and collapsing it here would destroy it at the
+ * point the caller reads it.** `TransportEnd.by` exists so that *"a host that
+ * crashed and a host we killed produce the same silence on the pipe, and only
+ * the first is a defect"* — a single `ended` code would throw that away
+ * immediately above the module that computes it.
+ *
+ * The sentence above about which end *raises* a code stays true of those seven
+ * and is false of these two: neither end raises them, because neither end is
+ * why. That is why it is qualified here rather than left standing — it is the
+ * half-true compound claim, whose live clause vouches for the dead one.
  */
 export interface HostTermination {
   readonly code:
@@ -106,7 +130,27 @@ export interface HostTermination {
     /** Either end: more calls outstanding than the limit anybody chose. */
     | 'too-many-in-flight'
     /** The LOOP: a declared result cannot be sent within the frame maximum. */
-    | 'unsendable-response';
+    | 'unsendable-response'
+    /**
+     * NEITHER END: the peer went away without a violation.
+     *
+     * The host process died, or the reader stopped producing bytes. Nothing was
+     * done wrong by anyone; there is simply nobody to answer, so every
+     * outstanding call has to be settled rather than left pending.
+     *
+     * A **defect** to report, which is what separates it from `shutdown`: this
+     * one is the host disappearing when it was supposed to be there.
+     */
+    | 'connection-lost'
+    /**
+     * NEITHER END: we ended it deliberately.
+     *
+     * Closing the connection is an ordinary lifecycle event, so an outstanding
+     * call rejecting because of one is **not** a fault to report — the caller
+     * still has to be told, since a promise nobody settles is the failure that
+     * costs most.
+     */
+    | 'shutdown';
   /** Diagnostic text. Shapes, counts and limits — never payload content. */
   readonly detail: string;
 }

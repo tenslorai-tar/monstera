@@ -177,7 +177,7 @@ describe('createHostClient', () => {
     const first = h.client.invoke('one', {});
     const second = h.client.invoke('two', {});
 
-    h.client.fail({ code: 'frame', detail: 'the reader thread exited' });
+    h.client.fail({ code: 'connection-lost', detail: 'the reader thread exited' });
 
     // THE FAILURE THAT COSTS MOST is the quiet one: the host dies, nothing
     // rejects, and a caller waits for ever holding whatever it was going to do
@@ -192,10 +192,45 @@ describe('createHostClient', () => {
 
   it('rejects a call made after the connection ended, without writing', async () => {
     const h = harness({ ids: ['a'] });
-    h.client.fail({ code: 'frame', detail: 'gone' });
+    h.client.fail({ code: 'connection-lost', detail: 'gone' });
 
     await expect(h.client.invoke('one', {})).rejects.toBeInstanceOf(HostConnectionLost);
     expect(h.writes).toEqual([]);
+  });
+
+  /**
+   * DDDD-15's control, and the fixture is the whole of it.
+   *
+   * These three `fail` calls used to pass `frame` for a reader thread that
+   * exited, because `HostTermination` had no code for an ending nobody caused
+   * and a violation is what the type would accept. The cases passed — they
+   * assert that the call rejects, and it does either way — so the constant was
+   * free to be a lie, and the missing state hid behind it until the first real
+   * caller had to choose a value for a host that had simply died.
+   *
+   * This case is what makes the constant load-bearing: it asserts that the code
+   * a caller SUPPLIED is the code the rejection carries, so a client that
+   * invented one goes red. Both new codes are exercised, because they are two
+   * facts rather than one — `TransportEnd.by` already separates a host that
+   * crashed from a host we killed, and a single code here would collapse that
+   * distinction one line above the module that computes it.
+   */
+  it('CARRIES the supplied code into the rejection, for both endings nobody caused', async () => {
+    for (const code of ['connection-lost', 'shutdown'] as const) {
+      const h = harness({ ids: ['a'] });
+      const call = h.client.invoke('one', {});
+
+      h.client.fail({ code, detail: 'why this ended' });
+
+      const thrown: unknown = await call.catch((error: unknown) => error);
+      expect(thrown).toBeInstanceOf(HostConnectionLost);
+      // Read off the error rather than off the client, because the error is
+      // what a caller actually holds — and rendering it is where a wrong code
+      // would be read as a framing bug in a host that never framed anything.
+      expect((thrown as HostConnectionLost).termination.code).toBe(code);
+      expect(String(thrown)).toContain(code);
+      expect(h.client.termination()?.code).toBe(code);
+    }
   });
 
   it('keeps the FIRST cause when a violation is followed by the transport failing', async () => {
@@ -203,7 +238,7 @@ describe('createHostClient', () => {
     const call = h.client.invoke('one', {});
 
     h.answer({}, 'never-sent');
-    h.client.fail({ code: 'frame', detail: 'and then the reader went away' });
+    h.client.fail({ code: 'connection-lost', detail: 'and then the reader went away' });
 
     await expect(call).rejects.toThrow(/unknown-correlation/u);
     expect(h.client.termination()?.code).toBe('unknown-correlation');
