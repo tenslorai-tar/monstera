@@ -50,8 +50,20 @@ import { type DocId, type DocVersion } from '@monstera/shared';
  * What is genuinely open is the **policy**, not the ownership: how many images
  * are resident, what happens at ADR-0007's ceiling, and whether a killed host
  * actually recovers. The first two are answered in
- * [ADR-0021](../../../docs/DECISIONS/0021-the-canonical-image-is-retained.md);
- * the third is owed against a running host and is a `docs/FEATURES.md` row.
+ * [ADR-0021](../../../docs/DECISIONS/0021-the-canonical-image-is-retained.md).
+ *
+ * **The third is now two claims, and only one of them is still owed.** Its
+ * *policy* is decided —
+ * [ADR-0023](../../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * Decision 9: the rebuild is bounded per document and poisons at two consecutive
+ * failures, a death is reported on `ShellFailureSink`, and other documents are
+ * neither drained nor failed because the supervisor enters their lanes rather
+ * than creating at the lookup below. That last part is why {@link SessionLookup}
+ * is unchanged: widening it to create would be bending this seam to fit a
+ * feature, which is B4.
+ *
+ * What remains owed is the *measurement* — that a killed host actually recovers,
+ * against a running one — and it is a `docs/FEATURES.md` row.
  */
 
 /**

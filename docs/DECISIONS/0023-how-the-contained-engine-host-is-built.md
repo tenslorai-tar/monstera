@@ -1327,3 +1327,180 @@ wearing a measurement's clothes, except this one really was measured, on one of
 two machines that disagree. The phase is still right and its value is larger than
 first stated: it removes the dependence on `poolSize` altogether rather than
 covering a gap that existed only locally.
+
+## Decision 9 — a dead host is rebuilt, and the three questions a first implementation would otherwise settle silently (decided 2026-08-25)
+
+Session lifetime needs no amendment, and that was **checked rather than read off
+a summary**. `docs/ARCHITECTURE.md` §2 states that per document
+`DocumentService` owns "canonical bytes, lazily-created engine handles
+(invalidated together on any mutation), the command log and checkpoints, and the
+originating `FileHandle`" — a cache that can be thrown away and rebuilt, not the
+document. And Decision 8's subject, in its own body, is a host **created** with
+the container applied and `AssignProcessToJobObject` failed: the partly-contained
+state, two of three *at birth*. Its "never resume" governs creation. Nothing in
+it reaches a properly contained host that later dies.
+
+**But *handles are a cache* settles only that a dead host MAY be rebuilt.** It
+settles none of the three below, and each of them is otherwise answered by
+whatever the first implementation happens to do — which is the one
+reasonable-looking exception the stage audit's item 6 exists to catch. They are
+decided here, before the supervisor is written, so that the answer is a decision
+with a reason rather than a property discovered afterwards.
+
+None of the three is B4. Each registers into the supervisor being written; no
+seam is bent, and 9c is written the way it is *because* the alternative would
+bend one.
+
+### 9a. The rebuild is bounded per document, and the bound is a decision rather than a derivation
+
+**The failure this bounds.** If the host died because of the document, the next
+command against that document kills the rebuilt host too: open, crash, rebuild,
+retry, crash. It is user-driven rather than automatic, so it is not a runaway —
+but it is an unbounded loop with a hostile input at the centre of it, and
+invariant 25's premise is that a host death is a plausible compromise signal
+rather than a hiccup.
+
+**The requirement.** The supervisor holds a consecutive-failure count per
+`DocId`. A host death increments the count of every document that had a call
+rejected by it. **Any call the host answers resets that document's count to
+zero.** At **2**, the document is *poisoned*: no session is rebuilt for it, and
+`document.execute` against it is refused with a **declared** code rather than
+with `internal`.
+
+**Why 2.** The only thing a retry tells you is whether the failure is
+deterministic, and one retry tells you that. A second retry re-derives an answer
+already in hand while feeding the suspect input to a fresh process again. The
+number is not derivable from anything cited in this ADR and is written down here
+with its reason precisely because it is a choice.
+
+**Why reset-on-success is what makes the plain counter correct.** One host per
+engine means a death can reject calls for documents that had nothing to do with
+it, and counting those looks like poisoning the innocent. It is not, because the
+innocent document's *next* command succeeds against the rebuilt host and puts it
+back to zero. A document only reaches 2 by failing twice with no success in
+between, which is the deterministic case the bound is for.
+
+**Why the document is the unit.** The input the host chokes on is that
+document's bytes. A per-host or per-command counter would bound the wrong thing:
+the loop is reproduced by whoever holds the bytes.
+
+**What poisoning is NOT.** It is not containment. Containment is the kill, and
+the kill has already happened by the time this count is read. Poisoning bounds a
+loop and gives the user an answer.
+
+**Why refusing beats closing the document.** A poisoned document is still
+**saveable**: main holds the canonical bytes and never parses them — which is
+§9.17's own stated premise for main's budget — so an unavailable engine does not
+put the user's work out of reach. Closing the record would discard the command
+log and the dirty state to report an engine fault, which is destroying the thing
+the failure did not touch.
+
+**Why a declared code and not `internal`.** `packages/contract`'s `document.execute`
+already separates the two by name: `document-not-open` and `document-busy` are
+*outcomes*, and everything else is a *defect* reported as `internal` with the
+diagnostic kept main-side. A poisoned document is a decided outcome — the
+supervisor decided it — so reporting it as a defect would file a decision as an
+inconsistency. The code is added to that channel's list and owes the renderer's
+mapping, which is ordinary definition-of-done work rather than an amendment.
+
+Rejected:
+
+| alternative | why not |
+|---|---|
+| no bound; rebuild for ever | the loop above, with invariant 25's premise saying what is at the centre of it |
+| **N = 1** | cannot separate a host killed for a transient reason — a job limit, an OS decision — from one the document kills every time. That separation is the entire content of a retry |
+| attribute a death only when that document's call was the **sole** one in flight | evadable by concurrency, needs the supervisor to hold a call-to-`DocId` map, and buys nothing once reset-on-success exists |
+| poison, then **close** the document | discards intact canonical bytes and an intact command log to report a fault in neither |
+
+### 9b. A host death is reported on the shell's failure sink, as a named event
+
+**The failure this closes is one this repository has already paid for.** The
+transport's `ended` sink is required by type, which is right, and a composition
+root that wires it to a stub reproduces the preload defect exactly: a failure
+channel a runtime announces on, with nothing subscribed. `shellFailure.ts` exists
+because of that defect and states the rule in its own header.
+
+**The requirement.** `ShellFailureEvent` gains `engine-host-gone`. The supervisor
+subscribes the transport's `ended` and reports the `TransportEnd`'s `by` and
+`detail`, plus the `HostTermination` code where the ending carries one.
+
+**Why that sink and not `Incident`.** `Incident.channel` means *the IPC channel a
+failure was crossing when it did not cross*. A host death has no IPC channel, and
+putting one there would make the field mean two things a reader cannot tell
+apart — which is the objection `shellFailure.ts` already records, in those terms,
+against putting lifecycle failures in `Incident` at all.
+
+**Why a new member rather than `child-process-gone`.** That member is Electron's
+event for a process Electron created. The engine host is a process **we** create
+(ADR-0022), announced by our own transport, and a shared name would say the
+runtime told us when it did not. `ShellFailureEvent`'s own comment is "Named, not
+inherited"; the type's doc, which scopes it to "the failures Electron announces",
+is widened in the same commit — the reason the type exists is the *subscription*,
+not the identity of the announcer.
+
+**The user-facing half is separate and is not this.** Calls in flight reject with
+a declared code, which `packages/kernel/src/host/client.ts` already does. Two
+audiences, two mechanisms; a log line is not a report to a user and a rejected
+promise is not a diagnostic.
+
+### 9c. Other documents are not drained, and the rebuild is entered through their lanes
+
+This is the genuinely new part, and *handles are a cache* says nothing about it.
+One host per engine plus §7's per-document serial lanes (ADR-0009) means one host
+death unwinds N lanes at once.
+
+**In-flight calls reject. That is a deduction, not a decision** — the answer can
+never arrive.
+
+**Queued commands are the decision, and they are neither drained nor failed.** A
+queued command has not touched the host, and the canonical bytes it will run
+against are intact in main. Failing it would report a fault it did not have.
+
+**The requirement.** At the moment the ending is observed, the supervisor enters
+**each** document's lane through `DocumentService.run` with an entry that awaits
+the host rebuild and reopens that document's session inside the lane.
+
+Three properties follow from that placement, and none of them needs a check:
+
+- **Ordering.** The reopen entry is queued at *death* time, so it sits ahead of
+  every command the user issues afterwards. Wiring it the other way round — build
+  the host, *then* enter the lanes — leaves a window in which a command queues in
+  front of the reopen and finds no session.
+- **Serialisation.** Queued work for a document sits behind that document's
+  reopen, in the order the lane already guarantees. Nothing drains anything.
+- **A document closed in the meantime is skipped by the seam.** `run` is
+  get-or-miss on the record, so it refuses rather than resurrecting.
+
+**What this costs, stated rather than discovered:** a rebuild long enough to
+saturate a lane's queue bound turns some commands into `DocumentBusyError`. That
+is a declared outcome whose renderer answer is to back off, so it is the right
+shape — but it is a real behaviour change under a slow rebuild and is named here
+so nobody later reads it as a bug.
+
+**Why the session is not created at the lookup instead.** `SessionLookup` is
+**get-or-miss, never get-or-create**, for ADR-0009's stated reason: a lookup that
+creates would mint a session for a closed `DocId` and run a command against a
+torn-down document. Widening it to create — even conditionally, even from inside
+the lane where the record is alive by construction — changes a seam
+`documentCommands.ts` owns and documents at length, and changing a seam to fit a
+feature is B4. The eager, lane-entered rebuild needs no such change, which is the
+argument for it rather than a happy accident of it.
+
+**Why not rebuild only on demand.** Then the ordinary post-crash path is
+`MissingSessionError`, which that module defines as a **defect** reported as
+`internal`. A decided, recovered-from event would arrive at the renderer wearing
+an inconsistency's clothes.
+
+**The rebuild set is derived, and the derivation runs the dangerous way (item
+4c).** The set comes from the supervisor's own session map, and the failure to
+fear makes that set *smaller* — a document missing from it is one that silently
+never gets a session back, whose next command is then a `MissingSessionError`. A
+count derived from a collection cannot disagree with that collection, so the
+anchor is outside it: `DocumentService.size` is the open-document count, and
+after a rebuild *open minus poisoned* must equal the sessions held. That needs no
+enumeration the kernel does not already expose.
+
+**What is still owed against a running host** and is a `docs/FEATURES.md` row
+rather than a claim here: that a killed host actually recovers. `documentCommands.ts`
+has named that as owed since ADR-0009; this decision is what that row will prove,
+and none of the three above is measured yet.
