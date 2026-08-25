@@ -1151,3 +1151,30 @@ rather than a paragraph: whether a worker sees Electron's module is a property o
 the **runtime**, and a version bump is the event that would change it in silence.
 It runs on Windows only — on Linux Electron needs a display server and hangs
 without one rather than failing, so a decline there is legitimate.
+
+### Correction, 2026-08-25 — the interleaved mix is the ORDINARY state, and the recorded reason was the wrong one
+
+The first 2026-08-25 correction above says the unmeasured case — inline and
+pending completions interleaving — could only be constructed "by starving a
+reader at a rate tuned to make some writes pend and others not". That sentence is
+true about a **fixture** and misleading about production, where it reads as *this
+state is rare*.
+
+It is not rare. **It is what a host reading at any moderate rate produces
+continuously**, which makes the sentence exactly the wrong thing to have written
+down: the next reader takes an untested branch for an unusual one.
+
+**And the reason it is safe was never recorded, because the constructability
+sentence occupied the place where it belonged.** The protection is structural,
+not statistical: `hostWriteQueue.ts` keeps ONE `queued` list, its collect walks
+all of it rather than stopping at the first pending, and `outstanding()` returns
+that list's length. So the mixed state is the union of two branches the cases
+already exercise separately, and the accounting cannot diverge between them
+because there is only one of it.
+
+Recorded as a correction rather than an edit: what was believed at the time is
+the record. `transportWrite.mjs`'s header is a live specification and its body is
+edited true in the same commit, which is the other half of that rule.
+
+The constructability point survives only as the reason no fixture forces the mix.
+It is not the reason the state is safe, and it was standing in for one.

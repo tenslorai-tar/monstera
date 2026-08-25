@@ -58,16 +58,25 @@
  * peer that is not reading, drained afterwards. That is the state the third
  * design puts main in.
  *
- * NOT MEASURED, and the reasoning is recorded rather than the case built: a
- * batch issued while the peer is actively draining, so that inline completions
- * and pending ones interleave. A write completes inline only when the pipe has
- * room, and room exists only once the bytes ahead of it have been consumed — so
- * an inline completion cannot be issued while an earlier write of this handle's
- * is still holding bytes in the buffer, and the interleaving the case would
- * construct does not arise. Building it would mean starving a reader at a rate
- * tuned to make some writes pend and others not, which is a case that passes or
- * fails on the runner's speed. This paragraph is an ARGUMENT; the cases below
- * are the measurement, and the two are not to be read as one.
+ * NOT MEASURED: a batch issued while the peer is actively draining, so that
+ * inline completions and pending ones interleave.
+ *
+ * **That mix is the ORDINARY state, not a rare one.** Any host reading at a
+ * moderate rate produces it continuously, and this paragraph used to argue that
+ * it "cannot be constructed except by starving a reader at a tuned rate" — true
+ * about a FIXTURE and badly misleading about production, because it reads as
+ * *this state is rare* when it is the normal one.
+ *
+ * What makes it safe is structural rather than statistical, and that is the
+ * sentence worth having: `hostWriteQueue.ts` keeps ONE `queued` list, its
+ * collect walks ALL of it rather than stopping at the first pending, and
+ * `outstanding()` returns that list's length. So the mixed state is the union of
+ * two branches the cases below already exercise separately, and the accounting
+ * cannot diverge between them because there is only one of it.
+ *
+ * The constructability point survives only as the reason no fixture here FORCES
+ * the mix — a case tuned to produce it passes or fails on the runner's speed. It
+ * is not the reason the state is safe.
  *
  * The blocking case is built from a client that CONNECTS AND NEVER READS, and
  * the volume is many times the pipe's buffer. A write that would block has to

@@ -856,6 +856,27 @@ specifications and take an edited body. **Open — the next commit.**
 | DDDD-4 | `collect()`'s first-failure guard survives its own mutation, because the detail is a constant | **recorded** at the constant |
 | DDDD-5 | interleaved inline-and-pending completions are reasoned about, not measured | **open**, stated in two documents as an argument |
 
+**Correction appended 2026-08-25 — DDDD-5's recorded reason was the wrong one,
+and the right one had never been written down.** The entry above, and the two
+documents it points at, said the interleaved mix could only be constructed by
+starving a reader at a tuned rate. True about a fixture; misleading about
+production, where it reads as *this state is rare*. It is the **ordinary** state
+— any host reading at a moderate rate produces it continuously — so the sentence
+invited the next reader to treat an untested branch as unusual.
+
+What protects it is structural and was absent from all three statements because
+the constructability sentence occupied that place: `hostWriteQueue.ts` keeps one
+`queued` list, its collect walks all of it rather than stopping at the first
+pending, and `outstanding()` returns that list's length. The mixed state is the
+union of two branches the cases already exercise separately, and the accounting
+cannot diverge because there is only one of it.
+
+Raised by the reviewing seat, which went looking for the defect the wrong reason
+implied and did not find one. That is why this is a correction and not work — and
+it is one more instance of the shape this journal has recorded before: **the
+reason written down at the moment of writing is the one that came to hand, not
+the one that holds**, and nothing downstream can tell them apart.
+
 ---
 
 ## 2026-08-25 — Stage audit: `fb9731e..4a0ef5d` — the instrument that measures teardown could not tear itself down
