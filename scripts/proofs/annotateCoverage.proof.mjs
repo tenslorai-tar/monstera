@@ -30,7 +30,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 20 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -138,6 +138,28 @@ try {
         `shrinks what this search can find, which is the direction that loses a defect — so the ` +
         `two fixtures differ only in the comment marker, and a scan that skipped too much fails ` +
         `here while passing the case above.`,
+    );
+
+    // AND THE CONTROL ABOVE VARIES THE LEADING `#` ONLY, which leaves the other
+    // way to skip too much untested: a rule keyed on `#` ANYWHERE would pass
+    // both cases and swallow a real step carrying a trailing comment. The
+    // fixture is that step.
+    const trailing = tempRepo({
+      scripts: { 'proof:thing': 'node scripts/proofs/thing.proof.mjs' },
+      workflows: {
+        'a.yml':
+          '      - name: prove\n' +
+          '        run: node scripts/ci/annotate.mjs scripts/proofs/thing.proof.mjs\n' +
+          '        run: node scripts/proofs/thing.proof.mjs # why it is bare\n',
+      },
+    });
+    check(
+      'CONTROL: a real step carrying a TRAILING comment is still reported',
+      scan({ root: trailing }).violations.length === 1,
+      `violations = ${JSON.stringify(scan({ root: trailing }).violations)}. The rule is the ` +
+        `FIRST non-space character and nothing about # elsewhere on the line — a scan keyed on ` +
+        `# anywhere passes both cases above and loses this one, which is the shape a pair varying ` +
+        `only the leading marker cannot see.`,
     );
   }
 
