@@ -29,12 +29,18 @@ import {
  * container's ACE alone refuses the contained host, because an AppContainer's
  * access check is conjunctive (ADR-0023 §4's 2026-08-24 correction).
  *
- * That factory also owns the pipe's overlapped reads and writes, because a
- * Win32 handle **cannot** be adopted into Node: `node.exe` links its CRT
- * statically, so an fd minted by any DLL an FFI can reach answers `EBADF` in
- * node's own runtime (measured). The chunks this loop receives therefore arrive
- * from the surface rather than from a stream — which is the shape it already
- * had. That boundary is not
+ * The overlapped reads and writes are also `apps/desktop`'s, because a Win32
+ * handle **cannot** be adopted into Node: `node.exe` links its CRT statically,
+ * so an fd minted by any DLL an FFI can reach answers `EBADF` in node's own
+ * runtime (measured). The chunks this loop receives therefore arrive from the
+ * surface rather than from a stream — which is the shape it already had.
+ *
+ * They are **not one owner**, and the sentence here used to say they were. A
+ * reader thread inside `WaitForMultipleObjects` cannot be told anything, so
+ * writes cannot travel to it: the worker does the reads and main issues the
+ * writes itself (ADR-0023 §4's 2026-08-25 decision). Nothing about this loop
+ * changes — it hands frames to `transport.write` either way — which is exactly
+ * why the claim could sit here being false. That boundary is not
  * tidiness — a loop that owned a socket could only be tested by opening one,
  * and CLAUDE.md's rule is that a test needing a fake window bridge is evidence
  * the boundary is wrong.

@@ -190,6 +190,12 @@ export function createHostWriteQueue(
         stillPending.push(write);
         continue;
       }
+      // THE FIRST FAILURE WINS, and nothing can currently observe that (finding
+      // DDDD-4). The detail below is a constant, so two failures in one sweep
+      // produce identical output and this guard survives its own mutation —
+      // recorded here rather than deleted, because it is not vacuous code: it
+      // encodes the same discipline the transport's ending has, and it becomes
+      // load-bearing the day the detail names which write failed.
       if (found === 'failed' && failure === null) {
         failure = {
           reason: 'failed',

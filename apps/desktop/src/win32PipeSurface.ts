@@ -39,9 +39,20 @@ import { containerSidText, isInvalidHandle } from './win32HostSurface.js';
  * descriptor whose `GetFileType` is `FILE_TYPE_PIPE`, and node's own C runtime
  * answers `EBADF` for the same number, because `node.exe` links its CRT
  * statically. So the bytes cannot travel as a Node stream, and whatever carries
- * them is a separate decision from creating the channel. Creating it is settled;
- * carrying them is not, and mixing the two here would settle the second by
- * accident.
+ * them was a separate decision from creating the channel.
+ *
+ * **That decision is now taken** (ADR-0023 §4, 2026-08-25): the worker thread
+ * does the overlapped reads, and main issues the overlapped writes itself,
+ * because a thread inside `WaitForMultipleObjects` cannot be told anything. The
+ * paragraph above used to end *"creating it is settled; carrying them is not"*,
+ * which stopped being true on the day the decision landed and would have gone on
+ * reading as a live reason not to put the write calls here.
+ *
+ * They belong here when they are built: writes on this handle are the same
+ * native boundary as creating it, and B7 asks for one adapter per boundary
+ * rather than one per verb. What must not move here is the READ side — it runs
+ * on the worker, and a module a worker imports is a different execution mode
+ * from this one.
  */
 
 const PIPE_ACCESS_DUPLEX = 0x00000003;
