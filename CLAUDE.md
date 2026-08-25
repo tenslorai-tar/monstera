@@ -174,6 +174,10 @@ packages/kernel/    headless document engine: DocumentService, CommandBus,
                     imports: shared, contract — NEVER Electron, NEVER React
 packages/ui/        React app, per-document stores, registries, PDF.js
                     imports: shared, contract — NEVER kernel, NEVER Node
+packages/nodemode/  runs in NODE MODE and is not the document engine: the engine
+                    host's reader thread and what it needs. The Electron binary
+                    may be the runtime; Electron's APIs are not there
+                    imports: shared, contract — NEVER Electron
 packages/testing/   fixture corpus, proof harness, browser shim
 apps/desktop/       Electron shell — the ONLY package that imports Electron
 scripts/            provisioning, release tooling, git hooks
@@ -187,6 +191,13 @@ docs/               ARCHITECTURE.md (law), FEATURES.md, DECISIONS/ (ADRs)
 Boundary violations are **red builds**, not review comments — enforced by ESLint
 import restrictions and per-package tsconfigs. `native/` is the exception and it
 is a real one: no tsconfig and no lint rule reaches it.
+
+**This map has TWO axes and the tree above is one of them.** It classifies by
+what a package is *about*; the second is which runtime mode a module executes in
+([ADR-0024](docs/DECISIONS/0024-execution-mode-is-a-placement-axis.md)). They
+usually agree, and the first module where they disagreed is the engine host's
+reader — Win32 pipe plumbing *for the shell*, executing where the shell's API
+surface does not exist. Ask both questions.
 
 The kernel having zero Electron imports is not aesthetic: it makes the whole
 document pipeline unit-testable in milliseconds. **A test that must fake
@@ -258,12 +269,27 @@ is wrong** — fix the boundary, not the test.
   exempts `desktop` while the scan's root stops at `scripts/` (invariant 26).
 
   **`apps/desktop/src/` is exempted as a PROXY for "runs inside Electron", and
-  the proxy has now failed three times** — a module vitest imports, and the
-  engine host, which runs the Electron binary under `ELECTRON_RUN_AS_NODE=1` and
-  so *is* Node. The answer is placement, not another clause: anything that runs
-  in Node mode lives outside `desktop`, where `MAY_IMPORT_ELECTRON` already makes
-  the specifier a red build. Ask which **mode** a file runs in, never which
-  directory it sits in.
+  the proxy has now failed FOUR times** — a module vitest imports; the engine
+  host, which runs the Electron binary under `ELECTRON_RUN_AS_NODE=1` and so *is*
+  Node; and a **worker thread**, measured 2026-08-25. The answer is placement,
+  not another clause: anything that runs in Node mode lives outside `desktop`,
+  where `MAY_IMPORT_ELECTRON` already makes the specifier a red build. Ask which
+  **mode** a file runs in, never which directory it sits in.
+
+  **The fourth is the one where the import SUCCEEDS**, and it is why the axis is
+  now written into `docs/ARCHITECTURE.md` §1 rather than applied per occurrence
+  ([ADR-0024](docs/DECISIONS/0024-execution-mode-is-a-placement-axis.md)). A
+  `worker_threads` Worker inside Electron main has `process.versions.electron`
+  **set** and `process.type` **undefined**, and `import('electron')` there yields
+  a module carrying **no `app`** — against main's control in the same run, which
+  carries one. The other three broke at the import; this one returns an object
+  and fails later at the first property access, where nothing points back at it.
+
+  **So where Node-mode code goes is part of the map, not a rule you recall.**
+  `packages/nodemode` holds it where its subject is not the document engine; the
+  document engine's own Node-mode code stays in `packages/kernel`, which is
+  unmoved. Harness and probe files are in scope by the same test — which mode
+  they run in, not that they are harnesses.
 
 - **Distribution is the Microsoft Store only.** No direct download. The
   two-flavour seam is kept deliberately — flavour switch, `WebUpdateProvider`

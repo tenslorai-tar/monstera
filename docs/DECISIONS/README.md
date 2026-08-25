@@ -81,3 +81,4 @@ Each contains:
 | [0021](0021-the-canonical-image-is-retained.md) | The canonical image is retained, one per open document, under a supplied ceiling | Accepted |
 | [0022](0022-the-engine-host-is-a-process-we-create.md) | The engine host is a process we create, not a utility process | Accepted |
 | [0023](0023-how-the-contained-engine-host-is-built.md) | How the contained engine host is built | Accepted |
+| [0024](0024-execution-mode-is-a-placement-axis.md) | Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side | Accepted |

@@ -46,6 +46,10 @@ monstera/
 │   ├── ui/          the React app: components, per-document stores, registries,
 │   │                PDF.js presentation. Browser-only.
 │   │                Imports: shared, contract. NEVER kernel, NEVER Node.
+│   ├── nodemode/    code that runs in NODE MODE and is not the document engine:
+│                    the engine host's reader thread and what it needs. The
+│                    Electron binary may be the runtime; Electron's APIs are not
+│                    there. Imports: shared, contract. NEVER Electron.
 │   └── testing/     fixture corpus, proof harness, esbuild bundling helpers,
 │                    browser shim.
 ├── apps/
@@ -76,6 +80,31 @@ entire document pipeline is unit-testable in milliseconds in CI, reusable for a
 future CLI, and legible to reviewers as a library. A test that must fake
 `DOMMatrix` or a window bridge just to exercise a save is evidence the boundary
 is wrong — fix the boundary, not the test.
+
+**And that sentence is why `packages/nodemode` exists rather than one more file
+in the kernel** ([ADR-0024](DECISIONS/0024-execution-mode-is-a-placement-axis.md)).
+
+**Placement has TWO axes, and this map states both.** The tree above classifies
+by what a package is **about**. The second axis is which runtime mode a module
+executes in, and it is not derivable from the first:
+
+| the module runs | it lives |
+|---|---|
+| inside Electron, with Electron's APIs available | `apps/desktop/` |
+| in **Node mode** — the Electron binary may be the runtime, but Electron's APIs are absent | outside `apps/desktop/`; in `packages/nodemode` where its subject is not the document engine |
+| under `node` directly, as tooling | `scripts/` |
+
+Harness and probe files are in scope by the same test — which mode they run in,
+not that they are harnesses.
+
+The axis is stated because this is the point where the two answers can disagree:
+the engine host's reader is Win32 pipe plumbing **for the shell** that executes
+**where the shell's API surface does not exist**. Invariant 26 records four
+failures of `apps/desktop/src/` as a proxy for *runs inside Electron*, and a
+module whose subject and mode disagree is the case a one-axis map cannot place.
+Putting a Windows-only reader in `packages/kernel` would satisfy the mode and
+break the paragraph above — a package that cannot be exercised without a
+platform, which is the boundary decaying by one reasonable-looking exception.
 
 ### 1.1 The bootstrap layer is plain JavaScript, deliberately
 
@@ -840,7 +869,25 @@ say**.
     plain-Node block is defined — *"may import Electron" is a property of code
     that RUNS INSIDE Electron, and package membership is only a proxy for that.*
 
-    So this case is answered by **placement, not by a fourth clause**: the host
+    **Fourth case, 2026-08-25 — a worker thread, where the import SUCCEEDS**
+    ([ADR-0024](DECISIONS/0024-execution-mode-is-a-placement-axis.md)). Measured
+    by `proof:workermode` under the pinned binary: a `worker_threads` Worker
+    inside Electron's main process has `process.versions.electron` **set** and
+    `process.type` **undefined**, and `import('electron')` there yields a module
+    carrying **no `app`** — while main's control in the same run carries one.
+
+    This is the quietest of the four. The others broke at the import; this one
+    succeeds and fails later at the first property access, where nothing points
+    back at it. The runtime is the Electron binary while the APIs are absent,
+    which is the pair a directory-shaped proxy cannot express.
+
+    **So the axis is now stated rather than applied per occurrence, and where
+    Node-mode code GOES is part of the map** (§2): outside `apps/desktop/`, and
+    in `packages/nodemode` where its subject is not the document engine.
+    Harness and probe files are in scope by the same test — which mode they run
+    in, not that they are harnesses.
+
+    This case is answered by **placement, not by a fourth clause**: the host
     body lives in `packages/kernel` and **not** under `apps/desktop/src/`.
     `MAY_IMPORT_ELECTRON` is an exception list naming only `desktop`, so every
     other package fails lint on the specifier by all four routes `patternsFor`
@@ -1224,3 +1271,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-21 | **The renderer's Content-Security-Policy is pinned as invariant 27** — the exact eleven-directive list, with this document as the writer of record and `apps/desktop/src/windowPolicy.ts` as the derived form, checked in both directions by `proof:rendererpolicy` against a running Chromium (§2, §9.27). `style-src`'s `'unsafe-inline'` is dropped in the same commit rather than pinned, because nothing needs it and an unproven grant that arrives before the pin is never argued for afterwards. | `BUILD-PROMPT.md` Part C2's "CSP set" as one item in a configuration list, and §2's own line which repeated it | [ADR-0019](DECISIONS/0019-the-renderers-csp-is-pinned.md) |
 | 2026-08-22 | **The engine hosts are processes this application creates, not Electron utility processes** (§2, §5, §9.25, §9.26). Invariant 25's (c) and (d) are supplied by an AppContainer, which `utilityProcess.fork` cannot create, so the containment is a property of the creation route — measured, including a native `CreateFileW` refused `ERROR_ACCESS_DENIED` and a loopback connection refused, with the engine still running inside. The host contract crosses a DACL'd named pipe and registers into `packages/contract`'s discipline rather than beside it; the host body lives in `packages/kernel`, which answers invariant 26's third case by placement instead of a fourth clause. | §2's `utility: mupdfHost` / `utility: pdfiumHost` topology, which ADR-0010 introduced; and §9.25's "policy before mechanism" | [ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md) |
 | 2026-08-18 | **Distribution is the Microsoft Store only.** No direct download exists; the website's download button links to the Store listing. The two-flavour seam is kept — flavour switch, `WebUpdateProvider` registered with no implementation, signing certificate as an empty config value — so a signed direct download is later a config change rather than an amendment. Updates are Windows'; `StoreUpdateProvider` adds a static-manifest version check that sends nothing, an in-app indicator linking to the Store, and a settings toggle (§8). | `BUILD-PROMPT.md` Part J's two-flavour distribution with a direct download, and its self-update path | [ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md) |
+| 2026-08-25 | **Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side** (§1, §9.26). The map classified by what a package is *about*; this is the first module where subject and mode disagree — the engine host's reader is Win32 pipe plumbing for the shell that executes where the shell's API surface does not exist. Measured: a `worker_threads` Worker inside Electron main has `process.versions.electron` set, `process.type` undefined, and `import('electron')` yielding a module with **no `app`**, against main's control in the same run — the fourth failure of the `apps/desktop/src/` proxy and the only one where the import SUCCEEDS. A sixth package, not in `MAY_IMPORT_ELECTRON`, so the specifier is a red build with no rule to remember (B5). Harness and probe files are in scope by the same test. `packages/kernel` was rejected on subject rather than on mode: a Windows-only reader there breaks §1's own reason for the kernel's Electron-free property. The engine host body is unmoved and stays in `packages/kernel`. | §1's one-axis repository map, and invariant 26 answering each occurrence by moving one file rather than stating where Node-mode code goes | [ADR-0024](DECISIONS/0024-execution-mode-is-a-placement-axis.md) |

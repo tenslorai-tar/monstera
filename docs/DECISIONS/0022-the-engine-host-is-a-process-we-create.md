@@ -321,3 +321,31 @@ Recorded here rather than only there because this is the ADR whose text names
 the cell, and a cross-reference that still resolves while the target says
 something else is the failure finding UU-1 named: worse than a broken link,
 because it announces nothing.
+
+---
+
+## Addition, 2026-08-25 — the axis this ADR applied is now stated, and this placement is unchanged
+
+**Nothing above is superseded.** The engine host body stays in
+`packages/kernel`, for the reasons given.
+
+What has changed is that the reasoning is now general.
+[ADR-0024](0024-execution-mode-is-a-placement-axis.md) makes **execution mode a
+placement axis** in `docs/ARCHITECTURE.md` §1, after a **fourth** failure of the
+`apps/desktop/src/` proxy — a `worker_threads` Worker inside Electron main,
+measured to have `process.versions.electron` set, `process.type` undefined, and
+`import('electron')` yielding a module with no `app`.
+
+**Read the sentence above carefully if you are placing a new module**, because
+this ADR's two reasons come apart and only one of them generalises:
+
+- *the kernel already fails lint on the specifier* — B5, and true of **every**
+  package outside `apps/desktop/`. It does not select the kernel.
+- *the kernel is where the host belongs on the existing map* — subject matter,
+  and it is what actually chose it. It holds for a protocol loop over documents.
+  It does **not** hold for, say, a koffi `ReadFile` loop, whose subject is a
+  transport.
+
+A module whose subject is not the document engine goes to `packages/nodemode`
+instead. Following this precedent means following the second reason, not copying
+the destination.

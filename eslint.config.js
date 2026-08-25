@@ -388,7 +388,16 @@ export default tseslint.config(
     // are not the same axis. `boundaryConfigFor` exempts `desktop` because
     // apps/desktop is where Electron may be imported — but "may import Electron"
     // is a property of code that RUNS INSIDE Electron, and package membership is
-    // only a proxy for that. Everything under `scripts/` is started by plain
+    // only a proxy for that.
+    //
+    // THAT PROXY HAS FAILED FOUR TIMES, and ADR-0024 turned this comment into a
+    // placement rule rather than an observation: execution mode is an axis of
+    // ARCHITECTURE §1's map, and `nodemode` is the package on the Node-mode side.
+    // The proxy is still a proxy — this table is per-package because ESLint's
+    // boundaries are — but a module now has somewhere to go where the proxy is
+    // right, instead of an exemption it happens to sit inside.
+    //
+    // Everything under `scripts/` is started by plain
     // `node`, where importing `electron` resolves to `index.js`, whose
     // `module.exports` IS `getElectronPath()` — so the import downloads an
     // unpinned binary through `install.js`. Spawn the provisioned path instead.
