@@ -34,7 +34,7 @@ import { downloadVerified } from '../lib/fetchVerified.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -57,6 +57,34 @@ const DIGEST = createHash('sha256').update(PAYLOAD).digest('hex');
  */
 function served(bytes, status = 200) {
   return new Response(status === 200 ? bytes : null, { status });
+}
+
+/**
+ * A response whose body dies PART WAY THROUGH, after headers arrived.
+ *
+ * The distinction this exists for (finding DDDD-22): `fetch` rejecting is a
+ * **pre-body** failure and is what the ECONNRESET on 2026-08-25 actually was.
+ * A socket reset *after* headers surfaces on the body stream instead, and it is
+ * an equally ordinary production shape — but it leaves a PARTIAL FILE in the
+ * quarantine, which the pre-body shape never does.
+ *
+ * That is the branch the retry's whole design rests on: *a stream cannot be
+ * replayed, so a reset halfway through has to redo the request.* Until this
+ * fixture existed, nothing produced one, and gutting that branch left all nine
+ * cases green.
+ *
+ * @param {Buffer} partial Bytes to deliver before the socket dies.
+ */
+function diesMidStream(partial) {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(partial));
+        controller.error(new Error('read ECONNRESET'));
+      },
+    }),
+    { status: 200 },
+  );
 }
 
 /** @typedef {(attempt: number) => Response | Error} Answer */
@@ -118,6 +146,22 @@ async function run(
     'a 503 is retried',
     result.ok && result.calls === 2,
     `ok=${String(result.ok)} calls=${String(result.calls)}`,
+  );
+}
+
+{
+  // THE MID-STREAM CASE, and one fixture carries three claims (finding DDDD-22).
+  //
+  // The byte comparison is the load-bearing half: attempt 1 leaves a PARTIAL
+  // file in the quarantine, so if it survived into attempt 2 the digest would
+  // differ and the download would fail. Passing proves the retry happened, that
+  // the post-headers branch is reached at all, and that the quarantine is
+  // cleared between attempts — which no other case here touches.
+  const result = await run((n) => (n === 1 ? diesMidStream(PAYLOAD.subarray(0, 8)) : served(PAYLOAD)));
+  check(
+    'a stream that dies AFTER headers is retried, and the partial does not contaminate the retry',
+    result.ok && result.calls === 2 && readFileSync(result.destination).equals(PAYLOAD),
+    `ok=${String(result.ok)} calls=${String(result.calls)} error=${String(result.error?.message)}`,
   );
 }
 
@@ -186,22 +230,32 @@ async function run(
 {
   // The host allowlist is a SECURITY refusal, and a security refusal that is
   // retried is one that gets three chances to be raced.
-  const result = await run(() => served(PAYLOAD));
+  // THE COUNTER IS THE CLAIM (finding DDDD-23). This case is named "before any
+  // request is made", and without counting it proved only that the call threw
+  // and nothing landed — which an implementation that fetched FIRST and checked
+  // the host afterwards would also satisfy. The timing is the whole point: a
+  // security refusal that reaches the network is one that can be raced.
+  let requests = 0;
   const denied = await downloadVerified({
     url: 'https://not-the-pinned-host.example/asset.bin',
     allowedHosts: HOSTS,
     sha256: DIGEST,
     maxBytes: 1_000_000,
     destination: join(scratch, 'never.bin'),
-    fetchImpl: /** @type {typeof fetch} */ (async () => served(PAYLOAD)),
+    fetchImpl: /** @type {typeof fetch} */ (
+      async () => {
+        requests += 1;
+        return served(PAYLOAD);
+      }
+    ),
   }).then(
     () => null,
     (error) => (error instanceof Error ? error : new Error(String(error))),
   );
   check(
     'CONTROL: a host outside the allowlist is refused before any request is made',
-    denied !== null && !existsSync(join(scratch, 'never.bin')) && result.ok,
-    `denied=${String(denied?.message).slice(0, 120)}`,
+    denied !== null && requests === 0 && !existsSync(join(scratch, 'never.bin')),
+    `requests=${String(requests)} denied=${String(denied?.message).slice(0, 120)}`,
   );
 }
 

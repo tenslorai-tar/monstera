@@ -759,7 +759,11 @@ mutations · four `icacls` readings · the local sweep at 15 of 15 on every comm
 · the board at seven of the nine commits.
 
 **Asserted:** that candidate 1's collisions are *exhaustive* — three were found
-and there may be more · that the ACL union generalises, which is ordinary Windows
+and there may be more. *(Correction, same day: this belongs in the asserted
+column **permanently** rather than as a claim awaiting promotion. The three were
+found by reading, and there is no procedure that would establish exhaustiveness —
+so nothing is pending, and a later reader should not treat it as work in
+progress.)* · that the ACL union generalises, which is ordinary Windows
 behaviour but was **read once, on one SID (`ALL APPLICATION PACKAGES`), on one
 machine, on one Windows build**. The conclusion it supports is a layout
 constraint rather than a security claim, which is why one reading was enough to
