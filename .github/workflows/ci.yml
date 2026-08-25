@@ -696,6 +696,19 @@ jobs:
       - name: Prove the transport's reader stops without interrupting a syscall
         run: node scripts/ci/annotate.mjs scripts/research/transportTeardown.mjs
 
+      # The OTHER direction, and it decides how writes reach the pipe at all. A
+      # reader inside `WaitForMultipleObjects` cannot be told anything — measured
+      # by the step above — so writes cannot travel to it by `postMessage`. What
+      # this measures is whether main can issue them itself without ever
+      # blocking: 64 × 4096 bytes into a peer that never reads, with the
+      # completions reaped non-blockingly afterwards.
+      #
+      # Its load-bearing case is that backpressure was REACHED. If every write
+      # completes inline the kernel absorbed everything, and "no write blocked"
+      # would be true for a reason that says nothing about a full pipe.
+      - name: Prove main can write to the transport without blocking
+        run: node scripts/ci/annotate.mjs scripts/research/transportWrite.mjs
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
@@ -970,3 +983,16 @@ jobs:
       # node_modules and a built dist, and it is Win32 the whole way down.
       - name: Prove the transport's reader stops without interrupting a syscall
         run: node scripts/ci/annotate.mjs scripts/research/transportTeardown.mjs
+
+      # The OTHER direction, and it decides how writes reach the pipe at all. A
+      # reader inside `WaitForMultipleObjects` cannot be told anything — measured
+      # by the step above — so writes cannot travel to it by `postMessage`. What
+      # this measures is whether main can issue them itself without ever
+      # blocking: 64 × 4096 bytes into a peer that never reads, with the
+      # completions reaped non-blockingly afterwards.
+      #
+      # Its load-bearing case is that backpressure was REACHED. If every write
+      # completes inline the kernel absorbed everything, and "no write blocked"
+      # would be true for a reason that says nothing about a full pipe.
+      - name: Prove main can write to the transport without blocking
+        run: node scripts/ci/annotate.mjs scripts/research/transportWrite.mjs

@@ -325,6 +325,19 @@ try {
       },
     ],
     [
+      'scripts/research/transportWrite.mjs',
+      {
+        sites: 2,
+        reason:
+          'imports apps/desktop/dist/win32PipeSurface.js and dist/enginePipeFactory.js through ' +
+          'file:// URLs, for the same reason transportTeardown.mjs does: the pipe whose write ' +
+          'behaviour this measures has to be the SHIPPED one, or the reading is about a copy. ' +
+          'Both need Windows backslash conversion at run time. It starts no Electron anything — ' +
+          'it writes to a pipe and reads the bytes back through a Node socket — and neither ' +
+          'built module imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/transportTeardown.mjs',
       {
         sites: 2,

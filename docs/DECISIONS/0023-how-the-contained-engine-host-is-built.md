@@ -900,6 +900,34 @@ memory; a **second thread** for writes; or **main issuing overlapped writes
 itself** and reaping completions when it next has business rather than on a
 timer. That choice is not made here.
 
+**The third candidate's premise is now measured, which is what it needed rather
+than an argument.** It is the smallest by a wide margin — no shared buffer, no
+second thread, and nothing to tear down, which is the property that decided the
+read side — and it rested on one unmeasured claim: that main never blocks.
+`scripts/research/transportWrite.mjs`, seven cases:
+
+| | |
+|---|---|
+| 64 × 4096 bytes into a peer that never reads | slowest **1ms**, total **3ms** |
+| still outstanding when reaped before the peer drained | **63 of 64** |
+| collected non-blockingly once it had drained | all, 4096 bytes each |
+| delivered to the peer | 262144 of 262144 |
+
+The second row is the one that makes the first evidence rather than a
+coincidence of buffer sizes: if every write completed inline the kernel had
+absorbed everything, and *no write blocked* would be true for a reason that says
+nothing about a full pipe. Sixty-three were genuinely queued, and main still
+never waited.
+
+`GetOverlappedResult` with `wait` false reports `ERROR_IO_INCOMPLETE` for those,
+so reaping can say *not yet* without blocking — which is the whole of what "reap
+when main next has business" requires.
+
+So the candidate is viable and the choice can be made on evidence rather than on
+which description sounded lighter. It is still a choice, and it is still not made
+here: what changes is that one of the three no longer rests on a claim nobody had
+run.
+
 Two further facts, both found by the probe rather than by reasoning:
 
 - **A worker holding a `parentPort` message listener does not exit.** The
