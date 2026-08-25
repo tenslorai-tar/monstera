@@ -1106,3 +1106,48 @@ Two consequences:
   applied here before being bitten rather than after. What it gives up is
   exercising `wait` true itself, and that is stated in the file rather than
   assumed away.
+
+### Addition, 2026-08-25 — a worker thread is Node mode, and the import SUCCEEDS
+
+The reader is a `worker_threads` Worker inside the Electron main process, and
+where its file lives is decided by CLAUDE.md's placement rule: *anything that
+runs in Node mode lives outside `desktop`*, because `apps/desktop/src/` is
+exempted from the Electron-import ban as a **proxy** for "runs inside Electron"
+— a proxy that rule records as having failed three times. Nobody had asked the
+question of a worker thread, and the rule's own instruction is to ask which mode
+a file runs in.
+
+Measured before a line of the reader was written, by
+`scripts/research/workerMode.mjs` driving a harness under the pinned Electron
+binary:
+
+| | main | worker thread |
+|---|---|---|
+| `process.type` | `"browser"` | **`undefined`** |
+| `process.versions.electron` | 43.4.1 | **43.4.1** |
+| `import('electron')` | a module | **a module** |
+| the module carries `app` | **yes** | **no** |
+
+Main's row is the control, and it is not decoration: without it *the worker could
+not* is indistinguishable from *this harness cannot import Electron at all* —
+refusal and impossibility producing one observation.
+
+**So a worker thread is Node mode, and this is the fourth failure of the
+`apps/desktop/src/` proxy — the quietest of the four.** The other three broke at
+the import. This one *succeeds*: a file in `apps/desktop/src/` that imports
+`electron` and runs in a worker receives an object, not an error, and fails later
+at the first property access, where nothing points back at the import. The
+runtime is the Electron binary — `process.versions.electron` is set — while the
+APIs are absent, which is exactly the pair that makes a directory-shaped proxy
+wrong.
+
+**The placement that follows**, and it is the same split ADR-0022 made for the
+host: the part that runs in Node mode lives outside `desktop`, and the factory
+that creates it lives in `apps/desktop/`. The reader worker's body is therefore
+not a `desktop` module, whatever else it needs.
+
+The claim carries an expiry no document can enforce, which is why it is a probe
+rather than a paragraph: whether a worker sees Electron's module is a property of
+the **runtime**, and a version bump is the event that would change it in silence.
+It runs on Windows only — on Linux Electron needs a display server and hangs
+without one rather than failing, so a decline there is legitimate.
