@@ -969,6 +969,67 @@ if (koffi !== null) {
   report.probes.nativeReadUnhanded = errored('koffi never loaded, so the native path was never reached');
 }
 
+// CAN THE HOST REWRITE THE TRANSPORT'S OWN DACL? (finding BBBB-4.)
+//
+// The shipped descriptor granted GENERIC_ALL to the container, and GA maps to
+// FILE_ALL_ACCESS, which carries STANDARD_RIGHTS_REQUIRED — so it included
+// WRITE_DAC and FILE_CREATE_PIPE_INSTANCE. The principal invariant 25 declares
+// contains a compromise could therefore rewrite the DACL of its own trust
+// boundary and decide who else may reach the channel.
+//
+// The mask is now 0x0012019B: FILE_GENERIC_READ|FILE_GENERIC_WRITE minus 0x4.
+// That is measured rather than reasoned, and this is the measurement.
+//
+// THE INPUT IS ONE THE ABSENT GUARD WOULD LET THROUGH, which is the whole
+// design of this pair. Opening a pipe that is not reachable at all would be
+// refused for a reason that has nothing to do with the mask, so:
+//
+//   dacWriteShipped   the shipped pipe, opened for WRITE_DAC — must be REFUSED
+//                     for the contained cell. The uncontained one is ALLOWED and
+//                     cannot be otherwise: it runs as the object's OWNER, which
+//                     holds WRITE_DAC implicitly whatever the DACL says.
+//   dacWriteGranted   the BU+container pipe, which still carries GA, opened the
+//                     SAME way by the SAME cell — ALLOWED, which both proves the
+//                     probe can open something and demonstrates the defect: the
+//                     old descriptor let the contained host do this.
+//
+// One call, one access mask, two descriptors. A Node socket connect cannot ask
+// for WRITE_DAC, so this has to be native — which is also the adversary's route.
+const openForDacWrite = (probe, name) => {
+  if (!name) {
+    report.probes[probe] = errored('no handed config, so no pipe name to try');
+    return;
+  }
+  if (koffi === null) {
+    report.probes[probe] = errored('koffi never loaded, so the native path was never reached');
+    return;
+  }
+  try {
+    const kernel = koffi.load('kernel32.dll');
+    const CreateFileW = kernel.func(
+      'void *CreateFileW(const char16_t *name, uint32 access, uint32 share, void *sa, uint32 disp, uint32 flags, void *tmpl)',
+    );
+    const CloseHandle = kernel.func('bool CloseHandle(void *handle)');
+    const GetLastError = kernel.func('uint32 GetLastError()');
+    // WRITE_DAC alone. Not combined with read or write access: the question is
+    // whether this principal may change the descriptor, and asking for more
+    // would let a denial be about the something else.
+    const handle = CreateFileW(name, 0x00040000, 3, null, 3, 0x80, null);
+    if (isInvalidHandle(koffi, handle)) {
+      report.probes[probe] = refused('CreateFileW WRITE_DAC: error ' + GetLastError());
+    } else {
+      CloseHandle(handle);
+      report.probes[probe] = allowed(CELL + ' opened ' + name + ' for WRITE_DAC');
+    }
+  } catch (error) {
+    report.probes[probe] = errored(String(error && error.message));
+  }
+};
+
+step('dacWrite');
+openForDacWrite('dacWriteShipped', config === null ? null : config.win32SidOnly);
+openForDacWrite('dacWriteGranted', config === null ? null : config.win32Granted);
+
 // (c) NETWORK, on LOOPBACK. A remote target cannot separate "refused by policy"
 // from "this runner has no network" — the two produce one observation, and that
 // mistake has been made three times here (HH-2). Main listens on 127.0.0.1, so
@@ -1999,7 +2060,7 @@ function releaseGrants(sid) {
  * the honest shape here: it is not thirteen cases with some skipped, it is a
  * run that measured nothing.
  */
-const roster = createRoster(caseFailures, { cases: 21 });
+const roster = createRoster(caseFailures, { cases: 23 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -2559,6 +2620,21 @@ function summarise(runs) {
     ['CONTROL: the container ACE is what admits it', 'namedPipeWin32UserOnly', 'lowbox', 'route',
       { withMechanism: 'refused', without: 'allowed' },
       'the same Win32 route with Built-in Users only — separates the ACE from the route'],
+    ['the host cannot rewrite the transport’s DACL', 'dacWriteShipped', 'lowbox', 'route',
+      { withMechanism: 'refused', without: 'allowed' },
+      'CreateFileW for WRITE_DAC on the shipped pipe (finding BBBB-4). The contained host is ' +
+        'REFUSED, which is the property. `route` is allowed and cannot be otherwise: it runs as ' +
+        'the object’s OWNER, and an owner holds READ_CONTROL and WRITE_DAC implicitly whatever ' +
+        'the DACL says — measured here, not assumed, because the user’s mask 0x0012019F does ' +
+        'not contain WRITE_DAC and it was allowed anyway'],
+    ['CONTROL: BBBB-4 demonstrated, and the probe can open something', 'dacWriteGranted',
+      'lowbox', 'route', { withMechanism: 'allowed', without: 'allowed' },
+      'the SAME call by the SAME cell against the BU+container pipe, which still carries GA. ' +
+        'The contained host opens it for WRITE_DAC — so the old descriptor let the principal ' +
+        'invariant 25 declares hostile rewrite its own trust boundary, demonstrated rather than ' +
+        'argued. It is also this pair’s positive control: one cell, one access mask, two ' +
+        'descriptors, and only the mask differs, so the refusal above cannot be a probe that ' +
+        'opens nothing'],
     ['(b) memory — job alone', 'commitPastLimit', 'route-small-limit', 'route-no-job',
       { withMechanism: 'refused', without: 'allowed' },
       'a commit past the job’s ProcessMemoryLimit, uncontained on both sides'],

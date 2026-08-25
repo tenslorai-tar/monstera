@@ -746,3 +746,50 @@ is unaffected by anything above.
 `echoWin32`'s assertion pins the negative result **and its mechanism**: outcome
 `error` and a detail naming `EBADF`. A change in either is a red, because a
 message-only pin would survive the mechanism moving underneath it.
+
+## Correction, 2026-08-25 — the DACL's first spelling let the host rewrite the DACL
+
+The descriptor the corrections above settled on was
+`D:(A;;GA;;;<user>)(A;;GA;;;<container>)`, and `GA` is wrong for the container.
+`GENERIC_ALL` maps to `FILE_ALL_ACCESS`, which carries
+`STANDARD_RIGHTS_REQUIRED` — so it granted **`WRITE_DAC`** and
+**`FILE_CREATE_PIPE_INSTANCE`** to the principal invariant 25 declares *contains
+a compromise*, on the object §4 calls a trust boundary.
+
+**Demonstrated in the run that fixed it**, not argued: on the spike's pipe that
+still carries `GA`, the contained cell opens it for `WRITE_DAC` and succeeds.
+
+The shipped masks are now:
+
+| principal | mask | what it is |
+|---|---|---|
+| this user | `0x0012019F` | `FILE_GENERIC_READ｜FILE_GENERIC_WRITE` |
+| the container | `0x0012019B` | the same, **minus `0x4`** |
+
+Four readings, all from the shipped factory rather than from a copy:
+
+- The contained cell **still connects** under `0x0012019B`, so the conjunctive
+  check does not consume any right the narrowing removed. That was the open
+  question and it resolved in the tightening's favour.
+- The contained cell is **refused `WRITE_DAC`, error 5**, on the shipped pipe.
+- The creator **needs `0x4`**: at `0x0012019B` for both principals, instance 1
+  fails with `GetLastError 5` and the factory reports the stage. Instance 0
+  creates the object and is not access checked; every later one asks for read
+  and write on the existing object, and `0x4` is part of what
+  `PIPE_ACCESS_DUPLEX` asks for.
+- The **owner** is allowed `WRITE_DAC` on the shipped pipe even though its mask
+  does not contain it. An object's owner holds `READ_CONTROL` and `WRITE_DAC`
+  implicitly. That cannot be narrowed and does not need to be: same-user was
+  already established above as a boundary this descriptor cannot draw.
+
+The masks are numeric because SDDL's file mnemonics cannot express the one that
+matters — `FW` (`FILE_GENERIC_WRITE`) includes `0x4`, so `FRFW` for the
+container would grant instance creation back.
+
+**What this correction does not claim.** That `WRITE_DAC` is the only right worth
+removing, or that `FILE_GENERIC_READ｜FILE_GENERIC_WRITE` is minimal for a host
+that only reads and writes framed messages. It is the mask a Node client's
+`GENERIC_READ｜GENERIC_WRITE` open requires, and narrowing below it would refuse
+the host for a reason unrelated to the threat. A host that opened the pipe with
+an explicit mask could go tighter; that is a change to both ends and is not made
+here.

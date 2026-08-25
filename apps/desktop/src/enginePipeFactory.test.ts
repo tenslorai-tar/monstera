@@ -72,8 +72,27 @@ describe('hostPipeDacl', () => {
     // Built-in Users is absent deliberately — `BU` is every user of the
     // machine, and the spike carries it only for its uncontained controls.
     expect(hostPipeDacl(user, container)).toBe(
-      'D:(A;;GA;;;S-1-5-21-1-2-3-1001)(A;;GA;;;S-1-15-2-1-2-3-4-5-6-7)',
+      'D:(A;;0x0012019F;;;S-1-5-21-1-2-3-1001)(A;;0x0012019B;;;S-1-15-2-1-2-3-4-5-6-7)',
     );
+  });
+
+  it('gives the container a mask that is four bits smaller than the creator’s', () => {
+    // THE DIFFERENCE IS THE PROPERTY, so it is asserted as a difference rather
+    // than left implicit in two literals a reader has to subtract (BBBB-4).
+    // `0x4` is FILE_CREATE_PIPE_INSTANCE on a pipe: the creator needs it —
+    // measured, instance 1 fails with GetLastError 5 without it — and the host
+    // does not. Neither mask carries WRITE_DAC, which is what `GA` was
+    // handing to the principal invariant 25 declares hostile.
+    const dacl = hostPipeDacl(user, container);
+    const masks = [...dacl.matchAll(/\(A;;(0x[0-9A-F]{8});;;/gu)].map((match) =>
+      Number(match[1]),
+    );
+    const [creator, host] = masks;
+    expect(masks).toHaveLength(2);
+    expect(creator).toBeDefined();
+    expect(host).toBeDefined();
+    expect((creator ?? 0) - (host ?? 0)).toBe(0x4);
+    for (const mask of masks) expect(mask & 0x00040000).toBe(0);
   });
 });
 

@@ -148,18 +148,53 @@ export interface PipeCreationFailure {
  * creation fails, and a diagnostic that paraphrases the descriptor is a second
  * opinion about it.
  *
- * `GA` — `GENERIC_ALL` — for both. The host must read and write; the creator
- * must be able to add instances, which `PIPE_ACCESS_DUPLEX` makes a read-write
- * request. No group appears: `D:(A;;GA;;;BU)` would grant Built-in Users, which
- * is every user of the machine, and the spike carries that spelling only
- * because its uncontained control cells have to connect.
+ * ## The two masks differ, and `GA` is not one of them (finding BBBB-4)
+ *
+ * Both ACEs said `GA` — `GENERIC_ALL` — on the argument that the host must read
+ * and write and the creator must be able to add instances. That was a compound
+ * claim whose two clauses cover different principals: the instance-creation half
+ * is about the CREATOR, and the container got `GA` alongside it.
+ *
+ * `GA` maps to `FILE_ALL_ACCESS`, which carries `STANDARD_RIGHTS_REQUIRED` —
+ * `WRITE_DAC` included. So the principal invariant 25 declares *contains a
+ * compromise*, on the pipe this design calls a trust boundary, could rewrite
+ * that boundary's own DACL and decide who else may reach the channel.
+ *
+ * **Demonstrated, not argued.** On the spike's pipe that still carries `GA`, the
+ * contained cell opens it for `WRITE_DAC` and succeeds. Under the masks below it
+ * is refused, error 5, in the same run.
+ *
+ * | principal | mask | what it is |
+ * |---|---|---|
+ * | this user | `0x0012019F` | `FILE_GENERIC_READ｜FILE_GENERIC_WRITE` |
+ * | the container | `0x0012019B` | the same, **minus `0x4`** |
+ *
+ * `0x4` is `FILE_APPEND_DATA` for a file and `FILE_CREATE_PIPE_INSTANCE` for a
+ * pipe. The creator needs it — measured: without it, instance 1 fails with
+ * `GetLastError 5` and the factory reports the stage. The host does not, and it
+ * is the one right on this object that would let a compromised host stand up
+ * another instance of the channel.
+ *
+ * Neither mask contains `WRITE_DAC`, `WRITE_OWNER` or `DELETE`. What that buys
+ * against the OWNER is nothing — an object's owner holds `READ_CONTROL` and
+ * `WRITE_DAC` implicitly whatever the DACL says, measured here too — and
+ * same-user was never a boundary this descriptor could draw. Against the
+ * container it is the whole point.
+ *
+ * No group appears: `D:(A;;GA;;;BU)` would grant Built-in Users, which is every
+ * user of the machine, and the spike carries that spelling only because its
+ * uncontained control cells have to connect.
+ *
+ * The masks are written numerically because SDDL's file mnemonics cannot express
+ * the one that matters: `FW` — `FILE_GENERIC_WRITE` — includes `0x4`, so
+ * `FRFW` for the container would grant instance creation back.
  *
  * @param user This process's own user SID.
  * @param container The AppContainer's SID.
  * @returns An SDDL string.
  */
 export function hostPipeDacl(user: UserSid, container: ContainerSid): string {
-  return `D:(A;;GA;;;${user.value})(A;;GA;;;${container.value})`;
+  return `D:(A;;0x0012019F;;;${user.value})(A;;0x0012019B;;;${container.value})`;
 }
 
 /**
