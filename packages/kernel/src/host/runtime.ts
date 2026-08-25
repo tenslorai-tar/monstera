@@ -69,15 +69,43 @@ import {
  * than saying so.
  */
 
-/** Why the loop stopped. Always terminal; there is no resumption. */
+/**
+ * Why the connection stopped. Always terminal; there is no resumption.
+ *
+ * **ONE vocabulary for BOTH ends, and that is forced rather than chosen.**
+ * `HostRuntimeTransport.terminate` takes this type, and `client.ts` calls the
+ * same method over the same transport — so a separate client vocabulary would
+ * be a second type that has to be converted into this one at the only place
+ * either is used.
+ *
+ * Which end can raise which is not symmetric, and the comments say so per code
+ * rather than leaving a reader to work it out from where the string appears.
+ */
 export interface HostTermination {
   readonly code:
+    /** Either end: the byte stream violated the framing. */
     | 'frame'
+    /** Either end: a frame's bytes were not UTF-8 JSON. */
     | 'not-utf8-json'
+    /** The LOOP: the peer sent something that is not a request. */
     | 'malformed-request'
+    /** The CLIENT: the host sent something that is not a response. */
+    | 'malformed-response'
+    /** The LOOP: the peer named a channel that does not exist. */
     | 'unknown-channel'
+    /** Either end: an id arrived twice. */
     | 'duplicate-id'
+    /**
+     * The CLIENT: the host answered an id nobody sent.
+     *
+     * Terminal rather than ignored, for the reason every other violation here
+     * is: a peer inventing correlation ids is a peer we have stopped
+     * understanding, and dropping the message is choosing to keep talking to it.
+     */
+    | 'unknown-correlation'
+    /** Either end: more calls outstanding than the limit anybody chose. */
     | 'too-many-in-flight'
+    /** The LOOP: a declared result cannot be sent within the frame maximum. */
     | 'unsendable-response';
   /** Diagnostic text. Shapes, counts and limits — never payload content. */
   readonly detail: string;

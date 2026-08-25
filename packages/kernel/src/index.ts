@@ -86,3 +86,9 @@ export {
   type HostTermination,
   createHostRuntime,
 } from './host/runtime.js';
+export {
+  type HostClient,
+  type HostClientOptions,
+  HostConnectionLost,
+  createHostClient,
+} from './host/client.js';
