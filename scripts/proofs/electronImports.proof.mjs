@@ -325,6 +325,20 @@ try {
       },
     ],
     [
+      'scripts/research/transportTeardown.mjs',
+      {
+        sites: 2,
+        reason:
+          'imports apps/desktop/dist/win32PipeSurface.js and dist/enginePipeFactory.js through ' +
+          'file:// URLs. The pipe whose teardown this measures has to be the SHIPPED one: the ' +
+          'reading decides whether the transport can be stopped without interrupting a syscall, ' +
+          'and a copy of the creation path would make it a reading about a copy. Both need ' +
+          'Windows backslash conversion at run time. This file starts no Electron anything — it ' +
+          'creates a worker thread and waits on two Win32 handles — and neither built module ' +
+          'imports the electron package: they reach koffi, @monstera/shared and their siblings.',
+      },
+    ],
+    [
       'scripts/research/hostSurfaceProbe.mjs',
       {
         sites: 2,

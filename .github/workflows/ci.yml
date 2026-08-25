@@ -680,6 +680,22 @@ jobs:
       - name: Prove invariant 25's containment against running processes
         run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment --expect-lowbox-spawn=refused
 
+      # THE TRANSPORT STOPS, and this is the half that cannot be retrofitted.
+      # `HostRuntimeTransport` declares `terminate(reason)` as a first-class
+      # operation and Decision 8 kills the host rather than resuming it, so the
+      # reader must come down at an arbitrary moment. A thread blocked in
+      # `ReadFile` is unwedged with `CancelIoEx` or by closing the handle
+      # underneath it; a thread waiting over completion-plus-stop returns.
+      #
+      # Two waits, because a reader has two: for a client, then for bytes. The
+      # first is where a `terminate()` most often lands — a host that never
+      # connects is what Decision 8 kills for.
+      #
+      # Here rather than on Guards for the ordinary reason: it needs
+      # node_modules and a built dist, and it is Win32 the whole way down.
+      - name: Prove the transport's reader stops without interrupting a syscall
+        run: node scripts/ci/annotate.mjs scripts/research/transportTeardown.mjs
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
@@ -938,3 +954,19 @@ jobs:
       # repair the pin.
       - name: Prove invariant 25's containment against running processes
         run: node scripts/ci/annotate.mjs scripts/research/lowboxSpike.mjs --require-containment --expect-lowbox-spawn=refused
+
+      # THE TRANSPORT STOPS, and this is the half that cannot be retrofitted.
+      # `HostRuntimeTransport` declares `terminate(reason)` as a first-class
+      # operation and Decision 8 kills the host rather than resuming it, so the
+      # reader must come down at an arbitrary moment. A thread blocked in
+      # `ReadFile` is unwedged with `CancelIoEx` or by closing the handle
+      # underneath it; a thread waiting over completion-plus-stop returns.
+      #
+      # Two waits, because a reader has two: for a client, then for bytes. The
+      # first is where a `terminate()` most often lands — a host that never
+      # connects is what Decision 8 kills for.
+      #
+      # Here rather than on Guards for the ordinary reason: it needs
+      # node_modules and a built dist, and it is Win32 the whole way down.
+      - name: Prove the transport's reader stops without interrupting a syscall
+        run: node scripts/ci/annotate.mjs scripts/research/transportTeardown.mjs

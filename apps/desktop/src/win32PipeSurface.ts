@@ -45,6 +45,26 @@ import { containerSidText, isInvalidHandle } from './win32HostSurface.js';
  */
 
 const PIPE_ACCESS_DUPLEX = 0x00000003;
+/**
+ * `FILE_FLAG_OVERLAPPED`, in `CreateNamedPipeW`'s open mode.
+ *
+ * Required, not optional, and the reason is termination rather than throughput.
+ * A synchronous handle can only be read by a thread that blocks inside
+ * `ReadFile`, and unwedging such a thread means `CancelIoEx` from outside or
+ * closing the handle underneath it — teardown that works on one machine and
+ * hangs on another. `HostRuntimeTransport` declares `terminate(reason)` as a
+ * first-class operation and ADR-0023 Decision 8 kills the host rather than
+ * resuming it, so the transport has to come down cleanly at an arbitrary
+ * moment.
+ *
+ * With this flag the reader waits on the read's completion event **and** a stop
+ * event together, and a stop returns from the wait rather than interrupting a
+ * syscall. Measured by `scripts/research/transportTeardown.mjs`.
+ *
+ * The client side is unaffected: a server instance's overlapped flag is not
+ * visible to whoever opens the name.
+ */
+const FILE_FLAG_OVERLAPPED = 0x40000000;
 const SDDL_REVISION_1 = 1;
 /** `CreateNamedPipeW`'s in and out buffer sizes. The kernel treats these as a hint. */
 const PIPE_BUFFER_BYTES = 4096;
@@ -239,7 +259,7 @@ export function createWin32PipeSurface(): PipeCreationSurface {
       });
       const handle: unknown = bindings.createNamedPipe(
         name,
-        PIPE_ACCESS_DUPLEX,
+        PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
         0,
         instances,
         PIPE_BUFFER_BYTES,

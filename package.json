@@ -83,6 +83,7 @@
     "proof:stackowner": "node scripts/proofs/stackOwnership.proof.mjs",
     "proof:stagedsyntax": "node scripts/proofs/stagedSyntax.proof.mjs",
     "proof:treewitness": "node scripts/proofs/treeWitness.proof.mjs",
+    "proof:teardown": "node scripts/research/transportTeardown.mjs",
     "check:types": "node scripts/lib/typecheck.mjs",
     "proof:typecheck": "node scripts/proofs/typecheck.proof.mjs",
     "check:proofcoverage": "node scripts/lib/proofCoverage.mjs",

@@ -793,3 +793,61 @@ that only reads and writes framed messages. It is the mask a Node client's
 the host for a reason unrelated to the threat. A host that opened the pipe with
 an explicit mask could go tighter; that is a change to both ends and is not made
 here.
+
+## Addition, 2026-08-25 — the reader is a worker thread, and it stops by waking
+
+The correction above leaves the surface owning the reads and writes. **How** it
+owns them is decided here, because the property that decides it is one neither
+candidate's description covered.
+
+`HostRuntimeTransport` declares `terminate(reason)` as a first-class operation,
+deliberately separate from `write`, and Decision 8 kills the host rather than
+resuming it. So the transport must come down cleanly **at an arbitrary moment**,
+and termination is the half that cannot be retrofitted: a transport that carries
+bytes correctly and cannot be torn down has to be rewritten, and by then there is
+a runtime loop on top of it.
+
+**Rejected: overlapped I/O polled from main.** A poll loop in the process that
+must stay responsive is a latency floor on every frame, paid whether or not
+anything is in flight. No measurement is needed to see that.
+
+**Decided: a worker thread that waits over the operation's completion event AND a
+stop event.** Not a thread blocking inside `ReadFile` — unwedging one of those
+means `CancelIoEx` from another thread, or closing the handle underneath it, and
+both are teardown that works on one machine and hangs on another.
+`WaitForMultipleObjects` over the two turns a stop into a wait returning, so
+nothing is ever interrupted mid-syscall.
+
+`FILE_FLAG_OVERLAPPED` on `CreateNamedPipeW` follows from that, and is in the
+shipped surface for this reason rather than for throughput.
+
+Measured by `scripts/research/transportTeardown.mjs`, on the shipped pipe, seven
+cases on the Windows containment jobs:
+
+| the reader is | it exited after the signal |
+|---|---|
+| waiting for a client | **10ms**, code 0 |
+| waiting for bytes | **7ms**, code 0 |
+
+**And the rejected shape was measured too**, by mutating the wait to one handle —
+which is exactly what blocking in `ReadFile` amounts to. Both cells wedge: the
+budget expires with the thread alive and the exit code is `null`, at 2010ms and
+2015ms. So the second handle is not defensive; it is the whole difference.
+
+Three further facts the probe settled, each of which would have changed the
+adapter:
+
+- **A reader has TWO waits, not one.** The probe's first version issued
+  `ReadFile` straight away and got `ERROR_PIPE_LISTENING`: a server instance
+  cannot be read before a client connects. The wait for a client is where a
+  `terminate()` most often lands — a host that never connects is precisely what
+  Decision 8 kills for — so a design stoppable only in the second wait would be
+  stoppable only in the case that does not matter.
+- **Handles cross to a worker as addresses.** Worker threads share the process
+  handle table, and `postMessage` carries structured-cloneable data rather than
+  koffi pointers, so the handle travels as a numeric address. Had that failed,
+  the pipe would have to be created inside the worker, which moves where
+  `createHostPipe` is called.
+- The stop event is **manual-reset**, because a stop is permanent: an auto-reset
+  event consumed by one waiter would leave a second reader waiting on a
+  transport that has already been told to stop.
