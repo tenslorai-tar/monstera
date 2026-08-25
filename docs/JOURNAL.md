@@ -644,6 +644,162 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `4880ea0..4f37b51` — three fixtures whose constants chose the input the defect survives, and two reds
+
+**Audited through `4f37b51`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 4880ea0..HEAD
+
+  commits: 6 (one batch is 9)
+  files:   24 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (4 more) or 25 files (1 more).
+```
+
+**Audited at 6, one file from the gate**, because the next unit — the
+`ReaderChannel` factory and its tests — is more than one file.
+
+**0 proofs added**, 1 modified (a pure addition), 0 removed; **5 source files
+added**, 5 changed, 0 removed. The range created `packages/nodemode`, built the
+reader thread, closed **CCCC-2**, and **reddened `main` twice** — both times on
+the same control, both times mine.
+
+### 1. Root cause, or workaround?
+
+- **CCCC-2** (`6ffc14f`): closed by driving the shipped reader over a real pipe.
+  Mechanism: `proof:teardown` measures termination and nothing about bytes, so a
+  reader that ended cleanly having read nothing satisfied it.
+- **the reader's chunk copy** (`6ffc14f`): root, and the recorded reason was
+  wrong before it was right — see item 4.
+- **the two reds** (`c223618`, `4f37b51`): the first repair is the interesting
+  one and it is finding **DDDD-13** below.
+
+No loosened check. The one modified proof gained a declaration.
+
+### 2. Verified against the easy shape only?
+
+**Three times in this range, and that is the range's shape.** In each case a
+constant was chosen for a good reason that had nothing to do with what it
+quietly excluded:
+
+| the constant | chosen because | what it excluded |
+|---|---|---|
+| one write batch in the reader probe | simplest way to send frames | the read loop's **second iteration** — all 16 frames landed in one read |
+| `FRAME_BYTES = 4096` | sixteen times the pipe's buffer | a **pooled payload**, here; see DDDD-12, which corrects even this |
+| one `Buffer.from` sample in a control | the obvious way to check an offset | every **pool refill**, where the offset is 0 |
+
+The first was caught by its own control on the first run. The second and third
+went to CI.
+
+**The transferable question is not *is this fixture realistic* but *what does
+this constant exclude*** — and in all three the constant was picked for a
+defensible reason, which is what stopped anyone asking.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, and in the good direction twice. Two mutations that did **not** bite were
+turned into cases that do, by finding the mechanism instead of recording the
+non-result:
+
+- the reader's chunk copy: a view left every case green, because `postMessage`
+  clones synchronously. What bites is that cloning a TypedArray clones its
+  **entire** underlying `ArrayBuffer` — 512 carried against 65536 weighed. The
+  probe now reads each chunk's underlying width.
+- the write adapter's payload copy: covered by the pooled-frame phase.
+
+That is the opposite of this checklist's usual finding, and worth naming: a
+mutation that does not bite is a prompt to look for the real mechanism, not only
+a thing to record at the constant.
+
+### 3. Would CI have caught it?
+
+**It did, twice, and it should not have had to.** `check:lint` caught four
+errors before the first push — two of them shape defects rather than style, since
+`'operation' | 'stop' | string` has the `string` swallow both literals so no
+comparison narrows. That gate is one range old and has now earned itself.
+
+What it could not see is a probe whose behaviour depends on the machine, which
+is both reds.
+
+**Asked the other way — a defect this machine cannot see?** Yes, and it is
+DDDD-12. This is the first finding in this project where the developing machine
+and the runners disagree about a **runtime constant** rather than about
+provisioning.
+
+### 4. Are the proofs non-vacuous?
+
+| what was mutated | what went red |
+|---|---|
+| the reader's wait watching the read alone | the stop cases, at **2006ms with the thread alive**; the delivery cases stayed green |
+| the reader posting a view instead of a copy | **nothing**, until the clone-weight case existed; then that case alone, printing `{"carried":512,"weighed":65536}` |
+| the write adapter dropping the payload's offset | the pooled-frame case **alone** — the 4096-byte fixture could not see it *here* |
+
+### 4a. Resolution-tested BEFORE it measured anything real?
+
+Yes for the reader: three mutations before any reading reached a document, and
+the single-batch fixture was corrected by its own control on the first run.
+
+### 4b. Positive control on every search?
+
+No new search-shaped instrument. The reader probe's controls are of the other
+kind — *did the thing I am measuring actually happen* — and one of them caught
+the fixture.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+Nothing new derives. `EXPECTED_TARGETS` and the `cases:` literals are unchanged.
+
+### 5. Executed, or asserted?
+
+**Executed:** `proof:readerworker` 8 cases · `proof:writesurface` 14 ·
+`proof:workermode` 6 · `proof:boundaries` **202**, generated · five mutations ·
+`npm run local -- --only check:` 15 of 15 · board **GREEN at `4f37b51`**.
+
+**Asserted:** nothing new. ADR-0024's cost estimate, carried as asserted in the
+previous entry, was **paid and corrected** in this range.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, in the previous range. This range built against ADR-0024 and moved
+`workerModeHarnessWorker.ts` as the amendment required, which closed DDDD-9.
+
+### 7. Do the documents still match the code?
+
+ADR-0023 took two appended additions and one appended correction; ADR-0024 took
+an appended cost correction; FEATURES row 282 was edited true.
+
+### Findings
+
+| # | finding | state |
+|---|---|---|
+| DDDD-12 | `Buffer.poolSize` is **8192** here and **65536** on the runners, and I recorded one machine's table in an ADR as a property of Node | **closed** `4f37b51` |
+| DDDD-13 | the first repair fixed a real defect that was not the cause, because I reasoned from a local reproduction instead of reading the annotation | **recorded**, no fix |
+
+**DDDD-12 in full.** The addition claiming *4096 is exactly the size that is not
+pooled* was true here and false on the runners, where a 4096-byte copy landed at
+byteOffset **21504**. So the earlier phases were **already** writing offset
+payloads on CI, and the blindness that phase was written to close existed only on
+this machine. The phase is still right and worth more than first stated — it
+removes the dependence on `poolSize` rather than covering a local gap — and B6 is
+the rule that was broken: **a figure carries the number, the date and where it
+was read**, and a six-row table went into an ADR with no machine named. It was
+genuinely measured, on one of two machines that disagree, which is the case B6
+exists for rather than an exception to it.
+
+**DDDD-13 in full, and it has no fix because it is a process finding.** After the
+first red I hypothesised a cause, reproduced it locally, found it **real** — a
+pool refill putting `byteOffset` at 0, measured at 2 of 40 — fixed that, and
+pushed. Still red. The annotation, one unauthenticated GET on a wrapped step,
+said `poolSize 65536` and named the actual cause. **The local reproduction was
+persuasive precisely because it found a genuine defect**, which is what made it
+feel like an answer rather than a candidate. *I can reproduce something that
+looks like this* and *this is what happened* are different claims, and only the
+second arrives with evidence. Read the failure text before forming the
+hypothesis, not to confirm one.
+
+---
+
 ## 2026-08-25 — Stage audit: `484460a..4880ea0` — two controls that could not see the branch they were written for
 
 **Audited through `4880ea0`.** Pasted from `npm run audit:scope`, run before this
