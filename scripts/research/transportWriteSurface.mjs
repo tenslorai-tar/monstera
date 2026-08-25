@@ -414,19 +414,22 @@ orphaned.client.destroy();
 // PHASE 5 — A FRAME SMALL ENOUGH TO BE POOLED, which every phase above avoided.
 //
 // The adapter copies with `Buffer.from(frame)`, and Node pools that copy for
-// anything under `Buffer.poolSize / 2`. Measured: a 512-byte copy lands at
-// byteOffset 528 inside a shared 8192-byte buffer, while a 4096-byte copy gets
-// byteOffset 0 and a buffer of its own.
+// anything under `Buffer.poolSize / 2` — so the payload usually starts at a
+// non-zero offset inside a buffer shared with other allocations. If koffi passed
+// the underlying buffer's base rather than the view's start, such a frame would
+// write bytes belonging to something else entirely.
 //
-// FRAME_BYTES is 4096 — exactly the size that is NOT pooled — so every case
-// above handed `WriteFile` a payload starting at offset zero. If koffi passed
-// the underlying buffer's base rather than the view's start, every sub-4096
-// frame would write the wrong bytes and the fixture could not see it: item 2's
-// easy shape and item 4's fixture-the-bug-also-handles-correctly, in one
-// constant.
+// `Buffer.poolSize` DIFFERS BY MACHINE — 8192 on the developing machine and
+// 65536 on the CI runners, both read 2026-08-25 from this probe's own output —
+// so whether the phases above exercised that path was an accident of where they
+// ran. At 8192 a 4096-byte frame is not pooled and they did not; at 65536 it is,
+// and they did.
+//
+// This phase removes the accident by using a size that is pool-eligible under
+// both, and the control says so rather than assuming it.
 //
 // A real transport's frames are whatever a message serialises to, which is
-// mostly under 4096.
+// mostly small.
 // ---------------------------------------------------------------------------
 const POOLED_BYTES = 512;
 const POOLED_FRAMES = 8;
@@ -454,17 +457,29 @@ const samples = [
   Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset,
   Buffer.from(new Uint8Array(POOLED_BYTES)).byteOffset,
 ];
+// AND IT ASSERTS NOTHING ABOUT `FRAME_BYTES`, which is the second red.
+//
+// The first version also required a 4096-byte copy to land at offset 0 — true
+// here and FALSE on the runners, where `Buffer.poolSize` is **65536** against
+// **8192** on this machine. At 65536 the threshold is 32768, so 4096 is pooled
+// too and that copy landed at 21504.
+//
+// That number is the finding rather than the flake. `Buffer.poolSize` is not a
+// constant across machines, so *4096 is the size that is not pooled* was this
+// machine's accident stated as a property — which means the phases above were
+// ALREADY writing offset payloads on the runners and were blind to the class
+// only here.
+//
+// So the control asserts only what this phase needs: that `POOLED_BYTES` is
+// pool-eligible wherever it runs, which holds under both readings, and that a
+// non-zero offset actually occurs.
 check(
   'CONTROL: a frame this size IS pool-eligible, so payloads start at a non-zero offset',
-  POOLED_BYTES < Buffer.poolSize / 2 &&
-    FRAME_BYTES >= Buffer.poolSize / 2 &&
-    samples.some((offset) => offset !== 0) &&
-    Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset === 0,
+  POOLED_BYTES < Buffer.poolSize / 2 && samples.some((offset) => offset !== 0),
   `poolSize ${String(Buffer.poolSize)}; ${String(POOLED_BYTES)}-byte copies landed at ` +
-    `${JSON.stringify(samples)} and a ${String(FRAME_BYTES)}-byte one at ` +
-    `${String(Buffer.from(new Uint8Array(FRAME_BYTES)).byteOffset)}. If the small size stopped ` +
-    `being pooled, the phase below would test nothing the phases above did not — Node's pool ` +
-    `threshold is an implementation detail and this is what notices it moving.`,
+    `${JSON.stringify(samples)}. If this size stopped being pooled the phase below would test ` +
+    `nothing the phases above did not — the threshold is an implementation detail that DIFFERS ` +
+    `BY MACHINE, which is what this reports rather than assumes.`,
 );
 
 const small = await attachedPipe('pooled');

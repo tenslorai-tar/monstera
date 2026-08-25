@@ -1294,9 +1294,36 @@ fixture the bug also handles correctly*, meeting in one constant.
 
 **koffi passes the view's start, so the shipped code was right — and unproven.**
 A fifth phase writes eight 512-byte frames through the shipped queue and compares
-the bytes, with a control asserting that a frame of that size really is pooled
-while a 4096-byte one is not (the pool threshold is an implementation detail, and
-that control is what notices it moving). Mutated by passing
-`Buffer.from(payload.buffer, 0, payload.length)` — the offset dropped — the new
-case reddens **alone**, which is the demonstration that the older fixture was
-blind to the class rather than merely quiet about it.
+the bytes. Mutated by passing `Buffer.from(payload.buffer, 0, payload.length)` —
+the offset dropped — the new case reddens **alone**.
+
+### Correction, 2026-08-25 — `Buffer.poolSize` is not the same on both machines, and the table above is one of them
+
+The table above is this developing machine's, and the sentence that followed it —
+*4096 is exactly the size that is not pooled* — is **not a property of Node**. It
+is a property of `Buffer.poolSize`, which was read at **8192** here and at
+**65536** on the CI runners, both on 2026-08-25 from this probe's own failure
+output.
+
+At 65536 the threshold is 32768, so a 4096-byte copy is pooled too — it landed at
+byteOffset **21504** on the runners. Which means **the earlier phases were
+already writing offset payloads there**, and the blindness the addition above
+describes was this machine's, not the probe's.
+
+Two things follow, and the second is the one worth carrying.
+
+The control was corrected twice and reddened `main` both times. Its first version
+asserted a single sample lands at a non-zero offset, which fails at every pool
+refill — measured at 2 of 40 here, and 0 of 64 pool positions for the two-sample
+form that replaced it. Its second still asserted that a 4096-byte copy lands at
+offset 0, which is the local accident restated. It now asserts only that
+`POOLED_BYTES` is pool-eligible wherever it runs, which holds under both
+readings.
+
+And **a figure read on one machine is a figure about that machine** (B6). The
+first version of this addition put a six-row table into an ADR without saying
+where it was read, which is exactly the shape B6 names — a number that is a guess
+wearing a measurement's clothes, except this one really was measured, on one of
+two machines that disagree. The phase is still right and its value is larger than
+first stated: it removes the dependence on `poolSize` altogether rather than
+covering a gap that existed only locally.
