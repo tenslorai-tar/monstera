@@ -2053,12 +2053,25 @@ function releaseGrants(sid) {
  * The cases, DECLARED so one that stops running cannot take its line and the
  * total with it (finding Z-4).
  *
- * THIRTEEN: three for the working-host control, nine property rows, and the
- * absence control. The count is constant on any machine that gets this far,
- * because everything before it is a provisioning gate that exits rather than
- * running fewer cases — an UNVERIFIABLE run prints no roster at all, which is
- * the honest shape here: it is not thirteen cases with some skipped, it is a
- * run that measured nothing.
+ * **THE NUMBER LIVES IN `cases:` BELOW AND IS NOT RESTATED HERE (finding
+ * DDDD-20).** This paragraph used to open "THIRTEEN: three for the working-host
+ * control, nine property rows, and the absence control" while the declaration
+ * read 23 — a decomposition of a roster that had not existed for some time. The
+ * roster itself was never wrong: `format` throws when recorded and declared
+ * disagree in either direction, so the 23 is enforced on every run and was
+ * confirmed by one (`23 containment cases passed`, this machine, 2026-08-25).
+ *
+ * What was wrong is the only part a reader consults when deciding whether their
+ * change should raise the number — and a stale decomposition is worse than none,
+ * because it invites arithmetic against a total that no longer applies. It is
+ * the same rule `check:docs` applies to §9.17: **do not copy a number the reader
+ * can reach.** What belongs here is why the anchor exists, not how big it is.
+ *
+ * The count is constant on any machine that gets this far, because everything
+ * before it is a provisioning gate that exits rather than running fewer cases —
+ * an UNVERIFIABLE run prints no roster at all, which is the honest shape here:
+ * it is not a partial roster with some cases skipped, it is a run that measured
+ * nothing.
  */
 const roster = createRoster(caseFailures, { cases: 23 });
 
