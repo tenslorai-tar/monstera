@@ -16,11 +16,11 @@
  */
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { unverifiableOutcome } from '../lib/unverifiable.mjs';
+import { UNVERIFIABLE_MARKER, unverifiableOutcome } from '../lib/unverifiable.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 5 });
+const roster = createRoster(failures, { cases: 8 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -77,6 +77,40 @@ check(
   `strict: ${JSON.stringify(strict.text)}; permissive: ${JSON.stringify(permissive.text)}. ` +
     `"Could not look" without saying what stopped it sends the next reader to reproduce the ` +
     `condition before they can act on it.`,
+);
+
+// ---------------------------------------------------------------------------
+// THE MARKER A HARNESS KEYS ON (finding DDDD-6).
+//
+// The permissive outcome exits 0, so a runner reading the exit code alone
+// reports a probe that measured nothing as a pass — measured, by moving a built
+// module aside. `checkLocal.mjs` now reads this marker to report a third state,
+// which makes the string load-bearing rather than cosmetic.
+// ---------------------------------------------------------------------------
+
+check(
+  'the permissive text carries the marker a harness can key on',
+  permissive.text.includes(UNVERIFIABLE_MARKER),
+  `it said ${JSON.stringify(permissive.text)}, which does not contain ` +
+    `${JSON.stringify(UNVERIFIABLE_MARKER)}. A runner sees exit 0 and nothing else, so without ` +
+    `this token a probe that could not look and a probe that measured everything are one ` +
+    `observation.`,
+);
+
+check(
+  'and the STRICT text does not, so a hard failure is never reported as could-not-look',
+  !strict.text.includes(UNVERIFIABLE_MARKER),
+  `the required-mode text contains the marker. It exits 1 and is a genuine failure; a harness ` +
+    `that also saw the marker would downgrade the one case this whole rule exists to keep red.`,
+);
+
+check(
+  'CONTROL: the marker is specific enough that ordinary output does not carry it',
+  !'  ok  proof:transportwrite (1.5s)\n  14 write cases passed.\n'.includes(UNVERIFIABLE_MARKER) &&
+    UNVERIFIABLE_MARKER.trim().length > 4,
+  `${JSON.stringify(UNVERIFIABLE_MARKER)} matches ordinary harness output, so every passing ` +
+    `script would be classified as unverifiable — the opposite error, and one that makes the ` +
+    `state useless rather than absent.`,
 );
 
 if (failures.length > 0) {

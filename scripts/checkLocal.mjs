@@ -90,6 +90,7 @@ import { retention, runLogName } from './lib/runLog.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
 import { multiProofSweepRefusal } from './lib/sweepScope.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
+import { UNVERIFIABLE_MARKER } from './lib/unverifiable.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -403,6 +404,20 @@ const didNotStart = [];
 
 /** @type {string[]} */
 const notNode = [];
+/**
+ * Scripts that exited 0 because they COULD NOT LOOK (finding DDDD-6).
+ *
+ * A third state beside passed and failed, for the reason `didNotStart` is one:
+ * the permissive could-not-look outcome exits 0 by design — locally there may be
+ * no build and nothing to assert — so a runner reading the exit code alone
+ * reports it as a pass. Measured 2026-08-25 by moving the built pipe surface
+ * aside: `ok proof:transportwrite (0.3s)`, and the affected-proofs disclosure
+ * then said this run had *reached every proof that reads a file this tree
+ * changed*. The stronger the disclosure got, the more it certified.
+ *
+ * @type {string[]}
+ */
+const unverifiable = [];
 /** Scripts observed to move the tree, in the order they did it. */
 /** @type {string[]} */
 const treeMovers = [];
@@ -648,6 +663,28 @@ for (const name of selected) {
     process.stdout.write(`  FAILED  ${name} (${took})\n      ${firstProblem}\n`);
     continue;
   }
+  // COULD NOT LOOK IS NOT A PASS, and it exits 0 on purpose — see the note on
+  // `unverifiable` above. Read from the marker `scripts/lib/unverifiable.mjs`
+  // owns rather than from a spelling of our own, because a second opinion about
+  // what that module prints drifts the first time its wording changes (B3a).
+  if (`${run.stdout ?? ''}${run.stderr ?? ''}`.includes(UNVERIFIABLE_MARKER)) {
+    unverifiable.push(name);
+    recordRow({
+      name,
+      exit: 0,
+      unverifiable: true,
+      signal: null,
+      seconds: Number(seconds.toFixed(2)),
+      bytes: `${run.stdout ?? ''}${run.stderr ?? ''}`.length,
+      firstProblem: '(could not look — nothing is asserted and nothing is denied)',
+    });
+    process.stdout.write(
+      `  UNVERIFIABLE  ${name} (${took})\n` +
+        `      It exited 0 without measuring anything. On a job that passes the require flag\n` +
+        `      this same condition is red; here it is neither a pass nor a failure.\n`,
+    );
+    continue;
+  }
   passedCount += 1;
   // Passes are logged too, and that is the point rather than symmetry: the
   // question WWW-2 turns on is what a script that COMPLETED did immediately
@@ -662,11 +699,16 @@ for (const name of selected) {
 // reached as a pass — the arithmetic quietly inventing the result the operator
 // was hoping for.
 const attempted =
-  failed.length + timedOut.length + didNotStart.length + notNode.length + passedCount;
+  failed.length +
+  timedOut.length +
+  didNotStart.length +
+  notNode.length +
+  unverifiable.length +
+  passedCount;
 process.stdout.write(
   `\n${String(passedCount)} passed, ${String(failed.length)} failed, ` +
     `${String(timedOut.length)} timed out, ${String(didNotStart.length)} never started, ` +
-    `${String(notNode.length)} not run — ` +
+    `${String(notNode.length)} not run, ${String(unverifiable.length)} unverifiable — ` +
     `${String(attempted)} of ${String(selected.length)} attempted.\n`,
 );
 // WRITTEN EVEN ON A PARTIAL RUN, and before the summary. A sweep that stopped
@@ -780,6 +822,14 @@ if (didNotStart.length > 0) {
       `was lost at exactly this step.\n`,
   );
 }
+if (unverifiable.length > 0) {
+  process.stdout.write(
+    `Could not look, so NOT a pass: ${unverifiable.join(', ')}\n` +
+      `Each exited 0 by design — locally there may be nothing provisioned to measure. The\n` +
+      `same condition is RED on the job that passes the require flag, so this is a gap in\n` +
+      `what YOU have evidence for and not a gap in the board.\n`,
+  );
+}
 // WHICH AFFECTED PROOFS THIS RUN REACHED AND WHICH IT DID NOT, BY NAME
 // (finding AAAA-16, and DDDD-1 for the second half).
 //
@@ -807,7 +857,7 @@ if (changedForProofs.status === 0) {
   // being named as reached when it was not, and that needs the set to grow —
   // which a set computed from the rows cannot do.
   const verdicted = runLog
-    .filter((row) => row['exit'] !== null)
+    .filter((row) => row['exit'] !== null && row['unverifiable'] !== true)
     .map((row) => (typeof row['name'] === 'string' ? row['name'] : ''));
   const report = affectedProofsReport(affectedProofs(changed, { root: ROOT }), verdicted);
   process.stdout.write(

@@ -79,13 +79,14 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { retention, runLogState } from '../lib/runLog.mjs';
 import { classifySpawn } from '../lib/spawnOutcome.mjs';
 import { multiProofSweepRefusal } from '../lib/sweepScope.mjs';
+import { UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
 
 const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 45 });
+const roster = createRoster(failures, { cases: 47 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -372,6 +373,41 @@ try {
     })(),
     'without this, "the marker is absent" is satisfied by a harness that runs nothing at all, ' +
       'or by a fixture whose second script never wrote a marker in the first place.',
+  );
+
+  // -------------------------------------------------------------------------
+  // 5a & 5b. COULD NOT LOOK IS NOT A PASS (finding DDDD-6).
+  //
+  // The permissive could-not-look outcome exits 0 by design, so a harness
+  // reading the exit code alone reports a probe that measured nothing as green.
+  // Measured 2026-08-25 by moving a built module aside: `ok
+  // proof:transportwrite (0.3s)`, after which the affected-proofs disclosure
+  // certified that this run had reached every proof reading a changed file.
+  //
+  // THE FIXTURE'S MARKER COMES FROM THE MODULE THAT OWNS IT. A literal here
+  // would be a second opinion about what `unverifiable.mjs` prints, and the two
+  // would drift the first time its wording changed — B3a, in a fixture.
+  // -------------------------------------------------------------------------
+  const blindBody = `process.stdout.write(${JSON.stringify(
+    `${UNVERIFIABLE_MARKER}the fixture is not measured here\n      nothing provisioned it\n`,
+  )});\n`;
+  const cannotLook = runFixture(
+    { 'a-blind.mjs': blindBody, 'b-seeing.mjs': EXIT_ZERO },
+    { 'proof:a-blind': 'node scripts/a-blind.mjs', 'proof:b-seeing': 'node scripts/b-seeing.mjs' },
+  );
+  check(
+    'a probe that could not look is reported UNVERIFIABLE rather than as a pass',
+    /UNVERIFIABLE\s+proof:a-blind/u.test(cannotLook.output) &&
+      /1 unverifiable/u.test(cannotLook.output),
+    `exit 0 and a green line are the same observation otherwise, and the stronger the sweep's ` +
+      `coverage claim gets the more it then certifies. Output:\n${cannotLook.output}`,
+  );
+  check(
+    'CONTROL: and an ordinary zero-exit script in the same run IS a pass',
+    /1 passed,/u.test(cannotLook.output) && /\bok\s+proof:b-seeing/u.test(cannotLook.output),
+    `without this, "not counted as a pass" is satisfied by a classifier that calls EVERYTHING ` +
+      `unverifiable — the opposite error, and one that makes the state useless rather than ` +
+      `absent. Output:\n${cannotLook.output}`,
   );
 
   // -------------------------------------------------------------------------
