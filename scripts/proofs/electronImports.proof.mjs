@@ -327,13 +327,14 @@ try {
     [
       'scripts/research/readerWorker.mjs',
       {
-        sites: 2,
+        sites: 4,
         reason:
-          'imports apps/desktop/dist/win32PipeSurface.js and dist/enginePipeFactory.js through ' +
-          'file:// URLs, to create the pipe and the stop event with the SHIPPED code the ' +
-          'transport will use. The reader itself is started as a worker by PATH, not imported, ' +
-          'so it is not a site. Both need Windows backslash conversion at run time, and neither ' +
-          'built module imports the electron package.',
+          'imports apps/desktop/dist/win32PipeSurface.js, dist/enginePipeFactory.js, ' +
+          'dist/readerHostSurface.js and dist/engineReaderChannel.js through file:// URLs, so ' +
+          'that it drives the SHIPPED composition — the channel creates the stop event and ' +
+          'starts the reader — rather than a hand-rolled Worker beside it. The reader itself is ' +
+          'started by PATH, not imported, so it is not a site. All four need Windows backslash ' +
+          'conversion at run time, and none of the built modules imports the electron package.',
       },
     ],
     [

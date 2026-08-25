@@ -34,7 +34,6 @@ import { existsSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { Worker } from 'node:worker_threads';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
@@ -71,6 +70,8 @@ if (process.platform !== 'win32') {
 const BUILT = {
   pipeSurface: join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js'),
   pipeFactory: join(ROOT, 'apps', 'desktop', 'dist', 'enginePipeFactory.js'),
+  readerSurface: join(ROOT, 'apps', 'desktop', 'dist', 'readerHostSurface.js'),
+  readerChannel: join(ROOT, 'apps', 'desktop', 'dist', 'engineReaderChannel.js'),
   reader: join(ROOT, 'packages', 'nodemode', 'dist', 'readerWorker.js'),
 };
 for (const built of Object.values(BUILT)) {
@@ -82,13 +83,16 @@ for (const built of Object.values(BUILT)) {
   }
 }
 
-const { createWin32PipeSurface, createWin32ReaderControl, currentUserSid, hostContainerSid } =
-  await import(pathToFileURL(BUILT.pipeSurface).href);
+const { createWin32PipeSurface, currentUserSid, hostContainerSid } = await import(
+  pathToFileURL(BUILT.pipeSurface).href
+);
 const { createHostPipe } = await import(pathToFileURL(BUILT.pipeFactory).href);
+const { createReaderHostSurface } = await import(pathToFileURL(BUILT.readerSurface).href);
+const { createEngineReaderChannel } = await import(pathToFileURL(BUILT.readerChannel).href);
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 10 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -102,7 +106,6 @@ const rest = (ms) => new Promise((done) => setTimeout(done, ms).unref?.() ?? und
 
 const CONTAINER = 'monstera-reader-worker-probe';
 const pipes = createWin32PipeSurface();
-const control = createWin32ReaderControl();
 const user = currentUserSid();
 const container = hostContainerSid(CONTAINER);
 if (!user.ok || !container.ok) {
@@ -123,14 +126,36 @@ if (!built.ok) {
 }
 const pipe = built.value.instances[0];
 
-const stopEvent = control.createStopEvent();
-check(
-  'SETUP: the shipped control creates a stop event',
-  stopEvent !== null,
-  `createStopEvent returned null, GetLastError ${String(control.lastError())}. Without it there ` +
-    `is no way to tell the reader anything, which is the whole reason the wait has two handles.`,
-);
-if (stopEvent === null) process.exit(1);
+// THE SHIPPED SURFACE, WRAPPED SO THIS CAN SEE WHAT THE CHANNEL HIDES.
+//
+// `createEngineReaderChannel` owns the stop event and the worker, which is the
+// point of it — so the two facts this probe needs and the channel does not
+// expose are observed by decorating the surface it is handed: whether the OS
+// thread actually exited, and whether `terminate` was ever called.
+//
+// A DECORATOR, never a second implementation. Every call still goes to
+// `createReaderHostSurface`, so what is measured is the shipped path.
+const shipped = createReaderHostSurface(BUILT.reader);
+let exited = false;
+let terminated = 0;
+const surface = {
+  ...shipped,
+  /** @param {unknown} data */
+  startWorker: (data) => {
+    const handle = shipped.startWorker(data);
+    if (handle === null) return null;
+    handle.onExit(() => {
+      exited = true;
+    });
+    return {
+      ...handle,
+      terminate: () => {
+        terminated += 1;
+        handle.terminate();
+      },
+    };
+  },
+};
 
 /**
  * Frame `index` filled with `index % 256`, carrying `index` as a little-endian
@@ -165,27 +190,28 @@ const received = [];
 const chunkWeights = [];
 /** @type {string[]} */
 const endings = [];
-let exited = false;
 
-const worker = new Worker(BUILT.reader, {
-  workerData: {
-    pipeAddress: control.addressOf(pipe),
-    stopAddress: control.addressOf(stopEvent),
-    readBytes: READ_BYTES,
-  },
+// THE SHIPPED CHANNEL, not a hand-rolled Worker. It creates the stop event, it
+// starts the reader, and it decides what an ending is — so this drives the
+// composition the application will, rather than the worker in isolation.
+const made = createEngineReaderChannel(surface, pipe, READ_BYTES);
+check(
+  'SETUP: the shipped channel starts the reader',
+  made.ok,
+  `createEngineReaderChannel refused: ${made.ok ? '' : made.error}. The channel creates the stop ` +
+    `event before the worker and refuses if it cannot, so a refusal here is that and not a ` +
+    `thread left running with nothing able to stop it.`,
+);
+if (!made.ok) process.exit(1);
+const { channel, dispose, finished } = made.value;
+
+channel.onChunk(/** @param {Uint8Array} chunk */ (chunk) => {
+  // Read BEFORE the copy below, which would give it a right-sized buffer of its
+  // own and erase the thing being measured.
+  chunkWeights.push({ carried: chunk.byteLength, weighed: chunk.buffer.byteLength });
+  received.push(Buffer.from(chunk));
 });
-worker.on('message', (message) => {
-  if (message.kind === 'chunk') {
-    // Read BEFORE the copy below, which would give it a right-sized buffer of
-    // its own and erase the thing being measured.
-    chunkWeights.push({ carried: message.bytes.byteLength, weighed: message.bytes.buffer.byteLength });
-    received.push(Buffer.from(message.bytes));
-  } else endings.push(String(message.detail));
-});
-worker.on('error', (error) => endings.push(`THREW: ${error.message}`));
-worker.on('exit', () => {
-  exited = true;
-});
+channel.onEnded(/** @param {string} detail */ (detail) => endings.push(detail));
 
 const client = connect(pipeName);
 client.on('error', (error) =>
@@ -273,25 +299,47 @@ check(
 // THE STOP, with the reader in the state it will really be in: waiting for
 // bytes, having already delivered some. The connect wait is the other probe's.
 // ---------------------------------------------------------------------------
-const signalled = control.signal(stopEvent);
+channel.stop();
 const stopStarted = Date.now();
 while (!exited && Date.now() - stopStarted < STOP_BUDGET_MS) await rest(10);
 const stopMs = Date.now() - stopStarted;
 
 check(
-  'signalling the stop event ends a reader that is waiting for bytes',
-  signalled && exited && stopMs < STOP_BUDGET_MS,
-  `signal=${String(signalled)}, exited=${String(exited)} after ${String(stopMs)}ms. The rejected ` +
-    `design — waiting on the read alone — wedges here with the thread alive until something ` +
-    `outside kills it, measured by transportTeardown.mjs at both of its waits.`,
+  'the channel stopping ends a reader that is waiting for bytes',
+  exited && stopMs < STOP_BUDGET_MS,
+  `exited=${String(exited)} after ${String(stopMs)}ms. The rejected design — waiting on the read ` +
+    `alone — wedges here with the thread alive until something outside kills it, measured by ` +
+    `transportTeardown.mjs at both of its waits.`,
 );
 
 check(
   'and it says WHY it ended, once',
-  endings.length === 1 && endings[0]?.includes('stopped') === true,
-  `endings = ${JSON.stringify(endings)}. One message for every ending, and the transport above ` +
-    `decides who caused it from which of its own calls it was in — a reader classifying its own ` +
-    `ending would be a second opinion about a question the layer above already answers.`,
+  endings.length === 1 && endings[0]?.includes('stopped') === true && finished(),
+  `endings = ${JSON.stringify(endings)}, finished=${String(finished())}. One message for every ` +
+    `ending, and the transport above decides who caused it from which of its own calls it was in ` +
+    `— a reader classifying its own ending would be a second opinion about a question the layer ` +
+    `above already answers.`,
+);
+
+check(
+  'THE CONTROL: the stop EVENT did it, and no terminate was ever called',
+  terminated === 0,
+  `terminate was called ${String(terminated)} time(s) before the reader ended. That is the ` +
+    `measurement this whole design turns on: a channel that killed the thread would end it just ` +
+    `as promptly and prove nothing about the two-handle wait, which is why stop() may not do it.` +
+    `\n      Measured by adding that terminate: THREE cases go red, and the third is the ` +
+    `interesting one — the reader never gets to post its own ending, so the diagnostic becomes ` +
+    `"exited with code 1" instead of "stopped while waiting for bytes". Killing the thread does ` +
+    `not merely prove nothing; it destroys the only account of what happened.`,
+);
+
+dispose();
+check(
+  'and disposing an already-ended reader still terminates nothing',
+  terminated === 0,
+  `terminate was called ${String(terminated)} time(s) by dispose. A terminate on an ended thread ` +
+    `is the call that lets somebody later conclude the terminate is what stops it — the unit ` +
+    `test asserts this against a fake, and this asserts it against the real one.`,
 );
 
 process.stdout.write(
@@ -301,8 +349,6 @@ process.stdout.write(
 );
 
 client.destroy();
-await worker.terminate();
-control.closeEvent(stopEvent);
 for (const instance of built.value.instances) pipes.close(instance);
 
 if (failures.length > 0) {
