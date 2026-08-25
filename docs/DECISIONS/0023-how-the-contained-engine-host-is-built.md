@@ -1651,3 +1651,95 @@ So this is carried as an **expiring claim on `docs/FEATURES.md` row 284**, with
 the trigger written into the body — the amendment is owed **before the save
 pipeline**, not before the supervisor. A symbol scan cannot see an event, which
 is why it is on a row and not in the advisory register.
+
+### Correction, 2026-08-25 — candidate 1 is the candidate with the LARGEST KNOWN COST, not the leading one (finding DDDD-19)
+
+The correction above called *letting the log outlive the record* "the only
+candidate that leaves L18 intact". That is literally true and it reads as a
+recommendation. **Three collisions were not noted, and all three are with
+decisions already recorded in this repository.**
+
+**1. It is resurrection, and ADR-0009 removed resurrection by CONSTRUCTION
+rather than by discipline.** That ADR's own words, deciding where the log lives:
+*"no map, so no get-or-create and no resurrection; the log's lifetime is the
+record's, dropped on close **by construction** rather than by discipline"* —
+reached because a `Map<DocId, …>` *"mints a bus for a closed `DocId` and runs it
+against a torn-down document"*. For a log to survive a close and re-attach on
+reopen, something must hold it in the interval, keyed by something outliving both
+records. **That is the map, and it is the get-or-create.** The row previously
+said this "changes ADR-0009's rule that the log's lifetime is the record's" —
+understated: it is not a rule being amended, it is a construction being rebuilt
+into the shape ADR-0009 chose it to prevent, and *"a whole class of lifetime bug
+has nowhere to live"* stops being true the day it exists.
+
+**2. That key is the one the DDDD-16 correction said did not exist.** DDDD-16
+argued that *never, for the life of the process* is **unrepresentable** (B5)
+because it has no key to live on. Candidate 1 mints exactly that key — and a
+carry-over identity that can hold a log can hold a poison count. **So the
+unrepresentability is contingent on candidate 1 not being taken**, which is not
+how it is recorded above or on the row: it is recorded as settled.
+
+**3. The automatic replay is 9a's rejected "try again", made automatic, and it
+restores the loop.** Traced: rotate → death (1) → rotate → death (2) → poisoned →
+close → reopen at a fresh `DocId`, count 0, log replayed → **the suspect intent
+reaches a fresh contained host**. Two deaths per cycle instead of one, and still
+unbounded.
+
+Stated precisely, because the precise version is the one that transfers: the
+reopen *is* a user act, but it is **not a retry decision** — the replay rides on
+it. 9a rejected the one-click retry for *"making the second attempt cheaper than
+the first, which is the wrong direction for a bound whose premise is that a host
+death may be a compromise signal"*. Candidate 1 makes it free **and** removes the
+human from the decision, which is further in that direction rather than less.
+
+**Recorded, not re-decided.** Candidate 1 is not dead — something that recovers
+stranded work may still be built on it — but only with a mechanism that stops the
+replay being automatic and unbounded, and **that mechanism is the expensive part
+nobody has costed.** It is carried from here as the candidate with the largest
+known cost.
+
+#### A fourth candidate, named only so this does not read as a two-horse race
+
+**Bound per `(DocId, command kind)` rather than per `DocId`.** A document whose
+`rotatePages` kills the host is refused *that*, keeps every other operation, and
+a save stays reachable — so L18 survives with nothing resurrected.
+
+**Not analysed, and it may fail immediately.** It plainly degrades to the current
+behaviour when the choke is in `open(image)` itself, since then everything dies.
+9a chose the document as the unit on the argument that *"the input the host chokes
+on is that document's bytes"*, which is right for the **open** path and
+**assumed** for the command path. Worth one paragraph when this is actually
+taken; not owed now, and recorded here so the absence of a fourth option is not
+mistaken for its having been considered.
+
+#### The timing ruling holds, and it has ONE dependency that must travel with it
+
+The amendment is owed before the save pipeline rather than before the supervisor,
+and the test that settles it is not *can work be stranded before a save exists*
+but **does the supervisor's SHAPE depend on the answer**. Taken one candidate at
+a time: letting the log outlive the record changes `DocumentService`'s record
+teardown; amending L18 changes prose; **only *let a save through the poison*
+changes the supervisor**, because it would have to tell a save from a command —
+and that is the candidate both seats rejected.
+
+**So this ruling holds only while candidate 3 stays rejected.** That rejection is
+an argument, not a measurement. If it is ever revisited, the supervisor is what
+changes, and by then it will be built. The dependency is written onto row 284
+beside the trigger, because a timing call whose condition lives only in a
+correction is a condition nobody re-reads.
+
+#### The expiry trigger carried one date for two facts that expire on different days
+
+Row 284 named **the save pipeline**. That is right for reason 1 — L18's subject
+does not exist. It is wrong for reason 2: *the candidate's premise cannot be
+tested, because no whole-log replay path exists* expires at **checkpoint
+restore**, which is separately owed and already named. `commandBus.ts` spells it
+out at `CheckpointRestoreNotBuiltError`: §4's answer, *restore the nearest
+checkpoint and replay forward*, **"means opening a new session from those
+bytes"** — which is precisely the machinery candidate 1 needs, and it may well
+land first.
+
+As written, if checkpoint restore landed first, reason 2 would become false and
+**nothing would fire**. The trigger is therefore **whichever of the save pipeline
+or checkpoint restore lands first**. Both are nameable today, which is what makes
+it a check rather than a note.
