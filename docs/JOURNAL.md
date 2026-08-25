@@ -644,6 +644,186 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `121c0ff..484460a` — the sweep said fifteen of fifteen and could not see the gate that was red
+
+**Audited through `484460a`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 121c0ff..HEAD
+
+  commits: 8 (one batch is 9)
+  files:   19 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (2 more) or 25 files (6 more).
+```
+
+**Audited at 8 because the pre-commit gate refused the ninth**, whose eight files
+took the range past 24. The report above is retrospective and the gate is
+prospective, so the two disagreeing at this moment is them agreeing about the
+same range — worth stating once, because a reader meeting both in one minute has
+every reason to think one of them is wrong.
+
+**0 proofs added**, 3 modified, 0 removed; **4 source files added**, 6 changed, 0
+removed. All three modified proofs are additions with their counts raised; no
+check in the range was loosened. The range built the write adapter and its
+end-to-end probe, measured the write teardown and the worker's runtime mode,
+closed DDDD-2 and DDDD-6, and **reddened `main` once**.
+
+### 1. Root cause, or workaround?
+
+Every fix root-cause. Two are corrections to my own claims and one is a red.
+
+- **DDDD-2** (`13d15b8`): two comments stated one thing owned both directions of
+  the pipe. Mechanism: the write decision falsified them and neither file is in
+  any scope column — one is in the kernel, which the range never touched.
+- **DDDD-6** (`6605e04`): the permissive could-not-look outcome exits 0 by
+  design, so a runner reading the exit code alone reports a probe that measured
+  nothing as a pass. Root fix: a third state in the harness, keyed on a marker
+  the printing module owns.
+- **the red** (`dd532bd`): four ordinary lint errors. The fix is mechanical; the
+  reason it reached `main` is **DDDD-7** below and is not.
+
+### 2. Verified against the easy shape only?
+
+**The write adapter's hard shape is a peer that never reads, and it was used** —
+32 frames, 131072 bytes delivered in issue order, the bound refusing past 8
+outstanding, a teardown freeing 31 writes in 0ms.
+
+**Two mutations did not bite and are recorded at their constants rather than
+acted on** — the `OVERLAPPED`'s completion event, which nothing reads because
+this design only polls, and the payload copy, which the named-pipe file system
+makes indistinguishable from a view. The second is the sharper one: **I built
+that case believing it would separate**, and the comment now says it does not
+rather than reading like a proof.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+No. Three widenings — `unverifiable.proof.mjs` +3 cases, `checkLocal.proof.mjs`
++2, `electronImports.proof.mjs` one declaration — and nothing asserted moved to
+being derived.
+
+### 3. Would CI have caught it?
+
+**It DID, and that is the finding rather than a reassurance.** `7ba978c` failed
+CI 32828958338 at step "Lint" on all three jobs. Answered from the run, not the
+workflow file.
+
+**DDDD-7 — the local sweep is structurally blind to lint.** `checkLocal.mjs`
+derives its set from `check:*`/`proof:*` names and invokes only bare `node`
+command lines; `npm run lint` is neither. `npm run local -- --only check:`
+reported **14 of 14 passed** on a tree CI then rejected, and the sweep's
+disclosure names the PROOFS it did not run, so nothing named this hole either. A
+file-naming convention standing in for a check, one layer up from where W-1 found
+it. The gate is written and lands in the next range.
+
+The compensation I was relying on was *lint the files you changed*, by hand, one
+at a time. That is the shape this project has written down three times as not
+being a mechanism, and it failed on the first file I forgot.
+
+**Asked the other way — a defect this machine cannot see?** `proof:workermode`
+is Windows-only and declines elsewhere, which is the inverse shape: CI is
+stricter than here, not looser.
+
+### 4. Are the proofs non-vacuous?
+
+| what was mutated | what went red |
+|---|---|
+| the `OVERLAPPED`'s completion event removed | **nothing** — recorded at the constant, kept because a per-write wait added later is silently wrong without it |
+| the payload copy replaced by a view | **nothing** — recorded; the pipe FSD takes the bytes at request time |
+| the limit checked before collecting | `hostWriteQueue`'s control, and not the overrun case |
+| `abandon` without the cancel | the teardown case, at *31 stranded after 250ms* — reporting where the waiting version produced exit 124 |
+| main reporting no usable Electron module | `workerMode`'s control, alone |
+| the marker classification removed, then applied to everything | both new `checkLocal` cases, in each direction |
+
+**DDDD-8 — a branch no fixture reaches, and it is load-bearing.** In
+`win32PipeSurface.ts`'s `abandon`, the path where `CancelIoEx` fails for a reason
+other than `ERROR_NOT_FOUND` strands every write without waiting. Nothing reaches
+it: the mutation that removed the cancel exercised the *poll timeout* instead.
+Forcing a genuine cancel failure needs a handle in a state this probe cannot
+construct. NNN-2's category — reachable, load-bearing, no case — and it is the
+one branch of the teardown that decides whether main hangs, so it is recorded as
+owed rather than as documentation.
+
+### 4a. Resolution-tested BEFORE it measured anything real?
+
+**Yes for the write surface, and this is the improvement on DDDD-3.** Three
+mutations were run against `transportWriteSurface.mjs` before its readings
+reached any document, and one of them corrected an over-specified expectation:
+I asserted four refusals past a limit of eight and the run gave three, because
+the kernel takes the first frame into the pipe's own buffer and the reap frees
+that slot. The case now asserts the shape and says why the count is not asserted.
+
+**`workerMode.mjs` was mutated during this audit rather than before**, which is
+DDDD-3's order again in a smaller way. Its control reddens alone when main
+reports no usable module. Two of its three defects had already been found by
+running it — the ESM `__dirname`, and a SETUP case that passed on a harness
+failure line because the harness reuses its marker for its own errors.
+
+### 4b. Positive control on every search?
+
+`workerMode.mjs`'s control is main's own row, taken in the same run, and it is
+the negative-probe rule in its exact form: build the input from something that
+would succeed if the property were absent.
+
+**One search of mine failed the ordinary way and is recorded because it is the
+fifth occurrence of the class.** Checking whether the new probes were registered
+in CI, I grepped the workflows for `proof:transportwrite` and got nothing — CI
+invokes the script path through `annotate.mjs`, not the npm name. The reassuring
+answer was *not registered*, and it was wrong.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+One new anchor, and its direction was asked before it was written.
+`check:lint`'s extent is a **literal** (`EXPECTED_TARGETS`) rather than derived,
+because the lint is one segment and shrinks by having its argument changed —
+`eslint .` to `eslint packages` lints less, parses the same, and leaves the
+invocation count unmoved. A case requires a narrowed script to fail that anchor,
+without which the literal is decoration.
+
+### 5. Executed, or asserted?
+
+**Executed:** the write surface end to end, 9 cases · the write teardown, 5 ·
+the worker's runtime mode, 6 · six mutations, listed above · the full
+`apps/desktop` suite, 124 · `npm run local -- --only check:`, 15 of 15 · board
+**GREEN at `dd532bd`**.
+
+**Asserted:** that `OverlappedWriteSurface`'s members map onto the Win32 calls
+the way the adapter spells them, which no case reaches independently of the
+adapter · that the reader worker will fit `ReaderChannel` unchanged.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No architecture changed in this range. The placement question the worker-mode
+measurement answers is a **B4 amendment** and is the next commit — measured
+first, deliberately, so the amendment rests on a reading rather than on a
+document.
+
+### 7. Do the documents still match the code?
+
+ADR-0023 took three appended sections and one appended correction; FEATURES row
+282 was edited true three times; two code comments were corrected in the commit
+that falsified them. NNN-4's cross-document sweep fired and produced DDDD-2.
+
+**DDDD-9 — and this one is against the range's own finding.**
+`apps/desktop/src/workerModeHarnessWorker.ts` runs in a worker thread, which this
+range measured to be Node mode, and it sits in the directory the same finding
+says Node-mode code must leave. It imports no Electron, so nothing is broken —
+which is exactly why it would have stayed. The B4 amendment is where it is
+resolved, and it has to answer whether harness files are in scope rather than
+leaving the first exception to be argued case by case.
+
+### Findings
+
+| # | finding | state |
+|---|---|---|
+| DDDD-2 | two comments said one thing owned both directions of the pipe | **closed** `13d15b8` |
+| DDDD-6 | the local sweep read a could-not-look as a pass, then certified coverage | **closed** `6605e04` |
+| DDDD-7 | the sweep is structurally blind to lint; it cost a red board | **fix written**, lands next range |
+| DDDD-8 | `abandon`'s cancel-failed branch is reachable, load-bearing and reached by no case | **open** |
+| DDDD-9 | the harness worker sits in the directory this range's own finding says it must leave | **open**, resolved by the B4 amendment |
+
+---
+
 ## 2026-08-25 — Stage audit: `4a0ef5d..121c0ff` — a control compared the one thing the defect would not change
 
 **Audited through `121c0ff`.** Pasted from `npm run audit:scope`, run after this
