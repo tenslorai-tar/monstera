@@ -488,6 +488,16 @@ jobs:
       - name: Trying again is bounded, fails closed, and never happens for an answer
         run: node scripts/ci/annotate.mjs scripts/proofs/retryTransient.proof.mjs
 
+      # And the CALL SITE, which is the half that was unproven (finding DDDD-14).
+      # The step above covers the retry mechanism with hand-built throws; this one
+      # covers what OSV's answers MEAN — a thrown fetch and a 5xx are nobody
+      # answering, a 404 is an answer and is not retried.
+      #
+      # Its load-bearing case is the 404. An adapter that retried everything
+      # passes every other case here.
+      - name: What OSV answered, and what nobody answering looks like
+        run: node scripts/ci/annotate.mjs scripts/proofs/osvQuery.proof.mjs
+
       - name: File policy (whole tree)
         run: node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --tree
 
