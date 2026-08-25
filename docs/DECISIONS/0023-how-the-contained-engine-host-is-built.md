@@ -1569,3 +1569,85 @@ supported, which **no sweep would ever have found**, since nothing about it was
 going to change. The tell was available at the moment of writing and was not
 reached: a two-clause sentence whose second clause was doing the reassuring and
 was not entailed by the first.
+
+### Correction, 2026-08-25 — "a poisoned document is still saveable" is WITHDRAWN, and it collided with invariant 18 (finding DDDD-18)
+
+9a justified *refusing beats closing* with one sentence, above: *"A poisoned
+document is still **saveable**: main holds the canonical bytes and never parses
+them — which is §9.17's own stated premise for main's budget."* The DDDD-17
+correction repeated it. **It is false, and the premise it cites is what makes it
+false.**
+
+Invariant 17 is *main holds canonical bytes and **never parses***. A save is a
+parse-and-write — §4 chooses incremental-append or full-rewrite-with-object-GC,
+and both walk the xref — so **a save is engine work**, and a poisoned document
+has no session. What main can do unaided is write the **last-saved bytes** back
+out, which is a copy of the original rather than the user's work.
+
+**The user's work is the command log, and it cannot be applied either.**
+Invariant 22 requires that no mutation exist only on the handle: it lives as
+intent to be re-executed, or as a recorded effect to be re-applied. Both are
+engine work. So for a poisoned document the edits can be neither applied nor
+saved.
+
+**And the recovery adopted in the DDDD-16 correction destroys them.**
+Close-and-reopen drops the record, and the log's lifetime *is* the record's — so
+the recovery is 9a's own rejected alternative, *"discards intact canonical bytes
+and an intact command log"*, with the user's hand on it instead of the app's.
+That correction is therefore correct about the **count** and wrong to present
+close-and-reopen as sufficient recovery whenever unsaved work exists.
+
+**The collision is with invariant 18**, in its words: *"A failed save never loses
+work. … a save failure is answered by killing the host, restarting, reopening
+from the last-saved bytes, replaying the log … never by a dialog whose only
+option discards their edits."* §3 above already states that failed-save recovery
+is kill-and-restart — *one route, reached three ways* — and 9a bounds that route
+at 2 per document. So the document whose **save** kills the host twice is the
+deterministic case the bound is written for, and it is exactly the document L18's
+mandated recovery is then refused.
+
+#### The decision survives; its stated reason does not
+
+*Refusing beats closing* is still right, and the reason is now the one that is
+actually true: **refusing STRANDS the work, closing DESTROYS it.** Refusing keeps
+the record, the log and the canonical bytes in main, intact and unappliable *for
+now*, which leaves every later resolution reachable. Closing forecloses all of
+them. Stranded strictly dominates destroyed, and that argument needs no claim
+about saving at all.
+
+This is recorded rather than reworded because a decision whose stated premise has
+been withdrawn is a check leaving: the conclusion happened to survive, and
+nothing about re-deriving it was guaranteed to reach the same answer.
+
+#### What is NOT decided here, and why it is not yet owed
+
+The prior question — *what happens to work that exists only as a command log when
+the engine is permanently refused for that document* — is **invariant 18's, not
+the supervisor's**, and settling it is a **B4 amendment**.
+
+It is not taken now, and the reason is measured rather than preferred:
+
+- **There is no save pipeline.** `documentService.ts` states it in its own words
+  — `markSaved` "deliberately keeps no token. Its writer of record is the save
+  pipeline, which does not exist" — and `packages/contract` declares exactly two
+  channels, `app.info` and `document.execute`, neither of which saves. L18's
+  subject cannot be violated by code that does not exist, and it cannot be
+  satisfied either.
+- **The leading candidate's premise cannot be tested yet.** Letting the log
+  outlive the record, so a reopen replays it against the fresh `DocId`, is the
+  only candidate that leaves L18 intact, and `commandLog.ts` names `DocId`
+  nowhere, so the log is not identity-bound. But whether a **checkpoint** replays
+  against a freshly opened document is the thing to measure, and there is no
+  whole-log replay path to measure it with: `commandBus` replays one entry for
+  redo and nothing replays a log into a fresh session.
+- **A fact that is true today and must not be mistaken for a decision:** every
+  command declares `replay: 'reapply-intent'`, and `'stored-effect'` is a
+  compile-time trigger with no user. So checkpoint replay is not on the replay
+  path *at all* right now, which makes that candidate look cheaper than it will
+  be. That is exactly the shape that needs an expiry rather than a decision taken
+  against it.
+
+So this is carried as an **expiring claim on `docs/FEATURES.md` row 284**, with
+the trigger written into the body — the amendment is owed **before the save
+pipeline**, not before the supervisor. A symbol scan cannot see an event, which
+is why it is on a row and not in the advisory register.
