@@ -644,6 +644,166 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `16dc4da..4859f20` — a stale count in the anchor's own explanation, and a board reading that cannot be taken later
+
+**Audited through `4859f20`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 16dc4da..HEAD
+
+  commits: 9 (one batch is 9)
+  files:   15 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (1 more) or 25 files (10 more).
+```
+
+**Audited at exactly one batch**, because the next commit is the Decision 7
+instrument and it would be commit 10.
+
+**2 proofs added**, 1 modified, 0 removed; **2 source files added**, 4 changed, 0
+removed. The range built the **composition point** — the last link of the
+transport — and then spent six commits on corrections to a decision written
+inside it, four of them from the reviewing seat.
+
+Board **GREEN at `4859f20`** (`Guards=success, CI=success`, exit 0).
+
+### 1. Root cause, or workaround?
+
+- **DDDD-14** (`ef9cf80`): root, and the repair is structural rather than a test
+  accommodation. `engineAdvisories.mjs` calls `main()` at import so nothing can
+  load it; instead of bolting an injection seam onto an entry point, OSV's
+  protocol became a named module with callers (B3a).
+- **DDDD-15** (`e7f3a94`): root — the type lacked a state, so two codes were
+  added. Patching the fixture alone would have left the next caller choosing a
+  violation for a host that committed none.
+- **DDDD-20** (`4859f20`): root, and the repair **removes the copy** rather than
+  correcting it. A corrected decomposition would have gone stale again in the
+  same place, silently.
+
+No loosened check. The one modified proof, `client.test.ts` at +38/−3, is a pure
+strengthening: three fixture corrections and one added case.
+
+### 2. Verified against the easy shape only?
+
+**No, and the interesting case is a fixture that was wrong on its first try.**
+The composition's load-bearing case proves that a client violation keeps its own
+code, and it needs a **well-formed** response for an id nobody sent. The first
+version sent a malformed one, which is refused *before* the correlation is looked
+up — so it passed on `malformed-response` and proved a different thing than its
+name claimed. Caught by the assertion, not by review.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and in the strengthening direction, but it does not replace what it looks
+like it replaces.** DDDD-14 moved OSV's classification into a module with eight
+cases driven by a fake `fetch`. Those cases prove the *decision*; they say
+nothing about the live API, which is still exercised only when OSV misbehaves.
+Coverage arrived beside the integration reading rather than in place of it.
+
+### 3. Would CI have caught it?
+
+DDDD-20, **no** — a stale comment beside a correct constant is invisible to every
+check, and deliberately so: the roster enforces the number and has no opinion
+about the prose. DDDD-15, **no**, for the reason recorded in the previous audit.
+
+### 4. Are the proofs non-vacuous?
+
+Mutations, all run: `hostFor` called twice reddens the once-only case **alone**;
+mapping a dead peer to `shutdown` reddens three; reporting an ending for a host
+that never started reddens the host-refusal case; dropping the explicit
+`terminate` reddens three. In `client.test.ts`, substituting a fixed `frame`
+inside `fail` reddens the new case and leaves the other fourteen green. In
+`osvQuery.proof.mjs`, rethrowing the network error as itself reddens the
+thrown-fetch case at `calls=1`, and retrying anything not ok reddens the 404 and
+the 400 at `calls=3`.
+
+**And a vacuity class was closed in the composition's own file:** every order
+assertion went through `indexOf`, where `-1 < n` is true, so a run that skipped
+the earlier step entirely would have passed all of them. They now assert presence
+of both operands first — confirmed by deleting the `terminate` call, which
+reddens three cases where the unguarded form went green.
+
+**DDDD-20 — the roster anchor was enforced and correct; the paragraph explaining
+it was stale by ten.** `createRoster(caseFailures, { cases: 23 })` carried a doc
+comment opening *"THIRTEEN: three for the working-host control, nine property
+rows, and the absence control"*. Nothing was broken: `passRoster.format()` throws
+when recorded and declared disagree **in either direction**, so 23 was enforced
+on every run — confirmed by running the spike (`23 containment cases passed`,
+this machine, 2026-08-25, machine state fully reversed and the profile deleted).
+
+The anchor did its job and the prose beside it did not, and that prose is the
+only part a reader consults when deciding whether their change should raise the
+number. It was found at exactly that moment — preparing to add Decision 7's
+probes — and trusting it would have meant computing the new total from 13.
+
+The repair is not a corrected decomposition. **Restating the number is what
+failed**, and restating it accurately would fail again on the next case added, in
+the same place. It is the rule `check:docs` already applies to §9.17: *do not
+copy a number the reader can reach.* The usual B6 failure is a figure nobody
+measured; this one was measured and then outlived by the code.
+
+### 4a. Resolution test before it measured anything?
+
+**The ACL measurement (`b465481`) had one and it is worth naming**, because a
+reading taken without one is the shape this checklist exists for: the ACL was
+read **before** the grant, **after** the directory grant, **after** the explicit
+file grant, and **after** the revoke. Four readings, each differing from its
+neighbour by exactly the act between them — so the instrument (here, `icacls`)
+is demonstrably able to report the change it was used to detect.
+
+### 5. Executed, or asserted?
+
+**Executed:** 23 containment cases, twice · 13 composition cases and four
+mutations · 15 client cases and one mutation · 8 `osvQuery` cases and two
+mutations · four `icacls` readings · the local sweep at 15 of 15 on every commit
+· the board at seven of the nine commits.
+
+**Asserted:** that candidate 1's collisions are *exhaustive* — three were found
+and there may be more · that the ACL union generalises, which is ordinary Windows
+behaviour but was **read once, on one SID (`ALL APPLICATION PACKAGES`), on one
+machine, on one Windows build**. The conclusion it supports is a layout
+constraint rather than a security claim, which is why one reading was enough to
+act on and is recorded here as one reading rather than as a property.
+
+### 6. Did architecture change *before* the feature, or underneath it?
+
+Before. Decision 9 and its four corrections all precede the supervisor, which is
+still unbuilt, and the ACL constraint precedes the instrument that will rest on
+it. Nothing was retrofitted.
+
+### 7. Do the documents still match the code?
+
+DDDD-20 is one instance found and fixed. Cross-document sweeps were run for
+Decision 9's claims and for *minted, never derived*; both clean.
+
+**DDDD-21 — a board reading is only available at the time, and the lookup that
+would take it later is retried for twenty minutes.** Two commits in this range,
+`116732e` and `e7f3a94`, were pushed without their own board reading; a
+descendant being green does not certify an ancestor, since a later commit can fix
+what an earlier one broke.
+
+Trying to close that gap retroactively is what produced the finding. `board.mjs`
+fetches `actions/runs?per_page=8` — **the eight most recent runs**, with `poll=`
+as a cache-buster rather than a page number. At two workflows per push that is a
+**four-push window**, and nine commits have landed since. Those runs are gone.
+
+`boardStatus.mjs` classifies this correctly and says so in its own words — *"This
+is a BROKEN LOOKUP, not a verdict: a cache older than the push, a sha that does
+not match the field, or **a page that does not reach far enough** all produce it"*
+— returning `blind`. **It never reports a false green.** But `board.mjs` polls
+`blind` forty times at thirty seconds, and for an aged-out sha that lookup cannot
+succeed: every further push moves it further out of the window.
+
+Two things follow. The **process** half is the transferable one: a board reading
+is not deferrable, because the evidence ages out — which is a better reason than
+*always read it*. The **tool** half is a real if small defect: `blind` covers one
+cause that self-resolves (a cache older than the push) and one that never can (a
+page that does not reach far enough), and they are separable — if the payload's
+oldest run is newer than the sha's commit time, waiting is pointless. Recorded
+rather than fixed, because it degrades a diagnostic and not a verdict.
+
+---
+
 ## 2026-08-25 — Stage audit: `4f37b51..16dc4da` — a retry proven in the helper and unproven at the call site, and a fixture that hid a missing type state
 
 **Audited through `16dc4da`.** Pasted from `npm run audit:scope`:
