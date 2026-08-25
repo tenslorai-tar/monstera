@@ -1841,6 +1841,36 @@ and nothing here has written an image, timed one, or shown that doing it per
 version is affordable. This says the grants can be shaped as Decision 7 wants;
 it says nothing about what shaping them that way costs.
 
+#### Addition, same day — the ENGINE opens a document it cannot write
+
+The four rows above were `fs.readFileSync` on a 4097-byte blob: they prove
+**Node** can read those bytes and say nothing about the consumer the candidate
+exists for. A native library that opened read-write, or wanted a lock or a
+temp beside the file, would have failed while every byte probe still reported the
+split working — a green check measuring something other than what it claims.
+
+A fifth row closes it: `mz_open` through the shim against a real PDF in the
+read-only snapshot directory. **Contained: allowed.** Its pair is the existing
+`openDocument` probe, which opens the same fixture from the **modify-granted**
+handed directory — so the two differ in the grant and nothing else.
+
+Mutated by pointing it at a file that is not there, the row goes red, so
+*allowed on both sides* is not a verdict this probe returns regardless.
+
+#### And the "cost half" above is the wrong thing to measure next
+
+Recorded because the sentence above invites it. **There is no time budget in this
+repository to measure against** — the Stage 0 performance gate is *peak RSS <
+1.5× file size* (ADR-0007) and is about memory. Decision 7 says of this candidate
+in its own words: *"Its argument is not performance. It keeps main the single
+source of truth."*
+
+So a timing here would be a number with no decision attached, which is the
+instrument-that-gates-nothing shape §6 warns about. What *would* be decision-
+relevant is a **memory** reading — writing an image per version is a byte cost in
+a process whose budget is machine-read and enforced on every push — and that is
+a different measurement from the one the phrase "cost half" suggests.
+
 #### Addition, same day — the table above is THREE machines, not one
 
 The rows were first read here, and the paragraph above says so. They have since

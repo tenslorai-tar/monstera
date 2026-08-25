@@ -937,6 +937,18 @@ if (koffi !== null) {
         report.probes.openDocument = allowed('opened, ' + pages[0] + ' page(s)');
         mz_close(ctxOut[0], docOut[0]);
       }
+
+      const snapOut = [null];
+      const snapRc = mz_open(ctxOut[0], SNAPSHOT_PDF, snapOut);
+      if (snapRc !== 0 || !snapOut[0]) {
+        report.probes.openSnapshotDocument = refused('mz_open returned ' + snapRc);
+      } else {
+        const snapPages = [0];
+        mz_page_count(ctxOut[0], snapOut[0], snapPages);
+        report.probes.openSnapshotDocument = allowed('opened, ' + snapPages[0] + ' page(s)');
+        mz_close(ctxOut[0], snapOut[0]);
+      }
+
       mz_drop(ctxOut[0]);
     }
   } catch (error) {
@@ -2184,7 +2196,7 @@ function releaseGrants(sid) {
  * it is not a partial roster with some cases skipped, it is a run that measured
  * nothing.
  */
-const roster = createRoster(caseFailures, { cases: 27 });
+const roster = createRoster(caseFailures, { cases: 28 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -2284,6 +2296,7 @@ try {
   // Its content is a known length so the read probe reports a number that could
   // only have come from reading it.
   writeFileSync(snapshotPath, SNAPSHOT_BYTES);
+  copyFileSync(FIXTURE, join(snapshotDir, 'snapshot.pdf'));
   writeFileSync(
     hostJs,
     `const KOFFI_PATH = ${koffiPath};\n` +
@@ -2296,6 +2309,15 @@ try {
       `const SNAPSHOT_PATH = ${JSON.stringify(snapshotPath)};\n` +
       `const SNAPSHOT_DIR = ${JSON.stringify(snapshotDir)};\n` +
       `const SNAPSHOT_BYTES = ${String(SNAPSHOT_BYTES.length)};\n` +
+      // A REAL PDF IN THE READ-ONLY DIRECTORY, opened through the SHIM.
+      //
+      // `readSnapshot` proves Node can read those bytes; it says nothing about
+      // whether the ENGINE can open a document it cannot write. A native
+      // library that opens read-write, or wants a lock or a temp beside the
+      // file, would fail here while the byte probe still reported the split
+      // working — which is Decision 7's candidate breaking on the one consumer
+      // it exists for, behind a green check measuring something else.
+      `const SNAPSHOT_PDF = ${JSON.stringify(join(snapshotDir, 'snapshot.pdf'))};\n` +
       // EMITTED, not passed on argv, because `argv.slice(-2)` is fixed at two
       // and widening it would make the host's argument handling depend on how
       // many probes exist. The target is one number for every cell — what
@@ -2804,6 +2826,17 @@ function summarise(runs) {
       'the security property. `route` is uncontained and writes the SAME directory successfully, ' +
         'which is the negative-probe rule: the input is one an absent containment would let ' +
         'through, so refusal and impossibility cannot share an observation'],
+    // THE ONE THAT COULD STILL KILL THE CANDIDATE. `readSnapshot` is a Node
+    // read; this is MuPDF opening a real PDF it has no write access to. A
+    // native library that opens read-write, or wants a lock or a temp beside
+    // the file, fails here while every byte probe above still reports the split
+    // working.
+    ['Decision 7 — the ENGINE opens a document it cannot write', 'openSnapshotDocument',
+      'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'mz_open through the shim against the read-only snapshot directory, beside the existing ' +
+        'openDocument probe which reads from the MODIFY-granted handed directory — so the pair ' +
+        'differs in the grant and nothing else'],
     ['Decision 7 — the output directory IS writable', 'writeOutput', 'lowbox', 'route',
       { withMechanism: 'allowed', without: 'allowed' },
       'the other half of the split, and the reason the row above is a verb difference rather ' +
