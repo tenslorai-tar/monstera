@@ -1793,3 +1793,50 @@ mechanism whose failure modes nobody in this repository has costed.
 Recorded against Decision 7 rather than inside the instrument that will measure
 the rest, because it constrains the **candidate's shape** and is true whether or
 not that instrument is ever built.
+
+### Measurement, 2026-08-25 — the verb split HOLDS on a real LowBox token
+
+Decision 7 said *how an image actually reaches the host* is mechanism and
+**"wants a measurement… not decided here, and deliberately not chosen from an
+armchair"**, and named the candidate to test first. The grant half of that
+candidate is now measured, in `lowboxSpike.mjs`, which `proof:hostcontainment`
+runs — so these are gating rows rather than research output.
+
+Four rows, on the two-directory layout the addition above forced, read on this
+machine 2026-08-25:
+
+| row | contained | uncontained |
+|---|---|---|
+| the snapshot is READABLE | allowed | allowed |
+| the snapshot is NOT WRITABLE | **refused** | allowed |
+| the output directory IS writable | allowed | allowed |
+| CONTROL: same path, R against M | **allowed** | allowed |
+
+**So the split works: a contained host can be given a document it may read and
+cannot alter, beside a directory it may write.** That is the property the
+candidate needs, and it was the one genuinely open question about whether the
+candidate is buildable at all.
+
+Four things make the reading worth something, and each is a rule this repository
+has paid for:
+
+- **The refusal is separable from impossibility.** The uncontained cell writes
+  the *same directory* successfully, so the input is one an absent containment
+  would let through.
+- **Both directions are measured.** A set that only asked whether the write is
+  refused would be NNN-1's shape, and a grant that silently allowed modify
+  everywhere would satisfy all of it. The reads and the permitted write are what
+  give the refusal meaning.
+- **The instrument is resolution-tested on every run** (item 4a). The last row is
+  the same cell, the same directory and the same call as the refusal, with the
+  grant moved from `R` to `M` and nothing else changed. It flips. Mutated by
+  re-granting `R` instead, that row goes red **alone** — so it separates *the
+  instrument can see a grant* from every other verdict in the file.
+- **The read probe compares a byte count** against the length written, so a
+  partial or empty read is an error rather than a success.
+
+**What is NOT measured, and must not be read as included:** the cost half. The
+candidate is *main writes its canonical image to a handed path once per version*,
+and nothing here has written an image, timed one, or shown that doing it per
+version is affordable. This says the grants can be shaped as Decision 7 wants;
+it says nothing about what shaping them that way costs.

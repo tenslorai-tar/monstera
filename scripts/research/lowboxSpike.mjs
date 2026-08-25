@@ -874,6 +874,33 @@ try {
   report.probes.readHanded = refused(String(error && error.code || error));
 }
 
+step('readSnapshot');
+try {
+  const bytes = fs.readFileSync(SNAPSHOT_PATH).length;
+  report.probes.readSnapshot =
+    bytes === SNAPSHOT_BYTES
+      ? allowed('read ' + bytes + ' bytes')
+      : errored('read ' + bytes + ' bytes, expected ' + SNAPSHOT_BYTES);
+} catch (error) {
+  report.probes.readSnapshot = refused(String(error && error.code || error));
+}
+
+step('writeSnapshot');
+try {
+  fs.writeFileSync(path.join(SNAPSHOT_DIR, 'host-wrote-here.bin'), 'written by the host');
+  report.probes.writeSnapshot = allowed('wrote into the snapshot directory');
+} catch (error) {
+  report.probes.writeSnapshot = refused(String(error && error.code || error));
+}
+
+step('writeOutput');
+try {
+  fs.writeFileSync(path.join(path.dirname(REPORT), 'host-wrote-here.bin'), 'written by the host');
+  report.probes.writeOutput = allowed('wrote into the handed output directory');
+} catch (error) {
+  report.probes.writeOutput = refused(String(error && error.code || error));
+}
+
 step('loadKoffi');
 let koffi = null;
 try {
@@ -1921,16 +1948,7 @@ function runCells(hostJs, scratchDir) {
           // own, so every property has a pair that flips exactly one thing.
           // There is no cell off this route: what used to sit here was a forked
           // baseline, and ADR-0022 retired the route it referenced.
-          const cells = [
-            { cell: 'lowbox', contained: true, job: true, limit: PROCESS_MEMORY_LIMIT },
-            { cell: 'route', contained: false, job: true, limit: PROCESS_MEMORY_LIMIT },
-            { cell: 'route-no-job', contained: false, job: false, limit: PROCESS_MEMORY_LIMIT },
-            { cell: 'lowbox-no-job', contained: true, job: false, limit: PROCESS_MEMORY_LIMIT },
-            // THE MEMORY CELL. Uncontained, so the container is not a variable
-            // in its pair, and identical to `route` in every respect except the
-            // job's ProcessMemoryLimit — which is the one thing under test.
-            { cell: 'route-small-limit', contained: false, job: true, limit: SMALL_MEMORY_LIMIT },
-          ];
+          const cells = CELLS;
 
           /** @type {Array<{ cell: string, spawn: Record<string, unknown>, report: { probes?: Record<string, { outcome: string, detail: string }> } | null }>} */
           const collected = [];
@@ -1958,6 +1976,9 @@ function runCells(hostJs, scratchDir) {
           });
 
           for (const spec of cells) {
+            // The machine-state change a cell needs, taken immediately before it
+            // runs so nothing between the two can be the variable instead.
+            if (spec.before !== undefined) spec.before();
             const reportPath = join(scratchDir, `report-${spec.cell}.json`);
             const spawn = runCell(
               hostJs,
@@ -1986,6 +2007,90 @@ function runCells(hostJs, scratchDir) {
 // ---------------------------------------------------------------------------
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-lowbox-'));
+
+/**
+ * Decision 7's snapshot, and it is a SIBLING of `scratch` rather than a child.
+ *
+ * ADR-0023's Decision 7 asks to split the grants by verb — read on the snapshot,
+ * modify only on the output directory — and it reads as though both could live
+ * inside the one handed area. **They cannot, measured 2026-08-25 and recorded in
+ * that ADR:** granting modify on a directory propagates to a file inside it as
+ * an inherited ACE, and granting read explicitly on that file ADDS a second
+ * allow ACE rather than restricting the first. An access check unions allow
+ * ACEs, so the file stays writable.
+ *
+ * `scratch` carries `M` because a host that reports has to write where it was
+ * handed. A snapshot placed under it would therefore be writable however
+ * carefully it was granted read — and the probe below would report the split as
+ * working while measuring nothing. A separate `mkdtemp` is the whole fix: two
+ * directories, one grant each, no inheritance between them.
+ *
+ * The alternative is a DENY ace, which is evaluated ahead of allows and would
+ * also work. It is not used here and would be its own decision, because a deny
+ * on the boundary between this app and a hostile host is a mechanism whose
+ * failure modes nobody in this repository has costed.
+ */
+const snapshotDir = mkdtempSync(join(tmpdir(), 'monstera-lowbox-snapshot-'));
+const snapshotPath = join(snapshotDir, 'snapshot.bin');
+
+/**
+ * The snapshot's content — a fixed, odd length so the read probe's number could
+ * only have come from reading this file.
+ *
+ * A zero-length file would make "read 0 bytes" and "read nothing because the
+ * open failed in a way the catch did not see" the same reading, which is the
+ * reassuring answer arriving in a measurement.
+ */
+const SNAPSHOT_BYTES = Buffer.alloc(4097, 7);
+
+/**
+ * The cells, at module scope so the count printed before they run is DERIVED.
+ *
+ * `before` runs immediately ahead of its own cell and is how a cell whose
+ * variable is *machine state rather than process shape* is expressed. Only the
+ * resolution cell uses it.
+ *
+ * **Item 4c, asked rather than assumed.** Deriving `CELL_COUNT` from this array
+ * is safe in the direction that matters: the failure to fear is somebody adding
+ * a cell and leaving the prose behind, which makes the set BIGGER and which a
+ * derived count tracks exactly. A cell *removed* would agree silently — and the
+ * anchor for that is outside this array: every property row names the cells it
+ * reads, so a missing cell turns its rows UNREADABLE and the roster's declared
+ * case count fails rather than shrinking.
+ */
+const CELLS = [
+  { cell: 'lowbox', contained: true, job: true, limit: PROCESS_MEMORY_LIMIT },
+  { cell: 'route', contained: false, job: true, limit: PROCESS_MEMORY_LIMIT },
+  { cell: 'route-no-job', contained: false, job: false, limit: PROCESS_MEMORY_LIMIT },
+  { cell: 'lowbox-no-job', contained: true, job: false, limit: PROCESS_MEMORY_LIMIT },
+  // THE MEMORY CELL. Uncontained, so the container is not a variable in its
+  // pair, and identical to `route` in every respect except the job's
+  // ProcessMemoryLimit — which is the one thing under test.
+  { cell: 'route-small-limit', contained: false, job: true, limit: SMALL_MEMORY_LIMIT },
+  // THE RESOLUTION CELL (item 4a). Identical to `lowbox` in every respect —
+  // same containment, same job, same limit, same paths — with ONE difference:
+  // the snapshot directory is re-granted M immediately before it runs.
+  //
+  // It exists because the two-path pair below it (snapshot refused, output
+  // allowed) varies the grant AND the path, and "what else is different about
+  // the odd point?" answers "the directory" as readily as "the grant". Holding
+  // the path constant and moving only the right is what makes the instrument's
+  // ability to SEE a grant a measurement rather than an inference.
+  //
+  // No second `granted` entry is pushed: `revoke` removes every ACE for the SID
+  // on a path regardless of the rights it was given, so the entry taken when
+  // this directory was first granted R already covers the release.
+  {
+    cell: 'lowbox-snapshot-writable',
+    contained: true,
+    job: true,
+    limit: PROCESS_MEMORY_LIMIT,
+    before: () => grant(snapshotDir, sid, 'M'),
+  },
+];
+
+/** How many cells run. Derived — see {@link CELLS}. */
+const CELL_COUNT = CELLS.length;
 
 /**
  * Every path the container must be able to reach, and why.
@@ -2026,6 +2131,12 @@ const GRANTS = [
   // startup check in ADR-0023 §5 and not inherited from this fixture's choice of
   // channel.
   { path: scratch, rights: 'M', why: 'what the host was handed — and it must be able to write back' },
+  // READ ONLY, and it is the point rather than a detail. Decision 7's candidate
+  // hands the host a snapshot it may read and an output directory it may write,
+  // and the whole question is whether the verb split holds on a real LowBox
+  // token. A separate directory because grants inherit and allow ACEs union —
+  // see `snapshotDir`.
+  { path: snapshotDir, rights: 'R', why: "Decision 7's snapshot — readable, and it must NOT be writable" },
 ];
 
 /** @type {Array<{ path: string, why: string }>} */
@@ -2073,7 +2184,7 @@ function releaseGrants(sid) {
  * it is not a partial roster with some cases skipped, it is a run that measured
  * nothing.
  */
-const roster = createRoster(caseFailures, { cases: 23 });
+const roster = createRoster(caseFailures, { cases: 27 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function assert(name, condition, detail) {
@@ -2106,6 +2217,7 @@ if (wantsReset) {
   const hr = DeleteAppContainerProfile(CONTAINER);
   process.stdout.write(`  profile deleted: ${hr === 0 ? 'yes' : `0x${(hr >>> 0).toString(16)}`}\n`);
   rmSync(scratch, { recursive: true, force: true });
+  rmSync(snapshotDir, { recursive: true, force: true });
   process.exit(0);
 }
 
@@ -2120,6 +2232,7 @@ if (!created) {
       `  node scripts/research/lowboxSpike.mjs --reset\n`,
   );
   rmSync(scratch, { recursive: true, force: true });
+  rmSync(snapshotDir, { recursive: true, force: true });
   process.exit(1);
 }
 
@@ -2166,11 +2279,23 @@ try {
   const koffiPath = JSON.stringify(join(ROOT, 'node_modules', 'koffi'));
   const hostJs = join(scratch, 'host.js');
   copyFileSync(FIXTURE, join(scratch, 'handed.pdf'));
+  // Written AFTER the grant, which is safe and deliberate: `(OI)(CI)` propagates
+  // to files created later, so a file made here inherits the directory's read.
+  // Its content is a known length so the read probe reports a number that could
+  // only have come from reading it.
+  writeFileSync(snapshotPath, SNAPSHOT_BYTES);
   writeFileSync(
     hostJs,
     `const KOFFI_PATH = ${koffiPath};\n` +
       `const SHIM_PATH = ${JSON.stringify(SHIM)};\n` +
       `const UNHANDED_PATH = ${JSON.stringify(join(ROOT, 'package.json'))};\n` +
+      // ABSOLUTE, and emitted rather than derived in the child from REPORT's
+      // directory. Every other handed path in this host hangs off `REPORT`,
+      // which is inside the modify-granted scratch — deriving the snapshot the
+      // same way would put it there too and silently undo the split.
+      `const SNAPSHOT_PATH = ${JSON.stringify(snapshotPath)};\n` +
+      `const SNAPSHOT_DIR = ${JSON.stringify(snapshotDir)};\n` +
+      `const SNAPSHOT_BYTES = ${String(SNAPSHOT_BYTES.length)};\n` +
       // EMITTED, not passed on argv, because `argv.slice(-2)` is fixed at two
       // and widening it would make the host's argument handling depend on how
       // many probes exist. The target is one number for every cell — what
@@ -2198,7 +2323,12 @@ try {
   // What went with it: an emitted-source template, a `package.json` whose `main`
   // pointed at a script nothing launched as an app, and a report line parsed out
   // of another process's stdout. The runs are now values.
-  process.stdout.write('\nrunning four cells\n\n');
+  // DERIVED, not restated (finding DDDD-20, second occurrence). This line read
+  // "running four cells" beside a list of five, one commit after the same class
+  // was fixed in the roster's doc comment above — which is the argument for
+  // deriving rather than for being careful: a count written as prose goes stale
+  // the next time somebody adds to the list, in the same file, silently.
+  process.stdout.write(`\nrunning ${String(CELL_COUNT)} cells\n\n`);
   const runs = await runCells(hostJs, scratch);
   process.stdout.write(`${JSON.stringify({ runs }, null, 2)}\n\n`);
   exitCode = summarise(runs);
@@ -2224,6 +2354,7 @@ try {
   const hr = DeleteAppContainerProfile(CONTAINER);
   process.stdout.write(`  profile deleted: ${hr === 0 ? 'yes' : `0x${(hr >>> 0).toString(16)}`}\n`);
   rmSync(scratch, { recursive: true, force: true });
+  rmSync(snapshotDir, { recursive: true, force: true });
 }
 
 // THE CASES, printed after the machine state is reversed so a failure never
@@ -2657,6 +2788,35 @@ function summarise(runs) {
     ['CONTROL: handed', 'readHanded', 'lowbox', 'route',
       { withMechanism: 'allowed', without: 'allowed' },
       'allowed on BOTH sides, or the container was handed nothing'],
+    // DECISION 7'S VERB SPLIT, and it is measured in BOTH directions on purpose.
+    //
+    // A set that only asked whether the write is refused would be NNN-1's shape
+    // — every case holding the same argument constant — and a grant that
+    // silently allowed modify everywhere would pass all of it. The reads and the
+    // permitted write are what make the refusal mean something.
+    ['Decision 7 — the snapshot is READABLE', 'readSnapshot', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'the contained host reads the snapshot it was granted R on. Allowed on BOTH sides, and ' +
+        'the probe compares the byte COUNT against the length written, so a partial or empty ' +
+        'read is an error rather than a success'],
+    ['Decision 7 — the snapshot is NOT WRITABLE', 'writeSnapshot', 'lowbox', 'route',
+      { withMechanism: 'refused', without: 'allowed' },
+      'the security property. `route` is uncontained and writes the SAME directory successfully, ' +
+        'which is the negative-probe rule: the input is one an absent containment would let ' +
+        'through, so refusal and impossibility cannot share an observation'],
+    ['Decision 7 — the output directory IS writable', 'writeOutput', 'lowbox', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'the other half of the split, and the reason the row above is a verb difference rather ' +
+        'than a filesystem the container simply cannot touch'],
+    // THE RESOLUTION TEST (item 4a), and it is a PROPERTY ROW rather than a note
+    // so it cannot be removed without the roster noticing.
+    ['CONTROL: the instrument can SEE the grant — same path, R against M', 'writeSnapshot',
+      'lowbox-snapshot-writable', 'route',
+      { withMechanism: 'allowed', without: 'allowed' },
+      'the same cell, the same directory and the same call as the refusal two rows up, with the ' +
+        'grant moved from R to M and nothing else changed. If this does not flip, the two rows ' +
+        'above measured a directory rather than a right, and every filesystem verdict in this ' +
+        'run is worth nothing'],
   ];
 
   process.stdout.write('PROPERTIES — each row against the cell that removes ONLY its own mechanism:\n\n');
