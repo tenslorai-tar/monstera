@@ -30,7 +30,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 15 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -103,15 +103,76 @@ function check(name, condition, detail) {
   );
   check(
     '  ...and the report says NOTHING rather than something general',
-    affectedProofsReport(none) === null,
+    affectedProofsReport(none, []) === null,
     'a general sentence is the failure mode this exists to replace. Silence beats furniture.',
   );
   check(
     'while a real hit produces a runnable instruction',
-    (affectedProofsReport(affectedProofs(['scripts/lib/registeredHooks.mjs'], { root: ROOT })) ?? '')
-      .includes('npm run proof:guards'),
+    (
+      affectedProofsReport(affectedProofs(['scripts/lib/registeredHooks.mjs'], { root: ROOT }), []) ??
+      ''
+    ).includes('npm run proof:guards'),
     'three proof names is an instruction; a caveat is not. The reader must be able to act on it ' +
       'without deciding anything.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE RUN REACHED IS SUBTRACTED (finding DDDD-1).
+//
+// The report used to end `THIS SWEEP DID NOT RUN THEM` with nothing passed in
+// that could support the claim, so `npm run local -- --only
+// proof:transportwrite` ran that proof, reported it passing, and then told the
+// reader it had not been run. These four cases hold the affected set constant
+// and vary only what the run reached, because that is the axis the bug was
+// blind to — a case that varies the changed paths instead separates nothing.
+// ---------------------------------------------------------------------------
+{
+  const affected = affectedProofs(['scripts/lib/registeredHooks.mjs'], { root: ROOT });
+  const every = affected.proofs.map((proof) => proof.name);
+
+  const reachedNone = affectedProofsReport(affected, []) ?? '';
+  check(
+    'a run that reached nothing names every affected proof',
+    every.length > 0 && every.every((name) => reachedNone.includes(`npm run ${name}`)),
+    `named ${String(every.filter((name) => reachedNone.includes(name)).length)} of ` +
+      `${String(every.length)}. This is the state the old report asserted unconditionally, and ` +
+      `it must still be reachable — otherwise the subtraction has replaced the warning rather ` +
+      `than qualifying it.`,
+  );
+
+  const reachedOne = affectedProofsReport(affected, ['proof:guards']) ?? '';
+  check(
+    'a proof the run DID reach is not listed as unreached',
+    !reachedOne.includes('npm run proof:guards') && reachedOne.includes('It did reach'),
+    `the report still says "npm run proof:guards" after the run produced a verdict for it. That ` +
+      `is the false claim: specific, and therefore believed.`,
+  );
+
+  const reachedAll = affectedProofsReport(affected, every) ?? '';
+  check(
+    'and a run that reached them all says so, by name, rather than falling silent',
+    reachedAll.startsWith('\n  ok  ') &&
+      !reachedAll.includes('npm run') &&
+      every.every((name) => reachedAll.includes(name)),
+    `reported ${JSON.stringify(reachedAll.slice(0, 80))}. Silence here would be indistinguishable ` +
+      `from "no proof reads a changed file", which is a different fact and the caller prints its ` +
+      `own line for it.`,
+  );
+
+  let refusedWithoutRan = false;
+  try {
+    // @ts-expect-error the omission is the defect under test; a caller that
+    // forgets the argument must not fall back to asserting nothing ran.
+    affectedProofsReport(affected);
+  } catch (error) {
+    refusedWithoutRan = /verdict/u.test(String(error));
+  }
+  check(
+    'CONTROL: omitting what the run reached is refused, not defaulted',
+    refusedWithoutRan,
+    `an optional parameter leaves the old false claim one omission away, which is B5's argument ` +
+      `exactly — the fix cannot be "remember to pass it".`,
   );
 }
 

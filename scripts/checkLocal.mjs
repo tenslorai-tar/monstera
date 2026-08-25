@@ -780,7 +780,8 @@ if (didNotStart.length > 0) {
       `was lost at exactly this step.\n`,
   );
 }
-// WHICH PROOFS THIS SWEEP DID NOT RUN, BY NAME (finding AAAA-16).
+// WHICH AFFECTED PROOFS THIS RUN REACHED AND WHICH IT DID NOT, BY NAME
+// (finding AAAA-16, and DDDD-1 for the second half).
 //
 // What used to stand here was a true sentence about the set's blind spots. It is
 // printed at the point of use, which AA-1 called the difference between a
@@ -798,7 +799,17 @@ const changedForProofs = spawnSync('git', ['diff', '--name-only', 'HEAD'], {
 });
 if (changedForProofs.status === 0) {
   const changed = changedForProofs.stdout.split('\n').filter((line) => line.trim() !== '');
-  const report = affectedProofsReport(affectedProofs(changed, { root: ROOT }));
+  // WHAT THIS RUN ACTUALLY REACHED, derived from the rows rather than counted
+  // alongside them. A row carries a non-null `exit` exactly when a script
+  // produced a verdict; a timeout, a spawn that never started and a non-node
+  // script all record `exit: null`, which is the distinction this report turns
+  // on. Deriving is right here by 4c's test: the failure to fear is a proof
+  // being named as reached when it was not, and that needs the set to grow —
+  // which a set computed from the rows cannot do.
+  const verdicted = runLog
+    .filter((row) => row['exit'] !== null)
+    .map((row) => (typeof row['name'] === 'string' ? row['name'] : ''));
+  const report = affectedProofsReport(affectedProofs(changed, { root: ROOT }), verdicted);
   process.stdout.write(
     report ??
       (changed.length === 0

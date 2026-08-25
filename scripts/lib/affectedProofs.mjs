@@ -185,6 +185,11 @@ export function affectedProofs(changed, options = {}) {
   };
 }
 
+/** The limit this report prints whenever it names anything. */
+const REACH_LIMIT =
+  `      This list is static-import reach only: a proof that spawns a script it\n` +
+  `      never imports is not in it.\n`;
+
 /**
  * What to print, and it is an instruction rather than a caveat.
  *
@@ -192,16 +197,63 @@ export function affectedProofs(changed, options = {}) {
  * the failure mode this exists to replace**, so the caller must not substitute
  * one: silence beats furniture.
  *
+ * ## Why `ran` is required rather than optional
+ *
+ * The sentence this used to print — *THIS SWEEP DID NOT RUN THEM* — is a claim
+ * about the caller's run, and nothing was passed in that could support it. So it
+ * was false whenever the sweep HAD run one: `npm run local -- --only
+ * proof:transportwrite` ran that proof, reported it passing, and then told the
+ * reader it had not been run. A disclosure that is wrong about the thing it is
+ * disclosing is worse than the general sentence AAAA-16 replaced, because it is
+ * specific and therefore believed.
+ *
+ * An optional parameter would leave the old claim reachable by omission, which
+ * is B5's whole argument: the fix is not to remember to pass it. A caller that
+ * genuinely reached nothing passes an empty list, and that is a statement rather
+ * than a default.
+ *
  * @param {Affected} affected
+ * @param {readonly string[]} ran script names this run produced a verdict for —
+ *   a pass or a fail. A timeout, a spawn that never started and a non-node
+ *   script are NOT verdicts and must not appear here: each of those is a run
+ *   that reached no answer, which is the case this report exists to name.
  * @returns {string | null}
  */
-export function affectedProofsReport(affected) {
+export function affectedProofsReport(affected, ran) {
+  if (!Array.isArray(ran)) {
+    throw new TypeError(
+      `affectedProofsReport needs the list of scripts this run produced a verdict for. Without ` +
+        `it the report can only assert that nothing ran, which is the false claim it was ` +
+        `changed to stop making.`,
+    );
+  }
   if (affected.changed.length === 0 || affected.proofs.length === 0) return null;
+
+  const executed = new Set(ran);
+  const covered = affected.proofs.filter((proof) => executed.has(proof.name));
+  const missed = affected.proofs.filter((proof) => !executed.has(proof.name));
+
+  if (missed.length === 0) {
+    return (
+      `\n  ok  this run reached every proof that reads a file this tree changed ` +
+      `(${String(covered.length)} of ${String(affected.examined)} examined):\n` +
+      covered.map((proof) => `        ${proof.name}\n`).join('') +
+      REACH_LIMIT
+    );
+  }
+
   return (
-    `\n  !!  ${String(affected.proofs.length)} of ${String(affected.examined)} proof(s) read a ` +
-    `file this tree changed, and THIS SWEEP DID NOT RUN THEM:\n` +
-    affected.proofs.map((proof) => `        npm run ${proof.name}\n`).join('') +
-    `      A green check set is not a green board. This list is static-import reach only:\n` +
-    `      a proof that spawns a script it never imports is not in it.\n`
+    `\n  !!  ${String(missed.length)} proof(s) read a file this tree changed and THIS RUN DID ` +
+    `NOT REACH THEM\n` +
+    `      (of ${String(affected.proofs.length)} affected, out of ${String(affected.examined)} ` +
+    `examined):\n` +
+    missed.map((proof) => `        npm run ${proof.name}\n`).join('') +
+    (covered.length === 0
+      ? ''
+      : `      It did reach ${String(covered.length)}: ${covered
+          .map((proof) => proof.name)
+          .join(', ')}\n`) +
+    `      A green check set is not a green board.\n` +
+    REACH_LIMIT
   );
 }
