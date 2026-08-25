@@ -644,6 +644,174 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `4f37b51..16dc4da` — a retry proven in the helper and unproven at the call site, and a fixture that hid a missing type state
+
+**Audited through `16dc4da`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 4f37b51..HEAD
+
+  commits: 6 (one batch is 9)
+  files:   19 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (4 more) or 25 files (6 more).
+```
+
+**Audited at 6, six files from the gate**, because the next unit — the
+composition that creates a host, a pipe, a reader and a transport together — is
+six files exactly, and a unit that lands *on* the gate leaves the audit owed
+before anything else can be committed.
+
+**3 proofs added**, 1 modified (a widened count), 0 removed; **4 source files
+added**, 5 changed, 0 removed. The range finished main's half of the host
+protocol, closed **CCCC-4** and the reviewing seat's three conditions, took
+**ADR-0023 Decision 9**, and reddened `main` once on a third party.
+
+Board **GREEN at `16dc4da`** — `Guards=success, CI=success`, read from
+`npm run board`.
+
+### 1. Root cause, or workaround?
+
+- **CCCC-4** (`42137ad`'s predecessor): the whole-path control compared a byte
+  *count*, and 64 frames of 4096 bytes delivered in the wrong order sum to the
+  same 262144. Fixed at the **fixture** — each frame names its index and the
+  streams are compared byte for byte — which is the root, because the check's
+  input was what could not separate the cases.
+- **the OSV 503** (`e26a9f8`): the root cause is proven to lie outside this
+  repository — a third party answered one request with 503 — so a workaround is
+  legal, and the commit names the cause. The guard is narrow by construction:
+  `retryTransient` retries **exactly** `TransientFailure`, a 404 propagates on
+  the first attempt, and exhaustion throws the last failure rather than
+  returning. There is no widenable predicate to loosen later.
+
+No loosened check. The one modified proof raised an exact count from 2 to 4
+because the file genuinely gained two import sites; an exact count still fails on
+a fifth.
+
+### 2. Verified against the easy shape only?
+
+The client's load-bearing case is the **hard** shape and no other case reaches
+it: a transport that answers **synchronously inside `write`**. The pending entry
+is registered before the write precisely so that answer arrives at a map that
+knows the id; written the other way round it is reported as an unknown
+correlation — a protocol violation manufactured by the order of two lines.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+`electronImports.proof.mjs` went from 2 pinned sites to 4. That is a
+**strengthening** — two more shipped modules are now named and their absence
+would fail — and it is recorded here rather than passed over, because a count
+moving in either direction reads identically in a diff.
+
+### 3. Would CI have caught it?
+
+Computed rather than assumed. **For DDDD-14, no**, and the half that is uncovered
+is nameable: `advisoryRegister.proof.mjs` drives the checker by
+`spawnSync(process.execPath, [CHECKER, …])` against the live API, so there is no
+seam a fake `fetch` could enter and the added branches only execute when OSV
+misbehaves. **For DDDD-15, no** — the fixture passes, and nothing anywhere
+compares a fixture's chosen constant against the situation it names.
+
+Is there a defect **this machine** cannot see? No branch added in this range is
+keyed on provisioning.
+
+### 4. Are the proofs non-vacuous?
+
+Mutation results, all run when the cases were written: registering the pending
+entry *after* the write reddens the synchronous case **alone**, and it hangs five
+seconds first, which is the failure itself. Dropping an unknown correlation
+reddens three. An ending that settles nothing reddens seven. Making the reader
+channel's `stop()` also terminate reddens three, and the third is the one worth
+having — the reader never gets to post its own ending, so the diagnostic becomes
+*exited with code 1* instead of *stopped while waiting for bytes*.
+
+**DDDD-14 — the retry is proven in the helper and unproven at the call site.**
+`retryTransient.proof.mjs` covers the helper with hand-built throws, eleven
+cases, and it is registered in `guards.yml` rather than only in `package.json`.
+What it does not reach is the three branches the range added *inside* `queryOsv`,
+which are where "what is transient **here**" is decided: a `fetch` that throws is
+re-thrown as `TransientFailure`, a transient status is re-thrown as one, and a
+status OSV answered with is not. Mutating the first to `throw cause` reddens
+nothing anywhere.
+
+That is NNN-2's category — a branch that is reachable and load-bearing with no
+case at all — and it is the half that would have prevented the red board, so
+"the retry protects the board" belongs in the asserted column and not the
+executed one. The helper being proven is what makes this easy to miss: the file
+that got the new proof is not the file with the unproven branch.
+
+**DDDD-15 — a fixture's constant was chosen from what the type would ACCEPT, and
+a missing type state hid behind it.** `client.test.ts` settles a connection with
+`{ code: 'frame', detail: 'the reader thread exited' }`, three times. A reader
+thread exiting is not a framing violation, and `HostTermination` carries no code
+that is not one — every member names something an end did wrong. The cases pass
+because they assert only that the promise rejects with `HostConnectionLost`, so
+the constant is incidental to them and load-bearing for the reader: shipped, a
+host that simply died would render *the engine host connection ended (frame): …*
+and send whoever read it to the framing code.
+
+Found by the **first real caller** — the composition being built next has to pass
+something to `client.fail` when a host dies, and there is nothing honest to pass.
+No check could have found it: both halves parse, and a fixture that lies about
+its own subject is exactly what item 4's *never build a fixture the bug also
+handles correctly* describes one level up, where the "bug" is a gap in the type.
+
+The fix is two codes, because the distinction is one the range already made and
+then dropped at this boundary: `TransportEnd.by` exists so that "a host that
+crashed and a host we killed produce the same silence on the pipe, and only the
+first is a defect" — collapsing both into one termination code destroys that
+distinction at the point the caller reads it.
+
+**Item 4c, asked of the one roster the range touched:** `electronImports.proof.mjs`'s
+`sites: 4` is a hand-kept literal, and the failure to fear — a new `electron`
+import site appearing — makes the set **bigger**. Hand-kept is the correct
+direction there, and a derived count would have agreed with any new site
+silently.
+
+### 5. Executed, or asserted?
+
+**Executed:** the 14 client cases · the 12 reader-channel cases · the 10-case
+shipped composition on both Windows containment jobs · the mutations above · the
+board at `16dc4da` · `npm run local -- --only check:` at 15 of 15 with the index
+matching the working tree.
+
+**Asserted:** that the OSV retry protects the board (DDDD-14 — the helper is
+proven, the adaptation is not) · that Decision 9's three requirements are
+implementable as written, since none of them is measured and no supervisor
+exists.
+
+### 6. Did architecture change *before* the feature, or underneath it?
+
+Before, twice. **ADR-0024** preceded the reader worker. **ADR-0023 Decision 9**
+was taken this range, before the supervisor, on the reviewing seat's ruling —
+and the ruling's two premises were checked in the documents rather than read off
+a summary: §2's "a cache that can be thrown away and rebuilt", and Decision 8's
+own body, whose subject is a host created with the assignment already failed.
+
+Recorded because the reviewing seat's framing added the part that made it worth
+taking before rather than after: *handles are a cache* settles that a dead host
+may be rebuilt and settles none of how often, where the death is reported, or
+what the other documents do.
+
+### 7. Do the documents still match the code?
+
+NNN-4's cross-document sweep was run for Decision 9's two cross-document claims.
+Six files state *session lookup is get-or-miss* and all six agree; nothing
+anywhere claims Decision 8 reaches a running host. `documentCommands.ts`'s
+comment was corrected in the same commit to separate the policy, now decided,
+from the measurement, still owed.
+
+**And asked forward, which is where item 7's newest rule points:**
+`runtime.ts`'s `HostTermination` doc says *"which end can raise which is not
+symmetric"* and gives a per-code comment naming an end. DDDD-15's fix adds two
+codes that **neither end raises** — the connection ended without either end doing
+anything wrong — so that framing is falsified by the fix and must be corrected in
+the same commit rather than left standing above it. That is the compound-claim
+shape: the sentence stays true of the seven existing codes, which is what would
+carry it past a reader.
+
+---
+
 ## 2026-08-25 — Stage audit: `4880ea0..4f37b51` — three fixtures whose constants chose the input the defect survives, and two reds
 
 **Audited through `4f37b51`.** Pasted from `npm run audit:scope`:
