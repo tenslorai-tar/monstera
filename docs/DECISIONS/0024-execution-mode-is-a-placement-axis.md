@@ -186,3 +186,42 @@ the code genuinely runs inside it — the same split ADR-0022 drew for the host.
   rather than answering each occurrence by moving one file.
 - **`scripts/` is unaffected.** Tooling `node` starts directly is already
   covered, by the same rule and by two enforcers.
+
+---
+
+## Correction, 2026-08-25 — the cost was read off a file rather than paid, and it was wrong twice
+
+The section above lists what the package costs: *one entry in `PACKAGES`,
+`ALLOWED_IMPORTS` and `PACKAGE_DIR`*, a tsconfig, a build line. That was written
+by reading `eslint.config.js` before building anything, and it went into a
+document that reads like a statement of fact. It is corrected here rather than
+edited above, and the audit that recorded it as **asserted** is what made the gap
+visible.
+
+**Wrong in two directions.**
+
+Larger, in two places the estimate missed:
+
+- **Four tables in `eslint.config.js`, not three.** `PACKAGE_GLOB` is a fourth,
+  and the `PackageName` union is a fifth edit — it is a union rather than
+  `string` on purpose, so a package added to `PACKAGES` and not to the union is
+  a type error rather than a silent gap. Missing that from an estimate is
+  harmless; missing it from the change would not have been.
+- **A new workspace needs `npm install`,** which writes `package-lock.json`. The
+  build fails with `TS2307: Cannot find module '@monstera/nodemode'` until the
+  workspace link exists, and that is the correct failure — it just is not free,
+  and `check:lockfile` has an opinion about the result.
+
+Smaller in one:
+
+- **There is no build line.** `npm run build` is `npm run typecheck && npm run
+  build:preload`, and the typecheck is `tsc --build` over the root's project
+  references. Adding the reference *is* adding the build. The vitest aliases are
+  derived from the workspace globs too, so the package cannot silently resolve to
+  a stale `dist`.
+
+**And the claim that enforcement widens on its own is measured rather than
+estimated: 148 boundary cases became 202**, all generated from `ALLOWED_IMPORTS`,
+with no case written by hand. That is the registry pattern collecting on what it
+was built for, and it is the one part of the estimate that was worth stating
+before the work.

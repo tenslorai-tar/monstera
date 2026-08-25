@@ -1,22 +1,30 @@
 import { parentPort } from 'node:worker_threads';
 
+import type { WorkerModeReport } from './workerModeReport.js';
+
 /**
  * The worker half of the harness that measures which MODE a worker thread runs
  * in.
  *
  * ## Why this exists
  *
- * CLAUDE.md's placement rule says *anything that runs in Node mode lives outside
- * `desktop`*, and that `apps/desktop/src/` is exempted from the Electron-import
- * ban as a PROXY for "runs inside Electron" — a proxy it records as having
- * failed three times. The engine host's reader is a `worker_threads` Worker
- * inside the Electron main process, and whether that is Node mode or Electron
- * mode decides where the shipped file lives.
+ * The placement rule says *anything that runs in Node mode lives outside
+ * `desktop`*, and `apps/desktop/src/` is exempted from the Electron-import ban
+ * as a PROXY for "runs inside Electron". The engine host's reader is a
+ * `worker_threads` Worker inside the Electron main process, and whether that is
+ * Node mode or Electron mode decided where the shipped file lives.
  *
- * The rule's premise is that a worker is Node mode. That is a claim about the
- * runtime, so it is measured rather than cited — and it has an expiry a document
- * cannot enforce, because an Electron bump is exactly the event that would
- * change it in silence.
+ * The rule's premise was that a worker is Node mode. That is a claim about the
+ * runtime, so it was measured rather than cited — and it has an expiry a
+ * document cannot enforce, because an Electron bump is exactly the event that
+ * would change it in silence. The answer became
+ * [ADR-0024](../../../docs/DECISIONS/0024-execution-mode-is-a-placement-axis.md)
+ * and the package this file now sits in.
+ *
+ * **It was in `apps/desktop/src/` when it took that measurement**, which is
+ * finding DDDD-9: a file running in Node mode, in the directory its own reading
+ * said Node-mode code must leave. It imported no Electron so nothing was broken,
+ * and that is exactly why it would have stayed.
  *
  * ## What it reports and why the failure is a value rather than a throw
  *
@@ -25,23 +33,12 @@ import { parentPort } from 'node:worker_threads';
  * separately. Every outcome here is a field instead, so the harness has one
  * thing to forward and the probe one thing to read.
  *
- * This file is built into `dist/` and is not reachable from the package's
- * exports — `index.ts` does not re-export it — so nothing can import it by
- * accident and it is not part of the app.
+ * This file is built into `dist/` and is a worker ENTRY POINT: loaded by path
+ * through `new Worker(…)`, never imported. `index.ts` does not re-export it, so
+ * nothing can pull its top-level work in by accident. The shape it posts back is
+ * `workerModeReport.ts`, which the package does export, because that shape is
+ * what crosses the boundary as a value.
  */
-interface WorkerModeReport {
-  /** Electron sets this on its own processes. `undefined` in plain Node. */
-  readonly processType: string | undefined;
-  /** Present whenever the Electron binary is the runtime, main or worker. */
-  readonly electronVersion: string | undefined;
-  /** What `import('electron')` did: a module, a string path, or a failure. */
-  readonly importOutcome: 'module' | 'path' | 'failed';
-  /** Whether the imported value carries `app` — the test of a USABLE module. */
-  readonly hasApp: boolean;
-  /** The failure's message, when there was one. */
-  readonly detail: string;
-}
-
 async function look(): Promise<WorkerModeReport> {
   const processType = (process as NodeJS.Process & { type?: string }).type;
   const electronVersion = process.versions.electron;

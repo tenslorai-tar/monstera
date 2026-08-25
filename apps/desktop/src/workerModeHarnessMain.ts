@@ -1,7 +1,8 @@
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 
+import type { WorkerModeReport } from '@monstera/nodemode';
 import { app } from 'electron';
 
 /**
@@ -53,14 +54,21 @@ async function run(): Promise<void> {
   // no string path could do.
   const mainHasApp = typeof app.getVersion === 'function';
 
-  // `import.meta.url` and NOT `__dirname`: this package is `"type": "module"`
-  // and the build emits ESM, where `__dirname` does not exist. Written the other
-  // way first, and the harness rejected with exactly that message — which is the
-  // same ESM-versus-CommonJS surprise that left the preload never executing,
-  // one artefact along.
-  const here = dirname(fileURLToPath(import.meta.url));
-  const worker = new Worker(join(here, 'workerModeHarnessWorker.js'));
-  const report = await new Promise<Record<string, unknown>>((done) => {
+  // RESOLVED THROUGH THE PACKAGE, not by walking out of this file's own `dist`.
+  // The worker moved to `packages/nodemode` when ADR-0024 made execution mode a
+  // placement axis, and a relative walk from here would encode the distance
+  // between two packages' build directories — a number that is correct until
+  // either of them moves. `exports` names the entry, so the sibling is one
+  // `join` from it.
+  //
+  // `createRequire` rather than `__dirname`: this package is `"type": "module"`
+  // and the build emits ESM, where `__dirname` does not exist. Written that way
+  // first, and the harness rejected with exactly that message — the same
+  // ESM-versus-CommonJS surprise that left the preload never executing, one
+  // artefact along.
+  const entry = createRequire(import.meta.url).resolve('@monstera/nodemode');
+  const worker = new Worker(join(dirname(entry), 'workerModeHarnessWorker.js'));
+  const report = await new Promise<WorkerModeReport | Record<string, unknown>>((done) => {
     // Every ending is a value. A worker that dies without messaging would
     // otherwise leave this promise pending and the probe reading a timeout.
     worker.once('message', (message: Record<string, unknown>) => {

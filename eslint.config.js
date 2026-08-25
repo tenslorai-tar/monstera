@@ -33,7 +33,7 @@ import { PLAIN_NODE_GLOBS } from './scripts/lib/plainNodeScope.mjs';
  * proven to work before being adopted.
  */
 /**
- * @typedef {'shared' | 'contract' | 'kernel' | 'ui' | 'testing' | 'desktop'} PackageName
+ * @typedef {'shared' | 'contract' | 'kernel' | 'nodemode' | 'ui' | 'testing' | 'desktop'} PackageName
  *
  * A union rather than `string`. Every table below is keyed by it, so a lookup is
  * provably present and `noUncheckedIndexedAccess` has nothing to widen — the
@@ -43,7 +43,7 @@ import { PLAIN_NODE_GLOBS } from './scripts/lib/plainNodeScope.mjs';
  */
 
 /** @type {readonly PackageName[]} */
-export const PACKAGES = ['shared', 'contract', 'kernel', 'ui', 'testing', 'desktop'];
+export const PACKAGES = ['shared', 'contract', 'kernel', 'nodemode', 'ui', 'testing', 'desktop'];
 
 /**
  * Exported so `scripts/proofs/boundaries.proof.mjs` GENERATES its cases from
@@ -57,9 +57,18 @@ export const ALLOWED_IMPORTS = {
   shared: [],
   contract: ['shared'],
   kernel: ['shared', 'contract'],
+  // Node mode, and the same reach as the kernel for the same reason: a module
+  // that could reach `ui` or `desktop` could reach Electron transitively, which
+  // is the property this package's placement exists to make unrepresentable
+  // (ADR-0024).
+  nodemode: ['shared', 'contract'],
   ui: ['shared', 'contract'],
   testing: ['shared', 'contract'],
-  desktop: ['shared', 'contract', 'kernel'],
+  // `nodemode` is reachable from here because the FACTORY that spawns a
+  // Node-mode worker runs inside Electron and needs the shape of what that
+  // worker posts back. The edge is deliberately one-way: nothing in `nodemode`
+  // may reach `desktop`, which is what keeps Electron out of it.
+  desktop: ['shared', 'contract', 'kernel', 'nodemode'],
 };
 
 /** Where each package's directory sits, relative to the repository root. */
@@ -68,6 +77,7 @@ export const PACKAGE_DIR = {
   shared: 'packages/shared',
   contract: 'packages/contract',
   kernel: 'packages/kernel',
+  nodemode: 'packages/nodemode',
   ui: 'packages/ui',
   testing: 'packages/testing',
   desktop: 'apps/desktop',
@@ -82,6 +92,7 @@ const PACKAGE_GLOB = {
   shared: 'packages/shared/**/*.{ts,tsx}',
   contract: 'packages/contract/**/*.{ts,tsx}',
   kernel: 'packages/kernel/**/*.{ts,tsx}',
+  nodemode: 'packages/nodemode/**/*.{ts,tsx}',
   ui: 'packages/ui/**/*.{ts,tsx}',
   testing: 'packages/testing/**/*.{ts,tsx}',
   desktop: 'apps/desktop/**/*.{ts,tsx}',

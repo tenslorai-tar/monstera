@@ -1,0 +1,19 @@
+{
+  "name": "@monstera/nodemode",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Code that runs in Node mode and is not the document engine: the engine host's reader thread and what it needs. The Electron binary may be the runtime; Electron's APIs are not there (ADR-0024).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "node ../../scripts/clean.mjs dist"
+  }
+}

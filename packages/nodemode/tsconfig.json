@@ -15,16 +15,10 @@
   ],
   "references": [
     {
-      "path": "../../packages/shared"
+      "path": "../shared"
     },
     {
-      "path": "../../packages/contract"
-    },
-    {
-      "path": "../../packages/kernel"
-    },
-    {
-      "path": "../../packages/nodemode"
+      "path": "../contract"
     }
   ]
 }

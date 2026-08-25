@@ -47,7 +47,11 @@ import { electronBinaryPath } from '../provision/electron.mjs';
 const ROOT = repoRoot();
 const MARKER = 'MONSTERA_WORKER_MODE ';
 const HARNESS = join(ROOT, 'apps', 'desktop', 'dist', 'workerModeHarnessMain.js');
-const WORKER = join(ROOT, 'apps', 'desktop', 'dist', 'workerModeHarnessWorker.js');
+// In `packages/nodemode` and not beside the harness main, because it runs in
+// Node mode — which is the thing this probe measured, and ADR-0024 is the
+// amendment that followed. Checked here as well as by the harness so a missing
+// build is reported as could-not-look rather than as a worker that died.
+const WORKER = join(ROOT, 'packages', 'nodemode', 'dist', 'workerModeHarnessWorker.js');
 
 /** Passed by the jobs that provision Electron. See `scripts/lib/unverifiable.mjs`. */
 const REQUIRE = process.argv.includes('--require-electron');
