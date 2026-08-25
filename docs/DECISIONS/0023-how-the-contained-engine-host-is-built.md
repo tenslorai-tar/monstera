@@ -1000,3 +1000,57 @@ consumed, so an inline completion cannot be issued while an earlier write on the
 same handle still holds bytes in the buffer. Constructing the interleaving would
 mean starving a reader at a rate tuned to make some writes pend and others not,
 which is a case that passes or fails on the runner's speed.
+
+### Decision, 2026-08-25 — main issues the overlapped writes, and the outstanding set is bounded
+
+The addition above left three write mechanisms on the list and declined to
+choose. **The third is taken:** main issues overlapped `WriteFile` calls itself
+and reaps their completions when it next has business. The reader thread reads;
+it does not write.
+
+The reasons are structural rather than preference, and none of them is *it
+sounded lighter*:
+
+- **Nothing to tear down.** That property decided the read side and it decides
+  this one. The second candidate adds a thread and therefore a second teardown
+  problem, immediately after a unit spent measuring the first. The first adds a
+  third handle to the reader's wait plus a shared-memory protocol, and sequences
+  writes against read completions inside the state machine that is now correct.
+- **It adds no native boundary.** Main already binds Win32 through koffi for
+  host creation (`win32HostSurface.ts`) and pipe creation (`win32PipeSurface.ts`)
+  — B7's two sanctioned adapters. Writes there register into a boundary that
+  exists; candidates one and two put FFI inside a worker as a third.
+- **The latency objection was measured away.** 64 writes into a peer that never
+  reads, slowest 1ms, 63 genuinely outstanding when reaped, order preserved.
+
+**One argument previously made for the worker is withdrawn as simply wrong.** It
+was written here that a worker "keeps the `any` boundary in one module that never
+touches the UI thread". Main is not the UI thread — the renderer is — and main
+already carries two such modules. The sentence compared the candidate against a
+constraint that does not exist.
+
+Three conditions come with the decision, and the first is already met:
+
+1. **Ordering is measured, not assumed.** The correction above. This is the
+   premise the choice rests on: overlapped writes issued from one place, with a
+   length-prefixed framing on a byte stream, are only safe if completions
+   preserve issue order.
+2. **The outstanding set is BOUNDED, and exceeding the bound terminates the
+   host.** A peer that stops reading makes main accumulate `OVERLAPPED`
+   structures and pinned buffers without limit, in the process that carries
+   §9.17's budget. The measurement above wrote 256KB into a silent peer and did
+   not test a bound, because there is not one. Decision 8's shape already fits —
+   kill, never resume — so the overrun is an ending rather than a warning, which
+   makes the unbounded state unrepresentable rather than monitored (B5).
+3. **"When main next has business" is defined as: on the next write, and on
+   `terminate`.** Nothing else, and no timer. The residual that leaves is stated
+   rather than discovered: a transport that writes once and then goes quiet holds
+   that frame's buffer and `OVERLAPPED` until it ends. That is bounded by the
+   same limit as condition 2 — at most `limit` frames pinned while idle — and it
+   is the price of having nothing that runs on its own.
+
+**This falsifies a paragraph in `apps/desktop/src/hostTransport.ts`**, which says
+the channel "owns the pipe handle … and does the overlapped reads and writes".
+It will read *reads*, corrected in the commit that builds the write side rather
+than left standing beside a new section — the compound-claim shape CLAUDE.md item
+7 names, where the live clause vouches for the dead one.
