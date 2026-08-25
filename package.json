@@ -113,6 +113,7 @@
     "check:handlers": "node scripts/security/handlerFootprint.mjs",
     "check:advisories": "node scripts/security/engineAdvisories.mjs",
     "proof:advisories": "node scripts/proofs/advisoryRegister.proof.mjs",
+    "proof:retrytransient": "node scripts/proofs/retryTransient.proof.mjs",
     "notice:generate": "node scripts/release/generateNotice.mjs",
     "notice:check": "node scripts/release/generateNotice.mjs --check",
     "proof:licences": "node scripts/proofs/licenceProvenance.proof.mjs",

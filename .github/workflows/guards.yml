@@ -477,6 +477,17 @@ jobs:
       - name: Advisory register cannot be silently disarmed
         run: node scripts/ci/annotate.mjs scripts/proofs/advisoryRegister.proof.mjs
 
+      # The advisory check reaches a third party, and on 2026-08-25 that party
+      # answered HTTP 503 and reddened `main` on a commit that touched nothing
+      # near it. The retry that closes it is one line from being the banned
+      # reflex, so the helper is built to refuse: only a TransientFailure is
+      # tried again, an empty result or a 404 propagates on the first attempt,
+      # and exhausting the attempts throws rather than returning.
+      #
+      # Its load-bearing cases are the refusals, not the retry.
+      - name: Trying again is bounded, fails closed, and never happens for an answer
+        run: node scripts/ci/annotate.mjs scripts/proofs/retryTransient.proof.mjs
+
       - name: File policy (whole tree)
         run: node scripts/ci/annotate.mjs scripts/hooks/guardFiles.mjs --tree
 

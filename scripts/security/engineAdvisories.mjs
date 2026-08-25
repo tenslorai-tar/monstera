@@ -84,6 +84,7 @@ import { fileURLToPath } from 'node:url';
 
 import { digestInputs } from '../lib/verdict.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { TransientFailure, isTransientStatus, retryTransient } from '../lib/retryTransient.mjs';
 import { MUPDF_VERSION, mupdfSourcePath } from '../provision/mupdf.mjs';
 import { declaredNativeComponents } from '../release/generateNotice.mjs';
 import { declaredSymbols, watchedSymbols } from './claimSymbols.mjs';
@@ -218,14 +219,55 @@ const ADVISORY_SOURCES = [
  * @typedef {{ id: string, component: string, summary: string, published: string }} Advisory
  */
 
+/**
+ * How many times one OSV query may go unanswered before this gives up.
+ *
+ * Three, with a short backoff. `main` went red on 2026-08-25 with `OSV returned
+ * HTTP 503 Service Unavailable for mupdf`, on a commit that touched nothing near
+ * it — one unanswered request from a third party reddening the board for
+ * everyone.
+ *
+ * This is NOT retrying until green, and `retryTransient` is built so it cannot
+ * become that: only a {@link TransientFailure} is tried again, an empty result
+ * or a 404 propagates on the first attempt, and exhausting the attempts throws
+ * the last failure rather than returning. A security check that passed because
+ * it eventually stopped asking would be the green tick meaning *did not look*
+ * that this whole file exists to refuse.
+ */
+const OSV_ATTEMPTS = 3;
+/** Backoff before attempt `n`. Bounded and short: this is a gate people wait on. */
+const OSV_BACKOFF_MS = (/** @type {number} */ attempt) => (attempt - 1) * 750;
+
 /** @param {string} name @returns {Promise<{id: string, summary?: string, published?: string, aliases?: string[]}[]>} */
 async function queryOsv(name) {
-  const response = await fetch('https://api.osv.dev/v1/query', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ package: { name, ecosystem: 'Debian:12' } }),
-  });
+  const response = await retryTransient(
+    async () => {
+      // A NETWORK ERROR IS ALSO NOBODY ANSWERING. `fetch` throws for a refused
+      // connection or a reset socket, and those are the same class as a 503 —
+      // so the throw is re-thrown as transient rather than escaping as itself.
+      /** @type {Response} */
+      let attempt;
+      try {
+        attempt = await fetch('https://api.osv.dev/v1/query', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ package: { name, ecosystem: 'Debian:12' } }),
+        });
+      } catch (cause) {
+        throw new TransientFailure(`OSV could not be reached for ${name}`, { cause });
+      }
+      if (isTransientStatus(attempt.status)) {
+        throw new TransientFailure(
+          `OSV returned HTTP ${String(attempt.status)} ${attempt.statusText} for ${name}`,
+        );
+      }
+      return attempt;
+    },
+    { attempts: OSV_ATTEMPTS, delayMs: OSV_BACKOFF_MS, sleep: (ms) => new Promise((done) => setTimeout(done, ms)) },
+  );
   if (!response.ok) {
+    // Reached here only for a status OSV *answered* with — a 404, a 400. Not
+    // retried, and not softened: a wrong package name must be reported as one.
     throw new Error(`OSV returned HTTP ${response.status} ${response.statusText} for ${name}`);
   }
   const body = /** @type {{vulns?: {id: string, summary?: string, published?: string, aliases?: string[]}[]}} */ (
