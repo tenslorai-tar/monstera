@@ -158,6 +158,18 @@ jobs:
       - name: Prove provisioning is safe under concurrency
         run: node scripts/ci/annotate.mjs scripts/provision/gitleaks.proof.mjs
 
+      # AND THE DOWNLOAD PRIMITIVE UNDERNEATH IT. The step above went red on
+      # 2026-08-25 with `read ECONNRESET` — a release host dropping one racer's
+      # TLS connection — so `downloadVerified` now retries what nobody answered.
+      #
+      # This step exists for the OTHER half: a retry on a verified download is
+      # dangerous in exactly one direction, and its load-bearing cases are the
+      # refusals. A digest mismatch retried is downloading until the hash
+      # matches, on the check that stands between a pinned asset and whatever a
+      # host served instead.
+      - name: Prove a verified download retries a reset and never a mismatch
+        run: node scripts/ci/annotate.mjs scripts/proofs/fetchVerified.proof.mjs
+
       # The scan below is only worth its runtime if it cannot be silently
       # disarmed. This proves each suppression channel is closed AND, by running
       # the corpus without each closure, that the closure is what shuts it —

@@ -115,6 +115,7 @@
     "proof:advisories": "node scripts/proofs/advisoryRegister.proof.mjs",
     "proof:retrytransient": "node scripts/proofs/retryTransient.proof.mjs",
     "proof:osvquery": "node scripts/proofs/osvQuery.proof.mjs",
+    "proof:fetchverified": "node scripts/proofs/fetchVerified.proof.mjs",
     "notice:generate": "node scripts/release/generateNotice.mjs",
     "notice:check": "node scripts/release/generateNotice.mjs --check",
     "proof:licences": "node scripts/proofs/licenceProvenance.proof.mjs",

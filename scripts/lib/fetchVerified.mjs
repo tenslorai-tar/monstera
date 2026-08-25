@@ -24,6 +24,8 @@
  * constant, so host-locking is the guard.
  */
 
+import { TransientFailure, isTransientStatus, retryTransient } from './retryTransient.mjs';
+
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
@@ -32,6 +34,41 @@ import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 
 const MAX_REDIRECTS = 5;
+
+/**
+ * A ceiling breach, named so the retry below cannot mistake it for a reset.
+ *
+ * It surfaces through the same `pipeline` rejection as a dead socket, and the
+ * two must not share a classification: a stream that died is nobody answering,
+ * a stream that ran past its ceiling is an asset that is not what we pinned.
+ */
+class DownloadTooLarge extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'DownloadTooLarge';
+  }
+}
+
+/**
+ * How many times one download may go unanswered. Three, with a short backoff.
+ *
+ * `main` went red on 2026-08-25 with `read ECONNRESET` inside
+ * `gitleaks.proof.mjs`'s concurrency case — one racer's TLS connection dropped
+ * mid-download, on a commit that added eighteen lines to a markdown file. The
+ * root cause is outside this repository, which is what makes trying again the
+ * correct response rather than a workaround (Rule 0), and the commit that added
+ * it names the cause.
+ *
+ * This is the THIRD consumer of `retryTransient` and the second in one day, so
+ * the classification lives there rather than here: only a `TransientFailure` is
+ * tried again, and exhausting the attempts throws the last failure rather than
+ * returning. What is local to this module is which of ITS failures are
+ * transient — see `fetchChecked` and the digest boundary in `downloadVerified`.
+ */
+const DOWNLOAD_ATTEMPTS = 3;
+/** Backoff before attempt `n`. Bounded and short: provisioning blocks a build. */
+const downloadBackoffMs = (/** @type {number} */ attempt) => (attempt - 1) * 750;
 
 /**
  * @param {string} url
@@ -64,13 +101,23 @@ function assertAllowed(url, allowedHosts) {
  *
  * @param {string} url
  * @param {readonly string[]} allowedHosts
+ * @param {typeof fetch} fetchImpl
  * @returns {Promise<ReadableStream<Uint8Array>>}
  */
-async function fetchChecked(url, allowedHosts) {
+async function fetchChecked(url, allowedHosts, fetchImpl) {
   let current = assertAllowed(url, allowedHosts).toString();
 
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-    const response = await fetch(current, { redirect: 'manual' });
+    /** @type {Response} */
+    let response;
+    try {
+      response = await fetchImpl(current, { redirect: 'manual' });
+    } catch (cause) {
+      // NOBODY ANSWERED. A refused connection, a reset socket or a DNS failure
+      // are the same class as a 503 and are re-thrown as transient rather than
+      // escaping as themselves.
+      throw new TransientFailure(`${current} could not be reached`, { cause });
+    }
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -84,7 +131,12 @@ async function fetchChecked(url, allowedHosts) {
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText} for ${current}`);
+      const message = `HTTP ${response.status} ${response.statusText} for ${current}`;
+      // 429 and 5xx are the host saying "not now"; everything else is an answer.
+      // A 404 retried three times is a wrong pin that takes three times as long
+      // to report, which is how a retry becomes retry-until-green.
+      if (isTransientStatus(response.status)) throw new TransientFailure(message);
+      throw new Error(message);
     }
     if (response.body === null) {
       throw new Error(`Empty response body for ${current}`);
@@ -105,9 +157,21 @@ async function fetchChecked(url, allowedHosts) {
  * @param {string} options.sha256 Lowercase hex digest of the expected bytes.
  * @param {number} options.maxBytes Hard ceiling on received bytes.
  * @param {string} options.destination Absolute path to place the verified file.
+ * @param {typeof fetch} [options.fetchImpl] Injected so the retry boundary can
+ *   be driven with an answer of our choosing. Provisioning never passes it; the
+ *   proof does. Without a seam here the three branches that decide what is
+ *   transient would be exercised only when a release host misbehaves, which is
+ *   the gap finding DDDD-14 was about one module over.
  * @returns {Promise<string>}
  */
-export async function downloadVerified({ url, allowedHosts, sha256, maxBytes, destination }) {
+export async function downloadVerified({
+  url,
+  allowedHosts,
+  sha256,
+  maxBytes,
+  destination,
+  fetchImpl = fetch,
+}) {
   const expected = sha256.toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(expected)) {
     throw new Error(`Expected a 64-character hex SHA-256, received "${sha256}"`);
@@ -117,35 +181,68 @@ export async function downloadVerified({ url, allowedHosts, sha256, maxBytes, de
   const quarantine = `${destination}.unverified`;
   await rm(quarantine, { force: true });
 
-  const body = await fetchChecked(url, allowedHosts);
-  const hash = createHash('sha256');
-  let received = 0;
-
-  const meter = new Transform({
-    transform(chunk, _encoding, callback) {
-      received += chunk.length;
-      if (received > maxBytes) {
-        callback(
-          new Error(
-            `Download exceeded its ${maxBytes} byte ceiling at ${received} bytes (${url}). ` +
-              `Content-Length is deliberately not trusted for this check.`,
-          ),
-        );
-        return;
-      }
-      hash.update(chunk);
-      callback(null, chunk);
-    },
-  });
-
-  try {
-    await pipeline(body, meter, createWriteStream(quarantine));
-  } catch (cause) {
+  /**
+   * ONE ATTEMPT: fetch, meter, hash, land in quarantine. Retried as a whole.
+   *
+   * A stream cannot be replayed, so a reset halfway through has to redo the
+   * request — which is why the retry wraps this and not just the `fetch`. The
+   * quarantine is removed at the top of every attempt rather than only on
+   * failure, so a partial file from a dead socket can never be hashed by the
+   * attempt that follows it.
+   */
+  const attempt = async () => {
     await rm(quarantine, { force: true });
-    throw new Error(`Download failed: ${url}`, { cause });
-  }
 
-  const actual = hash.digest('hex');
+    const body = await fetchChecked(url, allowedHosts, fetchImpl);
+    const hash = createHash('sha256');
+    let received = 0;
+
+    const meter = new Transform({
+      transform(chunk, _encoding, callback) {
+        received += chunk.length;
+        if (received > maxBytes) {
+          callback(
+            new DownloadTooLarge(
+              `Download exceeded its ${maxBytes} byte ceiling at ${received} bytes (${url}). ` +
+                `Content-Length is deliberately not trusted for this check.`,
+            ),
+          );
+          return;
+        }
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+
+    try {
+      await pipeline(body, meter, createWriteStream(quarantine));
+    } catch (cause) {
+      await rm(quarantine, { force: true });
+      // THE CEILING IS NOT A RESET. It arrives through the same rejection, and
+      // trying again would re-download an asset already known to be the wrong
+      // size — so it propagates on the first attempt, as itself.
+      if (cause instanceof DownloadTooLarge) throw cause;
+      throw new TransientFailure(`Download failed: ${url}`, { cause });
+    }
+
+    return hash.digest('hex');
+  };
+
+  /**
+   * **A DIGEST MISMATCH IS NEVER RETRIED, and that is the whole boundary.**
+   *
+   * It is outside `attempt` deliberately. Retrying a mismatch is *downloading
+   * until the hash matches* — on the one check that stands between a pinned
+   * asset and whatever the host served instead, which is the check this module
+   * exists for. A truncated stream fails at the pipeline above and is retried
+   * there; bytes that arrived complete and hash differently are an asset that
+   * is not what we pinned, and the answer to that is to stop.
+   */
+  const actual = await retryTransient(attempt, {
+    attempts: DOWNLOAD_ATTEMPTS,
+    delayMs: downloadBackoffMs,
+    sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+  });
   if (actual !== expected) {
     await rm(quarantine, { force: true });
     throw new Error(
