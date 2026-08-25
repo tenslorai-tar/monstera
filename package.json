@@ -89,6 +89,7 @@
     "proof:transportwrite": "node scripts/research/transportWrite.mjs",
     "proof:writesurface": "node scripts/research/transportWriteSurface.mjs",
     "proof:workermode": "node scripts/research/workerMode.mjs",
+    "proof:readerworker": "node scripts/research/readerWorker.mjs",
     "proof:unverifiable": "node scripts/proofs/unverifiable.proof.mjs",
     "check:types": "node scripts/lib/typecheck.mjs",
     "proof:typecheck": "node scripts/proofs/typecheck.proof.mjs",

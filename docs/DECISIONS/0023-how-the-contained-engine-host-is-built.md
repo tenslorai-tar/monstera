@@ -1211,3 +1211,57 @@ The case therefore asserts the elapsed time alongside the count, and the comment
 in `win32PipeSurface.ts` says which half is load-bearing. A case that asserted
 only *everything was stranded* would have passed against the branch being
 deleted.
+
+### Addition, 2026-08-25 — the reader thread exists, CCCC-2 is closed, and a chunk weighs more than it carries
+
+The read side is built: `packages/nodemode/src/readerWorker.ts`, in that package
+because it runs in Node mode (ADR-0024), with the stop event and the handle
+addresses supplied by `createWin32ReaderControl` in `win32PipeSurface.ts` — the
+same native boundary as creating the pipe.
+
+**CCCC-2 was that `proof:teardown` measures termination and nothing about bytes
+crossing**, so a reader that ended cleanly having read nothing satisfied it.
+`scripts/research/readerWorker.mjs` drives the shipped reader over a pipe from
+the shipped factory, eight cases:
+
+| | |
+|---|---|
+| bytes the client wrote, delivered | **8192 of 8192**, in write order |
+| chunks they arrived in | **3** |
+| the reader ended after the stop event was signalled | **15ms** |
+| what it said | *stopped while waiting for bytes* |
+
+**Its load-bearing case is that they arrived in more than one chunk.** Written
+as a single batch first, all sixteen frames landed in ONE read — the client had
+finished writing before the reader's first `ReadFile` completed and a 64KB read
+buffer takes 8192 bytes without noticing — and every other case passed while the
+loop's second iteration, where a transport spends its life, had never executed.
+The fixture now writes in two batches and waits for the first to be *delivered*,
+which makes the second read a certainty rather than a race.
+
+Mutated to the rejected design — the wait watching the read alone — the stop
+cases go red at **2006ms with the thread alive and no ending**, while the
+delivery cases stay green. That is the correct separation: a one-handle reader
+reads perfectly well and cannot be told to stop.
+
+**A CHUNK WEIGHS MORE THAN IT CARRIES, and this is the measurement worth
+keeping.** Posting `buffer.subarray(0, n)` was tried and every case stayed green,
+which is where the write side's copy also sits — a non-biting mutation. The
+reason it is wrong is not aliasing: `postMessage` structured-clones
+synchronously, so a view never sees the next read's bytes. It is that **cloning
+a TypedArray clones its entire underlying `ArrayBuffer`.** Measured: a 512-byte
+view into a 64KB buffer arrives with `byteLength` 512 and `buffer.byteLength`
+**65536**, while `Uint8Array.from` arrives with both at 512.
+
+So a reader posting views copies its whole read buffer across the thread
+boundary on every chunk, whatever the read returned — a 128× amplification at
+these sizes, in the process carrying §9.17's budget. Finding that mechanism is
+what turned a mutation nothing could catch into a case that catches it: the
+probe now reads each chunk's underlying width before copying, and re-running the
+mutation prints `{"carried":512,"weighed":65536}`.
+
+**Nothing is sent to the reader**, and it registers no `parentPort` listener. One
+would be an active handle keeping the thread alive past its Win32 work — measured
+on the probe that first added an acknowledgement — and it could not be delivered
+anyway while the thread is inside its wait, which is where it spends its life.
+Main says one thing, *stop*, by signalling an event the wait is already watching.

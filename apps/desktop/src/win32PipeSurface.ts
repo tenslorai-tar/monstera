@@ -299,6 +299,46 @@ export function createWin32PipeSurface(): PipeCreationSurface {
   };
 }
 
+/**
+ * The event main signals to stop the reader thread.
+ *
+ * Branded separately from {@link PipeHandle} for the reason the SIDs are: both
+ * are opaque Win32 handles, and signalling the pipe or waiting on the event
+ * would be a call that compiles and does nothing anybody meant.
+ */
+export interface StopEvent {
+  readonly __handle: 'stop-event';
+}
+
+/**
+ * The Win32 objects main owns on the reader's behalf.
+ *
+ * Separate from {@link PipeCreationSurface} because it is a different question —
+ * *how do I tell a thread to stop* rather than *how do I create the channel* —
+ * and in the same module because it is the same native boundary. B7 asks for one
+ * adapter per boundary, not one per verb.
+ */
+export interface Win32ReaderControl {
+  /** A manual-reset event, unsignalled. `null` when the call failed. */
+  readonly createStopEvent: () => StopEvent | null;
+  /**
+   * Signals it. MANUAL RESET, so a reader that has not reached its wait yet
+   * still sees the signal when it gets there — an auto-reset event signalled
+   * before the wait is a stop that arrives and is consumed by nothing.
+   */
+  readonly signal: (event: StopEvent) => boolean;
+  readonly closeEvent: (event: StopEvent) => void;
+  /**
+   * A handle's numeric value as a decimal string, for `workerData`.
+   *
+   * Worker threads share the process handle table, so a handle created here is
+   * valid there — but `postMessage` carries structured-cloneable data and a
+   * koffi pointer is not that. A string is, and `koffi.as` turns it back.
+   */
+  readonly addressOf: (handle: PipeHandle | StopEvent) => string;
+  readonly lastError: () => number;
+}
+
 /** `WriteFile` returned `ERROR_IO_PENDING`: queued, which is the ordinary case. */
 const ERROR_IO_PENDING = 997;
 /** `GetOverlappedResult` with `wait` false: not finished, and it said so without blocking. */
@@ -548,5 +588,63 @@ export function createWin32WriteSurface(pipe: PipeHandle): Win32WriteSurface {
     lastError: (): number => bindings.lastError(),
 
     stranded: (): number => strandedCount,
+  };
+}
+
+interface ReaderControlBindings {
+  readonly createEvent: (
+    attrs: unknown,
+    manualReset: boolean,
+    initial: boolean,
+    name: string | null,
+  ) => unknown;
+  readonly setEvent: (event: unknown) => unknown;
+  readonly closeHandle: (handle: unknown) => boolean;
+  readonly lastError: () => number;
+}
+
+function bindReaderControl(): ReaderControlBindings {
+  const kernel = koffi.load('kernel32.dll');
+  return {
+    createEvent: kernel.func(
+      'void *CreateEventW(void *attrs, bool manualReset, bool initial, const char16_t *name)',
+    ),
+    setEvent: kernel.func('bool SetEvent(void *event)'),
+    closeHandle: kernel.func('bool CloseHandle(void *handle)'),
+    lastError: kernel.func('uint32 GetLastError()'),
+  };
+}
+
+/**
+ * @returns The Win32 calls {@link Win32ReaderControl} declares.
+ */
+export function createWin32ReaderControl(): Win32ReaderControl {
+  const bindings = bindReaderControl();
+
+  return {
+    createStopEvent: (): StopEvent | null => {
+      // MANUAL RESET, and unsignalled. Manual because a stop signalled before
+      // the reader reaches its wait must still be there when it arrives — an
+      // auto-reset event is consumed by the first waiter and there may not be
+      // one yet. Unsignalled because a reader that stopped before it started is
+      // a transport that never ran.
+      const handle: unknown = bindings.createEvent(null, true, false, null);
+      if (isInvalidHandle(handle)) return null;
+      return handle as StopEvent;
+    },
+
+    signal: (event: StopEvent): boolean => bindings.setEvent(event) === true,
+
+    closeEvent: (event: StopEvent): void => {
+      bindings.closeHandle(event);
+    },
+
+    // `koffi.address` rather than a cast: the value is a pointer and its width
+    // is the platform's, so anything narrower silently truncates on 64-bit.
+    // Decimal, because `BigInt()` at the other end reads decimal and a hex
+    // string would need a prefix nobody would notice was missing.
+    addressOf: (handle: PipeHandle | StopEvent): string => String(koffi.address(handle)),
+
+    lastError: (): number => bindings.lastError(),
   };
 }

@@ -747,6 +747,18 @@ jobs:
       - name: Prove the shipped write path carries, bounds and tears down
         run: node scripts/ci/annotate.mjs scripts/research/transportWriteSurface.mjs --require-transport
 
+      # THE READ SIDE, end to end through the shipped reader thread. It closes
+      # CCCC-2: `proof:teardown` measures termination and nothing about bytes
+      # crossing, so a reader that ended cleanly having read nothing satisfied
+      # it.
+      #
+      # Its load-bearing case is that the bytes arrived in MORE THAN ONE chunk.
+      # Written as a single batch first, all sixteen frames landed in one read
+      # and the loop's second iteration — where a transport spends its life —
+      # had never executed while every other case passed.
+      - name: Prove the shipped reader carries bytes and stops when told
+        run: node scripts/ci/annotate.mjs scripts/research/readerWorker.mjs --require-transport
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
@@ -1045,3 +1057,15 @@ jobs:
       # the overrun case, because nothing completes into a silent peer.
       - name: Prove the shipped write path carries, bounds and tears down
         run: node scripts/ci/annotate.mjs scripts/research/transportWriteSurface.mjs --require-transport
+
+      # THE READ SIDE, end to end through the shipped reader thread. It closes
+      # CCCC-2: `proof:teardown` measures termination and nothing about bytes
+      # crossing, so a reader that ended cleanly having read nothing satisfied
+      # it.
+      #
+      # Its load-bearing case is that the bytes arrived in MORE THAN ONE chunk.
+      # Written as a single batch first, all sixteen frames landed in one read
+      # and the loop's second iteration — where a transport spends its life —
+      # had never executed while every other case passed.
+      - name: Prove the shipped reader carries bytes and stops when told
+        run: node scripts/ci/annotate.mjs scripts/research/readerWorker.mjs --require-transport

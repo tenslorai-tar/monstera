@@ -36,3 +36,9 @@
  */
 
 export type { WorkerModeReport } from './workerModeReport.js';
+export type {
+  ReaderChunk,
+  ReaderEnded,
+  ReaderMessage,
+  ReaderWorkerData,
+} from './readerProtocol.js';
