@@ -1743,3 +1743,53 @@ As written, if checkpoint restore landed first, reason 2 would become false and
 **nothing would fire**. The trigger is therefore **whichever of the save pipeline
 or checkpoint restore lands first**. Both are nameable today, which is what makes
 it a check rather than a note.
+
+### Addition, 2026-08-25 — Decision 7's verb split needs TWO DIRECTORIES, measured
+
+Decision 7 asks to *"split the grants by verb: **read** on the snapshot,
+**modify** only on the output directory"*, and it reads as though both could sit
+inside the one handed area the spike already grants. **They cannot, and this was
+measured rather than reasoned about**, because the reasoning and the reading are
+the same sentence right up until they are not.
+
+Read on this machine, 2026-08-25, with `icacls` on a throwaway directory, using
+`ALL APPLICATION PACKAGES` (`S-1-15-2-1`) as a stand-in for a container SID —
+every AppContainer is a member of it, which is the same membership P1 rests on.
+
+Grant modify on the directory, and an existing file inside it gains the ACE by
+inheritance:
+
+```
+icacls . /grant "*S-1-15-2-1:(OI)(CI)(M)"
+
+snapshot.bin APPLICATION PACKAGE AUTHORITY\ALL APPLICATION PACKAGES:(I)(M)
+```
+
+Then grant read explicitly on the file, intending to restrict it:
+
+```
+icacls snapshot.bin /grant "*S-1-15-2-1:(R)"
+
+snapshot.bin APPLICATION PACKAGE AUTHORITY\ALL APPLICATION PACKAGES:(R)
+             APPLICATION PACKAGE AUTHORITY\ALL APPLICATION PACKAGES:(I)(M)
+```
+
+**Two allow ACEs for the same SID, and an access check unions them.** The
+explicit `(R)` restricts nothing; the inherited `(M)` still grants write. So a
+snapshot placed inside a modify-granted directory is writable by the contained
+host **however carefully it is granted read**, and an instrument that measured
+the grant without measuring the write would report the split as working.
+
+Both grants were revoked and the directory removed; the file's ACL was re-read
+after the revoke and carries neither ACE.
+
+**What follows for the candidate.** The snapshot and the output directory must be
+**separate directories**, each with one grant — not one handed area with a
+per-file exception. The alternative is a **deny** ACE, which is evaluated ahead
+of allows and would work; it is not adopted here and would be its own decision,
+because a deny ACE on the boundary between this app and a hostile host is a
+mechanism whose failure modes nobody in this repository has costed.
+
+Recorded against Decision 7 rather than inside the instrument that will measure
+the rest, because it constrains the **candidate's shape** and is true whether or
+not that instrument is ever built.
