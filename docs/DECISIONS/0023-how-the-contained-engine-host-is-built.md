@@ -1504,3 +1504,68 @@ enumeration the kernel does not already expose.
 rather than a claim here: that a killed host actually recovers. `documentCommands.ts`
 has named that as owed since ADR-0009; this decision is what that row will prove,
 and none of the three above is measured yet.
+
+### Correction, 2026-08-25 — 9a defined poisoning and never defined RECOVERY (finding DDDD-16)
+
+9a said what poisoning is, why the bound is 2, why the document is the unit, what
+poisoning is not, why refusing beats closing and why the code is declared. **It
+never said how a document leaves the poisoned state**, which is the omission
+Decision 9 exists to prevent, one level down: *never*, *until close-and-reopen*,
+*on an explicit user retry* and *on the next successful host build* are four
+materially different products, and the supervisor would have picked one silently.
+
+**The answer needs no new mechanism, because `DocId` already has the lifetime.**
+ADR-0009 fixes that `DocId` is **minted, never derived** — 256 random bits per
+open — and `documentService.ts` mints one inside `#openNow`, with a comment
+rejecting a reusable counter by name because a reused id lands a late message on
+a different document (invariant L10).
+
+So the requirement is: **the failure count and the poison live on the
+supervisor's per-document state, whose lifetime is the record's** — the same rule
+the lane and the command log already follow, and the same reason. Closing and
+reopening a document mints a fresh `DocId` with no entry, so recovery is a
+property of the existing design rather than a step somebody has to remember to
+implement.
+
+That also makes the worst of the four **unrepresentable** rather than rejected
+(B5): *never, for the life of the process* has no key to live on.
+
+The other two are rejected with mechanisms rather than preferences:
+
+| candidate | why not |
+|---|---|
+| reset on the **next successful host build** | a host building fine says nothing about a document's bytes. It would clear the count of exactly the document that kills the next host — the loop restored, with a mechanism that looks like a repair |
+| a dedicated **"try again"** affordance | close-and-reopen *is* an explicit user act with this effect. A one-click retry puts a human inside the loop and makes the second attempt cheaper than the first, which is the wrong direction for a bound whose premise is that a host death may be a compromise signal |
+
+### Correction, 2026-08-25 — the innocent-document claim was stronger than its mechanism supports (finding DDDD-17)
+
+9a said: *"A document only reaches 2 by failing twice with no success in between,
+which is the deterministic case the bound is for."* **The first clause is true
+and the second does not follow.**
+
+The count increments for every document that had a call rejected by a death. A
+document with a call in flight at **two successive deaths caused by a third
+document's bytes** reaches 2 with no success in between, having caused neither.
+Reset-on-success does not save it, because it never got a success — that is the
+condition it was in.
+
+**The residual is narrow and it is not closed.** An idle document is never
+incremented, so this needs one busy at both deaths. It stays open because every
+mechanism that would close it is **attribution**, which 9a rejected as evadable
+by concurrency and as buying nothing — and that rejection is unchanged. What
+repairs the case instead is the recovery above: the document's canonical bytes
+are intact, it is still saveable, and closing and reopening it starts a fresh
+`DocId` at zero.
+
+**So the two corrections answer each other, and that is the load-bearing
+consequence rather than a tidy coincidence.** Recovery was written up as a
+convenience — the reason refusing beats closing the record. Admitting the
+innocent case makes it a **requirement**: without it, a document that caused
+nothing would be permanently refused engine work for someone else's input.
+
+Recorded rather than quietly reworded, because this is AAAA-8's shape in a
+decision written the same day — a claim recorded more strongly than its mechanism
+supported, which **no sweep would ever have found**, since nothing about it was
+going to change. The tell was available at the moment of writing and was not
+reached: a two-clause sentence whose second clause was doing the reassuring and
+was not entailed by the first.
