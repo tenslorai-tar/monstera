@@ -194,6 +194,24 @@ export function findWrappableInvocations({ root = repoRoot() } = {}) {
     const lines = readFileSync(join(dir, name), 'utf8').split('\n');
     for (let index = 0; index < lines.length; index += 1) {
       const text = lines[index] ?? '';
+      // A COMMENT IS NOT A COMMAND. A line whose first non-space character is
+      // `#` runs nothing under either reading of this file — a YAML comment
+      // between steps, or a shell comment inside a `run: |` block — so a
+      // workflow comment that MENTIONS a command was being reported as an
+      // unwrapped step. Measured: a comment recording why `check:lint` exists
+      // quoted `npm run local -- --only check:` and the scan named it at
+      // ci.yml:292.
+      //
+      // This makes the found set SMALLER, which is the dangerous direction for a
+      // search (item 4c), so it is written as narrowly as it can be: the first
+      // non-space character, nothing about `#` anywhere else on the line. A step
+      // with a trailing comment is untouched, and a commented-out invocation
+      // genuinely does not run. `annotateCoverage.proof.mjs` carries both
+      // directions.
+      //
+      // Textual still, and therefore no second opinion about YAML — which is why
+      // the fix is here rather than in a parser.
+      if (text.trimStart().startsWith('#')) continue;
       // The wrapper's own path contains no proof path, so it is never mistaken
       // for one; a line naming it is only interesting because of what follows.
       // MATCHED WHOLE, not by prefix. `text.includes('npm run proof:shim')` is

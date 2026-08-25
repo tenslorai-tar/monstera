@@ -285,6 +285,18 @@ jobs:
       - name: Prove the typecheck runner separates a broken project from a clean one
         run: node scripts/ci/annotate.mjs scripts/proofs/typecheck.proof.mjs
 
+      # The same gap, one gate along, and it cost a red board rather than being
+      # reasoned about: `npm run lint` is not a `check:*` name and not a `node`
+      # command line either, so the rule set governing every line of this
+      # repository was outside the sweep that runs before every push. 7ba978c
+      # added four ordinary lint errors, `npm run local -- --only check:`
+      # reported 14 of 14 passed, and CI failed at "Lint" on all three jobs.
+      #
+      # Drives the real linter against fixture trees with their own flat config,
+      # so it needs node_modules and belongs in this job rather than with Guards.
+      - name: Prove the lint runner separates a violating tree from a clean one
+        run: node scripts/ci/annotate.mjs scripts/proofs/lintcheck.proof.mjs
+
       # The FIRST check in this repository that starts Electron and reads
       # something back out of a running renderer. Two claims, split so a
       # provisioning failure costs the cheap half nothing: the directive list is

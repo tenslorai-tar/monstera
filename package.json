@@ -70,6 +70,8 @@
     "proof:annotate": "node scripts/proofs/annotate.proof.mjs",
     "check:lockfile": "node scripts/hooks/lockfileIntegrity.mjs",
     "check:docs": "node scripts/hooks/documentConsistency.mjs",
+    "check:lint": "node scripts/lib/lintcheck.mjs",
+    "proof:lintcheck": "node scripts/proofs/lintcheck.proof.mjs",
     "local": "node scripts/checkLocal.mjs",
     "proof:checklocal": "node scripts/proofs/checkLocal.proof.mjs",
     "audit:scope": "node scripts/audit/scope.mjs",

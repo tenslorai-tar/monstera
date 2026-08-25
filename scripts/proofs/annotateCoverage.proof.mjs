@@ -30,7 +30,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 18 });
+const roster = createRoster(failures, { cases: 20 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -92,6 +92,52 @@ try {
       result.blind,
       'With no wrapped invocation anywhere, a clean result would be indistinguishable from a ' +
         'scan that recognised nothing. It must say so.',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // A COMMENT IS NOT A COMMAND, and the pair is what makes that safe.
+  //
+  // Skipping comment lines makes the found set SMALLER, which is the dangerous
+  // direction for a search — so the second case here holds everything constant
+  // except the `#` and requires the same line to be reported. A scan that
+  // skipped too much would pass the first and fail the second.
+  // -------------------------------------------------------------------------
+  {
+    const commented = tempRepo({
+      scripts: { 'proof:thing': 'node scripts/proofs/thing.proof.mjs' },
+      workflows: {
+        'a.yml':
+          '      - name: prove\n' +
+          '        run: node scripts/ci/annotate.mjs scripts/proofs/thing.proof.mjs\n' +
+          '      # why this exists: node scripts/proofs/thing.proof.mjs used to run bare\n',
+      },
+    });
+    check(
+      'a workflow COMMENT naming a command is not reported as an unwrapped step',
+      scan({ root: commented }).violations.length === 0,
+      `violations = ${JSON.stringify(scan({ root: commented }).violations)}. A line whose first ` +
+        `non-space character is # runs nothing under either reading — a YAML comment between ` +
+        `steps, or a shell comment inside a run block — and one recording why a check exists ` +
+        `was reported at ci.yml:292.`,
+    );
+
+    const uncommented = tempRepo({
+      scripts: { 'proof:thing': 'node scripts/proofs/thing.proof.mjs' },
+      workflows: {
+        'a.yml':
+          '      - name: prove\n' +
+          '        run: node scripts/ci/annotate.mjs scripts/proofs/thing.proof.mjs\n' +
+          '        run: node scripts/proofs/thing.proof.mjs bare\n',
+      },
+    });
+    check(
+      'CONTROL: the SAME line without the # is still reported',
+      scan({ root: uncommented }).violations.length === 1,
+      `violations = ${JSON.stringify(scan({ root: uncommented }).violations)}. Skipping comments ` +
+        `shrinks what this search can find, which is the direction that loses a defect — so the ` +
+        `two fixtures differ only in the comment marker, and a scan that skipped too much fails ` +
+        `here while passing the case above.`,
     );
   }
 

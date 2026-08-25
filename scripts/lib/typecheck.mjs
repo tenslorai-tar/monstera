@@ -67,6 +67,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
+import { segmentsOf } from './scriptSegments.mjs';
 
 /** The TypeScript compiler's JavaScript entry point, relative to the root. */
 export const TSC_ENTRY = join('node_modules', 'typescript', 'bin', 'tsc');
@@ -98,20 +99,16 @@ export const FEWEST_INVOCATIONS = 2;
 /**
  * The `&&`-separated segments of a command line.
  *
- * Split before anything else so the count is available to the control: the
- * number of invocations this file produces must equal the number of things the
- * authority asked for, and a parse that dropped one would otherwise look like a
- * shorter typecheck rather than a broken read.
+ * MOVED to `scriptSegments.mjs` when `lintcheck.mjs` needed the same answer, and
+ * re-exported here so this module's callers and its proof are unchanged. Two
+ * implementations of *how an `&&`-composed script is read* would be a second
+ * opinion about a question one manifest answers (B3a), and the dangerous kind:
+ * they would agree until one of them learnt about quoting.
  *
- * @param {string} command
- * @returns {string[]}
+ * Imported AND re-exported, not `export … from`: the latter would not bind the
+ * name in this module's own scope, and two call sites below use it.
  */
-export function segmentsOf(command) {
-  return command
-    .split('&&')
-    .map((segment) => segment.trim())
-    .filter((segment) => segment !== '');
-}
+export { segmentsOf };
 
 /**
  * The argument lists to hand `tsc`, one per segment.
