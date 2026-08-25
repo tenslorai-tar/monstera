@@ -1,5 +1,7 @@
 import type { HostRuntimeTransport, HostTermination } from '@monstera/kernel';
 
+import type { HostWriteQueue } from './hostWriteQueue.js';
+
 /**
  * The engine host's transport, over a reader thread (ADR-0023 §4 and its
  * 2026-08-25 addition).
@@ -12,11 +14,24 @@ import type { HostRuntimeTransport, HostTermination } from '@monstera/kernel';
  * and a transport testable only against a real host would be tested by nothing.
  *
  * The channel's implementation is the worker thread. It owns the pipe handle,
- * waits over the operation's completion event **and** a stop event, and does the
- * overlapped reads and writes. That shape was decided and measured before this
- * module existed: a reader blocked inside `ReadFile` has to be unwedged with
+ * waits over the read's completion event **and** a stop event, and does the
+ * overlapped **reads**. That shape was decided and measured before this module
+ * existed: a reader blocked inside `ReadFile` has to be unwedged with
  * `CancelIoEx` or by closing the handle underneath it, and `proof:teardown`
  * measured both the working design and the rejected one.
+ *
+ * ## The two directions are not the same mechanism
+ *
+ * Writes do not travel to the reader, because a thread inside
+ * `WaitForMultipleObjects` cannot be told anything — a `postMessage` to it is
+ * not delivered until the wait returns, measured. Main issues them itself, and
+ * `hostWriteQueue.ts` holds that ordering and its bound (ADR-0023 §4's
+ * 2026-08-25 decision).
+ *
+ * That is why this module takes a queue beside the channel rather than a channel
+ * that does both: they are two mechanisms with two failure modes, and one
+ * parameter would have made an overrun and a dead reader the same fact — the
+ * error this file's own ending already refuses to make.
  *
  * ## An ending has two causes and they are not the same fact
  *
@@ -46,10 +61,15 @@ import type { HostRuntimeTransport, HostTermination } from '@monstera/kernel';
 /** Why the transport stopped, and which side caused it. */
 export interface TransportEnd {
   /**
-   * `us` — `terminate` was called. `peer` — the reader thread went away.
+   * `us` — `terminate` was called. `peer` — the host is why this ended.
    *
    * Two facts, never one field's worth. A host that crashed and a host we killed
    * produce the same silence on the pipe, and only the first is a defect.
+   *
+   * That test is what decides the value, rather than which side noticed: a write
+   * queue that overran is `peer`, because a host that stopped consuming its end
+   * is the cause and is a defect to report — even though main is what saw it,
+   * and even though the reader thread is still alive at that moment.
    */
   readonly by: 'us' | 'peer';
   /** Diagnostic text. Shapes and reasons — never payload content. */
@@ -63,8 +83,6 @@ export interface TransportEnd {
  * that is what lets the ordering below be exercised without a pipe.
  */
 export interface ReaderChannel {
-  /** Hands one already-framed message to the reader thread to write. */
-  readonly write: (frame: Uint8Array) => void;
   /**
    * Signals the stop event.
    *
@@ -90,11 +108,13 @@ export interface TransportSinks {
 
 /**
  * @param channel The reader thread. See {@link ReaderChannel}.
+ * @param writer Main's outstanding writes. See `hostWriteQueue.ts`.
  * @param sinks Where chunks and the ending go. See {@link TransportSinks}.
  * @returns The transport the runtime loop is given.
  */
 export function createHostTransport(
   channel: ReaderChannel,
+  writer: HostWriteQueue,
   sinks: TransportSinks,
 ): HostRuntimeTransport {
   /**
@@ -106,16 +126,28 @@ export function createHostTransport(
   const state: { end: TransportEnd | null } = { end: null };
 
   /**
-   * Records the ending once and tells the caller once.
+   * Records the ending once, shuts both mechanisms, and tells the caller once.
    *
    * The FIRST cause wins, deliberately. A reader that went away and was then
    * terminated ended because of the reader; reporting the later call would
    * relabel a dead host as a clean shutdown, which is the one direction that
    * loses a defect.
+   *
+   * `readerAlive` decides whether the stop event is signalled, and it is a
+   * parameter rather than a call at each site because there are now three
+   * endings and only one of them has a dead reader. The queue is closed on all
+   * three: it holds pinned buffers whatever ended the transport, and an ending
+   * that released them on two paths out of three is the shape a fourth ending
+   * would get wrong.
    */
-  const finish = (end: TransportEnd): boolean => {
+  const finish = (end: TransportEnd, readerAlive: boolean): boolean => {
     if (state.end !== null) return false;
     state.end = end;
+    // NOT signalled into a reader that has gone: the thread that would receive
+    // it has exited, and calling anyway would be a call made to look symmetrical
+    // — a shape that invites someone to make the channel do work there.
+    if (readerAlive) channel.stop();
+    writer.close();
     sinks.ended(end);
     return true;
   };
@@ -126,26 +158,29 @@ export function createHostTransport(
   });
 
   channel.onEnded((detail) => {
-    // NOT followed by `stop`. The reader is what would receive it, and it is
-    // gone; signalling a stop event nobody is waiting on would be a call made to
-    // look symmetrical.
-    finish({ by: 'peer', detail });
+    finish({ by: 'peer', detail }, false);
   });
 
   return {
     write: (frame: Uint8Array): void => {
       if (state.end !== null) return;
-      channel.write(frame);
+      const outcome = writer.write(frame);
+      if (outcome.ok) return;
+      // A REFUSED WRITE IS AN ENDING, not a dropped frame. The frame the peer
+      // will never see leaves the next length prefix landing in the wrong place,
+      // so the stream is desynchronised from our side — and `HostRuntimeTransport`
+      // has no way to say "this one did not go", deliberately, because a
+      // transport that reported per-frame failure would invite a caller to
+      // retry into a stream that has already lost its offsets.
+      //
+      // `peer`, not `us`: an overrun means the host stopped consuming and a
+      // refusal means its pipe would not take the bytes. Both are defects to
+      // report rather than shutdowns anybody asked for.
+      finish({ by: 'peer', detail: `write ${outcome.refusal.reason}: ${outcome.refusal.detail}` }, true);
     },
 
     terminate: (reason: HostTermination): void => {
-      // `stop` ONLY WHEN THIS CALL IS THE ENDING. A terminate that arrives after
-      // the reader already went away has nothing to stop, and calling anyway
-      // would be a signal into a thread that has exited — harmless today and a
-      // shape that invites someone to make the channel do work there.
-      if (finish({ by: 'us', detail: `${reason.code}: ${reason.detail}` })) {
-        channel.stop();
-      }
+      finish({ by: 'us', detail: `${reason.code}: ${reason.detail}` }, true);
     },
   };
 }
