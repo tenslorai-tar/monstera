@@ -44,7 +44,7 @@ interface WorkerModeReport {
 
 async function look(): Promise<WorkerModeReport> {
   const processType = (process as NodeJS.Process & { type?: string }).type;
-  const electronVersion = process.versions['electron'];
+  const electronVersion = process.versions.electron;
   try {
     // A DYNAMIC import deliberately. A static one would be resolved at build
     // time by the bundler and could not report a runtime failure, which is the

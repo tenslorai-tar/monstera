@@ -63,9 +63,15 @@ async function run(): Promise<void> {
   const report = await new Promise<Record<string, unknown>>((done) => {
     // Every ending is a value. A worker that dies without messaging would
     // otherwise leave this promise pending and the probe reading a timeout.
-    worker.once('message', (message: Record<string, unknown>) => done(message));
-    worker.once('error', (error: Error) => done({ workerThrew: error.message }));
-    worker.once('exit', (code: number) => done({ workerExited: code }));
+    worker.once('message', (message: Record<string, unknown>) => {
+      done(message);
+    });
+    worker.once('error', (error: Error) => {
+      done({ workerThrew: error.message });
+    });
+    worker.once('exit', (code: number) => {
+      done({ workerExited: code });
+    });
   });
   await worker.terminate();
 
