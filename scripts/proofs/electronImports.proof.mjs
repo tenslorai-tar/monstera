@@ -325,6 +325,19 @@ try {
       },
     ],
     [
+      'scripts/research/transportWriteSurface.mjs',
+      {
+        sites: 3,
+        reason:
+          'imports apps/desktop/dist/win32PipeSurface.js, dist/enginePipeFactory.js and ' +
+          'dist/hostWriteQueue.js through file:// URLs, because this drives the SHIPPED write ' +
+          'path rather than a copy of it — the half that makes the adapter run instead of ' +
+          'merely typecheck. All three need Windows backslash conversion at run time. It starts ' +
+          'no Electron anything: it writes to a pipe and reads the bytes back through a Node ' +
+          'socket, and none of the three built modules imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/transportWrite.mjs',
       {
         sites: 2,

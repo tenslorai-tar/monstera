@@ -709,6 +709,17 @@ jobs:
       - name: Prove main can write to the transport without blocking
         run: node scripts/ci/annotate.mjs scripts/research/transportWrite.mjs --require-transport
 
+      # THE SHIPPED write path, as opposed to the Win32 facts above. It drives
+      # `createWin32WriteSurface` and `createHostWriteQueue` from the built
+      # output, so the adapter is RUN rather than merely typed — a compiler
+      # cannot see a `WriteFile` whose arguments are in the wrong order.
+      #
+      # Its load-bearing case is the bound's control: 16 frames pass a limit of
+      # 8 while the peer is draining. A limit that counted TOTAL writes passes
+      # the overrun case, because nothing completes into a silent peer.
+      - name: Prove the shipped write path carries, bounds and tears down
+        run: node scripts/ci/annotate.mjs scripts/research/transportWriteSurface.mjs --require-transport
+
       # Executes CVE-2026-7233's disclosed trigger against the built engine and
       # proves the fix is load-bearing by rebuilding libmupdf without it and
       # confirming the same input then crashes. Guards against a future MuPDF
@@ -996,3 +1007,14 @@ jobs:
       # would be true for a reason that says nothing about a full pipe.
       - name: Prove main can write to the transport without blocking
         run: node scripts/ci/annotate.mjs scripts/research/transportWrite.mjs --require-transport
+
+      # THE SHIPPED write path, as opposed to the Win32 facts above. It drives
+      # `createWin32WriteSurface` and `createHostWriteQueue` from the built
+      # output, so the adapter is RUN rather than merely typed — a compiler
+      # cannot see a `WriteFile` whose arguments are in the wrong order.
+      #
+      # Its load-bearing case is the bound's control: 16 frames pass a limit of
+      # 8 while the peer is draining. A limit that counted TOTAL writes passes
+      # the overrun case, because nothing completes into a silent peer.
+      - name: Prove the shipped write path carries, bounds and tears down
+        run: node scripts/ci/annotate.mjs scripts/research/transportWriteSurface.mjs --require-transport

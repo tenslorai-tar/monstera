@@ -8,6 +8,11 @@ import type {
   SecurityDescriptor,
   UserSid,
 } from './enginePipeFactory.js';
+import type {
+  OverlappedWriteSurface,
+  PendingWrite,
+  WriteState,
+} from './hostWriteQueue.js';
 import { containerSidText, isInvalidHandle } from './win32HostSurface.js';
 
 /**
@@ -291,5 +296,246 @@ export function createWin32PipeSurface(): PipeCreationSurface {
     },
 
     lastError: (): number => bindings.lastError(),
+  };
+}
+
+/** `WriteFile` returned `ERROR_IO_PENDING`: queued, which is the ordinary case. */
+const ERROR_IO_PENDING = 997;
+/** `GetOverlappedResult` with `wait` false: not finished, and it said so without blocking. */
+const ERROR_IO_INCOMPLETE = 996;
+/** `CancelIoEx` found nothing outstanding. Not a failure — see {@link createWin32WriteSurface}. */
+const ERROR_NOT_FOUND = 1168;
+const POINTER = koffi.sizeof('void *');
+/**
+ * How long `abandon` polls for cancelled completions before giving up on one.
+ *
+ * Measured 2026-08-25 by `scripts/research/transportWrite.mjs`: 63 cancelled
+ * writes became collectable in **0ms**. This is three orders of magnitude above
+ * that, because the number it has to separate from is not *slow* — it is a
+ * completion that never arrives, which is unbounded.
+ */
+const ABANDON_BUDGET_MS = 250;
+
+interface WriteBindings {
+  readonly writeFile: (
+    file: unknown,
+    buffer: Buffer,
+    toWrite: number,
+    written: unknown[],
+    overlapped: Buffer,
+  ) => unknown;
+  readonly getOverlappedResult: (
+    file: unknown,
+    overlapped: Buffer,
+    transferred: unknown[],
+    wait: boolean,
+  ) => unknown;
+  readonly createEvent: (
+    attrs: unknown,
+    manualReset: boolean,
+    initial: boolean,
+    name: string | null,
+  ) => unknown;
+  readonly cancelIoEx: (file: unknown, overlapped: unknown) => unknown;
+  readonly closeHandle: (handle: unknown) => boolean;
+  readonly lastError: () => number;
+}
+
+function bindWrites(): WriteBindings {
+  const kernel = koffi.load('kernel32.dll');
+  // Signatures from the C prototype on the adjacent line, as above: koffi's
+  // `func()` is assignable to anything, so the pair reading together is the
+  // whole review mechanism.
+  return {
+    writeFile: kernel.func(
+      'bool WriteFile(void *file, void *buffer, uint32 toWrite, _Out_ uint32 *written, ' +
+        'void *overlapped)',
+    ),
+    getOverlappedResult: kernel.func(
+      'bool GetOverlappedResult(void *file, void *overlapped, _Out_ uint32 *transferred, bool wait)',
+    ),
+    createEvent: kernel.func(
+      'void *CreateEventW(void *attrs, bool manualReset, bool initial, const char16_t *name)',
+    ),
+    // `CancelIoEx` and NOT `CancelIo`: the latter cancels only the CALLING
+    // THREAD's I/O. Main issues these writes and a teardown may be reached from
+    // anywhere, which is exactly the case that distinction exists for.
+    cancelIoEx: kernel.func('bool CancelIoEx(void *file, void *overlapped)'),
+    closeHandle: kernel.func('bool CloseHandle(void *handle)'),
+    lastError: kernel.func('uint32 GetLastError()'),
+  };
+}
+
+/** What one issued write owns until its completion is collected. */
+interface IssuedWrite {
+  /** Four pointer-sized fields. The kernel writes into this after the call returns. */
+  readonly overlapped: Buffer;
+  /** Our copy of the frame. The kernel reads from this after the call returns. */
+  readonly payload: Buffer;
+  /** The completion event, closed on release. */
+  readonly event: unknown;
+}
+
+/**
+ * The write surface, plus the one fact `abandon` can discover and the interface
+ * has nowhere to put.
+ */
+export interface Win32WriteSurface extends OverlappedWriteSurface {
+  /**
+   * Writes `abandon` could neither reap nor free.
+   *
+   * Non-zero means this process is holding an `OVERLAPPED` and a buffer the
+   * kernel may still own — bounded by the queue's limit, once, on a path where
+   * the host is already dying. It is a number rather than a throw because
+   * throwing out of a teardown is how the *rest* of a teardown gets skipped.
+   */
+  readonly stranded: () => number;
+}
+
+/**
+ * `OverlappedWriteSurface` over one pipe handle (ADR-0023 §4's 2026-08-25
+ * decision and its teardown addition).
+ *
+ * ## The lifetime this exists to get right
+ *
+ * An overlapped `WriteFile` returns before the peer has read anything, and the
+ * kernel keeps writing into the `OVERLAPPED` and reading from the buffer after
+ * it returns. Both must therefore outlive the call, and in JavaScript they would
+ * otherwise be collected at a moment nothing here controls. They are held in a
+ * **strong** map keyed by the token the queue holds — deliberately not a
+ * `WeakMap`, because a queue that lost a token would then have its buffers
+ * collected out from under the kernel, and the failure would be corruption at a
+ * random later moment. With a strong map the same bug is a leak, which is
+ * bounded by the queue's limit and can be seen.
+ *
+ * ## Abandon does not wait, and that is measured rather than cautious
+ *
+ * `CancelIoEx` then poll. Not `GetOverlappedResult(…, wait: true)`, which is
+ * what a first draft reaches for: with the cancel removed, a probe doing exactly
+ * that ran to an external `timeout 25` and exited 124 — it hung, in the process
+ * that must stay responsive. The property this needs is that completions become
+ * *available* promptly after a cancel, measured at 0ms for 63 writes, and
+ * polling reads that without ever blocking.
+ *
+ * A cancel returning **false** is not automatically a failure: Windows answers
+ * `ERROR_NOT_FOUND` when nothing was outstanding, measured by draining the peer
+ * first. Any other failure means the writes are still the kernel's, so nothing
+ * is freed and they are counted as {@link Win32WriteSurface.stranded} instead —
+ * freeing them there is the corruption this whole module is arranged to avoid.
+ *
+ * @param pipe The handle from {@link createWin32PipeSurface}. One surface per
+ *   handle: every call here names it, and a surface that took the handle per
+ *   call would let a caller collect one pipe's write against another's.
+ */
+export function createWin32WriteSurface(pipe: PipeHandle): Win32WriteSurface {
+  const bindings = bindWrites();
+  const issued = new Map<PendingWrite, IssuedWrite>();
+  let strandedCount = 0;
+
+  /**
+   * Reads one write's state without waiting.
+   *
+   * A token this surface does not know is `failed` rather than `completed`: it
+   * means the queue and this map disagree about what is outstanding, and the one
+   * answer that must never be invented is that the frame went out.
+   */
+  const state = (write: PendingWrite): WriteState => {
+    const held = issued.get(write);
+    if (held === undefined) return 'failed';
+    const transferred: unknown[] = [0];
+    if (bindings.getOverlappedResult(pipe, held.overlapped, transferred, false) === true) {
+      return 'completed';
+    }
+    return bindings.lastError() === ERROR_IO_INCOMPLETE ? 'pending' : 'failed';
+  };
+
+  const free = (write: PendingWrite): void => {
+    const held = issued.get(write);
+    if (held === undefined) return;
+    bindings.closeHandle(held.event);
+    issued.delete(write);
+  };
+
+  return {
+    issue: (frame: Uint8Array): PendingWrite | null => {
+      const event: unknown = bindings.createEvent(null, true, false, null);
+      const overlapped = Buffer.alloc(POINTER * 4);
+      // `hEvent` is the FOURTH field, at offset 3.
+      //
+      // NOTHING HERE READS IT, and that is deliberate rather than an oversight.
+      // Measured 2026-08-25: with this line removed, every case in
+      // `transportWriteSurface.mjs` still passes — the design only ever POLLS,
+      // and `GetOverlappedResult` with `wait` false reads the status out of the
+      // structure without touching the event.
+      //
+      // It is kept because of what a NULL `hEvent` means to somebody LATER: the
+      // kernel then signals the file handle instead, and with several writes
+      // outstanding on one handle that signal means nothing. So a per-write wait
+      // added on top of a NULL event is silently wrong, while one added on top
+      // of this is correct. Between a mutation that costs a handle per
+      // outstanding write and one that makes a future mistake invisible, this is
+      // the cheaper failure — and a rule saying *never wait here* is the kind
+      // this repository has watched fail seven times.
+      koffi.encode(overlapped, POINTER * 3, 'void *', event);
+      // COPIED, not referenced — and NO CASE PROVES THIS, which is worth more
+      // than a case that looked like it did.
+      //
+      // Measured 2026-08-25: `transportWriteSurface.mjs` overwrites every source
+      // buffer with 0xff after issuing and before the peer reads a byte, and the
+      // peer still receives exactly what was issued **with this line replaced by
+      // a view**. The named-pipe file system takes the bytes at request time, so
+      // what the caller's memory says at completion does not reach the wire.
+      //
+      // The copy stays because that is an implementation detail of one driver
+      // and the contract is the documented one: the buffer must remain valid
+      // until the operation completes, and *valid* is not a promise about
+      // contents that this repository gets to make on the caller's behalf. The
+      // cost is one 4KB copy per frame, bounded by the queue's limit.
+      const payload = Buffer.from(frame);
+      const written: unknown[] = [0];
+      const ok = bindings.writeFile(pipe, payload, payload.length, written, overlapped);
+      // `ERROR_IO_PENDING` is the ordinary answer and is a success: the whole
+      // design is that this returns before the peer has read anything. A `true`
+      // return means it completed inline, which is also fine — the queue
+      // collects it like any other.
+      if (ok !== true && bindings.lastError() !== ERROR_IO_PENDING) {
+        bindings.closeHandle(event);
+        return null;
+      }
+      const token: PendingWrite = { __handle: 'pending-write' };
+      issued.set(token, { overlapped, payload, event });
+      return token;
+    },
+
+    collect: state,
+
+    release: free,
+
+    abandon: (writes: readonly PendingWrite[]): void => {
+      if (writes.length === 0) return;
+      const cancelled = bindings.cancelIoEx(pipe, null);
+      if (cancelled !== true && bindings.lastError() !== ERROR_NOT_FOUND) {
+        // NOTHING IS FREED AND NOTHING IS WAITED FOR. The kernel may still own
+        // every one of these, and the wait that would find out is the one
+        // measured never to return.
+        strandedCount += writes.length;
+        return;
+      }
+      const started = Date.now();
+      for (const write of writes) {
+        let settled = false;
+        while (!settled && Date.now() - started < ABANDON_BUDGET_MS) {
+          const found = state(write);
+          if (found === 'pending') continue;
+          settled = true;
+        }
+        if (settled) free(write);
+        else strandedCount += 1;
+      }
+    },
+
+    lastError: (): number => bindings.lastError(),
+
+    stranded: (): number => strandedCount,
   };
 }

@@ -1,0 +1,383 @@
+// @ts-check
+/**
+ * Does the SHIPPED write path carry frames, hold its bound, and tear down?
+ *
+ * ## Why this exists beside `transportWrite.mjs`
+ *
+ * They ask different questions and neither answers the other's.
+ * `transportWrite.mjs` asks what **Win32** does — whether an overlapped write
+ * returns before the peer reads, whether completions preserve issue order,
+ * whether a cancelled write becomes collectable. Those are facts about the
+ * platform, measured with the calls written out in that file.
+ *
+ * This asks whether **our code** uses them correctly. It drives
+ * `createWin32WriteSurface` and `createHostWriteQueue` from the built output —
+ * the shipped modules, not a copy of them — for the reason `lowboxSpike.mjs`
+ * drives the shipped pipe factory: a measurement of a copy is a measurement of
+ * the copy.
+ *
+ * It is also the half that makes the adapter more than typed. A native module
+ * nothing runs is the *configured is not run* shape this project has paid for,
+ * and the compiler cannot see a `WriteFile` whose arguments are in the wrong
+ * order.
+ *
+ * ## What separates the cases
+ *
+ * The reassuring answer here is *every write was accepted*, and a queue that
+ * dropped frames on the floor produces it too. So the peer reads the bytes back
+ * and the stream is compared against the exact concatenation issued, frames
+ * naming their own index — a byte count cannot see a reorder, which is the
+ * defect that would sink the design.
+ *
+ * The bound has its own trap and it is the sharper one: a limit that counted
+ * TOTAL writes passes every assertion about an overrun into a silent peer,
+ * because nothing completes there. The control writes past the limit into a
+ * peer that IS draining.
+ *
+ * Usage: node scripts/research/transportWriteSurface.mjs [--require-transport]
+ */
+
+import { existsSync } from 'node:fs';
+import { connect } from 'node:net';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+import { repoRoot } from '../lib/gitScope.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
+
+const ROOT = repoRoot();
+
+/** Frames written into a peer that never reads. */
+const FRAMES = 32;
+/** Each frame's size. */
+const FRAME_BYTES = 4096;
+/** The queue's limit for the phases that are not about the bound. */
+const ROOMY = FRAMES * 4;
+/** The queue's limit for the phase that is. */
+const BOUND = 8;
+/** Frames the draining peer takes, past the bound, in the control. */
+const PAST_BOUND = 16;
+/** How long a single accepted write may take before main is considered blocked. */
+const NON_BLOCKING_MS = 250;
+/** How long the whole teardown may take. Measured at 0ms for 63 writes. */
+const TEARDOWN_BUDGET_MS = 500;
+/** How long a draining peer has to receive everything. */
+const DRAIN_BUDGET_MS = 10000;
+
+/** Passed by the jobs that provision. See `scripts/lib/unverifiable.mjs`. */
+const REQUIRE = process.argv.includes('--require-transport');
+/** @param {string} why @returns {never} */
+const unverifiable = (why) =>
+  exitUnverifiable({
+    required: REQUIRE,
+    subject: "the shipped write path",
+    why,
+    flag: '--require-transport',
+  });
+
+if (process.platform !== 'win32') {
+  unverifiable(`this drives Win32 overlapped writes, which do not exist on ${process.platform}.`);
+}
+
+const BUILT = {
+  pipeSurface: join(ROOT, 'apps', 'desktop', 'dist', 'win32PipeSurface.js'),
+  pipeFactory: join(ROOT, 'apps', 'desktop', 'dist', 'enginePipeFactory.js'),
+  writeQueue: join(ROOT, 'apps', 'desktop', 'dist', 'hostWriteQueue.js'),
+};
+for (const built of Object.values(BUILT)) {
+  if (!existsSync(built)) {
+    unverifiable(
+      `${built} is not built. This drives the SHIPPED modules rather than a copy, so without ` +
+        'the build there is nothing to measure. Run `npm run build`.',
+    );
+  }
+}
+
+const { createWin32PipeSurface, createWin32WriteSurface, currentUserSid, hostContainerSid } =
+  await import(pathToFileURL(BUILT.pipeSurface).href);
+const { createHostPipe } = await import(pathToFileURL(BUILT.pipeFactory).href);
+const { createHostWriteQueue } = await import(pathToFileURL(BUILT.writeQueue).href);
+
+/** @type {string[]} */
+const failures = [];
+const roster = createRoster(failures, { cases: 9 });
+
+/** @param {string} label @param {boolean} condition @param {string} detail */
+function check(label, condition, detail) {
+  const mark = roster.mark();
+  if (!condition) failures.push(`${label}\n      ${detail}`);
+  roster.record(mark, label);
+}
+
+/** @param {number} ms @returns {Promise<void>} */
+const rest = (ms) => new Promise((done) => setTimeout(done, ms).unref?.() ?? undefined);
+
+const CONTAINER = 'monstera-write-surface-probe';
+const pipes = createWin32PipeSurface();
+const user = currentUserSid();
+const container = hostContainerSid(CONTAINER);
+if (!user.ok || !container.ok) {
+  process.stderr.write(
+    `the SIDs could not be resolved, so no pipe can be built: ` +
+      `${user.ok ? '' : user.error}${container.ok ? '' : container.error}\n`,
+  );
+  process.exit(1);
+}
+
+/**
+ * Frame `index` filled with `index % 256`, carrying `index` as a little-endian
+ * uint32 at offset 0.
+ *
+ * Naming the index is what lets a reorder be seen: frames of identical bytes
+ * sum to the same total in any order, so a byte count reports the reassuring
+ * answer for the one failure that matters. The uint32 as well as the fill,
+ * because above 256 frames two would share a fill value.
+ *
+ * @param {number} index @returns {Buffer}
+ */
+function frameOf(index) {
+  const frame = Buffer.alloc(FRAME_BYTES, index % 256);
+  frame.writeUInt32LE(index, 0);
+  return frame;
+}
+
+/**
+ * A pipe of our own with a client attached that is not reading.
+ *
+ * One per phase, because a drained pipe and a full one are different states and
+ * a phase that inherited the previous one's would be measuring that instead.
+ *
+ * @param {string} suffix
+ */
+async function attachedPipe(suffix) {
+  const name = '\\\\.\\pipe\\' + `${CONTAINER}-${String(process.pid)}-${suffix}`;
+  const built = createHostPipe(pipes, name, user.value, container.value, 1);
+  if (!built.ok) {
+    process.stderr.write(
+      `the shipped factory refused '${suffix}' at stage '${built.error.stage}': ` +
+        `${built.error.detail}\n`,
+    );
+    process.exit(1);
+  }
+  const client = connect(name);
+  client.pause();
+  client.on('error', (error) =>
+    process.stderr.write(`  the '${suffix}' client could not connect: ${error.message}\n`),
+  );
+  await new Promise((ready) => client.once('connect', () => ready(undefined)));
+  return { built, client, pipe: built.value.instances[0] };
+}
+
+/** @param {{ built: { value: { instances: unknown[] } }, client: import('node:net').Socket }} phase */
+function closePhase(phase) {
+  phase.client.destroy();
+  for (const instance of phase.built.value.instances) pipes.close(instance);
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 1 — frames go out through the shipped queue, and arrive in order.
+// ---------------------------------------------------------------------------
+const carrying = await attachedPipe('carry');
+const carrySurface = createWin32WriteSurface(carrying.pipe);
+const carryQueue = createHostWriteQueue(carrySurface, ROOMY);
+
+const frames = Array.from({ length: FRAMES }, (_, index) => frameOf(index));
+const expected = Buffer.concat(frames);
+
+/** @type {number[]} */
+const durations = [];
+/** @type {string[]} */
+const refusals = [];
+for (const frame of frames) {
+  const started = Date.now();
+  const outcome = carryQueue.write(frame);
+  durations.push(Date.now() - started);
+  if (!outcome.ok) refusals.push(`${outcome.refusal.reason}: ${outcome.refusal.detail}`);
+}
+const slowest = durations.length === 0 ? -1 : Math.max(...durations);
+
+check(
+  'the shipped queue accepts every frame into a peer that is not reading',
+  refusals.length === 0,
+  `${String(refusals.length)} refusal(s), first: ${refusals[0] ?? '(none)'}. A peer that is not ` +
+    `reading is the ordinary case this design exists for — main writes when it has something to ` +
+    `say, not when the host is ready.`,
+);
+
+check(
+  `and no single write took longer than ${String(NON_BLOCKING_MS)}ms, reaping included`,
+  slowest >= 0 && slowest < NON_BLOCKING_MS,
+  `slowest ${String(slowest)}ms across ${String(durations.length)} writes. This is a longer ` +
+    `measurement than transportWrite.mjs's: every write here also collects the completions of ` +
+    `the writes before it, which is what main actually pays.`,
+);
+
+check(
+  'CONTROL: the writes really were outstanding rather than absorbed',
+  carryQueue.outstanding() > FRAMES / 2,
+  `${String(carryQueue.outstanding())} of ${String(FRAMES)} outstanding. If they had all ` +
+    `completed inline the kernel absorbed everything, and "nothing blocked" would be true for a ` +
+    `reason that says nothing about a full pipe — the case that makes the timing above evidence.`,
+);
+
+// THE SOURCE BUFFERS ARE OVERWRITTEN BEFORE THE PEER READS ANY OF IT — AND THIS
+// DOES NOT SEPARATE A COPY FROM A VIEW. Measured, and written down as a
+// non-result rather than left reading like a proof of the adapter's copy.
+//
+// The intent was the classic overlapped-I/O defect: the kernel reads from the
+// buffer after `WriteFile` returns, so an adapter passing the caller's array
+// through would send whatever that memory says at completion. With the
+// adapter's `Buffer.from(frame)` replaced by a view over the same memory, every
+// case here still passed — the named-pipe file system takes the bytes at request
+// time, so what the caller's memory says later never reaches the wire.
+//
+// It is kept because it costs nothing and would catch a driver that read late,
+// and because a fixture whose name claims more than it separates is the shape
+// this checklist exists to find. `expected` was concatenated above, which
+// copies, so it still holds what was issued.
+for (const frame of frames) frame.fill(0xff);
+
+/** @type {Buffer[]} */
+const received = [];
+carrying.client.on('data', (chunk) => received.push(chunk));
+carrying.client.resume();
+
+const drainStarted = Date.now();
+while (
+  received.reduce((sum, chunk) => sum + chunk.length, 0) < expected.length &&
+  Date.now() - drainStarted < DRAIN_BUDGET_MS
+) {
+  await rest(20);
+}
+
+const stream = Buffer.concat(received);
+const firstDifference = (() => {
+  const shared = Math.min(stream.length, expected.length);
+  for (let at = 0; at < shared; at += 1) {
+    if (stream[at] !== expected[at]) return at;
+  }
+  return stream.length === expected.length ? -1 : shared;
+})();
+
+check(
+  'THE WHOLE PATH: the peer receives exactly what was issued, in issue order',
+  firstDifference === -1,
+  stream.length !== expected.length
+    ? `received ${String(stream.length)} of ${String(expected.length)} bytes. "Every write was ` +
+      `accepted" is also what a queue that dropped frames reports.`
+    : `first difference at byte ${String(firstDifference)}, inside frame ` +
+      `${String(Math.floor(firstDifference / FRAME_BYTES))}. A byte count cannot see this, and a ` +
+      `reorder desynchronises the length-prefixed framing from our own side.`,
+);
+
+carryQueue.close();
+check(
+  'closing a drained queue strands nothing',
+  carrySurface.stranded() === 0,
+  `${String(carrySurface.stranded())} write(s) stranded. A stranded write is an OVERLAPPED and a ` +
+    `buffer this process holds while the kernel may still own them — bounded, but not nothing.`,
+);
+closePhase(carrying);
+
+// ---------------------------------------------------------------------------
+// PHASE 2 — the bound, and the control that says what it counts.
+// ---------------------------------------------------------------------------
+const bounded = await attachedPipe('bound');
+const boundQueue = createHostWriteQueue(createWin32WriteSurface(bounded.pipe), BOUND);
+
+/** @type {string[]} */
+const boundReasons = [];
+for (let index = 0; index < BOUND + 4; index += 1) {
+  const outcome = boundQueue.write(frameOf(index));
+  if (!outcome.ok) boundReasons.push(outcome.refusal.reason);
+}
+
+check(
+  `the bound refuses the frame past ${String(BOUND)} outstanding, and closes rather than dropping it`,
+  boundReasons.length >= 2 &&
+    boundReasons[0] === 'overrun' &&
+    boundReasons.slice(1).every((reason) => reason === 'closed'),
+  `reasons ${JSON.stringify(boundReasons)}. The first past the limit must be 'overrun' and every ` +
+    `one after it 'closed': an unbounded queue is the peer deciding how much memory main holds, ` +
+    `and a queue that resumed after an overrun would let it decide again. The COUNT is not ` +
+    `asserted, and that is not laziness — the kernel takes the first frame or two into the pipe's ` +
+    `own buffer, the reap at the next write frees those slots, and how many depends on a buffer ` +
+    `size nothing here owns. Measured: 3 refusals where the arithmetic says 4.`,
+);
+closePhase(bounded);
+
+const draining = await attachedPipe('draining');
+const drainQueue = createHostWriteQueue(createWin32WriteSurface(draining.pipe), BOUND);
+draining.client.on('data', () => undefined);
+draining.client.resume();
+
+/** @type {string[]} */
+const drainingReasons = [];
+for (let index = 0; index < PAST_BOUND; index += 1) {
+  const outcome = drainQueue.write(frameOf(index));
+  if (!outcome.ok) drainingReasons.push(outcome.refusal.reason);
+  await rest(10);
+}
+
+check(
+  `CONTROL: ${String(PAST_BOUND)} frames pass a limit of ${String(BOUND)} when the peer IS reading`,
+  drainingReasons.length === 0,
+  `${String(drainingReasons.length)} refusal(s): ${JSON.stringify(drainingReasons)}. A limit that ` +
+    `counted TOTAL writes passes the case above, because nothing completes into a silent peer — ` +
+    `this is the fixture that defect does not also handle correctly.`,
+);
+drainQueue.close();
+closePhase(draining);
+
+// ---------------------------------------------------------------------------
+// PHASE 3 — tearing down with writes the kernel still owns.
+// ---------------------------------------------------------------------------
+const torn = await attachedPipe('teardown');
+const tornSurface = createWin32WriteSurface(torn.pipe);
+const tornQueue = createHostWriteQueue(tornSurface, ROOMY);
+for (const frame of frames) tornQueue.write(frame);
+
+const outstandingAtClose = tornQueue.outstanding();
+check(
+  'CONTROL: writes were outstanding at the moment of the teardown',
+  outstandingAtClose > FRAMES / 2,
+  `${String(outstandingAtClose)} of ${String(FRAMES)}. Abandoning an empty set succeeds, returns ` +
+    `instantly and frees nothing — indistinguishable from the mechanism working.`,
+);
+
+const teardownStarted = Date.now();
+tornQueue.close();
+const teardownMs = Date.now() - teardownStarted;
+
+check(
+  `the teardown frees every outstanding write within ${String(TEARDOWN_BUDGET_MS)}ms`,
+  tornSurface.stranded() === 0 && teardownMs < TEARDOWN_BUDGET_MS,
+  `${String(tornSurface.stranded())} stranded after ${String(teardownMs)}ms. The rejected shape ` +
+    `here is waiting on the completions: with the cancel removed, a probe doing that ran to an ` +
+    `external timeout and exited 124 — the hang the read side was redesigned to avoid, arriving ` +
+    `in the process that must stay responsive.`,
+);
+closePhase(torn);
+
+process.stdout.write(
+  `\n  ${String(durations.length)} frame(s) through the shipped queue, slowest ` +
+    `${String(slowest)}ms\n` +
+    `  ${String(stream.length)} byte(s) delivered, ` +
+    `${firstDifference === -1 ? 'in issue order' : `first difference at ${String(firstDifference)}`}\n` +
+    `  bound refused at ${String(BOUND)} outstanding; ${String(PAST_BOUND)} passed the same ` +
+    `bound while draining\n` +
+    `  teardown freed ${String(outstandingAtClose)} outstanding write(s) in ` +
+    `${String(teardownMs)}ms, ${String(tornSurface.stranded())} stranded\n\n`,
+);
+
+if (failures.length > 0) {
+  process.stderr.write(
+    `\nShipped write path — ${String(failures.length)} failure(s):\n\n` +
+      failures.map((failure) => `  - ${failure}`).join('\n\n') +
+      `\n\n`,
+  );
+  process.exit(1);
+}
+
+process.stdout.write(`${roster.format('write-surface case')}`);
