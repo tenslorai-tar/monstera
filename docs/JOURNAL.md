@@ -644,6 +644,220 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-25 — Stage audit: `4a0ef5d..121c0ff` — a control compared the one thing the defect would not change
+
+**Audited through `121c0ff`.** Pasted from `npm run audit:scope`, run after this
+range's last commit:
+
+```
+Unaudited range: 4a0ef5d..HEAD
+
+  commits: 9 (one batch is 9)
+  files:   21 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (1 more) or 25 files (4 more).
+```
+
+**3 proofs added**, 2 modified, 0 removed; **4 source files added**, 5 changed, 0
+removed. The range measured the transport's write path, took the write-mechanism
+decision, and built the write side's ordering and bound. Two of its nine commits
+are corrections to instruments this project had already shipped.
+
+### 1. Root cause, or workaround?
+
+**Nine commits, every fix root-cause.** Two are corrections to a control that
+was passing.
+
+- **CCCC-4** (`3188b60`, the reviewing seat's finding): `transportWrite.mjs`'s
+  whole-path control compared `received.reduce((sum, chunk) => sum + chunk.length, 0)`
+  against `FRAMES * FRAME_BYTES` while its comment said the bytes were compared.
+  Mechanism: 64 frames of 4096 identical bytes sum to 262144 in **any** order, so
+  a reordered stream — the one failure that would sink the write design — produced
+  the reassuring answer. Fixed at the fixture: each frame names its index.
+- **DDDD-1** (`48071c0`, mine): `affectedProofsReport` printed *THIS SWEEP DID
+  NOT RUN THEM* with nothing passed in that could support the claim. Mechanism:
+  the sentence is about the caller's run and the function took only the affected
+  set, so `npm run local -- --only proof:transportwrite` ran that proof, reported
+  it passing, and then told the reader it had not been run. Fixed by making the
+  reached set a **required** parameter — an optional one leaves the false claim
+  one omission away, which is B5's argument rather than a preference.
+- `86349b5` (before this audit's window but inside the range): two probes exited
+  **0** on could-not-look. Root — one resolver, `scripts/lib/unverifiable.mjs`,
+  now with four callers.
+
+No loosened check in the range. Both modified proofs added cases; the two
+existing `affectedProofsReport` call sites gained a `[]` argument, which preserves
+their previous meaning exactly, since *reached nothing* is what the old report
+assumed of every run.
+
+### 2. Verified against the easy shape only?
+
+**The write measurement's hard shape is the peer that never reads, and it was
+used.** Ordering is now measured over 63 concurrent outstanding writes.
+
+**What is NOT measured is stated as an argument and must be read as one
+(DDDD-5).** A batch issued while the peer is actively draining, so inline and
+pending completions interleave, is reasoned about rather than run: a write
+completes inline only when the pipe has room, and room exists only once the bytes
+ahead of it were consumed. The reasoning is mine and nothing has tested it. It is
+in the probe's header and in the ADR, marked as an argument in both, because
+constructing the case would mean starving a reader at a rate tuned to produce the
+mix — a case that passes or fails on the runner's speed.
+
+**And the write queue has met no Win32 at all.** `hostWriteQueue.ts` is exercised
+against a fake surface only, because the adapter behind `OverlappedWriteSurface`
+does not exist yet. That the surface's four members map onto `WriteFile`,
+`GetOverlappedResult(…, false)`, a handle release and a post-close free is
+asserted from how `transportWrite.mjs` uses those calls — not proven through this
+interface. The next unit is where that becomes a measurement.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**No.** The one candidate is `affectedProofsReport`'s new parameter: the two
+pre-existing cases pass `[]` and therefore assert what they asserted before, and
+the four new cases hold the affected set constant while varying only the reached
+set — the axis the defect was blind to. A case varying the changed paths instead
+would separate nothing.
+
+### 3. Would CI have caught it?
+
+**CCCC-4: no, and no check could have.** `proof:transportwrite` is an
+unconditional step on both Windows legs and was green throughout — a byte-count
+comparison passes in CI exactly as it passed here. The defect was in what the
+control compared, which is not a property any harness can see. It was found by
+review.
+
+**DDDD-1: no, for a different reason.** The false sentence is printed by
+`checkLocal.mjs`, which CI never runs. `proof:affectedproofs` *does* run —
+`guards.yml:406`, `node scripts/ci/annotate.mjs scripts/proofs/affectedProofs.proof.mjs`
+— and could not have caught it, because the run-awareness axis did not exist to
+be tested. It does now, so the four new cases are on the board.
+
+The write queue and the transport are `vitest` files under `apps/desktop`, which
+both CI legs run.
+
+**Asked the other way — a defect this machine cannot see?** No branch in the
+range is keyed on provisioning. The nearest thing is `transportWrite.mjs`'s
+`--require-transport`, which is the *inverse* shape: the flag makes CI stricter
+than here, not looser.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated, all of them, and each mutation is recorded in the commit that made it:
+
+| what was mutated | what went red |
+|---|---|
+| two frames issued in exchanged order | the ordering case, at *byte 0, inside frame 0*; the byte count stayed 262144 |
+| frames filled `index % 2`, uint32 dropped | the distinctness control, at *2 distinct frames out of 64* — while the ordering case still reported *in issue order*, which is the blindness that control announces |
+| `missed` no longer subtracts the reached set | two of the four new `affectedProofs` cases; the third stayed green, correctly, since it asserts the state the old report claimed unconditionally |
+| the limit checked before collecting | `hostWriteQueue`'s control, and not the overrun case |
+| a refused write not ending the transport | the two new `hostTransport` cases |
+| `stop` signalled unconditionally | the dead-reader pair |
+
+**Branches no fixture reached (DDDD-4).** `hostWriteQueue.ts`'s `collect()`
+carries `if (found === 'failed' && failure === null)`, so the FIRST failure in a
+sweep wins. Nothing can observe that today: the detail string is a constant, so
+two failures produce identical output and the guard survives its own mutation.
+Not vacuous code — it encodes the same *first cause wins* discipline the
+transport's ending has — but it is currently unobservable, and it becomes
+load-bearing the day the detail names which write failed. Recorded at the
+constant rather than deleted, per the rule that a non-biting mutation is evidence
+about where the failure lives.
+
+**The fixture SET (NNN-1).** `hostWriteQueue.test.ts` varies the limit across 4,
+2 and 1, and varies which writes settle. The one constant is that `abandon` is
+never observed receiving an empty list, which is a gap of no consequence: the
+queue reaches `abandon` only through `shut`, and every case that gets there has
+something outstanding by construction.
+
+### 4a. Resolution-tested BEFORE it measured anything real?
+
+**No, and this is a finding against my own process (DDDD-3).** The ordering
+reading was taken first and the two mutations were run afterwards. The number is
+sound — the mutations confirmed the instrument discriminates, and one of them
+showed the ordering case reporting *in issue order* against a fixture that could
+not see a swap — but item 4a asks for that order specifically, because a
+confirmation obtained after the fact is a confirmation you already believe. The
+reading was not written into the ADR until both mutations had run, which is the
+next-best thing and is not what the item asks for.
+
+### 4b. Positive control on every search?
+
+No new search-shaped instrument in the range. `affectedProofs.mjs` already
+refuses to answer without `CONTROL_EDGE`, and the change touched its report
+rather than its walk.
+
+**One search of my own failed exactly this way during the audit and is recorded
+because it is the fourth occurrence of the class.** Checking whether the two new
+probes are registered in CI, I grepped the workflows for `proof:transportwrite`
+and got nothing — CI invokes the script path through `annotate.mjs`, not the npm
+script name. The reassuring answer was *not registered*, and it was wrong.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+One new derivation, and the direction was asked before it was written.
+`checkLocal.mjs` derives the reached set from the run log rather than counting
+alongside it. The failure to fear is a proof named as **reached** when it was not
+— a missing warning — and that needs the set to be too BIG. A set computed from
+the rows cannot invent a member, so deriving is the correct half here. The
+opposite error makes the set too small, which over-warns.
+
+Both `cases:` literals in the range (`11 → 15`, `7 → 9`) remain hand-kept
+anchors, which is the right half for them: a deleted case makes the set smaller.
+
+### 5. Executed, or asserted?
+
+**Executed:** the ordering measurement, twice mutated · the four
+`affectedProofs` cases and their mutation · nineteen `hostWriteQueue` and
+`hostTransport` cases and four mutations · the full `apps/desktop` suite, 124
+passing · `npm run local -- --only check:`, 14 of 14 · board **GREEN at
+`48071c0`** (CI and Guards).
+
+**Asserted:** the interleaved-completion argument (DDDD-5) · that
+`OverlappedWriteSurface`'s members map cleanly onto the Win32 calls · that the
+reader worker will fit `ReaderChannel` unchanged.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before.** `94f39f7` takes the write-mechanism decision and builds nothing;
+`121c0ff` builds against it. No seam changed — the transport still registers into
+`HostRuntimeTransport` — so this is an ADR decision rather than a B4 amendment,
+recorded the way the other decisions in ADR-0023 were.
+
+### 7. Do the documents still match the code?
+
+ADR-0023 took three appended sections (record class, never edited). FEATURES row
+282 was edited true twice (live specification). `hostTransport.ts`'s paragraph
+saying the channel "does the overlapped reads and writes" was corrected in the
+commit that made it false, which is what the decision commit said it owed.
+
+**DDDD-2 — and it is NNN-4's hole, found by NNN-4's compensation.** This range
+states a cross-document relationship — *the worker reads, main writes* — so every
+other statement of that relationship had to be swept by hand. Two are false and
+**neither file is named in any of this range's scope columns**, so no
+range-scoped sweep could have reached them:
+
+| where | what it says | why it is now false |
+|---|---|---|
+| `apps/desktop/src/win32PipeSurface.ts:43` | "Creating it is settled; carrying them is not, and mixing the two here would settle the second by accident" | carrying is settled as of `94f39f7`, and the write half belongs in this very file |
+| `packages/kernel/src/host/runtime.ts:32` | "That factory also owns the pipe's overlapped reads and writes" | the factory creates the pipe; the worker reads and main writes |
+
+The second is in the kernel, a package the range never touched. Both are live
+specifications and take an edited body. **Open — the next commit.**
+
+### Findings
+
+| # | finding | state |
+|---|---|---|
+| CCCC-4 | the whole-path control compared a byte count, which a reorder does not change | **closed** `3188b60` |
+| DDDD-1 | the affected-proofs disclosure asserted a fact about the run with no input that could support it | **closed** `48071c0` |
+| DDDD-2 | two comments state that one thing owns both directions of the pipe; the decision falsified both, in files no scope column names | **open** |
+| DDDD-3 | the ordering reading was taken before the discrimination control was mutated, which is item 4a's order backwards | **recorded**, no fix |
+| DDDD-4 | `collect()`'s first-failure guard survives its own mutation, because the detail is a constant | **recorded** at the constant |
+| DDDD-5 | interleaved inline-and-pending completions are reasoned about, not measured | **open**, stated in two documents as an argument |
+
+---
+
 ## 2026-08-25 — Stage audit: `fb9731e..4a0ef5d` — the instrument that measures teardown could not tear itself down
 
 **Audited through `4a0ef5d`.** Pasted from `npm run audit:scope`, run before this
