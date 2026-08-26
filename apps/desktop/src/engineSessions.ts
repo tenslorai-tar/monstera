@@ -19,7 +19,14 @@ import type {
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
-import { type DocumentSessions, type EngineSessionSource } from './documentCommands.js';
+// `import type`, and the header above says why in 38.1 MB. This one is the
+// SECOND occurrence and it landed in the file that documents the first: written
+// `import { type X } from './documentCommands.js'` it emitted
+// `import {} from './documentCommands.js'`, and that module imports
+// `declaredSpecs` as a VALUE — so the kernel barrel, `mupdfWriter` and the
+// native MuPDF binding all arrived in whatever process loads this, including
+// `perf:gate`'s main-service role, which measures main's fixed cost.
+import type { DocumentSessions, EngineSessionSource } from './documentCommands.js';
 
 /**
  * The engine session supervisor — the component that creates a document's
