@@ -258,10 +258,22 @@ export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
   // run has not been created — so the full median is the right wait.
   const elapsed = started.length === 0 ? 0 : nowMs - Math.min(...started);
 
-  // CLAMPED BETWEEN ZERO AND THE MEDIAN, and both bounds are the median rather
-  // than chosen fractions of it: never wait longer than a typical run took, and
-  // where the run is already older than that, poll now.
-  const seconds = Math.max(0, Math.min(median, median - elapsed)) / 1000;
+  // CLAMPED BETWEEN THE CALLER'S CADENCE AND THE MEDIAN.
+  //
+  // THE FLOOR WAS ZERO AND THAT WAS A DEFECT, measured 2026-08-26: a run that
+  // outlives the median makes `median - elapsed` negative, the clamp returns
+  // 0, and the caller sleeps for no time at all — so the reader polls FLAT OUT
+  // exactly when a run is slowest, which is the opposite of what this function
+  // is for. Observed: 40 polls exhausted in seconds, `NO VERDICT … gave up
+  // after 40 polls`, and 11 of 60 shared requests left.
+  //
+  // The mechanism is a conflation. *How long until this run is likely done* and
+  // *how long to wait before asking again* are the same number only while the
+  // estimate holds. Once it is spent there is no estimate — which is the same
+  // state as having no data at all, and that state already has a correct answer
+  // one branch above: the caller's own cadence. So the floor is that.
+  const remaining = Math.min(median, median - elapsed) / 1000;
+  const seconds = Math.max(fallbackSeconds, remaining);
   return { seconds, derivedFrom: durations.length, medianSeconds: median / 1000 };
 }
 

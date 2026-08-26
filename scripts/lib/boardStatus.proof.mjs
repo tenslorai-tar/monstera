@@ -38,7 +38,7 @@ import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 22 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -329,11 +329,18 @@ check(
     { ...run({ status: 'in_progress', conclusion: null }), created_at: new Date(NOW - 900_000).toISOString() },
   ]);
   check(
-    'CONTROL: a sha already older than the median polls NOW rather than waiting',
-    overdue.seconds === 0,
-    `seconds=${String(overdue.seconds)}. The lower clamp, and the case that separates ` +
-      `"subtract the elapsed time" from "wait the median regardless".`,
+    'a sha already older than the median falls back to the caller’s cadence, never to zero',
+    overdue.seconds === 30,
+    `seconds=${String(overdue.seconds)}, expected the 30s fallback.\n      ` +
+      `THIS CASE ASSERTED THE DEFECT UNTIL 2026-08-26. It read \`overdue.seconds === 0\` under ` +
+      `the label "polls NOW rather than waiting", and 0 does not mean "poll now" to the only ` +
+      `caller there is — it means \`sleep(0)\`, so the loop spins. Measured: 40 polls gone in ` +
+      `seconds, NO VERDICT, and 11 of 60 shared requests left.\n      ` +
+      `The fixture was right and the expectation was the bug, which is why nothing here went ` +
+      `red: a case whose expected value the defect produces is worse than a vacuous one, ` +
+      `because its name says the property is covered.`,
   );
+
 
   const skewed = pace(
     [timed(NOW - 900_000, 300_000), timed(NOW - 900_000, 300_000),
@@ -368,6 +375,25 @@ check(
       `\`updated_at\` moves while a run is in progress, so counting one would measure how long ` +
       `ago it was last touched and call it a duration — a number that reads like a measurement ` +
       `and is not one.`,
+  );
+
+  // THE CASE THAT WOULD HAVE CAUGHT IT, and it asserts the CONSEQUENCE rather
+  // than the number — which is the only form that survives someone deciding the
+  // number should be different. Last in the block so it can name every payload
+  // above it, which is the point: the next shape that returns a small number
+  // will not be the one anybody wrote a case for.
+  const BUDGET_POLLS = 40;
+  const CADENCE = 30;
+  check(
+    'CONTROL: no payload lets the reader spend its whole poll budget faster than the cadence',
+    [fast, slow, elapsed, overdue, skewed, noTimes, running].every(
+      (paced) => paced.seconds >= CADENCE,
+    ),
+    `at least one payload returns a wait under ${String(CADENCE)}s, so ${String(BUDGET_POLLS)} ` +
+      `polls could complete in less than ${String(BUDGET_POLLS * CADENCE)}s. The board reader ` +
+      `shares ~60 requests an hour with the reviewing seat (DDDD-28), and a burst empties that ` +
+      `for both — the failure is not a slow verdict, it is NO verdict plus a quota nobody else ` +
+      `can use.`,
   );
 }
 
