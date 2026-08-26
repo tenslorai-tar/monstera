@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  type ContainerSid,
   type PipeCreationSurface,
   type PipeHandle,
   type SecurityDescriptor,
-  type UserSid,
   createHostPipe,
-  hostPipeDacl,
 } from './enginePipeFactory.js';
+import { type ContainerSid, type UserSid, hostPipeDacl } from './hostDacl.js';
 
 /**
  * A recording Win32 surface.

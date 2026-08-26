@@ -4,12 +4,8 @@ import { type ReaderMessage } from '@monstera/nodemode';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import {
-  type ContainerSid,
-  type PipeHandle,
-  type SecurityDescriptor,
-  type UserSid,
-} from './enginePipeFactory.js';
+import { type PipeHandle, type SecurityDescriptor } from './enginePipeFactory.js';
+import { type ContainerSid, type UserSid } from './hostDacl.js';
 import { type EngineHostConnectionSurfaces, createEngineHostConnection } from './engineHostConnection.js';
 import { type ReaderWorkerHandle } from './engineReaderChannel.js';
 import { type CreatedProcess, type JobHandle, type ProcessHandle, type ThreadHandle } from './engineHostFactory.js';

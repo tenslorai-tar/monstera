@@ -2,12 +2,11 @@ import { type Result, err, ok } from '@monstera/shared';
 import koffi from 'koffi';
 
 import type {
-  ContainerSid,
   PipeCreationSurface,
   PipeHandle,
   SecurityDescriptor,
-  UserSid,
 } from './enginePipeFactory.js';
+import type { ContainerSid, UserSid } from './hostDacl.js';
 import type {
   OverlappedWriteSurface,
   PendingWrite,

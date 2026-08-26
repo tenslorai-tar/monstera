@@ -426,7 +426,6 @@ import {
   copyFileSync,
   existsSync,
   fstatSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -1199,6 +1198,59 @@ const { createWin32PipeSurface, currentUserSid, hostContainerSid } = await impor
   pathToFileURL(BUILT_PIPE_SURFACE).href
 );
 const { createHostPipe } = await import(pathToFileURL(BUILT_PIPE_FACTORY).href);
+
+/**
+ * THE HANDED DIRECTORIES ARE CREATED BY THE SHIPPED FACTORY TOO, for the reason
+ * the pipe is: **anything that creates has exactly one implementation.**
+ *
+ * A directory carrying a DACL is a securable object this application creates,
+ * and until 2026-08-26 this file created two of them with `mkdtemp` followed by
+ * `spawnSync('icacls', …)`. That is a second opinion about what a grant is
+ * (B3a) and it is also a mechanism nothing ships, so every row read against it
+ * transferred to the shipped path by assumption.
+ *
+ * What stays on `icacls` here is deliberate and is not a grant the app makes:
+ * the three `RX` tool-path entries in {@link GRANTS} are a development
+ * accommodation for a checkout under a user profile (ADR-0023 §5), on
+ * directories this process did not create and cannot create; and the resolution
+ * cell's re-grant, which exists precisely to do something the shipped path
+ * never does — change the right on a directory that already exists.
+ */
+const BUILT_DIRECTORY_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32DirectorySurface.js');
+const BUILT_SESSION_DIRECTORIES = join(ROOT, 'apps', 'desktop', 'dist', 'sessionDirectories.js');
+for (const built of [BUILT_DIRECTORY_SURFACE, BUILT_SESSION_DIRECTORIES]) {
+  if (!existsSync(built)) {
+    unverifiable(
+      `The session directory factory is not built at ${built}. The handed pair below is created ` +
+        `through the SHIPPED module rather than a copy of it, so without the build there is ` +
+        `nothing to measure. Run \`npm run build\`.`,
+    );
+  }
+}
+const { createWin32DirectorySurface } = await import(
+  pathToFileURL(BUILT_DIRECTORY_SURFACE).href
+);
+const {
+  createSessionDirectories,
+  removeSessionDirectories,
+  sessionDirectoryName,
+  sessionDirectoryPaths,
+} = await import(pathToFileURL(BUILT_SESSION_DIRECTORIES).href);
+
+/**
+ * The shipped validator, with its refusal turned into a throw.
+ *
+ * Not a second validator: the shipped code decides what a session directory
+ * name may be, and this only makes a refusal here fatal rather than a `Result`
+ * nobody in a research script would check.
+ *
+ * @param {string} value
+ */
+function assertName(value) {
+  const name = sessionDirectoryName(value);
+  if (!name.ok) throw new Error(`the composed session name was refused: ${name.error}`);
+  return name.value;
+}
 
 /**
  * §9.17's absolute cap for `mupdf-host`, which is what the shipped factory
@@ -2018,10 +2070,33 @@ function runCells(hostJs, scratchDir) {
 
 // ---------------------------------------------------------------------------
 
-const scratch = mkdtempSync(join(tmpdir(), 'monstera-lowbox-'));
+/**
+ * THE HANDED PAIR IS CREATED BY THE SHIPPED FACTORY, not by `mkdtemp` plus
+ * `icacls`, and that is what keeps the four verb-split rows meaning what they
+ * say.
+ *
+ * The rows below were first read on 2026-08-25 against directories this file
+ * created and granted with `spawnSync('icacls', …)`. The shipped path does not
+ * grant that way — it passes a security descriptor to `CreateDirectoryW`, so
+ * the DACL is present in the directory's first observable state and carries `P`
+ * against inherited ACEs. Leaving the instrument on `icacls` would have made
+ * every row below a measurement of a mechanism nothing ships, transferring to
+ * the real one **by assumption**.
+ *
+ * This repository refused exactly that transfer once before, deliberately:
+ * `hostSurfaceProbe.mjs` exists so invariant 25(b) *"is obtained through
+ * shipped code rather than through the spike"*. Same sentence, different
+ * property.
+ *
+ * The names are composed here and the directories are created below, once the
+ * container SID is known — the descriptor names it, so there is nothing to
+ * create before then.
+ */
+const SESSION_NAME = `${process.pid.toString(16)}-${Date.now().toString(16)}`;
 
 /**
- * Decision 7's snapshot, and it is a SIBLING of `scratch` rather than a child.
+ * Decision 7's snapshot, and it is a SIBLING of the output directory rather
+ * than a child.
  *
  * ADR-0023's Decision 7 asks to split the grants by verb — read on the snapshot,
  * modify only on the output directory — and it reads as though both could live
@@ -2034,15 +2109,22 @@ const scratch = mkdtempSync(join(tmpdir(), 'monstera-lowbox-'));
  * `scratch` carries `M` because a host that reports has to write where it was
  * handed. A snapshot placed under it would therefore be writable however
  * carefully it was granted read — and the probe below would report the split as
- * working while measuring nothing. A separate `mkdtemp` is the whole fix: two
- * directories, one grant each, no inheritance between them.
+ * working while measuring nothing. Two separate directories is the whole fix:
+ * one grant each, no inheritance between them.
+ *
+ * The shipped `handedDirectoryDacl` now also sets `P`, so an inherited ACE
+ * cannot reach either of them from whatever sits above. That is belt and
+ * braces rather than a replacement — the sibling layout is what the rows were
+ * read against, and it stays.
  *
  * The alternative is a DENY ace, which is evaluated ahead of allows and would
  * also work. It is not used here and would be its own decision, because a deny
  * on the boundary between this app and a hostile host is a mechanism whose
  * failure modes nobody in this repository has costed.
  */
-const snapshotDir = mkdtempSync(join(tmpdir(), 'monstera-lowbox-snapshot-'));
+const handed = sessionDirectoryPaths(tmpdir(), assertName(SESSION_NAME));
+const scratch = handed.output;
+const snapshotDir = handed.snapshot;
 const snapshotPath = join(snapshotDir, 'snapshot.bin');
 
 /**
@@ -2134,21 +2216,38 @@ const GRANTS = [
   { path: join(ROOT, 'node_modules', 'koffi'), rights: 'RX', why: 'the FFI' },
   { path: join(ROOT, 'node_modules', '@koromix', 'koffi-win32-x64'), rights: 'RX', why: "the FFI's platform sibling" },
   { path: join(ROOT, 'native', 'mupdf-shim', 'out'), rights: 'RX', why: 'the engine shim' },
-  // MODIFY, and the difference is measured. Granted RX, the host ran every probe
-  // and then exited 97 — its own code for "could not write the report into the
-  // directory it was handed". A host that reports needs to write where it was
-  // handed, so "what it was handed" and "what it may read" are two grants and
-  // ADR-0022 §6 names both. The SHIPPED host reports over the pipe rather than
-  // to a file, so whether it needs a writable directory at all is decided by the
-  // startup check in ADR-0023 §5 and not inherited from this fixture's choice of
-  // channel.
-  { path: scratch, rights: 'M', why: 'what the host was handed — and it must be able to write back' },
-  // READ ONLY, and it is the point rather than a detail. Decision 7's candidate
-  // hands the host a snapshot it may read and an output directory it may write,
-  // and the whole question is whether the verb split holds on a real LowBox
-  // token. A separate directory because grants inherit and allow ACEs union —
-  // see `snapshotDir`.
+];
+
+/**
+ * THE HANDED PAIR IS NOT IN THE LIST ABOVE, 2026-08-26, and that is the point
+ * of this comment rather than a note about where two lines went.
+ *
+ * They used to be entries 6 and 7 — `scratch` at `M` and `snapshotDir` at `R`.
+ * Both are now created by `createSessionDirectories`, which passes a security
+ * descriptor to `CreateDirectoryW`; there is no grant step to list, because
+ * there is no window in which the directory exists ungranted.
+ *
+ * The difference the removed comments recorded is preserved and still
+ * load-bearing, so it is restated here rather than deleted with them:
+ *
+ * - the output directory is `M` because a host that reports has to write where
+ *   it was handed. Granted `RX`, the host ran every probe and then exited 97 —
+ *   its own code for "could not write the report into the directory it was
+ *   handed". The SHIPPED host reports over the pipe rather than to a file, so
+ *   whether it needs a writable directory at all is decided by ADR-0023 §5's
+ *   startup check and not inherited from this fixture's choice of channel.
+ * - the snapshot directory is `R` and that is the point rather than a detail.
+ *   Whether the verb split holds on a real LowBox token is the question these
+ *   rows exist to answer.
+ *
+ * The masks the shipped factory uses were read from `icacls` on 2026-08-26 and
+ * are exactly these two rights: `0x00120089` renders `(R)` and `0x001301BF`
+ * renders `(M)`. That equality is asserted below rather than assumed, because
+ * it is the whole of what makes these rows continuous with the 2026-08-25 ones.
+ */
+const HANDED = [
   { path: snapshotDir, rights: 'R', why: "Decision 7's snapshot — readable, and it must NOT be writable" },
+  { path: scratch, rights: 'M', why: 'what the host was handed — and it must be able to write back' },
 ];
 
 /** @type {Array<{ path: string, why: string }>} */
@@ -2287,6 +2386,72 @@ try {
     process.stdout.write(`  granted ${entry.rights.padEnd(2)} and FOUND  ${entry.path}\n`);
   }
 
+  // ---- the handed pair, through the SHIPPED factory ----
+  //
+  // No "assert clear first" step, and its absence is a mechanism rather than an
+  // omission: `createSessionDirectories` refuses a path that already exists
+  // instead of adopting it, precisely because a directory left by an earlier
+  // run carries a DACL this run did not write. The staleness check the GRANTS
+  // loop performs by reading is performed here by the shipped code refusing.
+  process.stdout.write('\ncreating the handed pair through the SHIPPED factory:\n');
+  {
+    const surface = createWin32DirectorySurface();
+    const userSid = currentUserSid();
+    if (!userSid.ok) throw new Error(`this process's user SID could not be read: ${userSid.error}`);
+    const containerSid = hostContainerSid(CONTAINER);
+    if (!containerSid.ok) throw new Error(`the container SID could not be branded: ${containerSid.error}`);
+
+    const made = createSessionDirectories(surface, handed, userSid.value, containerSid.value);
+    if (!made.ok) {
+      throw new Error(
+        `the shipped factory refused the ${made.error.stage} directory: ${made.error.detail}\n` +
+          `      Nothing below may be concluded — the rows measure a pair this factory made.`,
+      );
+    }
+    // DELIBERATELY NOT pushed onto `granted`. That list drives `releaseGrants`,
+    // which revokes an ACE from a directory that outlives the run — right for
+    // the three accommodation paths, meaningless here. These two are released
+    // by being REMOVED, and a revoke step would put `icacls` back on the
+    // shipped pair for no property it establishes.
+    for (const entry of HANDED) {
+      const after = readAcl(entry.path);
+      if (after === null || !namesContainer(after, sid)) {
+        throw new Error(
+          `the shipped factory created ${entry.path} and the search reports the container absent.\n` +
+            `      THE SEARCH IS BLIND, so nothing below means anything.`,
+        );
+      }
+      // THE RIGHT IS ASSERTED, NOT JUST THE PRESENCE. The 2026-08-25 rows were
+      // read against `icacls`-granted (R) and (M); if the shipped descriptor
+      // produced any other rendering, these rows would be measuring a different
+      // grant under the same headings and nothing would say so.
+      const rendered = after
+        .split(/\r?\n/)
+        .filter((line) => namesContainer(line, sid))
+        .join(' ');
+      if (!rendered.includes(`(${entry.rights})`)) {
+        throw new Error(
+          `${entry.path} was created by the shipped factory but icacls renders it as\n` +
+            `      ${rendered.trim()}\n` +
+            `      rather than (${entry.rights}). The rows below are continuous with the ` +
+            `2026-08-25 ones ONLY while these match.`,
+        );
+      }
+      // AND NO INHERITED ACE, which is what `P` in the shipped DACL buys and
+      // what the icacls path could not have given us. An `(I)` here means the
+      // descriptor's protection did not take.
+      if (rendered.includes('(I)')) {
+        throw new Error(
+          `${entry.path} carries an INHERITED ace: ${rendered.trim()}\n` +
+            `      The shipped DACL sets P, so this means the protection did not take and an ` +
+            `ancestor's grant is unioned with ours — the exact failure measured on 2026-08-25.`,
+        );
+      }
+      process.stdout.write(`  created ${entry.rights.padEnd(2)} PROTECTED and FOUND  ${entry.path}\n`);
+      process.stdout.write(`          ${entry.why}\n`);
+    }
+  }
+
   // ---- the app ----
   const koffiPath = JSON.stringify(join(ROOT, 'node_modules', 'koffi'));
   const hostJs = join(scratch, 'host.js');
@@ -2375,8 +2540,17 @@ try {
   // accumulating on the machine that runs the check.
   const hr = DeleteAppContainerProfile(CONTAINER);
   process.stdout.write(`  profile deleted: ${hr === 0 ? 'yes' : `0x${(hr >>> 0).toString(16)}`}\n`);
-  rmSync(scratch, { recursive: true, force: true });
-  rmSync(snapshotDir, { recursive: true, force: true });
+  // THROUGH THE SHIPPED REMOVAL, for the reason the creation is: a snapshot
+  // directory that outlives its session is a copy of the user's document
+  // sitting where the contained host can read it, and whether that removal
+  // works is a property of shipped code rather than of this file. It reports
+  // per directory instead of throwing, so a failure is printed beside the
+  // teardown it belongs to rather than costing the rest of it.
+  const removed = removeSessionDirectories(createWin32DirectorySurface(), handed);
+  process.stdout.write(
+    `  handed pair removed: snapshot ${removed.snapshot ? 'yes' : 'NO'}, ` +
+      `output ${removed.output ? 'yes' : 'NO'}\n`,
+  );
 }
 
 // THE CASES, printed after the machine state is reversed so a failure never

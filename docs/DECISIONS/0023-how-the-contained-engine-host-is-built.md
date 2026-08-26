@@ -2346,3 +2346,141 @@ The heading above says *the encoding question transfers*, and it does. **Its
 reassurance does not, and a reader who carries one across carries the other.**
 Recorded here rather than left to the transfer, because the sentence being
 borrowed from is two files away and reads as settled.
+
+### Decision 12, 2026-08-26 — the handed directories are created WITH their DACL, through the Win32 surface
+
+Decision 7 says the host is handed a snapshot it may read and an output
+directory it may write. Nothing said how the grant is made, and shipped code
+had no way to grant a directory at all — `lowboxSpike.mjs` did it with
+`spawnSync('icacls', …)`, which its own header calls a development
+accommodation.
+
+**Decided: `CreateDirectoryW` with a `SECURITY_ATTRIBUTES` carrying a
+descriptor parsed from SDDL, in a Win32 adapter, from a DACL that lives beside
+the pipe's.** Four reasons, in the order they weigh.
+
+**1. Create-with-descriptor has no window; create-then-grant necessarily does.**
+`mkdir` followed by `icacls` leaves the directory existing, briefly, with
+whatever it inherited — which is not theoretical, because the ACE union
+measured on 2026-08-25 is exactly an inherited `M` surviving an explicit `R`.
+Whether that window is reachable depends on an ordering argument (is the host
+running yet?), and an ordering argument is a thing someone has to keep true.
+Passing the descriptor to the create call makes the intermediate state
+unrepresentable — B5 over a check.
+
+**2. The DACL is `P`, so inheritance cannot apply at all.** That turns the
+failure measured on 2026-08-25 into a state that cannot occur for these two
+directories, rather than one the sibling layout has to keep avoiding. The
+sibling layout stays and is now belt-and-braces rather than load-bearing.
+
+**3. `spawnSync('icacls', …)` lets a name select the code that establishes a
+security boundary.** PATH resolution decides which binary runs. This repository
+already refuses that shape in a different domain — a filename may not select a
+native library (invariant 23) — and the objection carries over unchanged.
+
+**4. B3a.** `hostPipeDacl` already expresses this application's security
+boundaries as SDDL. Expressing the same grants a second way, as `icacls`
+argument strings, is a second opinion about what a DACL is. Both now live in
+`apps/desktop/src/hostDacl.ts`: one resolver, two callers.
+
+#### Measured 2026-08-26, before the shape was committed to
+
+`koffi` binds `CreateDirectoryW` from the same prototype shape as the
+`CreateFileW` already declared in `win32HostSurface.ts`. On this machine, under
+a parent carrying an inheritable `(OI)(CI)(M)` for `S-1-15-2-1`:
+
+| directory | created by | `icacls` renders |
+|---|---|---|
+| control sibling | `fs.mkdirSync` | `(I)(OI)(CI)(M)` |
+| snapshot | `CreateDirectoryW`, `D:P(…0x00120089…)` | `(OI)(CI)(R)` |
+| output | `CreateDirectoryW`, `D:P(…0x001301BF…)` | `(OI)(CI)(M)` |
+| — | `CreateDirectoryW`, `D:P(…0x001200A9…)` | `(RX)`, and unused |
+
+**The control sibling is the load-bearing row.** Without it, *the protected
+directory carries no inherited ACE* is indistinguishable from a reader that
+cannot see one (audit item 4b) — and the reassuring answer here is an absence,
+which is precisely the shape that goes unexamined. The last row is the
+resolution test: `R` and `M` render differently, so the reader can separate the
+two values whose difference this whole split consists of.
+
+The creating process can still write into the protected read-only directory,
+which is required and is not incidental: a protected DACL replaces what the
+parent would have given us, so this application's own ACE is the only thing
+between the design and a directory nobody can fill.
+
+`0x001200A9` is listed because it is what the obvious mask produces and is a
+widening **nothing measured as necessary** — the 2026-08-25 rows read the
+contained snapshot successfully on `R`.
+
+#### The layout is FLAT, and that is inherited from the measurement rather than chosen
+
+Both directories are siblings directly under a root that is granted nothing.
+That is the shape the four verb-split rows were read against — two `mkdtemp`
+siblings under `%TEMP%`, a directory application packages have no ACE on — and
+it carries a fact the nested alternative would have depended on silently: the
+contained host reads the snapshot with **no grant on any ancestor**, so
+traverse above a handed directory is not something this design has to buy.
+
+#### The spike now grants through shipped code, and that is part of this decision rather than follow-up
+
+The four rows above were read against directories `lowboxSpike.mjs` created and
+granted itself. Had the shipped path taken a different mechanism, those rows
+would have transferred to it **by assumption** — and this repository refused
+exactly that transfer once before, deliberately: `hostSurfaceProbe.mjs` exists
+so that invariant 25(b) *"is obtained through shipped code rather than through
+the spike"*. Same sentence, different property.
+
+So the spike's `scratch` and `snapshotDir` are now created by
+`createSessionDirectories`, and it asserts three things per directory before any
+cell runs: the container is named at all (the search is not blind), `icacls`
+renders **exactly** `(R)` and `(M)` (these rows are continuous with the
+2026-08-25 ones only while that holds), and **no `(I)` ACE is present** (the
+descriptor's protection took). Read 2026-08-26, `proof:hostcontainment`, 28
+cases:
+
+```
+creating the handed pair through the SHIPPED factory:
+  created R  PROTECTED and FOUND  C:\Users\…\Temp\in-3358-1a03d30c51e
+  created M  PROTECTED and FOUND  C:\Users\…\Temp\out-3358-1a03d30c51e
+  ok  Decision 7 — the snapshot is READABLE: lowbox allowed, route allowed
+  ok  Decision 7 — the snapshot is NOT WRITABLE: lowbox refused, route allowed
+  ok  Decision 7 — the ENGINE opens a document it cannot write: lowbox allowed, route allowed
+  ok  Decision 7 — the output directory IS writable: lowbox allowed, route allowed
+  handed pair removed: snapshot yes, output yes
+```
+
+The mask assertion is not decorative — mutating the shipped read mask to
+`0x001200A9` and rebuilding turns it red at the right line, naming what it read:
+
+```
+… was created by the shipped factory but icacls renders it as
+      S-1-15-2-…:(OI)(CI)(RX)
+      rather than (R). The rows below are continuous with the 2026-08-25 ones ONLY while these match.
+```
+
+#### Correction to §5 — "the five grants are a development accommodation" is now three
+
+That sentence was true when written and is not a claim this addition retracts;
+what changed underneath it is the count. Two of the five — the output directory
+at `M` and the snapshot at `R` — were the ones corresponding to shipped
+behaviour, and they are no longer granted at all, because there is no window in
+which those directories exist ungranted. The three that remain are the runtime,
+the FFI and the shim: paths under a checkout that this process did not create
+and cannot create, which is what made them an accommodation in the first place.
+
+The resolution cell's re-grant also stays on `icacls`, and deliberately: it
+exists to do something the shipped path never does — change the right on a
+directory that already exists — which is what holds the path constant while
+only the grant moves.
+
+#### What this does NOT cover, stated rather than absorbed
+
+A session directory pair is created before its snapshot is written and removed
+when the session closes, on every path including a failed open — a snapshot
+that outlives its session is a copy of the user's document sitting where the
+contained host can read it.
+
+**Nothing sweeps a root left behind by a main process that died without
+unwinding.** That is not a line of code someone forgot; it is a decision about
+what a second running instance of this application is allowed to delete, and it
+is owed on a `docs/FEATURES.md` row rather than assumed here.

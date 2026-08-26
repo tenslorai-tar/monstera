@@ -1,5 +1,7 @@
 import { type Result, err, ok } from '@monstera/shared';
 
+import { type ContainerSid, type UserSid, hostPipeDacl } from './hostDacl.js';
+
 /**
  * Creating the engine host's transport pipe, in the one order that leaks
  * nothing (ADR-0023 §4 and both of its 2026-08-24 corrections).
@@ -16,7 +18,12 @@ import { type Result, err, ok } from '@monstera/shared';
  * owns that, and the reason is measured rather than stylistic — see *the server
  * half* below.
  *
- * ## The descriptor is built here, from parts that cannot be strings
+ * ## The descriptor reaches here from a resolver, never from a caller
+ *
+ * The SDDL itself is `hostPipeDacl` in `hostDacl.ts`, which owns every grant
+ * this application makes to the contained host — the session directories being
+ * the second caller. What this file owns is the ORDER: parse, create every
+ * instance, free on both paths.
  *
  * ADR-0023 §4 said *"a named pipe created by main with the container SID in its
  * DACL"*. Measured on 2026-08-24: a pipe carrying only that ACE **refuses the
@@ -80,25 +87,6 @@ export interface SecurityDescriptor {
 }
 
 /**
- * A SID in string form, from a resolver rather than from a literal.
- *
- * Branded because the failure this prevents is not hypothetical: the shipped
- * descriptor needs the *user's* SID and the *container's*, they are both
- * `S-1-…` strings, and passing them in the wrong order produces a descriptor
- * that parses, creates a pipe, and refuses whichever principal it was supposed
- * to admit. Two brands make that a compile error.
- */
-export interface UserSid {
-  readonly __sid: 'user';
-  readonly value: string;
-}
-
-export interface ContainerSid {
-  readonly __sid: 'container';
-  readonly value: string;
-}
-
-/**
  * The Win32 calls this factory makes, in the order it makes them.
  *
  * Every member reports failure as a value rather than throwing, for the reason
@@ -139,62 +127,6 @@ export interface HostPipe {
 export interface PipeCreationFailure {
   readonly stage: 'descriptor' | 'instance';
   readonly detail: string;
-}
-
-/**
- * The DACL for the engine host's transport, assembled from two resolved SIDs.
- *
- * Exported because the adapter has to be able to show what it built when a
- * creation fails, and a diagnostic that paraphrases the descriptor is a second
- * opinion about it.
- *
- * ## The two masks differ, and `GA` is not one of them (finding BBBB-4)
- *
- * Both ACEs said `GA` — `GENERIC_ALL` — on the argument that the host must read
- * and write and the creator must be able to add instances. That was a compound
- * claim whose two clauses cover different principals: the instance-creation half
- * is about the CREATOR, and the container got `GA` alongside it.
- *
- * `GA` maps to `FILE_ALL_ACCESS`, which carries `STANDARD_RIGHTS_REQUIRED` —
- * `WRITE_DAC` included. So the principal invariant 25 declares *contains a
- * compromise*, on the pipe this design calls a trust boundary, could rewrite
- * that boundary's own DACL and decide who else may reach the channel.
- *
- * **Demonstrated, not argued.** On the spike's pipe that still carries `GA`, the
- * contained cell opens it for `WRITE_DAC` and succeeds. Under the masks below it
- * is refused, error 5, in the same run.
- *
- * | principal | mask | what it is |
- * |---|---|---|
- * | this user | `0x0012019F` | `FILE_GENERIC_READ｜FILE_GENERIC_WRITE` |
- * | the container | `0x0012019B` | the same, **minus `0x4`** |
- *
- * `0x4` is `FILE_APPEND_DATA` for a file and `FILE_CREATE_PIPE_INSTANCE` for a
- * pipe. The creator needs it — measured: without it, instance 1 fails with
- * `GetLastError 5` and the factory reports the stage. The host does not, and it
- * is the one right on this object that would let a compromised host stand up
- * another instance of the channel.
- *
- * Neither mask contains `WRITE_DAC`, `WRITE_OWNER` or `DELETE`. What that buys
- * against the OWNER is nothing — an object's owner holds `READ_CONTROL` and
- * `WRITE_DAC` implicitly whatever the DACL says, measured here too — and
- * same-user was never a boundary this descriptor could draw. Against the
- * container it is the whole point.
- *
- * No group appears: `D:(A;;GA;;;BU)` would grant Built-in Users, which is every
- * user of the machine, and the spike carries that spelling only because its
- * uncontained control cells have to connect.
- *
- * The masks are written numerically because SDDL's file mnemonics cannot express
- * the one that matters: `FW` — `FILE_GENERIC_WRITE` — includes `0x4`, so
- * `FRFW` for the container would grant instance creation back.
- *
- * @param user This process's own user SID.
- * @param container The AppContainer's SID.
- * @returns An SDDL string.
- */
-export function hostPipeDacl(user: UserSid, container: ContainerSid): string {
-  return `D:(A;;0x0012019F;;;${user.value})(A;;0x0012019B;;;${container.value})`;
 }
 
 /**

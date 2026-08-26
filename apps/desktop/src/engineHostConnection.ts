@@ -2,13 +2,12 @@ import { type HostClient, type HostTermination, createHostClient } from '@monste
 import { type Result, err, ok } from '@monstera/shared';
 
 import {
-  type ContainerSid,
   type HostPipe,
   type PipeCreationSurface,
   type PipeHandle,
-  type UserSid,
   createHostPipe,
 } from './enginePipeFactory.js';
+import { type ContainerSid, type UserSid } from './hostDacl.js';
 import { type ReaderHostSurface, createEngineReaderChannel } from './engineReaderChannel.js';
 import { type HostCreationSurface, createContainedHost } from './engineHostFactory.js';
 import { type OverlappedWriteSurface, createHostWriteQueue } from './hostWriteQueue.js';
