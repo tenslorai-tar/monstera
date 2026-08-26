@@ -2284,3 +2284,65 @@ Where the *renderer-facing* contract lives, which is unchanged; and whether the
 worker protocol's channels follow the same rule — they will face the same
 question when they carry a kernel-only type, and the answer here is the reasoning
 rather than a precedent to apply without checking.
+
+## Correction, 2026-08-26 — the encoding deferral's first reason was refuted by the table three paragraphs above it (finding DDDD-31)
+
+The deferral under *"the encoding question transfers"* reads:
+
+> Not adopted now: the first remote command's prior state is kilobytes, the
+> fallback is correct rather than merely tolerable, and choosing an encoding is
+> a decision that wants its own moment (B4) rather than one taken in passing
+> while wiring a call site.
+
+**Clause one is WITHDRAWN.** *"The first remote command's prior state is
+kilobytes"* is refuted by the measurement three paragraphs above it, in the same
+commit: **969,018 bytes** at 20,000 pages, binding at ~5,410. The same section
+says so in its own words — *`captured: false` is what a select-all rotate on a
+large document does today, with the one command that exists*. The reassuring
+clause and the table that kills it were written an hour apart by the same author,
+which is this project's standing shape: the sentence that comforts is the one
+nobody re-reads.
+
+**Clause two is QUALIFIED, not deleted.** *"The fallback is correct rather than
+merely tolerable"* is true **about behaviour** — `captured: false` produces a
+terminal entry with a checkpoint, which is ADR-0009's designed answer. What it
+does not cover is **where that checkpoint lands**, and this range made that
+reachable:
+
+- `CommandLog` has **no cap and no spill** — verified, and `docs/FEATURES.md`
+  row 278 already records it: *"checkpoint bytes are already retained,
+  unbounded — every terminal entry holds a full byte image and `CommandLog` has
+  no cap, so `ARCHITECTURE` §4's 'one document plus a few checkpoints' is a
+  budget nothing enforces."*
+- `perf:gate` reports `main-service` at **1.01–1.02×** of file size against
+  ADR-0007's **1.5×** ceiling, holding the canonical image. A checkpoint is
+  another full image. Canonical **plus one checkpoint is ~2.0×** — over budget
+  by construction, on precisely the document large enough to make the fallback
+  fire.
+
+So the stated reason is no longer *the fallback is fine*. It is **the fallback is
+fine given a budget ADR-0009 deferred to the Stage 0 performance gate**, and this
+measurement moved that budget from theoretical to reachable with today's only
+command. 10a is unaffected — the fallback is still the right shape, and
+recording an inverse is still the cheap option. What changed is which unstated
+dependency it rests on.
+
+**Clause three survives on its own, and is enough.** Changing the payload shape
+reaches this package's schemas and every command's declaration of a page
+selection. That is its own unit (B4).
+
+### The arithmetic transfers; the reassurance INVERTS, and that is the finding
+
+`hostProtocol.ts` defers the *intent* encoding on this reason: *"not now, when
+the bound sits 2.2× beyond any document that exists."* Run the same arithmetic on
+prior state:
+
+| payload | binds at | against the stated 20,000-page extreme |
+|---|---|---|
+| intent, index list | ~43,669 pages | **2.18×** beyond it — headroom |
+| prior state, per page | ~5,410 pages | **0.27×** of it — inside it |
+
+The heading above says *the encoding question transfers*, and it does. **Its
+reassurance does not, and a reader who carries one across carries the other.**
+Recorded here rather than left to the transfer, because the sentence being
+borrowed from is two files away and reads as settled.
