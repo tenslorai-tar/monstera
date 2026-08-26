@@ -46,6 +46,18 @@ permissions:
 #
 # Branches keep cancelling, where superseding a run is the whole point and no
 # commit's verdict is being relied on later.
+#
+# MEASURED, not assumed that the expression takes effect. Read from
+# `actions/runs?per_page=8` on 2026-08-26, minutes after `6d8f2d5` was pushed on
+# top of a still-running `8b99118`:
+#
+#   CI      8b99118  in_progress     <- survived the push
+#   Guards  6d8f2d5  in_progress     <- and the newer run started anyway
+#   CI      53eafae  cancelled       <- the same group under the old setting
+#
+# Two runs coexisting on `main`, with the pre-fix cancellation visible in the
+# same payload as the control. `8b99118` then completed `success`, so the verdict
+# a push used to destroy is the verdict it now keeps.
 concurrency:
   group: guards-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
