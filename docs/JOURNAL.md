@@ -644,7 +644,168 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
-## 2026-08-26 — Stage audit: `2f1444b..5168f3b` — a resolver moved and its proof stayed behind, and the proof that went red was in no column
+## 2026-08-26 — Stage audit: `5168f3b..cedec2d` — a service outage reported from an instrument that looks once
+
+**Audited through `cedec2d`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 5168f3b..HEAD
+  commits: 8 (one batch is 9)
+  files:   23 (one batch is 24)
+  proofs ADDED (1):    packages/kernel/src/host/remoteLifecycle.test.ts
+  proofs MODIFIED (6): enginePipeFactory.test.ts +4 -31 · hostDacl.test.ts +47 -6
+                       documentService.test.ts +127 -0 · remoteEngine.test.ts +67 -4
+                       boardStatus.proof.mjs +31 -5 · electronImports.proof.mjs +26 -6
+  proofs REMOVED: none
+  source FILES ADDED (4):   engineSessions.ts · remoteLifecycle.ts
+                            failingJobs.mjs · barrelCost.mjs
+  source FILES CHANGED (7): documentService.ts +114 -1 · engineChannels.ts +111 -12
+                            engineHandlers.ts +125 -6 · kernel/index.ts · …
+  source FILES REMOVED: none
+```
+
+The range: the file-exchanging `open`/`serialise`/`close`, the capability that
+lets a canonical image leave without anything receiving it, a red on `main`
+fixed, a defect of my own in the board pacing, and a measured invariant-20
+exposure recorded as open.
+
+### EEEE-3. A service outage reported from an instrument that looks once
+
+**The claim was false.** *"GitHub Actions has stopped running for this
+repository"* went into a report to the owner, with a request to check billing.
+`cedec2d` is green on both workflows.
+
+**The mechanism, measured.** `cedec2d` was pushed at ~16:11Z. Its workflow runs
+were **created at 16:30:18Z** — a nineteen-minute lag. Two reads of
+`failingJobs.mjs --recent`, at ~16:12Z and ~16:26Z, both fell inside that
+window, returned no runs for the sha, and were read as absence.
+
+**What went wrong is not the reading, it is the instrument I used to take it.**
+`board.mjs` exists to separate *pending* from *absent*, and it does so by
+**waiting**; nothing that looks once can. I had it, and went around it by hand
+at the moment its distinction was load-bearing.
+
+**The tool even said so.** `failingJobs.mjs`'s empty-list branch printed *"That
+is NOT 'nothing failed': it is the same output an unknown sha, an aged-out sha
+and a never-started run give"* — a sentence I wrote, an hour earlier, in a
+commit titled *"A sha with no run and a sha whose run was cancelled read
+identically through a filtered query."* I read it and concluded anyway.
+
+So this is the session's own subject arriving in my reading rather than in the
+code: **a disclaimer that lists possibilities still lets the reader pick one.**
+The repair is not to add *not yet created* to the list — it is that the tool now
+refuses to be a verdict and names `board.mjs` as what answers absence.
+
+**The transferable rule, and it is the reviewing seat's words because they are
+better than mine:** *when you bypass an instrument, you inherit every
+distinction it was built to make* — and under time pressure the bypass is
+exactly what feels efficient.
+
+**One correction to the diagnosis I was offered:** the proposed mechanism was a
+403 rendering as an empty list. That is a real hole and it is **already closed**
+— `parseRuns` refuses a payload with no `workflow_runs` array, naming the
+rate-limit case in its own message, and `boardStatus.proof.mjs` carries the case
+*'an error body with no workflow_runs THROWS'* with a rate-limit fixture. It was
+not what bit here: both of my reads returned **populated** lists. The timestamps
+are what settle it.
+
+**Also ruled out, so it is not re-investigated:** neither workflow file has
+changed since `1201d8e`, which ran green.
+
+### EEEE-4. Two commits carry no verdict, and one of them needed an answer
+
+`459e9e4` is the ordinary case: committed locally and pushed together with
+`cedec2d`, and GitHub creates runs for the **tip** of a push. Its content is
+covered by `cedec2d`'s green.
+
+`8215f42` is the capability commit — `writeCanonicalImage` and the security
+property the ruling turned on — and it has **no CI run at all** and a Guards run
+whose jobs were **cancelled**. The later green must not stand in for it
+silently, so the per-file argument is made rather than assumed:
+
+| file `8215f42` touched | blob at `cedec2d` (green) |
+|---|---|
+| `apps/desktop/src/engineSessions.ts` | identical |
+| `packages/kernel/src/documentService.ts` | identical |
+| `packages/kernel/src/documentService.test.ts` | identical |
+| `packages/kernel/src/index.ts` | identical |
+| `scripts/perf/roleMainService.mjs` | identical |
+| `docs/DECISIONS/0023-…md` | identical |
+| `docs/FEATURES.md` | **differs** — `459e9e4` added a row |
+
+Six of seven blobs are byte-identical at a green commit. The seventh is a
+document whose **later** version passed `check:docs` at `cedec2d`, which is a
+superset of the earlier one. So the content is verified; the commit is not, and
+those are different claims.
+
+**What cancelled it is measured and its cause is NOT determinable from this
+seat.** Both jobs report:
+
+```
+queued 2026-08-26T15:38:49Z  started 2026-08-26T15:38:49Z  ended 2026-08-26T15:53:50Z
+```
+
+Two jobs on different runner images, ending at the **same second**, fifteen
+minutes and one second after starting. They started, so this is not a pending
+run superseded in a concurrency group. Neither workflow sets `timeout-minutes`,
+so it is not a limit of ours. Nothing newer had been pushed at 15:53:50Z —
+`cedec2d` did not exist until 16:11Z.
+
+That is a **could-not-look, not a looked-and-found-nothing**: job logs answer 403
+without owner authentication, and the runs payload carries no cancelling actor.
+The Actions UI shows who or what cancelled a run; this seat cannot. Recorded as
+unexplained rather than as benign.
+
+### 1. Root cause, or workaround?
+
+| the fix | the mechanism |
+|---|---|
+| the pacing floor | `Math.max(0, median − elapsed)` returns 0 once a run outlives the median, and `sleep(0)` is not a wait — so the reader polled flat out exactly when a run was slowest. A **conflation**: *time remaining on the estimate* and *how long to wait* are one number only while the estimate holds |
+| `electronImports` declaration | not a fix — the guard demanding a declaration for two new computed loads, working on its author |
+| EEEE-1's case move | a symbol moved and its proof did not; nothing was deleted, so nothing could see it |
+
+### 4. Are the proofs non-vacuous?
+
+Mutations run this range, all red at the right line except where noted:
+
+| mutation | outcome |
+|---|---|
+| `handedDirectoryDacl` ignores its verb · `P` dropped · rollback removed | 6 cases across two files |
+| shipped read mask widened to `0x001200A9` | `proof:hostcontainment`, naming `(OI)(CI)(RX)` |
+| the pacing floor restored to zero | 2 cases, one naming the 40-poll arithmetic |
+| `writeCanonicalImage` copies the buffer | 1 case, on buffer identity |
+| the snapshot write copies before writing | `perf:gate`, 2.00× and 1.99× |
+| **`close`'s `finally` deleted** | **SURVIVED** — see below |
+
+**The one that survived is the useful one.** The case feeding it overrode the
+host's *writer* to reject, and `wrapHandler` catches anything a handler throws
+and answers with a `Result` — so nothing ever rejected and the cleanup ran on the
+ordinary path either way. The real failure is a **transport** that has gone,
+which does reject and is the only path between the call and the cleanup.
+Rewritten there, the mutation reddens immediately.
+
+A fixture the bug also handles correctly, wearing the name of the property it did
+not test. The distinction it turns on — *a handler throw is a `Result`, a
+transport failure is a rejection* — is one every later case against this client
+will need.
+
+### 5. Executed, or asserted?
+
+**Executed:** 390 vitest cases · `proof:hostcontainment` twice · `perf:gate`
+four times, two of them mutations · 16 local checks against the index, three
+times · the scanning proofs by hand, three times · the board through `board.mjs`.
+
+**Asserted, and corrected:** that Actions had stopped. See EEEE-3.
+
+### 7. Do the documents still match the code?
+
+ADR-0023 gained Decisions 12, 13 and 14. `docs/FEATURES.md` gained the
+handed-directory row, the barrel exposure as **open — amendment owed**, and the
+`perf:gate` residual closed.
+
+The false EEEE-3 claim **reached no tracked record** — swept with
+`sweep:prose` and by grep over `docs/` and the handoff. It existed only in a
+report, which is why it is written up here rather than corrected in place.
 
 **Audited through `5168f3b`.** Pasted from `npm run audit:scope`:
 
