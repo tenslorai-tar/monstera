@@ -58,6 +58,7 @@
     "proof:kernelload": "node scripts/proofs/kernelLoad.proof.mjs",
     "provision:electron": "node scripts/provision/electron.mjs",
     "board": "node scripts/ci/board.mjs",
+    "board:why": "node scripts/ci/failingJobs.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
     "proof:boundaries": "node scripts/proofs/boundaries.proof.mjs",
     "proof:testresolution": "node scripts/proofs/testResolution.proof.mjs",
