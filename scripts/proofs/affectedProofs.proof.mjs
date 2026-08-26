@@ -17,7 +17,7 @@
  * Usage: node scripts/proofs/affectedProofs.proof.mjs
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -25,12 +25,13 @@ import { CONTROL_EDGE, affectedProofs, affectedProofsReport, importGraph } from 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { proofScripts } from '../lib/proofCoverage.mjs';
+import { SCANNING_PROOFS, scanningProofRoster } from '../lib/scanningProofs.mjs';
 
 const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+const roster = createRoster(failures, { cases: 20 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -153,11 +154,32 @@ function check(name, condition, detail) {
   check(
     'and a run that reached them all says so, by name, rather than falling silent',
     reachedAll.startsWith('\n  ok  ') &&
-      !reachedAll.includes('npm run') &&
+      !reachedAll.includes('DID NOT REACH') &&
       every.every((name) => reachedAll.includes(name)),
     `reported ${JSON.stringify(reachedAll.slice(0, 80))}. Silence here would be indistinguishable ` +
       `from "no proof reads a changed file", which is a different fact and the caller prints its ` +
       `own line for it.`,
+  );
+
+  // THE MIDDLE CLAUSE CHANGED AND IT IS A CORRECTION, NOT A LOOSENING (EEEE-2).
+  //
+  // It read `!reachedAll.includes('npm run')`, using that substring as a proxy
+  // for "nothing is listed as unreached". The proxy stopped separating those
+  // two the moment the report gained a SECOND, legitimate `npm run` section:
+  // the scanning-proof roster, which is printed on every run precisely because
+  // no import walk can reach it. So the old clause would now fail against a
+  // correct report.
+  //
+  // `DID NOT REACH` is the unreached section's own header, which is what the
+  // clause meant all along. The case below is what stops that being a
+  // weakening: it requires the substitution to still separate the two reports.
+  check(
+    'CONTROL: the header the case now keys on is what actually distinguishes the two reports',
+    (affectedProofsReport(affected, []) ?? '').includes('DID NOT REACH') &&
+      !reachedAll.includes('DID NOT REACH'),
+    `a report where NOTHING was reached does not carry "DID NOT REACH", or the all-reached one ` +
+      `does. Then the clause above is satisfied by both shapes and separates nothing — which is ` +
+      `exactly what the 'npm run' proxy had quietly become.`,
   );
 
   let refusedWithoutRan = false;
@@ -235,6 +257,62 @@ function check(name, condition, detail) {
     'a query over the real graph terminates, so no cycle traps the walk',
     answered.examined > 10,
     'gitScope is imported by nearly everything; if a cycle hung the walk this case never returns',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE SCANNING-PROOF ROSTER (finding EEEE-2). What the import walk cannot see.
+// ---------------------------------------------------------------------------
+{
+  const verdict = scanningProofRoster();
+
+  check(
+    'every roster entry is a real proof:* script',
+    verdict.stale.length === 0,
+    `the roster names ${verdict.stale.join(', ')}, which package.json does not declare. A name ` +
+      `that matches nothing is worse than a missing one: it reads as coverage on every run and ` +
+      `sends whoever follows it to a script that is not there.`,
+  );
+
+  check(
+    'the count anchor agrees with the list',
+    verdict.miscount === null,
+    verdict.miscount ??
+      'unreachable — miscount is null exactly when the two agree, and this branch exists so a ' +
+        'failure prints the module’s own sentence rather than a second opinion about it.',
+  );
+
+  // THE ANCHOR IS ANCHORING — the case that separates "the count agrees" from
+  // "the count is computed from the list and therefore always agrees". Without
+  // it, `SCANNING_PROOF_COUNT = SCANNING_PROOFS.length` satisfies the case
+  // above forever, which is 4c's whole subject.
+  //
+  // IT READS THE SOURCE, and the first version did not — it compared the
+  // imported value against `SCANNING_PROOFS.length` and against 9, both of
+  // which hold whichever way the constant is written. That case survived the
+  // mutation it existed to catch: **a control against "a number derived from
+  // the collection it checks" was itself a number derived from the collection
+  // it checked.** Only the definition distinguishes them, which is the same
+  // reason `proof:kernelload` reads the emitted JavaScript and the CSP is read
+  // off the response.
+  const source = readFileSync(join(repoRoot(), 'scripts/lib/scanningProofs.mjs'), 'utf8');
+  check(
+    'CONTROL: the count is a literal in the source, so it CAN disagree',
+    /export const SCANNING_PROOF_COUNT = \d+;/u.test(source),
+    `SCANNING_PROOF_COUNT is not defined as a numeric literal. Derived from the roster it agrees ` +
+      `with every deletion, and the case above becomes a check that a number equals itself.`,
+  );
+
+  // The report names them, which is the whole repair: a disclaimer became an
+  // instruction. Asserted on the real report rather than on the constant, so a
+  // wiring that forgot to include them is red here.
+  const named = affectedProofsReport(affectedProofs(['scripts/lib/gitScope.mjs']), []) ?? '';
+  check(
+    'the report NAMES the scanning proofs rather than disclaiming them',
+    SCANNING_PROOFS.every((name) => named.includes(name)),
+    `the report omits at least one scanning proof. Its predecessor said "this list is ` +
+      `static-import reach only" — true on every run, naming nothing, asking for nothing, and ` +
+      `on screen when 5168f3b reddened main at a proof it structurally could not list.`,
   );
 }
 

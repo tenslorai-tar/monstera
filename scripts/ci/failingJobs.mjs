@@ -25,13 +25,26 @@
  * an empty section — a diagnosis missing its evidence must not read like one
  * that found nothing wrong.
  *
- * ## It is a DIAGNOSTIC and has no proof, which is stated rather than implied
+ * ## IT ANSWERS "WHY IS THIS RED", NEVER "IS THIS GREEN" (finding EEEE-3)
  *
- * Nothing gates on it and nothing is concluded from its silence, so the one
- * control it carries is the one that matters: an empty run list is refused with
- * exit 3 and a sentence saying why, because *no run lists this sha* is the same
- * output a wrong sha, an aged-out sha and a never-started run all produce
- * (item 4b). A green board is still `board.mjs`'s answer, not this file's.
+ * That boundary was in this file's header from the first line and was crossed
+ * anyway, within the hour, by its author. Two reads returning no runs for a
+ * freshly pushed sha were written up as *"GitHub Actions has stopped running
+ * for this repository"* — a claim about the service, from a tool that looks
+ * once. The sha was green; its runs were created **nineteen minutes** after the
+ * push, and both reads fell inside that window.
+ *
+ * The previous version of this paragraph called the empty-list message a
+ * control and listed the causes it cannot separate. It was accurate and it
+ * changed nothing, because a sentence that lists four possibilities still lets
+ * the reader pick one. **`board.mjs` is the instrument for absence, because it
+ * WAITS** — and nothing that looks once can distinguish *not yet* from *never*.
+ *
+ * The general form, which is the part worth carrying: **when you bypass an
+ * instrument you inherit every distinction it was built to make**, and under
+ * time pressure the bypass is exactly what feels efficient.
+ *
+ * Nothing gates on this file and nothing may be concluded from its silence.
  *
  * Usage: node scripts/ci/failingJobs.mjs <full sha>
  */
@@ -96,11 +109,30 @@ try {
   const runs = await json(`/actions/runs?per_page=20&head_sha=${sha}`);
   const list = Array.isArray(runs['workflow_runs']) ? runs['workflow_runs'] : [];
   if (list.length === 0) {
-    // AN EMPTY LIST IS NOT A CLEAN BILL. It is the reassuring answer this
-    // instrument could give for a wrong sha, an aged-out sha, or a workflow
-    // that never started — and none of those is "nothing failed".
-    process.stdout.write(`No workflow run lists this sha. That is NOT "nothing failed": it is the\n`);
-    process.stdout.write(`same output an unknown sha, an aged-out sha and a never-started run give.\n`);
+    // AN EMPTY LIST IS NOT A CLEAN BILL AND IT IS NOT A VERDICT (EEEE-3).
+    //
+    // The list this tool can return is the same for a wrong sha, an aged-out
+    // sha, a run that was refused — and, the one that actually bit, **a run
+    // GitHub has not created yet**. Measured 2026-08-26: `cedec2d` was pushed
+    // at ~16:11Z and its runs were created at **16:30:18Z**, a nineteen-minute
+    // lag. Two reads inside that window reported nothing, and "Actions has
+    // stopped for this repository" was written up from them. It was false; the
+    // sha is green.
+    //
+    // The previous text listed three of those four causes and still let the
+    // reader draw a conclusion. Naming the fourth is not the fix — refusing to
+    // be a verdict is. `board.mjs` is what distinguishes *pending* from
+    // *absent*, because it WAITS; nothing that looks once can.
+    process.stdout.write(
+      `No workflow run lists this sha.\n\n` +
+        `  THIS IS NOT A VERDICT. One look cannot tell these apart:\n` +
+        `    - a run GitHub has not created YET (measured at 19 minutes after a push)\n` +
+        `    - a sha that has aged out of the listing\n` +
+        `    - a wrong sha\n` +
+        `    - a request that was refused\n\n` +
+        `  Only waiting separates the first from the rest:\n` +
+        `    npm run board -- ${sha}\n`,
+    );
     process.exit(3);
   }
 
@@ -118,7 +150,16 @@ try {
       const one = /** @type {Record<string, unknown>} */ (job);
       if (String(one['conclusion']) === 'success' || String(one['conclusion']) === 'skipped') continue;
       failures += 1;
-      process.stdout.write(`  JOB ${String(one['name'])} — ${String(one['conclusion'])}\n`);
+      // THE TIMESTAMPS, because for a CANCELLED job they are the whole
+      // diagnosis available from this seat: a job that never started and a job
+      // killed mid-run are the same word in `conclusion`, and only
+      // `started_at` separates them. GitHub reports a job that never ran with
+      // `started_at` equal to `completed_at`, or absent.
+      process.stdout.write(
+        `  JOB ${String(one['name'])} — ${String(one['conclusion'])}\n` +
+          `      queued ${String(one['created_at'])}  started ${String(one['started_at'])}  ` +
+          `ended ${String(one['completed_at'])}\n`,
+      );
       const steps = Array.isArray(one['steps']) ? one['steps'] : [];
       for (const step of steps) {
         const s = /** @type {Record<string, unknown>} */ (step);

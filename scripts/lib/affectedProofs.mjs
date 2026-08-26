@@ -45,6 +45,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { proofScripts } from './proofCoverage.mjs';
+import { SCANNING_PROOFS } from './scanningProofs.mjs';
 
 /**
  * An import edge that must exist, or this instrument has not looked.
@@ -186,9 +187,21 @@ export function affectedProofs(changed, options = {}) {
 }
 
 /** The limit this report prints whenever it names anything. */
+/**
+ * WHAT THIS LIST CANNOT SEE, NAMED (finding EEEE-2).
+ *
+ * It used to read *"This list is static-import reach only: a proof that spawns
+ * a script it never imports is not in it"* — true, printed on every run, and a
+ * **disclaimer** by CLAUDE.md's own test: it could have been printed before the
+ * change, it names nothing and it asks for nothing. It was on screen when
+ * `5168f3b` reddened `main` at a proof it structurally could not list.
+ *
+ * The replacement names the proofs. A reader can act on a name.
+ */
 const REACH_LIMIT =
-  `      This list is static-import reach only: a proof that spawns a script it\n` +
-  `      never imports is not in it.\n`;
+  `      Static-import reach only. These proofs SCAN the tree, so any change reaches\n` +
+  `      them and no import walk can say so — run them too:\n` +
+  SCANNING_PROOFS.map((name) => `        npm run ${name}\n`).join('');
 
 /**
  * What to print, and it is an instruction rather than a caveat.
