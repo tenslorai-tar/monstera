@@ -158,19 +158,31 @@ export function describeChildProcessGone(details: {
 /**
  * The message for an engine host connection that ended.
  *
- * ## `HostTermination.code` carries the whole distinction, so `by` is not passed
+ * ## Decision 9b asks for THREE things and this takes one — both departures
  *
- * ADR-0023 Decision 9b asks for `TransportEnd`'s `by` and `detail` plus the
- * termination code. Only the termination is taken, and that is not a narrowing —
- * `engineHostConnection.ts`'s `reasonFor` has already folded `by` into the code
- * by the time this is called: a violation the client raised keeps that
- * violation's code, `by: 'peer'` with nothing raised becomes `connection-lost`,
- * and `by: 'us'` with nothing raised becomes `shutdown`. So the code determines
- * `by`, and passing both would be two fields that can disagree about one fact.
+ * The requirement is *"the `TransportEnd`'s `by` and `detail`, plus the
+ * `HostTermination` code"*. Only the termination is taken. Each half is answered
+ * here, because an earlier version of this comment quoted the phrase and then
+ * addressed `by` alone, leaving `detail` substituted rather than considered
+ * (finding GGGG-2).
  *
- * The distinction that matters survives, which is the one that mapping exists
- * for: **a host that crashed and a host we killed produce the same silence on
- * the pipe, and only the first is a defect.**
+ * **`by` is folded into the code.** `engineHostConnection.ts`'s `reasonFor` has
+ * already decided by the time this is called: a violation the client raised
+ * keeps that violation's code, `by: 'peer'` with nothing raised becomes
+ * `connection-lost`, and `by: 'us'` with nothing raised becomes `shutdown`. So
+ * the code determines `by`, and passing both would be two fields that can
+ * disagree about one fact. The distinction that mapping exists for survives:
+ * **a host that crashed and a host we killed produce the same silence on the
+ * pipe, and only the first is a defect.**
+ *
+ * **`detail` is the same string on the paths where it could have differed.**
+ * `TransportEnd` and `HostTermination` carry separate diagnostics, so this was
+ * read rather than assumed: `reasonFor` returns `detail: end.detail` **verbatim**
+ * for both `connection-lost` and `shutdown` — which are exactly the endings where
+ * no termination was constructed for a specific cause, and therefore where the
+ * transport's own text is the informative one. On the violation path the detail
+ * is the client's own, which is the better of the two there, since the client is
+ * what detected the violation.
  */
 export function describeEngineHostGone(termination: {
   readonly code: string;

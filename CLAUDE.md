@@ -923,6 +923,29 @@ The tell is that the fixture contains none of the thing the defect keys on. Ask
 what the broken version would print for *this input*, before writing the
 assertion.
 
+**AND WHEN THE PROPERTY UNDER TEST IS A DECISION, THE END STATE IS THE WRONG
+OBSERVABLE — ASSERT THE CALL THAT WAS OR WAS NOT MADE.** A decision's job is
+often to *avoid* doing something, and the state a correct decision produces is
+routinely the state an absent decision produces too, because something further
+down refuses the same thing for its own reasons. The case then passes under its
+own mutation and reads as coverage.
+
+This is the direction rule above arriving in **behaviour** rather than in a
+comparison, and it took three instances on 2026-08-26/27 to name, all of them
+inside the commits that fixed an instance of it:
+
+| the claim | asserted | why it separated nothing |
+|---|---|---|
+| a seven-character `--sha` is refused | the message contains *"forty"* | the value fell through to a **different** refusal whose message also says forty. Restoring the old rule left it green |
+| a poisoned document is not rebuilt for | it holds no session afterwards | `hold` refuses a poisoned document anyway, so deleting the filter leaves the same state |
+| a document closed mid-recovery is skipped | closing it during recovery | `run` reads the record when **called**, so that interleaving cannot reach the branch at all |
+
+Each was fixed by asserting the decision instead: which rule refused it, that
+`reopen` was never called, and an interleaving that reaches the branch. **Ask
+what the correct decision does that its absence does not** — usually a call not
+made, or made with different arguments — and assert that, not the tidy state
+both arrive at.
+
 **For a NEGATIVE probe the rule has a sharper form, and it is the transferable
 one: build the input from something that would SUCCEED if the guard were
 absent.** A probe that asserts "this was refused" is worthless when its input

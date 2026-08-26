@@ -1443,7 +1443,44 @@ a declared code, which `packages/kernel/src/host/client.ts` already does. Two
 audiences, two mechanisms; a log line is not a report to a user and a rejected
 promise is not a diagnostic.
 
-### 9c. Other documents are not drained, and the rebuild is entered through their lanes
+> **CORRECTION, 2026-08-27 — what was built reports the `HostTermination` ALONE,
+> and the requirement above still asks for three things** (findings GGGG-1 and
+> GGGG-2). The requirement reads *"reports the `TransportEnd`'s `by` and
+> `detail`, plus the `HostTermination` code where the ending carries one"*.
+> `describeEngineHostGone` takes `{ code, detail }` from the termination and
+> nothing from the transport end. The reasoning was written at the code and not
+> here, which is the wrong direction: an auditor checking whether 9b is
+> implemented opens **this** document, counts three reported things, finds one,
+> and either files it as incomplete or restores `by` — reintroducing exactly what
+> the code comment exists to prevent.
+>
+> **`by` is folded into the code, so passing it would be two fields that can
+> disagree about one fact.** `engineHostConnection.ts`'s `reasonFor` decides the
+> termination before this is called: a violation the client raised keeps that
+> violation's own code; `by: 'peer'` with nothing raised becomes
+> `connection-lost`; `by: 'us'` with nothing raised becomes `shutdown`. The code
+> therefore determines `by`, and the distinction the mapping exists for survives
+> intact — *a host that crashed and a host we killed produce the same silence on
+> the pipe, and only the first is a defect.*
+>
+> **`detail` was the second departure and it had not been considered**, only
+> substituted — GGGG-2 caught the sentence quoting *"`by` and `detail`"* and
+> answering for `by` alone. `TransportEnd` and `HostTermination` carry two
+> distinct diagnostic strings, so this needed a reading rather than an argument.
+>
+> **Read, and it is a no-op in the case that matters.** `reasonFor` returns
+> `{ code: 'connection-lost', detail: end.detail }` and
+> `{ code: 'shutdown', detail: end.detail }` — the transport's own detail passed
+> through **verbatim**. So on both non-violation paths the two details are the
+> same string, and the worry that the informative one is dropped where no
+> termination was constructed for a specific cause does not arise: that is
+> precisely the path that forwards it. On the violation path the detail is the
+> client's own, which is the better of the two there, because the client is what
+> detected the violation.
+>
+> So the requirement is met in substance by one field, and this is recorded
+> rather than reworded because the sentence above is what a reviewer reads first
+> and what was actually built is one field, not three.
 
 This is the genuinely new part, and *handles are a cache* says nothing about it.
 One host per engine plus §7's per-document serial lanes (ADR-0009) means one host
