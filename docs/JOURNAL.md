@@ -712,6 +712,55 @@ are what settle it.
 **Also ruled out, so it is not re-investigated:** neither workflow file has
 changed since `1201d8e`, which ran green.
 
+> **CORRECTION, 2026-08-26 — the claim was not false, and filing it as a
+> reporting error teaches the opposite of what happened. What was unsupported
+> was the CAUSE and the SCOPE.** Actions was in a **critical outage** across the
+> entire window above. Read from `githubstatus.com/api/v2/incidents.json` — no
+> token, and a **different host** from `api.github.com`, so it costs nothing
+> against the shared 60/hour:
+>
+> ```
+> Incident with Actions
+>   impact=critical   component: Actions = major_outage
+>   created=2026-08-26T15:11:58.254Z
+>   [15:23:10Z] We've identified an issue with a database primary and are
+>               failing over to a replica immediately
+>   [15:48:07Z] primary failover briefly improved performance but did not fully
+>               mitigate, we've throttled inbound traffic and are investigating
+>               upstream Vitess issues
+>   [16:50:28Z] … delayed queues are burning down. Some customers will continue
+>               to see increased delays until all throttled work has been completed
+> ```
+>
+> **One cause, four symptoms**, and the times close without a gap:
+>
+> | observation | time | inside the incident |
+> |---|---|---|
+> | `8215f42` Guards started | 15:38:49Z | yes — 27 minutes in |
+> | its jobs cancelled, both images, same second | 15:53:50Z | yes — 6 minutes after inbound traffic was throttled |
+> | `8215f42` CI never created | — | yes |
+> | `cedec2d` pushed → runs created | ~16:11Z → 16:30:18Z | yes — the delayed queues named at 16:50:28Z |
+>
+> **What was actually wrong is narrower than "false":** the remedy (*check
+> billing*) and the scope (*this repository*). Both were invented to explain an
+> observation and both were wrong. Reporting that Actions was not running was
+> **correct**. Attaching an unsupported cause to it, and asking the owner to act
+> on that cause, was not.
+>
+> **The rule neither seat applied.** Three explanations were offered across these
+> anomalies — a nineteen-minute lag, a cancel, and (from the reviewing seat) a
+> 403 rendering as an empty list, which was measured away as already closed. All
+> three were **per-anomaly**. **When several anomalies cluster in one window on
+> one external service, the first hypothesis to test is a single cause on that
+> service's side.** One fetch, on a host with no quota, before diagnosing
+> anything: *is the board itself the thing that is broken?*
+>
+> The reviewing seat recorded its own half plainly: the conclusion it gave was
+> sound and the reason attached to it was not — the 19-of-60 rate-limit reading
+> was consistent with its story and equally consistent with the truth. That is
+> AAAA-8's tell — *what else is different about the odd point?* — arriving in the
+> seat that wrote it.
+
 ### EEEE-4. Two commits carry no verdict, and one of them needed an answer
 
 `459e9e4` is the ordinary case: committed locally and pushed together with
@@ -755,6 +804,18 @@ That is a **could-not-look, not a looked-and-found-nothing**: job logs answer 40
 without owner authentication, and the runs payload carries no cancelling actor.
 The Actions UI shows who or what cancelled a run; this seat cannot. Recorded as
 unexplained rather than as benign.
+
+> **CORRECTION, 2026-08-26 — explained, and the look is no longer owed.** The
+> cancel is the same GitHub Actions outage that produced EEEE-3's lag; see the
+> correction there for the incident's own timestamps. There was no cancelling
+> actor, which is why the payload named none — so the answer the Actions UI was
+> going to give is *nobody*. The could-not-look was real and the reason it
+> reported nothing was not a permission this seat lacks.
+>
+> Worth keeping: **a could-not-look is the right verdict even when the answer
+> turns out to be reachable from somewhere else entirely.** Nothing about the
+> runs payload was ever going to yield this; the answer lived on a different
+> host.
 
 ### 1. Root cause, or workaround?
 
