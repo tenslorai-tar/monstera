@@ -7,7 +7,7 @@ import { localMupdfExecution } from '../commandSpecs.js';
 import { type ByteImage, type MupdfSession } from '../engineSeam.js';
 import { mupdfWriter, withDocument } from '../mupdfWriter.js';
 import { engineChannels } from './engineChannels.js';
-import { createEngineHandlers } from './engineHandlers.js';
+import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
   createRemoteSessions,
   EngineSessionGone,
@@ -68,12 +68,48 @@ async function joined(): Promise<{
   readonly incidents: readonly Incident[];
 }> {
   const session = await mupdfWriter.open(flat);
-  const held = new Map<string, MupdfSession>([['h1', session]]);
+  const held = new Map<string, HostSession>([
+    ['h1', { session, outputDirectory: 'no directory: the execution half writes no bytes' }],
+  ]);
 
   const incidents: Incident[] = [];
   const wrapped = wrapHandlers(
     engineChannels,
-    createEngineHandlers({ lookup: (id) => held.get(id) }, localMupdfExecution),
+    createEngineHandlers(
+      {
+        lookup: (id) => held.get(id),
+        issue: () => {
+          throw new Error('this file drives the EXECUTION half; nothing here opens a session');
+        },
+        forget: () => {
+          throw new Error('this file drives the EXECUTION half; nothing here closes a session');
+        },
+      },
+      localMupdfExecution,
+      // THROWING STUBS RATHER THAN WORKING ONES. Every case below is about
+      // apply, capture and invert, none of which may touch a document image or
+      // a directory — so a handler that reached for either fails loudly here
+      // instead of passing against a surface that happened to work.
+      {
+        open: () => {
+          throw new Error('the execution half must not open');
+        },
+        serialise: () => {
+          throw new Error('the execution half must not serialise');
+        },
+        close: () => {
+          throw new Error('the execution half must not close');
+        },
+      },
+      {
+        readSnapshot: () => {
+          throw new Error('the execution half must not read the snapshot directory');
+        },
+        writeOutput: () => {
+          throw new Error('the execution half must not write the output directory');
+        },
+      },
+    ),
     (incident) => incidents.push(incident),
   );
 
@@ -205,10 +241,37 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     const wrapped = wrapHandlers(
       engineChannels,
       createEngineHandlers(
-        { lookup: () => session },
+        {
+          lookup: () => ({ session, outputDirectory: 'unused' }),
+          issue: () => {
+            throw new Error('unused');
+          },
+          forget: () => {
+            throw new Error('unused');
+          },
+        },
         {
           ...localMupdfExecution,
           apply: () => Promise.reject(new Error('the engine faulted')),
+        },
+        {
+          open: () => {
+            throw new Error('unused');
+          },
+          serialise: () => {
+            throw new Error('unused');
+          },
+          close: () => {
+            throw new Error('unused');
+          },
+        },
+        {
+          readSnapshot: () => {
+            throw new Error('unused');
+          },
+          writeOutput: () => {
+            throw new Error('unused');
+          },
         },
       ),
       (incident) => incidents.push(incident),

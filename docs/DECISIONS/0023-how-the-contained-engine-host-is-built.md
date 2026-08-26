@@ -2484,3 +2484,90 @@ contained host can read it.
 unwinding.** That is not a line of code someone forgot; it is a decision about
 what a second running instance of this application is allowed to delete, and it
 is owed on a `docs/FEATURES.md` row rather than assumed here.
+
+### Decision 13, 2026-08-26 — `open`, `serialise` and `close`, and only ONE direction may carry a path
+
+Decision 10 split execution from lifecycle and built the first half. This is the
+second, and its whole security content is an asymmetry that a first
+implementation does not have:
+
+- **main → host may carry a path.** Main created those directories and wrote
+  their DACLs, so it is naming something it granted. The string is an
+  **address**; the capability is the ACE. A host told a name it was not granted
+  reaches nothing, so validating the path a second time here would be a second
+  opinion about a question the access check already answers.
+- **host → main carries no path, and no component of one.** `serialise` takes
+  the output file name in the **request** and answers with a byte count. The
+  shape a first implementation reaches for — the host returns the name it
+  wrote — would let a compromised host have main open an arbitrary path and
+  treat the bytes as the user's document (B5).
+
+The byte count is on the wire for a reason worth stating, because it looks like
+belt-and-braces and is not: **a host that wrote nothing and a read that found
+nothing produce the same empty buffer**, and only one of those is main's
+problem.
+
+#### The pair is PER SESSION, and the reason is lifetime rather than isolation
+
+Stated because the obvious reading is wrong and would be believed. There is
+**one host per engine** (Decision 9c), not one per document, and every session's
+directories are granted to the same container SID — so per-session directories
+do **not** isolate one document's snapshot from a host compromised while parsing
+another. They cannot; that would need a container per session, which is not this
+design.
+
+What they buy is that a snapshot's lifetime is the **session's** rather than the
+host's. A host outlives every document that passes through it, so a pair handed
+at host creation would accumulate a copy of every document the user had opened,
+readable by the host, until the app exited.
+
+#### Two failure codes are added, and they exist to protect the supervisor from the document
+
+`open-failed` and `serialise-failed` are the **document's** fault, not the
+host's. Left as `internal`, a file that will never parse would reach the
+supervisor as evidence that the host is unhealthy, be answered with a rebuild,
+and fail the same way on the rebuilt host — which is Decision 9a's runaway with
+a hostile input at the centre of it. Distinguishable codes are what let the
+supervisor decline to count them.
+
+The detail is **discarded rather than forwarded**: it comes from a native
+library parsing a file this design assumes is hostile, and the supervisor acts
+on the code.
+
+#### What was got wrong, because the mutation is the interesting part
+
+`close`'s `finally` — the one that removes the directories whether or not the
+call succeeded — **survived its own mutation**. The case feeding it overrode the
+host's writer to reject, and `wrapHandler` catches anything a handler throws and
+answers with a `Result`, so nothing ever rejected and the cleanup ran on the
+ordinary path either way.
+
+The real failure has a different shape: a **transport** that has gone — a dead
+host, a closed pipe, a call that will never be answered — rejects. That is the
+only path between the call and the cleanup. Rewritten to reject there, the
+mutation reddens immediately.
+
+A fixture the bug also handles correctly, wearing the name of the property it
+did not test. Recorded because the distinction it turns on — *a handler throw is
+a Result, a transport failure is a rejection* — is one every later case against
+this client will need.
+
+#### The memory gate now covers the operation Decision 7 named as the risk
+
+Decision 7's third supporting argument is that *"re-transmitting hundreds of
+megabytes from a main process already near its ceiling is the worst possible
+moment to do the most expensive thing"*, and until this range no snapshot write
+existed, so `perf:gate` reported green while blind to it.
+
+`roleMain.mjs` now writes the canonical bytes inside the measured window,
+holding them across it. Read 2026-08-26 on a 199.4 MB fixture: `main` stays at
+**1.00×**, so the hand-off adds no resident copy. Writing `Buffer.from(canonical)`
+instead reddens both fixtures at **2.00×** and **1.99×** — the gate can see the
+failure it is watching for.
+
+**The service-level version is blocked on a call site and is stated rather than
+absorbed.** `DocumentService` holds the image on a private record and has no
+engine-handle creation yet, so `roleMainService.mjs` cannot hand those bytes to a
+write without inventing that call site or reading the file twice — both being
+the defect that role exists because of (LL-4/JJ-1), one layer along. It lands
+with `composition.ts`.

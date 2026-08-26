@@ -54,12 +54,26 @@ export {
 } from './commandSpecs.js';
 export { localMupdfWriter } from './localEngine.js';
 export {
+  ENGINE_PATH_MAX_CHARS,
   ENGINE_SESSION_ID_MAX_CHARS,
   type EngineChannels,
   type EngineFailureCode,
   engineChannels,
 } from './host/engineChannels.js';
-export { type HostSessions, createEngineHandlers } from './host/engineHandlers.js';
+export {
+  type HostFilesystem,
+  type HostSession,
+  type HostSessions,
+  createEngineHandlers,
+} from './host/engineHandlers.js';
+export {
+  EngineOpenFailed,
+  EngineSerialiseFailed,
+  EngineSerialiseMismatch,
+  type SessionArea,
+  type SessionAreaSurface,
+  remoteMupdfLifecycle,
+} from './host/remoteLifecycle.js';
 export {
   EngineCallFailed,
   EngineSessionGone,

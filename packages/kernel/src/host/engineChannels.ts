@@ -26,12 +26,38 @@ import { z } from 'zod';
  * being a token whose meaning is membership of an adapter's `WeakMap` in one
  * process. What crosses is the id that adapter recorded beside it.
  *
- * ## What is NOT here
+ * ## The lifecycle channels exchange FILES, and only ONE direction carries a path
  *
- * `open`, `serialise` and `close`. Those exchange **files** in the two handed
- * directories rather than payloads (Decision 7's verb split, measured), so they
- * need the handed-directory plumbing and are their own unit. Splitting there is
- * Decision 10's own line: execution is one half, session lifecycle is the other.
+ * `open`, `serialise` and `close` move document images through the two handed
+ * directories rather than through the pipe (Decision 7's verb split, measured).
+ * The asymmetry below is the whole security content of that:
+ *
+ * - **main → host may carry a path.** Main created those directories and wrote
+ *   their DACLs, so it is naming something it granted. The string is an
+ *   address; the *capability* is the ACE, and the host reaches nothing by being
+ *   told a name it was not granted.
+ * - **host → main carries no path, and no component of one.** A compromised
+ *   host that could name the file main reads back would have main open an
+ *   arbitrary path and treat the bytes as the user's document. So main mints
+ *   the output file name in the **request**, and the answer carries a byte
+ *   count. Nothing this side joins to a directory came from the peer (B5).
+ *
+ * That is why `serialise` takes `into` rather than returning a name, which is
+ * the shape a first implementation reaches for.
+ *
+ * ## Why the pair is PER SESSION, and the reason is lifetime rather than isolation
+ *
+ * Stated precisely because the obvious reading is wrong and would be believed.
+ * There is **one host per engine** (Decision 9c), not one per document, and
+ * every session's directories are granted to the same container SID — so
+ * per-session directories do **not** isolate one document's snapshot from a
+ * host compromised while parsing another. They cannot; that would need a
+ * container per session, which is not this design.
+ *
+ * What they buy is that a snapshot's lifetime is the **session's** rather than
+ * the host's. A host outlives every document that passes through it, so a pair
+ * handed at host creation would accumulate a copy of every document the user
+ * had opened, readable by the host, until the app exited.
  */
 
 /** How long a session handle may be. Bounded for the reason a correlation id is:
@@ -111,7 +137,71 @@ const captureResultSchema = z.discriminatedUnion('captured', [
  */
 const inverseSchema = capturedPriorSchema;
 
+/**
+ * How long a handed path may be.
+ *
+ * Bounded because every field on this wire is, not because a long path is the
+ * hazard here — these travel main → host, and main composed them. `\\?\`-form
+ * Windows paths exceed `MAX_PATH`, so the bound is well clear of 260 rather
+ * than at it.
+ */
+export const ENGINE_PATH_MAX_CHARS = 1024;
+
+/**
+ * The file name main asks the host to write its serialised bytes into.
+ *
+ * Minted by MAIN and travelling main → host, which is the point: main joins
+ * this to a directory it created, so the name it joins is one it chose. The
+ * allowlist is the same shape the handed directory names use — hex and hyphen,
+ * nothing that can spell a separator, a parent, a device name or a stream —
+ * and it carries **no extension**, because MuPDF picks a writer from a file
+ * extension and invariant 23 keeps that dispatch closed.
+ */
+const outputNameSchema = z
+  .string()
+  .min(1)
+  .max(ENGINE_SESSION_ID_MAX_CHARS)
+  .regex(/^[0-9a-f-]+$/u);
+
+const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
+
 export const engineChannels = {
+  'engine/open': channel(
+    'Opens a document image the host reads from a directory it was granted.',
+    z
+      .object({
+        /** The directory main granted this session READ on. */
+        snapshotDirectory: pathSchema,
+        /** The file inside it holding the canonical bytes. */
+        snapshotName: outputNameSchema,
+        /** The directory main granted this session MODIFY on. */
+        outputDirectory: pathSchema,
+      })
+      .strict(),
+    // The host mints the identity (Decision 10b). Main holds a token it cannot
+    // dereference, and this string is what the adapter records beside it.
+    z.object({ session: sessionSchema }).strict(),
+    ['open-failed'],
+  ),
+
+  'engine/serialise': channel(
+    'Writes the session’s current bytes into the output directory, under a name main chose.',
+    z.object({ session: sessionSchema, into: outputNameSchema }).strict(),
+    // A COUNT, NOT A NAME. Main already knows where it asked for the bytes; what
+    // it cannot know without being told is how many arrived, and comparing that
+    // against the file it reads separates "the host wrote nothing" from "the
+    // read found nothing" — which are otherwise the same empty buffer.
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    ['no-such-session', 'serialise-failed'],
+  ),
+
+  'engine/close': channel(
+    'Releases the session’s native resources.',
+    z.object({ session: sessionSchema }).strict(),
+    z.object({}).strict(),
+    ['no-such-session'],
+  ),
+
   'engine/apply': channel(
     'Applies one command to a session this host holds.',
     z.object({ session: sessionSchema, command: commandSchema }).strict(),
@@ -137,12 +227,21 @@ export const engineChannels = {
 export type EngineChannels = typeof engineChannels;
 
 /**
- * The one declared failure: a session id this host does not hold.
+ * The declared failures.
  *
- * **An outcome rather than a defect**, and named rather than left to `internal`,
- * because it is reachable without anything being wrong: a host dies, main
- * rebuilds it, and a call issued against the old session arrives at the new
- * process. The supervisor's answer to that is a rebuild, which it cannot decide
- * from an opaque `internal`.
+ * `no-such-session` is **an outcome rather than a defect**, and named rather
+ * than left to `internal`, because it is reachable without anything being
+ * wrong: a host dies, main rebuilds it, and a call issued against the old
+ * session arrives at the new process. The supervisor's answer to that is a
+ * rebuild, which it cannot decide from an opaque `internal`.
+ *
+ * `open-failed` and `serialise-failed` are named for a different reason, and it
+ * is the one that matters here: they are the **document's** fault, not the
+ * host's. A file that is not a PDF, or a save the engine refuses, must not
+ * reach the supervisor as evidence that the host is unhealthy — invariant 25's
+ * premise is that a host death is a plausible compromise signal, and a
+ * rebuild-and-retry loop driven by a document that will never parse is exactly
+ * the runaway Decision 9a bounds. Distinguishable codes are what let the
+ * supervisor decline to count them.
  */
-export type EngineFailureCode = 'no-such-session';
+export type EngineFailureCode = 'no-such-session' | 'open-failed' | 'serialise-failed';
