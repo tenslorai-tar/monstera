@@ -246,8 +246,10 @@ MuPDF is the structural writer of record. Nothing is ever written by one engine
 and re-read for truth by another.
 
 **MuPDF is reached natively**, as a shared library built from source and bound
-with koffi behind a thin flat-C shim, running in the `mupdfHost` utility
-process — never as WASM, and never by spawning `mutool`. That is what gives
+with koffi behind a thin flat-C shim, running in the contained `mupdfHost`
+process this application creates (§2,
+[ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)) — never as
+WASM, and never by spawning `mutool`. That is what gives
 `DocumentService` a **held document handle**, which is the difference between a
 mutation costing 0.004 ms and costing seconds
 ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md)).
@@ -724,7 +726,10 @@ say**.
 20. **No native engine code runs in the main process** — generalising invariant
     8 from PDFium to MuPDF, which is now reached through a native shared library
     rather than WASM. A native fault is uncatchable wherever it happens, so both
-    engines live in utility processes. Every `fz_try`/`fz_catch` pair stays
+    engines live in **engine hosts** — processes this application creates, not
+    Electron utility processes (§2,
+    [ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md)).
+    Every `fz_try`/`fz_catch` pair stays
     inside one exported shim function and what crosses the ABI is an error code,
     because a `longjmp` unwinding through koffi's frames is undefined behaviour.
     ([ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md))
@@ -790,7 +795,7 @@ say**.
     job object bounding memory and process creation, **with no network access**,
     and reaches no filesystem path it was not handed.
 
-    Invariant 20 put native engine code in utility processes so a native fault
+    Invariant 20 put native engine code **out of main** so a native fault
     could not take the application down. That contains a *crash*. A
     memory-safety bug that reaches code execution currently inherits everything
     the process has, and MuPDF's advisory history is memory-safety bugs.
