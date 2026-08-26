@@ -1530,6 +1530,31 @@ implement.
 That also makes the worst of the four **unrepresentable** rather than rejected
 (B5): *never, for the life of the process* has no key to live on.
 
+> **NOTE, 2026-08-26 — the property held as a design and not as a mechanism for
+> the whole interval between this correction and `EngineSessions` being wired,
+> and nothing said so** (finding FFFF-1). *"The count and the poison live on the
+> supervisor's per-document state, whose lifetime is the record's"* is written
+> here in the present tense, and the B5 claim above rests on it entirely: the
+> unrepresentability of *never, for the life of the process* is exactly the claim
+> that no entry outlives its record.
+>
+> When `EngineSessions` first landed it carried a `release(docId)` method with
+> **no production caller** — two test callers and nothing else — so an entry
+> would have outlived its record the first time a document was closed, and the
+> B5 claim would have been false at the moment it was most relied on.
+>
+> Closed by registering rather than by adding a caller: `releaseOnClose` is typed
+> as `DocumentTeardown`, and the composition root hands it to `DocumentService`
+> at construction. `DocumentService` is the only component that knows a record
+> ended, so nothing has to remember the supervisor exists.
+>
+> Recorded rather than reworded because the shape recurs and the wording above is
+> not what was wrong. **A decision that says a lifetime is X is a promise that
+> something enforces X**, and the interval between deciding and enforcing is
+> invisible in both documents — the decision reads as delivered, and the code
+> reads as complete because the method exists. What makes it findable is asking
+> who *calls* the thing the decision names, which is a search, not a reading.
+
 The other two are rejected with mechanisms rather than preferences:
 
 | candidate | why not |

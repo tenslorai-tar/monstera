@@ -11,7 +11,12 @@
 // `import type { … } from 'm'` is erased whole. The two spellings look
 // interchangeable and are not, and invariant 20 is what sits behind the
 // difference: no native engine code in main.
-import type { DocumentService, EngineSupervisor, MupdfSession } from '@monstera/kernel';
+import type {
+  DocumentService,
+  DocumentTeardown,
+  EngineSupervisor,
+  MupdfSession,
+} from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
 import { type DocumentSessions, type EngineSessionSource } from './documentCommands.js';
@@ -249,16 +254,39 @@ export class EngineSessions implements EngineSessionSource {
   }
 
   /**
-   * Drops a document's state, on close.
+   * Drops a document's state, on close. **Registered as `DocumentService`'s
+   * `teardown`, never called by hand.**
    *
    * This is what makes the entry's lifetime the record's. It is also why a
    * document closed between a call being issued and the host dying is simply
    * absent from {@link EngineSessions.recordFailure}'s effect rather than
    * needing a case: there is nothing left to increment.
+   *
+   * ## Why it is typed as the seam rather than exposed as a method
+   *
+   * `DocumentService` is the **only** thing that knows a document closed — the
+   * record's lifetime is its concern, and this entry's lifetime is defined to
+   * be the record's. A `release(docId)` method for somebody else to call is a
+   * fan-out that works only while whoever writes the close path remembers this
+   * component exists, and this project replaces callers-you-must-remember with
+   * registrations (finding FFFF-1, where three documents asserted the lifetime
+   * property in the present tense while nothing invoked it).
+   *
+   * `DocumentTeardown` is the seam that already existed for exactly this, in its
+   * own words — *"releases whatever a document holds outside this index — the
+   * engine session, above all"* — so nothing here is a new seam. Typing the
+   * member as it is what makes the registration a compile-time fit rather than
+   * an adapter arrow in the composition root that could be written wrong.
+   *
+   * **The ordering is `DocumentService`'s and is why this needs no lane of its
+   * own**: `close` removes the index entry *before* awaiting teardown, and
+   * awaits the document's lane first, so this runs after that document's
+   * in-flight work and after any later message has already missed the index.
    */
-  release(docId: DocId): void {
+  readonly releaseOnClose: DocumentTeardown = (docId) => {
     this.#entries.delete(docId);
-  }
+    return Promise.resolve();
+  };
 
   /**
    * A host death: increments every document that had a call rejected by it, and
@@ -273,7 +301,7 @@ export class EngineSessions implements EngineSessionSource {
    *
    * The caller supplies that set; this does not derive it. A `DocId` with no
    * entry is skipped, and the only way to be in the set without one is to have
-   * been closed in between — see {@link EngineSessions.release}.
+   * been closed in between — see {@link EngineSessions.releaseOnClose}.
    *
    * **Attribution is deliberately absent.** Decision 9a rejected counting only
    * the document whose call was the sole one in flight: it is evadable by
@@ -314,7 +342,8 @@ export class EngineSessions implements EngineSessionSource {
    * report a document that silently lost its session — the failure 9c fears
    * makes the set *smaller* (audit item 4c). That anchor is `DocumentService.size`,
    * which lives outside this class on purpose. This exists so a test can see
-   * that {@link EngineSessions.release} dropped an entry rather than leaked it.
+   * that {@link EngineSessions.releaseOnClose} dropped an entry rather than
+   * leaked it.
    */
   get held(): number {
     return this.#entries.size;

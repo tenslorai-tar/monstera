@@ -152,15 +152,16 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.poisoned(second)).toBe(2);
   });
 
-  it('RECOVERY needs no mechanism: a fresh DocId has no entry', () => {
+  it('RECOVERY needs no mechanism: a fresh DocId has no entry', async () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
     engine.recordFailure([first]);
     engine.recordFailure([first]);
     expect(engine.poisoned(first)).toBe(2);
 
-    // Close: the entry's lifetime is the record's.
-    engine.release(first);
+    // Close: the entry's lifetime is the record's. Driven directly here; that
+    // the SERVICE is what invokes it is the case at the end of this file.
+    await engine.releaseOnClose(first);
     expect(engine.held).toBe(0);
 
     // Reopen. ADR-0009 mints a new id per open, never derives one, so the
@@ -170,10 +171,10 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.sessions(second)).toStrictEqual(someSessions('b'));
   });
 
-  it('a document closed between the call and the death is skipped, not resurrected', () => {
+  it('a document closed between the call and the death is skipped, not resurrected', async () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.release(first);
+    await engine.releaseOnClose(first);
 
     engine.recordFailure([first]);
     engine.recordFailure([first]);
@@ -292,5 +293,81 @@ describe('openEngineSession writes the canonical image out and opens it', () => 
   afterAll(async () => {
     if (opened !== undefined) await mupdfWriter.close(opened);
     await service.close(docId);
+  });
+});
+
+describe('the SERVICE releases the entry, because nothing else is told a document closed', () => {
+  /**
+   * The registration, driven end to end — finding FFFF-1.
+   *
+   * `releaseOnClose` deleting from a map is not the property. The property is
+   * that **`DocumentService.close` invokes it**, because that is the only thing
+   * that knows a record ended, and a method somebody has to remember to call is
+   * what this replaces. So the service here is the production one, constructed
+   * the way `composition.ts` constructs it, over a real file.
+   */
+  async function openWith(engine: EngineSessions): Promise<{
+    readonly service: DocumentService;
+    readonly docId: DocId;
+  }> {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      teardown: engine.releaseOnClose,
+    });
+    const outcome = await service.open(registry.mint(file));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    return { service, docId: outcome.docId };
+  }
+
+  it('closing the document drops the supervisor entry it opened', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await openWith(engine);
+
+    engine.hold(docId, someSessions('a'));
+    expect(engine.held).toBe(1);
+
+    await service.close(docId);
+
+    expect(engine.held).toBe(0);
+    expect(service.size).toBe(0);
+  });
+
+  it('CONTROL: an unregistered service leaves the entry behind', async () => {
+    // Without this, the case above passes against a `close` that drops entries
+    // by some other route, and against a harness that never held one — and it
+    // is the case that goes red if `composition.ts` stops registering, which is
+    // the mistake worth catching rather than the deletion itself.
+    const engine = new EngineSessions();
+    const registry = new CapabilityRegistry();
+    const unregistered = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await unregistered.open(registry.mint(file));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+
+    engine.hold(outcome.docId, someSessions('a'));
+    await unregistered.close(outcome.docId);
+
+    expect(engine.held).toBe(1);
+    expect(unregistered.size).toBe(0);
+  });
+
+  it('the release runs AFTER that document lane drains, so in-flight work still sees it', async () => {
+    // `close` removes the index entry first and awaits the lane before teardown.
+    // A release that ran at removal time would pull a session out from under
+    // work already executing — the stale-handle failure one step earlier.
+    const engine = new EngineSessions();
+    const { service, docId } = await openWith(engine);
+    engine.hold(docId, someSessions('a'));
+
+    let heldDuringLaneWork = -1;
+    const inFlight = service.run(docId, async () => {
+      await Promise.resolve();
+      heldDuringLaneWork = engine.held;
+    });
+
+    await Promise.all([inFlight, service.close(docId)]);
+
+    expect(heldDuringLaneWork).toBe(1);
+    expect(engine.held).toBe(0);
   });
 });

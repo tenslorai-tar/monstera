@@ -64,8 +64,19 @@ import { type ShellDependencies } from './main.js';
 export function createShellDependencies(appInfo: AppInfo): ShellDependencies {
   const capabilities = new CapabilityRegistry();
 
+  // Built before the service because the service **registers** it, not after
+  // because something later calls it. `EngineSessions` entries are defined to
+  // live exactly as long as the record, and `DocumentService` is the only thing
+  // that knows a record ended — so the supervisor learns about a close by being
+  // handed to the seam that already exists for it (`DocumentTeardown`: *"releases
+  // whatever a document holds outside this index — the engine session, above
+  // all"*), rather than by a `release(docId)` some future close path has to
+  // remember to call. Finding FFFF-1.
+  const engine = new EngineSessions();
+
   const documents = new DocumentService(capabilities, {
     documentBytesCeiling: MAIN_DOCUMENT_BYTES_CEILING,
+    teardown: engine.releaseOnClose,
   });
 
   // EMPTY BY CONSTRUCTION, and the type says so. `WriterRegistry` is partial
@@ -76,7 +87,7 @@ export function createShellDependencies(appInfo: AppInfo): ShellDependencies {
   const bus = new CommandBus({});
 
   // EMPTY BY CONSTRUCTION TOO, and for the same reason as the bus above: the
-  // real component, holding no sessions, because nothing here builds a host to
+  // supervisor above holds no sessions, because nothing here builds a host to
   // get one from. Its `sessions` therefore misses on every document and its
   // `poisoned` answers `undefined` on every document — the latter being true
   // rather than stubbed, since poisoning is a count of host failures and no
@@ -86,7 +97,6 @@ export function createShellDependencies(appInfo: AppInfo): ShellDependencies {
   // a stubbed predicate are a second implementation of a rule the supervisor
   // owns, and the day a host is wired one of them gets replaced and the other
   // does not (B3a).
-  const engine = new EngineSessions();
   const commands = new DocumentCommands(documents, bus, engine);
 
   return {
