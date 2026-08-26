@@ -644,6 +644,286 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-26 — Stage audit: `2f1444b..5168f3b` — a resolver moved and its proof stayed behind, and the proof that went red was in no column
+
+**Audited through `5168f3b`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 2f1444b..HEAD
+  commits: 7 (one batch is 9)
+  files:   24 (one batch is 24)
+  proofs ADDED — new coverage (3):
+    apps/desktop/src/hostDacl.test.ts
+    apps/desktop/src/sessionDirectories.test.ts
+    packages/kernel/src/host/remoteEngine.test.ts
+  proofs MODIFIED — read each diff (3):
+    apps/desktop/src/engineHostConnection.test.ts   net +2 -6
+    apps/desktop/src/enginePipeFactory.test.ts      net +1 -3
+    scripts/lib/boardStatus.proof.mjs               net +92 -2
+  proofs REMOVED: none
+  source FILES ADDED (6): hostDacl.ts · sessionDirectories.ts · win32DirectorySurface.ts
+                          engineChannels.ts · engineHandlers.ts · remoteEngine.ts
+  source FILES CHANGED (7): engineHostConnection.ts +1 -2 · enginePipeFactory.ts +8 -76
+                            win32PipeSurface.ts +1 -2 · kernel/index.ts +15 -0
+                            board.mjs +23 -2 · boardStatus.mjs +95 -0
+                            lowboxSpike.mjs +196 -22
+  source FILES REMOVED: none
+```
+
+The range: the remote execution half of Decision 10, invariant 23's scan moved
+onto a job that installs, the DDDD-31 correction, the board reader's derived
+pacing, and the handed directories' grant becoming a security descriptor at
+creation.
+
+### 1. Root cause, or workaround?
+
+Four corrections, and the mechanism is stateable for each.
+
+| the fix | the mechanism |
+|---|---|
+| the invariant-23 scan moved to `shim` | it derives its banned set from MuPDF's own source and exits 1 where that source is absent — so `Guards`, which installs nothing, could never have run it |
+| the DDDD-31 clause withdrawn | prior state is **0.27× of** the stated extreme, not kilobytes; the table three paragraphs above the deferral already said so |
+| the board reader's pacing | ~60 unauthenticated requests an hour are shared by both seats, and a fixed 30s poll spends forty of them on a run that finishes in a fraction of the window |
+| `icacls` → `CreateDirectoryW` with a descriptor | a grant applied after creation leaves the directory existing, briefly, carrying whatever it inherited — and the inherited ACE is measured, not hypothetical |
+
+None is a workaround. The last one is the only one that could have been: a
+`mkdir` plus a grant works today and would pass every check written here, and
+what rules it out is that its safety is an **ordering argument** rather than a
+property — which is the shape B5 exists to replace.
+
+### 2. Verified against the easy shape only?
+
+The directory grant was measured on **one machine**, and it is the kind of
+behaviour this project has already been bitten by across machines: AAAA-8 was
+an AppContainer reading that split by environment while being written up as
+splitting by something else. The compensation is not care, it is that
+`lowboxSpike.mjs` runs the shipped creation on **two Windows images** in CI —
+`shim` and `containment-2022` — both with `--require-containment`, which turns
+a could-not-look into a hard failure.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, and in the direction that needs saying. `lowboxSpike.mjs`'s four verb-split
+rows previously measured directories the instrument itself created and granted.
+They now measure directories **shipped code** created. That is a strengthening
+of what the rows mean and a **narrowing of when they can run**: the spike now
+refuses as `unverifiable` if `apps/desktop/dist/` is not built, where before it
+needed no build for those two directories.
+
+The same trade the pipe surface already made, and stated rather than absorbed
+for the same reason: an `unverifiable` line reads as rigour, including where it
+used to be a measurement.
+
+### 3. Would CI have caught it? — answered from a RUN, and it did
+
+**`5168f3b` turned CI red on both platforms**, and this section was drafted
+saying *pending on a run* before that landed. The run is the answer:
+
+```
+CI: completed / failure
+  JOB Typecheck, lint, and proofs (ubuntu-latest) — failure
+    step 21: Prove nothing can trigger the unpinned Electron download — failure
+  JOB Typecheck, lint, and proofs (windows-latest) — failure
+    step 21: Prove nothing can trigger the unpinned Electron download — failure
+Guards: completed / success
+```
+
+`electronImports.proof.mjs` keeps a **counted** allowlist of computed `file://`
+loads. `lowboxSpike.mjs` declared four and now makes six, because the handed
+pair followed the pipe and the process onto the shipped surface. The guard's own
+diagnostic says why the count is there rather than a bare file key: *"a
+file-keyed list with no count is standing amnesty."*
+
+**The amnesty it refused would have been mine, and would have been correct on
+the merits** — the two new loads are as legitimate as the four. A guard that
+only stops illegitimate additions is one nobody can trust to have stopped
+anything.
+
+The inverse question — *is there a defect this machine cannot see* — was also
+worth asking and its answer is now narrower than it looked. Every figure in
+Decision 12's table was read here, and the DACL semantics are kernel behaviour
+this project has already seen differ by Windows build. `proof:hostcontainment`
+runs on **two** Windows images (`shim` and `containment-2022`), and both were
+green in the same run that failed on the step above — so the measurement is no
+longer one machine's, and the red is unrelated to it.
+
+One thing worth recording about finding that step: `lowboxSpike.mjs` is invoked
+by **path** in `ci.yml`, so a grep for its npm script name returns nothing. That
+is the search whose reassuring answer is *no job runs this*.
+
+### EEEE-2. The affected-proofs reporter cannot see a proof that SCANS, and says so in a sentence that is a disclaimer
+
+The local sweep passed, 16 of 16, against the staged index. It named one
+affected proof:
+
+```
+  !!  1 proof(s) read a file this tree changed and THIS RUN DID NOT REACH THEM
+        npm run proof:hostcontainment
+      This list is static-import reach only: a proof that spawns a script it
+      never imports is not in it.
+```
+
+That is correct and it is not the whole set. `electronImports.proof.mjs` never
+imports `lowboxSpike.mjs` — it **scans the tree** — so no static-import walk can
+reach it, and the proof that actually went red appeared in no column.
+
+**The class this misses is the worst one to miss.** A proof that scans the
+repository is precisely the kind that guards a repo-wide invariant, and
+repo-wide invariants are what adding a file or a call site trips. The
+import-reaching proofs are the ones whose relevance is already obvious from the
+diff.
+
+**By this repository's own test, that closing sentence is a disclaimer rather
+than a compensation.** CLAUDE.md asks: *could it have been printed before you
+made your change?* It could — it is printed on every run, names nothing and asks
+for nothing, and by the third reading it is furniture. That is the same property
+that made `checkLocal.mjs`'s provisioning sentence fail to stop a red push, and
+this is a second instance of it in the same file.
+
+What would make it specific: the scanning proofs are enumerable — they are the
+ones that walk the tree rather than import a module — and any changed file
+reaches all of them. Naming them in the run's own output, as the import-reaching
+ones already are, turns the sentence from *this list is incomplete* into *and
+these three scan the tree, so your change reaches them too*.
+
+**Open, with the fix named.** It is not closed in this range because the roster
+it needs is a decision about how a scanning proof is identified, and that is
+item 4c's question — the failure to fear here makes the set **smaller**, so it
+must not be derived from something a missing proof also shrinks.
+
+### 2b. The exit code that was read wrong, and the memory note that covers it
+
+Reproducing the red locally, the first reading was `... | tail -30` followed by
+`echo EXIT=$?` — which reports `tail`'s status. It printed `EXIT=0` beside output
+that said *1 electron-import failure(s)*. Caught immediately because the text
+disagreed with the number, which is luck rather than method; the second reading
+redirected to a file and read the process's own code.
+
+No new finding — this is exactly the standing note *read the real signal* — but
+recorded because it happened while auditing, in the section about whether
+instruments can be believed.
+
+### 4. Are the proofs non-vacuous?
+
+Four mutations run, all red at the right line:
+
+| mutation | what went red |
+|---|---|
+| `handedDirectoryDacl` ignores its verb | 3 cases, in both new files |
+| the `P` flag dropped | 2 cases |
+| the rollback stops removing the snapshot | 1 case |
+| the shipped read mask widened to `0x001200A9` | `proof:hostcontainment`, naming `(OI)(CI)(RX)` rather than `(R)` |
+
+**The mutation direction was chosen, not defaulted.** The property under test is
+*read and modify differ*, and agreement is also what a verb-blind builder
+produces — so the case asserts the two strings differ **and** that swapping the
+mask back makes them identical, which a builder that moved a flag between verbs
+would fail.
+
+`boardStatus.proof.mjs`'s +92 is six added cases carrying a resolution test and
+three controls; nothing in it was loosened. Its roster went 15 → 21 as a
+literal, which is item 4c's safe direction — the failure to fear is a case
+added and the prose left behind, which makes the set bigger.
+
+### 4a/4b. Instruments
+
+`win32DirectorySurface.ts` is an adapter with no unit test, as
+`win32PipeSurface.ts` is: it is exercised by `proof:hostcontainment` against a
+real container, and a unit test of a koffi binding would assert that a mock was
+called.
+
+The spike's ACL reader is a **search**, and its positive control is unchanged
+and now covers the new path too: every directory must be **found** naming the
+container immediately after creation, or the run throws *THE SEARCH IS BLIND*.
+Two assertions were added beside it, and both exist because presence alone is
+not the property: the rendering must be **exactly** `(R)` or `(M)` — otherwise
+these rows silently stop being continuous with the 2026-08-25 ones — and there
+must be **no `(I)` ACE**, which is what `P` buys and what the `icacls` path
+could not have given.
+
+### EEEE-1. A resolver moved; its proof stayed in the file that no longer owns it
+
+`hostPipeDacl` moved from `enginePipeFactory.ts` to `hostDacl.ts`. Its two
+thorough cases — the both-ACEs-required literal and the four-bit mask
+difference — stayed behind under a `describe('hostPipeDacl')` in a file that no
+longer imports it, and the file that gained the function got a **thinner
+duplicate** of the first one.
+
+**Nothing was deleted and no coverage was lost, which is exactly why no check
+could see it.** The tests passed. Lint passed. The audit-scope report named both
+files. It is visible only by asking *where does this symbol's proof live now*,
+which is a question a move makes and nobody asks.
+
+Two things make it worth a letter rather than a tidy-up:
+
+- **It is the memory note *proven in the wrong file*, arriving by a new route.**
+  That note is about a helper getting the thorough proof while its call site
+  gets none. Here the proof was thorough and in the right place, and the
+  **subject moved out from under it**. A move is a rename plus a deletion, and
+  the deletion side is the one with no signal.
+- **It ended with two files asserting one expected value**, which is the second
+  opinion B3a is about, at the assertion layer. Whichever file a reader opens is
+  the one they trust.
+
+**Fixed in the commit that follows this range**, not inside it: the audit gate
+blocked every further commit until this entry landed, so the repair is in the
+next range by the mechanism's own design. The cases move with the function, and
+`enginePipeFactory.test.ts` keeps calling `hostPipeDacl` — because what it
+proves is that the factory passes the resolver's output through unaltered, and
+restating the literal there would be the second opinion again.
+
+**The transferable question, for the next move:** *which file now holds the
+cases for the symbol I just moved?* It is cheap, and it is not asked by the
+diff, by the checks, or by the scope report — all three see a file changed and
+a file added, which is what a correct move also looks like.
+
+### 5. Executed, or asserted?
+
+**Executed:** 173 vitest cases in `apps/desktop` · 28 containment cases through
+the shipped factory, twice — once green, once against the mask mutation · four
+mutations · 16 local checks against the **index** after staging · `koffi`
+binding `CreateDirectoryW` · the three-directory ACL table, including the
+`mkdirSync` control sibling · the shipped read mask rendering as `(R)` · the
+full CI board for `5168f3b`, which is where the red came from · 18
+electron-import cases after the declaration moved to six.
+
+**Asserted:** that a session directory pair cannot outlive a main process that
+dies without unwinding — it can, and the FEATURES row says so rather than the
+code pretending otherwise.
+
+**Previously asserted in this very entry, and corrected before it landed:** that
+item 3 was *pending on a run*. It was drafted that way, the run answered while
+the entry was being written, and the answer was red — which is why the section
+above quotes the job output rather than a workflow file. Worth keeping visible:
+the draft would have read as diligence, and *pending* is the answer that never
+looks wrong.
+
+### 6. Architecture before the feature?
+
+No amendment owed, and this was checked rather than assumed. Decision 7 already
+declares the handed pair; this range decides **how the grant is made**, which
+is mechanism inside an existing decision. Recorded as Decision 12 in ADR-0023,
+not as an ARCHITECTURE §-change: no seam moved and no invariant changed.
+
+### 7. Do the documents still match the code?
+
+ADR-0023 gained Decision 12. `docs/FEATURES.md` gained a row for the grant
+mechanism carrying the unswept-root obligation with its trigger.
+
+**One correction, and it is a count rather than a claim:** §5's *"the five
+grants are a development accommodation"* is now three. The sentence was true
+when written; two of the five were the shipped-behaviour ones and are no longer
+granted at all. Appended as a dated correction under Decision 12 rather than
+edited, because an ADR is a record.
+
+The NNN-4 sweep fired — this range states where the grant mechanism lives —
+and was run with `npm run sweep:prose` rather than by grep, for the reason the
+fifth line-break miss established. `icacls` returns seven matches across 37
+documents; the two in §5 and one in JOURNAL are records, and the FEATURES and
+P1 mentions are about an install root this change does not touch.
+
+---
+
 ## 2026-08-26 — Stage audit: `3c4f338..2f1444b` — two security scans that run on a developer machine and nowhere else
 
 **Audited through `2f1444b`.** Pasted from `npm run audit:scope`:
