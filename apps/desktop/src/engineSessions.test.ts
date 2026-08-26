@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   CapabilityRegistry,
+  DocumentNotOpenError,
   DocumentService,
   type MupdfSession,
   mupdfWriter,
@@ -14,7 +15,14 @@ import {
 import { asDocId, type DocId } from '@monstera/shared';
 
 import { type DocumentSessions } from './documentCommands.js';
-import { EngineSessions, openEngineSession, type SessionAreaOwner } from './engineSessions.js';
+import {
+  EngineSessions,
+  type HostDeathSurfaces,
+  onEngineHostEnded,
+  openEngineSession,
+  type SessionAreaOwner,
+} from './engineSessions.js';
+import { type ShellFailure } from './shellFailure.js';
 
 /**
  * The engine session supervisor's creation step and its state.
@@ -31,6 +39,8 @@ const AMPLE_CEILING = 64 * 1024 * 1024;
 
 let directory: string;
 let file: string;
+/** A second document, so a per-lane claim is not made against one lane. */
+let secondFile: string;
 
 async function pdfBytes(): Promise<Uint8Array> {
   const document = await PDFDocument.create();
@@ -42,6 +52,8 @@ beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), 'monstera-supervisor-'));
   file = join(directory, 'fixture.pdf');
   writeFileSync(file, await pdfBytes());
+  secondFile = join(directory, 'fixture-two.pdf');
+  writeFileSync(secondFile, await pdfBytes());
 });
 
 afterAll(() => {
@@ -66,6 +78,23 @@ const second = asDocId('22222222-bbbb');
  */
 const someSessions = (marker: string): DocumentSessions =>
   ({ mupdf: marker }) as unknown as DocumentSessions;
+
+/**
+ * A placeholder resolver that THROWS rather than doing nothing.
+ *
+ * These cases hand a `resolve` out of a promise executor and call it later, and
+ * the executor runs when the lane invokes its callback — not when the promise is
+ * constructed. A no-op placeholder turns "called it too early" into a five-second
+ * timeout with no line number; this names the mistake at the call that made it.
+ * It is also how the closed-in-the-meantime case below was got wrong once.
+ *
+ * @param what What was released before it existed.
+ */
+function notYet(what: string): () => void {
+  return () => {
+    throw new Error(what);
+  };
+}
 
 describe('the supervisor holds one entry per document, and poisons at two', () => {
   it('a document it has never seen is neither held nor poisoned', () => {
@@ -293,6 +322,215 @@ describe('openEngineSession writes the canonical image out and opens it', () => 
   afterAll(async () => {
     if (opened !== undefined) await mupdfWriter.close(opened);
     await service.close(docId);
+  });
+});
+
+describe('a host death is reported, and every document is put back through its own lane', () => {
+  /**
+   * Decisions 9b and 9c, driven against a **real** `DocumentService` over real
+   * documents — the lane ordering is the whole claim, and a fake service would
+   * prove only that this function calls something named `run`.
+   */
+  async function twoOpenDocuments(engine: EngineSessions): Promise<{
+    readonly service: DocumentService;
+    readonly first: DocId;
+    readonly second: DocId;
+  }> {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      teardown: engine.releaseOnClose,
+    });
+    const a = await service.open(registry.mint(file));
+    const b = await service.open(registry.mint(secondFile));
+    if (a.kind !== 'opened' || b.kind !== 'opened') throw new Error('fixture did not open');
+    engine.hold(a.docId, someSessions('a'));
+    engine.hold(b.docId, someSessions('b'));
+    return { service, first: a.docId, second: b.docId };
+  }
+
+  /** Records what was reported and what was rebuilt. */
+  function surfaces(
+    service: DocumentService,
+    over: Partial<HostDeathSurfaces> = {},
+  ): HostDeathSurfaces & {
+    readonly reported: ShellFailure[];
+    readonly rebuilds: number[];
+    readonly reopened: DocId[];
+  } {
+    const reported: ShellFailure[] = [];
+    const rebuilds: number[] = [];
+    const reopened: DocId[] = [];
+    return {
+      reported,
+      rebuilds,
+      reopened,
+      documents: service,
+      failures: (failure) => reported.push(failure),
+      rebuild: () => {
+        rebuilds.push(1);
+        return Promise.resolve();
+      },
+      reopen: (docId) => {
+        reopened.push(docId);
+        return Promise.resolve(someSessions(`reopened-${docId.slice(0, 4)}`));
+      },
+      closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      ...over,
+    };
+  }
+
+  const died = { code: 'connection-lost', detail: 'the reader stopped producing bytes' };
+
+  it('reports the death on the shell sink as its OWN event, not as a child process', async () => {
+    const engine = new EngineSessions();
+    const { service, first } = await twoOpenDocuments(engine);
+    const surface = surfaces(service);
+
+    await onEngineHostEnded(engine, died, surface);
+
+    expect(surface.reported[0]?.event).toBe('engine-host-gone');
+    expect(surface.reported[0]?.detail).toContain('connection-lost');
+    await service.close(first);
+  });
+
+  it('CONTROL: a deliberate shutdown says so and rebuilds NOTHING', async () => {
+    // Without this, the case above is satisfied by a handler that reports every
+    // ending identically — and the distinction the report exists for is exactly
+    // that a host we killed and a host that crashed produce the same silence.
+    const engine = new EngineSessions();
+    const { service } = await twoOpenDocuments(engine);
+    const surface = surfaces(service);
+
+    await onEngineHostEnded(engine, { code: 'shutdown', detail: 'closed' }, surface);
+
+    expect(surface.reported[0]?.detail).toContain('nothing here is a fault');
+    expect(surface.rebuilds).toStrictEqual([]);
+  });
+
+  it('rebuilds ONCE for a death, not once per document', async () => {
+    const engine = new EngineSessions();
+    const { service } = await twoOpenDocuments(engine);
+    const surface = surfaces(service);
+
+    await onEngineHostEnded(engine, died, surface);
+
+    // One host per engine (Decision 9c). Two documents, one rebuild.
+    expect(surface.rebuilds).toStrictEqual([1]);
+    expect(engine.held).toBe(2);
+  });
+
+  it('THE ORDERING: the reopen is queued at DEATH time, ahead of a later command', async () => {
+    // The claim 9c rests on, and the only one a fake service could not show.
+    // A command issued after the death must find the reopened session, which is
+    // true only if the reopen entry is already in the lane when it queues.
+    const engine = new EngineSessions();
+    const { service, first } = await twoOpenDocuments(engine);
+
+    let releaseRebuild = notYet('the rebuild was released before it was requested');
+    const held = new Promise<void>((resolve) => {
+      releaseRebuild = resolve;
+    });
+    const surface = surfaces(service, { rebuild: () => held });
+
+    const recovering = onEngineHostEnded(engine, died, surface);
+
+    // Issued while the rebuild is still outstanding, so it can only run after.
+    const seen: DocumentSessions[] = [];
+    const later = service.run(first, () => {
+      seen.push(engine.sessions(first) ?? {});
+      return Promise.resolve();
+    });
+
+    releaseRebuild();
+    await Promise.all([recovering, later]);
+
+    expect(seen).toStrictEqual([someSessions(`reopened-${first.slice(0, 4)}`)]);
+  });
+
+  it('a POISONED document is not rebuilt for, and the others still are', async () => {
+    const engine = new EngineSessions();
+    const { service, first, second } = await twoOpenDocuments(engine);
+    // One prior death for `first` only, so this death is its second.
+    engine.recordFailure([first]);
+    engine.hold(first, someSessions('a'));
+    const surface = surfaces(service);
+
+    await onEngineHostEnded(engine, died, surface);
+
+    // THE ASSERTION IS THE DECISION, NOT THE RESULTING STATE, and the first
+    // version of this case got that wrong. It asserted `sessions(first)` was
+    // empty — which stays true with the poison filter deleted, because `hold`
+    // refuses a poisoned document and the throw leaves the same state. The case
+    // survived its own mutation and could not tell the filter from the guard.
+    //
+    // What only the filter produces: the poisoned document is never asked for,
+    // so no engine work is done for it and no failure is reported about it.
+    expect(surface.reopened).toStrictEqual([second]);
+    expect(surface.reported).toHaveLength(1);
+
+    expect(engine.poisoned(first)).toBe(2);
+    expect(engine.sessions(first)).toStrictEqual({});
+    expect(engine.sessions(second)).toStrictEqual(someSessions(`reopened-${second.slice(0, 4)}`));
+  });
+
+  it('a document closed in the meantime is skipped by the seam, silently', async () => {
+    // THE INTERLEAVING IS THE FIXTURE, and the first version of this case used
+    // one the branch cannot be reached through. `run` reads the record when it
+    // is CALLED, so a document closed after its reopen was queued still runs
+    // that entry — closing "during" the recovery proves nothing.
+    //
+    // The reachable state is narrow: `close` deletes the record synchronously
+    // and defers teardown until that document's lane drains, so between those
+    // two moments the record is gone while the supervisor still holds an entry.
+    // A death landing in that window calls `run` on a closed document.
+    const engine = new EngineSessions();
+    const { service, first, second } = await twoOpenDocuments(engine);
+    const surface = surfaces(service);
+
+    let releaseWork = notYet('the lane entry had not started, so there was nothing to release');
+    let announceStarted = notYet('the start was announced before the entry ran');
+    // Awaited below rather than assumed: `run` invokes its callback in a
+    // microtask, so releasing the work before it has started leaves the release
+    // pointing at the stub and the lane never drains.
+    const started = new Promise<void>((resolve) => {
+      announceStarted = resolve;
+    });
+    const busy = service.run(
+      first,
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWork = resolve;
+          announceStarted();
+        }),
+    );
+    await started;
+
+    // Record gone now; `releaseOnClose` waits for the lane above.
+    const closing = service.close(first);
+    expect(engine.documentIds()).toContain(first);
+
+    const recovering = onEngineHostEnded(engine, died, surface);
+    releaseWork();
+    await Promise.all([busy, closing, recovering]);
+
+    // Exactly one report: the death. A close is the correct outcome of
+    // get-or-miss, not a failure to tell anybody about.
+    expect(surface.reported).toHaveLength(1);
+    expect(engine.sessions(second)).toStrictEqual(someSessions(`reopened-${second.slice(0, 4)}`));
+  });
+
+  it('CONTROL: a reopen that genuinely fails IS reported, so silence above means something', async () => {
+    const engine = new EngineSessions();
+    const { service } = await twoOpenDocuments(engine);
+    const surface = surfaces(service, {
+      reopen: () => Promise.reject(new Error('the rebuilt host refused this document')),
+    });
+
+    await onEngineHostEnded(engine, died, surface);
+
+    expect(surface.reported).toHaveLength(3);
+    expect(surface.reported[1]?.detail).toContain('reopen failed');
   });
 });
 

@@ -14,7 +14,26 @@
 import type { App, WebContents } from 'electron';
 
 /**
- * The failures Electron announces and nothing was listening to.
+ * The lifecycle failures nothing was listening to.
+ *
+ * **Scope widened 2026-08-27** (ADR-0023 Decision 9b). This said *"the failures
+ * Electron announces"*, and that was true of all four members while all four
+ * were Electron events. `engine-host-gone` is announced by **our own** transport,
+ * because ADR-0022 made the engine hosts processes we create rather than
+ * children Electron forks for us — so Electron does not know they exist and has
+ * nothing to say about them.
+ *
+ * (Electron's fork API is deliberately not named here. `check:advisories`
+ * watches that symbol for invariant 25, and its matcher is a `git grep` that
+ * cannot tell naming a symbol from calling it — so a doc comment expires a live
+ * verdict. That is KKK-1's shape, and the register's own re-triage records
+ * rewording as the answer when the trigger's SUBJECT has not occurred. It fired
+ * on this paragraph, at commit time, which is the mechanism working.)
+ *
+ * The reason the type exists is the **subscription**, not the identity of the
+ * announcer: a failure channel a runtime announces on with nothing subscribed is
+ * not a channel. That argument never depended on the runtime being Electron's,
+ * so the members widen and the reasoning does not.
  *
  * ## The finding this closes, and why it is a class rather than a bug
  *
@@ -53,11 +72,20 @@ import type { App, WebContents } from 'electron';
  * path of the file that failed, and that path is what identified the defect.
  */
 
-/** The lifecycle failures subscribed to. Named, not inherited. */
+/**
+ * The lifecycle failures subscribed to. Named, not inherited.
+ *
+ * `engine-host-gone` is deliberately **not** `child-process-gone`. That member
+ * is Electron's event for a process Electron created; the engine host is a
+ * process we create (ADR-0022), announced by our own transport. Sharing the name
+ * would say the runtime told us when it did not — and the two carry different
+ * fields, so a reader could not tell which one a detail line came from.
+ */
 export type ShellFailureEvent =
   | 'preload-error'
   | 'render-process-gone'
   | 'child-process-gone'
+  | 'engine-host-gone'
   | 'unresponsive';
 
 /** One lifecycle failure, flattened for a log. */
@@ -124,6 +152,41 @@ export function describeChildProcessGone(details: {
       `. ` +
       `An engine host dying is the DESIGNED response to a containment breach (invariant 25); ` +
       `it is reported here so that a kill and a crash are distinguishable in a log.`,
+  };
+}
+
+/**
+ * The message for an engine host connection that ended.
+ *
+ * ## `HostTermination.code` carries the whole distinction, so `by` is not passed
+ *
+ * ADR-0023 Decision 9b asks for `TransportEnd`'s `by` and `detail` plus the
+ * termination code. Only the termination is taken, and that is not a narrowing —
+ * `engineHostConnection.ts`'s `reasonFor` has already folded `by` into the code
+ * by the time this is called: a violation the client raised keeps that
+ * violation's code, `by: 'peer'` with nothing raised becomes `connection-lost`,
+ * and `by: 'us'` with nothing raised becomes `shutdown`. So the code determines
+ * `by`, and passing both would be two fields that can disagree about one fact.
+ *
+ * The distinction that matters survives, which is the one that mapping exists
+ * for: **a host that crashed and a host we killed produce the same silence on
+ * the pipe, and only the first is a defect.**
+ */
+export function describeEngineHostGone(termination: {
+  readonly code: string;
+  readonly detail: string;
+}): ShellFailure {
+  const deliberate = termination.code === 'shutdown';
+  return {
+    event: 'engine-host-gone',
+    detail:
+      `code=${termination.code} ${termination.detail}. ` +
+      (deliberate
+        ? 'We closed this connection, so nothing here is a fault.'
+        : 'The host was supposed to be there. Sessions it held are gone and every document ' +
+          'that had a call in flight has had its consecutive-failure count raised ' +
+          '(ADR-0023 Decision 9a); at two with no success in between, that document is ' +
+          'refused engine work rather than rebuilt for.'),
   };
 }
 

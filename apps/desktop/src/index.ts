@@ -15,6 +15,7 @@ export {
   type ShellFailureEvent,
   type ShellFailureSink,
   describeChildProcessGone,
+  describeEngineHostGone,
   describePreloadError,
   describeRenderProcessGone,
   describeUnresponsive,

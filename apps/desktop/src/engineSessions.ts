@@ -20,6 +20,8 @@ import type {
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
+import { describeEngineHostGone, type ShellFailureSink } from './shellFailure.js';
+
 // `import type`, and the header above says why in 38.1 MB. This one is the
 // SECOND occurrence and it landed in the file that documents the first: written
 // `import { type X } from './documentCommands.js'` it emitted
@@ -161,6 +163,146 @@ export async function openEngineSession(
  * brand never made forgery impossible, it made it visible.
  */
 export const SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS: EngineSupervisor = SUPERVISOR;
+
+/**
+ * What the death handler needs that is not the supervisor's own state.
+ *
+ * Injected rather than imported for the reason the whole module is: a case about
+ * *which lanes were entered, in what order* must be decidable without a pipe, a
+ * process or a container.
+ */
+export interface HostDeathSurfaces {
+  /** The lanes. Entered through `run`, which is get-or-miss on the record. */
+  readonly documents: DocumentService;
+  /** Where the death is reported. Decision 9b. */
+  readonly failures: ShellFailureSink;
+  /**
+   * Builds a replacement host and resolves when it can answer.
+   *
+   * Called **once** per death, and every lane awaits the same promise — one host
+   * per engine (Decision 9c), not one per document.
+   */
+  readonly rebuild: () => Promise<void>;
+  /**
+   * Reopens one document's sessions against the rebuilt host.
+   *
+   * Runs **inside** that document's lane, so the reopened session cannot be
+   * handed to a command that queued before it.
+   */
+  readonly reopen: (docId: DocId) => Promise<DocumentSessions>;
+  /**
+   * Whether a lane entry failed because the document closed underneath it.
+   *
+   * **Injected because this module may not value-import the kernel.**
+   * `DocumentNotOpenError` is a class, `instanceof` needs it at run time, and
+   * `@monstera/kernel` exports only `.` — so naming it here would load the
+   * barrel, `mupdfWriter` and the native MuPDF binding into `main`. That is
+   * invariant 20, and it is the 38 MB this module's own header is about.
+   *
+   * Matching on `error.name` instead was the other candidate and is rejected:
+   * a string copied out of a class is a second opinion about that class's
+   * identity, and it drifts in silence (B3a). The composition root already
+   * imports the kernel, so the one place that can answer this cheaply is the
+   * one place that answers it.
+   */
+  readonly closedMeanwhile: (error: unknown) => boolean;
+}
+
+/**
+ * The engine host connection ended: report it, and put every document back.
+ *
+ * Wired as `createEngineHostConnection`'s `onEnded`. It is one function rather
+ * than two because Decisions 9b and 9c both happen **at the moment the ending is
+ * observed**, and the ordering below is the only thing that makes 9c's claims
+ * true.
+ *
+ * ## Why the lane entries are queued SYNCHRONOUSLY
+ *
+ * `documents.run` is called for every document before this function awaits
+ * anything. That is what puts each reopen **ahead of every command the user
+ * issues afterwards**. Wiring it the other way round — build the host, then
+ * enter the lanes — leaves a window in which a command queues in front of the
+ * reopen and finds no session, which is the `MissingSessionError` Decision 9c
+ * exists to keep off the ordinary post-crash path.
+ *
+ * ## What is deliberately NOT done
+ *
+ * **Nothing is drained and nothing is failed.** In-flight calls have already
+ * rejected — the client settles them, and that is a deduction rather than a
+ * decision. Queued commands never touched the host and the canonical bytes they
+ * will run against are intact in main, so failing them would report a fault they
+ * did not have. They simply sit behind their document's reopen, in the order the
+ * lane already guarantees.
+ *
+ * **A poisoned document gets no reopen.** That is Decision 9a's whole content:
+ * at two consecutive failures with no success between them, no session is
+ * rebuilt and `document.execute` answers `document-poisoned`.
+ *
+ * **A document closed in the meantime is skipped by the seam, not by a check.**
+ * `run` is get-or-miss on the record, so it refuses rather than resurrecting,
+ * and the refusal is swallowed here because it is the correct outcome rather
+ * than a failure to report.
+ *
+ * ## The anchor Decision 9c asks for is NOT here, and that is stated
+ *
+ * The rebuild set is derived from this supervisor's own map, whose failure
+ * direction is *smaller* (audit item 4c), so it wants an anchor outside itself —
+ * *open minus poisoned must equal sessions held*, against `DocumentService.size`.
+ * **It cannot hold yet.** Nothing creates a session at open, so `size` counts
+ * documents this supervisor has never heard of and the identity is false by
+ * construction today. Shipping it now would be a check that is wrong rather than
+ * one that watches, so it is owed at the moment sessions are created at open.
+ *
+ * @returns a promise that settles when every lane entry has finished. Returned
+ *   for the cases; a subscriber calls this for its effect and the connection's
+ *   `onEnded` is synchronous.
+ */
+export async function onEngineHostEnded(
+  sessions: EngineSessions,
+  termination: { readonly code: string; readonly detail: string },
+  surfaces: HostDeathSurfaces,
+): Promise<void> {
+  surfaces.failures(describeEngineHostGone(termination));
+
+  // Snapshotted BEFORE the count moves, because `recordFailure` is what decides
+  // which of these are poisoned and the set itself must not change under it.
+  const affected = sessions.documentIds();
+  sessions.recordFailure(affected);
+
+  // A deliberate close is not a rebuild. Nothing is coming back, and entering
+  // lanes to await a host nobody is building would hang every document.
+  if (termination.code === 'shutdown') return;
+
+  const rebuilt = surfaces.rebuild();
+
+  // Every entry is queued here, in this loop, before the first await below.
+  const entries = affected
+    .filter((docId) => sessions.poisoned(docId) === undefined)
+    .map(async (docId) => {
+      try {
+        await surfaces.documents.run(docId, async () => {
+          await rebuilt;
+          sessions.hold(docId, await surfaces.reopen(docId));
+        });
+      } catch (error) {
+        // A closed document is the seam working; anything else is a rebuild
+        // that did not arrive, and the document keeps its raised count.
+        if (surfaces.closedMeanwhile(error)) return;
+        surfaces.failures({
+          event: 'engine-host-gone',
+          detail:
+            `reopen failed for document ${docId.slice(0, 8)}…: ${String(error)}. Its session is ` +
+            `not restored and its consecutive-failure count stands, so a second death with no ` +
+            `success between them poisons it.`,
+        });
+      }
+    });
+
+  // `rebuilt` is awaited inside the lanes rather than here, so a rejection has a
+  // handler by the time it settles. Awaiting it first would make the rejection
+  // unhandled for a tick and lose the per-document reporting above.
+  await Promise.all(entries);
+}
 
 /**
  * How many consecutive engine-host failures poison a document.
@@ -355,5 +497,18 @@ export class EngineSessions implements EngineSessionSource {
    */
   get held(): number {
     return this.#entries.size;
+  }
+
+  /**
+   * Every document this holds state for, in insertion order.
+   *
+   * The set a host death acts on: Decision 9c's rebuild set, and the argument
+   * {@link EngineSessions.recordFailure} is given. Snapshotted into an array
+   * rather than exposing the map, because the caller mutates this state while
+   * iterating — `hold` during a reopen would otherwise be a live-collection
+   * hazard rather than a decision anybody made.
+   */
+  documentIds(): readonly DocId[] {
+    return [...this.#entries.keys()];
   }
 }
