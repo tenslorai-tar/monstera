@@ -167,7 +167,13 @@ patching around. Add to it; do not re-pay for it.
 ```
 packages/shared/    branded types, geometry, Result, pure utils
                     imports: nothing internal
-packages/contract/  THE IPC contract — every channel defined once, zod schemas
+packages/contract/  THE RENDERER IPC contract — every renderer-facing channel
+                    defined once, zod schemas — plus the boundary DISCIPLINE
+                    (channel(), wrapHandler, frame.ts) that every other
+                    boundary takes. A channel's definition lives where its
+                    schemas may live: the engine host's are in kernel, because
+                    a capture answers with prior state the renderer must not
+                    see (ARCHITECTURE §5, ADR-0023 Decision 11)
                     imports: shared
 packages/kernel/    headless document engine: DocumentService, CommandBus,
                     engine adapters, undo log, save pipeline, OCR, export

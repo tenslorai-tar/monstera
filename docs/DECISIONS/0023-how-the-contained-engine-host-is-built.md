@@ -2223,3 +2223,64 @@ Not adopted now: the first remote command's prior state is kilobytes, the
 fallback is correct rather than merely tolerable, and choosing an encoding is a
 decision that wants its own moment (B4) rather than one taken in passing while
 wiring a call site.
+
+## Decision 11 — the engine host's channels are declared in `packages/kernel` (decided 2026-08-26)
+
+### The collision, found before a line was written
+
+Decision 10's remote half needs a channel per execution member, and
+`engine/capture` **answers with `CommandPrior[K]`**. Declaring that channel needs
+a zod schema for prior state, and `packages/contract/src/commands.ts` states, in
+its own header, why one cannot live there:
+
+> Inverses are deliberately absent from this file. They stay kernel-only: they
+> carry structural prior state the renderer must not see, and a
+> renderer-supplied inverse would let the UI dictate undo (§6).
+
+`packages/ui` imports `packages/contract`. So a prior-state schema declared there
+is a prior-state schema the renderer can reach — at the one boundary that rule
+was written for.
+
+### The decision
+
+**A channel's DEFINITION lives where its schemas may live; the shared thing is
+the discipline.** `packages/contract` keeps every renderer-facing channel and
+keeps `channel()`, `wrapHandler`, `createClient` and `frame.ts`. The engine
+host's channel map is declared in `packages/kernel`, which is where **both**
+halves of the host run, and goes through those same primitives.
+
+Nothing about *defined once* weakens: the map is declared once, in one package,
+and the renderer cannot reach it by the module graph rather than by discipline
+(B5 — `packages/ui` may not import `packages/kernel`, and that is a red build).
+
+`ARCHITECTURE.md` §5's *"defines every channel exactly once"* now reads
+*renderer-facing*, because that sentence predates any non-renderer channel and
+would otherwise be read as forbidding the only placement the inverse rule
+permits.
+
+**This decision travels in the amendment's own commit, not the feature's, and
+that is B4 read precisely.** The rule is that the amendment lands *before* the
+build and in a commit of its own; the amendment log row cites this ADR by
+number, so the reasoning it points at has to exist when the row does. What B4
+separates is the architecture change from the feature — and the feature is the
+channel map, which is not in this commit.
+
+`BUILD-PROMPT.md` still carries the unqualified sentence at **C5** — *"defines
+every channel once (zod schema per params/result)"*. It is the immutable founding
+record and is not edited; the amendment log names the superseded clause, which is
+the mechanism for exactly this.
+
+### Rejected, with mechanisms
+
+| candidate | why not |
+|---|---|
+| **Declare the engine channels in `packages/contract` anyway.** | Breaks `commands.ts`' stated rule at the exact boundary it was written for. The renderer would be one import from a schema describing structural prior state — and "the renderer never constructs one" is a discipline where the module graph already offers a compile error. |
+| **A `contract`-side factory taking the prior schema as a parameter.** | Preserves §5's sentence by splitting one channel definition across two packages — worse for *defined once* than the thing it protects. It is also an abstraction with a single caller, which B7 refuses. |
+| **Send prior state as an opaque blob, validated in kernel after the fact.** | A second validated-boundary discipline beside the first, which is the defect B3a and §5 both name. The point of the discipline is that validation happens once, in the wrapper. |
+
+### What this does NOT decide
+
+Where the *renderer-facing* contract lives, which is unchanged; and whether the
+worker protocol's channels follow the same rule — they will face the same
+question when they carry a kernel-only type, and the answer here is the reasoning
+rather than a precedent to apply without checking.

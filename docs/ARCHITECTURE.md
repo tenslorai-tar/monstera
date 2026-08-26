@@ -390,8 +390,8 @@ Save invariants (hard-won; each has a mechanism):
 
 ## 5. The IPC contract — one definition, four generated surfaces
 
-`packages/contract` defines every channel exactly once, with a zod schema per
-params and result. Generated or type-derived from it:
+`packages/contract` defines every **renderer-facing** channel exactly once, with
+a zod schema per params and result. Generated or type-derived from it:
 
 1. the `ipcMain` registration — **exhaustive; an unhandled contract entry is a
    compile error**,
@@ -414,6 +414,19 @@ were built. What carries the discipline today is `channel()` plus
 Whoever writes the worker protocol either extends those or builds the named
 helper on top of them; what is settled either way is that there is **one**
 validated-boundary discipline and not a second (B3a).
+
+**A channel's DEFINITION lives where its schemas may live; the discipline is
+what is shared** ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+Decision 11, 2026-08-26). The word *renderer-facing* above is doing work: the
+engine host's channels are declared in `packages/kernel`, not here, and the
+reason is a rule this document's own contract package already states.
+`commands.ts` says inverses *"stay kernel-only: they carry structural prior state
+the renderer must not see"* — and the host's `capture` channel answers with
+exactly that prior state, so its result schema cannot be declared in the package
+the renderer imports. Kernel is where both halves of the engine host run, so the
+declaration is still exactly once and still through `channel()`, `wrapHandler`
+and `frame.ts`. What would be a second discipline is a hand-validated boundary,
+not a channel map in the package whose types it carries.
 
 Errors cross every boundary **structurally**
 (`{name, message, stack, cause}`), never as a bare string. Silent `catch {}` is
@@ -1277,3 +1290,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-22 | **The engine hosts are processes this application creates, not Electron utility processes** (§2, §5, §9.25, §9.26). Invariant 25's (c) and (d) are supplied by an AppContainer, which `utilityProcess.fork` cannot create, so the containment is a property of the creation route — measured, including a native `CreateFileW` refused `ERROR_ACCESS_DENIED` and a loopback connection refused, with the engine still running inside. The host contract crosses a DACL'd named pipe and registers into `packages/contract`'s discipline rather than beside it; the host body lives in `packages/kernel`, which answers invariant 26's third case by placement instead of a fourth clause. | §2's `utility: mupdfHost` / `utility: pdfiumHost` topology, which ADR-0010 introduced; and §9.25's "policy before mechanism" | [ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md) |
 | 2026-08-18 | **Distribution is the Microsoft Store only.** No direct download exists; the website's download button links to the Store listing. The two-flavour seam is kept — flavour switch, `WebUpdateProvider` registered with no implementation, signing certificate as an empty config value — so a signed direct download is later a config change rather than an amendment. Updates are Windows'; `StoreUpdateProvider` adds a static-manifest version check that sends nothing, an in-app indicator linking to the Store, and a settings toggle (§8). | `BUILD-PROMPT.md` Part J's two-flavour distribution with a direct download, and its self-update path | [ADR-0018](DECISIONS/0018-distribution-is-the-microsoft-store.md) |
 | 2026-08-25 | **Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side** (§1, §9.26). The map classified by what a package is *about*; this is the first module where subject and mode disagree — the engine host's reader is Win32 pipe plumbing for the shell that executes where the shell's API surface does not exist. Measured: a `worker_threads` Worker inside Electron main has `process.versions.electron` set, `process.type` undefined, and `import('electron')` yielding a module with **no `app`**, against main's control in the same run — the fourth failure of the `apps/desktop/src/` proxy and the only one where the import SUCCEEDS. A sixth package, not in `MAY_IMPORT_ELECTRON`, so the specifier is a red build with no rule to remember (B5). Harness and probe files are in scope by the same test. `packages/kernel` was rejected on subject rather than on mode: a Windows-only reader there breaks §1's own reason for the kernel's Electron-free property. The engine host body is unmoved and stays in `packages/kernel`. | §1's one-axis repository map, and invariant 26 answering each occurrence by moving one file rather than stating where Node-mode code goes | [ADR-0024](DECISIONS/0024-execution-mode-is-a-placement-axis.md) |
+| 2026-08-26 | **A channel's DEFINITION lives where its schemas may live; the shared thing is the discipline** (§5). `packages/contract` defines every *renderer-facing* channel exactly once; the engine host's channels are declared in `packages/kernel` and still go through `channel()`, `wrapHandler` and `frame.ts`. Forced by a rule the contract package already states about itself — `commands.ts`: inverses "stay kernel-only: they carry structural prior state the renderer must not see" — and the host's `capture` channel answers with exactly that prior state, so its result schema cannot be declared in the package the renderer imports. Rejected: declaring it in `contract` anyway (breaks that rule at the only boundary it was written for); and a `contract`-side factory taking the prior schema as a parameter (splits one channel definition across two packages to preserve a sentence, and is an abstraction with one caller). | Part C5's "defines every channel once (zod schema per params/result)", and §5's unqualified restatement of it — both predate any non-renderer channel | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) |
