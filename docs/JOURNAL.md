@@ -644,6 +644,173 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-26 — Stage audit: `3c4f338..2f1444b` — two security scans that run on a developer machine and nowhere else
+
+**Audited through `2f1444b`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 3c4f338..HEAD
+
+  commits: 8 (one batch is 9)
+  files:   21 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (2 more) or 25 files (4 more).
+
+  proofs ADDED — new coverage (2):
+    scripts/proofs/mainNeverCancels.proof.mjs
+    scripts/proofs/proseSweep.proof.mjs
+  proofs MODIFIED — read each diff; a loosened check looks like a corrected one (4):
+    apps/desktop/src/documentCommands.test.ts       net +10 -2
+    packages/kernel/src/commandBus.test.ts          net +213 -17
+    scripts/proofs/contract.proof.mjs               net +56 -1
+    scripts/proofs/fetchVerified.proof.mjs          net +156 -5
+  proofs REMOVED: none
+  source FILES ADDED — instruments to resolution-test (items 4a, 4b) (3):
+    packages/kernel/src/localEngine.ts
+    scripts/lib/mainNeverCancels.mjs
+    scripts/lib/proseSweep.mjs
+  source FILES CHANGED (3):
+    packages/kernel/src/commandBus.ts               net +41 -8
+    packages/kernel/src/commandSpecs.ts             net +127 -5
+    packages/kernel/src/index.ts                    net +5 -0
+  source FILES REMOVED: none
+```
+
+**Audited under the FILE threshold, not the commit one** — the next commit would
+have made 25 against a batch of 24, and the gate refused it. Board **GREEN at
+`2f1444b`** (`Guards=success, CI=success`, exit 0).
+
+### 1. Root cause, or workaround?
+
+Root in every case, and one is worth naming because it looks like a preference.
+**The concurrency setting was itself the defect**, not a symptom of one: a
+cancelled run is no verdict at all, so grouping `main` with
+`cancel-in-progress: true` destroyed the previous commit's verdict on every
+rapid push. Changing it is a repair, and the fix is measured against its own
+pre-fix control rather than assumed to take effect.
+
+No loosened check. **One check was TIGHTENED and the harness is why:**
+`contract.proof.mjs`'s byte-image reject matcher now anchors on a parameter
+name, because the new `CommandExecution` case produced a diagnostic whose
+operative line was word-for-word identical, and the proof's own resolution test
+refused to certify either verdict while one matcher accepted the other's reason.
+
+### 2. Verified against the easy shape only?
+
+**No, and `mainNeverCancels` is where it would have been.** The easy shape is
+`true` versus the expression. The cases that matter are the inverted expression
+`== 'refs/heads/main'` — which *mentions* the branch and cancels on it and
+nowhere else, so a matcher relaxed to a substring test would certify the exact
+defect — and an expression the scan cannot read, which is **reported rather than
+passed** because a check that cannot decide must not pass.
+
+### 2a. Has a change to HOW something is proven moved the coverage? — and **DDDD-30**
+
+**Yes, in two directions at once.** Sixteen `CommandBus` registrations moved from
+`mupdfWriter` to `localMupdfWriter`, which widens what each case drives.
+
+**DDDD-30. The checkpoint-failure control's INPUTS changed, and that is a cost
+rather than an improvement.** It used to register a hand-built partial writer —
+`open`, `close`, and a `serialise` that rejects — which is the most isolated
+fixture available. Since Decision 10 a bare lifecycle no longer satisfies the
+registry type, so it spreads `localMupdfWriter` and overrides `serialise`; its
+capture is now the real one. That is the right call and the alternative is worse:
+a stub carrying only a lifecycle would fail at the **capture**, before reaching
+the checkpoint the case exists for, and would pass for the wrong reason. But it
+means a change to `localMupdfWriter` changes this control's fixture, which is
+recorded here rather than discovered later by whoever changes it.
+
+### 3. Would CI have caught it? — **DDDD-29**, and it is the finding of this range
+
+Answered from runs for the range's own work: both new proofs are unconditional
+steps in `guards.yml`, and Guards reported `success` at `6d8f2d5` and `2f1444b`.
+
+**Asked the other way — is there a defect this machine cannot see? — the answer
+is yes, and it predates the range.** `scripts/checkLocal.mjs` derives its set
+from every `check:*` and `proof:*` in `package.json`, so *every* check runs
+before a push **on a developer machine**. CI runs the ones a workflow names. Two
+do not appear in any workflow:
+
+| script | what it enforces | where it runs |
+|---|---|---|
+| `scripts/security/pathDispatch.mjs` | **invariant 23** — no shipped file names a MuPDF entry point that selects an implementation from a filename | `checkLocal` only |
+| `scripts/security/handlerFootprint.mjs` | which document-format parsers are actually present in the shipped DLL | `checkLocal` only |
+
+**The first is the sharp one, and CI runs its PROOF.**
+`scripts/proofs/pathDispatch.proof.mjs` is a step in `ci.yml`, so every push
+proves the scan *can see* — and nothing ever points it at the repository. That is
+the *instrument that gates nothing* shape inverted: the gate exists, is proven
+sound, and is never fired.
+
+It is also unregistered rather than unregisterable: run here during this audit,
+it reads tracked source only — no `node_modules`, no MuPDF build — and exits 0
+with *"no shipped file names a filename dispatcher"*. So it can run on Guards
+today. `handlerFootprint.mjs` inspects the shipped DLL and may genuinely need the
+`shim` job, which is a different answer to the same question and has to be
+established rather than assumed.
+
+Recorded rather than fixed, because an audit-recording commit is docs-only.
+
+**The transferable form:** a check being *derived* into the local sweep makes it
+feel covered. `checkLocal` deriving from `package.json` is exactly right and it
+guarantees nothing about CI — and the fact that one of the two has a proof
+running in CI is what makes the gap invisible, because the workflow file mentions
+`pathDispatch` and a reader stops there.
+
+### 4. Are the proofs non-vacuous?
+
+Every control in the range was mutation-tested at the time. Two re-run during
+this audit rather than recalled:
+
+- `proseSweep`: `findInUnits` mutated to match the unit's **first line only** —
+  five cases red and the CLI refuses with *"cannot see a phrase that wraps"*. So
+  the positive control does carry the property, and the module is not certifying
+  its own silence.
+- `mainNeverCancels`: the column-0 anchor broken — the check **refuses** rather
+  than passing, and three proof cases go red.
+
+### 4c. Does each new scan derive its extent, and in which direction?
+
+Both do, and both are anchored, which is the half 4c actually asks for.
+`scanWorkflows` derives from `readdirSync` and a *deleted* workflow would agree
+silently — anchored by `filesScanned >= 2` asserted in the proof.
+`defaultDocuments` derives from `git ls-files` with the same shrink direction —
+anchored by `filesScanned > 1` **and** by a positive control that requires a
+named phrase to be found in `CLAUDE.md`.
+
+**Stated limit on that anchor:** reword the sentence it quotes and the proof goes
+red. That is the cost of a real-tree control and the alternative is worse, so the
+failure detail tells the next reader to **re-anchor rather than delete** —
+deleting it leaves only the empty-result case, which a sweep that opened no file
+satisfies.
+
+### 5. Executed, or asserted?
+
+**Executed:** the concurrency differential, with the pre-fix cancellation in the
+same payload; every mutation above; the prose sweep demonstrated against
+`ARCHITECTURE.md`, where a `grep` finds one line and the sweep finds three; the
+809,018-byte prior-state measurement; `pathDispatch.mjs` run by hand during this
+audit.
+
+**Asserted:** that Decision 10a's derived bound will be computed at the call
+site — there is no call site yet.
+
+### 6. Did architecture change *before* the feature?
+
+**Yes, and for the first time in this project's record it was the whole commit.**
+`2f1444b` amends `ARCHITECTURE.md` §5, updates `CLAUDE.md`'s map in the same
+commit as the three-document table requires, and records ADR-0023 Decision 11 —
+with the feature it exists for deliberately not in it.
+
+### 7. Do the documents still match the code?
+
+The §5 cross-document sweep was run with the new tool, and that is what found the
+other three statements of the amended claim: `BUILD-PROMPT.md` C5 (immutable,
+named in the amendment log as superseded), ADR-0022's citation (about the
+*discipline*, which is unchanged), and the amendment's own log row.
+
+---
+
 ## 2026-08-26 — Stage audit: `4859f20..3c4f338` — a module's first proof covering the axis the incident was about, and two sentences of the law falsified by a commit that never touched them
 
 **Audited through `3c4f338`.** Pasted from `npm run audit:scope`:
