@@ -218,6 +218,20 @@ function epochMs(value) {
  * requests*, never a longer wait, because a pacing bug that delays a verdict is
  * worse than one that spends a poll.
  *
+ * ## Measured on its own first read, 2026-08-26
+ *
+ * `board.mjs --verbose` against `cb5c07f`, quoted from its trace:
+ *
+ * ```
+ * poll 1: PENDING — 0 of 2 complete: Guards=queued, CI=in_progress
+ * poll 1: waiting 545s (derived from 6 completed run(s), median 555s)
+ * poll 2: COMPLETE — Guards=success, CI=success
+ * ```
+ *
+ * **Two requests where the old cadence would have spent about nineteen** — 555
+ * seconds at one poll every thirty. The verdict arrived at the same moment
+ * either way; what changed is what the wait cost the shared quota.
+ *
  * @param {BoardRun[]} runs
  * @param {{ sha: string, nowMs: number, fallbackSeconds: number }} options
  * @returns {{ seconds: number, derivedFrom: number, medianSeconds: number | null }}
