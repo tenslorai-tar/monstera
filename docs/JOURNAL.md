@@ -809,6 +809,43 @@ other three statements of the amended claim: `BUILD-PROMPT.md` C5 (immutable,
 named in the amendment log as superseded), ADR-0022's citation (about the
 *discipline*, which is unchanged), and the amendment's own log row.
 
+### Correction, 2026-08-26 — DDDD-29 was right about the gap and wrong about the remedy, in the way its own section warns about
+
+Three things above are corrected. The finding stands; two of its claims do not.
+
+**1. "It reads tracked source only — no `node_modules`, no MuPDF build — and
+exits 0, so it can run on Guards today" is FALSE.**
+`scripts/security/pathDispatch.mjs` imports `mupdfSourcePath` and derives the
+banned set from MuPDF's own `is_extension`, so with the source absent it exits
+**1** — *"MuPDF source not provisioned — the dispatcher set was NOT derived and
+nothing was checked."* That refusal is the scan being correct. It exited 0 during
+the audit because **this machine has MuPDF provisioned**.
+
+That is item 3's second half — *is there a defect THIS MACHINE cannot see?* — and
+the answer was written into the same section that asks it. A branch keyed on
+whether something is installed has a side that never executes where that thing is
+always present, and the developed-in world is the one that hides it. The
+correction is not "check harder": it is that **a claim about where a script can
+run is a claim about a machine that does not have what this one has**, and
+running it here cannot establish it.
+
+**2. DDDD-29 overstated by LUMPING.** `handlerFootprint.mjs` is not a gate. Run
+here it prints the shipped footprint — `epub`, `xps`, `svg`, `mobi` and `fb2`
+absent, `pdf`, `html` and `office` present — and **exits 0 either way**. The only
+thing that can fail is its positive control, the PDF markers. So its absence from
+CI was a missing *measurement*, not a missing enforcement, and putting it in the
+same row as invariant 23's scan made two different things look like one class.
+
+**3. And the gap was sharper than the entry said.** The step that ran the proof
+was named **"Enforce invariant 23 — no filename may select a native library"**.
+It is not the filename a reader stops at; it is the word *Enforce* over a step
+that proves a scan can see and never looks at a shipped file.
+
+**Both now run in `ci.yml`'s `shim` job**, which provisions MuPDF and builds the
+DLL — the same placement, and for the same stated reason, as the OCR-door step
+four lines above them. The proof's step is renamed so *Enforce* belongs to the
+check.
+
 ---
 
 ## 2026-08-26 — Stage audit: `4859f20..3c4f338` — a module's first proof covering the axis the incident was about, and two sentences of the law falsified by a commit that never touched them

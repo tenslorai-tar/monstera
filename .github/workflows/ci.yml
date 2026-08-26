@@ -855,8 +855,32 @@ jobs:
       # are what keep it usable: fz_open_document and pdf_save_document take a
       # path and are NOT dispatchers, because a rule banning every path-taking
       # function would ban the shim's own save and be switched off within a week.
-      - name: Enforce invariant 23 — no filename may select a native library
+      - name: Prove the invariant-23 scan derives a dispatcher set and can refuse
         run: node scripts/ci/annotate.mjs scripts/proofs/pathDispatch.proof.mjs
+
+      # AND THEN POINT IT AT THE REPOSITORY (finding DDDD-29). The step above
+      # was called "Enforce invariant 23" for a range while running the PROOF,
+      # which establishes the scan can see and never looks at a single shipped
+      # file. The gate existed, was proven sound, and was never fired — and the
+      # step's own name is what made that invisible, because a reader who sees
+      # `pathDispatch` under the word *Enforce* stops there.
+      #
+      # HERE, WHERE THE SOURCE EXISTS, for the reason the OCR-door step above
+      # gives: the banned set is derived from MuPDF's own `is_extension`, so the
+      # scan exits 1 with "the dispatcher set was NOT derived and nothing was
+      # checked" wherever the source is absent. That refusal is correct and it is
+      # why this cannot live on Guards, which provisions nothing.
+      - name: Enforce invariant 23 — no shipped file names a filename dispatcher
+        run: node scripts/ci/annotate.mjs scripts/security/pathDispatch.mjs
+
+      # A REPORTER WITH ONE CONTROL, not a gate, and named as one. It measures
+      # which format parsers are actually present in the shipped DLL — `epub`,
+      # `xps`, `svg`, `mobi` and `fb2` absent, `html` and `office` present as of
+      # this build — and exits 0 either way. What it can fail on is its control:
+      # if the PDF markers are not found it cannot see, and the footprint it
+      # reports means nothing. Runs here because it reads the built DLL.
+      - name: Report the shipped parser footprint, and prove the reader can see
+        run: node scripts/ci/annotate.mjs scripts/security/handlerFootprint.mjs
 
       # ADR-0016. fz_open_document scores handlers on CONTENT, and the shim's
       # "not a PDF" refusal used to come from pdf_specifics AFTER the foreign
