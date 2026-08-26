@@ -15,9 +15,17 @@ on:
 permissions:
   contents: read
 
+# CANCELLING IS FOR BRANCHES. `main` NEVER CANCELS — see the same block in
+# `guards.yml` for the mechanism and the trade; both workflows carried the
+# defect, so both carry the fix.
+#
+# In one line: a cancelled run is no verdict at all, so grouping `main` with
+# `cancel-in-progress: true` meant every rapid push destroyed the previous
+# commit's verdict — `9292d1f`, `142a2d6`, `53eafae` — and left a bisect landing
+# on commits CI never evaluated.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:

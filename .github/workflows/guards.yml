@@ -27,9 +27,28 @@ on:
 permissions:
   contents: read
 
+# CANCELLING IS FOR BRANCHES. `main` NEVER CANCELS.
+#
+# A cancelled run is not a weaker green — it is **no verdict at all**, and the
+# commit it belonged to carries none afterwards. Grouped by ref with
+# `cancel-in-progress: true` everywhere, every rapid push to `main` destroyed the
+# previous commit's verdict: `9292d1f`, `142a2d6` and `53eafae`, the same
+# mechanism each time. A bisect then lands on commits CI never evaluated, and the
+# per-commit board reading this project relies on becomes a fact about the tip
+# and nothing else.
+#
+# The trade, stated rather than glossed: two runs may now overlap on `main`, so a
+# rapid push costs runner minutes twice and feedback on the newer commit arrives
+# behind the older one. What it buys is that *push, read the board, then push* is
+# no longer a rule somebody has to recall at the moment they are about to push —
+# which is this repository's own argument for preferring a mechanism to a note.
+# It failed as a note three times.
+#
+# Branches keep cancelling, where superseding a run is the whole point and no
+# commit's verdict is being relied on later.
 concurrency:
   group: guards-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   guards:
@@ -297,6 +316,18 @@ jobs:
 
       - name: No workflow names a path inside the provisioned Electron tree
         run: node scripts/ci/annotate.mjs scripts/lib/workflowPins.mjs
+
+      # A cancelled run is NO VERDICT AT ALL, so a workflow that cancels
+      # in-progress runs on `main` destroys the previous commit's board reading
+      # on every rapid push — three times before this scan existed. The proof
+      # runs first because it is what establishes the scan can see a cancelling
+      # workflow at all; its reassuring answer is "found nothing", which is also
+      # what a matcher anchored wrong produces.
+      - name: Prove the main-never-cancels scan can see, separate and tolerate
+        run: node scripts/ci/annotate.mjs scripts/proofs/mainNeverCancels.proof.mjs
+
+      - name: No workflow cancels an in-progress run on main
+        run: node scripts/ci/annotate.mjs scripts/lib/mainNeverCancels.mjs
 
       # Runs HERE, on Linux, with no native library involved: the check is pure
       # arithmetic on what koffi returns, and the value it must reject was
