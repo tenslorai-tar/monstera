@@ -1,6 +1,15 @@
-import { type CommandKind } from '@monstera/contract';
+import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 
-import { type Apply, type Capture, type Invert, type WriterSession } from './engineSeam.js';
+import { type CaptureResult, type CommandPrior } from './commandLog.js';
+import {
+  type Apply,
+  type ByteImage,
+  type Capture,
+  type EngineWriter,
+  type Invert,
+  type WriterSession,
+  type WriterShapeOf,
+} from './engineSeam.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
@@ -142,9 +151,11 @@ const declared = {
     // Bound to `mupdf` by WriterBinding, so this must take a MupdfSession and
     // return void. Handing it a byte-image writer's apply does not compile.
     apply: applyRotatePages,
-    // The bus calls this BEFORE apply, in one code path, never a handler
-    // (ADR-0009, 2026-08-19). It reports own-state or states why it could not,
-    // and the bus answers the second with a checkpoint.
+    // Run BEFORE apply, in one code path, never by a handler (ADR-0009,
+    // 2026-08-19). It reports own-state or states why it could not, and the bus
+    // answers the second with a checkpoint. Since ADR-0023 Decision 10 the bus
+    // reaches it through the registered writer rather than through this table —
+    // *when* it runs is still the bus's, which is the half §4 is about.
     capture: captureRotatePages,
     // Takes the prior state and nothing else — see `Invert`. An inverse that
     // could see the command could compute a reversing rotation, which is the
@@ -181,3 +192,114 @@ export const commandSpecs: CommandSpecs = declared;
  * *view* of one table is not.
  */
 export const declaredSpecs: DeclaredSpecs = declared;
+
+/**
+ * The command kinds routed to one writer of record.
+ *
+ * Derived from the table rather than listed beside it, so a command re-routed
+ * to a different writer moves in exactly one place. The distributed conditional
+ * is what makes it a union of kinds rather than `never`.
+ */
+export type KindsRoutedTo<W extends WriterOfRecord> = {
+  [K in CommandKind]: WriterOf<K> extends W ? K : never;
+}[CommandKind];
+
+/**
+ * How a command is executed **against a writer**, rather than by the bus
+ * itself (ADR-0023 Decision 10).
+ *
+ * ## Why this exists at all
+ *
+ * `CommandBus` used to call `spec.apply(session, command)` directly. That works
+ * for exactly as long as the session is in this process. `rotatePages.ts` calls
+ * `withDocument(session, work)` whose `work` is a **synchronous**
+ * `(document: mupdf.PDFDocument) => T`, and a synchronous callback holding a
+ * live native handle cannot be made an RPC — so the moment the session lives in
+ * an engine host, a bus that calls the spec has nothing to call it against.
+ *
+ * Moving the *call* here leaves the *declaration* where it was: `declared`
+ * above is still the one place a command's `apply`, `capture` and `invert` are
+ * named, and ADR-0009 §6's binding of a spec's `apply` to its declared writer's
+ * session type is untouched. A remote implementation sends the command and the
+ * host's own local implementation performs the same lookup against its live
+ * session — one implementation per command, executed where the session is,
+ * rather than two opinions about what a command means (B3a).
+ *
+ * ## What did NOT move
+ *
+ * ADR-0009 §4's one code path. The bus still captures before it applies, still
+ * decides what the entry will be, and still holds the only `Checkpoint` mint.
+ * This interface is *how* a call reaches a session, never *when*.
+ *
+ * @template W the writer of record. Every member is bound to the kinds routed
+ *   to it, so a `pdf-lib` command cannot be executed through the MuPDF writer.
+ */
+export interface CommandExecution<W extends WriterOfRecord> {
+  /**
+   * Runs the declared `apply` for `command.kind`.
+   *
+   * The shape asymmetry is {@link Apply}'s, restated at the writer because a
+   * byte-image writer produces a new image where a live-session writer mutates
+   * in place and returns nothing.
+   */
+  apply<K extends KindsRoutedTo<W>>(
+    session: WriterSession[W],
+    command: CommandOfKind<K>,
+  ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
+
+  /** Runs the declared `capture` for `command.kind`, before any apply. */
+  capture<K extends KindsRoutedTo<W>>(
+    session: WriterSession[W],
+    command: CommandOfKind<K>,
+  ): Promise<CaptureResult<CommandPrior[K]>>;
+
+  /**
+   * Runs the declared `invert` for `kind`.
+   *
+   * Takes the kind explicitly, and that asymmetry with {@link apply} is real
+   * rather than an oversight: a command carries its own `kind` and a recorded
+   * inverse does not, so the kind has to travel separately — over a pipe as
+   * much as across this call.
+   */
+  invert<K extends KindsRoutedTo<W>>(
+    session: WriterSession[W],
+    kind: K,
+    inverse: CommandPrior[K],
+  ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
+}
+
+/**
+ * One writer of record, as `CommandBus` needs it: a session lifecycle **and**
+ * the ability to run a command against one of its sessions (ADR-0023 Decision
+ * 10).
+ *
+ * The two halves are declared separately because they answer to different
+ * documents — {@link EngineWriter} is ADR-0009 §8's seam, {@link
+ * CommandExecution} is Decision 10's — and intersected here because a
+ * registration missing either half is a writer the bus cannot use.
+ *
+ * Declared in this file rather than beside the registry that holds it, so
+ * `commandBus.ts` imports from here and nothing imports back: the routing table
+ * is what binds a command to a writer, so the type of a usable writer is a
+ * statement about routing.
+ */
+export type RegisteredWriter<W extends WriterOfRecord> = EngineWriter<WriterSession[W]> &
+  CommandExecution<W>;
+
+/**
+ * Executing MuPDF commands **in this process**.
+ *
+ * Written out for `mupdf` rather than produced by a generic factory, because
+ * `mupdf` is the one writer of record with an adapter (B7: the second one is
+ * what would show whether a factory abstracts anything real). It is also the
+ * implementation an engine host runs: `packages/kernel` is the host body, so
+ * the same object serves main's tests today and the host's dispatch later.
+ *
+ * Every member is a lookup in {@link declaredSpecs} and a call. There is no
+ * second table and no switch — §6's routing does the dispatch.
+ */
+export const localMupdfExecution: CommandExecution<'mupdf'> = {
+  apply: (session, command) => declaredSpecs[command.kind].apply(session, command),
+  capture: (session, command) => declaredSpecs[command.kind].capture(session, command),
+  invert: (session, kind, inverse) => declaredSpecs[kind].invert(session, inverse),
+};

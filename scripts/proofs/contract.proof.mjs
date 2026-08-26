@@ -561,11 +561,66 @@ export const rotate: Apply<'pdf-lib', 'rotatePages'> = (image, command) =>
     // The other half. Without this the case above passes for a seam whose
     // `Apply` ignores the writer entirely — both shapes would be assignable to
     // one signature, and "expresses both" would mean "distinguishes neither".
-    because: /Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    //
+    // Anchored on the PARAMETER NAME, because Decision 10's `CommandExecution`
+    // produces a diagnostic whose second line is identical to this one. The
+    // harness caught that itself on the day the second case was written: two
+    // matchers that accept each other's reason certify neither.
+    because: /\(image: ByteImage, command: [\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
     notBecause: null,
     source: `
 import type { Apply, ByteImage } from '@monstera/kernel';
 export const rotate: Apply<'pdf-lib', 'rotatePages'> = (_image: ByteImage) => {};
+`,
+  },
+  {
+    name: 'AND EXECUTION EXPRESSES IT TOO, with no type assertion (Decision 10)',
+    expect: 'allow',
+    // The same argument as the case above, one layer on. ADR-0023 Decision 10
+    // restates `Apply`'s shape asymmetry on `CommandExecution`, and a restated
+    // conditional is a second place it can be got wrong — a `CommandExecution`
+    // whose `apply` returned void for every writer would satisfy every use this
+    // repository has today, because `mupdf` is the only writer with an adapter
+    // and it is the live-session one.
+    //
+    // So the byte-image side needs its own fixture for the reason the seam's
+    // does: an unimplemented variant nobody constructs is a vacuous check. NO
+    // `as`, NO `any`, NO `satisfies` escape — if this needs one, the interface
+    // does not express the shape and that is the finding.
+    source: `
+import type { ByteImage, CommandExecution } from '@monstera/kernel';
+
+// A byte-image writer's execution: apply and invert CONSUME an image and
+// PRODUCE a new one. Capture is the same shape for both kinds, because
+// capture only ever reads.
+export const execution: CommandExecution<'pdf-lib'> = {
+  apply: (image, command) =>
+    Promise.resolve(command.pages.length === 0 ? image : new Uint8Array(image)),
+  capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
+  invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image)),
+};
+`,
+  },
+  {
+    name: "a byte-image writer's EXECUTION may not return void either",
+    expect: 'reject',
+    code: 'TS2322',
+    // The other half, and it is not covered by the `Apply` pair above: this is
+    // a separate conditional in a separate file, so a version of it that
+    // ignored the writer would leave the allow-case passing while
+    // distinguishing nothing.
+    //
+    // Anchored on `session:` where the seam's pair anchors on `image:` — the
+    // two diagnostics agree line for line otherwise, and the harness refuses to
+    // certify either verdict while one matcher accepts the other's reason.
+    because: /\(session: ByteImage, command: [\s\S]*Type 'void' is not assignable to type 'Promise<ByteImage>'/u,
+    notBecause: null,
+    source: `
+import type { ByteImage, CommandExecution } from '@monstera/kernel';
+
+export const execution: Pick<CommandExecution<'pdf-lib'>, 'apply'> = {
+  apply: (_image: ByteImage) => {},
+};
 `,
   },
   {

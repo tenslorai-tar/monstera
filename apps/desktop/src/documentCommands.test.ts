@@ -10,6 +10,7 @@ import {
   CapabilityRegistry,
   CommandBus,
   DocumentService,
+  localMupdfWriter,
   type MupdfSession,
   mupdfWriter,
   withDocument,
@@ -73,9 +74,16 @@ afterAll(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-/** The production bus, with the one adapter that exists. */
+/**
+ * The production bus, with the one adapter that exists.
+ *
+ * `localMupdfWriter` rather than `mupdfWriter` since ADR-0023 Decision 10: a
+ * registered writer is a session lifecycle **and** the execution of commands
+ * against one of its sessions, and the local assembly is what a process holding
+ * the session registers.
+ */
 function bus(): CommandBus {
-  return new CommandBus({ mupdf: mupdfWriter });
+  return new CommandBus({ mupdf: localMupdfWriter });
 }
 
 /** A session lookup that finds this document's session and nothing else. */

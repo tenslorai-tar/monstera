@@ -37,17 +37,22 @@ export {
   type WriterRegistry,
 } from './commandBus.js';
 export {
+  type CommandExecution,
   type CommandSpec,
   type CommandSpecs,
   type DeclaredSpecs,
   type Invertibility,
+  type KindsRoutedTo,
+  type RegisteredWriter,
   type Reproducibility,
   type WriterBinding,
   type WriterOf,
   type WriterOfRecord,
   commandSpecs,
   declaredSpecs,
+  localMupdfExecution,
 } from './commandSpecs.js';
+export { localMupdfWriter } from './localEngine.js';
 export {
   type CanonicalPath,
   type FileIdentity,

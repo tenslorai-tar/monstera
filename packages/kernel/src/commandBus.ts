@@ -1,9 +1,14 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 
 import { type Checkpoint, type LogEntry, type LogEntryFor } from './commandLog.js';
-import { type DeclaredSpecs, type WriterOf, declaredSpecs } from './commandSpecs.js';
+import {
+  type DeclaredSpecs,
+  type RegisteredWriter,
+  type WriterOf,
+  declaredSpecs,
+} from './commandSpecs.js';
 import { type CommandWriter, type DocumentContext } from './documentService.js';
-import { type ByteImage, type EngineWriter, type WriterSession } from './engineSeam.js';
+import { type ByteImage, type WriterSession } from './engineSeam.js';
 
 /**
  * The one code path from a command to a log entry (ADR-0009 §4).
@@ -36,7 +41,7 @@ import { type ByteImage, type EngineWriter, type WriterSession } from './engineS
  */
 
 /**
- * The engine adapters available to take a checkpoint.
+ * The engine adapters available to take a checkpoint and to run a command.
  *
  * **Partial by construction, not by oversight.** The seam declares four writers
  * of record and one has an adapter; a total map could not be built today, and
@@ -46,7 +51,7 @@ import { type ByteImage, type EngineWriter, type WriterSession } from './engineS
  * shape as ADR-0018's update provider registered with nothing behind it.
  */
 export type WriterRegistry = {
-  readonly [W in keyof WriterSession]?: EngineWriter<WriterSession[W]>;
+  readonly [W in keyof WriterSession]?: RegisteredWriter<W>;
 };
 
 /**
@@ -161,7 +166,13 @@ export class CommandBus {
 
     // Capture BEFORE apply. Not for tidiness: once `apply` has written, the
     // prior own-state is gone from the document and no later read recovers it.
-    const captured = await spec.capture(session, command);
+    //
+    // Through the WRITER, not through the spec (ADR-0023 Decision 10). The spec
+    // is still where this command's capture is declared; calling it is the
+    // writer's job, because a writer whose session lives in an engine host runs
+    // it there and one whose session is here runs it here. Nothing about *when*
+    // the capture happens moves — that is the line above, and it is §4's.
+    const captured = await writer.capture(session, command);
 
     // What this execution will be recorded as, decided — and the checkpoint
     // taken — STRICTLY BEFORE apply. Deciding first is what keeps the
@@ -180,7 +191,7 @@ export class CommandBus {
           reason: captured.reason,
         };
 
-    await spec.apply(session, command);
+    await writer.apply(session, command);
 
     // Recorded and counted only after the document actually changed. An entry
     // for work that threw is worse than no entry — undo would reverse a change
@@ -227,7 +238,24 @@ export class CommandBus {
     }
 
     const spec = declaredSpecs[entry.command.kind];
-    await spec.invert(session as WriterSession[WriterOf<typeof entry.command.kind>], entry.inverse);
+    const writer = this.#writers[spec.writer];
+    if (writer === undefined) {
+      // The same refusal `execute` gives, and it is reachable independently: a
+      // log can outlive the registration that produced it, since ADR-0009 puts
+      // the log on the document's record and the registry on the bus. Undo
+      // through a writer that is no longer registered would otherwise be a
+      // property access on `undefined` at the moment a user asked to undo.
+      throw new UnregisteredWriterError(entry.command.kind, spec.writer);
+    }
+
+    // Through the writer, for `execute`'s reason. The kind travels as its own
+    // argument because a recorded inverse does not carry one — see
+    // `CommandExecution.invert`.
+    await writer.invert(
+      session as WriterSession[WriterOf<typeof entry.command.kind>],
+      entry.command.kind,
+      entry.inverse,
+    );
 
     log.undo();
     return { entry, version: context.bumpVersion(COMMAND_WRITER) };
@@ -276,7 +304,12 @@ export class CommandBus {
     const replay: 'reapply-intent' = spec.replay;
     void replay;
 
-    await spec.apply(
+    const writer = this.#writers[spec.writer];
+    if (writer === undefined) {
+      throw new UnregisteredWriterError(entry.command.kind, spec.writer);
+    }
+
+    await writer.apply(
       session as WriterSession[WriterOf<typeof entry.command.kind>],
       entry.command,
     );
