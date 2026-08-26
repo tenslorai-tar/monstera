@@ -54,6 +54,21 @@ export {
 } from './commandSpecs.js';
 export { localMupdfWriter } from './localEngine.js';
 export {
+  ENGINE_SESSION_ID_MAX_CHARS,
+  type EngineChannels,
+  type EngineFailureCode,
+  engineChannels,
+} from './host/engineChannels.js';
+export { type HostSessions, createEngineHandlers } from './host/engineHandlers.js';
+export {
+  EngineCallFailed,
+  EngineSessionGone,
+  type RemoteSessions,
+  UnknownRemoteSession,
+  createRemoteSessions,
+  remoteMupdfExecution,
+} from './host/remoteEngine.js';
+export {
   type CanonicalPath,
   type FileIdentity,
   isSameDocument,
