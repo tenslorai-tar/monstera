@@ -32,13 +32,13 @@
  * Usage: node scripts/lib/boardStatus.proof.mjs
  */
 
-import { boardVerdict, parseRuns } from './boardStatus.mjs';
+import { boardVerdict, parseRuns, pollDelaySeconds } from './boardStatus.mjs';
 import { createRoster } from './passRoster.mjs';
 import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 15 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -280,6 +280,96 @@ check(
   '`startsWith("")` is true of every run, so an unset sha would match the whole page and ' +
     'report the newest unrelated commit as the answer.',
 );
+
+// ---------------------------------------------------------------------------
+// THE POLL PACING (finding DDDD-28), and item 4a first: an instrument that
+// cannot tell two durations apart reports the number somebody hoped for.
+// ---------------------------------------------------------------------------
+{
+  /** @param {number} startedMs @param {number} durationMs */
+  const timed = (startedMs, durationMs, over = {}) => ({
+    ...run({ ...over, sha: OTHER }),
+    created_at: new Date(startedMs).toISOString(),
+    updated_at: new Date(startedMs + durationMs).toISOString(),
+  });
+
+  const NOW = Date.parse('2026-08-26T12:00:00Z');
+  /** @param {Record<string, unknown>[]} rows */
+  const pace = (rows, nowMs = NOW) =>
+    pollDelaySeconds(parseRuns(payload(rows)), { sha: MINE, nowMs, fallbackSeconds: 30 });
+
+  const fast = pace([timed(NOW - 900_000, 300_000), timed(NOW - 900_000, 300_000)]);
+  const slow = pace([timed(NOW - 900_000, 600_000), timed(NOW - 900_000, 600_000)]);
+  check(
+    'RESOLUTION TEST: two payloads whose runs took different times give different waits',
+    fast.seconds === 300 && slow.seconds === 600,
+    `fast=${String(fast.seconds)} slow=${String(slow.seconds)}. An instrument that cannot ` +
+      `separate a five-minute run from a ten-minute one reports whatever constant it was going ` +
+      `to report anyway, and the wait it produces is not derived from anything.`,
+  );
+
+  const elapsed = pace(
+    [
+      timed(NOW - 900_000, 300_000),
+      timed(NOW - 900_000, 300_000),
+      { ...run({ status: 'in_progress', conclusion: null }), created_at: new Date(NOW - 200_000).toISOString() },
+    ],
+  );
+  check(
+    'the wait SUBTRACTS how long this sha has already been running',
+    elapsed.seconds === 100,
+    `seconds=${String(elapsed.seconds)}, expected 100 — a 300s median minus 200s already ` +
+      `elapsed. Without this the reader waits a full run length after the run is nearly done, ` +
+      `which is the delay this pacing exists to avoid rather than to introduce.`,
+  );
+
+  const overdue = pace([
+    timed(NOW - 900_000, 300_000),
+    timed(NOW - 900_000, 300_000),
+    { ...run({ status: 'in_progress', conclusion: null }), created_at: new Date(NOW - 900_000).toISOString() },
+  ]);
+  check(
+    'CONTROL: a sha already older than the median polls NOW rather than waiting',
+    overdue.seconds === 0,
+    `seconds=${String(overdue.seconds)}. The lower clamp, and the case that separates ` +
+      `"subtract the elapsed time" from "wait the median regardless".`,
+  );
+
+  const skewed = pace(
+    [timed(NOW - 900_000, 300_000), timed(NOW - 900_000, 300_000),
+      { ...run({ status: 'in_progress', conclusion: null }), created_at: new Date(NOW + 600_000).toISOString() }],
+  );
+  check(
+    'CONTROL: a createdAt in the FUTURE cannot produce a wait longer than the median',
+    skewed.seconds === 300,
+    `seconds=${String(skewed.seconds)}. Clock skew between this machine and GitHub is the ` +
+      `ordinary cause, and the upper clamp is the median rather than a chosen multiple of it: ` +
+      `never wait longer than a typical run took.`,
+  );
+
+  const noTimes = pace([run(), run({ name: 'CI' })]);
+  check(
+    'THE FALLBACK: with no readable timestamps it returns the caller’s own cadence',
+    noTimes.seconds === 30 && noTimes.derivedFrom === 0 && noTimes.medianSeconds === null,
+    `seconds=${String(noTimes.seconds)} derivedFrom=${String(noTimes.derivedFrom)}. The ` +
+      `failure direction is MORE REQUESTS, never a longer wait — a pacing bug that delays a ` +
+      `verdict is worse than one that spends a poll, and \`derivedFrom: 0\` is how a caller ` +
+      `tells "derived" from "could not derive" rather than reading it off the number.`,
+  );
+
+  const running = pace([
+    { ...run({ status: 'in_progress', conclusion: null, sha: OTHER }), created_at: new Date(NOW - 900_000).toISOString(), updated_at: new Date(NOW - 300_000).toISOString() },
+    { ...run({ status: 'in_progress', conclusion: null, sha: OTHER }), created_at: new Date(NOW - 900_000).toISOString(), updated_at: new Date(NOW - 300_000).toISOString() },
+  ]);
+  check(
+    'CONTROL: an UNFINISHED run contributes no duration, so it cannot shorten the wait',
+    running.derivedFrom === 0 && running.seconds === 30,
+    `derivedFrom=${String(running.derivedFrom)} seconds=${String(running.seconds)}. ` +
+      `\`updated_at\` moves while a run is in progress, so counting one would measure how long ` +
+      `ago it was last touched and call it a duration — a number that reads like a measurement ` +
+      `and is not one.`,
+  );
+}
 
 // ONE writer for the exit code. The first draft here had two — a `process.exitCode
 // = 1` in the catch and a second assignment below it — which is the shape that

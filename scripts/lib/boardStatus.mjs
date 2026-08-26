@@ -56,7 +56,14 @@
  *   runNumber: number,
  *   status: string,
  *   conclusion: string | null,
+ *   createdAt: number | null,
+ *   completedAt: number | null,
  * }} BoardRun
+ *
+ * `createdAt` and `completedAt` are epoch milliseconds and are `null` where the
+ * payload did not carry a readable timestamp. **No verdict reads them** — only
+ * {@link pollDelaySeconds} does, which is why they may be absent without making
+ * a run unscoreable.
  */
 
 /**
@@ -166,8 +173,82 @@ export function parseRuns(payload) {
       runNumber: Number(row['run_number']),
       status: String(row['status']),
       conclusion: row['conclusion'] === null ? null : String(row['conclusion']),
+      // TIMESTAMPS ARE OPTIONAL AND THE REQUIRED-FIELD CHECK ABOVE DOES NOT
+      // COVER THEM, deliberately. A verdict must never depend on them; only the
+      // POLL PACING does, and that has a stated fallback. Adding them to the
+      // list above would make a payload without them unverdictable, which is
+      // trading the answer for the schedule.
+      createdAt: epochMs(row['created_at']),
+      completedAt: epochMs(row['updated_at']),
     };
   });
+}
+
+/**
+ * @param {unknown} value an ISO-8601 timestamp, or anything else.
+ * @returns {number | null} epoch milliseconds, or `null` where it is unreadable.
+ */
+function epochMs(value) {
+  if (typeof value !== 'string') return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * How long to wait before the NEXT poll, derived from the durations the
+ * payload's own completed runs took (finding DDDD-28).
+ *
+ * ## Why this is derived and not a constant
+ *
+ * The unauthenticated GitHub quota is ~60 requests an hour **per IP**, and both
+ * seats on this machine draw on the same 60. One board read polls up to 40
+ * times at 30 seconds — a twenty-minute window — while these runs finish in a
+ * fraction of that, so most of a read's cost is spent asking about a run that
+ * has not finished. That is the part the shared quota cannot afford, and it
+ * starves the board check the reviewing seat is required to run.
+ *
+ * A first-wait constant would be a number nobody chose, and it would go stale as
+ * CI gets slower or faster. The payload already carries the answer: every
+ * completed run in it reports when it started and when it ended.
+ *
+ * ## What it does when it cannot derive
+ *
+ * Returns `fallbackSeconds` and says so in `derivedFrom: 0`. The caller then
+ * polls exactly as it did before this existed — the failure direction is *more
+ * requests*, never a longer wait, because a pacing bug that delays a verdict is
+ * worse than one that spends a poll.
+ *
+ * @param {BoardRun[]} runs
+ * @param {{ sha: string, nowMs: number, fallbackSeconds: number }} options
+ * @returns {{ seconds: number, derivedFrom: number, medianSeconds: number | null }}
+ */
+export function pollDelaySeconds(runs, { sha, nowMs, fallbackSeconds }) {
+  const durations = runs
+    .flatMap((run) => {
+      if (run.status !== 'completed') return [];
+      if (run.createdAt === null || run.completedAt === null) return [];
+      const ms = run.completedAt - run.createdAt;
+      return ms > 0 ? [ms] : [];
+    })
+    .sort((left, right) => left - right);
+
+  if (durations.length === 0) {
+    return { seconds: fallbackSeconds, derivedFrom: 0, medianSeconds: null };
+  }
+
+  const median = durations[Math.floor(durations.length / 2)] ?? 0;
+  const started = runs.flatMap((run) =>
+    run.sha === sha && run.createdAt !== null ? [run.createdAt] : [],
+  );
+  // Nothing for this sha yet is the ordinary first-poll state, and it means the
+  // run has not been created — so the full median is the right wait.
+  const elapsed = started.length === 0 ? 0 : nowMs - Math.min(...started);
+
+  // CLAMPED BETWEEN ZERO AND THE MEDIAN, and both bounds are the median rather
+  // than chosen fractions of it: never wait longer than a typical run took, and
+  // where the run is already older than that, poll now.
+  const seconds = Math.max(0, Math.min(median, median - elapsed)) / 1000;
+  return { seconds, derivedFrom: durations.length, medianSeconds: median / 1000 };
 }
 
 /**

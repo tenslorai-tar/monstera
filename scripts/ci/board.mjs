@@ -43,7 +43,7 @@
  *   node scripts/ci/board.mjs <sha> --once      one look, no waiting
  */
 
-import { boardVerdict } from '../lib/boardStatus.mjs';
+import { boardVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
 import { githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -142,7 +142,28 @@ async function main() {
       return green ? 0 : 1;
     }
     if (once) return verdict === 'pending' ? 3 : 2;
-    await sleep(POLL_SECONDS * 1000);
+
+    // HOW LONG TO WAIT IS DERIVED FROM THIS PAYLOAD, not from POLL_SECONDS
+    // alone (finding DDDD-28). Both seats on this machine share ~60
+    // unauthenticated requests an hour, and forty polls at thirty seconds spend
+    // a twenty-minute window on runs that finish in a fraction of it — so most
+    // of a read's cost went on asking about a run that had not finished, and
+    // that is what starved the board check the reviewing seat must run.
+    //
+    // The decision is in `boardStatus.mjs` because this file prints what it is
+    // handed: a schedule computed HERE would have no proof, which is the exact
+    // mistake the greenness predicate made before it moved.
+    const paced = pollDelaySeconds(parseRuns(body), {
+      sha,
+      nowMs: Date.now(),
+      fallbackSeconds: POLL_SECONDS,
+    });
+    trace(
+      `  poll ${String(attempt)}: waiting ${paced.seconds.toFixed(0)}s ` +
+        `(derived from ${String(paced.derivedFrom)} completed run(s)` +
+        `${paced.medianSeconds === null ? '' : `, median ${paced.medianSeconds.toFixed(0)}s`})\n`,
+    );
+    await sleep(paced.seconds * 1000);
   }
 
   const refused = refusals.length;
