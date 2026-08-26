@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 
 import {
   type Brand,
@@ -211,6 +211,39 @@ export class DocumentNotOpenError extends Error {
  * writer.
  */
 export type CommandWriter = Brand<'command-writer', 'CommandWriter'>;
+
+/**
+ * Proof that the holder is the engine session supervisor (rule B3).
+ *
+ * Declared here beside {@link CommandWriter} and for the same reason, and
+ * **minted only inside the supervisor's module** — that module-private line is
+ * what makes the supervisor the one component permitted to have this service
+ * copy a canonical image out.
+ *
+ * ## Why a capability and not an accessor
+ *
+ * The question this answers is *what hands `record.bytes` to
+ * `EngineWriter.open`*, and the tempting answer is a getter. It is the wrong
+ * one: an accessor hands out a **reference**, and ADR-0021's own sentence is
+ * that "a second copy anywhere in main is not a matter of taste" — measured, at
+ * 2.00× of file size against a 1.5× ceiling. A getter makes the second
+ * reference *discouraged*; this makes it **unrepresentable**, because nothing
+ * ever receives the bytes.
+ *
+ * What crosses is a **destination**. The service writes; the caller says where.
+ *
+ * ## The B3 split, stated so two owners do not become two writers
+ *
+ * The supervisor owns the handed directory pair's **lifetime** — creating it,
+ * and removing it on close. This service owns the **bytes**, and is the only
+ * thing that can copy them out. Neither writes the other's concern, which is
+ * what stops the pair having two owners and the image having two writers.
+ *
+ * As for `CommandWriter`, the brand does not make forgery impossible — a cast
+ * produces one. It makes copying the image out **by accident** impossible, and
+ * any production code that tries **visible in a diff**.
+ */
+export type EngineSupervisor = Brand<'engine-supervisor', 'EngineSupervisor'>;
 
 /**
  * Everything a lane entry is told about the document, **as of the moment it
@@ -633,6 +666,24 @@ function requireSoleOwnership(bytes: Uint8Array, path: string): void {
 /** The default: the file, whole, once. */
 const readFileBytes: BytesReader = (path) => readFile(path);
 
+/**
+ * How a canonical image reaches a destination this service was handed.
+ *
+ * The mirror of {@link BytesReader}, and injectable for the same reason: a case
+ * that needs to know *what was written where* should not need a filesystem, and
+ * the production path should not be substitutable by accident.
+ *
+ * **It receives the record's buffer and must not retain it.** A writer that
+ * kept a reference would hold a second copy of the document for as long as it
+ * lived — the exact accounting failure `requireSoleOwnership` guards on the way
+ * in, arriving on the way out where nothing counts it. Node's `writeFile`
+ * consumes and returns.
+ */
+export type BytesWriter = (destination: string, bytes: Uint8Array) => Promise<void>;
+
+/** The default: the bytes, whole, once. */
+const writeFileBytes: BytesWriter = (destination, bytes) => writeFile(destination, bytes);
+
 export interface DocumentServiceOptions {
   /**
    * Total canonical-image bytes this service may hold across every open
@@ -659,6 +710,7 @@ export interface DocumentServiceOptions {
   readonly randomBytesSource?: TokenBytesSource;
   readonly readIdentity?: IdentityReader;
   readonly readBytes?: BytesReader;
+  readonly writeBytes?: BytesWriter;
 }
 
 export class DocumentService {
@@ -668,6 +720,7 @@ export class DocumentService {
   readonly #teardown: DocumentTeardown;
   readonly #readIdentity: IdentityReader;
   readonly #readBytes: BytesReader;
+  readonly #writeBytes: BytesWriter;
   readonly #documentBytesCeiling: number;
 
   /**
@@ -727,6 +780,7 @@ export class DocumentService {
     this.#randomBytes = options.randomBytesSource ?? cryptoBytes;
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
     this.#readBytes = options.readBytes ?? readFileBytes;
+    this.#writeBytes = options.writeBytes ?? writeFileBytes;
   }
 
   /**
@@ -761,6 +815,65 @@ export class DocumentService {
       total += record.bytes.byteLength + record.log.retainedBytes();
     }
     return total;
+  }
+
+  /**
+   * Writes an open document's canonical image to a destination the caller
+   * names, and returns how many bytes went.
+   *
+   * **The only way anything outside this service can obtain a document's
+   * bytes** — and it does not obtain them. The image goes from the record to
+   * the writer without passing through the caller, so the second reference
+   * ADR-0021 costs at 2.00× of file size is not discouraged here, it is
+   * unrepresentable (B5).
+   *
+   * ## What it is for
+   *
+   * ADR-0023 Decision 7: the engine host is handed a snapshot it may read, in a
+   * directory main granted it. This is the step that puts the image there —
+   * `EngineWriter.open` receives a path, never a buffer, and this is why it can.
+   *
+   * ## Guarded, and the token is the supervisor's
+   *
+   * See {@link EngineSupervisor}. The B3 split it records: the supervisor owns
+   * the handed directory's **lifetime**, this service owns the **bytes**.
+   *
+   * ## No lane, and that is a decision rather than an omission
+   *
+   * The lane serialises work that reads the index and then writes it. This
+   * reads one record's immutable buffer and writes elsewhere; it changes
+   * nothing about the document, so taking the lane would make a snapshot write
+   * wait behind an unrelated command and — worse — would let a supervisor
+   * rebuilding a dead host deadlock against the lane entry that is waiting for
+   * the host.
+   *
+   * The buffer it hands out is safe to read outside the lane because a record's
+   * `bytes` is `readonly` and replaced only by a new record: there is no
+   * mutation for this read to tear.
+   *
+   * @param supervisor Proof the caller is the session supervisor.
+   * @param docId The open document.
+   * @param destination Where the image goes. The caller granted it.
+   * @returns The number of bytes written.
+   * @throws DocumentNotOpenError when the document is closed or was never open.
+   */
+  async writeCanonicalImage(
+    supervisor: EngineSupervisor,
+    docId: DocId,
+    destination: string,
+  ): Promise<number> {
+    void supervisor;
+    const record = this.#records.get(docId);
+    if (record === undefined) {
+      // THE SAME REFUSAL EVERY OTHER PER-DOCUMENT OPERATION MAKES. A supervisor
+      // opening a session for a document that closed underneath it is racing a
+      // teardown, and writing the image of a document nobody has open would put
+      // a copy of it in a directory whose removal is keyed to a session that
+      // will never exist.
+      throw new DocumentNotOpenError(docId, 'write the canonical image');
+    }
+    await this.#writeBytes(destination, record.bytes);
+    return record.bytes.byteLength;
   }
 
   /**

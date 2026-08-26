@@ -91,7 +91,9 @@ export {
 export {
   DocumentBusyError,
   type DocumentContext,
+  type BytesWriter,
   DocumentNotOpenError,
+  type EngineSupervisor,
   DocumentService,
   type DocumentTeardown,
   type IdentityReader,

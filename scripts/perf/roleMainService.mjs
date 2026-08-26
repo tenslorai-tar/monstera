@@ -39,7 +39,8 @@
  * Usage: node scripts/perf/roleMainService.mjs <document-path>
  */
 
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -95,6 +96,10 @@ requireFreshBuild(
   'packages/kernel/src/documentService.ts',
   'packages/kernel/dist/documentService.js',
 );
+// The supervisor's module too, for the same reason and with the same
+// consequence: it holds the only mint of the capability this role uses, and a
+// stale build would answer confidently about a previous one.
+requireFreshBuild('apps/desktop/src/engineSessions.ts', 'apps/desktop/dist/engineSessions.js');
 
 // THE SPECIFIC MODULES, NOT THE BARREL, and imported DYNAMICALLY.
 //
@@ -148,10 +153,69 @@ if (resident !== size) {
   process.exit(1);
 }
 
+// THE SNAPSHOT WRITE, THROUGH THE SHIPPED CALL SITE (ADR-0023 Decision 7 and
+// Decision 14; the `perf:gate` coverage row is this measurement's trigger).
+//
+// Decision 7's third supporting argument is that *"re-transmitting hundreds of
+// megabytes from a main process already near its ceiling is the worst possible
+// moment to do the most expensive thing"*, and this is that moment: the service
+// is holding the canonical image and is asked to put a copy on disk.
+//
+// **It drives `writeCanonicalImage` and invents nothing**, which is the whole
+// reason this role can measure it at all. The two alternatives were the defect
+// this file exists because of (LL-4/JJ-1), one layer along: reading the
+// document a second time here would measure the HARNESS's copy, and inventing a
+// call site would measure something nothing ships.
+//
+// The capability is the supervisor's, taken from the module that mints it. What
+// this role does not get — and what nothing gets — is the bytes: the method
+// takes a destination and returns a count, so a second reference to the image
+// is not discouraged here, it is unrepresentable.
+const { SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS } = await import(
+  '../../apps/desktop/dist/engineSessions.js'
+);
+
+const snapshotDirectory = mkdtempSync(join(tmpdir(), 'monstera-role-main-service-'));
+const snapshotPath = join(snapshotDirectory, 'image');
+const wrote = await documents.writeCanonicalImage(
+  SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS,
+  outcome.docId,
+  snapshotPath,
+);
+const onDisk = statSync(snapshotPath).size;
+rmSync(snapshotDirectory, { recursive: true, force: true });
+
+if (wrote !== size || onDisk !== size) {
+  // Both numbers, because they fail differently: the service's count coming
+  // from the record and the file's size coming from the filesystem, so a short
+  // write and a miscounted record are separable rather than one figure nobody
+  // can attribute.
+  process.stderr.write(
+    `roleMainService: service reported ${String(wrote)} bytes and the file holds ` +
+      `${String(onDisk)}, for a ${String(size)}-byte document. The peak below would be a ` +
+      `measurement of writing something other than the document.\n`,
+  );
+  process.exit(1);
+}
+
+// Read AFTER the write, so the buffer cannot have been released during it and
+// the peak above covers a process that was still holding the document.
+const stillResident = documents.residentDocumentBytes();
+if (stillResident !== size) {
+  process.stderr.write(
+    `roleMainService: service holds ${String(stillResident)} bytes after the snapshot write, ` +
+      `for a ${String(size)}-byte document. The write changed what main retains, which is the ` +
+      `one thing this measurement exists to rule out.\n`,
+  );
+  process.exit(1);
+}
+
 reportPeak({
   role: 'main-service',
   document: documentPath,
   documentBytes: size,
   docId: outcome.docId.slice(0, 8),
   residentBytes: resident,
+  snapshotBytes: wrote,
+  residentAfterWrite: stillResident,
 });

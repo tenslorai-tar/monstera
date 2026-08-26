@@ -23,6 +23,7 @@ import {
   DocumentNotOpenError,
   DocumentService,
   type DocumentServiceOptions,
+  type EngineSupervisor,
   type IdentityReader,
   type OpenOutcome,
   type CommandWriter,
@@ -1257,5 +1258,131 @@ describe('the canonical image', () => {
           documentBytesCeiling: Number.NaN,
         }),
     ).toThrow(/finite, non-negative/);
+  });
+});
+
+/**
+ * The supervisor's capability, stubbed for the same reason
+ * {@link COMMAND_WRITER_FOR_TEST} is: this is a `DocumentService` test, so the
+ * token is a collaborator's capability being stubbed rather than a guard being
+ * bypassed. Its only production mint is module-private to
+ * `apps/desktop/src/engineSessions.ts`.
+ */
+const SUPERVISOR_FOR_TEST = 'engine-supervisor' as EngineSupervisor;
+
+describe('writeCanonicalImage', () => {
+  /**
+   * THE LOAD-BEARING PROPERTY, and it is about what the caller does NOT get.
+   *
+   * The method exists instead of an accessor, so the case that matters asserts
+   * the destination received exactly the record's bytes while the return value
+   * is a **count**. A version that handed the buffer back would satisfy any
+   * assertion about content and would reintroduce the second reference the
+   * whole shape exists to prevent.
+   */
+  it('writes the record’s bytes to the destination and returns only a count', async () => {
+    const capabilities = new CapabilityRegistry();
+    const bytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7]);
+    /** @type {[string, Uint8Array][]} */
+    const written: { destination: string; bytes: Uint8Array }[] = [];
+    const documents = newService(capabilities, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: () => Promise.resolve(bytes),
+      writeBytes: (destination, given) => {
+        written.push({ destination, bytes: given });
+        return Promise.resolve();
+      },
+    });
+
+    const opened = await documents.open(capabilities.mint(original()));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+
+    const count = await documents.writeCanonicalImage(
+      SUPERVISOR_FOR_TEST,
+      opened.docId,
+      'C:\\granted\\in-abc\\image',
+    );
+
+    expect(count).toBe(7);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.destination).toBe('C:\\granted\\in-abc\\image');
+    // THE SAME BUFFER, not a copy of it. `toBe` rather than `toEqual`, because
+    // an implementation that copied on the way out would put a second full
+    // image in main for the duration of the write — 1.00x becoming 2.00x
+    // against a 1.5x ceiling, which is the number this method's shape exists
+    // to protect.
+    expect(written[0]?.bytes).toBe(bytes);
+  });
+
+  /**
+   * THE RESIDENT TOTAL DOES NOT MOVE. The control for the case above, and the
+   * one that would catch a copy the identity check above could not — a writer
+   * that copied *before* pushing would still fail `toBe`, but an implementation
+   * that retained a slice somewhere else would not, and this reads the number
+   * the ceiling is actually compared against.
+   */
+  it('does not change what the service holds', async () => {
+    const capabilities = new CapabilityRegistry();
+    const bytes = new Uint8Array(4096);
+    const documents = newService(capabilities, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: () => Promise.resolve(bytes),
+      writeBytes: () => Promise.resolve(),
+    });
+
+    const opened = await documents.open(capabilities.mint(original()));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+    const before = documents.residentDocumentBytes();
+
+    await documents.writeCanonicalImage(SUPERVISOR_FOR_TEST, opened.docId, 'anywhere');
+
+    expect(documents.residentDocumentBytes()).toBe(before);
+    expect(before).toBe(4096);
+  });
+
+  /**
+   * GET-OR-MISS, like every other per-document operation. A supervisor opening
+   * a session for a document that closed underneath it is racing a teardown,
+   * and writing the image of a document nobody has open would leave a copy in a
+   * directory whose removal is keyed to a session that will never exist.
+   */
+  it('refuses a document that is not open, having written nothing', async () => {
+    const capabilities = new CapabilityRegistry();
+    let writes = 0;
+    const documents = newService(capabilities, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: () => Promise.resolve(new Uint8Array(8)),
+      writeBytes: () => {
+        writes += 1;
+        return Promise.resolve();
+      },
+    });
+
+    await expect(
+      documents.writeCanonicalImage(SUPERVISOR_FOR_TEST, asDocId('deadbeef'.repeat(8)), 'nowhere'),
+    ).rejects.toThrow(DocumentNotOpenError);
+    expect(writes).toBe(0);
+  });
+
+  /**
+   * AND AFTER A CLOSE, which is the reachable version of the case above. The
+   * one before it uses a `DocId` that never existed; this one uses a real
+   * document's, after teardown — the ordering a supervisor actually races.
+   */
+  it('refuses after the document has been closed', async () => {
+    const capabilities = new CapabilityRegistry();
+    const documents = newService(capabilities, {
+      readIdentity: () => Promise.resolve(identity()),
+      readBytes: () => Promise.resolve(new Uint8Array(8)),
+      writeBytes: () => Promise.resolve(),
+    });
+
+    const opened = await documents.open(capabilities.mint(original()));
+    if (opened.kind !== 'opened') throw new Error(`expected opened, got ${opened.kind}`);
+    await documents.close(opened.docId);
+
+    await expect(
+      documents.writeCanonicalImage(SUPERVISOR_FOR_TEST, opened.docId, 'nowhere'),
+    ).rejects.toThrow(DocumentNotOpenError);
   });
 });

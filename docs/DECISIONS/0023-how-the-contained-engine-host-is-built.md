@@ -2507,6 +2507,17 @@ belt-and-braces and is not: **a host that wrote nothing and a read that found
 nothing produce the same empty buffer**, and only one of those is main's
 problem.
 
+**It is a LIVENESS check and not an integrity check, and it cannot be one.** The
+host is the thing that produces those bytes, and invariant 25's own premise is
+that it may be compromised — so a count it reports about its own output can only
+tell us that something happened, never that the right thing did. A host that
+wanted to hand back altered bytes would report their length correctly.
+
+Written down because the boundary will otherwise be misread in the direction
+that costs something: a later reader who takes the count for validation will
+skip whatever the save pipeline actually owes here. Nothing in this decision
+validates a document image, and nothing in it claims to.
+
 #### The pair is PER SESSION, and the reason is lifetime rather than isolation
 
 Stated because the obvious reading is wrong and would be believed. There is
@@ -2515,6 +2526,17 @@ directories are granted to the same container SID — so per-session directories
 do **not** isolate one document's snapshot from a host compromised while parsing
 another. They cannot; that would need a container per session, which is not this
 design.
+
+**How this paragraph came to be written, because the route is the useful part.**
+The building seat proposed the opposite — that the pair is really handed at
+*host* creation, since a host was assumed to be per document — flagged it as an
+assumption rather than acting on it, and checked: §9c says one host per
+**engine**. So per-session was right. But the reason it is right was not the one
+anybody had given: it is **lifetime**. A host outlives every document that
+passes through it, so a pair handed at host creation accumulates a readable copy
+of every document the user has opened. Recorded because a correct conclusion
+resting on a wrong reason is the shape this project keeps paying for, and here
+the check that caught it was a two-minute sweep of the law.
 
 What they buy is that a snapshot's lifetime is the **session's** rather than the
 host's. A host outlives every document that passes through it, so a pair handed
@@ -2565,9 +2587,63 @@ holding them across it. Read 2026-08-26 on a 199.4 MB fixture: `main` stays at
 instead reddens both fixtures at **2.00×** and **1.99×** — the gate can see the
 failure it is watching for.
 
-**The service-level version is blocked on a call site and is stated rather than
-absorbed.** `DocumentService` holds the image on a private record and has no
-engine-handle creation yet, so `roleMainService.mjs` cannot hand those bytes to a
-write without inventing that call site or reading the file twice — both being
-the defect that role exists because of (LL-4/JJ-1), one layer along. It lands
-with `composition.ts`.
+**The service-level version was blocked on a call site and is now measured —
+Decision 14 below is what unblocked it.**
+
+### Decision 14, 2026-08-26 — the canonical image leaves through a capability, and nothing receives it
+
+*What hands `record.bytes` to `EngineWriter.open`?* The tempting answer is an
+accessor on `DocumentService`, and it is wrong for a reason ADR-0021 already
+measured: an accessor hands out a **reference**, and a second copy of the image
+in main is 2.00× of file size against a 1.5× ceiling.
+
+**Decided: one method, `writeCanonicalImage(supervisor, docId, destination)`,
+guarded by a capability whose only mint is module-private to the supervisor's
+module** — the idiom `bumpVersion(writer: CommandWriter)` already establishes.
+The service writes; the caller says where. Nothing outside the service ever
+holds the bytes, so the second reference is **unrepresentable** rather than
+discouraged (B5 over a convention — the same trade `markSaved` records for its
+missing token).
+
+#### The B3 split, stated so two owners do not become two writers
+
+| concern | owner |
+|---|---|
+| the handed pair's lifetime — created, removed on close | the **supervisor** |
+| the canonical image, and copying it out | **`DocumentService`** |
+
+Neither writes the other's concern. That is what stops the directory pair
+acquiring two owners and the image acquiring two writers.
+
+#### One mechanism, two dependents
+
+The supervisor needs it to put a snapshot where the host can read one. The
+`perf:gate` coverage row needs it because `roleMainService.mjs` must drive the
+**shipped** call site: reading the document a second time in the harness would
+measure the harness's own copy, and inventing a call site would measure
+something nothing ships — both being LL-4/JJ-1 one layer along. The instrument
+takes the capability; it still never receives the bytes.
+
+**Measured 2026-08-26, through that call site:** `main-service` at **1.00×** on
+the 199.4 MB image-heavy fixture and **1.03×** on the object-dense one, with the
+service still holding exactly the document after the write. So the snapshot
+write adds no resident copy, and that figure is now a measurement of the real
+path rather than of a model of it.
+
+#### What this cost on the way, because the gate caught it and no reader would have
+
+The supervisor's module first wrote `import { type DocumentService } from
+'@monstera/kernel'`. Under `verbatimModuleSyntax` that elides the **binding**
+and keeps the **statement**, emitting `import {} from '@monstera/kernel'` — a
+side-effect import of the barrel, which reaches `mupdfWriter.js`, which binds
+the native library.
+
+`perf:gate` failed on the **baseline**: 97.6 MB against a 96 MB base limit,
+while the *ratio* still passed at 1.04×. So the number that moved was not the
+one anybody watches, and the two spellings are indistinguishable in review.
+`import type { … }` is erased whole; the baseline returned to 62.8 MB.
+
+This is `proof:kernelload`'s exact subject arriving through a new door — that
+proof guards `documentService.js`, and this was a different module. Recorded
+rather than treated as a slip, because the same door is open to every module
+that wants only types from a barrel.
