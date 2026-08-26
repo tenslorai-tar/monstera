@@ -1888,3 +1888,95 @@ measurement of anything numeric.
 It matters most for the refusal. A write refused on one machine could be that
 machine's ACL state; refused on three, under a container each job creates for
 itself, is the mechanism.
+
+#### Correction, 2026-08-26 — the cost retraction took a clause that was not part of it (finding DDDD-24)
+
+The paragraph headed **"What is NOT measured … the cost half"** carries two
+claims in one sentence, and the section above retracted only one of them.
+
+**Withdrawn:** *timed one*, and *affordable* as a frame. There is no time budget
+in this repository to measure against, and "affordable" entered through a
+paraphrase of Decision 7 rather than from Decision 7.
+
+**Standing, and now the only unmeasured thing left in this candidate:**
+*nothing here has written an image.* That clause is not part of the cost frame.
+It states that the entire **write half** of the candidate — *main writes its
+canonical image to a handed path once per version* — is unmeasured, which is
+still exactly true.
+
+The shape is audit item 7's compound claim in the direction that hides best. A
+reader meets a paragraph headed *the cost half*, then a section saying the cost
+half is the wrong measurement, and reasonably concludes the paragraph is spent —
+so the clause that must survive is the one no heading points at. It is not
+bookkeeping either, because Decision 7's own third supporting argument puts a
+named risk on exactly that half: *"ADR-0007's kill-and-restart re-reads a path.
+Re-transmitting hundreds of megabytes from a main process already near its
+ceiling is the worst possible moment to do the most expensive thing."*
+
+**Which half each row covers, so the split is visible without re-deriving it:**
+
+| row | what it covers |
+|---|---|
+| the snapshot is READABLE | consumption — Node reads the handed bytes |
+| the snapshot is NOT WRITABLE | consumption — the read-only grant holds |
+| the output directory IS writable | consumption — the *host's own report*, which is not main's image |
+| CONTROL: same path, R against M | the instrument, not the candidate |
+| the ENGINE opens a document it cannot write | consumption, at the real consumer |
+
+**Production has no row, and no row above is a step towards one.** Four measure
+what a contained host can do with an image it was handed; the fifth measures
+whether the instrument can see a grant.
+
+#### The fifth row's parse boundary is chosen, not assumed
+
+`mz_open` followed by `mz_page_count` is a **real parse** — the trailer, the
+xref, the catalog and the page tree all resolve — so the lock, temp-file and
+open-read-write failure modes a native library could have are crossed, which is
+what that row exists to cross. A **render** would additionally touch content
+streams and font loading.
+
+That probe is not owed. The failure modes it could add are not ones a read-only
+directory plausibly changes, and the candidate's viability question is answered
+without it. Recorded so the boundary is a choice rather than an omission.
+
+#### The memory reading is well-formed, unowed today, and needs NO new instrument
+
+The section above named a **memory** reading as the decision-relevant one. Both
+halves of that are now settled, and neither produces work today.
+
+**It needs no instrument, because one already owns the question.**
+`scripts/perf/budgetGate.mjs` measures main through the real service —
+`{ role: 'main-service', budget: 'main', script: roleMainService.mjs }` — and it
+is enforced rather than merely present: `perfBudget.proof.mjs` is an
+unconditional step of the `shim` job in `ci.yml`, which runs on every push to
+`main`. A second memory instrument for the snapshot write would be a second
+opinion about a question an enforced gate already answers (B3a), and this
+repository has paid for that three times in one day.
+
+**The decision a reading would change is nameable now**, which is what makes the
+measurement well-formed rather than a number looking for a use. Read from
+`npm run perf:gate` on this machine, 2026-08-26:
+
+| role | image-heavy (199.4 MB) | object-dense (25.1 MB) | limit |
+|---|---|---|---|
+| `main` | 1.00× | 0.99× | 1.5× |
+| `main-service` | 1.01× | 1.02× | 1.5× |
+
+So the headroom is just under **0.5× of file size**, and the ratio is
+`(peak − baseline) ÷ file bytes`, which makes the arithmetic exact rather than
+estimated: **a second full copy adds 1.00× by definition.** An implementation
+that streams the held buffer to a handed path retains one copy and passes at
+~1.0×; anything that concatenates, clones or re-serialises on the way out
+retains two and breaches at ~2.0×. Those are the two values a reading would
+decide between.
+
+**What is owed is COVERAGE, not an instrument, and its trigger is an event.**
+`roleMainService.mjs` cannot exercise a snapshot write because no snapshot write
+exists, so today the gate's green means *main holding one copy is within
+budget* — not *main writing a copy is*. The day a snapshot write lands, that
+role's scenario must include it, or the gate stays structurally blind to the one
+operation Decision 7's third argument warns about while continuing to report
+green: audit item 4's *branch nothing arrives at*, in the instrument this
+decision would lean on. Carried on `docs/FEATURES.md` with the trigger in the
+body, and deliberately **not** in `docs/security/engine-advisories.json` — a
+symbol scan cannot see an event, and this expires on one.
