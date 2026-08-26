@@ -1980,3 +1980,151 @@ green: audit item 4's *branch nothing arrives at*, in the instrument this
 decision would lean on. Carried on `docs/FEATURES.md` with the trigger in the
 body, and deliberately **not** in `docs/security/engine-advisories.json` — a
 symbol scan cannot see an event, and this expires on one.
+
+## Decision 10 — command execution goes THROUGH the writer, and the specs stay the one declaration site (decided 2026-08-26)
+
+### The blocker, as a mechanism
+
+`rotatePages.ts` imports `mupdf` and calls `withDocument(session, work)`, whose
+`work` is `(document: mupdf.PDFDocument) => T` — **synchronous**, over a live
+native handle. `commandBus.ts` calls `spec.capture(session, …)` and
+`spec.apply(session, …)` directly, in main. So the moment the session lives in
+the host, those two calls have nothing to run against, and a synchronous
+callback holding a native handle cannot be made an RPC.
+
+That is why there was no "remote `EngineWriter`" to build: `EngineWriter` is
+`open`/`serialise`/`close`, and the piece that actually blocks is the pair of
+calls the *bus* makes.
+
+### The decision
+
+**Execution goes through the writer; `commandSpecs.ts` stays the single place a
+command's `apply`, `capture` and `invert` are declared.**
+
+The bus stops calling the spec's functions itself and asks the registered writer
+to run them. The in-process adapter's implementation is a lookup in
+`declaredSpecs` and a direct call. A remote adapter sends the command — intent
+only — and the **host's** in-process adapter performs that same lookup against
+its own live session. `packages/kernel` is what the host body runs, so this is
+one implementation per command executed in one place, not a second opinion about
+what `rotatePages` means (B3a).
+
+What this preserves, deliberately:
+
+- **ADR-0009 §4's one code path stays in main.** The bus still captures before
+  it applies and still holds the only `Checkpoint` mint. Nothing about *when* a
+  checkpoint is taken moves.
+- **ADR-0009 §6 stays true.** A spec's `apply` is still bound to the session
+  type of its declared writer; the adapter is where that binding is consumed,
+  not where it is declared.
+- **`ARCHITECTURE.md` §2 is unchanged.** `CommandBus` stays in main and the host
+  still holds MuPDF behind the shim.
+
+**The shape question the implementation must satisfy, stated rather than
+assumed:** `Apply<W, K>` is conditional on the writer's shape — a byte-image
+writer returns bytes where a live-session writer returns `void` — and
+`EngineWriter<TSession>` is generic over the session type alone. Expressing that
+asymmetry on the writer is the part that has to compile, and the seam already
+has the control for it: `contract.proof.mjs`'s type-level fixture builds a
+byte-image writer with no type assertion in it. If that fixture needs an
+assertion, the type does not express the shape, and per `engineSeam.ts` that is
+the finding rather than an obstacle to route around.
+
+### `open` and `serialise` exchange FILES; only the handle crosses the pipe
+
+The objection that killed a first reading of this decision — *the seam you would
+make remote is made of the two operations that cannot cross* — is true of
+`open(image: ByteImage)` and `serialise(): Promise<ByteImage>` **over the
+pipe**, and not true of them over the route measured above.
+
+- `open` receives the snapshot from the **read-only** handed directory. The
+  fifth row measured `mz_open` plus `mz_page_count` succeeding there.
+- `serialise` writes into the **modify-granted** output directory. The third row
+  measured that the host can write there.
+- What crosses the pipe is the **handle** — which is exactly what Decision 7
+  says crosses: *"Intent and handles cross. Document images do not."*
+
+This is not a new mechanism. It is the one measured on three machines, and it is
+the candidate Decision 7 named to test first. **The blocker and the thing that
+clears it are the same measurement.**
+
+### Correction, in the same breath — "per terminal command" IS per operation
+
+A first statement of this decision said the byte crossing is `serialise` for a
+checkpoint, *"which is per terminal command rather than per operation"*.
+
+That is wrong, and the rule says so with no rarity clause: invariant 11 is
+*"Cross-process payload size never scales with document size per operation."* A
+checkpoint is taken per operation — a rarer operation, still an operation — so
+a checkpoint over the pipe breaches L11 and Decision 7 both. Through the output
+directory it breaches neither, because nothing crosses.
+
+Recorded because the reasoning was a rarity argument dressed as a bound, and a
+bound that holds only while a case stays rare is the shape that fails the day it
+stops being rare.
+
+### 10a. The prior-state payload is bounded, required and undefaulted
+
+Under this decision every `capture` returns `CommandPrior[K]` **across the
+pipe**. For `rotatePages` that is prior rotations — kilobytes, and nothing about
+it scales with the document. Nothing states that it must stay that way, and a
+command whose prior state is a page's content stream or a form's full field set
+breaks L11 *per operation* with no check firing.
+
+So the payload carries a bound shaped like `ENGINE_HOST_FRAME_MAX_BYTES`:
+**required, undefaulted, and widened only at a named call site**, for the reason
+Decision 7 already gives for the frame maximum — widening is then a visible act
+rather than a constant somebody edits.
+
+**The breach needs no new failure path, which is the argument that it is the
+right bound rather than a convenient one.** `CaptureResult<T>` is already
+`{ captured: true; prior: T } | { captured: false; reason: string }`, and the bus
+already answers a `captured: false` by taking a checkpoint and applying anyway
+(ADR-0009's 2026-08-19 decision that invertibility is determined per entry). A
+capture whose prior state exceeds the bound is therefore reported as *cannot be
+recorded*, and the command becomes a terminal entry with a checkpoint — which is
+the correct outcome and was already implemented.
+
+### 10b. The host owns session identity; main holds an opaque handle
+
+`WriterSession[W]` for a remote writer is a handle the **host** mints and holds.
+Main never holds the native session and never holds anything it could dereference.
+
+Stated because Decision 7's *handles cross* is the clause that makes this
+decision legal at all, and because leaving it implicit invites the opposite
+reading — a main-side session object with the host holding a mirror, which is
+two writers of one identity (B3).
+
+The brand `engineSeam.ts` already puts on `MupdfSession` does the same job on
+both sides: fabrication stays a compile error, and the adapter's `WeakMap`
+covers the case a brand cannot — a genuinely-minted session that has been closed.
+
+### Rejected, with the mechanism rather than a citation
+
+| candidate | why not |
+|---|---|
+| **The specs execute in the host and main's bus stops calling them.** | ADR-0009 §4: *"the checkpoint is taken by the bus before `apply`, in one code path, never by a handler."* Specs host-side with the bus no longer calling them reproduces that one code path across a process boundary, while the log it records into stays in main. Splitting it is precisely what that sentence forbids. |
+| **The bus moves into the host.** | ADR-0009 made `CommandBus` **stateless and application-wide** and put the log on the document's record in main, specifically so a per-document bus would not need a `Map<DocId, bus>`. Moving the bus into the host either takes the log with it — and **invariant 18 requires the log to survive a host crash**, so that breaks outright — or separates the bus from the ordering ADR-0009 deliberately unified. It fails on an invariant, not on a topology diagram. |
+| **Every command gains a second, remote `apply`.** | Two implementations of what `rotatePages` means, agreeing most of the time. B3a's exact shape, and the one this decision exists to avoid. |
+
+### This is NOT a B4 amendment, and that was checked rather than assumed
+
+B4 amends `docs/ARCHITECTURE.md`, so an amendment commit is owed only if a
+sentence there becomes false. Swept, 2026-08-26: **none does.**
+
+- §2's topology block keeps `CommandBus` in main — unchanged by 10.
+- §2's *"`DocumentService` owns … the command log and checkpoints"* — unchanged;
+  a checkpoint arriving as a file main reads is still a checkpoint main holds.
+- Invariant 11 — satisfied by 10a and by the file route, not strained by them.
+- Invariant 17's *`main` … never parses* — main writes bytes it already holds
+  and reads bytes back. Neither is a parse.
+- §3's *"a **held document handle**"* — still held; 10b says by whom.
+
+So this is an ADR plus a contract and seam change, and an amendment commit that
+edits nothing would be a ceremony asserting a change where none happened.
+
+**The sweep did find two sentences that were ALREADY false**, from ADR-0022
+rather than from this decision — §3 and invariant 20 both still said the engines
+live in *utility processes*, which §2 of the same document denies. Corrected in
+their own commit, and recorded here because the finding belongs to the sweep this
+decision required rather than to this decision.
