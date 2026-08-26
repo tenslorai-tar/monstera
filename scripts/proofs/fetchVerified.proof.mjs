@@ -34,7 +34,7 @@ import { downloadVerified } from '../lib/fetchVerified.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
+const roster = createRoster(failures, { cases: 18 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -87,7 +87,33 @@ function diesMidStream(partial) {
   );
 }
 
-/** @typedef {(attempt: number) => Response | Error} Answer */
+/** @typedef {(attempt: number, requested: string) => Response | Error} Answer */
+
+/**
+ * A `303` to `location`, as a release host issues one.
+ *
+ * @param {string} location
+ * @param {{ header?: boolean }} [options] `header: false` omits `Location`
+ *   entirely, which is the branch a redirect with nowhere to go takes.
+ */
+function redirectedTo(location, { header = true } = {}) {
+  return new Response(null, {
+    status: 303,
+    headers: header ? { location } : {},
+  });
+}
+
+/**
+ * Distinct destinations, without asking the clock.
+ *
+ * The first version of this file named the file from `Date.now()`, and two
+ * cases entering the same millisecond would have shared a destination — after
+ * which "it leaves nothing behind" is a claim about the previous case's file.
+ * A counter cannot collide, and it removes a time dependency from a proof.
+ */
+let destinationSeq = 0;
+/** @type {string[]} */
+const destinationsUsed = [];
 
 /**
  * Drives `downloadVerified` with a scripted `fetch`, counting requests.
@@ -101,7 +127,9 @@ async function run(
   /** @type {{ sha256?: string, maxBytes?: number }} */ { sha256 = DIGEST, maxBytes = 1_000_000 } = {},
 ) {
   let calls = 0;
-  const destination = join(scratch, `out-${String(Math.abs(Date.now() % 100000))}-${String(calls)}.bin`);
+  destinationSeq += 1;
+  const destination = join(scratch, `out-${String(destinationSeq)}.bin`);
+  destinationsUsed.push(destination);
   /** @type {{ ok: boolean, error: Error | null, calls: number, destination: string }} */
   const outcome = { ok: false, error: null, calls: 0, destination };
   try {
@@ -112,9 +140,10 @@ async function run(
       maxBytes,
       destination,
       fetchImpl: /** @type {typeof fetch} */ (
-        async () => {
+        /** @param {string | URL | Request} requested */
+        async (requested) => {
           calls += 1;
-          const outcomeForAttempt = answer(calls);
+          const outcomeForAttempt = answer(calls, String(requested));
           if (outcomeForAttempt instanceof Error) throw outcomeForAttempt;
           return outcomeForAttempt;
         }
@@ -256,6 +285,128 @@ async function run(
     'CONTROL: a host outside the allowlist is refused before any request is made',
     denied !== null && requests === 0 && !existsSync(join(scratch, 'never.bin')),
     `requests=${String(requests)} denied=${String(denied?.message).slice(0, 120)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE REDIRECT PATH (finding DDDD-25).
+//
+// This module's first proof was written the day a reset socket reddened `main`,
+// so its ten cases are all about the retry rule and none of them reaches
+// `fetchChecked`'s redirect loop — four branches, one of which is the allowlist
+// re-check on every hop.
+//
+// THE ORDER OF THE FIRST TWO CASES IS THE POINT. A refusal is worth nothing on
+// its own, because "the guard refused it" and "a redirect never works here"
+// produce the same observation. So the first case is an input that SUCCEEDS,
+// through the same loop, differing only in the host it is sent to.
+// ---------------------------------------------------------------------------
+{
+  const result = await run((n) =>
+    n === 1 ? redirectedTo('https://github.com/example/moved.bin') : served(PAYLOAD),
+  );
+  check(
+    'CONTROL: a redirect to an ALLOWED host is FOLLOWED, and the bytes are the answer',
+    result.ok && result.calls === 2 && readFileSync(result.destination).equals(PAYLOAD),
+    `ok=${String(result.ok)} calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 120)}`,
+  );
+}
+
+{
+  /** @type {string[]} */
+  const asked = [];
+  const result = await run((n, requested) => {
+    asked.push(requested);
+    return n === 1 ? redirectedTo('https://evil.example.com/asset.bin') : served(PAYLOAD);
+  });
+  check(
+    'a hop to a host OUTSIDE the allowlist is refused, and the hop is never requested',
+    !result.ok &&
+      /unlisted host "evil\.example\.com"/u.test(String(result.error?.message)) &&
+      result.calls === 1 &&
+      asked.every((url) => url.startsWith('https://github.com/')),
+    `calls=${String(result.calls)} asked=${asked.join(',')} error=${String(result.error?.message).slice(0, 160)}`,
+  );
+}
+
+{
+  // The ordering the module comments on: `new URL(location, current)` is
+  // resolved BEFORE the host check. A relative Location is the ordinary release
+  // host's shape and must stay on the allowed host.
+  /** @type {string[]} */
+  const asked = [];
+  const result = await run((n, requested) => {
+    asked.push(requested);
+    return n === 1 ? redirectedTo('/example/moved.bin') : served(PAYLOAD);
+  });
+  check(
+    'a RELATIVE Location is resolved against the current URL, so the hop stays on the allowed host',
+    result.ok && result.calls === 2 && asked[1] === 'https://github.com/example/moved.bin',
+    `ok=${String(result.ok)} asked=${asked.join(',')} error=${String(result.error?.message).slice(0, 120)}`,
+  );
+}
+
+{
+  // And the half that makes the ordering load-bearing rather than convenient.
+  // A protocol-relative Location has no host until it is resolved, so a check
+  // that ran first would have nothing to compare — and `new URL('//evil…')`
+  // with no base throws. Resolved, it is a different host and is refused.
+  const result = await run((n) =>
+    n === 1 ? redirectedTo('//evil.example.com/asset.bin') : served(PAYLOAD),
+  );
+  check(
+    'a PROTOCOL-RELATIVE Location resolves to another host and is refused there',
+    !result.ok &&
+      /unlisted host "evil\.example\.com"/u.test(String(result.error?.message)) &&
+      result.calls === 1,
+    `calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 160)}`,
+  );
+}
+
+{
+  const result = await run(() => redirectedTo('https://github.com/x', { header: false }));
+  check(
+    'a redirect carrying no Location is an ERROR, not a silent stop',
+    !result.ok &&
+      /carried no Location header/u.test(String(result.error?.message)) &&
+      result.calls === 1,
+    `calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 160)}`,
+  );
+}
+
+{
+  // MAX_REDIRECTS is 5, and the loop runs hops 0..5 — so six requests are made
+  // and the seventh is never sent. The count is what proves the bound is a
+  // bound rather than a comment.
+  const result = await run((n) => redirectedTo(`https://github.com/hop-${String(n)}`));
+  check(
+    'an unbounded redirect chain is refused after a BOUNDED number of requests',
+    !result.ok && /Exceeded 5 redirects/u.test(String(result.error?.message)) && result.calls === 6,
+    `calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 160)}`,
+  );
+}
+
+{
+  const result = await run(() => served(null));
+  check(
+    'a 200 with no body is an error rather than an empty file',
+    !result.ok &&
+      /Empty response body/u.test(String(result.error?.message)) &&
+      result.calls === 1 &&
+      !existsSync(result.destination),
+    `calls=${String(result.calls)} error=${String(result.error?.message).slice(0, 160)}`,
+  );
+}
+
+{
+  // A control on this file's own harness rather than on the module. Every case
+  // above that asserts "nothing was left behind" is a claim about ONE path, and
+  // it would be a claim about the PREVIOUS case's file if two runs could share
+  // a destination — which is what naming them from the clock allowed.
+  check(
+    'CONTROL: no two runs in this file shared a destination',
+    new Set(destinationsUsed).size === destinationsUsed.length && destinationsUsed.length > 1,
+    `runs=${String(destinationsUsed.length)} distinct=${String(new Set(destinationsUsed).size)}`,
   );
 }
 
