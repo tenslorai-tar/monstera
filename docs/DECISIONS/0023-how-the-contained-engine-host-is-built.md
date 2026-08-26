@@ -2147,3 +2147,79 @@ The build is `commandSpecs.ts`'s `CommandExecution<W>` and `RegisteredWriter<W>`
 writer downstream of both — a third file because
 `mupdfWriter → commandSpecs → rotatePages → mupdfWriter` is a cycle, so the
 execution members cannot hang off `mupdfWriter` however tidy that reads.
+
+### Correction, 2026-08-26 — 10a's bound protects nothing, and once that is said the number derives itself
+
+**10a reads as though its bound is what protects invariant 11. It is not, and
+saying so is the whole correction.** `CommandPrior[K]` comes back inside a
+`HostResponse`, and `hostProtocol.ts` bounds frames on that pipe **in both
+directions** at `ENGINE_HOST_FRAME_MAX_BYTES` = 262,144. Anything larger cannot
+cross whatever 10a says. L11's protection is already delivered, by a constant
+that was itself derived from a measurement — `LARGEST_INTENT_PAYLOAD_BYTES` at
+2.18× headroom, with its derivation written down.
+
+**What 10a's number actually decides is WHERE the degradation happens:** at the
+seam, as a graceful `captured: false` and a checkpoint, or at the transport, as
+a frame refusal. That is a **fallback-quality choice, not a safety threshold**,
+and it has to be said in those words — as written, a later reader treats widening
+it as a security decision when the transport caps it regardless.
+
+**And the economics run the opposite way to the question I asked.** I went
+looking for a threshold *below which* recording an inverse is acceptable. The
+alternative to recording an inverse is a **checkpoint — a whole document image**:
+
+| prior state | what it costs |
+|---|---|
+| recorded as an inverse | ≤ 256 KiB on the pipe, once |
+| refused, so a checkpoint is taken | a full byte image of the document |
+
+Recording is *always* the cheap option, so the bound should be **as large as the
+transport permits, not smaller**. Anything less trades a bounded pipe payload for
+a whole-document image.
+
+**So it is derived, not chosen:** `ENGINE_HOST_FRAME_MAX_BYTES` minus the
+response envelope, **computed at the call site, never a second literal.** That
+satisfies both constraints the open question named — it never mentions
+`rotatePages`, so it is not fitted to the one command that exists; and it is not
+a number nobody agreed to, because it descends from one that was measured. It is
+also B3a in `hostProtocol.ts`'s own words about itself: that file calls
+`LARGEST_INTENT_PAYLOAD_BYTES` *"the thing the maximum below is derived FROM
+rather than a second opinion about it"*, and a prior-state bound written as its
+own literal is exactly the second opinion that sentence refuses.
+
+#### The refusal branch is not defensive — it is the ORDINARY outcome at this project's stated extreme
+
+Measured 2026-08-26, encoding a `rotatePages` inverse for a select-all on this
+project's stated 20,000-page extreme into the real response envelope
+(`{id, body: {ok, value: {captured, prior}}}`, id at its 64-character maximum):
+
+| payload | bytes at 20,000 pages | per page | binds at |
+|---|---|---|---|
+| prior state, every page's `/Rotate` **absent** | 809,018 | 40.45 | ~6,480 pages |
+| prior state, every page **carrying** a rotation | 969,018 | 48.45 | ~5,410 pages |
+| *intent*, for comparison | 120,057 | 6.00 | ~43,669 pages |
+
+**The prior state binds seven times sooner than the intent does, and at the
+stated extreme it is three to four times the whole frame.** So `captured: false`
+on payload grounds is not a branch waiting for a future command with an awkward
+inverse — it is what a select-all rotate on a large document does *today*, with
+the one command that exists. The fallback is a live path and must be built as
+one.
+
+It also sharpens where the cost lands: the cheap option is unavailable exactly
+where the expensive one hurts most, since the document whose inverse overflows is
+the document whose checkpoint is largest.
+
+#### The encoding question transfers, and this is the sentence that stops it being rediscovered
+
+`hostProtocol.ts` records that a bitmap is ~48× smaller than its JSON and that
+under a compact encoding *"the bound stops existing instead of being
+renegotiated"*. **That is equally true of a per-page prior state** — 40.45 bytes
+a page is JSON field names repeated 20,000 times, and the same observation
+applies unchanged. Written here so the next reader meets it as an option already
+considered rather than as a new finding.
+
+Not adopted now: the first remote command's prior state is kilobytes, the
+fallback is correct rather than merely tolerable, and choosing an encoding is a
+decision that wants its own moment (B4) rather than one taken in passing while
+wiring a call site.
