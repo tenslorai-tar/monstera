@@ -2128,3 +2128,22 @@ rather than from this decision — §3 and invariant 20 both still said the engi
 live in *utility processes*, which §2 of the same document denies. Corrected in
 their own commit, and recorded here because the finding belongs to the sweep this
 decision required rather than to this decision.
+
+### Note, 2026-08-26 — the blocker above is in the PAST TENSE now (finding DDDD-26)
+
+*"The blocker, as a mechanism"* says `commandBus.ts` **calls**
+`spec.capture(session, …)` and `spec.apply(session, …)` directly. That was true
+when it was written and stopped being true one commit later: the bus now calls
+`writer.capture`, `writer.apply` and `writer.invert` at all four call sites.
+
+Appended rather than edited, because that sentence is the evidence for why this
+decision was taken and rewriting it would destroy the record. Noted because the
+heading reads as historical **to its author** and as current to a reader who
+lands on it — item 7's own warning about the paragraph a reader treats as the
+contract, arriving in the section that argued for the change.
+
+The build is `commandSpecs.ts`'s `CommandExecution<W>` and `RegisteredWriter<W>`,
+`localMupdfExecution` beside them, and `localEngine.ts` assembling the local
+writer downstream of both — a third file because
+`mupdfWriter → commandSpecs → rotatePages → mupdfWriter` is a cycle, so the
+execution members cannot hang off `mupdfWriter` however tidy that reads.

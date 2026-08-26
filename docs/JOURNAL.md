@@ -644,6 +644,193 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-26 — Stage audit: `4859f20..3c4f338` — a module's first proof covering the axis the incident was about, and two sentences of the law falsified by a commit that never touched them
+
+**Audited through `3c4f338`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 4859f20..HEAD
+
+  commits: 9 (one batch is 9)
+  files:   10 (one batch is 24)
+  Within one batch. An audit is not yet owed.
+  Fires at 10 commits (1 more) or 25 files (15 more).
+
+  proofs ADDED — new coverage (1):
+    scripts/proofs/fetchVerified.proof.mjs
+  proofs MODIFIED — read each diff; a loosened check looks like a corrected one: none
+  proofs REMOVED — coverage leaving; say why in the entry: none
+  source FILES ADDED — instruments to resolution-test (items 4a, 4b): none
+  source FILES CHANGED — an instrument whose behaviour moved (items 4a, 4b) (2):
+    scripts/lib/fetchVerified.mjs
+      net +127 -30   per-commit +127 -30
+    scripts/research/lowboxSpike.mjs
+      net +205 -12   per-commit +206 -13
+  source FILES REMOVED — an instrument leaving; say why in the entry: none
+```
+
+**Audited at exactly one batch, and not by choice** — the pre-commit gate refused
+the tenth commit and named this audit as what unblocks it. The tenth is the
+Decision 10 build, so the range audited here is the decision work that precedes
+it.
+
+Board **GREEN at `3c4f338`** (`CI=success, Guards=success`, exit 0).
+
+### 1. Root cause, or workaround?
+
+- **The download retry** (`5cb259e`): a **legal workaround**, and the one shape
+  Rule 0 permits — the root cause is a release host resetting one racer's TLS
+  connection, which is outside this repository, and the commit names it. The
+  test that matters is the direction: `retryTransient` wraps the *fetch*, and
+  the **digest comparison sits outside it**, so a mismatch is answered once. A
+  retry that enclosed the hash check would be downloading until the hash
+  matches, which is the check that stands between a pinned asset and whatever a
+  host served instead. `DownloadTooLarge` is re-thrown past the retry for the
+  same reason: a ceiling breach is an answer, not a silence.
+- **DDDD-22 / DDDD-23** (`cf3e178`): both root. The first added the fixture for
+  the branch the design argues for; the second deleted a claim from a label
+  nothing measured, rather than adding a measurement to justify the label.
+- **DDDD-24** (`9e37ac2`): a documentation correction, and it *narrowed* a
+  retraction rather than widening one — the standing clause was recovered, not
+  re-argued.
+
+No loosened check in the range. No proof modified, so the load-bearing column
+is empty for the first time in five ranges.
+
+### 2. Verified against the easy shape only?
+
+**Not in this range, and DDDD-22 is why:** the previous range's proof covered a
+failure *before* headers only, which is the easy shape, and the hard one — a
+stream that dies mid-body — is the branch Decision 7's whole design argues for.
+That fixture now exists and carries the no-contamination assertion.
+
+### 3. Would CI have caught it? Answered from a run.
+
+**Yes, and one of them it did.** `5cb259e`'s defect *was* a red board — CI is how
+it was found, not something a check would have anticipated.
+
+For the new proof: `proof:fetchverified` is registered in `guards.yml` as a step
+with **no `if:`** in the *Secret scan and file policy* job, and that job reported
+`success` on both legs at `9e37ac2`. A step without a condition cannot be skipped
+in a job that succeeds, so it executed. **That is the reasoning, and it is not a
+step line** — job logs need owner authentication, and the unauthenticated
+`check-runs` payload carries job names only. Stated rather than glossed, because
+"registered in the workflow" is what AAAA-29 warns is not an answer.
+
+**Is there a defect this machine cannot see?** The provisioning branch here runs
+on every runner, and `fetchVerified.proof.mjs` injects `fetchImpl`, so it makes
+no network request and has no two worlds. `lowboxSpike.mjs` genuinely does — it
+is Windows-and-shim only — and the range's own commit for that (`fd1235c`)
+is the one that took its readings to three machines.
+
+### 4. Are the proofs non-vacuous? — **DDDD-25**
+
+**DDDD-25. `fetchVerified.mjs` got its first proof in this range, and the proof
+covers the axis the incident was about. Four reachable branches of the same
+module have no case anywhere in the repository.**
+
+Ten cases, five of them controls, both directions of the retry rule — that half
+is good, and the controls are the load-bearing ones (a mismatch, a ceiling
+breach, a 404, a 403, a host outside the allowlist, each proven *not* retried).
+
+What none of them reaches is `fetchChecked`'s **redirect** path, which predates
+the range and had no proof before it either:
+
+| branch | what it does | case |
+|---|---|---|
+| a hop whose `Location` fails the allowlist | `assertAllowed` throws | none |
+| a redirect carrying no `Location` header | throws | none |
+| a 200 with no body | throws | none |
+| more than `MAX_REDIRECTS` hops | throws | none |
+
+The first is the one that matters and it is not a tidiness point: the code
+resolves `new URL(location, current)` **before** the host check, with a comment
+saying the ordering exists so a relative hop cannot skip it. That is a
+deliberate, security-relevant ordering with nothing holding it — NNN-2's shape
+exactly, a branch reachable and load-bearing with no case at all. The existing
+allowlist case covers the **initial** URL, which is the input a redirect defect
+would sail past.
+
+Recorded rather than fixed, because an audit-recording commit is docs-only.
+
+**The general form is the transferable part, and it is not "write more cases":
+a module's FIRST proof is written by whoever just had an incident, so its
+coverage is shaped like the incident.** The retry axis is thorough because a
+reset socket reddened `main`; the redirect axis is empty because nothing had
+gone wrong there. A new proof arriving for an old module is the moment to ask
+what the module does that the incident did not touch.
+
+**Item 4c, and the range asked it of itself.** `lowboxSpike.mjs` derives
+`CELL_COUNT` from a module-scope `CELLS` array and writes the 4c question out:
+the failure to fear makes the set *bigger*, which a derived count tracks, and
+the anchor against a *removed* cell is that every property row names the cells
+it reads, so a missing cell turns rows `UNREADABLE` and the roster's declared
+`cases: 28` — a literal — fails rather than shrinking. **That anchor is
+asserted, not executed.** No run has removed a cell to confirm the roster fails
+rather than agreeing. Stated as a limit rather than filed as a defect: the
+mechanism is written down and the roster count is genuinely hand-kept, which is
+the half 4c actually requires.
+
+### 5. Executed, or asserted?
+
+**Executed:** the verb-split rows on three machines (verdicts, not figures, and
+the entry says so); the engine-open probe, mutated by pointing it at a missing
+file; the ten download cases; `perf:gate`'s `main-service` figures, re-read on
+this machine rather than carried from a document.
+
+**Asserted:** the 4c anchor above. And Decision 10's claim that a host runs the
+*same* `declaredSpecs` — true by construction of the module graph, and no host
+runs anything yet.
+
+### 6. Architecture before the feature?
+
+Yes, and twice deliberately. Decision 10 was recorded in `3c4f338` and built in
+the commit this audit unblocks. The **B4 question was checked rather than
+assumed**: no `ARCHITECTURE.md` sentence becomes false under Decision 10, so it
+is an ADR plus a seam change and not an amendment — an amendment commit editing
+nothing asserts a change that did not happen.
+
+### 7. Do the documents still match the code? — **DDDD-26**, and two already-false sentences
+
+**Two sentences of the law were false before this range began** (`53298a0`).
+`ARCHITECTURE.md` §3 said MuPDF runs "in the `mupdfHost` utility process" and
+invariant 20 said "both engines live in utility processes" — which §2 of the
+same document denies, having been amended by ADR-0022 on 2026-08-22. The
+amendment log names the sections that were swept; §3 and L20 were not among
+them.
+
+**NNN-4's shape, and no range-scoped sweep could ever have reached them**: no
+range has changed both the sentence and the decision that refutes it. They were
+found by the sweep Decision 10's B4 question required — which is the
+compensation NNN-4 names, firing on a range that states a cross-document
+relationship.
+
+Invariant 25's *"(a) and (b) are obtained on an Electron utility process"* was
+deliberately **not** touched: it records what was measured, and it was.
+
+**AND THE ORDINARY GREP MISSED ONE.** `grep -n "utility process"` over
+`ARCHITECTURE.md` returns lines 160, 727, 793, 802, 812 and 821 — **not 249**,
+where `utility` ends the line and `process` begins the next. The phrase is
+there; no line contains it. It was found by reading the range, not by the
+search, and a multiline match afterwards confirms both the miss and that the
+remaining hits are correct. That is the **line-wrap axis for the fifth time** in
+this repository, after `withdrawnPhrases.mjs`, a `grep -A3` window on a runs
+payload, and an ad-hoc grep of `CLAUDE.md`. The lesson keeps being written down
+and keeps recurring in tools nobody thinks of as searches — which is the
+evidence that documentation is not the mechanism and a positive control is.
+
+**DDDD-26. ADR-0023's Decision 10 states its blocker in the present tense, and
+the blocker was removed one commit later.** The section reads *"`commandBus.ts`
+calls `spec.capture(session, …)` and `spec.apply(session, …)` directly, in
+main"*, which was true when written and is false now. The heading — *The
+blocker, as a mechanism* — reads as historical to its author and as current to a
+reader who lands on it, which is item 7's own warning about the paragraph a
+reader treats as the contract. Corrected by an **appended, dated** note, because
+an ADR is a record: the sentence is evidence of what was true when the decision
+was taken and editing it destroys that.
+
+---
+
 ## 2026-08-25 — Stage audit: `16dc4da..4859f20` — a stale count in the anchor's own explanation, and a board reading that cannot be taken later
 
 **Audited through `4859f20`.** Pasted from `npm run audit:scope`:
