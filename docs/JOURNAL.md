@@ -644,6 +644,271 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-26 — Stage audit: `cedec2d..825c9a2` — a lifetime nothing invoked, and a budget wide enough to hide the thing it was written for
+
+**Audited through `825c9a2`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: cedec2d..HEAD
+  commits: 9 (one batch is 9)
+  files:   23 (one batch is 24)
+  proofs ADDED (1):     apps/desktop/src/engineSessions.test.ts
+  proofs MODIFIED (3):  documentCommands.test.ts +68 -17
+                        affectedProofs.proof.mjs +81 -3
+                        memoryBudgets.proof.mjs +20 -2
+  proofs REMOVED: none
+  source FILES ADDED (1):    scripts/lib/scanningProofs.mjs
+  source FILES CHANGED (10): engineSessions.ts +218 -6 · documentCommands.ts +84 -6
+                             failingJobs.mjs +53 -12 · channels.ts +27 -8
+                             composition.ts +25 -3 · affectedProofs.mjs +15 -2
+                             commandHandlers.ts · budget.ts · index.ts · memoryBudgets.mjs
+  source FILES REMOVED: none
+```
+
+The range: ADR-0023 Decision 9a built, a B4 amendment to §9.17, one red commit on
+`main` corrected forward, and two findings raised in review that no check could
+have raised.
+
+### FFFF-1. A lifetime three documents asserted in the present tense, with nothing invoking it
+
+`EngineSessions.release(docId)` dropped a document's entry and said in its own
+comment that *this is what makes the entry's lifetime the record's*. **Nothing
+called it** — two test callers, no production one.
+
+Nothing was broken, because there is no close channel for it to hang off. What
+was wrong is that three things asserted the property as **obtained**: the comment,
+ADR-0023's DDDD-16 correction — whose entire B5 argument is that *never, for the
+life of the process* has no key to live on — and `docs/FEATURES.md`'s 4c anchor,
+*open minus poisoned equals sessions held*, which fails for any document that has
+ever been closed if the entry outlives it.
+
+**The fix was a registration, not a caller**, and the seam already existed:
+`DocumentTeardown` in `documentService.ts` says *"releases whatever a document
+holds outside this index — the engine session, above all"*, and `composition.ts`
+was passing nothing for it. `releaseOnClose` is **typed as** that seam, so the
+fit is compile-checked and there is no method left for a future close path to
+remember.
+
+**The transferable form:** *a decision that says a lifetime is X is a promise
+that something enforces X*, and the interval between deciding and enforcing is
+invisible in both documents — the decision reads as delivered, and the code reads
+as complete because the method exists. What finds it is asking **who calls** the
+thing the decision names. That is a search, not a reading, and it is the question
+this audit's item 7 does not currently ask.
+
+### FFFF-2. §9.17's `base 96 MB` had no derivation, in the section that forbids assuming one
+
+Raised after a native library reached `main`'s measured fixed cost and the budget
+passed. Two possibilities were put: measured against a clean `main` and merely
+generous, or fitted to a `main` that already loaded the barrel.
+
+**Neither, and the third possibility was not on the list: it was argued and never
+measured.** The commit that introduced the term, `752679e`, says so in its own
+message — *"the budgets are argued rather than fitted, as the invariant requires:
+main runs the language runtime and nothing else, so its fixed cost should be
+within a small factor of a bare interpreter"*. That criterion is correct and
+contains **no number**, and nothing recorded what a bare interpreter cost, so
+nothing downstream could separate `96` from any other value satisfying the same
+sentence.
+
+**Reading the number's own commit is what settled it, and it is cheaper than
+either branch of the question.** Both proposed possibilities shared the premise
+that *somebody measured something* — Rule 0's *all the options can share a false
+premise*, arriving in the question rather than in the answer.
+
+Measured 2026-08-26 by `barrelCost.mjs`: bare Node **55.0 MB**, `+documentService`
+63.3, `+mupdfWriter` **94.2 (+39.2, the anchor)**, `+commandBus` 95.6, the barrel
+**103.8 (+48.8)**. So `96` is bare-plus-41 — within a megabyte of *bare plus the
+whole barrel*. That coincidence is why the fitted reading deserved testing rather
+than dismissal, and the commit message is what refutes it; the arithmetic alone
+would not have.
+
+Amended in its own commit as [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md):
+a baseline budget sits above the honest measured fixed cost of every role it
+governs and **below that cost plus the smallest thing it exists to catch**.
+`main` becomes `base 80 MB`.
+
+### The red commit, and what it says about the budget
+
+`9c7f078` turned CI red at `proof:perfbudget` and is left red, corrected forward
+by `9733db2` (B10). The cause was in the commit before it: `engineSessions.ts`
+written `import { type X } from './documentCommands.js'`, which under
+`verbatimModuleSyntax` elides the bindings and **keeps the statement** — emitting
+`import {}` — and that module imports `declaredSpecs` as a **value**, so the
+kernel barrel and the native MuPDF binding loaded in every process that loaded
+the supervisor. **Second occurrence of that trap, eleven lines below the header
+that documents the first.**
+
+`perf:gate`'s `main-service` baseline, measured both ways on both machines
+available:
+
+| | with the barrel | clean |
+|---|---|---|
+| `windows-latest` runner | **92.0 MB** — passed `base 96 MB` | ≤ 80 MB (bounded by a later passing gate; never read) |
+| this machine | **98.1 / 98.6 MB** — `OVER`, gate FAILS | **63.4 / 63.5 MB** |
+
+**+2 MB here, −4 MB there.** Not a loose limit — a limit sitting *on* the
+boundary of the thing it must catch, with the side decided by the machine. The
+first write-up said flatly *"the budget did not catch it"*, which was one
+machine's reading stated as a property; corrected in `e94e6c5`, and the
+correction cut toward tightening.
+
+What went red on the runner was `proof:perfbudget`'s H2 control, which
+re-measures with the baseline tightened by 4 MB and demands a refusal. **An
+invariant-20 exposure caught because a control is variance-sensitive** — luck,
+not coverage.
+
+### 1. Root cause, or workaround?
+
+| the fix | the mechanism |
+|---|---|
+| `import type` | the statement form is not erased; the emitted `import {}` is a side-effect load of a module that value-imports the barrel. Root cause, one keyword |
+| `releaseOnClose` typed as `DocumentTeardown` | not a caller added — the seam existed and the composition root passed nothing for it. Fixing the class: no method remains that someone must remember to call |
+| `base 80 MB` | the budget's upper bound was never stated, so the term could not fail for its own reason. Amendment, not a threshold nudge |
+| `proof:budgets`' derived nudge | it hardcoded `97`, encoding that §9.17 said `96`. Root cause: a second opinion about the number, **inside the proof of the module that exists to keep it in one place** |
+
+No workarounds this range. The nearest thing to one is the amendment carrying its
+own derived constant (`budget.ts`) in the same commit — B4 says amendment and
+feature commits are separate, and the judgement made was that a derived form
+`proof:composition` requires to move with the invariant is not a feature, and
+that an amendment leaving the tree red is not committable. Recorded as a
+judgement rather than left silent.
+
+### 2. Verified against the easy shape only?
+
+The `hold`-on-poisoned refusal, `recordFailure` and `recordSuccess` have **tests
+and no production callers**. That is the built-ahead state and it is legitimate —
+and FFFF-1 is precisely what happens when it is described in the present tense.
+Every branch in `EngineSessions` is exercised by a case; none is exercised by the
+application, and the `document-poisoned` code cannot be reached through any
+channel the renderer can construct.
+
+### 3. Would CI have caught it? — answered from runs
+
+**Yes, twice, and it is on the board.** The `import { type X }` defect was caught
+by CI and by nothing local (`9c7f078`, `proof:perfbudget`, step 28). The
+hardcoded `97 MB` was caught the moment §9.17's value moved.
+
+**No, twice, and both are review findings.** Nothing checks that an exported
+method has a production caller (FFFF-1), and nothing checks that a declared
+number has a recorded derivation (FFFF-2). Neither gap is closed here; naming
+them is what this line is for.
+
+**And the inverse — a defect THIS MACHINE can see that CI cannot, which is the
+direction ZZ-1 did not cover.** `main-service`'s clean baseline is 63.4 MB here
+and at most 80 MB on the runner, in fact lower. **The runner has more slack, so
+the runner is the blinder machine**, and a fixed-cost regression can pass there
+while failing here — which is exactly what happened at `9c7f078`. Every previous
+instance of this shape in the record ran the other way, with the developed-on
+machine hiding the defect.
+
+### 4. Are the proofs non-vacuous?
+
+Nine mutations run this range, all red at the right line:
+
+| mutation | outcome |
+|---|---|
+| poison bound moved to 3 | 7 cases |
+| reset-on-success removed | 1 |
+| poison read after the session lookup | 1, failing by name — `MissingSessionError` instead of `DocumentPoisonedError`, which is the whole distinction |
+| the session drop on death removed | 1 |
+| `openEngineSession`'s rollback removed | 2 — covering a function that until this range had **no test and no caller** |
+| `releaseOnClose` gutted | 4 |
+| `close`'s teardown moved ahead of the lane | 2, one of them `documentService.test.ts`'s own `CLOSE SPLITS` |
+| the baseline parsed but not read | 2, naming `83886080 against 83886080` |
+
+**`proof:budgets` was the best self-catch of the range**, and it caught its author
+rather than being caught: the resolution case read `base 97 MB` and asserted the
+parse returned *the real line's baseline plus 1 MB*. It held only while §9.17 said
+96. Now derived from the real line, with a precondition case requiring the
+declared baseline to be a whole number of MB so the arithmetic is about the
+quantity the assertion means — strictly stronger, since it held for one value and
+now holds for any.
+
+**`proof:composition` refused the amendment** until the derived constant followed:
+*"§9.17 is the writer of record: change the invariant first, then derive the
+constant from it."* The writer-of-record rule working on its author.
+
+Read for loosening, per the modified-proofs column: `documentCommands.test.ts`
+replaced two inline lookups with the production component (strengthening);
+`affectedProofs.proof.mjs` changed a clause from `!includes('npm run')` to
+`!includes('DID NOT REACH')` and **added a control requiring the substitution to
+still separate the two reports** — a correction, documented as one, not a
+loosening.
+
+### 4a / 4b. Instruments
+
+`scanningProofs.mjs` (added) is a search and carries its own positive control,
+refusing when it cannot find what it is known to be able to find.
+`failingJobs.mjs` (changed) now refuses to be a verdict on an empty per-sha
+result and names `board.mjs` as what answers absence — the direct repair for
+EEEE-3. `affectedProofs.mjs`'s `REACH_LIMIT` names the nine proofs no import walk
+reaches instead of disclaiming, and it is what named the six proofs run against
+this range's last changed set.
+
+**The green board was itself read as an instrument, opportunistically:**
+`perf:gate` passes when `baseline <= budget`, so `e94e6c5` going green bounds the
+runner's clean baseline at ≤ 80 MB. A bound, not a figure — but it closes the
+direction that mattered, and it was evidence already in hand.
+
+### 4c. Rosters
+
+`SCANNING_PROOF_COUNT = 9` is a literal anchor beside a derived list, which is the
+right direction: the failure feared makes the set *smaller*.
+`affectedProofs.proof.mjs`'s `cases: 15 → 20` is a hand-kept count rising with
+growth, which is the direction a hand-kept list handles correctly.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before. ADR-0025 is its own commit and nothing is built on `base 80 MB`. ADR-0023
+Decision 9a was decided 2026-08-25 and built here, in that order.
+
+### 7. Do the documents still match the code?
+
+**FFFF-3, raised in review of ADR-0025 and folded in here because that ADR is
+inside this range.** The ADR states *"the smallest thing the term must catch is
+the native binding: +39.2 MB"*. §9.17 names **three** things the baseline term
+exists to catch — a font preload, a warmed cache, and the binding — and **only
+the binding has a measured size**. So the rule is right, the instantiation
+satisfies it for one class of three, and the ADR's title claims the general
+property. A reader takes the general one; the number delivers the specific one.
+
+Appended to the ADR as a stated limit rather than answered with a lower number:
+`base 80 MB` leaves ~16.5 MB of slack against this machine's honest floor, so a
+fixed-cost regression below that passes here and by an unknown margin on the
+runner. **Not lowered**, because the slack also absorbs the >4 MB machine swing
+and legitimate growth, and a baseline that reddens on ordinary variance is a
+check people switch off. The same move already made in that ADR for
+`mupdf-host`'s undecided ceiling.
+
+Swept in the amendment's own commit, since a number change owes it:
+`memoryBudgets.mjs`'s format comment and expected-form diagnostic, `budget.ts`'s
+quoted line, `engineSessions.ts`'s dated measurement, and two `docs/FEATURES.md`
+rows now say which limit was in force. ADR-0012 reproduces the whole budget line
+verbatim and took an **appended note** — a record is not edited, and a verbatim
+block reads as a specification in a way a sentence about a measurement does not.
+ADR-0021 and ADR-0023 name `96` inside dated measurements and were left alone for
+the same reason.
+
+`docs/FEATURES.md` also gained Decision 9a as built, the registration finding, and
+the corrected scope on the invariant-20 row.
+
+### 5. Executed, or asserted?
+
+**Executed:** `perf:gate` on both content shapes, four times, including two
+deliberate reintroductions of the defect · `proof:perfbudget` (31) ·
+`proof:budgets` (23) with one mutation · `proof:composition` (5) · `proof:shell`
+(3) · the six proofs `affectedProofs` named for the amendment's changed set —
+`stackowner`, `jobplacement`, `proofcoverage`, `affectedproofs`, `pathdispatch`,
+`boundaries` · 485 vitest cases · the 16 local checks against the index, five
+times · the board through `board.mjs` at every push · `githubstatus.com`'s
+incident feed, read directly rather than quoted.
+
+**Asserted:** that the >4 MB inter-run swing on the runner is the native load.
+Plausible, not isolated, and the amendment deliberately does not depend on it.
+
+---
+
 ## 2026-08-26 — Stage audit: `5168f3b..cedec2d` — a service outage reported from an instrument that looks once
 
 **Audited through `cedec2d`.** Pasted from `npm run audit:scope`:

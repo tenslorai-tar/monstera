@@ -116,6 +116,34 @@ Roles governed by the `main` budget, clean, measured on this machine:
 
 The smallest thing the term must catch is the native binding: **+39.2 MB**.
 
+> **NOTE, 2026-08-26 — that sentence names one of THREE classes and calls it the
+> smallest, and only one of the three has a measured size** (finding FFFF-3,
+> raised in review of this ADR). §9.17 names what the baseline term exists to
+> catch: *"an engine that begins preloading fonts, a cache warmed at startup"* —
+> and the native binding. **The binding is the only one anybody has measured.**
+> Nothing makes a warmed cache or a font preload ≥ 39.2 MB, so the derivation
+> above is sound for the class it used and does not establish the general
+> property this ADR's title claims.
+>
+> **What `base 80 MB` therefore does and does not catch**, stated as a limit
+> rather than left implied: against this machine's honest floor of 63.5 MB it
+> leaves roughly **16.5 MB of slack**, so a fixed-cost regression smaller than
+> that passes here. On the runner the slack is larger and **unknown** — its clean
+> baseline is bounded at ≤ 80 MB by a passing gate and has never been read — so
+> the figure there cannot be stated at all.
+>
+> **The number is not lowered, and the reason is a rule of its own.** The slack
+> also absorbs a machine-to-machine swing measured at more than 4 MB and whatever
+> legitimate growth `main` is entitled to; a baseline that reddens on ordinary
+> variance is a check people switch off, which is a worse outcome than one that
+> misses a small regression. So this is the same move made for `mupdf-host`'s
+> ceiling in the section below — an unfinished derivation named as unfinished
+> rather than a criterion quietly widened to fit what was done.
+>
+> **What would close it** is the runner's clean baseline being printed by some
+> run, at which point the slack is known on both builds instead of one — the same
+> gap this amendment closed one level up, arriving one level down.
+
 - **Floor**: above 63.5 MB, the largest honest measurement, or the gate fails on
   correct code.
 - **Ceiling**: below 63.5 + 39.2 = **102.7 MB** here, and below the runner's
