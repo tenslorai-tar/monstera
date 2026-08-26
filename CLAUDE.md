@@ -1045,6 +1045,26 @@ The fix stayed inside the one check that had been bitten. That is Rule 0's *fix
 the class, not the instance*, where the instance was fixed properly and the class
 was never named, which is the version that leaves no trace to find later.
 
+**And a FIFTH on 2026-08-26, which is what finally made it a command.**
+`grep -n "utility process"` over `docs/ARCHITECTURE.md` returned six lines and
+not the one where `utility` ends a line and `process` begins the next — a
+sentence the law had been contradicting itself with since ADR-0022. It was found
+by reading the range. Writing the rule down had not worked four times, so the
+rule now has a caller:
+
+```bash
+npm run sweep:prose -- "the phrase, in lower case, with single spaces"
+```
+
+`scripts/lib/proseSweep.mjs` imports `units` and `normalise` from
+`withdrawnPhrases.mjs` rather than re-deriving them — a hand-run line-by-line
+grep is a **second opinion** about a question that module already owns (B3a). It
+refuses to report when its own positive control, a phrase deliberately broken
+across a line, is not found; and its proof asserts that a **line-scoped search
+misses that same phrase**, because a control a `grep` would also pass proves
+nothing about the one thing the instrument exists for. Reach for it in every
+cross-document sweep, and especially the NNN-4 one.
+
 **And "the answer sits where the pattern cannot reach" recurs after being written
 down.** The OCR list below already carries a parser that read prose as C and a
 pattern that could not match a definition at column 0. It happened again on

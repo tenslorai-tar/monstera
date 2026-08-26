@@ -329,6 +329,14 @@ jobs:
       - name: No workflow cancels an in-progress run on main
         run: node scripts/ci/annotate.mjs scripts/lib/mainNeverCancels.mjs
 
+      # The prose sweep takes a pattern, so there is nothing for it to assert
+      # about the tree and only its proof runs here. What the proof holds is that
+      # it sees a phrase broken across a line break AND that a line-scoped search
+      # misses the same phrase — a control a grep would also pass would prove
+      # nothing about the one thing this instrument exists for.
+      - name: Prove the prose sweep sees what a line-scoped search cannot
+        run: node scripts/ci/annotate.mjs scripts/proofs/proseSweep.proof.mjs
+
       # Runs HERE, on Linux, with no native library involved: the check is pure
       # arithmetic on what koffi returns, and the value it must reject was
       # measured once on Windows and is pinned in the proof. A defect that lived

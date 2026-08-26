@@ -108,6 +108,8 @@
     "check:electronbinary": "node scripts/lib/electronBinaryCallers.mjs",
     "check:workflowpins": "node scripts/lib/workflowPins.mjs",
     "proof:maincancels": "node scripts/proofs/mainNeverCancels.proof.mjs",
+    "proof:prosesweep": "node scripts/proofs/proseSweep.proof.mjs",
+    "sweep:prose": "node scripts/lib/proseSweep.mjs",
     "check:maincancels": "node scripts/lib/mainNeverCancels.mjs",
     "proof:toolchain": "node scripts/proofs/toolchainPin.proof.mjs",
     "proof:threattopics": "node scripts/proofs/threatModelTopics.proof.mjs",
