@@ -141,6 +141,16 @@ comfortable.
   authentication, and annotations carry a step's output only when it fails. The
   runner ceiling above is derived from its *with-barrel* figure, which is a real
   reading, and is therefore an upper bound rather than the number itself.
+
+  > **NOTE, 2026-08-26 — the amendment's own CI run bounds it, and that is a
+  > reading rather than an inference.** `perf:gate` passes when
+  > `baselineBytes <= budget.baselineBytes`, so `e94e6c5` going green on
+  > `windows-latest` says the runner's clean `main-service` baseline is **at most
+  > 80 MB**. Still not the figure — a pass is a bound, and this one is the
+  > declared value by construction — but it closes the direction that mattered:
+  > the floor chosen from this machine's 63.5 MB does not fail on the runner.
+  > Recorded because the sentence above says the figure is unreadable, and a
+  > reader would otherwise not notice that the green board answers half of it.
 - **It does not explain the >4 MB swing** between two measurements of the same
   role on the runner. Loading a statically linked engine is a plausible source
   and it was not isolated. The amendment does not depend on it: with the budget
