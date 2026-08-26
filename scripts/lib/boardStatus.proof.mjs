@@ -32,13 +32,13 @@
  * Usage: node scripts/lib/boardStatus.proof.mjs
  */
 
-import { boardVerdict, parseRuns, pollDelaySeconds } from './boardStatus.mjs';
+import { boardTarget, boardVerdict, parseRuns, pollDelaySeconds } from './boardStatus.mjs';
 import { createRoster } from './passRoster.mjs';
 import { formatError } from './reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 22 });
+const roster = createRoster(failures, { cases: 29 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -394,6 +394,89 @@ check(
       `shares ~60 requests an hour with the reviewing seat (DDDD-28), and a burst empties that ` +
       `for both — the failure is not a slow verdict, it is NO verdict plus a quota nobody else ` +
       `can use.`,
+  );
+}
+
+{
+  // THE ARGUMENT SHAPE (finding FFFF-6). This judgement used to live in
+  // `board.mjs`, where no fixture reaches it, as `sha.length < 7` — a guard
+  // naming the exact failure it permitted, since `?head_sha=` matches on forty
+  // characters and nothing else. Seven passed, matched no run, and came back as
+  // a plausible zero.
+  //
+  // THE FIXTURE IS SEVEN CHARACTERS ON PURPOSE. A forty-character one passes
+  // whether the rule is "at least 7" or "exactly 40" and separates nothing —
+  // never build a fixture the bug also handles correctly.
+  const SHORT = MINE.slice(0, 7);
+
+  /** @param {readonly string[]} argv @param {string} [head] */
+  function target(argv, head = MINE) {
+    return boardTarget(argv, { headSha: head });
+  }
+  /** @param {readonly string[]} argv @param {string} [head] */
+  function refusal(argv, head = MINE) {
+    try {
+      target(argv, head);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  check(
+    'no arguments reads HEAD, so the common case names no sha at all',
+    target([]).sha === MINE && !target([]).once,
+    `got ${JSON.stringify(target([]))} for a HEAD of ${MINE}.`,
+  );
+
+  const shortFlag = refusal(['--sha', SHORT]);
+  check(
+    'a SEVEN-character --sha is refused BY THE FLAG RULE, which the old shell guard admitted',
+    shortFlag !== null && shortFlag.startsWith('--sha needs'),
+    `refusing "${SHORT}" reported ${JSON.stringify(shortFlag)}. Seven characters is the exact ` +
+      `length \`sha.length < 7\` let through, and it matches no run.`,
+  );
+  // WHICH RULE REFUSED IT IS THE ASSERTION, and the first version of this case
+  // did not say so: it required the message to contain "forty", and the
+  // downstream HEAD check says "not forty hex characters" too. Restoring the old
+  // `length < 7` rule left the case GREEN — the value fell through to that check
+  // and was refused for a reason this case does not exist to test. Mutation
+  // testing found it; the roster never would have.
+
+  check(
+    'CONTROL: the same flag with a FULL sha is accepted, so the refusal is about length',
+    target(['--sha', OTHER]).sha === OTHER,
+    `a full forty-character sha was refused, so the case above is satisfied by a rule that ` +
+      `refuses every --sha and separates nothing.`,
+  );
+
+  const positional = refusal([SHORT]);
+  check(
+    'a bare positional sha is refused BY NAME rather than interpreted',
+    positional !== null && positional.includes('--sha'),
+    `got ${JSON.stringify(positional)}. A caller who typed a sha meant one; being told where ` +
+      `it goes is the difference between the reflex being unavailable and being punished.`,
+  );
+
+  check(
+    'and a positional is refused even at FULL length, because the flag is the way in',
+    refusal([OTHER]) !== null,
+    `a forty-character positional was accepted, so the old interface still works and the ` +
+      `reflex that produced FFFF-6 is still reachable.`,
+  );
+
+  const badHead = refusal([], 'ref: refs/heads/main');
+  check(
+    'a HEAD that is not a sha is refused rather than queried',
+    badHead !== null && badHead.includes('HEAD'),
+    `got ${JSON.stringify(badHead)}. A \`git rev-parse\` that answered something else must not ` +
+      `become a query that quietly matches nothing — the same defect through the other door.`,
+  );
+
+  check(
+    'the flags still come back, so moving the parse did not drop --once or --verbose',
+    target(['--once', '--verbose']).once && target(['--once', '--verbose']).verbose,
+    `got ${JSON.stringify(target(['--once', '--verbose']))}.`,
   );
 }
 

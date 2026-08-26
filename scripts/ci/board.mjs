@@ -38,12 +38,23 @@
  * run in progress.
  *
  * Usage:
- *   node scripts/ci/board.mjs <sha>             wait for it, print the verdict
- *   node scripts/ci/board.mjs <sha> --verbose   one line per poll as well
- *   node scripts/ci/board.mjs <sha> --once      one look, no waiting
+ *   node scripts/ci/board.mjs                   HEAD: wait for it, print the verdict
+ *   node scripts/ci/board.mjs --verbose         one line per poll as well
+ *   node scripts/ci/board.mjs --once            one look, no waiting
+ *   node scripts/ci/board.mjs --sha <40 hex>    another commit, full sha only
+ *
+ * **No positional sha, and that is the point** (finding FFFF-6). This used to
+ * take one and accept it at seven characters — a length `?head_sha=` matches
+ * nothing at, so the query came back empty and the reader said *not yet* about
+ * a commit it had never asked about. The guard's own message named that failure
+ * in the sentence permitting it. The common case is *is what I just pushed
+ * green*, so it now reads `HEAD` and the reflex is unavailable rather than
+ * rejected. {@link boardTarget} decides all of this, where a proof can reach it.
  */
 
-import { boardVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
+import { execFileSync } from 'node:child_process';
+
+import { boardTarget, boardVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
 import { githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
@@ -75,16 +86,20 @@ function trace(line) {
   if (process.argv.includes('--verbose')) process.stdout.write(line);
 }
 
+/**
+ * The commit this shell is running in, read from git.
+ *
+ * The one impure half of the argument work, kept here so {@link boardTarget}
+ * stays a function of literals. It is not validated here either — the shape is
+ * that function's judgement, and a second opinion about what a sha looks like
+ * is how the first one drifted.
+ */
+function headSha() {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+}
+
 async function main() {
-  const sha = process.argv[2];
-  const once = process.argv.includes('--once');
-  if (sha === undefined || sha.length < 7) {
-    throw new Error(
-      'usage: node scripts/ci/board.mjs <sha> [--once]\n' +
-        'Give at least 7 characters. A short sha is what made the first version of this ' +
-        'instrument report zero runs and call it "not yet".',
-    );
-  }
+  const { sha, once } = boardTarget(process.argv.slice(2), { headSha: headSha() });
 
   /** @type {Map<number, number>} */
   const seen = new Map();

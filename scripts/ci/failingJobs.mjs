@@ -131,7 +131,7 @@ try {
         `    - a wrong sha\n` +
         `    - a request that was refused\n\n` +
         `  Only waiting separates the first from the rest:\n` +
-        `    npm run board -- ${sha}\n`,
+        `    npm run board -- --sha ${sha}\n`,
     );
     process.exit(3);
   }

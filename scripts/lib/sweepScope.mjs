@@ -117,7 +117,7 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
     `  npm run local -- --only check:            the pre-push sweep, no proofs, unaffected\n` +
     `  npm run local -- --only <one proof name>  a single proof has nothing to be ` +
     `contaminated by\n` +
-    `  npm run board -- <full sha>               the whole set, on a machine per job\n\n` +
+    `  npm run board                             the whole set at HEAD, on a machine per job\n\n` +
     `AND IF YOU ARE HERE TO INVESTIGATE THIS, run the full sweep against a CLONE:\n` +
     `  git clone . <path>\n` +
     `  npm run local -- --root <path> --only proof:\n\n` +

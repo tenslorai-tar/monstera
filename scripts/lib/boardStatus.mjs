@@ -122,6 +122,87 @@ const PROGRESS = Object.freeze({
 });
 
 /**
+ * A full commit sha, which is the only shape `?head_sha=` matches.
+ *
+ * Forty lower-case hex characters. Not "at least seven", which is what the
+ * shell used to accept — see {@link boardTarget}.
+ */
+const FULL_SHA = /^[0-9a-f]{40}$/u;
+
+/**
+ * What one invocation of the board reader is about, decided from its arguments.
+ *
+ * ## Why the argument shape is decided HERE (finding FFFF-6)
+ *
+ * This module exists because the thing answering *"is `main` green?"* failed
+ * three ways that all printed **"not yet"**, and the first one listed at the top
+ * of this file is *a query keyed on a SHORT sha*. The shell then guarded that
+ * with `sha.length < 7`, **naming the failure in the sentence that permitted
+ * it** — every value from 7 to 39 characters passed the check, matched no run,
+ * and came back as a plausible zero. A guard that admits the case it names is
+ * worse than no guard: an absent check leaves a caller suspicious, and that one
+ * returned a clean *usage passed*.
+ *
+ * It went unnoticed because it sat in the untested half. The decider/shell split
+ * was made so judgement could be proven without a network, and a second piece of
+ * judgement then accumulated on the shell side where no fixture reaches. **A
+ * split like that holds only while nothing new lands in the shell, and nothing
+ * checks that** — so argument shape is judgement and belongs here, beside the
+ * parsing rules, where a seven-character fixture can be required to fail.
+ *
+ * ## The default takes no sha at all
+ *
+ * The common case is *is the thing I just pushed green*, so the caller passes
+ * nothing and this uses `HEAD`. The reflex that produced the slip — typing a
+ * short sha — is then not a thing the command accepts wrongly; it is not a thing
+ * the command accepts at all. A positional argument is refused by name rather
+ * than interpreted, because a caller who typed one meant a sha and should be
+ * told where it goes.
+ *
+ * `headSha` is validated too. A `git rev-parse` that answered something else
+ * must not become a query that quietly matches nothing — which is the same
+ * defect arriving through the other door.
+ *
+ * @param {readonly string[]} argv Arguments after the script path.
+ * @param {{ headSha: string }} context The resolved `HEAD`, supplied by the
+ *   caller so this stays free of process spawning and testable with literals.
+ * @returns {{ sha: string, once: boolean, verbose: boolean }}
+ */
+export function boardTarget(argv, { headSha }) {
+  const positional = argv.filter((argument) => !argument.startsWith('--'));
+  const flagged = argv.indexOf('--sha');
+  const supplied = flagged === -1 ? undefined : argv[flagged + 1];
+
+  if (positional.length > 0 && positional[0] !== supplied) {
+    throw new Error(
+      `The board reader takes no positional argument; got "${String(positional[0])}". ` +
+        `Run it with no sha to read HEAD, or pass --sha <40 hex characters> for another ` +
+        `commit. A bare sha here used to be accepted at seven characters and matched no run, ` +
+        `because ?head_sha= matches on the full forty and nothing else.`,
+    );
+  }
+
+  if (flagged !== -1 && (supplied === undefined || !FULL_SHA.test(supplied))) {
+    throw new Error(
+      `--sha needs a FULL forty-character commit sha; got ${supplied === undefined ? 'nothing' : `"${supplied}" (${String(supplied.length)} characters)`}. ` +
+        `?head_sha= matches on the full forty and nothing else, so anything shorter returns ` +
+        `zero runs — which reads exactly like a push that has not registered yet.`,
+    );
+  }
+
+  const sha = supplied ?? headSha;
+  if (!FULL_SHA.test(sha)) {
+    throw new Error(
+      `HEAD resolved to "${sha}", which is not forty hex characters. That would be sent to ` +
+        `?head_sha= and match nothing, and the run would report "not yet" for a commit it ` +
+        `never asked about.`,
+    );
+  }
+
+  return { sha, once: argv.includes('--once'), verbose: argv.includes('--verbose') };
+}
+
+/**
  * Reads the runs out of a payload.
  *
  * Throws rather than returning `[]` on anything it cannot read. An empty
