@@ -40,8 +40,12 @@ import { githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const sha = process.argv[2];
-if (sha === undefined || !/^[0-9a-f]{40}$/.test(sha)) {
-  process.stderr.write('usage: node scripts/ci/failingJobs.mjs <full 40-character sha>\n');
+const RECENT = '--recent';
+if (sha !== RECENT && (sha === undefined || !/^[0-9a-f]{40}$/.test(sha))) {
+  process.stderr.write(
+    'usage: node scripts/ci/failingJobs.mjs <full 40-character sha>\n' +
+      '       node scripts/ci/failingJobs.mjs --recent\n',
+  );
   process.exit(2);
 }
 
@@ -67,6 +71,28 @@ async function json(path) {
 }
 
 try {
+  if (sha === RECENT) {
+    // ONE REQUEST, and it answers a question the per-sha view structurally
+    // cannot: whether a run EXISTS. A sha with no run and a sha whose run was
+    // cancelled read very differently here and identically there, because a
+    // filtered query returns an empty list for both.
+    const recent = await json('/actions/runs?per_page=20');
+    const list = Array.isArray(recent['workflow_runs']) ? recent['workflow_runs'] : [];
+    if (list.length === 0) {
+      process.stdout.write('No runs at all. That is a broken read, not a quiet repository.\n');
+      process.exit(3);
+    }
+    for (const run of list) {
+      const entry = /** @type {Record<string, unknown>} */ (run);
+      process.stdout.write(
+        `${String(entry['head_sha']).slice(0, 8)}  ${String(entry['name']).padEnd(10)} ` +
+          `${String(entry['status']).padEnd(11)} ${String(entry['conclusion'])}` +
+          `   ${String(entry['created_at'])}\n`,
+      );
+    }
+    process.exit(0);
+  }
+
   const runs = await json(`/actions/runs?per_page=20&head_sha=${sha}`);
   const list = Array.isArray(runs['workflow_runs']) ? runs['workflow_runs'] : [];
   if (list.length === 0) {
