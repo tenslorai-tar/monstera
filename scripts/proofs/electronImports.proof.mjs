@@ -330,6 +330,21 @@ try {
       },
     ],
     [
+      'scripts/research/barrelCost.mjs',
+      {
+        sites: 1,
+        reason:
+          'loads one built kernel module per cell through a file:// URL, the file named by the ' +
+          'cell argument. Windows absolute paths are not URLs and the ESM loader refuses a ' +
+          '`c:` scheme, so the conversion is required rather than stylistic. The specifier is ' +
+          'computed because the whole instrument is a per-module comparison — a literal per ' +
+          'module would be six copies of one line and the roster would live in the imports. ' +
+          'Every path it can build is under packages/kernel/dist, and this file measures RSS ' +
+          'rather than starting anything: it never names the electron package, and the module ' +
+          'it exists to weigh — mupdfWriter.js — reaches koffi and mupdf, not electron.',
+      },
+    ],
+    [
       'scripts/research/readerWorker.mjs',
       {
         sites: 4,
