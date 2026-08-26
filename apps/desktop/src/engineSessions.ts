@@ -14,6 +14,8 @@
 import type { DocumentService, EngineSupervisor, MupdfSession } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
+import { type DocumentSessions, type EngineSessionSource } from './documentCommands.js';
+
 /**
  * The engine session supervisor — the component that creates a document's
  * engine session and owns the directory pair its bytes travel through.
@@ -26,10 +28,11 @@ import type { DocId } from '@monstera/shared';
  * the lookup must create a session and put it where the lookup finds it. That
  * something is this.
  *
- * What is here is the **creation** step. The rest of ADR-0023 Decision 9 — the
- * rebuild bounded per document, poisoning at two consecutive failures with a
- * reset on success, entering other documents' lanes rather than draining them —
- * is the same component's and is not built yet.
+ * What is here is the **creation** step and the **state** — `openEngineSession`
+ * and {@link EngineSessions}, which together are Decision 9a. What is not here
+ * is what drives them: the transport subscription that observes a death
+ * (Decision 9b), the host rebuild, and the lane entry that reopens each
+ * document's session rather than draining it (Decision 9c).
  *
  * It is written now rather than with the rest because the capability it mints
  * has to be minted **somewhere**, and `documentService.ts` says what a token
@@ -145,3 +148,175 @@ export async function openEngineSession(
  * brand never made forgery impossible, it made it visible.
  */
 export const SUPERVISOR_CAPABILITY_FOR_INSTRUMENTS: EngineSupervisor = SUPERVISOR;
+
+/**
+ * How many consecutive engine-host failures poison a document.
+ *
+ * **A decision, not a derivation** (ADR-0023 Decision 9a, decided 2026-08-25),
+ * and its own text says so: the number is not derivable from anything that ADR
+ * cites. One retry tells you whether the failure is deterministic; a second
+ * re-derives an answer already in hand while feeding the suspect input to a
+ * fresh process again.
+ *
+ * Module-private on purpose. A test importing this and computing its
+ * expectations from it would agree with any value — the bound is what the cases
+ * exist to pin, so they spell the counts out.
+ */
+const POISON_AT = 2;
+
+/** One open document's supervisor state. See {@link EngineSessions}. */
+interface DocumentEntry {
+  sessions: DocumentSessions;
+  /** Reset to zero by any call the host answers (Decision 9a). */
+  consecutiveFailures: number;
+}
+
+/**
+ * The supervisor's per-document state: which engine sessions a document has,
+ * and how many consecutive host failures it has had.
+ *
+ * ## Why the sessions and the count are ONE map
+ *
+ * Decision 9a's DDDD-16 correction fixes it: *"the failure count and the poison
+ * live on the supervisor's per-document state, whose lifetime is the record's"*.
+ * Two maps keyed by `DocId` would be two owners of one document's supervisor
+ * state, which is the B3 defect — and they would drift at exactly the moment
+ * that matters, when a document closes during a host death.
+ *
+ * ## Recovery needs no mechanism, and that is the design rather than a gap
+ *
+ * ADR-0009 fixes that a `DocId` is **minted, never derived** — 256 random bits
+ * per open. So closing and reopening a file arrives here as an id with no entry,
+ * at zero, and the four candidate recovery policies collapse to one that cannot
+ * be got wrong. The worst of them — *never, for the life of the process* — is
+ * unrepresentable rather than rejected, because it has no key to live on (B5).
+ *
+ * **What that recovery costs is stated in the ADR and is not free**: the DDDD-18
+ * correction withdraws *"a poisoned document is still saveable"*, because a save
+ * is a parse and a poisoned document has no session. Close-and-reopen resets the
+ * count by dropping the record, and the command log's lifetime is the record's,
+ * so it takes the user's unsaved work with it. Refusing **strands** the work
+ * where closing **destroys** it; that, and not saveability, is why refusing wins.
+ *
+ * ## What is not here
+ *
+ * The transport subscription that calls {@link EngineSessions.recordFailure},
+ * the host rebuild, and the lane entry that reopens each document's session
+ * (Decisions 9b and 9c). This is the state those act on, written first for the
+ * same reason the module's header gives for `openEngineSession`: the alternative
+ * is a second map arriving later beside this one.
+ */
+export class EngineSessions implements EngineSessionSource {
+  readonly #entries = new Map<DocId, DocumentEntry>();
+
+  /**
+   * Get-or-miss, never get-or-create. Arrow-bound because this is handed over
+   * as {@link EngineSessionSource}'s member and a method would lose its
+   * receiver on the way.
+   */
+  readonly sessions = (docId: DocId): DocumentSessions | undefined =>
+    this.#entries.get(docId)?.sessions;
+
+  /** The count that poisoned this document, or `undefined`. */
+  readonly poisoned = (docId: DocId): number | undefined => {
+    const failures = this.#entries.get(docId)?.consecutiveFailures ?? 0;
+    return failures >= POISON_AT ? failures : undefined;
+  };
+
+  /**
+   * Records the sessions a document now has.
+   *
+   * Refuses a poisoned document rather than accepting it, because *poisoned*
+   * means no session is rebuilt: a session held for one could never be used —
+   * {@link EngineSessions.poisoned} is read first, and refuses. Accepting it
+   * would leave an unreachable session in the map and a supervisor whose two
+   * answers disagree, which is the state this class exists as one map to
+   * prevent.
+   */
+  hold(docId: DocId, sessions: DocumentSessions): void {
+    const entry = this.#entries.get(docId);
+    if (entry !== undefined && entry.consecutiveFailures >= POISON_AT) {
+      throw new Error(
+        `Supervisor defect: sessions offered for a poisoned document, whose whole meaning is ` +
+          `that no session is rebuilt for it. (document ${docId.slice(0, 8)}…)`,
+      );
+    }
+    if (entry === undefined) {
+      this.#entries.set(docId, { sessions, consecutiveFailures: 0 });
+      return;
+    }
+    entry.sessions = sessions;
+  }
+
+  /**
+   * Drops a document's state, on close.
+   *
+   * This is what makes the entry's lifetime the record's. It is also why a
+   * document closed between a call being issued and the host dying is simply
+   * absent from {@link EngineSessions.recordFailure}'s effect rather than
+   * needing a case: there is nothing left to increment.
+   */
+  release(docId: DocId): void {
+    this.#entries.delete(docId);
+  }
+
+  /**
+   * A host death: increments every document that had a call rejected by it, and
+   * **drops the sessions that died with the host**.
+   *
+   * Dropping is not bookkeeping. One host per engine means every session it held
+   * is gone the moment it is, and a handle left in this map is one a queued
+   * command would find and use — a stale handle into a process that no longer
+   * exists, which is the shape resolving the session inside the lane already
+   * exists to prevent one step earlier. Decision 9c's lane entry is what puts
+   * them back.
+   *
+   * The caller supplies that set; this does not derive it. A `DocId` with no
+   * entry is skipped, and the only way to be in the set without one is to have
+   * been closed in between — see {@link EngineSessions.release}.
+   *
+   * **Attribution is deliberately absent.** Decision 9a rejected counting only
+   * the document whose call was the sole one in flight: it is evadable by
+   * concurrency and buys nothing once a success resets the count. The residual
+   * it leaves is real and is recorded in the ADR's DDDD-17 correction — a
+   * document busy at two successive deaths caused by a *third* document's bytes
+   * reaches the bound having caused neither.
+   */
+  recordFailure(docIds: Iterable<DocId>): void {
+    for (const docId of docIds) {
+      const entry = this.#entries.get(docId);
+      if (entry === undefined) continue;
+      entry.consecutiveFailures += 1;
+      entry.sessions = {};
+    }
+  }
+
+  /**
+   * A call the host answered: back to zero.
+   *
+   * **This is what makes a plain counter correct**, and without it the count
+   * would poison the innocent. One host per engine means a death rejects calls
+   * for documents that had nothing to do with it; their next command succeeds
+   * against the rebuilt host and puts them back to zero, so only a document that
+   * fails twice with no success in between reaches the bound.
+   */
+  recordSuccess(docId: DocId): void {
+    const entry = this.#entries.get(docId);
+    if (entry === undefined) return;
+    entry.consecutiveFailures = 0;
+  }
+
+  /**
+   * How many documents this holds state for.
+   *
+   * **NOT the anchor Decision 9c needs**, and saying so here is the point. A
+   * count read off this map cannot disagree with this map, so it can never
+   * report a document that silently lost its session — the failure 9c fears
+   * makes the set *smaller* (audit item 4c). That anchor is `DocumentService.size`,
+   * which lives outside this class on purpose. This exists so a test can see
+   * that {@link EngineSessions.release} dropped an entry rather than leaked it.
+   */
+  get held(): number {
+    return this.#entries.size;
+  }
+}

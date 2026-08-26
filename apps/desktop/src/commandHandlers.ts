@@ -2,7 +2,7 @@ import { type ContractHandlers } from '@monstera/contract';
 import { DocumentBusyError, DocumentNotOpenError } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
-import { type DocumentCommands } from './documentCommands.js';
+import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
 
 /**
  * The first IPC handler, and the first code in this repository that answers
@@ -26,8 +26,9 @@ import { type DocumentCommands } from './documentCommands.js';
  *
  * ## Three kinds of thing can go wrong and only two of them are outcomes
  *
- * - **A named outcome** — the document closed while this was in flight, or its
- *   lane is saturated — becomes a declared code. Matched on the **class**, never
+ * - **A named outcome** — the document closed while this was in flight, its
+ *   lane is saturated, or the supervisor has stopped rebuilding its engine
+ *   session — becomes a declared code. Matched on the **class**, never
  *   on the message: wording changes silently, and the failure direction is an
  *   ordinary outcome reported to a user as an unexplained internal error.
  * - **Everything else is a defect** and is rethrown untouched. That is not
@@ -52,6 +53,11 @@ export function executeCommandHandler(
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      // A DECISION, not an inconsistency. The supervisor bounded a rebuild loop
+      // and refused; reporting that as `internal` would hand the renderer an
+      // unexplained defect for the one failure it can actually explain to a
+      // user. The count in the message stays main-side with everything else.
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };

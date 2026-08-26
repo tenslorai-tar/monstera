@@ -92,6 +92,50 @@ export type DocumentSessions = {
  */
 export type SessionLookup = (docId: DocId) => DocumentSessions | undefined;
 
+/**
+ * What the engine session supervisor exposes to this composition point.
+ *
+ * ## Why two questions and not one
+ *
+ * {@link SessionLookup}'s `undefined` means **three** things — never opened, a
+ * session awaiting a rebuild, and a document the supervisor has decided to stop
+ * rebuilding for. Only the last is an outcome the user can be told about; the
+ * others are a defect and a transient. Overloading one return value with all
+ * three would make the difference unrecoverable at the only place that has to
+ * act on it, so the decided state is asked for by name.
+ *
+ * ## Why ONE parameter carrying both
+ *
+ * They are two answers from one authority — the supervisor holds a single
+ * per-document entry, by [ADR-0023](../../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * Decision 9a's DDDD-16 correction, precisely so the count and the sessions
+ * cannot acquire separate owners. Handed over as two independent parameters,
+ * nothing would stop a caller wiring them from two places, which is the second
+ * opinion B3a is about. One object makes that unrepresentable rather than
+ * discouraged.
+ *
+ * {@link SessionLookup} itself is unchanged, and that is the point: this
+ * registers a second question beside it rather than widening it, which would be
+ * B4 for the reason its own comment gives.
+ */
+export interface EngineSessionSource {
+  /** Get-or-miss. See {@link SessionLookup}. */
+  readonly sessions: SessionLookup;
+  /**
+   * The consecutive engine-host failure count that poisoned this document, or
+   * `undefined` if it is not poisoned (Decision 9a). A document the supervisor
+   * has never seen is not poisoned.
+   *
+   * **The count rather than a boolean, and the bound stays with the
+   * supervisor.** This module must not re-derive *how many is too many* — that
+   * would be a second opinion about a rule Decision 9a owns, and the two would
+   * agree right up until the bound moved (B3a). It reports the number it was
+   * handed, which is also what stops the diagnostic below carrying a figure
+   * somebody recalled (B6).
+   */
+  readonly poisoned: (docId: DocId) => number | undefined;
+}
+
 /** An open document had no session for the writer its command routes to. */
 export class MissingSessionError extends Error {
   override readonly name = 'MissingSessionError';
@@ -101,6 +145,32 @@ export class MissingSessionError extends Error {
       `No '${writer}' session for a document that is open. Session lookup is get-or-miss: ` +
         'nothing is created here, so this means the holder of sessions and the open-document ' +
         `index have diverged. (document ${docId.slice(0, 8)}…)`,
+    );
+  }
+}
+
+/**
+ * The supervisor has stopped rebuilding an engine session for this document.
+ *
+ * An **outcome**, not a defect, and the class is what carries that distinction
+ * to `commandHandlers.ts` — matched on the class rather than on the message, for
+ * the reason that file states: wording changes silently, and the direction this
+ * fails in turns a decided outcome into an unexplained internal error.
+ *
+ * The message is a main-side diagnostic and never crosses. It names the count
+ * because *how many* is the whole of the decision, and a reader meeting this in
+ * a log needs the bound rather than the word.
+ */
+export class DocumentPoisonedError extends Error {
+  override readonly name = 'DocumentPoisonedError';
+
+  constructor(docId: DocId, failures: number) {
+    super(
+      `Engine work refused: ${String(failures)} consecutive engine-host failures with no success in ` +
+        'between, so no session is rebuilt for this document (ADR-0023 Decision 9a). The ' +
+        'canonical bytes and the command log stay in main, intact and unappliable — refusing ' +
+        'STRANDS the work where closing would destroy it, which is the whole of why this is a ' +
+        `refusal. (document ${docId.slice(0, 8)}…)`,
     );
   }
 }
@@ -135,12 +205,12 @@ void singleCommandKind;
 export class DocumentCommands {
   readonly #documents: DocumentService;
   readonly #bus: CommandBus;
-  readonly #sessions: SessionLookup;
+  readonly #engine: EngineSessionSource;
 
-  constructor(documents: DocumentService, bus: CommandBus, sessions: SessionLookup) {
+  constructor(documents: DocumentService, bus: CommandBus, engine: EngineSessionSource) {
     this.#documents = documents;
     this.#bus = bus;
-    this.#sessions = sessions;
+    this.#engine = engine;
   }
 
   /**
@@ -156,6 +226,11 @@ export class DocumentCommands {
    *   undo would then restore a document to something it was never in;
    * - the session is resolved **inside** the lane too, so a session torn down
    *   between queueing and running is a miss rather than a stale handle;
+   * - the **poison** is read inside the lane, before the session, for both
+   *   halves of that same reason. A document poisoned while this command sat in
+   *   the queue is refused rather than run — and reading it first is what stops
+   *   the decided outcome arriving as {@link MissingSessionError}, since a
+   *   poisoned document has no session and the miss would otherwise win;
    * - the version returned is the one `run` stamps **after** the work, not the
    *   one it handed in. For a command those are two different numbers, and the
    *   pre-work value is the version the command *replaced*.
@@ -164,8 +239,8 @@ export class DocumentCommands {
    * entry holds an inverse or a checkpoint — a whole byte image — which must not
    * leave the main process (L11) and has no renderer-side use.
    *
-   * @throws `DocumentNotOpenError`, `DocumentBusyError` — outcomes the handler
-   * reports as declared codes.
+   * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link DocumentPoisonedError}
+   * — outcomes the handler reports as declared codes.
    * @throws {@link MissingSessionError} and anything the engine throws — defects,
    * which the boundary turns into `internal` with the diagnostic kept main-side.
    */
@@ -176,7 +251,10 @@ export class DocumentCommands {
     const spec: DeclaredSpecs[K] = declaredSpecs[command.kind];
 
     const { version } = await this.#documents.run(docId, async (context) => {
-      const sessions = this.#sessions(docId);
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
       const session = sessions?.[spec.writer];
       if (session === undefined) throw new MissingSessionError(docId, spec.writer);
 

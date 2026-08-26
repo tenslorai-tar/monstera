@@ -53,19 +53,38 @@ export const channels = {
    * exactly what L11 forbids. The version is what the renderer needs to know its
    * view is stale.
    *
-   * Both failure codes are **outcomes, not defects**. A document closes while a
-   * command is in flight (`document-not-open`) and a runaway caller saturates a
-   * lane (`document-busy`); the renderer's answer is to drop the result or to
-   * back off, neither of which is an error report. Everything else a command can
-   * do wrong — an out-of-range page index, an unregistered writer, an engine
-   * throw — is a defect, and defects are `internal` with the diagnostic recorded
-   * main-side.
+   * All three failure codes are **outcomes, not defects**. A document closes
+   * while a command is in flight (`document-not-open`), a runaway caller
+   * saturates a lane (`document-busy`), and a document the supervisor has
+   * stopped rebuilding an engine session for is refused engine work
+   * (`document-poisoned`); the renderer's answer is to drop the result, to back
+   * off, or to tell the user this document cannot be edited until it is closed
+   * and reopened — none of which is an error report.
+   *
+   * Note the third is deliberately *the supervisor stopped rebuilding* and not
+   * *this document killed the host twice*: the count is not attribution, and
+   * ADR-0023's DDDD-17 correction records the case where a document busy at two
+   * deaths caused by a third document's bytes reaches the bound having caused
+   * neither. Everything else a command can do wrong — an out-of-range page
+   * index, an unregistered writer, an engine throw — is a defect, and defects
+   * are `internal` with the diagnostic recorded main-side.
+   *
+   * **Why `document-poisoned` is declared rather than `internal`**
+   * ([ADR-0023](../../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+   * Decision 9a). The supervisor **decided** it, after bounding a rebuild loop
+   * with a hostile input at the centre of it. Reporting a decision as `internal`
+   * would file it as an inconsistency, and the renderer would show an
+   * unexplained internal error for the one failure it can actually explain.
+   *
+   * It is also what stops the ordinary post-crash path arriving wearing an
+   * inconsistency's clothes: without it a poisoned document has no session, and
+   * a missing session is a defect by name (Decision 9c).
    */
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
     z.object({ docId: docIdSchema, command: commandSchema }),
     z.object({ version: docVersionSchema }),
-    ['document-not-open', 'document-busy'],
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 } as const;
 

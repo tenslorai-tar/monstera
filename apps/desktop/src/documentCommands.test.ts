@@ -21,7 +21,12 @@ import { type DocId } from '@monstera/shared';
 const AMPLE_CEILING = 64 * 1024 * 1024;
 
 import { executeCommandHandler } from './commandHandlers.js';
-import { DocumentCommands, type DocumentSessions, MissingSessionError } from './documentCommands.js';
+import {
+  DocumentCommands,
+  DocumentPoisonedError,
+  MissingSessionError,
+} from './documentCommands.js';
+import { EngineSessions } from './engineSessions.js';
 
 /**
  * The composition point and the first handler, driven end to end against a real
@@ -86,9 +91,22 @@ function bus(): CommandBus {
   return new CommandBus({ mupdf: localMupdfWriter });
 }
 
-/** A session lookup that finds this document's session and nothing else. */
-function sessions(): (id: DocId) => DocumentSessions | undefined {
-  return (id) => (id === docId ? { mupdf: session } : undefined);
+/**
+ * The production supervisor state, holding this document's session.
+ *
+ * The real component rather than an inline lookup: an arrow that answers
+ * `{ mupdf: session }` is a second implementation of get-or-miss, and it would
+ * keep passing after the real one stopped agreeing with it.
+ */
+function engine(): EngineSessions {
+  const held = new EngineSessions();
+  held.hold(docId, { mupdf: session });
+  return held;
+}
+
+/** The same component holding nothing — the miss path, not a stub of it. */
+function noSessions(): EngineSessions {
+  return new EngineSessions();
 }
 
 const rotateOnce: Command = { kind: 'rotatePages', pages: [0], quarterTurns: 1 };
@@ -97,7 +115,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   beforeAll(openDocument);
 
   it('applies the command and returns the version the LANE stamped', async () => {
-    const commands = new DocumentCommands(service, bus(), sessions());
+    const commands = new DocumentCommands(service, bus(), engine());
 
     // Opened at 1; one applied mutation makes it 2 (ADR-0009 §5).
     await expect(commands.execute(docId, rotateOnce)).resolves.toBe(2);
@@ -114,7 +132,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // before either applies and BOTH inverses record the pre-command state —
     // so undoing twice would leave the page at 90 rather than back where it
     // started, and the document would be in a state it was never in.
-    const commands = new DocumentCommands(service, bus(), sessions());
+    const commands = new DocumentCommands(service, bus(), engine());
 
     await Promise.all([commands.execute(docId, rotateOnce), commands.execute(docId, rotateOnce)]);
 
@@ -143,9 +161,39 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   });
 
   it('a session that cannot be found is a DEFECT, not an outcome', async () => {
-    const commands = new DocumentCommands(service, bus(), () => undefined);
+    const commands = new DocumentCommands(service, bus(), noSessions());
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(MissingSessionError);
+  });
+
+  it('a POISONED document is refused before the session is looked up', async () => {
+    // Built through the real state transitions, so the fixture is the one a
+    // poisoned document is actually in — including that the deaths took its
+    // session with them.
+    //
+    // Which is why the assertion is on the CLASS and not merely on rejecting:
+    // with the two reads in the other order this document's missing session
+    // wins and the failure arrives as MissingSessionError, a `internal` defect
+    // rather than the declared outcome the supervisor decided. Those are the
+    // two errors this ordering exists to choose between, so an assertion that
+    // accepted either would separate nothing.
+    const poisoned = noSessions();
+    poisoned.hold(docId, { mupdf: session });
+    poisoned.recordFailure([docId]);
+    poisoned.recordFailure([docId]);
+
+    const commands = new DocumentCommands(service, bus(), poisoned);
+
+    await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(DocumentPoisonedError);
+  });
+
+  it('CONTROL: the same document, unpoisoned, reaches the engine and applies', async () => {
+    // Without this the case above is satisfied by an `execute` that refuses
+    // everything, and by a supervisor whose `poisoned` answers a count for a
+    // document it has never heard of.
+    const commands = new DocumentCommands(service, bus(), engine());
+
+    await expect(commands.execute(docId, rotateOnce)).resolves.toBeGreaterThan(0);
   });
 });
 
@@ -173,7 +221,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
   it('a document that is not open is a DECLARED code, carrying no incident id', async () => {
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const commands = new DocumentCommands(closed, bus(), sessions());
+    const commands = new DocumentCommands(closed, bus(), engine());
     const result = await wrapped(commands)({ docId, command: rotateOnce });
 
     // The whole failure, asserted as a whole: a declared outcome hides nothing,
@@ -185,7 +233,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // Without this, the case above is satisfied by a handler that reports
     // `document-not-open` for everything.
     const { sink, seen } = recorder();
-    const commands = new DocumentCommands(service, bus(), () => undefined);
+    const commands = new DocumentCommands(service, bus(), noSessions());
     const result = await wrapped(commands, sink)({ docId, command: rotateOnce });
 
     expect(result.ok).toBe(false);
@@ -214,12 +262,15 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     const SECRET = 'C:\\Users\\someone\\Documents\\salary-review.pdf';
 
     function throwsWithPath(): DocumentCommands {
-      return new DocumentCommands(service, bus(), () => {
-        const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
-        cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
-        const thrown = new Error(`Could not read ${SECRET}`, { cause });
-        thrown.stack = `Error: Could not read ${SECRET}\n    at sessionFor (${SECRET}:2:2)`;
-        throw thrown;
+      return new DocumentCommands(service, bus(), {
+        poisoned: () => undefined,
+        sessions: () => {
+          const cause = new Error(`EPERM: operation not permitted, stat '${SECRET}'`);
+          cause.stack = `Error: EPERM: operation not permitted, stat '${SECRET}'\n    at readFileIdentity (${SECRET}:1:1)`;
+          const thrown = new Error(`Could not read ${SECRET}`, { cause });
+          thrown.stack = `Error: Could not read ${SECRET}\n    at sessionFor (${SECRET}:2:2)`;
+          throw thrown;
+        },
       });
     }
 
@@ -261,7 +312,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // The hard shape an in-process test cannot see (audit item 2): the
     // transport clones, and a value carrying anything unclonable passes every
     // function call and dies at the first Electron call.
-    const commands = new DocumentCommands(service, bus(), sessions());
+    const commands = new DocumentCommands(service, bus(), engine());
     const params = { docId, command: rotateOnce };
     expect(structuredClone(params)).toStrictEqual(params);
 
@@ -269,7 +320,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     expect(structuredClone(success)).toStrictEqual(success);
 
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const declined = await wrapped(new DocumentCommands(closed, bus(), sessions()))(params);
+    const declined = await wrapped(new DocumentCommands(closed, bus(), engine()))(params);
     expect(structuredClone(declined)).toStrictEqual(declined);
   });
 });

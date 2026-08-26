@@ -3,7 +3,8 @@ import { CapabilityRegistry, CommandBus, DocumentService } from '@monstera/kerne
 
 import { MAIN_DOCUMENT_BYTES_CEILING } from './budget.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
-import { DocumentCommands, type SessionLookup } from './documentCommands.js';
+import { DocumentCommands } from './documentCommands.js';
+import { EngineSessions } from './engineSessions.js';
 import { type ShellFailureSink } from './shellFailure.js';
 import { type ShellDependencies } from './main.js';
 
@@ -74,8 +75,19 @@ export function createShellDependencies(appInfo: AppInfo): ShellDependencies {
   // failing at a native call.
   const bus = new CommandBus({});
 
-  const noSessionYet: SessionLookup = () => undefined;
-  const commands = new DocumentCommands(documents, bus, noSessionYet);
+  // EMPTY BY CONSTRUCTION TOO, and for the same reason as the bus above: the
+  // real component, holding no sessions, because nothing here builds a host to
+  // get one from. Its `sessions` therefore misses on every document and its
+  // `poisoned` answers `undefined` on every document — the latter being true
+  // rather than stubbed, since poisoning is a count of host failures and no
+  // host has been asked for anything.
+  //
+  // The real one rather than two inline arrows on purpose: a stubbed lookup and
+  // a stubbed predicate are a second implementation of a rule the supervisor
+  // owns, and the day a host is wired one of them gets replaced and the other
+  // does not (B3a).
+  const engine = new EngineSessions();
+  const commands = new DocumentCommands(documents, bus, engine);
 
   return {
     handlers: createContractHandlers({ commands, appInfo }),

@@ -39,7 +39,9 @@ export { type AppInfo, createContractHandlers } from './contractHandlers.js';
 export { type IpcHandleTarget, registerContractHandlers } from './registerHandlers.js';
 export {
   DocumentCommands,
+  DocumentPoisonedError,
   type DocumentSessions,
+  type EngineSessionSource,
   MissingSessionError,
   type SessionLookup,
 } from './documentCommands.js';
