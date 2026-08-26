@@ -1189,6 +1189,10 @@ The false EEEE-3 claim **reached no tracked record** — swept with
 `sweep:prose` and by grep over `docs/` and the handoff. It existed only in a
 report, which is why it is written up here rather than corrected in place.
 
+---
+
+## 2026-08-26 — Stage audit: `2f1444b..5168f3b` — a resolver moved and its proof stayed behind, and the proof that went red was in no column
+
 **Audited through `5168f3b`.** Pasted from `npm run audit:scope`:
 
 ```

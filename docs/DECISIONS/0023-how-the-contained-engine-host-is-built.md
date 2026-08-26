@@ -1482,6 +1482,8 @@ promise is not a diagnostic.
 > rather than reworded because the sentence above is what a reviewer reads first
 > and what was actually built is one field, not three.
 
+### 9c. Other documents are not drained, and the rebuild is entered through their lanes
+
 This is the genuinely new part, and *handles are a cache* says nothing about it.
 One host per engine plus §7's per-document serial lanes (ADR-0009) means one host
 death unwinds N lanes at once.
