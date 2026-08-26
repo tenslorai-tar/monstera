@@ -774,6 +774,26 @@ feature commits are separate, and the judgement made was that a derived form
 that an amendment leaving the tree red is not committable. Recorded as a
 judgement rather than left silent.
 
+> **CORRECTION, 2026-08-26 — the judgement covered three things and this named
+> one, so the precedent it sets is narrower than the one actually taken**
+> (finding FFFF-5). `8728fc8` carried, besides `budget.ts`:
+>
+> - `memoryBudgets.proof.mjs` (+22) — the resolution case that had **hardcoded**
+>   `base 97 MB`, which the amendment falsified;
+> - `engineSessions.ts` (+3 −1) — a comment stating `96 MB` as the limit,
+>   re-stated as *the limit declared at the time*.
+>
+> All three are the same class and none is a feature. **The rule, which is what
+> the next person can apply:** a B4 amendment carries everything the amendment
+> makes false — the derived constant, the proof that asserts it, and any comment
+> that states the old value — because leaving any of them behind commits a tree
+> the amendment has just falsified.
+>
+> Written as *its own derived constant*, a reader takes it narrowly, and a proof
+> fix riding with a later amendment then looks unprecedented when it was not.
+> The instinct to record the judgement rather than slip it through was right;
+> this widens what the judgement covered to what was actually done.
+
 ### 2. Verified against the easy shape only?
 
 The `hold`-on-poisoned refusal, `recordFailure` and `recordSuccess` have **tests
@@ -801,6 +821,42 @@ the runner is the blinder machine**, and a fixed-cost regression can pass there
 while failing here — which is exactly what happened at `9c7f078`. Every previous
 instance of this shape in the record ran the other way, with the developed-on
 machine hiding the defect.
+
+> **CORRECTION, 2026-08-26 — *in fact lower* was not measured, and the general
+> claim built on it is WITHDRAWN** (finding FFFF-4). Four figures have been read
+> and the runner's clean baseline is not among them:
+>
+> | | with the barrel | clean |
+> |---|---|---|
+> | this machine | 98.1 / 98.6 MB | **63.4 / 63.5 MB** |
+> | the runner | 92.0 MB | **never read** — bounded at ≤ 80 MB by a green gate |
+>
+> **The two documents disagreed, and both were written in this range.**
+> [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)
+> lists the runner's clean baseline under *what this does NOT claim*, derives its
+> ceiling from the **with-barrel** figure and says so, and claims only that *"the
+> floor chosen from this machine's 63.5 MB does not fail on the runner"*. The ADR
+> is careful about exactly this and the paragraph above is not. That is NNN-4's
+> trigger — a cross-document relationship stated in a range — firing on a range
+> that created both halves.
+>
+> **And the conclusion may be inverted, which is why this is not a wording fix.**
+> Slack here is 80 − 63.4 = **16.6 MB**. Slack on the runner is 80 − unknown. If
+> its clean baseline were 78, its slack is 2 MB and **the runner is the sharper
+> machine**, which is the opposite of the lesson recorded above. The with-barrel
+> pair does not settle it: those two differ by roughly 6 MB, and the source of
+> that difference is precisely what the previous commit declined to isolate —
+> correctly, and it cannot then be spent here.
+>
+> **What the evidence does support, and it is still worth having:** at the
+> retired `base 96 MB`, one fixed-cost regression passed on the runner and failed
+> here. A fact about one defect against one number. Not a fact about which
+> machine is blinder in general, and ZZ-1's inverse is not established by it.
+>
+> **What would settle it** is one run printing the runner's clean baseline —
+> already the closing condition recorded in ADR-0025 for a different gap, and it
+> closes this one too. Until then this is a pending measurement rather than a
+> reversed lesson.
 
 ### 4. Are the proofs non-vacuous?
 
