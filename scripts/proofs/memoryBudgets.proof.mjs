@@ -172,12 +172,30 @@ checkThrows(
 
   // Resolution test: a one-unit change must come back as a different number, or
   // the term is being parsed but not read.
+  //
+  // The nudge is DERIVED from the real line rather than spelt out. It used to
+  // read `base 97 MB`, which silently encoded that §9.17 declared 96 — a second
+  // opinion about the one number this whole module exists to keep in a single
+  // place (B3a), and it went red the day ADR-0025 moved it. A resolution test is
+  // about the parser's resolution and must hold for whatever the invariant says.
+  const MB = 1024 ** 2;
+  check(
+    'the declared baseline is a whole number of MB, so the nudge below is exact',
+    main.baselineBytes % MB === 0,
+    `${String(main.baselineBytes)} bytes is not a whole number of MB, so "+1 MB" is not the ` +
+      `one-unit change this case means and the assertion below would be arithmetic about the ` +
+      `wrong quantity.`,
+  );
+  const nudgedMb = main.baselineBytes / MB + 1;
   const nudged = memoryBudgets({
-    text: withEntries('`main = 1.5x, 1.5 GB, base 97 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+    text: withEntries(
+      `\`main = 1.5x, 1.5 GB, base ${String(nudgedMb)} MB\` · ` +
+        '`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`',
+    ),
   });
   check(
     'changing the baseline by 1 MB changes the parsed budget',
-    assertableBudget(nudged, 'main').baselineBytes === main.baselineBytes + 1024 ** 2,
+    assertableBudget(nudged, 'main').baselineBytes === main.baselineBytes + MB,
     `${String(assertableBudget(nudged, 'main').baselineBytes)} against ${String(main.baselineBytes)}`,
   );
 }

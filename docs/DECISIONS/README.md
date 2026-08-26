@@ -82,3 +82,4 @@ Each contains:
 | [0022](0022-the-engine-host-is-a-process-we-create.md) | The engine host is a process we create, not a utility process | Accepted |
 | [0023](0023-how-the-contained-engine-host-is-built.md) | How the contained engine host is built | Accepted |
 | [0024](0024-execution-mode-is-a-placement-axis.md) | Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side | Accepted |
+| [0025](0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) | `main`'s baseline budget is derived from what it must catch, and 96 MB was not | Accepted |

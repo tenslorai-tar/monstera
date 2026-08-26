@@ -20,6 +20,16 @@ that line rather than defining constants.
 > `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`
 ```
 
+> **NOTE, 2026-08-26 — the block above is the line AS IT STOOD, and it is
+> reproduced here to show the grammar rather than to state the budgets.**
+> `main`'s baseline is now `base 80 MB`
+> ([ADR-0025](0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)).
+> §9.17 remains the only place the values are stated, and this ADR's subject —
+> that they are machine-read from the invariant rather than defined as constants
+> — is unchanged. Noted rather than edited because an ADR records what was
+> written at the time; noted **at all** because a verbatim block reads as a
+> specification in a way a sentence about a measurement does not.
+
 > **Addition — 2026-08-18: the third term.** The entry grammar gained a
 > `base <n> MB|GB` term after the gate was built. It is not a fourth kind of
 > thing; it is a budget on the same process, and it exists because the first two

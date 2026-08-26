@@ -4,7 +4,7 @@
  * ## Derived, and the derivation is the part that is stated
  *
  * `docs/ARCHITECTURE.md` §9.17 carries one machine-read line —
- * `main = 1.5x, 1.5 GB, base 96 MB` — and `scripts/lib/memoryBudgets.mjs` is its
+ * `main = 1.5x, 1.5 GB, base 80 MB` — and `scripts/lib/memoryBudgets.mjs` is its
  * only reader. Neither the kernel nor this package can reach that module: it is
  * plain Node under `scripts/`, and the boundary is deliberate. So the number
  * below is written here and **`proof:composition` recomputes it from the
@@ -27,7 +27,7 @@
  * Stated rather than fixed by inventing a headroom fraction. A number chosen to
  * feel safe is the thing ADR-0007 exists to refuse.
  */
-export const MAIN_DOCUMENT_BYTES_CEILING = 1_610_612_736 - 100_663_296;
+export const MAIN_DOCUMENT_BYTES_CEILING = 1_610_612_736 - 83_886_080;
 
 /**
  * The engine host job's `ProcessMemoryLimit`, from the same line and by a

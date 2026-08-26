@@ -5,7 +5,8 @@
 // 'm'`. That is a side-effect import of the kernel barrel, which re-exports
 // `mupdfWriter`, which loads the native MuPDF binding. Measured: written that
 // way, this module put the parser into `main`'s process and `perf:gate` failed
-// on the BASELINE — 97.6 MB against a 96 MB base limit, with the ratio still
+// on the BASELINE — 97.6 MB against the 96 MB base limit declared at the time
+// (ADR-0025 has since derived it to 80 MB), with the ratio still
 // passing at 1.04x, so the number that moved was not the one anybody watches.
 //
 // `import type { … } from 'm'` is erased whole. The two spellings look

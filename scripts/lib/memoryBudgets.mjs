@@ -57,7 +57,7 @@ const DECLARATION = /^\s*>\s*\*\*Memory budgets:\*\*(.*)$/u;
 const CONTINUATION = /^\s*>\s*(.*)$/u;
 
 /**
- * `name = 1.5x, 1.5 GB, base 96 MB`
+ * `name = 1.5x, 1.5 GB, base 80 MB`
  *
  * The third term bounds the process's FIXED cost, and it exists because the
  * first two cannot see a regression in it. The multiple is taken above the
@@ -102,7 +102,7 @@ function fail(what) {
       `than read is indistinguishable from a measured one at the moment it decides whether the ` +
       `build passes.\n` +
       `Expected exactly one line of the form:\n` +
-      `  > **Memory budgets:** \`main = 1.5x, 1.5 GB, base 96 MB\` · ` +
+      `  > **Memory budgets:** \`main = 1.5x, 1.5 GB, base 80 MB\` · ` +
       `\`mupdf-host = 6x, 3 GB, base 128 MB\` · \`renderer = provisional\``,
   );
 }
