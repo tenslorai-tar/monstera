@@ -106,6 +106,30 @@ Putting a Windows-only reader in `packages/kernel` would satisfy the mode and
 break the paragraph above — a package that cannot be exercised without a
 platform, which is the boundary decaying by one reasonable-looking exception.
 
+**A package's public surface exports no value whose module graph binds a native
+library** ([ADR-0026](DECISIONS/0026-a-declaration-is-not-an-implementation.md)).
+Importing `@monstera/kernel` cannot load native code. The engine adapters are
+reached through an explicit subpath — `@monstera/kernel/engine` — and only from
+the process that runs them.
+
+This is what makes invariant 20 a property of the module graph rather than a
+rule about where people put `import` statements. Measured 2026-08-27: loading
+the kernel's barrel in a bare Node process cost **+41.7 MB** over bare, against
+`+46.0 MB` for the adapter itself — so the barrel was loading it, and `main`
+paid that at startup while §9.17 argues `main`'s budget from *"main holds
+canonical bytes and never parses"*.
+
+**A subpath rather than a rule, because the rule was already there and had
+failed.** The same exposure reached `main`'s measured baseline through
+`import { type X } from './documentCommands.js'`, whose emitted form is
+`import {}` — in a file whose own header documents that exact trap, one commit
+after it was written. A barrel with nothing native behind it has no accidental
+route left; an import that must name `/engine` is a cost somebody chose.
+
+The corollary is §3's: a **declaration** of what a command is must not drag in
+the **implementation** that performs it, or every consumer that wanted routing
+gets an engine.
+
 ### 1.1 The bootstrap layer is plain JavaScript, deliberately
 
 `scripts/` is written as `.mjs` with `// @ts-check` and JSDoc types, not as
@@ -310,6 +334,27 @@ Adding a row still means executing it first.
 - Adding an engine requires an ADR: the gap, the engines checked, the licence
   and its AGPL interaction, the process it runs in. A fifth engine is not
   forbidden; an undeclared one is.
+- **A declaration is not an implementation, and they are separate modules**
+  ([ADR-0026](DECISIONS/0026-a-declaration-is-not-an-implementation.md)). What a
+  command *is* — its writer of record, its invertibility, its undo strategy, its
+  reproducibility, its replay strategy — is declared in a module that imports no
+  implementation and therefore reaches no engine. The functions are composed
+  onto that declaration in a second layer, imported only by the executor that
+  runs them.
+
+  **One declaration in two layers, never two tables.** A command is declared in
+  exactly one place, and a kind declared without an implementation does not
+  compile — the same rule that already forbids a second spec table, applied to
+  the split rather than violated by it.
+
+  The reason is measured rather than aesthetic: every routing consumer reads
+  `spec.writer` and nothing else, and `apply`/`capture`/`invert` have gone
+  through the registered writer since [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+  Decision 10. So a value import of the spec table bought routing and paid for
+  a 46 MB native binding, and had done since the day Decision 10 landed. **An
+  edge can outlive the reason for it, and nothing about the code looks wrong
+  afterwards** — which is why this is stated here rather than left as a
+  refactor somebody may undo.
 - **Text inside Form XObjects** (how Office and InDesign emit text): implement
   **normalize-then-edit** — on first edit of such a page, promote the XObject
   content into the page content stream with its matrix composed in, then edit in
@@ -1300,6 +1345,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-16 | The memory budget is stated **per process** with an absolute ceiling on each — main ≤ 1.5× and ≤ 1.5 GB, MuPDF host ≤ 6× and ≤ 3 GB as a containment limit, renderer provisional and two-term. Stage 0 exit is gated on the three budgets. *(This row originally also recorded a two-term heap model and an admission gate reading both terms; ADR-0007's own correction withdrew them the next day as WASM artefacts — see the 2026-08-17 row below.)* | `BUILD-PROMPT.md` Part G's "assert peak RSS < 1.5× file size" as a single whole-application number | [ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md) |
 | 2026-08-16 | Save mode is chosen by the **purpose** of the save: never incremental for removal, always incremental to preserve a signature, full rewrite otherwise (§4, §9.19). | Nothing in the founding record — Part C4 states one pipeline and is silent on mode | [ADR-0008](DECISIONS/0008-save-mode-is-determined-by-purpose.md) |
 | 2026-08-17 | MuPDF is reached through a **native shared library bound with koffi** behind a thin C shim, not through WASM; `mutool.exe` is not shipped; one held document handle per `DocId` in a utility process; the two-term memory model and admission gate are withdrawn; §8 now separates native code we build and statically link from prebuilt binaries we download, and the AGPL source offer covers the MuPDF version, our build configuration and the shim source (§2, §3, §8, §9.17, §9.20, §9.21). | `BUILD-PROMPT.md` Part C3's WASM assumption and Part J's bundled `mutool.exe` | [ADR-0010](DECISIONS/0010-native-mupdf-through-an-ffi-shim.md) |
+| 2026-08-27 | **A declaration is not an implementation, and a package's public surface carries no native binding** (§1, §3.2). Importing `@monstera/kernel` cannot load native code; the engine adapters are reached through `@monstera/kernel/engine`, from the process that runs them. And what a command *is* is declared in a module that imports no implementation, with the functions composed on in a second layer — one declaration, two layers, never two tables. Measured 2026-08-27 in a bare Node process: the barrel **+41.7 MB** over bare against the adapter's **+46.0 MB**, so the barrel was binding the library, and `commandBus.js` **+40.1 MB** by a second route while `documentCommands.ts` takes a third. Every routing consumer reads `spec.writer` and nothing else — `apply`/`capture`/`invert` have gone through the registered writer since ADR-0023 Decision 10 — so the value import bought routing and paid for a native binding, and had done since that decision landed. Rejected: keeping the barrel and importing narrowly (the rule was already there and the exposure still reached `main`'s baseline through `import { type X }`'s emitted `import {}`, in the file whose header documents that trap); a dynamic `import()` inside the barrel (hides the cost, moves the load to a moment nothing chose, and makes the export asynchronous for every caller); splitting the package (encodes the wrong axis — ADR-0024 established that the axis is which **mode** a module runs in, and these run in one package and two processes). | §1's package map, which stated what each package may import and never what its surface may export; and §3.2, which had no rule separating a command's declaration from its implementation | [ADR-0026](DECISIONS/0026-a-declaration-is-not-an-implementation.md) |
 | 2026-08-18 | Opening a document runs none of its content, and an engine host contains a compromise rather than only a crash (§9.24, §9.25). Both land before the components they constrain, per the sequencing resolved the same day. | Nothing in the founding record — Part K is silent on active content, and Part C3's process split addresses faults rather than containment | [ADR-0017](DECISIONS/0017-the-security-substrate.md) |
 | 2026-08-21 | **The renderer's Content-Security-Policy is pinned as invariant 27** — the exact eleven-directive list, with this document as the writer of record and `apps/desktop/src/windowPolicy.ts` as the derived form, checked in both directions by `proof:rendererpolicy` against a running Chromium (§2, §9.27). `style-src`'s `'unsafe-inline'` is dropped in the same commit rather than pinned, because nothing needs it and an unproven grant that arrives before the pin is never argued for afterwards. | `BUILD-PROMPT.md` Part C2's "CSP set" as one item in a configuration list, and §2's own line which repeated it | [ADR-0019](DECISIONS/0019-the-renderers-csp-is-pinned.md) |
 | 2026-08-22 | **The engine hosts are processes this application creates, not Electron utility processes** (§2, §5, §9.25, §9.26). Invariant 25's (c) and (d) are supplied by an AppContainer, which `utilityProcess.fork` cannot create, so the containment is a property of the creation route — measured, including a native `CreateFileW` refused `ERROR_ACCESS_DENIED` and a loopback connection refused, with the engine still running inside. The host contract crosses a DACL'd named pipe and registers into `packages/contract`'s discipline rather than beside it; the host body lives in `packages/kernel`, which answers invariant 26's third case by placement instead of a fourth clause. | §2's `utility: mupdfHost` / `utility: pdfiumHost` topology, which ADR-0010 introduced; and §9.25's "policy before mechanism" | [ADR-0022](DECISIONS/0022-the-engine-host-is-a-process-we-create.md) |
