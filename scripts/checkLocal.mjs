@@ -53,16 +53,26 @@
  * the 44 scripts it never reached as not-passes, which is correct behaviour and
  * also the answer: **the proof half is not a pre-push operation.**
  *
- * So this tool is useful over `check:*` and is not a sweep of everything — and
- * as of finding WWW-2 that is enforced rather than said: a run selecting more
- * than one `proof:*` script in THIS repository is refused before it starts, with
- * no flag to turn it off. The measurement and the boundary are on the refusal
- * itself, below `filtered`. What
+ * So this tool is useful over `check:*` and is not a sweep of everything. What
  * separates a runnable script from `proof:cff` is **measured cost**, not job
  * membership — see the note on {@link DURATIONS} for why the job-based version
  * of that rule is false and fails in the reassuring direction. The sweep records
  * what each script cost and runs cheapest-first, so a stop strands the expensive
  * tail rather than an alphabetical remainder.
+ *
+ * **WWW-2 once turned that observation into a REFUSAL, and the refusal is gone
+ * (UUUU-1).** This paragraph went on asserting it from `0f7f7de`, which deleted
+ * it, until `1e66a61` — *"refused before it starts, with no flag to turn it off
+ * … the boundary is below `filtered`"*, pointing at a boundary that no longer
+ * exists and at `sweepScope.mjs`, which does not either. What actually happens
+ * now is described where it happens, under *THE SCANNING ROSTER RUNS* and
+ * *THE MULTI-PROOF SWEEP WAS REFUSED HERE, AND IS NOT ANY MORE*; the stale
+ * sentence kept the position a reader treats as *what this module is*.
+ *
+ * Recorded here rather than silently deleted, because the shape is the point
+ * (finding XXXX-1): it was a **compound** claim whose second half — measured
+ * cost, not job membership — is still exactly true, so the paragraph read fine
+ * to anyone checking the part that still held.
  *
  * ## Three states, because two would lie
  *

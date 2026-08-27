@@ -1,9 +1,17 @@
 # ADR-0028 — `main` holds the process-creation binding, and §9.17's `main` clause is amended to say so
 
 **Date:** 2026-08-28
-**Status:** accepted. Per B4 the amendment to `docs/ARCHITECTURE.md` is the next
-commit and the wiring the one after it, so the law states the superseded clause
-for exactly one commit. That is the ordering working, not a gap.
+**Status:** accepted, and `docs/ARCHITECTURE.md` has not been amended yet. Per B4
+the amendment **precedes the wiring** and is its own commit; until it lands the
+law states the superseded clause, which is the ordering working rather than a
+gap.
+
+> This line first said the amendment was *"the next commit"* and that the law
+> would state the superseded clause *"for exactly one commit"*. Both were
+> falsified by the very next commit, a stage audit — and were never supported:
+> B4 constrains the amendment to precede the **feature** and says nothing about
+> what may sit between it and the ADR. Finding XXXX-3, and the reason the
+> corrected sentence claims only what B4 requires.
 **Amends:** `docs/ARCHITECTURE.md` §9.17 — the baseline **argument** for `main`.
 No budget number changes and the machine-read line is untouched.
 **Supersedes nothing.**
