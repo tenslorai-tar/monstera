@@ -2711,3 +2711,57 @@ This is `proof:kernelload`'s exact subject arriving through a new door — that
 proof guards `documentService.js`, and this was a different module. Recorded
 rather than treated as a slip, because the same door is open to every module
 that wants only types from a barrel.
+
+## Addition, 2026-08-27 — the HOST's end of the pipe IS a Node stream, and §4's measurement says nothing about it
+
+Mechanism inside Decision 4 rather than a new decision: it settles how big the
+engine host's entry module has to be, and the answer decides whether
+`packages/kernel` acquires a second native boundary.
+
+**The measurement that looks like an answer and is not.** `enginePipeFactory.ts`
+records, under *"the server half is NOT a Node stream"*, that a Win32 pipe handle
+cannot be handed to node: `_open_osfhandle` in `ucrtbase.dll` yields a descriptor
+node's statically linked CRT answers `EBADF` for, and `net.Socket({ fd })` says
+`Unsupported fd type: UNKNOWN`. Read quickly, that reads as *this pipe and node's
+streams do not mix*, and it would have sent the host's entry straight to an FFI
+of its own.
+
+It is a measurement about **adopting a handle another library created**. The
+host's end is the opposite direction — libuv opens the pipe itself, with its own
+`CreateFileW`, adopting nothing. The two share a noun and nothing else.
+
+**Measured 2026-08-27**, against the shipped `createHostPipe`,
+`createEngineReaderChannel` and its worker thread, with a `net` socket standing
+in for the host:
+
+| cell | reading |
+|---|---|
+| `net.connect` to the pipe | **connected** |
+| control — a name nothing created | refused, `ENOENT` |
+| control — the reader with nothing yet written | **timed out** at 403ms, reported as a timeout |
+| 22 bytes written by the client | delivered, 22 bytes in 1 chunk, 12ms, byte-exact |
+| the reader's `onEnded` during the run | never fired |
+
+Both controls are load-bearing and neither is decoration. Without the first,
+*connected* and *`net.connect` resolves for anything* are one observation.
+Without the third, *the reader delivered nothing* and *the reader never ran* are
+one observation — and this probe's reassuring answer is bytes arriving, so the
+cell that must be able to report **nothing** is the one that proves the
+instrument can see.
+
+So the host entry is plain Node on both directions: `socket.on('data')` into
+`HostRuntime.receive`, and `socket.write` behind `HostRuntimeTransport.write`.
+No koffi in the host body, and `packages/kernel` gains no native boundary.
+
+**What this does NOT measure, stated rather than absorbed.** The client here was
+**not contained** — it ran as this user, in no AppContainer. Nothing here says
+the shipped DACL admits a *contained* libuv. §4's table measured that for
+`CreateFileW` as the spike issues it, and whether libuv asks for the same
+desired access has not been read. That reading needs a contained process the
+application itself made, which is the milestone this work is heading for, so it
+is named here as owed rather than quietly inherited from the table above.
+
+The DACL was also not under test and deliberately so: the probe passed this
+user's own SID where a container SID goes, because resolving a real one creates
+an AppContainer profile — machine state a probe has no business writing — and
+the pipe's **creation flags** are what the cells above depend on.
