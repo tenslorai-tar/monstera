@@ -644,6 +644,212 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `825c9a2..d92737f` — the field that decides whether a host death is a fault is typed `string`
+
+**Audited through `d92737f`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 825c9a2..HEAD
+  commits: 8 (one batch is 9)
+  files:   22 (one batch is 24)
+  proofs ADDED — new coverage: none
+  proofs MODIFIED — read each diff (5):
+    engineSessions.test.ts +239 -1 · containment.test.ts +172 -11
+    remoteEngine.test.ts +6 -0 · remoteLifecycle.test.ts +6 -0
+    boardStatus.proof.mjs +85 -2
+  proofs REMOVED: none
+  source FILES ADDED: none
+  source FILES CHANGED (11):
+    engineSessions.ts +155 -0 · shellFailure.ts +77 -2 (per-commit +90 -15)
+    containment.ts +72 -10 · engineChannels.ts +51 -0 · engineHandlers.ts +30 -0
+    boardStatus.mjs +81 -0 · board.mjs +28 -13 · kernel/index.ts +5 -0
+    desktop/index.ts +1 -0 · failingJobs.mjs +1 -1 · sweepScope.mjs +1 -1
+  source FILES REMOVED: none
+```
+
+The range: ADR-0023 Decision 9b and 9c built, the board guard's short-sha hole
+closed, two corrections written into the ADR the code had departed from, two
+headings restored that appended corrections had landed on top of, and the
+engine host's containment probe given a channel.
+
+**No proofs were added and that is not a coverage gap** — every new case this
+range landed in an existing `*.test.ts`, which the classifier counts as
+MODIFIED. Worth stating because *proofs added: none* is the reassuring shape of
+a real gap, and the two columns are read differently.
+
+### IIII-1. The parameter that decides whether a host death reads as a fault is typed `string`, and its caller has the union
+
+`describeEngineHostGone` is the whole of Decision 9b's report. Its body turns on
+one comparison —
+
+```ts
+const deliberate = termination.code === 'shutdown';
+```
+
+— and it is declared as `termination: { readonly code: string; readonly detail: string }`.
+`HostTermination.code` is a **twelve-member union** and is exported from
+`@monstera/kernel`; `onEngineHostEnded` passes a real `HostTermination` into
+this parameter and the type is widened away at the boundary.
+
+**What that costs is not a hypothetical.** Misspell the literal — `'shutdow'`,
+`'shut-down'`, or rename the member in `runtime.ts` and miss this line — and
+nothing fails to compile. Every deliberate close then reports *"The host was
+supposed to be there… every document that had a call in flight has had its
+consecutive-failure count raised"*, which is the message for a crash. The output
+is a diagnostic that says a defect occurred whenever one did not, and the code
+path that produces it is the ordinary shutdown path, so it would be seen
+constantly and read as a real fault.
+
+**It is an item 1 shape — a widened type — and it was not written to silence an
+error**, which is why no comment defends it: the file's own header proves the
+author knew the erasure rule (`import type`, with a measured paragraph about why
+`import { type … }` is the wrong spelling), so the kernel type was reachable at
+zero runtime cost the whole time. The narrower reading is that a structural
+parameter looked like decoupling, and decoupling from a union is decoupling from
+the only thing that makes the comparison checkable.
+
+**Not fixed in this commit**, because an audit-recording commit is docs-only and
+alone. The repair is B5's: take `HostTermination` and let the compiler refuse a
+code that does not exist.
+
+**And the transferable form, which is worth more than the instance:** *a
+structural parameter standing where a declared union is available turns every
+literal comparison inside it into a spelling test nothing runs.* The tell is a
+call site that HAS the richer type and hands it to a poorer one — the widening
+is visible in the diff of the signature and invisible at the call.
+
+### 1. Root cause, or workaround?
+
+| the fix | the mechanism |
+|---|---|
+| FFFF-6, the short sha | `sha.length < 7` named *forty* in the message that permitted seven. The decider/shell split had put the check in the untested half; it moved into `boardTarget` with a 7-character fixture that must be refused |
+| FFFF-1, `release` with no caller | not a new method — `DocumentTeardown` already existed and composition was passing nothing for it. A registration, which is why it needed no seam change |
+| GGGG-1/2, the ADR's departures | documentation, not code: the reasoning existed at `shellFailure.ts` and the requirement it departs from is in the ADR, and auditors arrive at the decision |
+| HHHH-1/2, the deleted headings | **a repair that can regenerate, and it is recorded as one.** The same edit shape recreates it; two instances were restored and no mechanism was built |
+
+**HHHH's row is the honest one and item 1 asks for exactly this.** The rule says
+a repair that regenerates is a symptom fixed. The reason no check was built is
+4c's own recorded reasoning rather than cost: a chain rule over JOURNAL audit
+headings is cheap and decidable and catches the JOURNAL half, and **cannot see
+the ADR half**, because an ADR heading has no chain to break. That is the shape
+4c refuses by name — *a check covering the shape that has already been found,
+over a class that is half undecidable, reads as watched and is not.*
+
+**It becomes a defect the first time a third instance is found that a chain read
+would have surfaced.** The read itself is one line and found HHHH-2: audit
+headings name ranges and consecutive entries chain, so the forty of them read
+top to bottom show a break directly. It held unbroken through 35 entries and
+then did not.
+
+### 2. Verified against the easy shape only?
+
+**Yes, on the one that matters, and it is stated rather than discovered.** The
+containment probe and the pipe measurement were both taken against an
+**uncontained** client running as this user. The hard shape is a contained
+libuv, and nothing here says the shipped DACL admits one — §4's table measured
+that for `CreateFileW` as the spike issues it, and whether libuv asks for the
+same desired access has not been read. Written into ADR-0023's addition as owed
+rather than inherited from the table above it.
+
+The pipe DACL was also not under test: the probe passed this user's own SID
+where a container SID goes, because resolving a real one creates an AppContainer
+profile — machine state a probe has no business writing — and the pipe's
+creation flags are what the cells depended on.
+
+### 3. Would CI have caught it?
+
+**Yes, and this is answered from a run rather than from the workflow file.** The
+board is GREEN at `d92737f` (`CI=success, Guards=success`), read through
+`board.mjs`. `boardStatus.proof.mjs` — the range's one modified proof outside
+the kernel — runs at `guards.yml:158` as an **unconditional** step, so its
+success is execution rather than a skip reporting green. The kernel and contract
+cases run under vitest on both matrix legs.
+
+**The inverse — a defect this machine cannot see?** One, and it is not
+provisioning: the end-to-end host probe spawns a real child against a real Win32
+named pipe, and it lives in the scratchpad rather than in the repository. No
+runner has executed it. That is deliberate for now — it creates processes and a
+pipe — and it is the half of the host body that CI does not cover.
+
+### 4. Are the proofs non-vacuous?
+
+Mutations run this range, in both directions where the property is an agreement:
+
+| mutation | outcome |
+|---|---|
+| `probeCode` returns the raw string | 6 of 9 acceptance cases red |
+| the probe code's schema widened to `z.string()` | **only the control red** — all 9 acceptance cases green |
+| the handler probes two fixed paths of its own | **only the call case red** — the answer case green |
+| the ends-once guard deleted | the differing-reasons case red |
+| `onData` unwired from `receive` | 3 red, naming *wrote 0 frame(s) in 2000ms* |
+| the seven-character `--sha` refusal | **SURVIVED**, fixed |
+| the poison filter deleted | **SURVIVED**, fixed |
+
+**The two middle rows are the range's most useful pair**, because each shows
+what its neighbour cannot. Widening the schema is invisible to every acceptance
+case, since agreement is also what a schema accepting everything produces — the
+control is the only thing that separates a working bound from an absent one. And
+a handler probing paths of its own choosing returns a report of identical shape,
+so only an assertion on the **call** separates it.
+
+**Both survivals are the same diagnosis and it is now in `CLAUDE.md` item 4:**
+when the property under test is a DECISION, the end state is the wrong
+observable. The `--sha` value fell through to a different refusal whose message
+also says *forty*; the poisoned document is refused by `hold` anyway, so
+deleting the filter changed no observable state.
+
+### 5. Executed, or asserted?
+
+**Executed:** 294 cases across kernel and contract · the containment cases 31 ·
+both schema mutations in both directions · the handler mutation · the two host
+body mutations · the pipe client probe with its ENOENT control · the byte
+probe with its quiet-cell control · the end-to-end host entry probe with three
+controls · the 16 local checks against the index, four times · the board.
+
+**Asserted:** that a *contained* client is admitted by the shipped pipe DACL.
+Recorded in the ADR as owed, and it is the milestone this work is heading for.
+
+### 6. Architecture before the feature?
+
+One change, and it went in the right order. `probeContainment`'s parameter
+bundled the paths to attempt with the evidence a verdict is judged against
+(`negative.readableBytes`, `positive.origin`) — both of which are **main's**.
+The measuring half runs in the host, so the first caller would have had to
+invent those fields there or send them there. The signature changed before the
+channel was built, not underneath it.
+
+**Not a B4.** No seam moved and no invariant changed: `classifyContainment`
+keeps the request type, and what narrowed is which half of it the measuring side
+can see. That is B5 inside a decision ADR-0023 §5 already took.
+
+**One question this range did NOT settle, and it is recorded rather than
+guessed.** Decision 9c rejects widening `SessionLookup` to get-or-create by
+name, which means sessions are created **at open** — and `DocumentService` has
+`teardown` with no open-side counterpart. Adding one is a kernel seam, and what
+happens when the engine host is unavailable at open is not decided anywhere:
+the document failing to open, and opening without a session, are materially
+different products. That is the next thing the record has to say before 9c's 4c
+anchor can exist.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md` gained the probe-channel row; ADR-0023 gained the
+2026-08-27 addition about the host's end of the pipe, and appended corrections
+under Decisions 9a and 9b.
+
+**NNN-4's cross-document sweep fired** — this range states where the host's pipe
+end is decided — and was run with `sweep:prose`. Both phrases return one match
+with the control found, so no other document states the relationship differently.
+
+**And item 7 caught its own class this range, twice, which is HHHH.** A
+correction appended to Decision 9b consumed `### 9c`'s heading, leaving four
+references pointing at a heading that does not exist and `check:docs` green,
+because the document resolves. That is UU-1's recorded shape — worse than a
+broken link, which announces itself. The second instance had been standing for
+eight commits in `docs/JOURNAL.md` and took its `---` with it.
+
+---
+
 ## 2026-08-26 — Stage audit: `cedec2d..825c9a2` — a lifetime nothing invoked, and a budget wide enough to hide the thing it was written for
 
 **Audited through `825c9a2`.** Pasted from `npm run audit:scope`:
