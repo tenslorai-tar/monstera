@@ -213,3 +213,61 @@ comfortable.
 - The prose-restatement rule in `check:docs` still applies: §9.17 states the
   value once, in the machine-read line, and the paragraphs above argue it without
   repeating it.
+
+---
+
+## Note, 2026-08-27 — `mupdf-host`'s cost is now MEASURED, and `base 128 MB` fails this ADR's own rule
+
+This ADR left `mupdf-host` alone because *"nobody has named"* the smallest thing
+its baseline must catch. Half of what was missing is now measured, and it settles
+more than expected: **the number is not merely underived, it is too generous by
+this ADR's own arithmetic.**
+
+**The honest fixed cost**, read 2026-08-27 from **outside** the process — the
+parent reading `WorkingSet64` of the child, because a host reporting on itself is
+the shape `hostContainment.mjs` records as unsafe for exactly this subject:
+
+| cell | reading |
+|---|---|
+| bare Node, same binary, doing nothing (control) | **52.7 MB** |
+| `hostEntry.js`, connected, before any document | **93.6 MB** |
+| the engine's share | **40.9 MB** |
+
+The engine's share is **0.78× the runtime**, which is what §9.17 asks for — *"a
+fraction of the runtime's, not a multiple of it"*. That half of the argument
+holds and is now evidence rather than assertion.
+
+**The window does not.** `base 128 MB` leaves **34.4 MB** of slack above the
+honest cost, so it can only detect a regression of at least that size. The
+concrete candidates are all far smaller:
+
+| a thing the host has no business loading | measured |
+|---|---|
+| `koffi`, an FFI the host does not currently use — its transport is plain Node | **2.9 MB** |
+| the kernel barrel, after ADR-0026 | **9.6 MB** |
+| a second binding of the engine itself | ~41 MB |
+
+Only the last is caught. **That is `main`'s `96 MB` defect again** — a baseline
+wide enough to hide the thing it was written for, reading as a working limit —
+and it is the failure mode this ADR exists to correct.
+
+**What is NOT concluded, because the next step is a decision rather than a
+measurement.** Applying the rule literally gives a window of roughly
+(93.6, 96.5) MB against the smallest candidate, which is **tighter than the
+variance this project has already measured on one machine** — `main` saw a >4 MB
+inter-run swing, and ADR-0025 deliberately left slack to absorb it, on the
+grounds that *a baseline that reddens on ordinary variance is a check people
+switch off*. So the window may be **empty**: no single number can both survive
+variance and catch a 2.9 MB regression.
+
+If that is so, the honest conclusion is not a smaller number — it is that **a
+baseline is the wrong detector for this class in this role**, and what catches
+`koffi` arriving in the host is a reachability check like `proof:kernelload`,
+which is exact and variance-free. That is a decision for the owner and is named
+here rather than taken.
+
+**Two limits on the reading itself.** It is one machine and one run. And it is a
+**current** working set where the budget is enforced against a **peak** — peak is
+never lower, so the true honest cost is ≥ 93.6 MB and the real slack is ≤ 34.4 MB.
+Both errors run in the direction that makes the finding stronger, which is why it
+is recorded now rather than held for a better instrument.
