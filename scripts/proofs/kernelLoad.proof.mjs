@@ -190,13 +190,28 @@ try {
   );
 
   check(
-    'and the emit still names the module it type-imports, so the check is about the RIGHT thing',
-    importsOf(join(DIST, 'commandLog.js')).length >= 0 &&
-      existsSync(join(DIST, FORBIDDEN)) &&
-      existsSync(join(DIST, 'rotatePages.js')),
+    'both modules are PRESENT, so "not reachable" is a claim about reachability and not absence',
+    existsSync(join(DIST, FORBIDDEN)) && existsSync(join(DIST, 'rotatePages.js')),
     `${FORBIDDEN} or rotatePages.js is missing from ${DIST}. The reachability question is only ` +
       `meaningful while both exist; without them "not reachable" is true and means nothing.`,
   );
+  // WHAT THIS CASE USED TO SAY, and why it no longer does (finding KKKK-3).
+  //
+  // Its title was *"the emit still names the module it type-imports"* and it
+  // opened with `importsOf(join(DIST, 'commandLog.js')).length >= 0` — a
+  // tautology twice over. `>= 0` cannot be false, and `importsOf` matches only
+  // `./`-relative specifiers while `commandLog.js`'s emit contains none, so the
+  // call returns `[]` on every run regardless of what it is asked.
+  //
+  // The title was the worse half. After the fix `commandLog.js`'s emit does NOT
+  // name `rotatePages.js` — `import type` is erased entirely, which is the
+  // property this proof exists to defend — so the title described the DEFECT
+  // state and a reader would have believed the proof watched something it never
+  // did, in the file whose header is this trap's canonical write-up.
+  //
+  // What survives is real and is what the title now says: both modules exist,
+  // so every "not reachable" above is about reachability rather than about a
+  // module that is simply not there.
 
   process.stdout.write(
     failures.length > 0
