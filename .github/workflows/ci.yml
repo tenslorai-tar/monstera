@@ -165,6 +165,24 @@ jobs:
       - name: Prove the React lint rules are registered and fire
         run: node scripts/ci/annotate.mjs scripts/proofs/lintRules.proof.mjs
 
+      # ADR-0026's class, the half no lint rule covers.
+      # `no-import-type-side-effects` registers ImportDeclaration only, and
+      # `consistent-type-exports` treats an inline `type` specifier as already
+      # satisfying it, so `export { type X } from './y.js'` emits a runtime load
+      # that nothing reports. One of those cost the kernel barrel 41.7 MB.
+      #
+      # AFTER the build step above, and that placement is the point: the scan
+      # reads the EMIT, because the two spellings are identical in source and
+      # only one of them runs. This is the fail-closed half — the pre-commit
+      # copy reads whatever build is on disk and says so when there is none,
+      # since blocking a contributor who has not run tsc yet teaches the one
+      # habit this repository most forbids.
+      - name: Prove the emitted-side-effect scan can see, refuse and separate
+        run: node scripts/ci/annotate.mjs scripts/proofs/emittedSideEffects.proof.mjs
+
+      - name: No type-only statement survives into the emit
+        run: node scripts/ci/annotate.mjs scripts/lib/emittedSideEffects.mjs
+
       # The instrument the Stage 0 performance gate will use, resolution-tested
       # before it measures anything real. Its predecessor was a setInterval
       # sampler that could not fire while a synchronous FFI loop held the event

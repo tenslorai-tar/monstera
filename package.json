@@ -81,6 +81,8 @@
     "proof:win32handle": "node scripts/proofs/win32Handle.proof.mjs",
     "proof:emittedtemplates": "node scripts/proofs/emittedTemplates.proof.mjs",
     "check:emittedtemplates": "node scripts/lib/emittedTemplates.mjs",
+    "proof:emittedsideeffects": "node scripts/proofs/emittedSideEffects.proof.mjs",
+    "check:emittedsideeffects": "node scripts/lib/emittedSideEffects.mjs",
     "proof:annotatecoverage": "node scripts/proofs/annotateCoverage.proof.mjs",
     "check:annotatecoverage": "node scripts/lib/annotateCoverage.mjs",
     "proof:stackowner": "node scripts/proofs/stackOwnership.proof.mjs",
