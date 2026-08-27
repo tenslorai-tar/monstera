@@ -385,10 +385,45 @@ shape, and it is contradicted by the first matched-runtime measurement of it.
 Reported, not acted on: §9.17's writer of record is `docs/ARCHITECTURE.md` and
 moving it is a B4.
 
-**No number is proposed.** `base 128 MB` against 89.5 MB leaves **38.5 MB** of
-slack, so the detector question stands where the previous addition left it — the
-absolute is the only stable statistic, and both subtraction-based candidates
-inherit the share's 6.1 MB spread on a quantity of 45.8.
+### The derivation for `mupdf-host`, run for the first time — and it does not yield one number
+
+This ADR's rule is *floor above the largest honest measurement, ceiling below
+floor + the smallest regression that must be caught*. Applied to the corrected
+figures, with the two candidate regressions this document already carries at
+lines 246–247:
+
+| | floor | ceiling | window |
+|---|---|---|---|
+| against the kernel barrel, **9.6 MB** | > 92.2 MB | < 99.1 MB | **6.9 MB** |
+| against `koffi`, **2.9 MB** | > 92.2 MB | < 92.4 MB | **0.2 MB** |
+
+Floor is the largest observed host peak, 92.2 MB over 15 runs; ceiling is the
+median 89.5 MB plus the regression.
+
+**So the emptiness question has a per-class answer rather than one answer.** The
+barrel-sized window is real but thin: 6.9 MB against a machine-to-machine swing
+this project has measured at **more than 4 MB**, and the runner's own host
+baseline has never been read — the same gap `main`'s derivation names above,
+arriving one role down. The koffi-sized window is **empty**, and no choice of
+number opens it, because 2.9 MB is below the run-to-run spread of the thing being
+bounded.
+
+**Proposed, for the owner: `base 98 MB`, scoped in §9.17 to the barrel-sized
+class, with `koffi` moved to reachability.** 98 sits 5.8 MB above the largest
+honest measurement, which covers the >4 MB swing, and 1.1 MB below the smallest
+barrel-class regression that must fail. `proof:kernelload` already answers the
+koffi question exactly and without variance — it is a reachability walk, and *is
+this binding reachable* has no spread at all.
+
+**The residual, stated rather than left implied:** 1.1 MB of ceiling margin is
+thin, and on a machine whose host floor is more than 1.1 MB above this one the
+budget stops catching the barrel class while still passing. That is the same
+shape as `main`'s unread runner baseline and it closes the same way — by reading
+the host's floor on the runner. **`base 128 MB` is wrong either way**: against
+89.5 MB it leaves 38.5 MB of slack, four times the largest candidate it exists to
+catch.
+
+Moving §9.17 is a B4. Nothing here changes it.
 
 ---
 
