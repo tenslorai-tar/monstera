@@ -644,6 +644,145 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `cc1e54e..4eb94a7` — the control a ruling handed me cannot fail, and the two instruments that differed by one were never disagreeing
+
+**Audited through `4eb94a7`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: cc1e54e..HEAD
+  commits: 8 (one batch is 9)
+  files:   19 (one batch is 24)
+  proofs ADDED: none
+  proofs MODIFIED (4):  commandBus.test.ts +3 -3 · documentService.test.ts +2 -2
+                        mupdfWriter.test.ts +1 -1 · rotatePages.test.ts +2 -2
+  proofs REMOVED: none
+  source FILES ADDED: none
+  source FILES CHANGED (9): commandSpecs.ts +10 -10 · commandDeclarations.ts +6 -2
+                            commandBus.ts +4 -4 · engineSeam.ts +3 -3
+                            rotatePages.ts +3 -3 · commandLog.ts +2 -2
+                            documentIdentity.ts · documentService.ts · mupdfWriter.ts
+  source FILES REMOVED: none
+```
+
+The range: the previous audit recorded, LLLL-1's dropped paragraph restored,
+ADR-0027 written and stopped at, Track D's baseline finding, the runner-baseline
+expiry, MMMM-1's plugin reading, and the first part of the emitted-import
+rewrite. **The four modified proofs are import statements only** — read each
+diff; not one assertion or case moved, which is what a loosened check would look
+different from.
+
+### NNNN-1. The emit-diff control I was handed cannot fail, and reachability is the half that separates
+
+Ruling LLLL-2 states the control for each part of the lint rewrite exactly:
+*"dist must differ from its pre-commit state only by removed `import {}` /
+`export {}` lines, and the running count must fall by the number of statements
+that part rewrote."* Both halves held for part 1 — 28 statements rewritten, 69
+→ 41 in the emit, and a runtime-JavaScript diff of 28 removed `import {} from`
+lines plus one `export {};`.
+
+**And that control cannot distinguish a safe removal from a harmful one.**
+`no-import-type-side-effects` fires only where **every** specifier in the
+statement is inline-type, so its fix always deletes a whole statement and never
+rewrites one. A removal that erased a load something actually needed is
+therefore *also* a removed `import {} from` line, and *also* moves the count by
+one. **The output the control checks for is what both outcomes produce** — item
+4b's reassuring answer, arriving inside a comparison a ruling had specified.
+
+What actually separates them is whether each removed target still has a live
+load-point through a value edge. Measured across every dist tree after part 1,
+and every one of the seven targets does:
+
+| target | remaining references |
+|---|---|
+| `@monstera/shared` | 29 |
+| `@monstera/contract` | 27 |
+| `commandLog.js` | 3 |
+| `documentIdentity.js` | 3 |
+| `capabilityRegistry.js` | 3 |
+| `documentService.js` | 2 |
+| `engineSeam.js` | 1 |
+
+Corroborated from the other side: none of the five kernel modules above has an
+observable module-scope effect — no registration, no I/O, no shared mutable
+state. `engineSeam.js` and `commandLog.js` and `capabilityRegistry.js` have zero
+module-scope initialisers, `documentIdentity.js` one (`promisify`) and
+`documentService.js` three (all function values). **That scan was blind on its
+first run and was caught by its own control**: `@monstera/contract` builds its
+schemas at module scope and must show work, and the first pattern reported zero
+for it because the declarations begin with `export`. The figures above are from
+the corrected pattern, whose control reports non-zero for contract.
+
+**`engineSeam.js`'s single remaining reference is the barrel's `export {} from`,
+which part 4 removes**, so that module will then be loaded by nothing at all.
+That is ADR-0026's intended end state and it is written down here because a
+module with zero load-points looks exactly like a broken build to whoever checks
+this next.
+
+**The transferable form:** when a ruling — or anyone — hands you a control, ask
+what the *defect* would print for the same input. A control specified as *"the
+diff contains only X"* is worthless where the bug also produces only X, and that
+is not visible from inside the sentence, which is why it survived being written
+by the seat that has the direction rule and read by the seat that wrote it down.
+
+### NNNN-2. Two instruments differing by one, and the difference was the finding
+
+The OWED row recorded ESLint-over-source at **69** and grep-over-dist at **70**,
+called the gap unchased, and chose the dist figure *"being read from the artefact
+rather than from the text that produces it"*. The reasoning for the choice was
+sound and the gap needed no chasing beyond MMMM-1: 69 is everything
+`no-import-type-side-effects` can see, because it visits `ImportDeclaration`
+only, and 70 is that plus the single `export {} from`. **The instruments were
+never disagreeing — they were counting two populations, and the difference
+between them is the uncovered half.**
+
+Corrected in `4eb94a7`. The shape worth keeping: a discrepancy of **one** between
+two instruments reads as rounding, and the sentence it attracts is one that picks
+a figure to trust rather than one that asks what the difference is made of. A gap
+of forty would have been investigated on sight.
+
+### NNNN-3. LLLL-1's repair can regenerate, and no check is proposed for it — deliberately
+
+Item 1's test: *a repair that could regenerate is a symptom fix.* Restoring
+B3's dropped paragraph is exactly that — the next move of that comment can drop
+it again, and `65f9c16`'s message records the *method* that catches it
+(*"checked by name, not by eye"*) without recording that the method is a person
+remembering.
+
+**No check is proposed, and the reason is 4c rather than difficulty.** A comment
+move is not decidable by a scan: the same words at a new address and words that
+vanished are the same input to anything that does not model moves. A grep pinning
+this one paragraph would cover the instance already found while the class —
+every comment paragraph that must survive a relocation — stays undecidable, which
+is a check that **reads as watched and is not**. The compensation that exists is
+the audit-scope report's net-negative figure on a moved-from file, which is
+printed, computed per run, and names the file.
+
+### Executed, and asserted
+
+**Executed.** The plugin source read at 8.67.0 plus an ESLint probe with a
+positive control · the emit counts either side of a full rebuild · the
+reachability of all seven targets · the module-scope scan with its control
+repaired · 514 vitest cases · 16 of 16 local checks against the **index**, after
+the harness reported that the first run had read the previous content ·
+`proof:kernelload` with its control (`mupdfWriter.js` reachable from `engine.js`)
+still passing, which a rewrite that erased the edge the walk rides on would have
+reddened.
+
+**Asserted.** That no removed load-point changed module *initialisation order* in
+a way that matters. The reason it is safe is that ES modules initialise once in
+dependency order and every target still loads through a value edge — but no cycle
+analysis was run, so this is reasoning and not a measurement, and it is the one
+line in this entry to distrust.
+
+**Item 3, and not from the workflow file.** `proof:kernelload`, `check:types`,
+`check:lint` and the vitest suite are unconditional steps, and entry
+`f75005d..cc1e54e` established that from a run rather than from `ci.yml`. What
+this range's own commits have not yet had is a board reading — they are audited
+before the push, so the answer is owed on the next green rather than claimed
+here.
+
+---
+
 ## 2026-08-27 — Stage audit: `f75005d..cc1e54e` — a move dropped B3's own rationale, in the commit whose author was watching for exactly that
 
 **Audited through `cc1e54e`.** Pasted from `npm run audit:scope`:
