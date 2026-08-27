@@ -619,3 +619,56 @@ and *it came back higher* was not the more likely outcome.
 **`base 98` remains withdrawn.** It would now sit 0.9 MB below the ceiling rather
 than 0.2 MB, and that is still not a margin against a `min` taken from thirty
 readings that more sampling can only lower.
+
+---
+
+## Correction, 2026-08-27 — `main`'s spread, and the two things it measures
+
+**Finding RRRR-3's input, taken.** `main`'s window was settled with no set of
+readings behind it: the spread was quoted as *">4 MB on one machine"* from two
+figures observed in different conditions. `mupdf-host` got thirty readings;
+`main` got none. `scripts/research/baselineSpread.mjs` takes them, through
+`budgetGate.mjs`'s own exported `baselineFor` rather than beside it, so the
+quantity measured is the one the gate enforces (B3a).
+
+Fifteen readings of `main-service`, this machine, 2026-08-27:
+
+| runtime | min | median | max | spread |
+|---|---|---|---|---|
+| system node (what `perf:gate` uses today) | 51.7 MB | 51.8 MB | 51.9 MB | **0.2 MB** |
+| pinned Electron 43.4.1, Node mode | 40.7 MB | 41.0 MB | 43.7 MB | **3.0 MB** |
+
+**Two facts, and the second is the one that matters for a window.** The role
+costs ~11 MB *less* under the runtime it actually runs in — consistent with
+`barrelCost.mjs`'s bare cells, 39.3 MB against 57.4 MB. And its spread there is
+**fifteen times wider**. A window derived from the node column would be built on
+a stability the real runtime does not have.
+
+**AND THE LARGEST VARIATION IS NEITHER OF THOSE — IT IS BETWEEN SESSIONS, AND IT
+WAS MEASURED BY ACCIDENT.** `perf:gate` was run twice on this machine at the same
+commit, before and after a hung six-process `vitest` tree was killed:
+
+| role | with the stray alive | after | delta |
+|---|---|---|---|
+| `main` | 56.5 MB | 50.6 MB | −5.9 |
+| `main-service` | 59.1 MB | 53.1 MB | −5.8 |
+| `mupdf-host` | 65.6 MB | 59.8 MB | −5.8 |
+
+All three moved by the same amount, which is what makes it a property of the
+machine rather than of any role. **The mechanism is not established and is not
+guessed at here** — what is established is the size: **~5.8 MB between sessions
+against 0.2 MB within one.**
+
+**The consequence for this ADR is direct.** `mupdf-host`'s window is 6.7 MB wide,
+and a between-session shift of 5.8 MB nearly fills it. So fifteen consecutive
+readings answer a narrower question than *what is this role's honest cost* — they
+answer *what is it in this session*. Reporting the 0.2 MB figure as "`main`'s
+spread" would be the same error this document already corrected twice: a number
+whose conditions are not carried with it.
+
+**What is therefore still owed before `base 80 MB` can be re-derived:** readings
+taken in separate sessions, and on the runner. The instrument is built, tracked
+and takes `--runs` and `--runtime`; what it has not yet had is time between runs.
+The resolution test passed on every run reported here — `main` at 49.1 MB against
+`main-service` at 52.1 MB, 3.0 MB apart — so the readings distinguish the thing
+they name.

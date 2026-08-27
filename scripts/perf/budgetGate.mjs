@@ -61,12 +61,23 @@ const ROOT = repoRoot();
  * The absolute cap is deliberately NOT baseline-adjusted. It is a containment
  * limit on the whole process, and the machine pays for the baseline too.
  *
+ * **Exported so a spread can be measured through THIS function** rather than
+ * beside it. `baselineSpread.mjs` needs fifteen readings of the same quantity
+ * the gate enforces; a second `measurePeak(script, [tiny])` written there would
+ * be a second opinion about what a role's baseline is, and the two would agree
+ * until one of them changed (B3a).
+ *
+ * `options` reaches `measurePeak` untouched, which is how that caller selects a
+ * runtime — SSSS-2 measured that a figure and the runtime it was taken under
+ * cannot be separated.
+ *
  * @param {string} script
  * @param {string} tinyDocument
+ * @param {{ env?: NodeJS.ProcessEnv, timeoutMs?: number, runtime?: string }} [options]
  * @returns {number}
  */
-function baselineFor(script, tinyDocument) {
-  return measurePeak(script, [tinyDocument]).peakRssBytes;
+export function baselineFor(script, tinyDocument, options = {}) {
+  return measurePeak(script, [tinyDocument], options).peakRssBytes;
 }
 
 /**
