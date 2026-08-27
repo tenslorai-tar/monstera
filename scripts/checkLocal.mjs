@@ -310,10 +310,13 @@ const filtered = ONLY === null ? derived : derived.filter((name) => name.include
  * measurement was never taken there; refusing it would block the only way this
  * file's own failure paths can be exercised (QQQ-2).
  *
- * WHAT WOULD UNBLOCK IT: find the mechanism, then give each script its own job
- * object so its children die with it. Killing a process tree properly on Windows
- * needs one, which is a real unit and not something to bury in a convenience
- * script.
+ * WHAT WOULD UNBLOCK IT is no longer the mechanism, and the job object half is
+ * withdrawn — measured, an ordinary Windows grandchild dies with the harness 3
+ * of 3 and only a `detached` one survives, and this repository spawns nothing
+ * detached. What unblocks it is the property {@link multiProofSweepRefusal}'s
+ * message now names: a spawn that never became a process is classified as its
+ * own state rather than as a failure, and the run stops there. Both halves are
+ * asserted against an injected non-start, with the control the other way.
  *
  * The decision and its message live in {@link multiProofSweepRefusal} — the
  * boundary has a side this end-to-end path cannot exercise cheaply, and that

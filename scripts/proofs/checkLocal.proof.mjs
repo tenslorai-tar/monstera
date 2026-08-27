@@ -86,7 +86,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 47 });
+const roster = createRoster(failures, { cases: 51 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -1255,11 +1255,86 @@ try {
         const counted = runFixture({ 'ok.mjs': EXIT_ZERO }, { 'check:ok': 'node scripts/ok.mjs' });
         return counted.ok && /0 never started/u.test(counted.output);
       })(),
-      `The classifier can be perfect and reach nobody. This is the half of the wiring a ` +
-        `fixture can see: the harness's own \`didNotStart\` branch cannot be reached from a ` +
-        `fixture at all — see the stated gap in lib/spawnOutcome.mjs — so the counter ` +
-        `appearing in the summary is what is provable here.`,
+      `The classifier can be perfect and reach nobody. The counter appearing in the summary is ` +
+        `the cheapest half of the wiring; the two cases below drive the branch itself.`,
     );
+
+    // -----------------------------------------------------------------------
+    // THE NON-START, INJECTED. This used to be recorded as unreachable from a
+    // fixture, and it is not: a command line past Windows' 32767-character
+    // limit makes CreateProcess fail before any process exists.
+    //
+    // Measured 2026-08-27, against a normal spawn at 112.4ms:
+    //   nonexistent executable      status=null  ENOENT         1.5ms
+    //   argument list past 32767    status=null  ENAMETOOLONG   2.5ms
+    //
+    // `status: null`, no output, single-digit milliseconds — WWW-2's founding
+    // signature exactly. ENAMETOOLONG is the one reachable THROUGH the harness,
+    // because it always spawns `process.execPath` and takes the arguments from
+    // the manifest, so a fixture can supply them and an executable name cannot.
+    //
+    // Both directions are asserted, in this case and the next. A harness that
+    // called EVERYTHING a non-start would satisfy this one alone.
+    // -----------------------------------------------------------------------
+    {
+      const past = 'x'.repeat(40000);
+      const swept = runFixture(
+        { 'ok.mjs': EXIT_ZERO, 'later.mjs': EXIT_ZERO },
+        {
+          // Declared first so something remains to be skipped. Everything here
+          // is never-measured, which the harness runs in one bucket in the
+          // order the manifest declares.
+          'check:a-nostart': `node scripts/ok.mjs ${past}`,
+          'check:b-later': 'node scripts/later.mjs',
+          'check:c-later': 'node scripts/ok.mjs',
+        },
+        [],
+      );
+
+      check(
+        'a spawn that never starts is reported as DID NOT START and carries its errno',
+        /DID NOT START/u.test(swept.output) && /ENAMETOOLONG/u.test(swept.output),
+        `output did not name the state or the cause:\n${swept.output.slice(0, 900)}`,
+      );
+
+      check(
+        '  ...and is NOT counted as a failure, which is the whole distinction',
+        /0 failed/u.test(swept.output) && /1 never started/u.test(swept.output),
+        `the summary called it something else. A spawn that never became a process is not a ` +
+          `check that said no — reading it as one is what produced 35 invented failures and ` +
+          `cost this repository the multi-proof sweep:\n${swept.output.slice(0, 900)}`,
+      );
+
+      check(
+        '  ...and the run STOPS there rather than measuring against the same machine',
+        /never reached and are NOT passes/u.test(swept.output) &&
+          /1 of 3 attempted/u.test(swept.output),
+        `the sweep continued past a machine that had just refused to create a process. ` +
+          `Everything after one is a result about that machine, not about the script:\n` +
+          `${swept.output.slice(0, 900)}`,
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // THE OTHER DIRECTION. A genuine failure must still be a failure, still be
+    // counted, and must NOT stop the sweep — otherwise the case above is
+    // satisfied by a harness that treats every non-zero exit as a machine
+    // fault, which is the same collapse wearing the opposite label.
+    // -----------------------------------------------------------------------
+    {
+      const swept = runFixture(
+        { 'bad.mjs': 'process.exit(1);\n', 'ok.mjs': EXIT_ZERO },
+        { 'check:a-bad': 'node scripts/bad.mjs', 'check:b-ok': 'node scripts/ok.mjs' },
+      );
+      check(
+        'CONTROL: a real failure is still a FAILURE, still counted, and does not stop the run',
+        !swept.ok &&
+          /1 failed/u.test(swept.output) &&
+          /0 never started/u.test(swept.output) &&
+          /2 of 2 attempted/u.test(swept.output),
+        `a script that ran and exited 1 was misreported:\n${swept.output.slice(0, 900)}`,
+      );
+    }
   }
 
   // -------------------------------------------------------------------------

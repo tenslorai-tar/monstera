@@ -138,10 +138,24 @@ export function multiProofSweepRefusal({ rootDir, repoRoot, selected, runLogDir 
     `anything is killed — because "it stopped" and "it never started" are the same observation ` +
     `otherwise. What a timeout really leaves behind is a CHANGED TREE, since a killed script ` +
     `never runs its finally.\n\n` +
-    `Unblocked by: the ERRNO behind the 0.0s signature, and nothing else. The class is settled ` +
-    `— no process was created — and stopping at the first one bounds the damage to a single ` +
-    `invented failure instead of thirty-five. That is not an explanation, and the next ` +
-    `occurrence is the thing that will be. ` +
-    `There is no flag that turns this off.\n`
+    `UNBLOCKED BY THE PROPERTY BELOW, NOT BY THE ERRNO. This message used to end "unblocked by ` +
+    `the ERRNO behind the 0.0s signature, and nothing else". That condition can only be met by ` +
+    `the defect RECURRING, and the investigation it prescribes was run on 2026-08-27 — the real ` +
+    `harness against a clone, twice, once built and provisioned — completing 81 of 81 both ` +
+    `times with zero never-started and not one row at 0.0s. So there is no errno, because there ` +
+    `was no failure to read one from, and a condition that success prevents is not a strategy ` +
+    `that terminates (the same shape ADR-0025 records for the runner's baseline).\n\n` +
+    `The refusal is PROTECTIVE and the errno is EXPLANATORY. What it exists to stop is a sweep ` +
+    `reporting invented failures. So the condition is that the harness cannot report one: a ` +
+    `spawn that never became a process is classified as its own state rather than as a failure, ` +
+    `and the run stops there. Both halves are asserted in checkLocal.proof.mjs against an ` +
+    `INJECTED non-start — a command line past Windows' 32767-character limit, which fails ` +
+    `CreateProcess in ~2.5ms with status null and no output, WWW-2's signature exactly — with ` +
+    `the control the other way, that a genuine failure is still a failure, still counted, and ` +
+    `does not stop the run. A harness calling everything a non-start would satisfy the first ` +
+    `alone.\n\n` +
+    `When that holds, the harm is unrepresentable rather than merely unobserved, which is B5 ` +
+    `superseding a runtime prohibition — not a check switched off because nobody could ` +
+    `reproduce it. There is no flag that turns this off in the meantime.\n`
   );
 }
