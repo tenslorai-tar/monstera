@@ -2,7 +2,7 @@ import { PDFDocument } from '@cantoo/pdf-lib';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { createClient, type Incident, wrapHandlers } from '@monstera/contract';
 
@@ -67,6 +67,24 @@ beforeAll(async () => {
  * written, removed on every path out. Whether the DACL is right is
  * `hostDacl.test.ts` and `proof:hostcontainment`.
  */
+/**
+ * The temp ROOTS this file's fixture minted, so an `afterEach` can remove them.
+ *
+ * `remove(area)` deletes the two directories the surface's contract names —
+ * snapshot and output — and it must keep doing exactly that, because what is
+ * under test is the ORDER of operations against that contract. The root above
+ * them is not part of the contract: it is this fixture's own grouping, created
+ * by `mkdtemp` so two areas cannot collide.
+ *
+ * So it had no owner, and nothing removed it. Measured 2026-08-27: **284
+ * `monstera-lifecycle-*` directories** in `%TEMP%`, every one empty — the
+ * children removed exactly as the contract says and the parent left behind on
+ * every single call. Not a killed run and not a Windows handle: a leak by
+ * construction, which is why it is the largest of the 39 prefixes on this
+ * machine by a factor of two.
+ */
+const mintedRoots: string[] = [];
+
 function realAreas(): SessionAreaSurface & {
   readonly made: SessionArea[];
   readonly removed: SessionArea[];
@@ -81,6 +99,7 @@ function realAreas(): SessionAreaSurface & {
     mintName: () => `f${String((minted += 1))}`,
     create: async () => {
       const root = await mkdtemp(join(tmpdir(), 'monstera-lifecycle-'));
+      mintedRoots.push(root);
       const area: SessionArea = {
         snapshotDirectory: join(root, 'in'),
         outputDirectory: join(root, 'out'),
@@ -184,6 +203,16 @@ function joined(
 }
 
 describe('remoteMupdfLifecycle', () => {
+  // The fixture's own grouping directory, removed here rather than inside
+  // `remove` — see {@link mintedRoots}. `force` because a case that never
+  // reached `create` leaves nothing to delete, and that is not a failure.
+  afterEach(async () => {
+    while (mintedRoots.length > 0) {
+      const root = mintedRoots.pop();
+      if (root !== undefined) await rm(root, { recursive: true, force: true });
+    }
+  });
+
   /**
    * THE LOAD-BEARING CASE. Bytes go in through a directory, come back through
    * another, and the returned image is one MuPDF can open again — which is the

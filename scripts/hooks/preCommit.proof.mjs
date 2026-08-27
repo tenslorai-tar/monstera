@@ -659,13 +659,40 @@ check('CONTROL: a real lockfile failure still reads as one', () => {
 // The fixture is a candidate script that PRINTS a prefix, so no real npm is
 // involved and the rule is tested rather than the environment.
 // ---------------------------------------------------------------------------
+
+/**
+ * A temp directory this file will remove when it finishes.
+ *
+ * THESE FOUR HAD NO CLEANUP AT ALL, and the reason nobody noticed is worth more
+ * than the fix: this file removes a temp directory in nine other places, so any
+ * question of the form *does this file clean up* answers yes. Measured
+ * 2026-08-27: **126 `monstera-npmpath-*` and 84 `monstera-npmprefix-*`**
+ * directories in `%TEMP%`, from a proof that runs on every commit.
+ *
+ * A collected list rather than a `finally` per case, because three of the four
+ * are created inside `check` callbacks whose return value is the verdict — a
+ * `finally` there would have to be written three times, and the fourth site is
+ * a helper whose caller cannot see what it made.
+ *
+ * @param {string} prefix
+ * @returns {string}
+ */
+function tempDir(prefix) {
+  const made = mkdtempSync(join(tmpdir(), prefix));
+  scratchDirs.push(made);
+  return made;
+}
+
+/** @type {string[]} */
+const scratchDirs = [];
+
 /**
  * @param {string} prefix What the fake npm reports for `prefix -g`.
  * @param {boolean} installThere Whether an npm exists under that prefix.
  * @returns {{ candidate: string, installed: string, resolved: string }}
  */
 function resolveWithFakeNpm(prefix, installThere) {
-  const scratch = mkdtempSync(join(tmpdir(), 'monstera-npmpath-'));
+  const scratch = tempDir('monstera-npmpath-');
   const candidate = join(scratch, 'npm-cli.js');
   writeFileSync(candidate, `process.stdout.write(${JSON.stringify(prefix)});\n`, 'utf8');
 
@@ -678,7 +705,7 @@ function resolveWithFakeNpm(prefix, installThere) {
 }
 
 check('a globally installed npm WINS over the one bundled beside node', () => {
-  const prefix = mkdtempSync(join(tmpdir(), 'monstera-npmprefix-'));
+  const prefix = tempDir('monstera-npmprefix-');
   const { installed, resolved } = resolveWithFakeNpm(prefix, true);
   if (resolved !== installed) {
     return (
@@ -691,7 +718,7 @@ check('a globally installed npm WINS over the one bundled beside node', () => {
 });
 
 check('CONTROL: with no npm under the prefix, the candidate stands', () => {
-  const prefix = mkdtempSync(join(tmpdir(), 'monstera-npmprefix-'));
+  const prefix = tempDir('monstera-npmprefix-');
   const { candidate, resolved } = resolveWithFakeNpm(prefix, false);
   if (resolved !== candidate) {
     return (
@@ -704,7 +731,7 @@ check('CONTROL: with no npm under the prefix, the candidate stands', () => {
 });
 
 check('a prefix that cannot be read leaves the candidate in place', () => {
-  const scratch = mkdtempSync(join(tmpdir(), 'monstera-npmpath-'));
+  const scratch = tempDir('monstera-npmpath-');
   const candidate = join(scratch, 'npm-cli.js');
   writeFileSync(candidate, 'process.exit(3);\n', 'utf8');
   const resolved = globalPrefixOverride(candidate);
@@ -829,6 +856,14 @@ check('CONTROL: and the trigger reads the INDEX, not the working tree', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// BEFORE the verdict, and unconditionally: a run that fails leaves as much
+// behind as one that passes, and `process.exit` below would skip anything
+// written after it.
+while (scratchDirs.length > 0) {
+  const made = scratchDirs.pop();
+  if (made !== undefined) rmSync(made, { recursive: true, force: true });
+}
 
 if (failures.length > 0) {
   process.stderr.write(`\n${failures.length} hook proof failure(s):\n\n${failures.join('\n\n')}\n`);
