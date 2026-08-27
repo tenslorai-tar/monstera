@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { SANDBOX_PROBE_KEY } from './sandboxProbeKey.js';
-import { type ShellFailure } from './shellFailure.js';
+import type { ShellFailure } from './shellFailure.js';
 import { createMainWindow } from './window.js';
 import { RENDERER_WEB_PREFERENCES } from './windowPolicy.js';
 

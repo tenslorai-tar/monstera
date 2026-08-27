@@ -2,7 +2,7 @@ import { type Incident, channelIds } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
-import { type DocumentCommands } from './documentCommands.js';
+import type { DocumentCommands } from './documentCommands.js';
 import {
   type IpcHandleTarget,
   type IpcSenderCheck,

@@ -1,4 +1,4 @@
-import { type ContractHandlers } from '@monstera/contract';
+import type { ContractHandlers } from '@monstera/contract';
 import { DocumentBusyError, DocumentNotOpenError } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 

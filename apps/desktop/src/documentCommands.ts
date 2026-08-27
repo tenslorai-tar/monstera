@@ -1,4 +1,4 @@
-import { type CommandKind, type CommandOfKind } from '@monstera/contract';
+import type { CommandKind, CommandOfKind } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
 // which invariant 20 forbids by name and §9.17's budget is argued against
@@ -10,7 +10,7 @@ import {
   type WriterSession,
   declaredCommands,
 } from '@monstera/kernel';
-import { type DocId, type DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 /**
  * The composition point (ADR-0009, 2026-08-19): the one place that owns

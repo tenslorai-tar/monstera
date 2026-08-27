@@ -1,16 +1,16 @@
 import { ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
-import { type HostTermination } from '@monstera/kernel';
-import { type ReaderMessage } from '@monstera/nodemode';
+import type { HostTermination } from '@monstera/kernel';
+import type { ReaderMessage } from '@monstera/nodemode';
 import { ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { type PipeHandle, type SecurityDescriptor } from './enginePipeFactory.js';
-import { type ContainerSid, type UserSid } from './hostDacl.js';
+import type { PipeHandle, SecurityDescriptor } from './enginePipeFactory.js';
+import type { ContainerSid, UserSid } from './hostDacl.js';
 import { type EngineHostConnectionSurfaces, createEngineHostConnection } from './engineHostConnection.js';
-import { type ReaderWorkerHandle } from './engineReaderChannel.js';
-import { type CreatedProcess, type JobHandle, type ProcessHandle, type ThreadHandle } from './engineHostFactory.js';
-import { type PendingWrite } from './hostWriteQueue.js';
-import { type StopEvent } from './win32PipeSurface.js';
+import type { ReaderWorkerHandle } from './engineReaderChannel.js';
+import type { CreatedProcess, JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory.js';
+import type { PendingWrite } from './hostWriteQueue.js';
+import type { StopEvent } from './win32PipeSurface.js';
 
 const USER: UserSid = { __sid: 'user', value: 'S-1-5-21-1-2-3-1001' };
 const CONTAINER: ContainerSid = { __sid: 'container', value: 'S-1-15-2-1-2-3' };

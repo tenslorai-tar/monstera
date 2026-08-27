@@ -1,8 +1,8 @@
-import { type ContractHandlers } from '@monstera/contract';
+import type { ContractHandlers } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
-import { type DocumentCommands } from './documentCommands.js';
+import type { DocumentCommands } from './documentCommands.js';
 
 /**
  * What the application reports about itself.

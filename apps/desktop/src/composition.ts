@@ -1,12 +1,12 @@
-import { type IncidentSink } from '@monstera/contract';
+import type { IncidentSink } from '@monstera/contract';
 import { CapabilityRegistry, CommandBus, DocumentService } from '@monstera/kernel';
 
 import { MAIN_DOCUMENT_BYTES_CEILING } from './budget.js';
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
 import { DocumentCommands } from './documentCommands.js';
 import { EngineSessions } from './engineSessions.js';
-import { type ShellFailureSink } from './shellFailure.js';
-import { type ShellDependencies } from './main.js';
+import type { ShellFailureSink } from './shellFailure.js';
+import type { ShellDependencies } from './main.js';
 
 /**
  * The composition root: the one place that builds the object graph.

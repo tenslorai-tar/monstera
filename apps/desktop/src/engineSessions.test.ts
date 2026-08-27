@@ -20,7 +20,7 @@ import {
 import { mupdfWriter } from '@monstera/kernel/engine';
 import { asDocId, type DocId } from '@monstera/shared';
 
-import { type DocumentSessions } from './documentCommands.js';
+import type { DocumentSessions } from './documentCommands.js';
 import {
   EngineSessions,
   type HostDeathSurfaces,
@@ -28,7 +28,7 @@ import {
   openEngineSession,
   type SessionAreaOwner,
 } from './engineSessions.js';
-import { type ShellFailure } from './shellFailure.js';
+import type { ShellFailure } from './shellFailure.js';
 
 /**
  * The engine session supervisor's creation step and its state.

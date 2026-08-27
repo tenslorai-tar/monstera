@@ -7,7 +7,7 @@ import {
   type PipeHandle,
   createHostPipe,
 } from './enginePipeFactory.js';
-import { type ContainerSid, type UserSid } from './hostDacl.js';
+import type { ContainerSid, UserSid } from './hostDacl.js';
 import { type ReaderHostSurface, createEngineReaderChannel } from './engineReaderChannel.js';
 import { type HostCreationSurface, createContainedHost } from './engineHostFactory.js';
 import { type OverlappedWriteSurface, createHostWriteQueue } from './hostWriteQueue.js';

@@ -16,7 +16,7 @@ import {
 // the pre-host arrangement, and `/engine` is what makes that import say so
 // (ADR-0026).
 import { localMupdfWriter, mupdfWriter, withDocument } from '@monstera/kernel/engine';
-import { type DocId } from '@monstera/shared';
+import type { DocId } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */
 const AMPLE_CEILING = 64 * 1024 * 1024;

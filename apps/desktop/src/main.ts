@@ -1,4 +1,4 @@
-import { type ContractHandlers, type IncidentSink } from '@monstera/contract';
+import type { ContractHandlers, IncidentSink } from '@monstera/contract';
 import { app, ipcMain, session } from 'electron';
 
 import { registerContractHandlers } from './registerHandlers.js';
