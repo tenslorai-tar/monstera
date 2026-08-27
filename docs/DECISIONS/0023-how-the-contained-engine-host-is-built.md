@@ -2862,3 +2862,33 @@ at 2.9 MB as a regression class a baseline should catch.
 So the surface is reached through a **dynamic import at the point the shared
 host is first built**, and main pays nothing until a document is opened. That is
 following §9.17 rather than amending it, so it is a note rather than a B4.
+
+## Correction, 2026-08-28 — the deferral was a workaround around a conflict, and this was a B4 ([ADR-0028](0028-main-holds-the-process-creation-binding.md))
+
+The last paragraph above is withdrawn. The one-host-per-engine constraint and
+the measured table stand; the disposition does not.
+
+**What the note got wrong is which sentence of §9.17 it was reading.** It read
+*"anything more means it is loading something it has no business loading"* as
+the rule and asked whether `main` could avoid the binding. The sentence three
+clauses earlier assigns the FFI binding to `mupdf-host` **by name**, which no
+import placement in `main` can satisfy: ADR-0022 makes `main` the process that
+creates the host, creating it needs Win32, and Win32 needs the binding
+*somewhere in `main`'s graph* whether it arrives at module evaluation or at
+first open. Deferring changes when it is paid, not whether the clause is true.
+
+So the note reached a placement that reads as compliance and is a workaround
+around a conflict between two parts of the law — Rule 0's shape exactly, and
+the tell was available on the page: the argument for the deferral was *what
+§9.17 would object to*, which is a sentence being bent rather than applied.
+
+The deferral is separately rejected on its own merits in ADR-0028, and the
+reason is worth carrying back here because it falsifies this note's benefit
+rather than merely outweighing it: a session is created at **open** (the
+2026-08-27 correction above), the budget gate measures every role against a
+document, and no role measures the composed `main` at all — so the state the
+deferral protects is one no instrument observes.
+
+> The withdrawn sentence's *"main pays nothing until a document is opened"* is
+> also narrower than it reads: it is true of startup and false of the
+> application's ordinary working state.
