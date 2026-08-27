@@ -2816,3 +2816,49 @@ The DACL was also not under test and deliberately so: the probe passed this
 user's own SID where a container SID goes, because resolving a real one creates
 an AppContainer profile — machine state a probe has no business writing — and
 the pipe's **creation flags** are what the cells above depend on.
+
+---
+
+## Note, 2026-08-27 — what the composition root's wiring must satisfy, measured before it is written
+
+The wiring is the next unit and is not built. What is established here are the
+two constraints it has to meet, both of which were assumptions until measured —
+and one of which the obvious reading gets backwards.
+
+**One host per ENGINE, not per document.** Decision 9c says so, and this ADR
+already records a building seat proposing the opposite because "a host was
+assumed to be per document", flagging it, and checking. The same assumption
+arrived again while surveying the wiring and was checked the same way. So the
+shape is a **single shared connection** with `create(docId)` minting only that
+document's per-session directories and remote sessions on the shared client —
+not a host per open document. `onEngineHostEnded` already takes a document
+*list*, which is the design anticipating exactly this.
+
+**The Win32 surface must be loaded lazily; the connection need not be.**
+Measured 2026-08-27, peak RSS over a bare process, each cell one spawn:
+
+| cell | over bare | marginal over `composition.js` |
+|---|---|---|
+| `koffi` alone | +2.4 MB | — |
+| `win32HostSurface.js` | +2.7 MB | **+1.0 MB** |
+| `engineHostConnection.js` | +10.1 MB | **below resolution** |
+| `composition.js` | +10.5 MB | — |
+
+The connection module looks expensive and is free: it costs what it costs
+because it pulls `@monstera/kernel`, which `composition.ts` already imports, so
+its marginal cost is **smaller than this instrument's 0.2–0.3 MB
+within-invocation spread** and cannot be distinguished from zero. Importing it
+statically is therefore not a regression.
+
+`win32HostSurface.ts` is different. Its header says nothing is bound at import
+time, and that is true of `koffi.load('kernel32.dll')` and **not** of
+`import koffi from 'koffi'`, which is at module scope — so importing the module
+puts the FFI in `main` permanently, at ~1.0 MB marginal. §9.17 argues main's
+baseline from *"main runs the language runtime and nothing else … anything more
+means it is loading something it has no business loading"*, and main has no
+business holding the FFI: the host uses it, main does not. ADR-0025 lists koffi
+at 2.9 MB as a regression class a baseline should catch.
+
+So the surface is reached through a **dynamic import at the point the shared
+host is first built**, and main pays nothing until a document is opened. That is
+following §9.17 rather than amending it, so it is a note rather than a B4.
