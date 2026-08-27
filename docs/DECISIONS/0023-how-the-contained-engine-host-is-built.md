@@ -2045,6 +2045,57 @@ decision would lean on. Carried on `docs/FEATURES.md` with the trigger in the
 body, and deliberately **not** in `docs/security/engine-advisories.json` — a
 symbol scan cannot see an event, and this expires on one.
 
+### Correction, 2026-08-27 — a session is created at OPEN, and 9a's trigger sentence stops describing what the counter counts (finding PPPP/9c)
+
+9c placed the rebuild in each document's lane at *death* time and said nothing
+about where a session first comes from. `engineSessions.ts:252` has recorded the
+consequence since it was written: *"Nothing creates a session at open, so `size`
+counts documents this supervisor has never heard of"*, which is why 9c's own 4c
+anchor could not hold.
+
+**The requirement.** `document.open` succeeds without waiting on a host and
+enters that document's lane with an entry that creates its session — the same
+eager, lane-entered shape as the death path, for the same three reasons 9c gives.
+
+**The property this must produce: an open document is either sessioned or
+poisoned, and never neither.** Without it a failed creation leaves the document
+open, sessionless and healthy, and the next command answers `MissingSessionError`
+→ `internal` — 9c's rejected on-demand rebuild arriving through the back door,
+and what a development checkout hits on every open until ADR-0027's provisioning
+grant lands.
+
+**`N = 1` was considered and is rejected, by 9a's own table.** Poisoning on the
+first failed creation is `N = 1` for that cause, and 9a rejects `N = 1` because
+it *"cannot separate a host killed for a transient reason — a job limit, an OS
+decision — from one the document kills every time"* — which is exactly what an
+open-time host-creation failure is. Under the DDDD-16 correction the poison then
+lives for the record's whole lifetime, so one transient failure would disable
+that document until close-and-reopen while its neighbours opened normally.
+
+**So the bound is unchanged at 2, and the creation entry retries in the lane.**
+Nothing new is declared: `POISON_AT`, `poisoned()`, `hold`'s refusal and
+`releaseOnClose` are untouched. This is **not** 9a's rejected *"try again"* nor
+DDDD-19's candidate 1 — both reset or bypass the bound, which is why DDDD-19
+calls the latter the loop restored; this one *consumes* the bound, so a document
+whose bytes kill the host at open costs two deaths and is then poisoned.
+
+**The entry is minted at OPEN, and `recordFailure` is not widened.**
+`recordFailure` skips a document with no entry (`if (entry === undefined)
+continue;`), and a document whose open-time creation failed has never been
+through `hold`. Widening that method would give a counter a second job and put
+entry-existence in two places (B3a). Minting at open is instead the missing half
+of a property this file already asserts in the present tense at `:411` — *"This
+is what makes the entry's lifetime the record's"* — of which only the closing
+half, `releaseOnClose`, was implemented. FFFF-1 is the precedent: the same
+sentence, the same file, and the fix was a registration rather than a caller.
+
+**The anchor's evaluation point, which 9c left implicit for this path.** *Open
+minus poisoned equals sessions held* is false in the window between the entry
+being queued and it settling. 9c evaluates it after the rebuild pass; the open
+path's equivalent is **after the open-time entry settles — held or poisoned**. At
+every point a command can observe the document it is resolved, by 9c's own
+ordering argument, so the window is unobservable rather than tolerated.
+
 ## Decision 10 — command execution goes THROUGH the writer, and the specs stay the one declaration site (decided 2026-08-26)
 
 ### The blocker, as a mechanism
