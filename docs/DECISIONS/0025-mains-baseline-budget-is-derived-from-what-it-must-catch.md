@@ -672,3 +672,72 @@ and takes `--runs` and `--runtime`; what it has not yet had is time between runs
 The resolution test passed on every run reported here — `main` at 49.1 MB against
 `main-service` at 52.1 MB, 3.0 MB apart — so the readings distinguish the thing
 they name.
+
+---
+
+## Correction, 2026-08-27 (WWWW-1) — the shift was measured across an EVENT, and the event is not its cause
+
+The correction above says the ~5.8 MB was measured "between sessions", from two
+`perf:gate` runs "before and after a hung six-process `vitest` tree was killed".
+**That is two axes, and I named one.** An eight-hour-resident process being freed
+changes machine-wide memory pressure, and working-set figures move with pressure
+— which fits the observation identically, *including* the detail offered as
+evidence for the other reading. All three roles moving by the same amount is
+exactly what a machine-wide change produces. AAAA-8's shape, in the document that
+records AAAA-8.
+
+**Measured 2026-08-27, separate invocations, nothing unusual resident, all of
+them AFTER the kill:**
+
+| role | readings across the day | within one invocation |
+|---|---|---|
+| `main-service` | 51.7 · 53.1 · 55.6 · 56.2 · 56.2 · 56.2 → **4.8 MB band** | 0.2–0.3 MB |
+| `mupdf-host` | 59.8 (post-kill) · 62.8 · 62.8 · 62.8 · 65.6 (pre-kill) → **5.8 MB band** | 0.2–0.3 MB |
+
+**Three consecutive invocations agree to 0.3 MB**, so this is not per-run noise;
+it is a slow drift. And `mupdf-host` has since moved **back up 3.1 MB** from its
+post-kill low with no such event, which is what settles it: **the kill is not
+established as the cause, because comparable movement occurs without one.** The
+claim that it was is withdrawn.
+
+What survives is the size and the shape: **a ~5.8 MB band across hours on one
+machine, against 0.2 MB within a single invocation.** The mechanism is not
+established and is not guessed at.
+
+## Consequence (WWWW-2) — the window is narrower than recorded, and `base 96` is not defensible from readings that never sampled the drift
+
+The rule is *floor above the largest honest measurement, ceiling below the
+smallest plus the smallest regression*. Written as a width:
+
+> **window = R − (honest max − honest min)**
+
+| honest band | window |
+|---|---|
+| 3.6 MB, as this ADR's thirty readings recorded | 6.7 MB |
+| 4.8 MB, `main-service`'s measured drift | 5.5 MB |
+| 5.8 MB, `mupdf-host`'s measured drift | **4.5 MB** |
+
+**I do not reach *empty*, and the difference is worth stating rather than
+rounding away.** The window closes only when the band reaches `R` — 10.3 MB — and
+the largest band measured is 5.8. So a window exists, at roughly **4.5 MB**
+rather than 6.7.
+
+**`base 96` is still not defensible, and for the reviewer's reason rather than
+mine.** Its margins are 3.8 MB above the floor and 2.9 MB below the ceiling, and
+**both are smaller than the drift** — so the readings the number was fitted to
+move further than the room it was given, and thirty readings taken inside one
+window do not sample that. The number cannot be defended whichever way it is
+rounded.
+
+**Two things are owed before any number replaces it**, and neither is arithmetic:
+
+1. host readings **across days**, under the pinned runtime, so the band is
+   sampled rather than assumed — the runner now measures `main-service`'s on
+   every push, which is the cleanest sampler available because it starts clean;
+2. those readings taken through **the real host**, since the 88.6/92.2 pair comes
+   from `hostFixedCost.mjs` and the gate enforces against `roleMupdfHost.mjs`,
+   which is a different program under a different runtime.
+
+Until both land, **the §9.17 amendment waits.** Writing a number derived from
+readings whose conditions are in dispute is this document's own recurring error,
+and it has now been made three times.
