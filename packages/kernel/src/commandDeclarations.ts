@@ -49,6 +49,10 @@ import { type WriterSession } from './engineSeam.js';
 /**
  * Which component is permitted to write this command's effect (rule B3).
  *
+ * One writer per concern. Two writers is how a codebase acquires sidecar hacks,
+ * and for a document it is how one engine's idea of the page tree overwrites
+ * another's.
+ *
  * Derived from the seam rather than listed, so the set of writers has one
  * declaration. A writer added to `WriterSession` without an adapter is a
  * compile error at every spec that names it, which is the direction that fails
