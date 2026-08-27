@@ -644,6 +644,164 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `d92737f..f75005d` — a module arrived with a guard no case reaches, and the property it guards has been lost once before
+
+**Audited through `f75005d`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: d92737f..HEAD
+  commits: 5 (one batch is 9)
+  files:   17 (one batch is 24)
+  proofs ADDED — new coverage (1):
+    packages/kernel/src/host/hostBody.test.ts
+  proofs MODIFIED — read each diff (2):
+    apps/desktop/src/engineSessions.test.ts   +9 -1
+    scripts/proofs/contract.proof.mjs         +43 -0
+  proofs REMOVED: none
+  source FILES ADDED (3):
+    packages/kernel/src/host/hostBody.ts · hostEntry.ts · hostSessions.ts
+  source FILES CHANGED (5):
+    engineSessions.ts +2 -1 · shellFailure.ts +23 -4
+    hostProtocol.ts +21 -0 · contract/index.ts +1 -0 · runtime.ts +14 -5
+  source FILES REMOVED: none
+```
+
+The range: the engine host got a program, IIII-1 was fixed at both ends of its
+chain, and ADR-0026 was decided and amended into the law ahead of its build.
+
+### JJJJ-1. `hostSessions.ts` arrived with no proof of its own, and its one guard is a branch nothing reaches
+
+Three source files were added and **one** proof. `hostBody.test.ts` covers
+`hostBody.ts`; `hostEntry.ts` is deliberately uncovered and says so, being the
+two statements a case cannot reach. `hostSessions.ts` is neither: it is ordinary
+logic, fully decidable in milliseconds, and it has no case pointing at it.
+
+It is exercised **indirectly** — `hostBody.test.ts`'s `engine/close` case runs an
+id through `lookup`, which is why nothing looked wrong. What indirect exercise
+does not reach is the part that matters:
+
+- **The collision throw has no case at all.** `issue` refuses to overwrite an id
+  it has already issued, on the grounds that at 256 bits a collision is not
+  chance but a byte source that is not delivering what it claims. Nothing
+  reaches that branch, so it is a specification nobody has read — item 4's
+  *mutate the branches no fixture reached*.
+- **And the property behind it has been silently lost in this repository
+  before.** `token.ts` records exactly this: a test naming the entropy claim
+  *"asserted uniqueness and a 43-character shape, both of which a padded counter
+  satisfies — and a padded counter substituted for the CSPRNG left the whole
+  suite green."* `createHostSessions` takes its source injected **for that
+  reason**, and no case uses the injection point.
+
+**Why this is worth a finding rather than a to-do.** The module's own comment
+argues that a counter would satisfy every type here and make one property false
+— main would be able to *construct* an id it was never given. That argument is
+the reason the code is shaped as it is, and it is currently asserted by nothing.
+A guard whose premise is untested is a guard that can be deleted by anyone who
+reads it as defensive.
+
+**The tell, and it is cheap to apply to any range:** the added-source column and
+the added-proof column are both printed, and *three against one* is a question
+the report does not ask. Two of the three had an answer; asking it is what found
+the third.
+
+**Not fixed here** — an audit-recording commit is docs-only and alone. The case
+is a repeating byte source, asserting the refusal, plus one that the ids differ
+across issues so the fixture cannot pass by returning a constant.
+
+### 1. Root cause, or workaround?
+
+| the fix | the mechanism |
+|---|---|
+| IIII-1, the widened termination type | the union was available at both ends and neither took it. Typing the parameter made the compiler produce the second instance immediately, and a third arrived from the test side, where a bare object literal widens `code` to `string` |
+| the host having no program | not a fix — `commandArguments[0]` had named an entry script since the factory was written and none existed |
+| `connection-lost`'s comment | a one-sided description acquiring a second reader. Widened rather than left standing |
+
+**IIII-1 is the honest one.** The fix was one type, and the interesting part is
+that the compiler enumerated the class the moment the first instance was closed
+— which is what a type-level fix buys over a review habit, and is the argument
+the ADR in this range makes in a different register.
+
+### 2. Verified against the easy shape only?
+
+**The host entry was run, not reasoned about**, and against the shape that
+matters: spawned as a real child process, connecting to a real Win32 named pipe
+made by the shipped factory, answering a real framed request. Connected in 53ms,
+answered in 24ms.
+
+**The hard shape is a CONTAINED client and it was not reached** — stated in
+ADR-0023's addition rather than absorbed. Since then it has been established
+that it cannot be reached here at all: `icacls` on the pinned binary shows no
+`ALL APPLICATION PACKAGES` ACE and no container SID, and an AppContainer's
+access check is conjunctive, so the image cannot be executed by a contained
+token. That is a **development-checkout property**, and §5 already says the five
+grants are a development accommodation rather than the shipped mechanism.
+
+### 3. Would CI have caught it?
+
+**Yes for the kernel work, and this is from a run:** `hostBody.test.ts` runs
+under vitest on both matrix legs, and `contract.proof.mjs` is `proof:contract`.
+The board was GREEN at `d92737f` before this range and each commit pushed clean.
+
+**The inverse — a defect this machine cannot see — has one answer and it is not
+provisioning.** The end-to-end host probe spawns a real child against a real
+named pipe and lives in the scratchpad; no runner has executed it. That is
+deliberate today, and it means *the entry starts and answers* is a claim resting
+on one machine. It is the same shape as the containment readings above.
+
+### 4. Are the proofs non-vacuous?
+
+| mutation | outcome |
+|---|---|
+| the ends-once guard deleted | the differing-reasons case red |
+| `onData` unwired from `receive` | 3 red, naming *wrote 0 frame(s) in 2000ms* |
+| the termination parameter widened back to `{ code: string }` | the reject case red, **the allow case green** |
+| the handler probes two paths of its own | only the call case red |
+| the probe code's schema widened to `z.string()` | only the control red |
+
+**The `onData` mutation is the one that certifies the harness rather than the
+code.** `hostBody.test.ts` waits on a rejecting poll rather than a fixed number
+of microtask drains, and this is what shows the difference: a body that answers
+nothing and a body that answers late are the same observation to a drain count,
+and *it replied* is the reassuring answer here, so the not-yet outcome had to be
+the loud one.
+
+**The compile-fail pair anchors on TS2820, not TS2345**, which is worth keeping:
+2820 is the spelling-suggestion diagnostic, so the compiler literally answers
+*Did you mean `"shutdown"`?* — the check the structural type had deleted.
+
+### 5. Executed, or asserted?
+
+**Executed:** 509 vitest cases · 38 contract compile cases · five mutations ·
+the pipe client probe, the byte probe and the end-to-end entry probe, each with
+its controls · `icacls` with a positive control · the 16 local checks four times
+· nine scan proofs · the board.
+
+**Asserted:** that a contained client is admitted by the shipped pipe DACL. Owed,
+and now known to be unreachable in this checkout.
+
+### 6. Architecture before the feature?
+
+**Yes, and this range is the clearest instance of it so far.** ADR-0026 was
+written, then `docs/ARCHITECTURE.md` §1 and §3.2 were amended in a separate
+commit, and the build followed after this audit — three commits in B4's order,
+with the rejected alternatives carrying mechanisms rather than preferences.
+
+The ADR also declines to state what the numbers will be after the change and
+records the expectation **as a prediction**, because a prediction written as a
+measurement is what B6 forbids.
+
+### 7. Do the documents still match the code?
+
+ADR-0026 and its `DECISIONS/README.md` row; `docs/ARCHITECTURE.md` §1, §3.2 and
+the amendment log; `docs/FEATURES.md` gained the probe-channel and host-program
+rows.
+
+**The host-program row carries a consequence nobody had stated** — that the
+factory wiring cannot be observed in a development checkout — and names the
+three-way fork it leaves open rather than guessing at it.
+
+---
+
 ## 2026-08-27 — Stage audit: `825c9a2..d92737f` — the field that decides whether a host death is a fault is typed `string`
 
 **Audited through `d92737f`.** Pasted from `npm run audit:scope`:
