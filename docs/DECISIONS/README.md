@@ -84,3 +84,4 @@ Each contains:
 | [0024](0024-execution-mode-is-a-placement-axis.md) | Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side | Accepted |
 | [0025](0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) | `main`'s baseline budget is derived from what it must catch, and 96 MB was not | Accepted |
 | [0026](0026-a-declaration-is-not-an-implementation.md) | A declaration is not an implementation, and the kernel's public surface carries no native binding | Accepted |
+| [0027](0027-a-development-grant-belongs-to-provisioning.md) | A development grant belongs to provisioning, not to the application | Accepted |
