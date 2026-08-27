@@ -149,16 +149,40 @@ export type ContainmentVerdict =
   | { readonly kind: 'unreadable'; readonly detail: string };
 
 /**
- * Reads a few bytes of `target`, reporting what happened and judging nothing.
+ * What the measuring half is given: two paths, and nothing it is judged by.
+ *
+ * **Separate from {@link ContainmentProbeRequest} on purpose, and the split is
+ * the module's own argument expressed as a type.** That request bundles two
+ * different things — the paths to attempt, and the evidence a verdict is
+ * reached against (`negative.readableBytes`, `positive.origin`). The second
+ * group is main's: a reading main took itself, and main's knowledge of which
+ * path it named.
+ *
+ * The measuring runs **in the host**, which invariant 25's premise says may be
+ * compromised. Handing that side the inputs its report will be judged against
+ * is the shape the header warns about, so the type is what forbids it rather
+ * than a rule at the call site (B5). While nothing called this, the wider
+ * signature cost nothing and was harmless; the first caller is what shows it
+ * wrong, and the architecture changes before the feature rather than under it.
+ */
+export interface ContainmentProbePaths {
+  /** A path the host must reach. */
+  readonly positive: string;
+  /** A path the host must not. */
+  readonly negative: string;
+}
+
+/**
+ * Reads a few bytes of `path`, reporting what happened and judging nothing.
  *
  * A handful of bytes rather than the file: the question is whether the access
  * check passes, which `open` already answers, and reading an install-root
  * binary in full to learn it would be a cost with no information in it.
  */
-export async function probePath(target: ProbeTarget): Promise<ProbeOutcome> {
+export async function probePath(path: string): Promise<ProbeOutcome> {
   let handle;
   try {
-    handle = await open(target.path, 'r');
+    handle = await open(path, 'r');
   } catch (thrown) {
     return fromThrown(thrown);
   }
@@ -175,14 +199,14 @@ export async function probePath(target: ProbeTarget): Promise<ProbeOutcome> {
 
 /** Runs both probes. The pair is each other's control — see the module note. */
 export async function probeContainment(
-  request: ContainmentProbeRequest,
+  paths: ContainmentProbePaths,
 ): Promise<ContainmentReport> {
   // Sequential rather than concurrent, and it costs two file opens. A rejected
   // access check can take a different amount of time from a satisfied one, and
   // two probes racing on one thread is a difference nobody wants to have to
   // reason about when a verdict disagrees with expectation.
-  const positive = await probePath(request.positive);
-  const negative = await probePath(request.negative);
+  const positive = await probePath(paths.positive);
+  const negative = await probePath(paths.negative);
   return { positive, negative };
 }
 
@@ -288,10 +312,48 @@ export function outcomeForErrorCode(code: string): ProbeOutcome {
   return { kind: 'error', code };
 }
 
-function fromThrown(thrown: unknown): ProbeOutcome {
-  return outcomeForErrorCode(
+/**
+ * How long a probe's error code may be, and what it may contain.
+ *
+ * A **named rule with callers** rather than a shape two files agree about by
+ * hand (B3a): {@link probeCode} composes against it in the host and
+ * `engineChannels.ts` validates against it on the wire, so the peer cannot
+ * produce a code its own channel would refuse.
+ *
+ * Bounded for the reason a session id is — an unbounded string is a peer
+ * deciding how many bytes of our frame it spends — and charset-restricted
+ * because these codes are interpolated into {@link ContainmentVerdict} details
+ * that go to a log, where a newline in a peer-supplied field is a peer writing
+ * lines of its own.
+ */
+export const PROBE_CODE_MAX_CHARS = 32;
+
+/** @see PROBE_CODE_MAX_CHARS — the same rule, and its other half. */
+export const PROBE_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/u;
+
+/**
+ * The error code a thrown filesystem failure carries, or `UNKNOWN`.
+ *
+ * **Anything unrecognised is normalised HERE rather than refused at the
+ * channel**, and the difference is not cosmetic. A host whose `open` threw
+ * something exotic has still performed the access check this probe exists to
+ * measure; dropping the frame as a protocol violation would turn a usable
+ * observation into a dead connection, and it would do so over the diagnostic
+ * rather than over the containment answer the frame was carrying.
+ *
+ * The normalisation is safe in one direction only, which is why it is
+ * acceptable: an unrecognised code reaches {@link outcomeForErrorCode} as
+ * `error` — *measured nothing* — never as `refused`. So a code this rule cannot
+ * read fails toward `unreadable` and never toward `contained`.
+ */
+export function probeCode(thrown: unknown): string {
+  const raw =
     typeof thrown === 'object' && thrown !== null && 'code' in thrown
       ? String((thrown as { readonly code: unknown }).code)
-      : 'UNKNOWN',
-  );
+      : 'UNKNOWN';
+  return raw.length <= PROBE_CODE_MAX_CHARS && PROBE_CODE_PATTERN.test(raw) ? raw : 'UNKNOWN';
+}
+
+function fromThrown(thrown: unknown): ProbeOutcome {
+  return outcomeForErrorCode(probeCode(thrown));
 }

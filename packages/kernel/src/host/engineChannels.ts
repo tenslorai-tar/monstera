@@ -1,6 +1,8 @@
 import { commandSchema, channel } from '@monstera/contract';
 import { z } from 'zod';
 
+import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
+
 /**
  * The engine host's channels (ADR-0023 Decision 11).
  *
@@ -165,7 +167,56 @@ const outputNameSchema = z
 
 const pathSchema = z.string().min(1).max(ENGINE_PATH_MAX_CHARS);
 
+/**
+ * One attempt's outcome, exactly as `containment.ts` defines it.
+ *
+ * The code's bound and charset are imported rather than restated: the host
+ * composes with `probeCode` and this validates the same rule, so there is no
+ * pair of spellings that can drift into a host producing codes its own channel
+ * refuses (B3a).
+ */
+const probeCodeSchema = z.string().min(1).max(PROBE_CODE_MAX_CHARS).regex(PROBE_CODE_PATTERN);
+
+const probeOutcomeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('read'), bytes: z.number().int().nonnegative() }).strict(),
+  z.object({ kind: z.literal('refused'), code: probeCodeSchema }).strict(),
+  z.object({ kind: z.literal('absent'), code: probeCodeSchema }).strict(),
+  z.object({ kind: z.literal('error'), code: probeCodeSchema }).strict(),
+]);
+
 export const engineChannels = {
+  /**
+   * ADR-0023 §5's startup check, and the ONE channel whose answer decides
+   * whether this host is allowed to see a document at all.
+   *
+   * ## The request carries two paths and nothing else
+   *
+   * `classifyContainment` takes a request AND a report, and the request half
+   * stays in main: `negative.readableBytes` is main's own reading taken
+   * immediately before the ask, and `positive.origin` is main's knowledge of
+   * which path it named. Neither crosses. So the host supplies **observations**
+   * and main supplies **everything the observations are judged against** — a
+   * host that wanted a `contained` verdict cannot reach the inputs that produce
+   * one, which is the split `containment.ts` describes as *measured inside,
+   * decided outside* expressed in the wire shape rather than in a comment (B5).
+   *
+   * ## And the answer carries no path, like every other answer here
+   *
+   * Two outcomes and, at most, an errno. The paths in the report's detail lines
+   * are the ones main sent, joined on this side. That is the same asymmetry the
+   * lifecycle channels have, for the same reason.
+   *
+   * No declared failures. A probe that could not read is not a failed call — it
+   * is an observation, and `absent`/`error` are how it says so. Collapsing that
+   * into a channel failure would put *could not look* and *the call broke* in
+   * one output, which is the distinction this whole mechanism turns on.
+   */
+  'engine/probe-containment': channel(
+    'Attempts two paths and reports what happened, judging nothing.',
+    z.object({ positive: pathSchema, negative: pathSchema }).strict(),
+    z.object({ positive: probeOutcomeSchema, negative: probeOutcomeSchema }).strict(),
+  ),
+
   'engine/open': channel(
     'Opens a document image the host reads from a directory it was granted.',
     z

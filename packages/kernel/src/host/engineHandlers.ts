@@ -2,6 +2,7 @@ import { type Handlers } from '@monstera/contract';
 
 import { type CommandExecution } from '../commandSpecs.js';
 import { type EngineWriter, type MupdfSession } from '../engineSeam.js';
+import { type ContainmentProbePaths, type ContainmentReport } from './containment.js';
 import { type EngineChannels } from './engineChannels.js';
 
 /**
@@ -62,18 +63,35 @@ export interface HostFilesystem {
 }
 
 /**
+ * How this host attempts a path for ADR-0023 §5's startup check.
+ *
+ * Injected for the same reason {@link HostFilesystem} is, and with one addition
+ * that is specific to this one: the real implementation is `probeContainment`,
+ * which opens two paths for real, and a handler proof that had to supply a
+ * reachable path and an unreachable one would be a proof that needs a
+ * container. The surface is the whole `probeContainment` signature rather than
+ * a per-path `open`, because **what the pair means is `containment.ts`'s rule**
+ * and re-deriving it from two separate calls here would be a second opinion
+ * about it (B3a).
+ */
+export type HostContainmentProbe = (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
+
+/**
  * @param sessions what this host holds. `undefined` is an OUTCOME here, not a
  *   defect: a rebuilt host holds none of the previous one's sessions, so a call
  *   arriving with an old id is ordinary and gets a declared code.
  * @param execution how this process runs a command — `localMupdfExecution` in
  *   the host, and injectable so a proof can drive both halves without a
  *   document.
+ * @param probe how this process attempts the two paths §5's check names.
+ *   `probeContainment` in the host.
  */
 export function createEngineHandlers(
   sessions: HostSessions,
   execution: CommandExecution<'mupdf'>,
   writer: EngineWriter<MupdfSession>,
   files: HostFilesystem,
+  probe: HostContainmentProbe,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -113,6 +131,18 @@ export function createEngineHandlers(
   });
 
   return {
+    // NO try/catch, and that is deliberate rather than an omission. Every
+    // outcome this can produce is already one of `ProbeOutcome`'s four states —
+    // `probePath` catches its own opens and turns a throw into `refused`,
+    // `absent` or `error`. A catch here could only turn an observation into
+    // `internal`, whose diagnostic is withheld, and main's verdict for "the
+    // call broke" and "the probe measured nothing" would become one output.
+    // That is the exact collapse `unreadable` exists to prevent.
+    'engine/probe-containment': async ({ positive, negative }) => ({
+      ok: true,
+      value: await probe({ positive, negative }),
+    }),
+
     'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory }) => {
       // THE PATH IS USED, NOT VALIDATED, and that is the design rather than an
       // omission. Main composed these directories and wrote their DACLs; this

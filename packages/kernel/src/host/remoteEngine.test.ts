@@ -109,6 +109,9 @@ async function joined(): Promise<{
           throw new Error('the execution half must not write the output directory');
         },
       },
+      () => {
+        throw new Error('the execution half must not probe containment');
+      },
     ),
     (incident) => incidents.push(incident),
   );
@@ -272,6 +275,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           writeOutput: () => {
             throw new Error('unused');
           },
+        },
+        () => {
+          throw new Error('unused');
         },
       ),
       (incident) => incidents.push(incident),

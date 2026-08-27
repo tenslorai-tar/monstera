@@ -4,15 +4,23 @@ import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { wrapHandlers } from '@monstera/contract';
+
+import { localMupdfExecution } from '../commandSpecs.js';
 import {
+  PROBE_CODE_MAX_CHARS,
+  type ContainmentProbePaths,
   type ContainmentProbeRequest,
   type ContainmentReport,
   type ProbeOutcome,
   classifyContainment,
   outcomeForErrorCode,
+  probeCode,
   probeContainment,
   probePath,
 } from './containment.js';
+import { engineChannels } from './engineChannels.js';
+import { createEngineHandlers } from './engineHandlers.js';
 
 /**
  * ADR-0023 §5's table, and the fixtures are built so the classifier's likely
@@ -184,30 +192,183 @@ describe('probePath against a real filesystem', () => {
   });
 
   it('reads a file that is there', async () => {
-    expect(await probePath({ path: present, origin: 'app-created' })).toEqual({
-      kind: 'read',
-      bytes: 4,
-    });
+    expect(await probePath(present)).toEqual({ kind: 'read', bytes: 4 });
   });
 
   it('reports a zero-length file as read, not as a failure', async () => {
-    expect(await probePath({ path: empty, origin: 'app-created' })).toEqual({
-      kind: 'read',
-      bytes: 0,
-    });
+    expect(await probePath(empty)).toEqual({ kind: 'read', bytes: 0 });
   });
 
   it('reports a missing path as absent, in the same directory a present one reads from', async () => {
-    const outcome = await probePath({ path: join(directory, 'nope.bin'), origin: 'app-created' });
+    const outcome = await probePath(join(directory, 'nope.bin'));
     expect(outcome.kind).toBe('absent');
   });
 
   it('runs both probes and reports both, without deciding anything', async () => {
     const observed = await probeContainment({
-      positive: { path: present, origin: 'app-created' },
-      negative: { path: join(directory, 'nope.bin'), origin: 'app-created', readableBytes: 1 },
+      positive: present,
+      negative: join(directory, 'nope.bin'),
     });
     expect(observed.positive.kind).toBe('read');
     expect(observed.negative.kind).toBe('absent');
+  });
+});
+
+/**
+ * The rule `probeCode` composes against and `engineChannels.ts` validates
+ * against are the same rule, and this is the case that says so.
+ *
+ * The property is a **joint** one — *nothing the host can compose is refused by
+ * its own channel* — so it is asserted against the real declared schema rather
+ * than against a second spelling of the pattern here. A copy would agree with
+ * itself while both drifted.
+ *
+ * Every input below is a value a thrown filesystem error can actually carry:
+ * `code` is not a documented-and-guaranteed errno string, and `String()` of an
+ * object, a symbol-free bag or a number produces exactly these shapes.
+ */
+describe('a probe code the host composes is one the channel accepts', () => {
+  const RESULT = engineChannels['engine/probe-containment'].result;
+
+  const ADVERSARIAL: readonly { readonly label: string; readonly thrown: unknown }[] = [
+    { label: 'an ordinary errno', thrown: { code: 'EACCES' } },
+    { label: 'a newline, which would write a line of its own in a log', thrown: { code: 'E\nX' } },
+    { label: 'longer than the bound', thrown: { code: `E${'X'.repeat(PROBE_CODE_MAX_CHARS)}` } },
+    { label: 'lower case', thrown: { code: 'eacces' } },
+    { label: 'empty', thrown: { code: '' } },
+    { label: 'an object, which String() renders', thrown: { code: {} } },
+    { label: 'a number', thrown: { code: 404 } },
+    { label: 'no code at all', thrown: new Error('boom') },
+    { label: 'not an object', thrown: 'EACCES' },
+  ];
+
+  it.each(ADVERSARIAL)('accepts a report built from $label', ({ thrown }) => {
+    const outcome = outcomeForErrorCode(probeCode(thrown));
+    expect(RESULT.safeParse({ positive: outcome, negative: outcome }).success).toBe(true);
+  });
+
+  /**
+   * THE CONTROL, and without it the cases above pass against a schema that
+   * accepts anything — which is the failure they exist to rule out, not a
+   * hypothetical one: `code: z.string()` with no bound would satisfy all nine.
+   *
+   * So this asserts the schema DISCRIMINATES, by feeding it what the host would
+   * send with the normalisation removed. Mutating `probeCode` to return `raw`
+   * reddens the run here.
+   */
+  it('refuses the same reports with the normalisation removed', () => {
+    const raw = ADVERSARIAL.map(({ thrown }) =>
+      outcomeForErrorCode(
+        typeof thrown === 'object' && thrown !== null && 'code' in thrown
+          ? String((thrown as { readonly code: unknown }).code)
+          : 'UNKNOWN',
+      ),
+    ).filter((outcome) => !RESULT.safeParse({ positive: outcome, negative: outcome }).success);
+
+    expect(raw.length).toBeGreaterThan(0);
+  });
+
+  it('never normalises toward the reassuring answer', () => {
+    // A code this rule cannot read must reach `error` — *measured nothing* —
+    // and never `refused`, which is the observation a containment probe hopes
+    // for. Asserted over the whole set rather than one case, because the
+    // direction is the property and one input cannot show it.
+    for (const { thrown } of ADVERSARIAL) {
+      const normalised = probeCode(thrown);
+      if (normalised !== 'UNKNOWN') continue;
+      expect(outcomeForErrorCode(normalised).kind).toBe('error');
+    }
+  });
+});
+
+/**
+ * The host's side of the channel: it probes what it was asked to probe, and
+ * adds no judgement.
+ *
+ * **The assertion is the CALL, not the answer**, and that is the whole design of
+ * these two cases. A handler that ignored the request and probed two paths of
+ * its own choosing returns a report of exactly the same shape, so an assertion
+ * on the returned outcomes cannot separate the two — which is the end-state
+ * trap this project has now paid for four times.
+ *
+ * Driven through `wrapHandlers` rather than by calling the handler directly, so
+ * the declared schema validates both directions here as it does in the host.
+ */
+describe('the engine host answers a containment probe', () => {
+  /** Everything a probe must not touch, so a handler that reaches fails loudly. */
+  const forbidden = {
+    sessions: {
+      lookup: () => {
+        throw new Error('a containment probe must not look a session up');
+      },
+      issue: () => {
+        throw new Error('a containment probe must not issue a session');
+      },
+      forget: () => {
+        throw new Error('a containment probe must not forget a session');
+      },
+    },
+    writer: {
+      open: () => {
+        throw new Error('a containment probe must not open a document');
+      },
+      serialise: () => {
+        throw new Error('a containment probe must not serialise');
+      },
+      close: () => {
+        throw new Error('a containment probe must not close');
+      },
+    },
+    files: {
+      readSnapshot: () => {
+        throw new Error('a containment probe must not read the snapshot directory');
+      },
+      writeOutput: () => {
+        throw new Error('a containment probe must not write the output directory');
+      },
+    },
+  };
+
+  function probeHandler(answer: ContainmentReport) {
+    const asked: ContainmentProbePaths[] = [];
+    const wrapped = wrapHandlers(
+      engineChannels,
+      createEngineHandlers(
+        forbidden.sessions,
+        localMupdfExecution,
+        forbidden.writer,
+        forbidden.files,
+        (paths) => {
+          asked.push(paths);
+          return Promise.resolve(answer);
+        },
+      ),
+      () => undefined,
+    );
+    return { asked, call: wrapped['engine/probe-containment'] };
+  }
+
+  it('probes the two paths it was sent, and no others', async () => {
+    const { asked, call } = probeHandler(report(READ, REFUSED));
+
+    await call({ positive: 'C:\\install\\koffi.node', negative: 'C:\\elsewhere\\secret.txt' });
+
+    expect(asked).toEqual([
+      { positive: 'C:\\install\\koffi.node', negative: 'C:\\elsewhere\\secret.txt' },
+    ]);
+  });
+
+  it('reports what the probe observed, unchanged and unjudged', async () => {
+    // `containment-absent` in everything but name: the host read the path it
+    // must not reach. The handler must hand that back exactly as observed —
+    // a host that quietly softened its own worst answer is the one shape this
+    // channel cannot tolerate, and `classifyContainment` in MAIN is the only
+    // thing entitled to turn it into a verdict.
+    const observed = report(READ, { kind: 'read', bytes: 4096 });
+    const { call } = probeHandler(observed);
+
+    await expect(
+      call({ positive: 'C:\\install\\koffi.node', negative: 'C:\\elsewhere\\secret.txt' }),
+    ).resolves.toEqual({ ok: true, value: observed });
   });
 });

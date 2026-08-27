@@ -61,6 +61,7 @@ export {
   engineChannels,
 } from './host/engineChannels.js';
 export {
+  type HostContainmentProbe,
   type HostFilesystem,
   type HostSession,
   type HostSessions,
@@ -104,6 +105,9 @@ export {
 } from './documentService.js';
 export { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 export {
+  PROBE_CODE_MAX_CHARS,
+  PROBE_CODE_PATTERN,
+  type ContainmentProbePaths,
   type ContainmentProbeRequest,
   type ContainmentReport,
   type ContainmentVerdict,
@@ -112,6 +116,7 @@ export {
   type ProbeTarget,
   classifyContainment,
   outcomeForErrorCode,
+  probeCode,
   probeContainment,
   probePath,
 } from './host/containment.js';

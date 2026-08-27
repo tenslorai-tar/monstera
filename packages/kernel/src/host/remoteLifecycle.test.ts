@@ -163,6 +163,9 @@ function joined(
           return bytes.length;
         },
       },
+      () => {
+        throw new Error('the lifecycle half must not probe containment');
+      },
     ),
     (incident) => incidents.push(incident),
   );
@@ -240,6 +243,9 @@ describe('remoteMupdfLifecycle', () => {
             await writeFile(join(directory, name), bytes);
             return bytes.length;
           },
+        },
+        () => {
+          throw new Error('the byte-size case must not probe containment');
         },
       ),
       () => undefined,
