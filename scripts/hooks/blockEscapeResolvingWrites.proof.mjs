@@ -68,20 +68,71 @@ function ask(command, toolName = 'Bash') {
     },
   );
 
-  const stdout = `${result.stdout ?? ''}`.trim();
-  if (stdout === '') return { denied: false, reason: '', status: result.status ?? -1 };
+  return decisionFrom(`${result.stdout ?? ''}`, result.status, `${result.stderr ?? ''}`, command);
+}
 
-  try {
-    const parsed = JSON.parse(stdout);
-    const decision = parsed?.hookSpecificOutput?.permissionDecision;
-    return {
-      denied: decision === 'deny',
-      reason: `${parsed?.hookSpecificOutput?.permissionDecisionReason ?? ''}`,
-      status: result.status ?? -1,
-    };
-  } catch {
-    return { denied: false, reason: `unparseable stdout: ${stdout.slice(0, 200)}`, status: result.status ?? -1 };
+/**
+ * The decision the hook's own output carries, or a refusal naming why there is
+ * none.
+ *
+ * Separated from {@link ask} so it can be exercised without a hook: the branches
+ * below fire when the hook is BROKEN, which is the state a run of the real hook
+ * cannot produce on purpose. Its cases are at the end of this file.
+ *
+ * @param {string} rawStdout
+ * @param {number | null} status
+ * @param {string} stderr
+ * @param {string} command
+ * @returns {{ denied: boolean, reason: string, status: number }}
+ */
+export function decisionFrom(rawStdout, status, stderr, command) {
+  // SILENCE IS THE PROTOCOL'S ALLOW, and only at exit 0. A PreToolUse hook that
+  // permits a call says nothing and exits 0, so an empty stdout is a real
+  // decision rather than a broken read — measured 2026-08-27 by asserting the
+  // opposite and watching every ALLOWS case throw.
+  //
+  // What is NOT a decision is silence at a non-zero exit, or stdout that is not
+  // JSON. Both used to answer `denied: false`, which is `mustAllow`'s passing
+  // answer, so a hook that crashed would pass every ALLOWS case here. The
+  // `mustDeny` half reddens either way and the run still fails — but an
+  // individual allow case reporting the reassuring answer for the one condition
+  // it cannot distinguish is the shape `boardStatus.mjs` was fixed for.
+  const stdout = rawStdout.trim();
+  if (stdout === '') {
+    if (status === 0) return { denied: false, reason: '', status: 0 };
+    throw new Error(
+      `the hook exited ${String(status)} with no stdout for ` +
+        `${JSON.stringify(command.slice(0, 120))}. Silence means ALLOW only at exit 0; here it ` +
+        `means the hook did not reach a decision, and reading it as a permission would pass ` +
+        `every ALLOWS case in this file.` +
+        (stderr === '' ? '' : `\nstderr: ${stderr.slice(0, 300)}`),
+    );
   }
+
+  /** @type {unknown} */
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch (cause) {
+    throw new Error(
+      `the hook's stdout is not JSON, so no decision can be read from it: ${stdout.slice(0, 200)}`,
+      { cause },
+    );
+  }
+  const output = /** @type {{ hookSpecificOutput?: Record<string, unknown> }} */ (parsed)
+    .hookSpecificOutput;
+  const decision = output?.['permissionDecision'];
+  if (decision !== 'deny' && decision !== 'allow' && decision !== 'ask') {
+    throw new Error(
+      `the hook's JSON carries no recognisable permissionDecision (got ` +
+        `${JSON.stringify(decision)}). A missing field is not an allowance.`,
+    );
+  }
+  return {
+    denied: decision === 'deny',
+    reason: `${output?.['permissionDecisionReason'] ?? ''}`,
+    status: status ?? -1,
+  };
 }
 
 /** @type {string[]} */
@@ -604,6 +655,64 @@ mustAllow('an ordinary PowerShell cmdlet', 'Get-ChildItem -Recurse | Measure-Obj
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// `decisionFrom` — the branches a working hook cannot produce.
+//
+// Found by census 2026-08-27: this file's reader answered `denied: false` for
+// silence AND for unparseable stdout, and `mustAllow` asserts exactly `!denied`.
+// So a hook that crashed would have passed all 245 ALLOWS cases. The mustDeny
+// half reddens, so the run still failed — but each allow case individually
+// reported the reassuring answer for the one condition it could not see.
+//
+// The first repair threw on ANY empty stdout and turned every ALLOWS case red
+// at once: silence at exit 0 is how the protocol says *allow*. The exit code is
+// what separates the two, which is why these three cases exist rather than one.
+// ---------------------------------------------------------------------------
+{
+  /** @param {() => unknown} body @returns {string | null} */
+  const threw = (body) => {
+    try {
+      body();
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+
+  const allowed = decisionFrom('', 0, '', 'echo hello');
+  check(
+    "silence at exit 0 is the protocol's ALLOW, not a broken read",
+    allowed.denied === false && allowed.status === 0,
+    `got ${JSON.stringify(allowed)}. A PreToolUse hook that permits a call says nothing and ` +
+      `exits 0. Refusing this reddens every ALLOWS case in this file, which is what the first ` +
+      `version of this repair did.`,
+  );
+
+  const crashed = threw(() => decisionFrom('', 1, 'ReferenceError: git is not defined', 'echo hi'));
+  check(
+    'silence at a NON-ZERO exit is refused rather than read as a permission',
+    crashed !== null && /exited 1/u.test(crashed) && /ReferenceError/u.test(crashed),
+    `got ${JSON.stringify(crashed)}. This is the case the census found: a hook that died prints ` +
+      `nothing, and \`denied: false\` is mustAllow's passing answer. The stderr has to reach the ` +
+      `message, because "the hook did not run" and "why" are different questions.`,
+  );
+
+  const garbage = threw(() => decisionFrom('<html>502 Bad Gateway</html>', 0, '', 'echo hi'));
+  check(
+    'stdout that is not JSON is refused rather than read as a permission',
+    garbage !== null && /not JSON/u.test(garbage),
+    `got ${JSON.stringify(garbage)}.`,
+  );
+
+  const noField = threw(() => decisionFrom('{"hookSpecificOutput":{}}', 0, '', 'echo hi'));
+  check(
+    'JSON carrying no permissionDecision is refused rather than defaulted to allow',
+    noField !== null && /permissionDecision/u.test(noField),
+    `got ${JSON.stringify(noField)}. A missing field is not an allowance — it is the same ` +
+      `absence the two cases above cover, arriving one level further in.`,
+  );
 }
 
 if (failures.length > 0) {
