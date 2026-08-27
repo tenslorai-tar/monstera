@@ -644,6 +644,112 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `71b299d..9bbfbbb` — I made a guard non-blocking, and a parser read its own documentation
+
+**Audited through `9bbfbbb`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 71b299d..HEAD
+  commits: 9 (one batch is 9)
+  files:   19 (one batch is 24)
+  proofs ADDED (2):     emittedSideEffects.proof.mjs · tokenContrast.proof.mjs
+  proofs MODIFIED (2):  engineSessions.test.ts +175 -0 · lintRules.proof.mjs +111 -2
+  proofs REMOVED: none
+  source FILES ADDED (5):   tokens.css · emittedSideEffects.mjs · tokenContrast.mjs
+                            hostFixedCost.mjs · hostFixedCostChild.mjs
+  source FILES CHANGED (3): engineSessions.ts +168 -0 · preCommit.mjs +81 -0
+                            peakRss.mjs +53 -0
+  source FILES REMOVED: none
+```
+
+PPPP-1's quantity fix, ADR-0025's `base 98 MB` derivation, ADR-0023's open-time
+correction and its build, PPPP-2, and the UI substrate's first unit. Both
+modified proofs are additive (`+175 -0`, `+111 -2`); the two deletions in
+`lintRules.proof.mjs` are its header sentence being widened from *React rules* to
+*the lint rules this project's documents claim are enforced*, which is the file
+gaining a second family rather than a check being loosened.
+
+### QQQQ-1. I turned a guard from blocking to reporting, and the half it leaves can be silently inert
+
+Item 1 names a loosened check as the shape to distrust: *widening a type,
+disabling a rule, raising a limit, or exempting a role means the check was right
+and the code was wrong.* `check:emittedsideeffects` was registered fail-closed in
+the pre-commit set, blocked every case in `proof:guards` — whose fixture
+repository has no `dist` and legitimately never will — and I made *blind* a
+report rather than a block.
+
+**The reasoning holds and the consequence was understated in the commit that
+made it.** On a machine where nobody runs `tsc`, the pre-commit half prints one
+line and passes, every time, and by the third reading that line is furniture —
+the exact disclaimer test this project applies to printed compensations. So the
+FEATURES row's *two mechanisms* is really **one gate and one best-effort local
+copy**, and the pre-commit half's contribution is bounded by whether the
+committer happens to have built.
+
+**What reopens it, and why the alternative was rejected too fast.** The emit is
+the only place the two spellings differ *in general* — but the export spelling in
+particular is syntactically decidable in **source**: an export declaration whose
+every specifier carries `type`. An index-reading pre-commit scan is therefore
+possible, and I rejected it in one line as a B3a second opinion about the lint
+rule's question. That rejection is worth re-examining, because B3a's objection is
+to a *partial reimplementation of an authority*, and here there is no authority
+to reimplement — no lint rule covers this spelling at all. **Raised, not
+resolved:** it trades one mechanism that can be inert for one that always runs
+and can only produce false negatives.
+
+### QQQQ-2. The token check's first run reported five failures about a token called `<category>`
+
+`tokens.css`'s header documents the role grammar, and the illustration began with
+the real `@role` marker, so the parser read the documentation as a declaration.
+
+**This is the emitted-template class in a new file type**: a region where prose
+and machine-read content share a syntax, so an example of the syntax *is* the
+syntax. That family has cost this repository seven occurrences in `String.raw`
+regions, and the scan covering those cannot see this one — different file,
+different marker.
+
+**No scan is proposed, and the reason is 4c rather than difficulty.** *A comment
+that looks like data* is undecidable in general, and a check for this one marker
+would cover the instance already found while the class stayed open — reading as
+watched. What generalises is the proof case: every parsed role name must be a
+valid custom-property name, so the illustration cannot return as a silent
+sixteenth role. The remedy is a **validating parser**, not a rule about how to
+write comments.
+
+### QQQQ-3. The 9c retry has a tail no fixture reaches, and it is kept deliberately
+
+Item 4's *mutate the branches no fixture reached*. `onDocumentOpened`'s loop ends
+with a report reached only if `POISON_AT` attempts run out without `poisoned()`
+agreeing — and since both the loop bound and the counter read the same constant,
+**no code in this repository can reach it**. That is JJJ-1's first kind: kept,
+because the fact it encodes is true and deleting it would leave the state this
+function exists to prevent — open and sessionless — arriving in silence the day
+those two stop agreeing. It is not a missing case, and no case is written for it.
+
+The branch that *is* reachable and load-bearing is the loop bound itself, which
+exists only because a mutation showed the semantic exit could spin for ever; that
+one has three cases.
+
+### Executed, and asserted
+
+**Executed.** Three mutations on `onDocumentOpened`, each reddening its own
+cases · a mutation on `eslint.config.js` reddening `proof:lintrules`' two new
+cases while `check:lint` stayed green · a planted `export {} from` in
+`packages/kernel/dist/index.js`, named by the scan and blocking the hook · the
+pre-ADR-0003 border value reddening `check:tokencontrast` at **1.16:1**, the
+figure that ADR records · two probe runs of fifteen paired readings with the
+counter cross-check passing · 521 vitest cases · 18 of 18 local checks against
+the index · board **GREEN at `3051956`**.
+
+**Asserted.** That `scripts/research/hostFixedCost.mjs` is adequately covered by
+its own resolution test with no proof in CI. It refuses to report unless it first
+recovers a known 8 MB difference, which is the instrument-side control — but
+nothing runs it on another machine, and a probe that spawns processes and reads
+working sets is exactly the kind whose behaviour is machine-dependent. Stated
+because *no proof* and *no proof needed* read identically in the columns above.
+
+---
+
 ## 2026-08-27 — Stage audit: `4eb94a7..71b299d` — a document claims a lint rule is enforced, and nothing checks that it is, which is audit finding 31 in a new rule
 
 **Audited through `71b299d`.** Pasted from `npm run audit:scope`:
