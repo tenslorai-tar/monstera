@@ -30,8 +30,13 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { auditRecordDisagreement, auditScope, stagedWatermark } from '../lib/auditWatermark.mjs';
-import { filesInCommit, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
+import {
+  auditRecordDisagreement,
+  auditScope,
+  stagedWatermark,
+  unansweredAuditItems,
+} from '../lib/auditWatermark.mjs';
+import { filesInCommit, git, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeCoverage, probeState } from '../lib/hookProbe.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
@@ -655,6 +660,15 @@ registerRule({
   const disagreement = auditRecordDisagreement({ journalText: journal, watermark: scope.watermark });
   if (disagreement !== null) failures.push(disagreement);
 
+  // THE NEWEST ENTRY ONLY, and that scope is what keeps this from rewriting
+  // history. An audit entry is a record: the three that lost the checklist take
+  // an appended correction, never an edit, so a rule that judged every entry
+  // would demand the one operation item 7 forbids. Checking the newest is not a
+  // weaker rule — every audit is the newest one at the moment it is written, so
+  // nothing reaches a commit unchecked.
+  const unanswered = unansweredAuditItems(journal);
+  if (unanswered !== null) failures.push(unanswered);
+
   if (scope.overBudget.length > 0) {
     failures.push(
       `The unaudited range ${scope.watermark}..HEAD has grown past one batch: ` +
@@ -743,6 +757,110 @@ registerRule({
     );
   }
   failures.push(...malformed);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 11. A FEATURES row this commit edited does not get LONGER once it is past 250
+// words (finding RRRR-4).
+//
+// The trial that produced this: a row was rewritten in a commit whose stated
+// intent was compression, and it went from 1470 words to 1756 — up 19% — while
+// the report to the owner said it had not been rewritten at all. Nothing was
+// lost and the added content was substantive; what failed is that an operation
+// meant to shrink a row grew it, and nobody could see that from the diff, which
+// showed one line changed.
+//
+// **The rule is on the DELTA, not the absolute**, and that is what makes it
+// compatible with everything around it:
+//
+//   - it never asks anyone to touch a row they did not edit, so it does not
+//     collide with item 7's rule that a live specification is edited only when
+//     it is wrong. Four rows are past 1750 words today and none needs touching.
+//   - it never forbids adding a fact. The remedy is to move detail into the
+//     JOURNAL entry or ADR that owns it and leave a pointer, which is where that
+//     detail belongs anyway.
+//   - it is computable from the two blobs this commit is between, so it names a
+//     number this run produced rather than restating a target. A compensation
+//     that could have been printed before the change is a disclaimer.
+//
+// The 250-word floor is deliberate. Under it a row is short enough that growth
+// is not the problem, and a rule that fired on a 40-word row gaining ten would
+// be one people learn to ignore.
+// ---------------------------------------------------------------------------
+
+/** Below this a row may grow freely: it is short enough that growth is not the defect. */
+const ROW_WORD_FLOOR = 250;
+
+/**
+ * Rows keyed by their leading bold title, which is the only part stable across
+ * an edit.
+ *
+ * Line NUMBER is not the key and cannot be: inserting a row above shifts every
+ * row below it, which would report the whole table as rewritten. That is how
+ * RRRR-4's own figure came to be misread — a row measured at 291 before an
+ * insert and reported at 291 after it, when it had become 292.
+ *
+ * @param {string} markdown
+ * @returns {Map<string, number>} title → word count
+ */
+function featureRowWords(markdown) {
+  /** @type {Map<string, number>} */
+  const rows = new Map();
+  for (const line of markdown.split('\n')) {
+    const match = /^\|\s*\*\*(.+?)\*\*/u.exec(line);
+    if (match === null) continue;
+    rows.set((match[1] ?? '').trim(), line.split(/\s+/u).filter(Boolean).length);
+  }
+  return rows;
+}
+
+registerRule({
+  name: 'no FEATURES row this commit edited grew past its length target',
+  // PER-DOCUMENT: decided entirely by two blobs of one file.
+  scope: 'per-document',
+  documents: ['docs/FEATURES.md'],
+  run(failures) {
+    // NARROWLY CAUGHT, and this rule is why the width matters. Written with a
+    // bare `catch { return; }` it passed on its first run for the wrong reason:
+    // `git` was not imported, the `ReferenceError` landed in the catch, and the
+    // rule reported a clean result having read nothing. A catch that cannot tell
+    // "no HEAD yet" from "this code is broken" turns every defect in the try
+    // block into the answer the check was hoping for.
+    /** @type {string} */
+    let previous;
+    try {
+      previous = `${git(['show', 'HEAD:docs/FEATURES.md']).stdout}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // The only tolerable absence: no commit yet, so there is no previous
+      // length and "grew" has no meaning. Anything else is this rule failing to
+      // look, which must be loud.
+      if (/unknown revision|bad revision|ambiguous argument/iu.test(message)) return;
+      throw error;
+    }
+
+    const before = featureRowWords(previous);
+    const after = featureRowWords(read('docs/FEATURES.md'));
+
+    for (const [title, words] of after) {
+      const was = before.get(title);
+      // A NEW row is not judged here. It has no previous length, so "grew" has
+      // no meaning for it — and a rule that guessed one would be inventing the
+      // comparison it exists to make.
+      if (was === undefined) continue;
+      if (words <= ROW_WORD_FLOOR || words <= was) continue;
+      failures.push(
+        `docs/FEATURES.md — the row "${title.slice(0, 60)}…" grew from ${String(was)} to ` +
+          `${String(words)} words (+${String(words - was)}), and it is past the ${String(ROW_WORD_FLOOR)}-word ` +
+          `target.\n\n` +
+          `  A row is a live specification, and detail past that belongs in the JOURNAL entry or ` +
+          `ADR that owns it, with a pointer left behind. Move it there rather than deleting it — ` +
+          `nothing here asks you to lose a fact, only to put it where its owner is.\n` +
+          `  This fires only on a row THIS commit edited. Rows you did not touch are not its ` +
+          `business, whatever their length.`,
+      );
+    }
   },
 });
 

@@ -279,6 +279,81 @@ export function newestRecordedAudit(journalText) {
 }
 
 /**
+ * The stage-audit checklist items, every one of which an entry must answer.
+ *
+ * **A LITERAL, not derived from the entries** — finding RRRR-1, and audit item
+ * 4c is the reason in one line: the failure to fear here makes the set SMALLER,
+ * so a roster computed from what the entries happen to contain would agree with
+ * any omission. That is the direction test, and it points at a hand-kept list.
+ *
+ * `CLAUDE.md` is where the items are defined; this is the roll-call. The two can
+ * drift, and the drift that matters is an item added there and not here — which
+ * is why the list is short enough to read against that document by eye, and why
+ * a new item arrives with a line in both places or in neither.
+ */
+export const AUDIT_ITEMS = ['1', '2', '2a', '3', '4', '4a', '4b', '4c', '5', '6', '7'];
+
+/**
+ * Which checklist items an audit entry leaves unanswered.
+ *
+ * ## Why this exists
+ *
+ * Three consecutive entries carried no item headings at all (RRRR-1). The cause
+ * was a length instruction whose wording — *"audit entries: items 1–7 and the
+ * findings"* — put the checklist inside a sentence about trimming, so it read as
+ * a budget rather than as a requirement. **The checklist is not prose and no
+ * length instruction reaches it.**
+ *
+ * The range that lost item 3 was the worst one to lose it in: it added a
+ * pre-commit hook whose behaviour depends on whether `dist` exists, which is
+ * exactly the two-worlds question item 3's inverse exists for.
+ *
+ * ## Why an empty answer is the point rather than a loophole
+ *
+ * *Nothing in this range* costs one line and is a valid answer. An answer that
+ * is present and empty is **visible**; an absent one is not, and reads as an
+ * item nobody needed rather than an item nobody asked. That asymmetry is the
+ * whole mechanism — this cannot judge the content of an answer and does not try.
+ *
+ * @param {string} journalText
+ * @returns {string | null} one message, or null when the newest entry answers all
+ */
+export function unansweredAuditItems(journalText) {
+  const newest = newestRecordedAudit(journalText);
+  if (newest === null) return null; // `auditRecordDisagreement` owns that failure.
+
+  const start = journalText.indexOf(newest.heading);
+  if (start === -1) return null;
+  // The entry runs to the next `## ` heading, or to the end of the file. Sliced
+  // rather than split, because an entry's own `### ` findings are inside it and
+  // only a level-two heading ends it.
+  const rest = journalText.slice(start + newest.heading.length);
+  const next = /^## /mu.exec(rest);
+  const entry = next === null ? rest : rest.slice(0, next.index);
+
+  // `###` or `####`. The heading DEPTH is a formatting choice — answers written
+  // directly in an entry sit at `###`, and answers appended later under a dated
+  // correction sit one level in — while the marker that carries the claim is the
+  // item number. Matching only one depth would have refused a complete answer
+  // set for its indentation, which is a check failing on a property it does not
+  // hold an opinion about.
+  const missing = AUDIT_ITEMS.filter(
+    (item) => !new RegExp(`^#{3,4} ${item.replace('.', '\\.')}\\.\\s`, 'mu').test(entry),
+  );
+  if (missing.length === 0) return null;
+
+  return (
+    `The newest stage audit — ${newest.heading.slice(0, 80)}… — answers ` +
+    `${String(AUDIT_ITEMS.length - missing.length)} of ${String(AUDIT_ITEMS.length)} checklist ` +
+    `items. Missing: ${missing.map((item) => `### ${item}.`).join(', ')}.\n\n` +
+    `  Every item gets an explicit answer, and "nothing in this range" is a valid one costing ` +
+    `one line — which is the point, because an answer that is present and empty is visible and ` +
+    `an absent one is not. Three consecutive entries lost the whole checklist to a length ` +
+    `instruction that read as a budget (finding RRRR-1); no length instruction reaches it.`
+  );
+}
+
+/**
  * Whether the journal's newest recorded audit and the watermark agree, as one
  * message or `null`.
  *

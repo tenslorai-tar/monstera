@@ -45,6 +45,7 @@ const EXPECTED_RULES = [
   'every registered hook has its own probe entry, and the gate is not claimed without one',
   'every row in a FEATURES table has as many cells as its table declares',
   'every scripts/ path named in a tracked document resolves',
+  'no FEATURES row this commit edited grew past its length target',
   'no document states a claim an ADR correction withdrew',
   'the threat model raises all 3 carried questions',
   "the watermark and the journal's newest audit are the same string, and the range is within one batch",

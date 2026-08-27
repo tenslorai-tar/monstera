@@ -748,6 +748,111 @@ nothing runs it on another machine, and a probe that spawns processes and reads
 working sets is exactly the kind whose behaviour is machine-dependent. Stated
 because *no proof* and *no proof needed* read identically in the columns above.
 
+### Correction, 2026-08-27 — the checklist was missing from this entry and the two before it (finding RRRR-1)
+
+Appended rather than woven in, because an entry is a record. This entry, and the
+two before it, carried findings and no item headings; the last entry that had
+them is `f75005d..cc1e54e`. The cause was a length instruction of mine whose
+wording put the checklist inside a sentence about trimming, so it read as a
+budget. **It is not prose and no length instruction reaches it.**
+`unansweredAuditItems` now turns `check:docs` red when the newest entry omits an
+item, against a literal roster — the failure to fear makes the set smaller
+(4c), so a roster derived from the entries would agree with any omission. It
+fired on this entry, which is how these answers came to be written.
+
+#### 1. Root cause, or workaround?
+
+**One loosening, and it is QQQQ-1 above.** `check:emittedsideeffects` went from
+blocking to reporting on *blind* in the pre-commit set. The other two are root
+fixes: PPPP-1 moved the quantity to the module that owns it rather than
+correcting the reading (B3a), and `onDocumentOpened`'s loop bound made a runaway
+unrepresentable rather than caught (B5).
+
+#### 2. Verified against the easy shape only?
+
+**No, and each hard shape was a different axis.** The token check was run against
+ADR-0003's *rejected* value, not only the shipped one. The emit scan was run
+against a violation planted in a real `dist`, not only its fixtures. The host
+probe was run against **two runtimes**, which is what found PPPP-1's second axis.
+
+**What was NOT reached:** the emit scan's no-build world, outside
+`proof:guards`' fixture. See item 3's inverse.
+
+#### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it was understated in the commit that made it.** Turning *blind* from
+a block into a report is coverage moving, not a wording change: the pre-commit
+half now contributes nothing on a machine where nobody builds. Recorded as
+QQQQ-1 and unresolved.
+
+#### 3. Would CI have caught it?
+
+**From a run.** Board **GREEN at `9bbfbbb`**, `CI=success`. `ci.yml`'s build job
+carries `proof:emittedsideeffects`, `check:emittedsideeffects`,
+`proof:tokencontrast` and `check:tokencontrast` as unconditional steps, and that
+run executed them.
+
+**And the inverse, which is the half this range most needed.** Yes — there is a
+defect this machine cannot see. `check:emittedsideeffects`'s pre-commit caller
+branches on whether a build exists, and on a developed-in machine `dist` always
+exists, so the report-and-continue branch runs **only** inside `proof:guards`'
+fixture repository. That is the two-worlds shape exactly: a branch keyed on the
+presence of something never executes where the thing is always present, and the
+richer world is the one that hides it.
+
+#### 4. Are the proofs non-vacuous?
+
+Three mutations on `onDocumentOpened`, each reddening its own cases — and the
+first **hung** rather than failing, which is what exposed the unbounded loop. One
+on `eslint.config.js`, reddening `proof:lintrules`' two new cases while
+`check:lint` stayed green. One planting `export {} from` in
+`packages/kernel/dist/index.js`. One reverting `--border-control` to the
+pre-ADR-0003 value, reddening `check:tokencontrast` at **1.16:1**.
+
+#### 4a. Has every instrument passed a resolution test?
+
+`hostFixedCost.mjs` recovers a known **8 MB** difference and cross-checks the
+parent's `PeakWorkingSet64` against the child's `maxRSS` before reporting, and
+refuses on either. `tokenContrast.mjs` reproduces **3.04:1** and **1.16:1**,
+two figures ADR-0003 recorded from its own solve.
+
+#### 4b. Is the instrument a search? Then its positive control.
+
+`emittedSideEffects.mjs` carries a fixture with two violations and three
+near-misses and refuses when it cannot find them. `tokenContrast.mjs` requires
+its control's bad pair to fail **and** its good pair to pass. Both controls run
+inside the scan, not only in the proof.
+
+#### 4c. Does this check derive its extent from the set it governs?
+
+The token check's roles **are** derived from the file, and the failure to fear —
+a missing declaration — makes the set smaller. That is why its completeness check
+runs in both directions, with the value-without-a-role case as the anchor.
+`AUDIT_ITEMS` is a literal for the same reason, decided in this correction's own
+commit.
+
+#### 5. Executed, or asserted?
+
+Answered above, unchanged: one asserted line, about the host probe's coverage.
+
+#### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and it is checkable in the log.** `9978312` appends ADR-0023's
+open-time correction; `35054f2` builds it. Separate commits, in that order.
+Nothing in this range was retrofitted under a feature already built.
+
+#### 7. Do the documents still match the code?
+
+Rows updated for the export half's closure and the token substrate; ADR-0025 and
+ADR-0023 took appended corrections rather than edits.
+
+**And one document claim in the REPORT was false** — finding RRRR-4. The stretch
+report said *"row 291 is 1470 words and I did not rewrite it"*. It is row **292**,
+it **was** rewritten, and it went from 1470 to **1756** words, up 19%, in a
+commit whose stated intent was compression. Nothing was lost and the added
+content is substantive; the finding is that an operation meant to shrink a row
+grew it, and the report stated the opposite.
+
 ---
 
 ## 2026-08-27 — Stage audit: `4eb94a7..71b299d` — a document claims a lint rule is enforced, and nothing checks that it is, which is audit finding 31 in a new rule

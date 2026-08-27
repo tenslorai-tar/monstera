@@ -37,6 +37,8 @@ import {
   pendingAuditScope,
   readWatermark,
   stagedWatermark,
+  AUDIT_ITEMS,
+  unansweredAuditItems,
 } from '../lib/auditWatermark.mjs';
 import { git as gitAt, parseNameStatus, repoRoot } from '../lib/gitScope.mjs';
 
@@ -1096,6 +1098,69 @@ try {
       `heading at ${String(realJournal.search(/^##[^\n]*?\bStage audit\b/mu))}. Entries are ` +
       `prepended, so "newest" is a position claim — a parser that found the last one would agree ` +
       `with the watermark only by accident.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The checklist roster (finding RRRR-1). Three consecutive audit entries carried
+// no item headings at all, so the requirement got a caller.
+//
+// The cases that matter are the two that SEPARATE. A rule reporting every entry
+// as incomplete satisfies "it can see" perfectly, and a rule reporting none
+// satisfies "it does not false-positive" just as well; only both together say
+// anything.
+// ---------------------------------------------------------------------------
+{
+  /** @param {string[]} items */
+  const entryAnswering = (items) =>
+    [
+      '## 2026-01-01 — Stage audit: `aaaaaaa..bbbbbbb` — a probe',
+      '',
+      ...items.flatMap((item) => [`### ${item}. answered`, '', 'Nothing in this range.', '']),
+      '## 2025-12-31 — Stage audit: `ccccccc..aaaaaaa` — the one before',
+      '',
+    ].join('\n');
+
+  check(
+    'an entry answering every item is accepted',
+    unansweredAuditItems(entryAnswering(AUDIT_ITEMS)) === null,
+    `got a failure for a complete entry. "Nothing in this range" is a valid answer costing one ` +
+      `line, and a rule that refused it would push people to write filler instead.`,
+  );
+
+  const withoutItem3 = AUDIT_ITEMS.filter((item) => item !== '3');
+  const missing3 = unansweredAuditItems(entryAnswering(withoutItem3));
+  check(
+    'an entry missing ONE item is reported, and the message names which',
+    missing3 !== null && missing3.includes('### 3.') && !missing3.includes('### 4.'),
+    `got ${JSON.stringify(missing3)}. Naming the missing item is the whole value: "incomplete" ` +
+      `sends a reader through eleven headings, and item 3 is the one this rule exists for.`,
+  );
+
+  check(
+    'an entry with NO item headings is reported as answering none',
+    (unansweredAuditItems(entryAnswering([])) ?? '').includes(
+      `0 of ${String(AUDIT_ITEMS.length)}`,
+    ),
+    `that is the founding case — three entries in a row looked exactly like this.`,
+  );
+
+  check(
+    'a `####` heading counts, so an appended correction can carry the answers',
+    unansweredAuditItems(
+      entryAnswering(AUDIT_ITEMS).replaceAll(/^### (\d)/gmu, '#### $1'),
+    ) === null,
+    `an entry is a record, so answers added later arrive under a dated correction and sit one ` +
+      `heading level in. Refusing them for their depth would refuse a complete answer set for a ` +
+      `property this rule holds no opinion about.`,
+  );
+
+  check(
+    'the roster is a literal rather than derived from the entry',
+    AUDIT_ITEMS.length === 11 && AUDIT_ITEMS.includes('2a') && AUDIT_ITEMS.includes('4c'),
+    `AUDIT_ITEMS is ${JSON.stringify(AUDIT_ITEMS)}. The failure to fear makes the set SMALLER ` +
+      `(item 4c), so a roster computed from what the entries contain would agree with any ` +
+      `omission — which is the defect this rule exists to catch.`,
   );
 }
 
