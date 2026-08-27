@@ -644,6 +644,294 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `9bbfbbb..e48b265` — a swapped gate left its old comment standing, and I pushed twice onto a red board
+
+**Audited through `e48b265`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 9bbfbbb..HEAD
+  commits: 9 (one batch is 9)
+  files:   22 (one batch is 24)
+  proofs ADDED (2):     containerGrants.proof.mjs · typeOnlyExports.proof.mjs
+  proofs MODIFIED (4):  auditScope.proof.mjs +65 -0 · documentRuleScope.proof.mjs +1 -0
+                        kernelLoad.proof.mjs +5 -1 · peakRss.proof.mjs +50 -0
+  proofs REMOVED: none
+  source FILES ADDED (3):   typeOnlyExports.mjs · containerGrants.mjs · containedStart.mjs
+  source FILES CHANGED (6): annotate.mjs +31 -3 · documentConsistency.mjs +120 -2
+                            preCommit.mjs +27 -58 · auditWatermark.mjs +75 -0
+                            peakRss.mjs +24 -3 · barrelCost.mjs +117 -7
+  source FILES REMOVED: none
+```
+
+RRRR-1's checklist roster and RRRR-4's row-length rule, the runner's host floor,
+QQQQ-1's gate swap, ADR-0027's grant built and then measured, and SSSS-2's
+runtime correction to `R`.
+
+**`preCommit.mjs` is the only net-negative file (`+27 -58`) and it is a swap, not
+a removal**: `emittedSideEffects.mjs` left the pre-commit set and
+`typeOnlyExports.mjs` took its place, with the emit scan retained as CI's
+completeness control. Reading the deletions against the destination by name is
+what found TTTT-1. The other three modified proofs are additive; the one
+deletion in `kernelLoad.proof.mjs` is a figure being corrected by SSSS-2.
+
+### 1. Root cause or workaround?
+
+Nine commits, no workaround. Three are worth naming as root-cause work rather
+than repair: QQQQ-1 replaced a gate that could be *blind* with one that reads the
+index and cannot be, rather than softening the blind branch; SSSS-2 gave
+`measurePeak` a `runtime` parameter rather than re-labelling the figure; and
+`containedStart.mjs` revokes before it grants rather than reading the machine as
+it found it.
+
+**One repair could regenerate and does not:** the ACLs `containedStart.mjs`
+changes are restored in a `finally` and read back with `inspect()`, and the run
+prints the state it leaves. A probe that left the machine revoked would break the
+next contained run for a reason nothing recorded.
+
+**No check was loosened.** `annotate.mjs --always` widens what CI emits and is
+the one change in the range that could be read as one; it is gated on
+`status === 0`, and TTTT-2 is the case that now says so.
+
+### 2. Verified against the easy shape only?
+
+The hard shape for `containedStart.mjs` is *the grant is present already*, which
+is this machine's state and the one under which a positive reading means nothing.
+It is the shape the instrument is built around rather than one it was tested
+against afterwards.
+
+The hard shape for `R` was *a second runtime*, and it was not tested until this
+range: every prior figure came from whichever interpreter started the harness.
+
+**A shape still untested, stated rather than closed:** `barrelCost.mjs --runs`
+was exercised at 1 and 5. Nothing has run it where a sweep FAILS mid-series, and
+the loop has no handling for that — `measurePeak` throws and the whole run dies,
+which is the correct behaviour and is not asserted anywhere.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and it is a **gain with a stated edge**. QQQQ-1 moved the pre-commit
+half of ADR-0026's class from an emit read to an index read. The emit read had
+two worlds — a machine with `dist` and one without — and the poorer world was
+reported as *blind* and let through. The index read has no such branch, so the
+pre-commit gate now blocks in every checkout.
+
+What it no longer sees is the emit itself: a `dist` carrying a violation whose
+source has since been corrected is invisible to the index read. That is CI's
+`check:emittedsideeffects`, unconditional on both legs, which is why it stayed.
+
+### 3. Would CI have caught it?
+
+**Answered from runs, and the answer is that CI caught what this machine did
+not.** `c248756` and `e48b265` were both red on CI and green on Guards, on the
+step *Prove nothing can trigger the unpinned Electron download*
+(`scripts/proofs/electronImports.proof.mjs`), both platforms:
+`api.github.com/repos/tenslorai-tar/monstera/actions/runs/33076084119/jobs`.
+`containedStart.mjs` imports the built surface through a `file://` URL and was
+not listed in `ACCOUNTED_COMPUTED`.
+
+`npm run local -- --only check:` passed 19 of 19 both times. It names that proof
+in its scan-reach list; TTTT-3 is why that did not stop me.
+
+**Is there a defect this machine cannot see?** One branch keyed on presence
+arrived in this range: `containedStart.mjs` refuses on any platform that is not
+`win32` (exit 69) and on a missing build (exit 70). Neither side is exercised by
+CI, because the file is research and no workflow runs it. That is stated, not
+closed — it is the class the checklist warns about, in a file whose whole subject
+is a Windows kernel behaviour.
+
+### 4. Are the proofs non-vacuous?
+
+Four mutations run in this range, three of which reddened the case written for
+them. The fourth is TTTT-2 and did not.
+
+| mutation | result |
+|---|---|
+| `peakRss.mjs`: `options.runtime ?? process.execPath` → `process.execPath` | red, naming the ignored option |
+| `annotate.mjs`: drop the `status === 0` guard | **green** — see TTTT-2 |
+| the same, against the corrected case | red, naming the notice on a failing run |
+| `containedStart.mjs`: the coarse outcome bucket | see TTTT-4 — the instrument's own verdict |
+
+**A branch nothing reaches, kept:** `containedStart.mjs`'s `create-failed`
+outcome. Neither cell produced it — `CreateProcessW` succeeded in both, which is
+itself the finding that corrected ADR-0027's predicted mechanism. It is kept
+because the state is real and a token that cannot execute the image is what the
+ADR describes; deleting it would remove the name for the outcome the ADR predicts.
+
+### 4a. Has every instrument passed a resolution test?
+
+| instrument | resolution test | result |
+|---|---|---|
+| `containedStart.mjs` | the two contained cells: one ACE on four paths, present or absent | `runtime-init` vs `module-resolution` — separated |
+| `barrelCost.mjs --runtime` | the same six cells under two interpreters | `R` 7.5–8.0 vs 10.3–13.0 — separated |
+| `containerGrants.mjs` | `apply()` grant/revoke read back through `icacls` | separated, and it decides from the read rather than the exit code |
+
+**`barrelCost.mjs`'s anchor held under both runtimes** — `mupdfWriter.js` at
++39.3 MB and +41.4 MB over bare against its own 4 MB floor — so neither runtime
+was blind to the subject it exists to measure.
+
+### 4b. Does every search carry a positive control?
+
+`containedStart.mjs`'s is the **uncontained cell**, and it is load-bearing rather
+than decorative: node reports `Cannot find module` for a file it cannot READ as
+readily as for one that is absent, so without a cell that reaches the entry the
+`granted` row would have been indistinguishable from a stale build path. It
+refuses terminally rather than reporting a verdict when that cell does not run.
+
+`containerGrants.mjs`'s `namesApplicationPackages` matches the SID **and** the
+display name, because `icacls` renders a known SID by name and an unknown one
+numerically — a search for either alone finds nothing on half the machines.
+
+**The NNN-4 sweep fired and found two.** SSSS-2 states a cross-document
+relationship — which runtime a figure was read under — so every other statement
+of `9.6 MB` was swept: `docs/FEATURES.md`'s `mupdf-host` row used it as a
+host-relevant candidate, and `kernelLoad.proof.mjs`'s diagnostic quoted it as the
+after figure. Both corrected. Two more mentions were left alone because they
+already name their runtime.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Three rosters in the range, all literals, all in the direction 4c asks for —
+the feared failure makes each set SMALLER, so a derived count would agree with
+the omission:
+
+- `AUDIT_ITEMS` (11 items) in `auditWatermark.mjs`, with a case asserting the
+  length and two members rather than recomputing them;
+- `EXPECTED_RULES` in `documentRuleScope.proof.mjs`, which gained the row-length
+  rule as a literal line;
+- `annotate.proof.mjs`'s `cases: 8`, raised by hand with the three new cases.
+
+**One derived set was added and it runs the other way:** `containerGrants.mjs`'s
+`grantSet()` derives its four paths from the resolvers that own them, so a moved
+artefact moves the grant with it. The failure to fear there is a path that is
+present and ungranted, and `apply()` refuses an absent path rather than skipping
+it (*ABSENT IS NOT DONE*), which is the anchor.
+
+### 5. Executed, or asserted?
+
+**Executed:** the three contained-start cells and their ACL transitions; ten
+`barrelCost` sweeps across two runtimes; the four mutations in item 4;
+`electronImports.proof.mjs` before and after the listing; `perf:gate` on both
+fixtures; `annotate.proof.mjs` at 8 cases.
+
+**Asserted and NOT executed, listed as unfinished:** that ADR-0027's grant set
+extended to the application's built output would let a contained host start. That
+is the obvious next move and it is a prediction — the same kind of prediction
+this range just falsified once. It is not written anywhere as a fact.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither, and one decision is now **reopened rather than amended**. ADR-0027
+rejected *an uncontained host in development* on the reading that development
+containment costs four grants on artefacts provisioning already installs. The
+measurement says it costs more. A correction is appended to the ADR recording
+that the rejection rested on a premise this range falsified; the choice between
+widening the grant set and taking the rejected option is the owner's, and no
+feature was built on either reading in the meantime.
+
+### 7. Do the documents still match the code?
+
+Three corrections, all appended or edited in the same commits: ADR-0027's
+correction of 2026-08-27, ADR-0025's `R` correction, and `docs/FEATURES.md` rows
+287, 289 and 291.
+
+**TTTT-1 is this item, found in the changed function's own comment.**
+
+**A claim written in this range and checked while writing it** (AAAA-8's tell):
+the `INSUFFICIENT` verdict names one axis — the grant — where the evidence could
+also be explained by the entry script simply not being where the probe looked.
+That is what the uncontained control rules out, and it was added because the
+question was asked before the claim was written rather than after.
+
+### TTTT-1. The swapped gate kept its old comment, in capitals, above the correction
+
+`preCommit.mjs` now scans the **index** for type-only re-exports. Eight lines
+above the new comment saying so, the old one still read:
+
+> IT READS THE BUILD ON DISK, WHICH THE INDEX IS NOT, and that is the one thing
+> this caller has to say out loud. The emit is the only place the two spellings
+> differ, so there is nothing in the index to read.
+
+Every clause false, and the second directly contradicted by the paragraph below
+it. The block also still promised *the staged TypeScript files are named below*,
+for a `stagedTypeScript()` helper the same commit deleted. Two headers for one
+gate, both opening *ADR-0026's class, the half no lint rule covers*.
+
+**This is item 7's documented shape and the checklist predicts it exactly:** the
+author adds a section saying what changed, and leaves the original standing in
+the position a reader treats as the contract. What is new is that here the stale
+half was not half-true — it was wholly false and still survived review, because
+it sat *above* a correction rather than inside one, and the reader who agrees
+with the new paragraph never scrolls back.
+
+**Found by the audit, not by a check, and no check can see it:** both paragraphs
+parse, both describe a real mechanism, and one of them was true a commit ago.
+The compensation is the one already mandated — read the diff of the changed
+function's own comment — and it worked here only because `preCommit.mjs` was the
+range's only net-negative file, which is what sent me to its diff first.
+
+### TTTT-2. My case for `--always` passed its own mutation
+
+`annotate.mjs --always` shipped in this range with **no case at all**;
+`annotate.proof.mjs` was not in the modified-proofs column because nobody touched
+it. Adding cases was the obvious repair. The interesting part is the case I wrote
+first.
+
+The hazard `--always` introduces is that a flag reporting on success is one
+statement from reporting success, so the case asserted: a failing run under
+`--always` still emits `::error` and still exits 3. Dropping the `status === 0`
+guard left both of those exactly as they were, and the case passed.
+
+**The end state was the wrong observable, again.** The decision `--always` makes
+on a failing run is *not to emit a notice*, and the absence of that notice is the
+only thing the correct path produces. Asserting it reddens the mutation
+immediately.
+
+Three of these in two days now, all inside the commit that fixed the previous
+one. The checklist entry naming the pattern was written this week and I still
+reached for the end state first, which is the measure of how weak *knowing the
+rule* is against a case that looks right.
+
+### TTTT-3. I pushed twice onto a red board, past a compensation that named the proof
+
+`checkLocal` ends every run that touched a scanning proof with a list:
+
+> Static-import reach only. These proofs SCAN the tree, so any change reaches
+> them and no import walk can say so — run them too: `proof:electronimports` …
+
+It named the exact proof that then went red on CI, twice. I ran the three the
+import walk derived and skipped the five it printed, then pushed `c248756`
+without waiting for the board and wrote `e48b265` on top of it.
+
+**Both halves are mine, and one of them is a mechanism's.** By this project's own
+test — *could this have been printed before you made your change?* — that list is
+a **disclaimer**: it is the same five proofs on every run, computed from nothing
+about the change. The derived list beside it, which names proofs by import reach,
+is a mechanism and I obeyed it.
+
+**Raised, not resolved.** The obvious fix is to stop printing the list and run
+the five, which cost 0.2s, 1.0s, 3.5s, 18s and about 12s here — under a minute
+against a sweep that already takes three. That converts a note into a mechanism
+and is a change to the harness every push depends on, so it is proposed rather
+than taken in an audit-recording commit.
+
+### TTTT-4. The instrument reported its own blindness as a finding
+
+`containedStart.mjs`'s first two-cell run printed *the grant changed nothing
+observable* while its own logs showed one cell dying in Chromium's ICU
+initialisation (`icu_util.cc:232`) and the other in node's module loader.
+
+Both had landed in one `no-program` bucket, and the verdict compared buckets. The
+distinction existed in the evidence and not in the classifier, so **an absent
+distinction read exactly like an empty one** — the same sentence this repository
+has recorded for a missing audit-scope column, and here it was a coarse enum
+rather than a missing column.
+
+Cells carry a `stage` derived from which layer wrote the diagnostic, and the
+verdict compares outcome and stage. The repair is what made `INSUFFICIENT` a
+readable verdict rather than an unreadable one.
+
+---
+
 ## 2026-08-27 — Stage audit: `71b299d..9bbfbbb` — I made a guard non-blocking, and a parser read its own documentation
 
 **Audited through `9bbfbbb`.** Pasted from `npm run audit:scope`:
