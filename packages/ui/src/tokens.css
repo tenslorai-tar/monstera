@@ -1,0 +1,173 @@
+/*
+ * The single source of visual truth (ARCHITECTURE §10.2, ADR-0003).
+ *
+ * Components consume tokens only. A raw hex value or magic pixel number in a
+ * component is a lint error unless the value is genuinely dynamic — a
+ * user-chosen annotation colour is the one legitimate case.
+ *
+ * ## Two declaration sites, and why they are two rather than one
+ *
+ * ROLES are declared once, in the block below. VALUES are declared once per
+ * theme. ADR-0003 asks for "a machine-readable role declaration alongside each
+ * value", and repeating the role in all three theme blocks would be three
+ * places to update — the second-writer shape B3 exists to forbid, in a file
+ * whose whole job is to be the one source.
+ *
+ * `check:tokens` therefore reads both sites and requires them to agree in BOTH
+ * directions: every declared role has a value in every theme, and every value
+ * has a declared role. A role with no value is a check evaluating nothing; a
+ * value with no role is a colour the check cannot see, which is the same defect
+ * wearing the other hat.
+ *
+ * ## The role grammar
+ *
+ * Each declaration is one line reading: (at)role NAME CATEGORY [(at)on SURFACE …].
+ * Spelled that way here on purpose — a line that begins with the real marker is
+ * a declaration, and an example of one in this header would be parsed as one.
+ * That is not hypothetical: it was, on the check's first run, and the check
+ * reported five failures about a token called `<category>`.
+ *
+ * | category | obligation |
+ * |---|---|
+ * | `surface` | none itself; a background others are checked against |
+ * | `text` | 4.5:1 against its declared surface set |
+ * | `boundary-control` | 3:1 against every surface it may sit on (WCAG 1.4.11) |
+ * | `boundary-decorative` | none; lint forbids its use as a control boundary |
+ * | `fill` | none itself; if it carries a foreground it is also a `surface` |
+ * | `derived` | computed at the point of use by `onColor`; never stored |
+ *
+ * `@on` is required for `text` and `boundary-control` and forbidden elsewhere.
+ * The check evaluates exactly the declared pairs — no more, no fewer. Invariant
+ * L16 is what makes that exhaustive rather than narrow: a foreground that is not
+ * a token cannot exist, so a pair the check does not evaluate cannot render.
+ *
+ * ## Why `--page` is not a surface for chrome text
+ *
+ * §10.2 defines surfaces per render context. `--page` is the document, and
+ * chrome text never sits on it; chrome GRAPHICS drawn over it are checked at
+ * 3:1 by the overlay-on-page context, which is the derivation half and is owed.
+ */
+
+/* ─── roles ─────────────────────────────────────────────────────────────────
+ * @role bg surface
+ * @role bg2 surface
+ * @role surface surface
+ * @role surface2 surface
+ * @role canvas surface
+ * @role page surface
+ * @role text text @on bg bg2 surface surface2
+ * @role muted text @on bg bg2 surface surface2
+ * @role faint text @on bg bg2 surface surface2
+ * @role border-control boundary-control @on bg bg2 surface surface2
+ * @role border boundary-decorative
+ * @role border-soft boundary-decorative
+ * @role accent fill
+ * @role accent-hover fill
+ * @role accent-soft surface
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+:root,
+[data-theme='dark'] {
+  /* Colour. Seeded from DESIGN-DRAFT.html, which M2 names as the seed and the
+     naming authority; `--border-control` is ADR-0003's solved value, which the
+     draft predates and does not carry. */
+  --bg: #191c1e;
+  --bg2: #1f2225;
+  --surface: #24282b;
+  --surface2: #2a2f33;
+  --canvas: #141618;
+  --page: #ffffff;
+  --text: #e7eaec;
+  --muted: #9aa2a8;
+  --faint: #939ba3;
+  --border-control: #74787c;
+  --border: #33393e;
+  --border-soft: #2b3034;
+  --accent: #2fb96a;
+  --accent-hover: #3bc677;
+  --accent-soft: rgba(47, 185, 106, 0.14);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='light'] {
+  --bg: #f4f5f7;
+  --bg2: #ececef;
+  --surface: #ffffff;
+  --surface2: #f7f8f9;
+  --canvas: #e2e4e7;
+  --page: #ffffff;
+  --text: #1d2023;
+  --muted: #5d656c;
+  --faint: #5f6770;
+  --border-control: #848688;
+  --border: #dcdfe3;
+  --border-soft: #e6e8eb;
+  --accent: #16a34a;
+  --accent-hover: #159645;
+  --accent-soft: rgba(22, 163, 74, 0.12);
+  --shadow: 0 10px 30px rgba(30, 35, 40, 0.18);
+}
+
+[data-theme='hc'] {
+  --bg: #000000;
+  --bg2: #000000;
+  --surface: #0a0a0a;
+  --surface2: #101010;
+  --canvas: #000000;
+  --page: #ffffff;
+  --text: #ffffff;
+  --muted: #e6e6e6;
+  --faint: #bfbfbf;
+  --border-control: #ffffff;
+  --border: #ffffff;
+  --border-soft: #8a8f94;
+  --accent: #3ff08f;
+  --accent-hover: #6ff5ab;
+  --accent-soft: rgba(63, 240, 143, 0.28);
+  --shadow: none;
+}
+
+/* ─── scales, identical in every theme ─────────────────────────────────────
+ * Not remapped per theme, so declared once outside the theme blocks. A theme
+ * that changed a spacing value would be a different layout, not a different
+ * palette.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Spacing: the 8 px grid governs layout regions; 2/4 px increments are for
+     control interiors (M2). */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+
+  /* Type. Chrome sizes, and 10 px is the FLOOR — no UI text renders smaller. */
+  --font-chrome-10: 10px;
+  --font-chrome-11: 11px;
+  --font-chrome-12: 12px;
+  --font-chrome-13: 13px;
+  /* Content sizes. */
+  --font-content-14: 14px;
+  --font-content-16: 16px;
+  --font-content-20: 20px;
+  /* One display size: the start-screen wordmark. */
+  --font-display: 40px;
+
+  /* Icons. Each size has a stated use (§10.4): panel tabs and inline chrome ·
+     status bar and dense controls · primary controls · ribbon buttons. */
+  --icon-12: 12px;
+  --icon-14: 14px;
+  --icon-16: 16px;
+  --icon-20: 20px;
+
+  --radius-4: 4px;
+  --radius-6: 6px;
+  --radius-10: 10px;
+
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.24);
+  --elevation-3: var(--shadow);
+}

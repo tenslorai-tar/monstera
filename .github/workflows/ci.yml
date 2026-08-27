@@ -180,6 +180,22 @@ jobs:
       - name: Prove the emitted-side-effect scan can see, refuse and separate
         run: node scripts/ci/annotate.mjs scripts/proofs/emittedSideEffects.proof.mjs
 
+      # ARCHITECTURE §10.2: contrast is ENFORCED, not audited — computed from
+      # the token file itself, so the check never needs a wholesale exemption.
+      # ADR-0003 types the roles so it can be strict without one: a check over
+      # every text role × every surface fails pairs that never render, and the
+      # only ways out are an exception list or an exemption, both banned.
+      #
+      # The proof reproduces two figures ADR-0003 recorded from its own solve —
+      # 3.04:1 for the split border and 1.16:1 for the alternative it rejected —
+      # so the arithmetic is checked against something computed elsewhere rather
+      # than only against itself.
+      - name: Prove the token contrast check can see, refuse and separate
+        run: node scripts/ci/annotate.mjs scripts/proofs/tokenContrast.proof.mjs
+
+      - name: Every declared token pair meets its contrast obligation
+        run: node scripts/ci/annotate.mjs scripts/lib/tokenContrast.mjs
+
       - name: No type-only statement survives into the emit
         run: node scripts/ci/annotate.mjs scripts/lib/emittedSideEffects.mjs
 
