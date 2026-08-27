@@ -1,14 +1,22 @@
 export { CapabilityRegistry, type HandleBytesSource, handlesEqual } from './capabilityRegistry.js';
-export {
-  type Apply,
-  type ByteImage,
-  type EngineWriter,
-  type Invert,
-  type MupdfSession,
-  type PdfiumSession,
-  type WriterSession,
-  type WriterShape,
-  type WriterShapeOf,
+// `export type { … }` rather than `export { type … }`, and the difference is the
+// whole of ADR-0026 said in one statement: the second form elides the SPECIFIERS
+// and keeps the STATEMENT, emitting `export {} from './engineSeam.js'`, which
+// loads that module at runtime in every importer of this barrel. No lint rule
+// catches it — `no-import-type-side-effects` visits `ImportDeclaration` only,
+// and `consistent-type-exports` treats an inline `type` specifier as already
+// satisfying it (finding MMMM-1, measured against the pinned plugin 8.67.0 and
+// then executed with a positive control).
+export type {
+  Apply,
+  ByteImage,
+  EngineWriter,
+  Invert,
+  MupdfSession,
+  PdfiumSession,
+  WriterSession,
+  WriterShape,
+  WriterShapeOf,
 } from './engineSeam.js';
 // `mupdfWriter` and `withDocument` are NOT here. Every value whose module graph
 // binds a native library lives behind `@monstera/kernel/engine` — see
