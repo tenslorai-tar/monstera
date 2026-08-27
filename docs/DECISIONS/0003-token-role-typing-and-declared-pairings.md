@@ -152,3 +152,44 @@ that combination is not permitted to render, not because it was excused.
 - The design draft (`DESIGN-DRAFT.html`) does not implement this split. It
   remains illustrative only, as Part M7 already states; it is not updated,
   because it is a record of the approved layout rather than reference code.
+
+---
+
+## Note, 2026-08-27 — the border rule is built, and not as the lint rule named above
+
+The consequence above says *"a lint rule is required"*. **That mechanism was not
+available and the rule is a scan instead**, recorded here because the ADR names a
+specific mechanism and a reader would otherwise look for a rule that does not
+exist.
+
+ESLint does not lint CSS, and ADR-0004/ADR-0005 select no CSS linter. Adding one
+for a single rule means a dependency to pin, provision and keep current, against
+`scripts/lib/borderTokens.mjs` — which needs nothing new and runs in CI beside
+`check:tokencontrast`.
+
+**The rule's SHAPE also changed, and this is the substantive half.** The obvious
+scan — find the interactive selectors, require control-grade borders on them — is
+the one this ADR already rejected by name for the contrast check: *"inferring
+usage would mean parsing CSS modules and reasoning about which selectors are
+interactive. That is a fragile analysis whose failure mode is silence."* The
+same objection applies here and was not weakened by moving from a linter to a
+scan.
+
+So interactivity is not inferred. **Every use of `--border` or `--border-soft` in
+a `border` or `outline` property is reported unless the line carries a
+`decorative:` comment giving a reason.** The default answer is the safe one and
+the exception is written down — which matches this ADR's own premise that the
+decision is *got wrong by default*, and it is decidable from one line of text
+with no failure mode that is silence.
+
+What it does not decide is whether a marker is honest; that is a reason a
+reviewer reads. What it guarantees is that the decision was taken at every site
+rather than defaulted into.
+
+**Two limits, stated because both are the reassuring answer:** the scan examines
+**zero** declarations today — there is no component CSS — and prints
+`NOTHING TO SCAN` rather than reporting clean, since a broken walker and an empty
+tree produce identical output. `proof:bordertokens` is what says it can see, and
+it caught two real defects on its first two runs: the property pattern was
+anchored at line start and examined nothing in its own fixture, and the marker
+accepted an empty reason because a CSS comment's terminator satisfies `\S+`.

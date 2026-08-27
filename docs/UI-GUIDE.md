@@ -75,13 +75,28 @@ dialog outlines, and non-interactive containers.
 declared pairing, and fails when one misses its category's ratio. That guards the
 **values**: it is why `--border-control` is 3.04:1 rather than 1.16:1.
 
-It cannot see **usage**. Nothing today stops a new control reaching for
-`--border`, so the split above is currently a convention in a document, and
-ADR-0003 says plainly that a convention is not a mechanism. The scan that closes
-it is owed and named in that ADR's consequences. Until it lands, this section is
-the only thing standing between a new control and the wrong token — which is
-exactly the situation the ADR predicted, so treat the rule as binding rather than
-advisory.
+**Usage is guarded by `npm run check:bordertokens`**, and it works by inverting
+the burden rather than by guessing which selectors are interactive — ADR-0003
+rejected that inference by name, because a scan wrong about `.rail--active` or
+`.tab` fails silently.
+
+So the rule it enforces is:
+
+> Every `border` or `outline` property using `var(--border)` or
+> `var(--border-soft)` is reported, **unless the same line carries a CSS comment
+> beginning `decorative:` and a reason.**
+
+Write the reason for a reader, not for the scan: *region divider*, *group
+separator*, *dialog outline*. The scan only checks that you gave one; whether it
+is honest is what a reviewer reads. If you find yourself writing
+`decorative: because the design says so` on something a user can click, that is
+the defect the rule exists for.
+
+**It examines nothing today** — there is no component stylesheet yet — and it
+says `NOTHING TO SCAN` rather than reporting clean, because an empty tree and a
+broken walker print the same thing otherwise. `npm run proof:bordertokens` is
+what says it can see. The first `.css` file added to `packages/ui` puts it to
+work.
 
 ---
 

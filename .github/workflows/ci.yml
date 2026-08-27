@@ -196,6 +196,17 @@ jobs:
       - name: Every declared token pair meets its contrast obligation
         run: node scripts/ci/annotate.mjs scripts/lib/tokenContrast.mjs
 
+      # ADR-0003's border rule. The scan examines nothing until the first
+      # component stylesheet lands and says NOTHING TO SCAN rather than clean,
+      # so the proof is what carries the claim that it can see — which is why
+      # both steps are here from the day the scan is written rather than from
+      # the day it has something to find.
+      - name: Prove the border-token scan can see, refuse and separate
+        run: node scripts/ci/annotate.mjs scripts/proofs/borderTokens.proof.mjs
+
+      - name: No decorative border token bounds an unmarked control
+        run: node scripts/ci/annotate.mjs scripts/lib/borderTokens.mjs
+
       - name: Prove the type-only export scan can see, separate and never be blind
         run: node scripts/ci/annotate.mjs scripts/proofs/typeOnlyExports.proof.mjs
 
