@@ -1269,15 +1269,26 @@ try {
     //   argument list past 32767    status=null  ENAMETOOLONG   2.5ms
     //
     // `status: null`, no output, single-digit milliseconds — WWW-2's founding
-    // signature exactly. ENAMETOOLONG is the one reachable THROUGH the harness,
-    // because it always spawns `process.execPath` and takes the arguments from
-    // the manifest, so a fixture can supply them and an executable name cannot.
+    // signature exactly. An over-long argument is the one reachable THROUGH the
+    // harness, because it always spawns `process.execPath` and takes the
+    // arguments from the manifest, so a fixture can supply them and an
+    // executable name cannot.
+    //
+    // THE LENGTH CLEARS BOTH PLATFORMS' LIMITS, and the first version did not.
+    // 40,000 characters exceeds Windows' 32767-character command line and
+    // reddened nothing on Linux, where the ceiling is `MAX_ARG_STRLEN` — 32
+    // pages, 131072 bytes, per single argument. Guards caught it and this
+    // machine could not: the case passed here and failed there, which is
+    // audit item 2's easy shape with the platforms swapped.
+    //
+    // The errno differs by platform for the same reason, so the assertion names
+    // the CLASS rather than one code: `ENAMETOOLONG` here, `E2BIG` there.
     //
     // Both directions are asserted, in this case and the next. A harness that
     // called EVERYTHING a non-start would satisfy this one alone.
     // -----------------------------------------------------------------------
     {
-      const past = 'x'.repeat(40000);
+      const past = 'x'.repeat(200000);
       const swept = runFixture(
         { 'ok.mjs': EXIT_ZERO, 'later.mjs': EXIT_ZERO },
         {
@@ -1293,8 +1304,10 @@ try {
 
       check(
         'a spawn that never starts is reported as DID NOT START and carries its errno',
-        /DID NOT START/u.test(swept.output) && /ENAMETOOLONG/u.test(swept.output),
-        `output did not name the state or the cause:\n${swept.output.slice(0, 900)}`,
+        /DID NOT START/u.test(swept.output) && /ENAMETOOLONG|E2BIG/u.test(swept.output),
+        `output did not name the state or the cause. The errno is platform-specific — ` +
+          `ENAMETOOLONG on win32, E2BIG on Linux — so both are accepted and the absence of ` +
+          `either means no cause was carried at all:\n${swept.output.slice(0, 900)}`,
       );
 
       check(
