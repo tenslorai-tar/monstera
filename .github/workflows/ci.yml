@@ -722,6 +722,15 @@ jobs:
       - name: Measure the engine host's fixed cost on this runner
         run: node scripts/ci/annotate.mjs --always scripts/research/hostFixedCost.mjs --runs 15
 
+      # ADR-0027's provisioning grant. The derivation is checked on every
+      # platform; the grant/revoke round trip needs icacls and runs here, on a
+      # THROWAWAY file rather than on the real paths — a proof that granted the
+      # runtime would leave the machine in a state its own success depended on,
+      # and a later run could not tell "the grant works" from "a previous run
+      # left it granted", which is the stale-answer shape.
+      - name: Prove the container grant derives, takes and reverses
+        run: node scripts/ci/annotate.mjs scripts/proofs/containerGrants.proof.mjs
+
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous

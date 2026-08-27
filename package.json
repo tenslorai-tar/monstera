@@ -57,6 +57,8 @@
     "proof:rendererpolicy": "node scripts/proofs/rendererPolicy.proof.mjs",
     "proof:kernelload": "node scripts/proofs/kernelLoad.proof.mjs",
     "provision:electron": "node scripts/provision/electron.mjs",
+    "provision:grants": "node scripts/provision/containerGrants.mjs",
+    "proof:containergrants": "node scripts/proofs/containerGrants.proof.mjs",
     "board": "node scripts/ci/board.mjs",
     "board:why": "node scripts/ci/failingJobs.mjs",
     "proof:provision": "node scripts/provision/gitleaks.proof.mjs",
