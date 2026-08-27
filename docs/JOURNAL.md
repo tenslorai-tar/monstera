@@ -724,6 +724,42 @@ diff contains only X"* is worthless where the bug also produces only X, and that
 is not visible from inside the sentence, which is why it survived being written
 by the seat that has the direction rule and read by the seat that wrote it down.
 
+> **Correction, 2026-08-27 — two figures in the table above are undercounts, and
+> the instrument that produced them was blind in exactly the way this finding is
+> about (finding NNNN-4).** The counts came from `grep -rho "from '\./$t'"`,
+> anchored on a **same-directory** specifier. A module referenced from a
+> subdirectory is written `'../engineSeam.js'` and that pattern cannot match it.
+> Measured against the same post-part-1 snapshot with a prefix-agnostic pattern:
+> `engineSeam.js` is **7**, not 1, and `commandLog.js` is **4**, not 3. The other
+> three kernel rows are unchanged, and the two package rows used exact
+> specifiers (`'@monstera/contract'`, `'@monstera/shared'`) so 27 and 29 stand.
+>
+> **The conclusion is unaffected and is strengthened**, because the error
+> understates: every target retained live load-points, and two retained more of
+> them than recorded. That is the least interesting part of this.
+>
+> **What matters is that the reassuring answer here was not "found nothing".** It
+> was *"at least one reference for every target"*, and a partially blind pattern
+> satisfies that just as well as a working one — it returned `1` for
+> `engineSeam.js`, a plausible number, not a `0` that would have been
+> investigated on sight. NNNN-1 above is a finding about a control that cannot
+> fail, and its own supporting instrument was one, written in the same hour by
+> the author writing the finding. The module-scope scan in the paragraph beside
+> it **did** get a positive control and **was** caught by it; the reference count
+> got none, and the difference between the two was not a decision — it was that
+> one of them returned zero and looked wrong.
+>
+> So the rule that transfers is narrower than *searches need controls*, which was
+> already on the page and did not fire: **a count needs a control whenever
+> "more than zero" is the answer you are hoping for**, because an undercount and
+> a correct count are then the same shape. Item 4b's tell is *found nothing*;
+> this is the same defect wearing *found some*.
+>
+> The sentence above beginning *"`engineSeam.js`'s single remaining reference"*
+> was false when written and is true as of part 2, which removed the six
+> `../engineSeam.js` references from `packages/kernel/src/host/`. Left standing
+> with this note rather than edited, per the record rule.
+
 ### NNNN-2. Two instruments differing by one, and the difference was the finding
 
 The OWED row recorded ESLint-over-source at **69** and grep-over-dist at **70**,
