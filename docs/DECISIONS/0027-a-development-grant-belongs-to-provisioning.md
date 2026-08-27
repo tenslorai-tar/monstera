@@ -241,6 +241,12 @@ from *it would have worked anyway*. It is the anchor the roster never had: a
 roster can go stale the next time the host loads something new, and the one thing
 that cannot agree with a roster gone quiet is a host actually starting.
 
+**Reproduced on a second machine the first time it ran there** — `windows-latest`
+at `407c541`, a runner that starts clean and had never carried these ACEs. Same
+three outcomes, same stages, same verdict, read from the run's public annotation.
+So the result is not a property of this developer's machine, which is the one
+thing a single-machine containment reading can never establish about itself.
+
 ## The exposure this buys, stated rather than implied
 
 **Granting `node_modules` and every workspace package read-and-execute to

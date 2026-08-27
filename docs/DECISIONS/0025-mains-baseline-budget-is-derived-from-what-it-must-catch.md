@@ -537,6 +537,30 @@ same sentence and the same measurement.
 
 ---
 
+## CLOSED, 2026-08-27 — a passing run printed it
+
+The note below is answered. `annotate.mjs --always` emits a `::notice` on success,
+and annotations are public at
+`/repos/{owner}/{repo}/check-runs/{id}/annotations` — so the figure the note said
+only a failure could reveal is now read from a green run:
+
+> `main-service` baseline over 15 runs, `windows-latest`, node 24.19.0:
+> **min 40.9 MB · median 41.0 MB · max 41.2 MB · spread 0.3 MB.**
+> Resolution test passed in the same run: `main` 38.5 MB against `main-service`
+> 41.0 MB, 2.5 MB apart.
+
+**What this settles and what it does not.** The runner's WITHIN-invocation spread
+is 0.3 MB, matching this machine's 0.2–0.3 — so the tight figure is not a
+property of one machine. It gives **one** invocation, so it says nothing yet
+about the between-invocation drift WWWW-1 measured at 4.8–5.8 MB; each future
+push adds one reading, and that is how the runner's band gets sampled.
+
+The absolute is far below this machine's (41.0 against 51.7–56.5) on a different
+image and a different node, which is expected and is why a floor derived from one
+machine was never the plan.
+
+---
+
 ## Note, 2026-08-27 — the runner's clean baseline is waiting on an event that SUCCESS PREVENTS
 
 This ADR says *"what would close it is the runner's clean baseline being printed
