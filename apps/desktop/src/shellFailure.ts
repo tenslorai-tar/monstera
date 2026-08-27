@@ -13,6 +13,12 @@
 // to execute.
 import type { App, WebContents } from 'electron';
 
+// `import type` for the reason above, and the reason applies here with a
+// different destination: `@monstera/kernel`'s barrel reaches `mupdfWriter.js`,
+// which binds 38.1 MB of native MuPDF. Erased entirely, so this costs nothing
+// at runtime and buys the union below.
+import type { HostTermination } from '@monstera/kernel';
+
 /**
  * The lifecycle failures nothing was listening to.
  *
@@ -183,11 +189,24 @@ export function describeChildProcessGone(details: {
  * transport's own text is the informative one. On the violation path the detail
  * is the client's own, which is the better of the two there, since the client is
  * what detected the violation.
+ *
+ * ## The parameter is `HostTermination`, and a structural stand-in was a defect
+ *
+ * It was declared as `{ code: string; detail: string }` (finding IIII-1). The
+ * whole behaviour of this function is one comparison against a string literal,
+ * so a structural parameter made that comparison **a spelling test nothing
+ * runs**: misspell `'shutdown'`, or rename the member in `runtime.ts` and miss
+ * this line, and it compiles — and every deliberate close then reports the
+ * crash message, on the ordinary shutdown path, where it would be read as a
+ * real defect.
+ *
+ * The caller already had the union and handed it to a weaker parameter, which is
+ * the tell for the general shape: **a structural parameter standing where a
+ * declared union is available turns every literal comparison inside it into an
+ * unchecked spelling test.** `proof:contract` holds the pair that proves it —
+ * the wrong code is refused, and the right one still compiles.
  */
-export function describeEngineHostGone(termination: {
-  readonly code: string;
-  readonly detail: string;
-}): ShellFailure {
+export function describeEngineHostGone(termination: HostTermination): ShellFailure {
   const deliberate = termination.code === 'shutdown';
   return {
     event: 'engine-host-gone',

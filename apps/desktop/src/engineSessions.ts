@@ -16,6 +16,7 @@ import type {
   DocumentService,
   DocumentTeardown,
   EngineSupervisor,
+  HostTermination,
   MupdfSession,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
@@ -259,7 +260,7 @@ export interface HostDeathSurfaces {
  */
 export async function onEngineHostEnded(
   sessions: EngineSessions,
-  termination: { readonly code: string; readonly detail: string },
+  termination: HostTermination,
   surfaces: HostDeathSurfaces,
 ): Promise<void> {
   surfaces.failures(describeEngineHostGone(termination));

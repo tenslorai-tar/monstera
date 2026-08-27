@@ -9,6 +9,7 @@ import {
   CapabilityRegistry,
   DocumentNotOpenError,
   DocumentService,
+  type HostTermination,
   type MupdfSession,
   mupdfWriter,
 } from '@monstera/kernel';
@@ -380,7 +381,14 @@ describe('a host death is reported, and every document is put back through its o
     };
   }
 
-  const died = { code: 'connection-lost', detail: 'the reader stopped producing bytes' };
+  // ANNOTATED, not inferred. A bare object literal widens `code` to `string`,
+  // which is how the parameter it feeds came to be `string` in the first place
+  // (finding IIII-1) — an unannotated fixture is the same widening arriving
+  // from the test side, and it would make the union here decorative.
+  const died: HostTermination = {
+    code: 'connection-lost',
+    detail: 'the reader stopped producing bytes',
+  };
 
   it('reports the death on the shell sink as its OWN event, not as a child process', async () => {
     const engine = new EngineSessions();

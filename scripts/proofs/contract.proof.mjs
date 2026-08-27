@@ -231,6 +231,49 @@ export const handle: FileHandle = asFileHandle('opaque-token');
   },
 
   // ---------------------------------------------------------------------------
+  // Finding IIII-1. `describeEngineHostGone` decides whether a host death reads
+  // as a fault with ONE comparison against a string literal, so the parameter
+  // being a declared union rather than `{ code: string }` is the whole of what
+  // makes that comparison checkable. This is not testable at runtime: a
+  // misspelt code produces a perfectly well-formed ShellFailure carrying the
+  // wrong sentence, and no assertion about the returned object distinguishes a
+  // typo from a genuine crash report.
+  // ---------------------------------------------------------------------------
+  {
+    name: 'a termination code the runtime does not declare is refused',
+    expect: 'reject',
+    // TS2820 rather than TS2345, and the difference is the point: 2820 is the
+    // SPELLING-SUGGESTION diagnostic. Against the union the compiler answers
+    // `Did you mean '"shutdown"'?` — which is precisely the check a structural
+    // `{ code: string }` deleted, and it is worth anchoring on the code that
+    // says so rather than on a generic argument mismatch.
+    code: 'TS2820',
+    // Anchored on the literal that was misspelt AND on the member it failed to
+    // match, so this cannot be satisfied by an unrelated argument error in the
+    // same call — the failure has to be about the code's VALUE.
+    because: /Type '"shutdow"' is not assignable to type/u,
+    // The word `detail` appears in the same object literal and is correct here;
+    // excluding it stops a diagnostic about the other property standing in.
+    notBecause: /detail/u,
+    source: `
+import { describeEngineHostGone } from '@monstera/desktop';
+export const failure = describeEngineHostGone({ code: 'shutdow', detail: 'we closed it' });
+`,
+  },
+  {
+    name: 'a declared termination code still compiles',
+    expect: 'allow',
+    // THE CONTROL, and it is the half that matters here. A parameter that
+    // rejected everything would satisfy the case above while breaking the
+    // caller — and the caller is `onEngineHostEnded`, which passes a real
+    // `HostTermination` and is the only thing that ever calls this.
+    source: `
+import { describeEngineHostGone } from '@monstera/desktop';
+export const failure = describeEngineHostGone({ code: 'shutdown', detail: 'we closed it' });
+`,
+  },
+
+  // ---------------------------------------------------------------------------
   // ADR-0009 §6 and §3a. The command routing table cannot be partial, and
   // neither declaration axis can be omitted or declared without its
   // consequence. None of this is testable at runtime: a command kind with no
