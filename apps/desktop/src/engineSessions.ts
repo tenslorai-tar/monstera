@@ -210,6 +210,128 @@ export interface HostDeathSurfaces {
 }
 
 /**
+ * What {@link onDocumentOpened} needs. A strict subset of
+ * {@link HostDeathSurfaces} — no `rebuild`, because a host that is already
+ * running is not rebuilt for a new document, and `create` instead of `reopen`
+ * because the two are the same call with different names in the log.
+ */
+export interface DocumentOpenSurfaces {
+  readonly documents: HostDeathSurfaces['documents'];
+  readonly failures: HostDeathSurfaces['failures'];
+  readonly closedMeanwhile: HostDeathSurfaces['closedMeanwhile'];
+  /** Creates one document's sessions. Runs **inside** that document's lane. */
+  readonly create: (docId: DocId) => Promise<DocumentSessions>;
+}
+
+/**
+ * A document was opened: give it a session, inside its own lane.
+ *
+ * ADR-0023's 2026-08-27 correction. The shape is 9c's death path with one
+ * document and no rebuild, and it exists so that **an open document is either
+ * sessioned or poisoned and never neither** — without it a failed creation
+ * leaves the document open, sessionless and healthy, and the next command
+ * answers `MissingSessionError` → `internal`, which is 9c's rejected on-demand
+ * rebuild arriving through the back door.
+ *
+ * ## Why this retries, when the death path does not
+ *
+ * On a death the count is already raised and a second death poisons; there is a
+ * later event to carry the outcome. At open there is no later event, so the
+ * entry itself has to reach a terminal state. The loop is bounded by 9a's
+ * counter and nothing else: each failure increments, and `POISON_AT` is 2, so
+ * it makes at most two attempts.
+ *
+ * **That bound is why this is not 9a's rejected "try again".** The rejection is
+ * of a retry that makes the second attempt *cheaper* than the first; this one
+ * spends the bound rather than resetting it, so a document whose bytes kill the
+ * host at open costs two deaths and is then poisoned — which is what the bound
+ * is for. `N = 1` was the alternative and 9a rejects it by name, because an
+ * open-time host-creation failure is exactly the transient-versus-deterministic
+ * case a retry exists to separate.
+ *
+ * ## The ordering, which is 9c's argument reused
+ *
+ * The lane entry is queued before this returns, so it sits ahead of every
+ * command the user issues afterwards. A command therefore observes the document
+ * only after the entry has settled — sessioned or poisoned — which is what makes
+ * *never neither* a property of the shape rather than something to check.
+ *
+ * @returns a promise that settles when the entry has finished. `open` must not
+ *   await it: a document opens whether or not an engine is available, and
+ *   waiting here would make every open as slow as a host build. Returned for
+ *   the cases, and because a caller that wants to know may.
+ */
+export async function onDocumentOpened(
+  sessions: EngineSessions,
+  docId: DocId,
+  surfaces: DocumentOpenSurfaces,
+): Promise<void> {
+  // Both of these run BEFORE this function's first `await`, so they complete
+  // synchronously from the caller's side — which is what puts the lane entry
+  // ahead of anything the user does next.
+  //
+  // `begin` is outside the entry rather than inside it: `recordFailure` skips a
+  // document with no entry, so an entry that appeared only on success could
+  // never record the failure this function exists to bound.
+  sessions.begin(docId);
+  const entered = surfaces.documents.run(docId, async () => {
+    // BOUNDED STRUCTURALLY AS WELL AS SEMANTICALLY, and the second bound is not
+    // belt-and-braces — it was found by mutation. The exit that matters is
+    // `poisoned()`, which is 9a's authority on when to stop; but `poisoned()`
+    // only ever becomes true because `recordFailure` incremented, and
+    // `recordFailure` silently skips a document with no entry. Delete the
+    // `begin` above and a `for (;;)` here does not fail — it SPINS, for ever,
+    // inside a lane, with no diagnostic. A loop whose termination depends on a
+    // different method's side effect is a runaway waiting for that method to
+    // change; `POISON_AT` bounds it here too, so the illegal state cannot be
+    // represented rather than being caught (B5).
+    for (let attempt = 0; attempt < POISON_AT; attempt += 1) {
+      try {
+        sessions.hold(docId, await surfaces.create(docId));
+        return;
+      } catch (error) {
+        if (surfaces.closedMeanwhile(error)) return;
+        sessions.recordFailure([docId]);
+        if (sessions.poisoned(docId) !== undefined) {
+          surfaces.failures({
+            event: 'engine-host-gone',
+            detail:
+              `no engine session could be created for document ${docId.slice(0, 8)}… and it ` +
+              `is now poisoned: ${String(error)}. Commands against it answer document-poisoned ` +
+              `rather than internal, and close-and-reopen is what clears it.`,
+          });
+          return;
+        }
+      }
+    }
+
+    // Reached only if the attempts ran out without `poisoned()` agreeing, which
+    // means the counter and this loop disagree about 9a's bound. Reported rather
+    // than ignored: the document is open and sessionless, which is the one state
+    // this function exists to prevent, and silence here would restore it.
+    surfaces.failures({
+      event: 'engine-host-gone',
+      detail:
+        `supervisor defect: ${String(POISON_AT)} session-creation attempts for document ` +
+        `${docId.slice(0, 8)}… did not leave it poisoned, so it is open with no session. The ` +
+        `failure counter and this bound disagree.`,
+    });
+  });
+
+  try {
+    await entered;
+  } catch (error) {
+    // `run` itself refused — the document closed between `open` returning and
+    // the lane being entered. The seam working, not a failure to report.
+    if (surfaces.closedMeanwhile(error)) return;
+    surfaces.failures({
+      event: 'engine-host-gone',
+      detail: `could not enter document ${docId.slice(0, 8)}…'s lane to create its session: ${String(error)}`,
+    });
+  }
+}
+
+/**
  * The engine host connection ended: report it, and put every document back.
  *
  * Wired as `createEngineHostConnection`'s `onEnded`. It is one function rather
@@ -380,6 +502,26 @@ export class EngineSessions implements EngineSessionSource {
   };
 
   /**
+   * Mints a document's entry at **open**, before it has any session.
+   *
+   * The opening half of the lifetime {@link EngineSessions.releaseOnClose}
+   * closes, and it did not exist until ADR-0023's 2026-08-27 correction: the
+   * entry used to begin at the first {@link EngineSessions.hold}, so a document
+   * whose open-time session creation failed had no entry at all — and
+   * {@link EngineSessions.recordFailure} skips a document with no entry, so its
+   * failure could not be counted. Minting here is what lets that counter see the
+   * open path without being given a second job (B3a).
+   *
+   * Idempotent. `open` is the only caller and mints once per `DocId`, but a
+   * guard that overwrote an existing entry would silently reset a poisoned
+   * document's count, which is the one thing this class must never do quietly.
+   */
+  begin(docId: DocId): void {
+    if (this.#entries.has(docId)) return;
+    this.#entries.set(docId, { sessions: {}, consecutiveFailures: 0 });
+  }
+
+  /**
    * Records the sessions a document now has.
    *
    * Refuses a poisoned document rather than accepting it, because *poisoned*
@@ -498,6 +640,32 @@ export class EngineSessions implements EngineSessionSource {
    */
   get held(): number {
     return this.#entries.size;
+  }
+
+  /**
+   * How many documents hold **at least one** engine session.
+   *
+   * Distinct from {@link EngineSessions.held}, and only since
+   * {@link EngineSessions.begin} existed: an entry is now minted at open, so
+   * *has an entry* and *has a session* are different questions for the first
+   * time. `held` answers the lifetime one — did `releaseOnClose` drop it — and
+   * this answers Decision 9c's anchor one.
+   *
+   * Two accessors rather than one with a parameter, because the choice between
+   * them is then two names a caller picks from rather than a paragraph someone
+   * has to read and reject (QQQ-3).
+   *
+   * **This is still not the whole anchor**, for the reason `held`'s comment
+   * gives: a count read off this map cannot disagree with this map. The anchor
+   * is *`DocumentService.size` minus poisoned equals this*, and the term that
+   * makes it load-bearing is the one from outside.
+   */
+  get sessioned(): number {
+    let count = 0;
+    for (const entry of this.#entries.values()) {
+      if (Object.keys(entry.sessions).length > 0) count += 1;
+    }
+    return count;
   }
 
   /**

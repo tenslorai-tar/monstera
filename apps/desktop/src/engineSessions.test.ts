@@ -22,8 +22,10 @@ import { asDocId, type DocId } from '@monstera/shared';
 
 import type { DocumentSessions } from './documentCommands.js';
 import {
+  type DocumentOpenSurfaces,
   EngineSessions,
   type HostDeathSurfaces,
+  onDocumentOpened,
   onEngineHostEnded,
   openEngineSession,
   type SessionAreaOwner,
@@ -620,5 +622,178 @@ describe('the SERVICE releases the entry, because nothing else is told a documen
 
     expect(heldDuringLaneWork).toBe(1);
     expect(engine.held).toBe(0);
+  });
+});
+
+/**
+ * ADR-0023's 2026-08-27 correction: a session is created at OPEN, in the
+ * document's own lane, bounded by 9a's counter.
+ *
+ * **Every case here asserts a CALL rather than an end state**, and the reason is
+ * this module's own record: three cases on this subject have passed under their
+ * own mutation because the state a correct decision produces is the state its
+ * absence produces too (`CLAUDE.md` item 4). *Poisoned* is reached by one
+ * attempt and by two; only the call count separates them.
+ */
+describe('onDocumentOpened', () => {
+  /** Fails `attempts` times, then succeeds. Records every call. */
+  function openSurfaces(
+    service: DocumentService,
+    attempts: number,
+    over: Partial<DocumentOpenSurfaces> = {},
+  ): DocumentOpenSurfaces & { readonly created: DocId[]; readonly reported: ShellFailure[] } {
+    const created: DocId[] = [];
+    const reported: ShellFailure[] = [];
+    return {
+      created,
+      reported,
+      documents: service,
+      failures: (failure) => reported.push(failure),
+      closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      create: (docId) => {
+        created.push(docId);
+        if (created.length <= attempts) return Promise.reject(new Error('no host'));
+        return Promise.resolve(someSessions(`created-${docId.slice(0, 4)}`));
+      },
+      ...over,
+    };
+  }
+
+  async function oneOpenDocument(
+    engine: EngineSessions,
+  ): Promise<{ readonly service: DocumentService; readonly docId: DocId }> {
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      teardown: engine.releaseOnClose,
+    });
+    const opened = await service.open(registry.mint(file));
+    if (opened.kind !== 'opened') throw new Error('fixture did not open');
+    return { service, docId: opened.docId };
+  }
+
+  it('creates the session and holds it, so the document ends sessioned', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(service, 0);
+
+    await onDocumentOpened(engine, docId, s);
+
+    expect(s.created).toEqual([docId]);
+    expect(engine.sessioned).toBe(1);
+    expect(engine.poisoned(docId)).toBeUndefined();
+  });
+
+  it('mints the entry BEFORE the creation runs, so a failure can be counted at all', async () => {
+    // The load-bearing case for `begin`. `recordFailure` skips a document with
+    // no entry, so without minting first the failure below is a silent no-op and
+    // the document ends open, sessionless and NOT poisoned — the exact state
+    // this correction exists to make unrepresentable.
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+
+    let heldWhenCreationRan = -1;
+    const s = openSurfaces(service, 0, {
+      create: (id) => {
+        heldWhenCreationRan = engine.held;
+        return Promise.resolve(someSessions(`created-${id.slice(0, 4)}`));
+      },
+    });
+
+    await onDocumentOpened(engine, docId, s);
+
+    expect(heldWhenCreationRan).toBe(1);
+  });
+
+  it('retries once after a transient failure, and the count resets on the success', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(service, 1);
+
+    await onDocumentOpened(engine, docId, s);
+
+    // TWO calls is the assertion. A version that gave up after one would leave
+    // this document sessionless, and a version that poisoned at N = 1 would
+    // leave it poisoned — both are end states this call count separates.
+    expect(s.created).toHaveLength(2);
+    expect(engine.sessioned).toBe(1);
+    expect(engine.poisoned(docId)).toBeUndefined();
+    expect(s.reported).toEqual([]);
+  });
+
+  it('poisons after TWO failures and not before, and stops calling', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(service, Number.POSITIVE_INFINITY);
+
+    await onDocumentOpened(engine, docId, s);
+
+    // Exactly two. `POISON_AT` is what terminates this loop, so a bound that
+    // moved would show up here as a different number rather than as a hang, and
+    // `toHaveLength(2)` is what separates N = 2 from N = 1 — both poison.
+    expect(s.created).toHaveLength(2);
+    expect(engine.poisoned(docId)).toBe(2);
+    expect(engine.sessioned).toBe(0);
+    expect(s.reported).toHaveLength(1);
+    expect(s.reported[0]?.event).toBe('engine-host-gone');
+  });
+
+  it('leaves the document sessioned OR poisoned, never neither', async () => {
+    // The property the correction is for, asserted directly on both branches so
+    // that a future change which makes one of them fall through is caught here
+    // rather than by a `MissingSessionError` in production.
+    for (const attempts of [0, 1, Number.POSITIVE_INFINITY]) {
+      const engine = new EngineSessions();
+      const { service, docId } = await oneOpenDocument(engine);
+
+      await onDocumentOpened(engine, docId, openSurfaces(service, attempts));
+
+      const sessioned = engine.sessioned === 1;
+      const poisoned = engine.poisoned(docId) !== undefined;
+      expect(sessioned !== poisoned).toBe(true);
+    }
+  });
+
+  it('is skipped for a document closed before the lane is entered, and reports nothing', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(service, 0);
+
+    await service.close(docId);
+    await onDocumentOpened(engine, docId, s);
+
+    // `create` NOT called is the assertion, not the absence of a session. A
+    // document that was never given one also has none.
+    expect(s.created).toEqual([]);
+    expect(s.reported).toEqual([]);
+  });
+
+  it("satisfies 9c's anchor once the entry settles: open minus poisoned equals sessioned", async () => {
+    // The anchor's evaluation point for the open path, which the correction
+    // names: after the entry settles. The term that makes it load-bearing is
+    // `DocumentService.size`, from OUTSIDE this supervisor (audit item 4c).
+    const engine = new EngineSessions();
+    const registry = new CapabilityRegistry();
+    const service = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      teardown: engine.releaseOnClose,
+    });
+
+    const good = await service.open(registry.mint(file));
+    const bad = await service.open(registry.mint(secondFile));
+    if (good.kind !== 'opened' || bad.kind !== 'opened') throw new Error('fixture did not open');
+
+    await onDocumentOpened(engine, good.docId, openSurfaces(service, 0));
+    await onDocumentOpened(engine, bad.docId, openSurfaces(service, Number.POSITIVE_INFINITY));
+
+    const poisoned = [good.docId, bad.docId].filter(
+      (docId) => engine.poisoned(docId) !== undefined,
+    ).length;
+
+    // Asserted as a non-trivial identity: one of each, so a version that
+    // poisoned both or neither fails. Two documents in the same state would let
+    // 2 - 0 = 2 and 2 - 2 = 0 both pass for the wrong reason.
+    expect(poisoned).toBe(1);
+    expect(service.size - poisoned).toBe(engine.sessioned);
   });
 });
