@@ -196,6 +196,15 @@ jobs:
       - name: Every declared token pair meets its contrast obligation
         run: node scripts/ci/annotate.mjs scripts/lib/tokenContrast.mjs
 
+      - name: Prove the type-only export scan can see, separate and never be blind
+        run: node scripts/ci/annotate.mjs scripts/proofs/typeOnlyExports.proof.mjs
+
+      # THE GATE is the source scan, in the pre-commit set, against the index.
+      # This one is the COMPLETENESS CONTROL over both halves: it reads the EMIT
+      # and so answers *did a build emit a side-effect statement*, which is a
+      # different question from *did you write one*. It is what would catch a
+      # spelling the source pattern does not know about, and it needs a build,
+      # which is why it lives here and not in the hook (finding QQQQ-1).
       - name: No type-only statement survives into the emit
         run: node scripts/ci/annotate.mjs scripts/lib/emittedSideEffects.mjs
 

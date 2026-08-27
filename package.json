@@ -83,6 +83,8 @@
     "check:emittedtemplates": "node scripts/lib/emittedTemplates.mjs",
     "proof:tokencontrast": "node scripts/proofs/tokenContrast.proof.mjs",
     "check:tokencontrast": "node scripts/lib/tokenContrast.mjs",
+    "proof:typeonlyexports": "node scripts/proofs/typeOnlyExports.proof.mjs",
+    "check:typeonlyexports": "node scripts/lib/typeOnlyExports.mjs",
     "proof:emittedsideeffects": "node scripts/proofs/emittedSideEffects.proof.mjs",
     "check:emittedsideeffects": "node scripts/lib/emittedSideEffects.mjs",
     "proof:annotatecoverage": "node scripts/proofs/annotateCoverage.proof.mjs",

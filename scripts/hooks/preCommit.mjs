@@ -18,11 +18,11 @@
  */
 
 import { explainAuditBudget, pendingAuditScope } from '../lib/auditWatermark.mjs';
-import {
-  report as reportEmittedSideEffects,
-  scan as scanEmittedSideEffects,
-} from '../lib/emittedSideEffects.mjs';
 import { scan as scanEmittedTemplates } from '../lib/emittedTemplates.mjs';
+import {
+  report as reportTypeOnlyExports,
+  scan as scanTypeOnlyExports,
+} from '../lib/typeOnlyExports.mjs';
 import { report as reportStagedSyntax, scan as scanStagedSyntax } from '../lib/stagedSyntax.mjs';
 import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
@@ -57,27 +57,6 @@ const SOURCE_EXTENSIONS = /\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/u;
  *
  * @returns {boolean}
  */
-/**
- * Staged TypeScript under a package or app, which the emit on disk may not
- * include yet.
- *
- * Named individually rather than reported as a count, because a compensation
- * that could have been printed before the change is a disclaimer: the test is
- * whether it names something THIS run computed (finding AA-1's correction).
- *
- * @returns {string[]}
- */
-function stagedTypeScript() {
-  return changedPaths(['--cached'])
-    .filter(
-      (entry) =>
-        entry.state !== 'D' &&
-        /\.tsx?$/u.test(entry.path) &&
-        /^(packages|apps)\//u.test(entry.path),
-    )
-    .map((entry) => entry.path);
-}
-
 function stagesAStackRead() {
   return changedPaths(['--cached'])
     .filter((entry) => entry.state !== 'D' && SOURCE_EXTENSIONS.test(entry.path))
@@ -174,42 +153,32 @@ async function main() {
   // emit. The staged TypeScript files are named below rather than a general
   // disclaimer printed, because a sentence that could have been written before
   // the change is furniture by its third reading.
-  // TRIGGERED BY THE COMMIT, NOT BY THE MACHINE, and that distinction is the
-  // whole of why this branch is shaped as it is. A scan gated on "does a build
-  // exist" has two worlds and the developed-in one is the richer one, so the
-  // poorer world — a fresh clone, or `proof:guards`' scratch fixture, which has
-  // no `dist` and legitimately never will — is the side nothing exercises until
-  // it blocks every commit there. Measured: it did, on this scan's first run.
+  // ADR-0026's class, the half no lint rule covers — against the INDEX, and
+  // never blind (finding QQQQ-1's remedy).
   //
-  // So the trigger is *did this commit stage TypeScript*, which is a property of
-  // the commit and answerable anywhere, and the two outcomes are not symmetric:
+  // This used to be `emittedSideEffects.mjs`, which reads `dist`. Registered
+  // fail-closed it blocked every case in `proof:guards`, whose fixture
+  // repository has no build and legitimately never will; softened to
+  // report-and-continue it contributed nothing on a machine where nobody runs
+  // `tsc`, and printed one line that was furniture by its third reading. A gate
+  // keyed on whether something is installed has a side that never executes where
+  // the thing is always present.
   //
-  //   violations found  → BLOCK. The build on disk contains the defect.
-  //   no build to read  → SAY SO, and let the commit through. "Could not look"
-  //                       is not "looked and found nothing", and blocking a
-  //                       contributor who has not run tsc yet teaches the one
-  //                       habit this repository most forbids.
-  //
-  // The fail-closed gate is the CI step, which runs after a build every time.
-  const stagedSources = stagedTypeScript();
-  const sideEffects = stagedSources.length > 0 ? scanEmittedSideEffects() : null;
-  if (sideEffects !== null && sideEffects.blind !== null) {
+  // `export { type X } from './y.js'` and `export type { X } from './y.js'` are
+  // different TEXT, so this spelling needs no build to decide — which is what
+  // makes an index read possible and removes the blind state entirely. The emit
+  // scan stays in CI as the completeness control over both halves, answering
+  // *did a build emit one* rather than *did you write one*.
+  const typeOnly = scanTypeOnlyExports();
+  if (typeOnly.blind !== null || typeOnly.violations.length > 0) {
+    process.stderr.write(`\n${reportTypeOnlyExports(typeOnly)}`);
     process.stderr.write(
-      `\n  --  the emitted-side-effect scan did not run: ${sideEffects.blind}\n` +
-        `      CI runs it after a build on every leg, so this is a gap in THIS run rather\n` +
-        `      than in the coverage.\n\n`,
-    );
-  }
-  if (sideEffects !== null && sideEffects.violations.length > 0) {
-    process.stderr.write(`\n${reportEmittedSideEffects(sideEffects)}`);
-    process.stderr.write(
-      `\nCommit blocked — a type-only statement survives into the emit (reported above).\n\n` +
-        `An inline \`type\` marker elides the SPECIFIERS and keeps the STATEMENT. One of\n` +
-        `these cost the kernel barrel 41.7 MB, because the module it kept loading bound\n` +
-        `MuPDF at module scope (ADR-0026).\n\n` +
-        `This scan read the build on disk, which is not the index. These staged file(s) may\n` +
-        `not be in it, so rebuild and re-run if the report does not match what you changed:\n` +
-        `${stagedSources.map((path) => `  ${path}`).join('\n')}\n\n`,
+      typeOnly.blind !== null
+        ? `\nCommit blocked — the type-only export scan could not see (reported above).\n\n`
+        : `\nCommit blocked — a re-export will emit a runtime load (reported above).\n\n` +
+            `An inline \`type\` marker elides the SPECIFIERS and keeps the STATEMENT. One of\n` +
+            `these cost the kernel barrel 41.7 MB, because the module it kept loading bound\n` +
+            `MuPDF at module scope (ADR-0026). No rule in the pinned plugin reports it.\n\n`,
     );
     return 1;
   }
