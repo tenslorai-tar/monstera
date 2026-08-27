@@ -644,6 +644,403 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `acb2cbb..36a988b` — a header still describes the refusal its own file deleted, and nine corrected ADRs are indexed as uncorrected
+
+**Audited through `36a988b`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: acb2cbb..HEAD
+  commits: 9 (one batch is 9)
+  files:   16 (one batch is 24)
+  proofs ADDED — new coverage: none
+  proofs MODIFIED (2):       checkLocal.proof.mjs      net +89 -96
+                             containerGrants.proof.mjs net +47 -6
+  proofs REMOVED: none
+  source FILES ADDED: none
+  source FILES CHANGED (4):  checkLocal.mjs      net +81 -58  (16 deletions hidden)
+                             affectedProofs.mjs  net +37 -7
+                             scanningProofs.mjs  net +49 -10
+                             containerGrants.mjs net +59 -6
+  source FILES REMOVED (1):  sweepScope.mjs
+```
+
+The range is WWWW-1 to WWWW-4, the grant set reshaped to directories, the WWW-2
+sweep refusal lifted, and ADR-0028.
+
+**`sweepScope.mjs` is the removed instrument, and its removal is the range's
+subject rather than a side effect.** Read against its destination by name:
+`multiProofSweepRefusal` was its only export, `checkLocal.mjs` its only importer,
+and five `checkLocal.proof.mjs` cases went with it — which is why that file is
+the only net-negative proof in the range (+89 −96). Nothing was carried away
+unnoticed: the four cases that replace them assert the inverted property in both
+directions.
+
+**Three findings, all found by reading rather than by anything going red.** Two
+are in files this range did not change; the third is in a document this range
+added, and is falsified by the commit recording this audit.
+
+### XXXX-1 — `checkLocal.mjs`'s module header still asserts the refusal that `0f7f7de` deleted
+
+Lines 56–60, in the paragraph a reader treats as *what this module is*:
+
+> So this tool is useful over `check:*` and is not a sweep of everything — and
+> as of finding WWW-2 that is enforced rather than said: a run selecting more
+> than one `proof:*` script in THIS repository is refused before it starts, with
+> no flag to turn it off. The measurement and the boundary are on the refusal
+> itself, below `filtered`.
+
+There is no refusal, no boundary below `filtered`, and `sweepScope.mjs` does not
+exist. The two sections that explain the lift are at lines 279 and 327 — **220
+lines below the sentence that contradicts them** — which is item 7's predicted
+shape exactly: the author adds a new section saying what changed and leaves the
+original paragraph standing, and the stale half keeps the position a reader takes
+as the contract.
+
+Three things make it worth a finding rather than a tidy-up.
+
+**It is a compound claim and the surviving clause vouches for the dead one.** The
+same sentence continues *"what separates a runnable script from `proof:cff` is
+measured cost, not job membership"*, which is still exactly true. Nothing about
+reading the paragraph feels wrong, because the part a reader checks is the part
+that still holds.
+
+**The ragged line break is the visible residue of a partial edit** — *"below
+`filtered`. What"* mid-line, where a clause was removed and the sentence around
+it was not re-read. That is a tell available in the diff.
+
+**And no sweep could have reached it.** `sweep:prose` found its positive control
+and reported **0 matches in 42 documents** for both *"is refused before it
+starts"* and *"selecting more than one proof"*, so no `.md` file carries the
+claim. Its root is documents; a stale claim in a **source comment** is outside
+what it can see. That is the third occurrence of this shape in a source comment
+— `publish`'s destination sentence, the quarantine directory nothing cleaned up,
+and now this — against zero occurrences the document sweep has caught. The sweep
+is aimed at the corpus where the shape does not happen.
+
+Not fixed in this commit: an audit-recording commit is docs-only and alone, and
+this is a source comment. It is the first commit after.
+
+### XXXX-2 — the ADR index rule sees three correction forms as one, and misses nine
+
+`documentConsistency.mjs`'s second rule exists so that *"the index must not
+assert a status the file contradicts"*, and decides whether an ADR is corrected
+with:
+
+```js
+/^>\s*##\s*Correction\s*[—–-]\s*\d{4}-\d{2}-\d{2}/m
+```
+
+That matches a **blockquoted banner at the top of the file** — the form used by
+ADR-0001, ADR-0007 and ADR-0010, all three of which have index rows saying so.
+Ten ADRs carry body-level `## Correction, DATE — …` blocks instead; nine of them
+are invisible to the rule and every one of their index rows reads *Accepted*,
+with nothing recorded:
+
+```
+0006 · 0009 · 0019 · 0020 · 0022 · 0023 · 0024 · 0025 · 0027
+```
+
+**This range is where it bites.** Corrections were appended to ADR-0025, ADR-0027
+and ADR-0023 in these nine commits, and no index row moved for any of them
+because nothing asked.
+
+**The rule has already been fixed once for the same class of blindness, and the
+fix stopped at the instance.** Its own comment records it: *"The first version of
+this check omitted the EM dash, which is the one the ADRs actually use — so it
+found no corrections at all and reported that half as passing."* The dash was
+widened; the `>` was not. Half a fix, and the surviving half reports *found
+nothing* in exactly the voice of a clean corpus — W-1's pattern axis, in the
+check that was written after W-1.
+
+**What is NOT yet decided is which way to repair it**, and that is deliberate.
+Either the two heading forms mean different things — a banner retracts the
+headline, a body block refines a detail — in which case the distinction belongs
+in `docs/DECISIONS/README.md` where an author chooses between them, or they do
+not, in which case the pattern widens and nine rows need updating. Today an
+author picks the form by accident, and a `>` and a comma decide whether the
+index-consistency requirement applies. Recorded rather than guessed at.
+
+### XXXX-3 — a claim I wrote in this range is falsified by the commit recording this audit
+
+ADR-0028's Status line says:
+
+> Per B4 the amendment to `docs/ARCHITECTURE.md` is the next commit and the
+> wiring the one after it, so the law states the superseded clause for **exactly
+> one commit**.
+
+This audit is the next commit and it is not the amendment, so the count is
+wrong the moment this lands. It is a **compound claim** and the surviving half
+is the load-bearing one — B4's ordering is being followed, the gap is
+deliberate, the amendment does precede the wiring — which is exactly what makes
+the dead clause hard to see. The same shape as XXXX-1, committed by me, in the
+same hour I wrote the finding about it.
+
+Two things it demonstrates that XXXX-1 does not.
+
+**It was false the day it was written, in the sense AAAA-8 names**: nothing
+changed to falsify it, because *"the next commit"* asserted a fact about the
+future that no reading of the repository could have supported. B4 requires the
+amendment to precede the **feature**; it says nothing about what may sit between
+it and the ADR. I wrote the stricter claim because it read better.
+
+**And no sweep will ever find it**, for the same reason: a range-scoped audit
+hunts statements that *became* false, and this one never had evidence. It was
+caught because the next unit of work happened to be the counterexample.
+
+Corrected in the commit after this one, alongside XXXX-1: *"the amendment
+precedes the wiring"*, which is what B4 actually requires and what I could
+support.
+
+### 1. Root cause or workaround?
+
+Nine commits, no workaround, and two repairs are worth separating from their
+symptoms because both have the *shape* of something banned.
+
+- **The sweep refusal was removed rather than narrowed.** WWW-2's guard rested
+  on a premise — that a multi-proof sweep dies under the job object — and the
+  investigation it prescribed was run twice: **81 of 81 both times, no errno**.
+  Removing a guard is the strongest form of loosening there is, so what makes it
+  legal is that the mechanism it guarded against was measured not to exist, and
+  the file keeps the diagnostic (`spawnOutcome`, the run-log copy instruction)
+  that would report it if it ever does.
+- **The injected non-start went 40,000 → 200,000 characters, which is *bump the
+  number until it passes* unless the mechanism is named.** It is: Windows caps
+  the whole command line at **32,767 characters** and Linux caps a **single
+  argument** at `MAX_ARG_STRLEN`, **131,072 bytes**. 40,000 clears the first and
+  not the second, so the case passed here and reddened Guards. The assertion
+  widened with it, `/ENAMETOOLONG/` → `/ENAMETOOLONG|E2BIG/`, and a widened
+  pattern is a loosening in form; what makes this one not a loosening is that
+  the alternation is **closed** — those are the two errnos the class produces —
+  and the absence of *either* still fails, so a spawn that carried no cause at
+  all is still red.
+
+**One check was loosened outright and it is named rather than absorbed.**
+`containerGrants.proof.mjs` dropped `set.length === 4` for `set.length > 0`. In
+isolation that is this checklist's own warning about a loosened check. What
+replaces it is two property cases — the package holding `hostEntry.js` must be
+in the set, and both workspace groups must appear — and the reason is at the call
+site: a literal count is the right anchor over a **hand-kept** list and becomes a
+number people edit to make a red thing green once the list is **derived**. That
+is 4c's direction question, asked in the commit that made the change. Mutation
+evidence in item 4.
+
+**Nothing in this range could regenerate.** The grant set is derived from the
+filesystem, so a workspace package added tomorrow arrives granted rather than
+reproducing the exact omission SSSS-1 measured.
+
+### 2. Verified against the easy shape only?
+
+**The range's own answer is that the easy shape was the LOCAL one, and CI held
+the hard one** — the reverse of this item's usual direction, and worth recording
+because it is the first time that has happened here. The 40,000-character
+fixture was verified on Windows, where it is correct, and the platform where it
+is wrong is the one this machine cannot run.
+
+The grant reshaping was taken to the hard shape deliberately: **two machines**,
+this one and `windows-latest`, with the contained cell reaching its own code on
+both. A single-machine containment reading could not have established it, since
+the container's refusal of process creation is already known to be
+build-dependent.
+
+The **package-root versus `dist`** substitution was measured rather than argued.
+I wrote the reasoning first, then made the substitution with everything else held
+fixed, and the contained cell died at `module-resolution` — one step *earlier*
+than the failure it was meant to fix.
+
+**A shape still untested, stated:** every contained-start reading so far is from
+a checkout **under a user profile**. A checkout on a second volume, or under a
+directory whose inherited ACL differs, is a configuration the grant set has never
+met, and the failure mode there is the one this thread has already paid for
+twice — a well-formed set that is incomplete.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, twice, and they point in opposite directions.
+
+**A reduction:** `containerGrants.proof.mjs`'s count case became two property
+cases (item 1). A count is total — it fails on any change in size. The
+replacements are specific: they catch the omission that actually happened and a
+group disappearing entirely, and they are **silent on a partial shrink** — drop
+`packages/shared` from the derived half and every case here still passes.
+
+That is stated in the commit and compensated by mechanism rather than by care:
+`containedStart.mjs` now runs on every push, and a host that cannot read a
+package it imports does not start. The pairing is the point — *"the one thing
+that cannot agree with a roster gone quiet is a host actually starting"* — and it
+is why the proof's own comment says it asks whether the set is well **formed**
+and cannot ask whether it is **complete**.
+
+**A strengthening:** `checkLocal.proof.mjs`'s five refusal cases became four
+inversion cases plus an errno class assertion, and `affectedProofs.mjs` now reads
+`rosterMiscount()` rather than the bare array — so the anchor protects the second
+caller too, which was VVVV-1's whole finding.
+
+### 3. Would CI have caught it?
+
+**Computed, not assumed.** All three proofs the range's changed files reach are
+**unconditional steps**:
+
+| proof | workflow | platform |
+|---|---|---|
+| `containerGrants.proof.mjs` | `ci.yml:743` | Windows |
+| `checkLocal.proof.mjs` | `guards.yml:367` | Linux |
+| `affectedProofs.proof.mjs` | `guards.yml:469` | Linux |
+
+And the range contains a **run** that answers the question directly rather than a
+reading of the workflow file: Guards went red at `0f7f7de` on the 40,000-character
+case, which is CI catching a defect this machine structurally could not see.
+
+**Neither of this audit's two findings is visible to CI, and for different
+reasons.** XXXX-1 is a stale claim in a source comment, and nothing in this
+repository reads source comments for claims that stopped being true —
+`sweep:prose` reads `.md` only. XXXX-2 is a blind spot **inside a check that
+passes**: `check:docs` is green on all nine commits and is the thing that cannot
+see it, which is the worst version of this item's answer, since the green tick is
+what a reader takes as coverage.
+
+**And the other direction — is there a defect THIS MACHINE cannot see?** The
+containment work has two worlds and the richer one is here: `containedStart.mjs`
+and `containerGrants.proof.mjs` need `icacls`, a provisioned runtime and a built
+shim, so the Linux Guards job cannot run either. A grant-set regression is
+therefore visible on exactly one of the two boards, which is why the acceptance
+test was registered on the Windows job rather than left as a local instrument.
+
+### 4. Non-vacuous proofs
+
+**Three mutations, each reddening only its own cases**, run today against a clean
+tree and reverted with `git checkout --`.
+
+| mutation | result |
+|---|---|
+| `workspacePackages` drops the `apps` group — a **partial** shrink | `proof:containergrants` exit 1, exactly one case red: *"and every workspace package, since the entry imports across them"*. The host-entry case correctly stayed green, so the two cases separate |
+| `selectsNoProof` forced `false` in `checkLocal.mjs` | `proof:checklocal` exit 1, exactly one case red: *"a check-only selection also RUNS the scanning roster rather than printing it"*. The opposite-direction case — a deliberate single-proof run is not widened — stayed green |
+| `SCANNING_PROOF_COUNT` 9 → 8 | two independent reds: `npm run local` exits **78** before running anything, and `proof:affectedproofs` exits 1. Both callers now read the anchor, which is WWWW-3's fix executed rather than asserted |
+
+The first is the load-bearing one: it was chosen to be the mutation the *bug*
+would not produce. Dropping the whole derived half would also fail `set.length >
+0`'s neighbours and prove less; dropping one group leaves a well-formed set of
+nine paths and is the shape the four-path set actually had.
+
+**Mutations aimed at branches no fixture reaches:** none run this range, and the
+candidates are named rather than left implied — `workspacePackages`' `catch`
+(an absent `packages/` or `apps/` group, unreachable in a checkout of this
+repository) and `readAcl`'s `null` return (an unelevated *Access is denied*,
+which this machine does not produce for these paths). Both are the JJJ-1 shape:
+branches encoding a true fact about a state no test can construct here.
+
+### 4a. Instrument resolution tests
+
+`hostFixedCost.mjs` was run today at `--runs 3` and **passed its own resolution
+test before reporting**: bare runtime 37.8 MB against a deliberately +8 MB cell
+at 45.9 MB, recovered 8.1 MB. Its figures are what priced ADR-0028's rejected
+alternative 3.
+
+No instrument was added in this range, so there is nothing owing a first
+resolution test. `containerGrants.mjs` changed and is not a measuring
+instrument — it reports a DACL read back from `icacls`, and its control is the
+read-back itself.
+
+### 4b. Searches with positive controls
+
+Three searches ran in this range's service and all three carried controls that
+fired:
+
+- `sweep:prose`, twice, for XXXX-1's phrases — **0 matches in 42 documents,
+  control found**. The zero means something because the deliberately
+  line-wrapped control phrase was located in the same run.
+- `check:emittedtemplates` at commit time — *"12 emitted-source template(s) carry
+  no backtick"* **and** *"the scan located its positive control, so that result
+  means something"*.
+- `proof:affectedproofs`, whose `CONTROL_EDGE` requires a known-present import
+  edge before the walk's silence counts.
+
+**And the reassuring answer outside a search, which is where this item keeps
+arriving:** `npm run local -- --only check:` reported **29 of 29** on its first
+run today — and its own disclosure said every index-reading check had inspected
+the *previous* content, because the three documents were unstaged. A 29/29 that
+means nothing looks identical to one that means everything. It was re-run
+staged, where the run adds the line *"the index matches the working tree, so
+index-reading checks saw your edits"*. That disclosure passes the printed-
+compensation test: it names the two files, so it could not have been printed
+before the change.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**XXXX-2 is this item.** `documentConsistency.mjs`'s correction rule derives
+which ADRs are *corrected* from a **heading form**, and the failure to fear makes
+that set **smaller** — an ADR whose corrections use the other spelling drops out
+silently. There is no anchor: nothing independently claims how many ADRs carry
+corrections, so nine can vanish from the rule's view without any number
+disagreeing.
+
+The two rosters this range touched are the other direction and both have anchors:
+
+- `SCANNING_PROOFS` against `SCANNING_PROOF_COUNT`, a literal that is
+  deliberately **not** `SCANNING_PROOFS.length` — and both of its callers now
+  read it, which was VVVV-1.
+- `grantSet`'s derived half against the host-entry and workspace-group cases,
+  which is a **weaker** anchor than a count and is covered by `containedStart`
+  as recorded in 2a.
+
+### 5. Executed, or asserted?
+
+**Executed:** the two-machine contained start · the package-root substitution ·
+the 81/81 sweep investigation, twice · `hostFixedCost --runs 3` including its
+resolution test · the three mutations above · the elision of
+`engineReaderChannel.ts`'s type-only import, read from `apps/desktop/dist/` ·
+the two `sweep:prose` searches · `npm run local` twice, once staged.
+
+**Asserted, and therefore not findings:** that a partial shrink of the grant set
+is caught by `containedStart` — the mechanism is registered and green, but no
+run has been made with a package deliberately dropped · that ADR-0028's amended
+clause is enforceable once a scan for what `main` binds exists — no such scan is
+written · that the marginal cost of `win32HostSurface.js` on `composition.js` is
+~1.0 MB, which came from an **untracked** probe and is why ADR-0028 is built on
+the 2.7 MB absolute instead.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and this range is the clearest instance of it so far.** The wiring was
+surveyed and not built; the survey found that §9.17 assigns the FFI binding to
+`mupdf-host` by name while ADR-0022 requires it in `main`; ADR-0028 is that
+conflict recorded and decided, with the amendment and the wiring as the two
+commits after.
+
+**And the near-miss is the part worth keeping.** ADR-0023's note of 2026-08-27
+resolved the same question as *"a note rather than a B4"* by reaching for a
+dynamic import — a placement that reads as compliance while the clause it was
+avoiding stays false. That is Rule 0's shape, one step from being built on, and
+it was caught by the reviewing seat rather than by me. The note now carries a
+dated correction saying so.
+
+### 7. Do the documents still match the code?
+
+**XXXX-1 says no**, in the file whose headline change this range is — and
+**XXXX-3 says no about a document I wrote in this range**, which is the same
+compound-claim shape arriving inside the audit that named it.
+
+Everything else checked and clean: `docs/FEATURES.md` states no claim about the
+deferral, so nothing there was falsified by ADR-0028 · the ADR-0023 correction
+uses the body-level form its twenty-one siblings use, so the index row is
+consistent with the file as the rule reads it (and inconsistent with it as a
+human reads it, which is XXXX-2) · `docs/DECISIONS/README.md` gained ADR-0028's
+row in the same commit as the file.
+
+**NNN-4's cross-document sweep fires on this range and was run.** ADR-0028
+states a relationship between §9.17 and ADR-0022, so every other statement of
+that relationship was swept: `sweep:prose` for *"main runs the language runtime
+and nothing else"* found **two** — ADR-0023's note, which the same commit
+corrects, and `docs/JOURNAL.md`, which is a record and takes an appended
+correction rather than an edit. `docs/ARCHITECTURE.md:739` is the source and is
+the subject of the amendment commit that follows.
+
+**A claim written in this range that was checked against its own evidence at the
+time of writing (AAAA-8):** ADR-0028's *"at most 2.7 MB"* names the surface's
+absolute cost over bare rather than its marginal, precisely because the marginal
+came from an instrument that no longer exists. The bound is stated as a bound.
+
+---
+
 ## 2026-08-27 — Stage audit: `e48b265..acb2cbb` — a caller reached past the anchor it depends on, and a census miscounted by 22%
 
 **Audited through `acb2cbb`.** Pasted from `npm run audit:scope`:
