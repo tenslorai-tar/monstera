@@ -1,6 +1,6 @@
 import { type Handlers } from '@monstera/contract';
 
-import { type CommandExecution } from '../commandSpecs.js';
+import type { CommandExecution } from '../commandSpecs.js';
 import { type EngineWriter, type MupdfSession } from '../engineSeam.js';
 import { type ContainmentProbePaths, type ContainmentReport } from './containment.js';
 import { type EngineChannels } from './engineChannels.js';

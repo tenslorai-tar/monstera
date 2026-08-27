@@ -1,10 +1,14 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
+// DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
+// importing the spec table would bind the MuPDF native library **in main** —
+// which invariant 20 forbids by name and §9.17's budget is argued against
+// (ADR-0026). The kernel's barrel is now free of that edge too.
 import {
   type CommandBus,
-  type DeclaredSpecs,
+  type DeclaredCommands,
   type DocumentService,
   type WriterSession,
-  declaredSpecs,
+  declaredCommands,
 } from '@monstera/kernel';
 import { type DocId, type DocVersion } from '@monstera/shared';
 
@@ -248,7 +252,7 @@ export class DocumentCommands {
     docId: DocId,
     command: CommandOfKind<K>,
   ): Promise<DocVersion> {
-    const spec: DeclaredSpecs[K] = declaredSpecs[command.kind];
+    const spec: DeclaredCommands[K] = declaredCommands[command.kind];
 
     const { version } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);

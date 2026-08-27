@@ -287,7 +287,7 @@ export const failure = describeEngineHostGone({ code: 'shutdown', detail: 'we cl
     // which is this file's own stated failure mode.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -313,7 +313,7 @@ export const specs: CommandSpecs = {
     // table exhaustive by construction rather than by review.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {};
 `,
   },
@@ -325,7 +325,7 @@ export const specs: CommandSpecs = {};
     notBecause: /rotatePages/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -366,7 +366,7 @@ export const specs: CommandSpecs = {
     // retrofit arriving one command at a time.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -388,7 +388,7 @@ export const specs: CommandSpecs = {
     notBecause: /reproducible/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -417,7 +417,7 @@ export const specs: CommandSpecs = {
     // forbids — signing, OCR and AI all land here.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -444,7 +444,7 @@ export const specs: CommandSpecs = {
     // is how a checkpoint quietly becomes optional.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -468,7 +468,7 @@ export const specs: CommandSpecs = {
     // type would forbid the feature rather than the mistake.
     source: `
 import type { CommandSpec } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
@@ -527,7 +527,7 @@ export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns:
     // missing field.
     source: `
 import type { ByteImage, CommandSpec } from '@monstera/kernel';
-import { applyRotatePages } from '@monstera/kernel';
+import { applyRotatePages } from '@monstera/kernel/engine';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'pdf-lib',
@@ -853,7 +853,7 @@ export const entry: LogEntry = {
     notBecause: null,
     source: `
 import type { ByteImage, CommandSpec } from '@monstera/kernel';
-import { captureRotatePages } from '@monstera/kernel';
+import { captureRotatePages } from '@monstera/kernel/engine';
 export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'pdf-lib',

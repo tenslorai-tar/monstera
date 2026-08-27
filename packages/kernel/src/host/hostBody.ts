@@ -1,6 +1,6 @@
 import { ENGINE_HOST_FRAME_MAX_BYTES, type IncidentSink } from '@monstera/contract';
 
-import { type CommandExecution } from '../commandSpecs.js';
+import type { CommandExecution } from '../commandSpecs.js';
 import { type EngineWriter, type MupdfSession } from '../engineSeam.js';
 import { type TokenBytesSource } from '../token.js';
 import { engineChannels } from './engineChannels.js';

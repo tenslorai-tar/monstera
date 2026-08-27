@@ -1,6 +1,6 @@
 import { type ClientApi, type CommandOfKind } from '@monstera/contract';
 
-import { type CommandExecution, type KindsRoutedTo } from '../commandSpecs.js';
+import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import { type CaptureResult, type CommandPrior } from '../commandLog.js';
 import { type MupdfSession } from '../engineSeam.js';
 import { type EngineChannels } from './engineChannels.js';

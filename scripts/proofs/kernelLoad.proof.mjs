@@ -49,7 +49,7 @@ const FORBIDDEN = 'mupdfWriter.js';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 4 });
+const roster = createRoster(failures, { cases: 6 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -132,6 +132,8 @@ try {
 
   const fromService = reaches('documentService.js', FORBIDDEN);
   const fromIndex = reaches('index.js', FORBIDDEN);
+  const fromBus = reaches('commandBus.js', FORBIDDEN);
+  const fromEngine = reaches('engine.js', FORBIDDEN);
 
   check(
     'the walk found import edges at all',
@@ -141,11 +143,38 @@ try {
   );
 
   check(
-    `CONTROL: ${FORBIDDEN} IS reachable from index.js, so the walk can see it`,
-    fromIndex.reached,
-    `the walk could not reach ${FORBIDDEN} from index.js either, and index.js exports the MuPDF ` +
-      `adapter. So it cannot see the module it claims documentService.js avoids, and the case ` +
-      `below is satisfied by blindness rather than by the property.`,
+    `CONTROL: ${FORBIDDEN} IS reachable from engine.js, so the walk can see it`,
+    fromEngine.reached,
+    `the walk could not reach ${FORBIDDEN} from engine.js, which exists for the sole purpose of ` +
+      `exporting the adapter. So it cannot see the module every case below claims something ` +
+      `avoids, and all of them are satisfied by blindness rather than by the property.\n` +
+      `      THE ANCHOR MOVED HERE FROM index.js on 2026-08-27, and had to: ADR-0026 makes the ` +
+      `barrel not reach the adapter, so the old control asserted exactly what the new subject ` +
+      `denies. A control and a subject that contradict each other cannot both hold, and the one ` +
+      `to keep is the one that still names a module KNOWN to reach.`,
+  );
+
+  check(
+    `importing the kernel's public surface does not load ${FORBIDDEN}`,
+    !fromIndex.reached,
+    `reachable via ${fromIndex.path.join(' -> ')}.\n` +
+      `      ADR-0026: a package's public surface exports no value whose module graph binds a ` +
+      `native library. Measured 2026-08-27 — the barrel cost +41.7 MB over a bare Node process ` +
+      `before this held and +9.6 MB after, against +46.0 MB for the adapter itself.\n` +
+      `      SIX causes were found in one change and every one was a spelling: five ` +
+      `\`import { type X } from\` / \`export { type X } from\`, which keep the STATEMENT and ` +
+      `emit \`import {}\`, and one plain value export of an implementation. Read the emit for ` +
+      `the module named in the path above.`,
+  );
+
+  check(
+    `importing CommandBus does not load ${FORBIDDEN}`,
+    !fromBus.reached,
+    `reachable via ${fromBus.path.join(' -> ')}.\n` +
+      `      The bus reads \`spec.writer\` and calls nothing — \`apply\`, \`capture\` and ` +
+      `\`invert\` go through the registered writer since ADR-0023 Decision 10 — so it takes its ` +
+      `routing from commandDeclarations.js. An edge back to the spec table costs 39 MB for data ` +
+      `it does not use (measured: +40.1 MB before the split, +8.0 MB after).`,
   );
 
   check(

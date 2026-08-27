@@ -11,8 +11,13 @@ import {
   DocumentService,
   type HostTermination,
   type MupdfSession,
-  mupdfWriter,
 } from '@monstera/kernel';
+// `/engine` because this exercises a LOCAL engine in main's own process — the
+// pre-host arrangement — and importing it binds MuPDF. Naming the subpath is
+// the point rather than an inconvenience: invariant 20 says main must not
+// parse, so a main-side test reaching for the adapter should have to say so
+// (ADR-0026).
+import { mupdfWriter } from '@monstera/kernel/engine';
 import { asDocId, type DocId } from '@monstera/shared';
 
 import { type DocumentSessions } from './documentCommands.js';

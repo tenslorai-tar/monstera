@@ -1,12 +1,21 @@
 import { type CommandKind, type CommandOfKind } from '@monstera/contract';
 
 import { type Checkpoint, type LogEntry, type LogEntryFor } from './commandLog.js';
+// DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
+// nothing — `apply`, `capture` and `invert` go through the registered writer
+// (ADR-0023 Decision 10). Importing the spec table here would reach
+// `rotatePages.ts` → `mupdfWriter.ts` and bind the MuPDF native library in
+// whatever process loaded the bus, which for `main` is invariant 20's exact
+// prohibition (ADR-0026; measured at +40.1 MB).
 import {
-  type DeclaredSpecs,
-  type RegisteredWriter,
+  type DeclaredCommands,
   type WriterOf,
-  declaredSpecs,
-} from './commandSpecs.js';
+  declaredCommands,
+} from './commandDeclarations.js';
+// `import type`, NOT `import { type … }` — the second keeps the statement and
+// emits `import {} from './commandSpecs.js'`, which loads the spec table and
+// with it the native library this whole change exists to keep out of `main`.
+import type { RegisteredWriter } from './commandSpecs.js';
 import { type CommandWriter, type DocumentContext } from './documentService.js';
 import { type ByteImage, type WriterSession } from './engineSeam.js';
 
@@ -158,7 +167,7 @@ export class CommandBus {
     context: DocumentContext,
     command: CommandOfKind<K>,
   ): Promise<Executed> {
-    const spec: DeclaredSpecs[K] = declaredSpecs[command.kind];
+    const spec: DeclaredCommands[K] = declaredCommands[command.kind];
     const writer = this.#writers[spec.writer];
     if (writer === undefined) {
       throw new UnregisteredWriterError(command.kind, spec.writer);
@@ -237,7 +246,7 @@ export class CommandBus {
       throw new CheckpointRestoreNotBuiltError(entry.command.kind, entry.reason);
     }
 
-    const spec = declaredSpecs[entry.command.kind];
+    const spec = declaredCommands[entry.command.kind];
     const writer = this.#writers[spec.writer];
     if (writer === undefined) {
       // The same refusal `execute` gives, and it is reachable independently: a
@@ -284,7 +293,7 @@ export class CommandBus {
     const entry = log.peekRedo();
     if (entry === undefined) return undefined;
 
-    const spec = declaredSpecs[entry.command.kind];
+    const spec = declaredCommands[entry.command.kind];
 
     // §3a's declaration, enforced at COMPILE time rather than by a branch that
     // cannot run. Every command declared today replays by re-running, so a

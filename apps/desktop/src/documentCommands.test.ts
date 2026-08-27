@@ -10,11 +10,12 @@ import {
   CapabilityRegistry,
   CommandBus,
   DocumentService,
-  localMupdfWriter,
   type MupdfSession,
-  mupdfWriter,
-  withDocument,
 } from '@monstera/kernel';
+// See the note in `engineSessions.test.ts`: a local engine in main's process is
+// the pre-host arrangement, and `/engine` is what makes that import say so
+// (ADR-0026).
+import { localMupdfWriter, mupdfWriter, withDocument } from '@monstera/kernel/engine';
 import { type DocId } from '@monstera/shared';
 
 /** Large enough that capacity is never what these tests are measuring. */

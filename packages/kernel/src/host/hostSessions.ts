@@ -1,5 +1,5 @@
 import { type TokenBytesSource, mintToken } from '../token.js';
-import { type HostSession, type HostSessions } from './engineHandlers.js';
+import type { HostSession, HostSessions } from './engineHandlers.js';
 
 /**
  * The sessions one engine host process holds, and the mint that names them
