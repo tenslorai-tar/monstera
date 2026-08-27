@@ -271,3 +271,36 @@ here rather than taken.
 never lower, so the true honest cost is ≥ 93.6 MB and the real slack is ≤ 34.4 MB.
 Both errors run in the direction that makes the finding stronger, which is why it
 is recorded now rather than held for a better instrument.
+
+---
+
+## Note, 2026-08-27 — the runner's clean baseline is waiting on an event that SUCCESS PREVENTS
+
+This ADR says *"what would close it is the runner's clean baseline being printed
+by some run"*, and the section above says why the figure is unreadable: job logs
+answer 403 without owner authentication, and annotations carry a step's output
+only when it fails.
+
+Both halves are still true, and read together they say something the sentence
+does not: **no passing run will ever print it.** Confirmed from
+`scripts/ci/annotate.mjs` rather than from the prose — it emits `::error` on a
+non-zero exit and on a spawn that failed, and **nothing at all on success** —
+while its own header records that annotations *are* public at
+`/repos/{owner}/{repo}/check-runs/{id}/annotations`.
+
+So the closing condition can be met by exactly one thing today: `perf:gate`
+**failing** on the runner, which would carry its tail — including the baseline —
+into a public annotation. The condition is waiting on the outcome nobody wants,
+and *"take it the first time a run makes the figure available"* is therefore not
+a strategy that terminates.
+
+**This is the reassuring answer wearing yet another costume.** A green board is
+what withholds the measurement; the state everyone is working toward is the state
+in which the number stays unreadable.
+
+**The fix is small and is not taken here**, because it changes what CI emits and
+that is the owner's: have the gate emit its figures as a `::notice` on success as
+well, or write them to a public artefact. A blanket success-notice in
+`annotate.mjs` is the wrong shape — every annotated step would emit one, and
+GitHub caps annotations per run, so real error annotations would be crowded out
+by routine ones. Narrow it to the gate that owns the figure.
