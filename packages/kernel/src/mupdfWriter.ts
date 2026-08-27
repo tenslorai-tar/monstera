@@ -1,6 +1,6 @@
 import * as mupdf from 'mupdf';
 
-import { type ByteImage, type EngineWriter, type MupdfSession } from './engineSeam.js';
+import type { ByteImage, EngineWriter, MupdfSession } from './engineSeam.js';
 
 /**
  * The one adapter behind the engine seam today.

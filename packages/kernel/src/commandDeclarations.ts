@@ -1,6 +1,6 @@
-import { type CommandKind } from '@monstera/contract';
+import type { CommandKind } from '@monstera/contract';
 
-import { type WriterSession } from './engineSeam.js';
+import type { WriterSession } from './engineSeam.js';
 
 /**
  * What every command **is** — and nothing about how it is performed

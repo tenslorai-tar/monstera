@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises';
 import { realpath as realpathCallback } from 'node:fs';
 import { promisify } from 'node:util';
 
-import { type Brand } from '@monstera/shared';
+import type { Brand } from '@monstera/shared';
 
 /**
  * Whether two paths name the same document.

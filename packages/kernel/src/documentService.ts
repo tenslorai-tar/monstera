@@ -10,7 +10,7 @@ import {
   asDocVersion,
 } from '@monstera/shared';
 
-import { type CapabilityRegistry } from './capabilityRegistry.js';
+import type { CapabilityRegistry } from './capabilityRegistry.js';
 import { CommandLog, type ReadonlyCommandLog } from './commandLog.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
 import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';

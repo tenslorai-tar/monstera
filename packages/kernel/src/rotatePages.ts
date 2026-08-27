@@ -1,9 +1,9 @@
 import type * as mupdf from 'mupdf';
 
-import { type CommandOfKind } from '@monstera/contract';
+import type { CommandOfKind } from '@monstera/contract';
 
-import { type CaptureResult } from './commandLog.js';
-import { type Apply, type Invert, type MupdfSession } from './engineSeam.js';
+import type { CaptureResult } from './commandLog.js';
+import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 
 /**

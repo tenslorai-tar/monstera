@@ -1,20 +1,20 @@
-import { type CommandKind, type CommandOfKind } from '@monstera/contract';
+import type { CommandKind, CommandOfKind } from '@monstera/contract';
 
-import { type CaptureResult, type CommandPrior } from './commandLog.js';
+import type { CaptureResult, CommandPrior } from './commandLog.js';
 import {
   type Invertibility,
   type Reproducibility,
   type WriterOfRecord,
   declaredCommands,
 } from './commandDeclarations.js';
-import {
-  type Apply,
-  type ByteImage,
-  type Capture,
-  type EngineWriter,
-  type Invert,
-  type WriterSession,
-  type WriterShapeOf,
+import type {
+  Apply,
+  ByteImage,
+  Capture,
+  EngineWriter,
+  Invert,
+  WriterSession,
+  WriterShapeOf,
 } from './engineSeam.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 

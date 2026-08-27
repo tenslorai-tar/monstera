@@ -1,7 +1,7 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { type ByteImage, type MupdfSession } from './engineSeam.js';
+import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 
 /**

@@ -1,5 +1,5 @@
-import { type CommandKind, type CommandOfKind } from '@monstera/contract';
-import { type Brand } from '@monstera/shared';
+import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import type { Brand } from '@monstera/shared';
 
 // `import type`, NOT `import { type … }`. The second form keeps the specifier
 // in the emitted JavaScript as `import {} from './rotatePages.js'`, which RUNS —

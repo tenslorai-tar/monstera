@@ -1,6 +1,6 @@
-import { type CommandKind, type CommandOfKind } from '@monstera/contract';
+import type { CommandKind, CommandOfKind } from '@monstera/contract';
 
-import { type Checkpoint, type LogEntry, type LogEntryFor } from './commandLog.js';
+import type { Checkpoint, LogEntry, LogEntryFor } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
 // (ADR-0023 Decision 10). Importing the spec table here would reach
@@ -16,8 +16,8 @@ import {
 // emits `import {} from './commandSpecs.js'`, which loads the spec table and
 // with it the native library this whole change exists to keep out of `main`.
 import type { RegisteredWriter } from './commandSpecs.js';
-import { type CommandWriter, type DocumentContext } from './documentService.js';
-import { type ByteImage, type WriterSession } from './engineSeam.js';
+import type { CommandWriter, DocumentContext } from './documentService.js';
+import type { ByteImage, WriterSession } from './engineSeam.js';
 
 /**
  * The one code path from a command to a log entry (ADR-0009 §4).

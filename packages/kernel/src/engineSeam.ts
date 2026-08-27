@@ -1,7 +1,7 @@
-import { type CommandKind, type CommandOfKind } from '@monstera/contract';
-import { type Brand } from '@monstera/shared';
+import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import type { Brand } from '@monstera/shared';
 
-import { type CaptureResult, type CommandPrior } from './commandLog.js';
+import type { CaptureResult, CommandPrior } from './commandLog.js';
 
 /**
  * The seam between the kernel and the engines that write documents (ADR-0009

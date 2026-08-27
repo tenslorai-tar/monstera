@@ -15,8 +15,8 @@ import { type DocId, asDocId, asFileHandle } from '@monstera/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CapabilityRegistry } from './capabilityRegistry.js';
-import { type Checkpoint, type LogEntry } from './commandLog.js';
-import { type CanonicalPath, type FileIdentity } from './documentIdentity.js';
+import type { Checkpoint, LogEntry } from './commandLog.js';
+import type { CanonicalPath, FileIdentity } from './documentIdentity.js';
 import { foldsCase } from './filesystemProbe.js';
 import {
   DocumentBusyError,

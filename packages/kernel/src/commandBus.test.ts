@@ -1,7 +1,7 @@
 import { PDFDocument } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { type Command, type CommandOfKind } from '@monstera/contract';
+import type { Command, CommandOfKind } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
@@ -10,8 +10,8 @@ import {
   UnregisteredWriterError,
 } from './commandBus.js';
 import { CommandLog, type LogEntry } from './commandLog.js';
-import { type CommandWriter, type DocumentContext } from './documentService.js';
-import { type ByteImage, type MupdfSession } from './engineSeam.js';
+import type { CommandWriter, DocumentContext } from './documentService.js';
+import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 
