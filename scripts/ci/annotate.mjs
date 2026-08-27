@@ -27,7 +27,23 @@
  * anybody can. A wrapper that decided which lines mattered would be a second
  * opinion about what a proof said, and the proofs here are written to be read.
  *
- * Usage: node scripts/ci/annotate.mjs <script-path> [args...]
+ * ## `--always`, and the gap it closes
+ *
+ * The default carries a FAILING step's output, which is right for a proof: a
+ * green one has nothing anybody needs. A **measurement** is the opposite. Its
+ * whole value is the numbers it prints on a successful run, and those land in
+ * the same unreadable log — so a figure measured on a runner is knowable to the
+ * owner and to nobody else.
+ *
+ * ADR-0025 already carries an open item of exactly that shape: *the runner's
+ * clean baseline being printed by some run*, where every fact needed to see that
+ * no passing run will ever print it was already written down. `--always` emits a
+ * `::notice` regardless of outcome, so a green measurement is public.
+ *
+ * The policy is what widens, not the mechanism — this still only moves bytes the
+ * runner already printed from a place nobody can read to a place anybody can.
+ *
+ * Usage: node scripts/ci/annotate.mjs [--always] <script-path> [args...]
  */
 
 import { spawnSync } from 'node:child_process';
@@ -48,9 +64,11 @@ function forAnnotation(text) {
   return text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
 }
 
-const [target, ...rest] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const always = argv[0] === '--always';
+const [target, ...rest] = always ? argv.slice(1) : argv;
 if (target === undefined) {
-  process.stderr.write('usage: node scripts/ci/annotate.mjs <script-path> [args...]\n');
+  process.stderr.write('usage: node scripts/ci/annotate.mjs [--always] <script-path> [args...]\n');
   process.exit(2);
 }
 
@@ -73,6 +91,16 @@ if (result.error !== undefined) {
 }
 
 const status = result.status ?? 1;
+
+// A SUCCESSFUL run's output, made public, and only when asked. The tail rather
+// than the whole thing for the same reason a failure carries a tail: an
+// annotation is a message field, not a log.
+if (always && status === 0) {
+  const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  const tail = combined.split(/\r?\n/).slice(-TAIL_LINES).join('\n');
+  process.stdout.write(`::notice title=${target}::${forAnnotation(tail)}\n`);
+}
+
 if (status !== 0) {
   const combined = `${result.stdout ?? ''}${result.stderr ?? ''}`;
   const tail = combined.split(/\r?\n/).slice(-TAIL_LINES).join('\n');

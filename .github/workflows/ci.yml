@@ -695,6 +695,24 @@ jobs:
       - name: Compile TypeScript, which the performance gate now measures
         run: npm run typecheck
 
+      # The runner's host floor, which ADR-0025's derivation needs and nobody
+      # has. `main`'s number was bound not by this machine but by the runner's,
+      # and that ADR records what happened when the binding half was unmeasured:
+      # a budget at or above the runner's figure "cannot catch this on the
+      # runner, which is exactly what happened."
+      #
+      # `--always`, and that flag exists for this step. A measurement's value is
+      # the numbers it prints on a GREEN run, and Actions logs are readable only
+      # by the owner — so without it this would be the open item ADR-0025 already
+      # carries: a figure waiting on an event that success prevents.
+      #
+      # Runs here because this job provisions the pinned Electron runtime and
+      # compiles, which is everything the probe needs. It measures and never
+      # asserts: no budget is enforced from it, and a number nobody has seen is
+      # not one to gate on.
+      - name: Measure the engine host's fixed cost on this runner
+        run: node scripts/ci/annotate.mjs --always scripts/research/hostFixedCost.mjs --runs 15
+
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous
