@@ -481,6 +481,60 @@ its own derivation cannot answer from what is written.
 `main-service` through `hostFixedCost.mjs`, which already takes a bare-runtime
 control in the same run. Owed, not done.
 
+### Addition, 2026-08-27 — the runner's host floor is measured, and `base 98 MB` does not survive it
+
+The binding half of `mupdf-host`'s derivation was unread, which is the mistake
+this ADR records one role up: *a budget at or above the runner's number "cannot
+catch this on the runner, which is exactly what happened."* It is read now.
+
+**Fifteen paired readings on `windows-latest`**, from the same tracked probe, in
+`ci.yml`'s `shim` job at `d91efa2`, emitted as a public `::notice` because
+Actions serves logs only to the owner and a measurement's value is what it prints
+on a **green** run:
+
+| | this machine | `windows-latest` |
+|---|---|---|
+| host, median | 89.5 MB | **88.9 MB** |
+| host, min | 89.3 MB | **88.6 MB** |
+| host, max | 92.2 MB | **91.5 MB** |
+| host, spread | 2.9 MB | **2.9 MB** |
+| ratio, median | 1.05× | **1.06×** |
+
+**The two machines agree far more closely than `main`'s did** — 0.6 MB between
+the medians and the same 2.9 MB spread, against the >4 MB swing measured for
+`main`. That is a fact about this role rather than a general one, and it is what
+makes a derivation possible at all.
+
+**The derivation, with both inputs and the corrected `min + R` rule:**
+
+- **Floor** — above the largest honest measurement on either machine: **92.2 MB**.
+- **Ceiling** — below the smallest minimum plus the barrel regression:
+  88.6 + 9.6 = **98.2 MB**.
+- **Window: (92.2, 98.2)**, 6.0 MB.
+
+**`base 98 MB` is withdrawn.** It sits inside the window by **0.2 MB**, and a
+ceiling margin of 0.2 MB is not a margin: one reading slightly lower on any
+machine moves the ceiling below it, and `min` is a measured extreme of thirty
+readings that more sampling can only lower.
+
+**Proposed instead: `base 96 MB`** — 3.8 MB above the largest honest measurement
+and 2.2 MB below the reliable ceiling. The margins are deliberately unequal and
+this ADR's own rule decides which way: *a baseline that reddens on ordinary
+variance is a check people switch off, which is a worse outcome than one that
+misses a small regression.* So the floor side gets the larger share.
+
+**The residual, stated rather than implied.** 2.2 MB of ceiling margin rests on
+`R = 9.6 MB` for the barrel, measured once. If that regression class is ever
+smaller than measured, the ceiling falls toward the floor and the window closes —
+and the koffi-sized class at 2.9 MB has no window at all, which is why
+`proof:kernelload`'s reachability answers that one and no baseline can.
+
+**And the runner confirms §9.17's falsified clause on a second machine.** The
+engine's share is **1.06×** the runtime there against 1.05× here. *"A fraction of
+the runtime's, not a multiple of it"* is contradicted by both. The B4 that moves
+this number carries that clause with it — one amendment, because they are the
+same sentence and the same measurement.
+
 ---
 
 ## Note, 2026-08-27 — the runner's clean baseline is waiting on an event that SUCCESS PREVENTS
