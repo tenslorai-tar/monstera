@@ -425,6 +425,62 @@ catch.
 
 Moving §9.17 is a B4. Nothing here changes it.
 
+### Correction, 2026-08-27 — the ceiling above mixes two statistics, and neither is the right one (finding RRRR-2)
+
+**The internal contradiction first.** The paragraph above states the rule as
+*floor + the smallest regression* and then computes the ceiling from the
+**median**, saying so outright: *"ceiling is the median 89.5 MB plus the
+regression."* Applied literally the rule gives 92.2 + 9.6 = **101.8**; the table
+gives 89.5 + 9.6 = **99.1**. Both numbers are in one paragraph and neither
+reconciles the other. `main`'s derivation at lines 147–149 has no such gap — it
+uses 63.5 for the floor and 63.5 + 39.2 for the ceiling, the same figure twice.
+
+**Neither statistic is right, and that is the substantive half.** The gate reads
+**one peak per run** and compares it to the budget. A regression of `R` shifts
+the whole distribution, so afterwards the readings run from `min + R` to
+`max + R`. What each candidate ceiling buys:
+
+| ceiling | value | catches the barrel class |
+|---|---|---|
+| the rule as stated, `max + R` | 101.8 MB | at the worst reading only |
+| the table as computed, `median + R` | 99.1 MB | about half the time |
+| **reliable, `min + R`** | **98.9 MB** | **every run** |
+
+A check that reddens intermittently is a check people switch off, which is this
+ADR's own stated reason for not lowering `main`'s number. So the reliable ceiling
+is the only one worth having, and **the rule is corrected to `min + R`.**
+
+**The floor is unaffected** and stays *above the largest honest measurement* —
+92.2 MB — because a budget below it fails on correct code. The window for the
+barrel class is therefore **(92.2, 98.9)**, 6.7 MB wide rather than the 6.9 above.
+
+**`base 98 MB` survives all three ceilings, and its margin is smaller than
+stated.** Against the reliable ceiling it is **0.9 MB**, not the 1.1 the section
+above claims — and against a machine-to-machine swing this project has measured
+above 4 MB, 0.9 MB is not a margin. The proposal stands as a proposal and the
+number is not defended here.
+
+**Where `min` comes from:** 15 paired readings, host peaks 89.3–92.2, median
+89.5. `min` is a measured extreme of a small sample and is itself an estimate;
+more readings can only lower it, which moves the ceiling down and the margin
+toward zero.
+
+### Correction, 2026-08-27 — `main`'s own baseline was derived with no spread measured (finding RRRR-3)
+
+Line 48 records `main-service` clean at **63.4 MB / 63.5 MB**. Two readings are
+not a spread estimate, and the corrected rule above needs a **minimum**. The host
+now has fifteen readings; `main` has two.
+
+**This is not a claim that `base 80 MB` is wrong.** Its headroom above 63.5 MB is
+16.5 MB, wide enough that a minimum a little below 63.4 changes nothing about it.
+The finding is that the gap found one role down exists one role up and was
+unrecorded — and that the correction above raises a question about `main` that
+its own derivation cannot answer from what is written.
+
+**Cheap to close now that the probe exists.** Fifteen paired readings of
+`main-service` through `hostFixedCost.mjs`, which already takes a bare-runtime
+control in the same run. Owed, not done.
+
 ---
 
 ## Note, 2026-08-27 — the runner's clean baseline is waiting on an event that SUCCESS PREVENTS
