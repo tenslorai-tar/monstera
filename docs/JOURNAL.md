@@ -644,6 +644,118 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `4eb94a7..71b299d` — a document claims a lint rule is enforced, and nothing checks that it is, which is audit finding 31 in a new rule
+
+**Audited through `71b299d`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 4eb94a7..HEAD
+  commits: 7 (one batch is 9)
+  files:   24 (one batch is 24)
+  proofs ADDED: none
+  proofs MODIFIED (8):  engineHostConnection.test.ts +8 -8 · engineSessions.test.ts +2 -2
+                        documentCommands.test.ts · registerHandlers.test.ts
+                        channels.test.ts · hostBody.test.ts
+                        remoteEngine.test.ts · remoteLifecycle.test.ts   (all +1 -1)
+  proofs REMOVED: none
+  source FILES ADDED: none
+  source FILES CHANGED (12): composition.ts +3 -3 · contractHandlers.ts +2 -2
+                             documentCommands.ts +2 -2 · commandHandlers.ts +1 -1 · …
+  source FILES REMOVED: none
+```
+
+The range is ruling LLLL-2's lint unit in four parts, the rule enabled last and
+alone, the row's expiry fired for one half, and one appended correction. **Every
+one of the eight modified proofs is an import statement**; each diff read, and
+no assertion or case moved. Board **GREEN at `71b299d`** — CI success, Guards
+success — so item 3 is answered from a run for this range's own commits rather
+than owed forward.
+
+### OOOO-1. `docs/FEATURES.md` says the rule is an error, and `check:lint` being green does not establish that
+
+The row now states: *"the import half is CLOSED as of `c39e255` —
+`@typescript-eslint/no-import-type-side-effects` is an error over
+`**/*.{ts,tsx}`"*. **Nothing checks it.** Delete that line from
+`eslint.config.js` and `check:lint` stays green, because the tree no longer holds
+a single violation for the rule to miss — the class was fixed first, which is the
+ruling's shape and is also what removes the evidence. The two canaries that
+proved the rule fires were a manual act, in one session, and were deleted by
+design.
+
+**This repository has already paid for this exact defect and built the mechanism
+for it.** `lintRules.proof.mjs`'s own header: *"CLAUDE.md and CONTRIBUTING.md both
+stated the React Compiler lint rules were errors. `eslint --print-config …`
+returned an empty list of React rules: the plugin was installed and never
+imported by `eslint.config.js`."* That was audit finding 31. Its three cases are
+exactly the shape this needs — configured at error, scoped to the intended files,
+and **firing**, because *"a configured-but-inert rule prints the same
+`--print-config` output as a working one"*.
+
+So this is not a new mechanism to design; it is a registration into one that
+exists, and writing a second rule-registration check beside it would be the B3a
+shape. **Owed, and fixed in the next range** — recorded here rather than folded
+in, because an audit commit is docs-only and alone.
+
+**The transferable form is narrower than *claims need checks*.** It is that
+**fixing a class removes the evidence that the guard against it works**. Before
+the fix, a broken rule and a working one gave different answers, because there
+were 70 violations to report. After, they give the same answer. The window in
+which the guard is verifiable closes at the moment the guard is adopted — so the
+proof has to be written in that window, or built from a fixture that does not
+depend on it.
+
+### OOOO-2. The export half's only protection is a comment, and this project's own record says that is not a mechanism
+
+Part 4 fixed the one `export { type … } from` and added a comment at the site
+naming the mechanism. That comment is *correct* and it is *not a defence*.
+CLAUDE.md's own count: the escape-resolving-write rule was broken seven times,
+five of them while the file said the rule was the only defence; the
+emitted-template rule seven, the third in a file whose own header carried the
+rule against it and the fourth by the author who had just written the check. The
+sentence there is **KNOWING THE RULE IS NOT A DEFENCE**, and it has three domains
+behind it.
+
+So the export half is now in precisely the state the import half was in before
+`c39e255`: a rule in prose, an author expected to recall it, and no mechanism.
+**Expect a recurrence rather than hoping against one** — the emitted-template
+count is the precedent for saying so out loud, where predicting the sixth
+occurrence cost nothing and was right within a commit. The row carries what is
+owed: a scan over the emit with its own positive control, `check:emittedtemplates`'
+shape, because no lint rule in the pinned plugin covers the spelling.
+
+### OOOO-3. A rewrite that erased a load that mattered would not reliably have reddened CI, and what carried that risk is not in CI either
+
+Item 3's inverse, asked of the range's own subject. `proof:kernelload` covers one
+consequence — a native binding becoming reachable — and 514 vitest cases cover
+what they exercise. Nothing covers the general case: *a module with module-scope
+work stopped being loaded*. Four of the seventy statements were the only
+load-point their target had in some tree, and one of those took
+`@monstera/nodemode` to **zero**.
+
+What actually carried that risk was the reachability count run by hand once per
+part, and it exists now only in three commit messages. **Naming it because the
+next such rewrite will not have it**, and because the alternative — turning it
+into a check — is a 4c judgement rather than an omission: *is every module that
+lost a load-point still loaded* is decidable, but *did that matter* is not, and
+a check that answered only the first half over a class that is two-thirds
+undecidable would read as watched. The honest artefact is the recorded method,
+which is what these three commit messages are.
+
+### Executed, and asserted
+
+**Executed.** Four emit measurements either side of a full rebuild (69 → 41 → 23
+→ 0 import, 1 → 0 export) · a runtime-JavaScript diff per part, `.d.ts` and maps
+excluded · a prefix-agnostic reachability count per part, after NNNN-4 corrected
+the pattern · two canaries reported by the rule from the shipped config and then
+deleted · 514 vitest cases at each part · 16 of 16 local checks against the index
+at each part · `proof:kernelload` with its control · the board.
+
+**Asserted.** That no removed load-point changed module initialisation order in a
+way that matters — unchanged from the previous entry, still reasoning rather than
+measurement, and still the line to distrust.
+
+---
+
 ## 2026-08-27 — Stage audit: `cc1e54e..4eb94a7` — the control a ruling handed me cannot fail, and the two instruments that differed by one were never disagreeing
 
 **Audited through `4eb94a7`.** Pasted from `npm run audit:scope`:
