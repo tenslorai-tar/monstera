@@ -198,10 +198,32 @@ export function affectedProofs(changed, options = {}) {
  *
  * The replacement names the proofs. A reader can act on a name.
  */
-const REACH_LIMIT =
-  `      Static-import reach only. These proofs SCAN the tree, so any change reaches\n` +
-  `      them and no import walk can say so — run them too:\n` +
-  SCANNING_PROOFS.map((name) => `        npm run ${name}\n`).join('');
+/**
+ * @param {ReadonlySet<string>} executed
+ * @returns {string}
+ */
+function reachLimit(executed) {
+  const ran = SCANNING_PROOFS.filter((name) => executed.has(name));
+  const missed = SCANNING_PROOFS.filter((name) => !executed.has(name));
+
+  // DERIVED FROM THIS RUN, because the fixed version was a disclaimer by the
+  // same test that condemned its predecessor: it printed the same nine names
+  // whether or not the sweep had just executed them, and once `npm run local`
+  // began running the roster that made it false as well as generic.
+  if (missed.length === 0) {
+    return (
+      `      Static-import reach only — and this run RAN all ${String(ran.length)} proofs that\n` +
+      `      scan the tree, which no import walk can name:\n` +
+      ran.map((name) => `        ${name}\n`).join('')
+    );
+  }
+  return (
+    `      Static-import reach only. These proofs SCAN the tree, so any change reaches\n` +
+    `      them and no import walk can say so — run them too:\n` +
+    missed.map((name) => `        npm run ${name}\n`).join('') +
+    (ran.length === 0 ? '' : `      This run did reach ${ran.join(', ')}\n`)
+  );
+}
 
 /**
  * What to print, and it is an instruction rather than a caveat.
@@ -251,7 +273,7 @@ export function affectedProofsReport(affected, ran) {
       `\n  ok  this run reached every proof that reads a file this tree changed ` +
       `(${String(covered.length)} of ${String(affected.examined)} examined):\n` +
       covered.map((proof) => `        ${proof.name}\n`).join('') +
-      REACH_LIMIT
+      reachLimit(executed)
     );
   }
 
@@ -267,6 +289,6 @@ export function affectedProofsReport(affected, ran) {
           .map((proof) => proof.name)
           .join(', ')}\n`) +
     `      A green check set is not a green board.\n` +
-    REACH_LIMIT
+    reachLimit(executed)
   );
 }

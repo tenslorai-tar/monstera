@@ -88,7 +88,7 @@ import { fileURLToPath } from 'node:url';
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
-import { multiProofSweepRefusal } from './lib/sweepScope.mjs';
+import { SCANNING_PROOFS, SCANNING_PROOF_COUNT } from './lib/scanningProofs.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 import { UNVERIFIABLE_MARKER } from './lib/unverifiable.mjs';
 
@@ -273,68 +273,94 @@ try {
   // file is built around.
 }
 
-const filtered = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
+const requested = ONLY === null ? derived : derived.filter((name) => name.includes(ONLY));
 
 /**
- * THE MULTI-PROOF SWEEP IS REFUSED, NOT DOCUMENTED (finding WWW-2).
+ * THE SCANNING ROSTER RUNS, IT IS NO LONGER PRINTED (finding UUUU-1).
  *
- * A full sweep of this repository prints failures it invented. Measured
- * 2026-08-23, fourth pass at a 90-second bound: **35 scripts failed in 0.0
- * seconds each, and every one of them passed when run alone.** The tool's own
- * output then carried a note explaining them, which is the worse of the two
- * available states — a reader who trusts the note learns to discount red, and a
- * reader who does not gets 35 false diagnoses. This project already wrote that
- * a scan which cries wolf is a scan someone relaxes.
+ * `affectedProofs.mjs` names the proofs a change reaches by walking static
+ * imports, which is correct and blind to a whole class: a proof that SCANS the
+ * tree imports none of the files it examines, so it appears in no column however
+ * much a change reaches it. That list was therefore printed as an instruction to
+ * run them by hand — and it reddened `main` three times, twice in one session,
+ * always at the same proof.
  *
- * The earlier repair confined this to TIMEOUTS: a timeout kills the shell and
- * orphans the real process, so the sweep stops at the first one rather than
- * measuring against its own wreckage. That is not the whole class. The 35 above
- * followed scripts that **completed**, so something a finished script leaves
- * behind is enough, and **the mechanism is not established.** Naming an
- * unproven mechanism here would be worse than saying so (Rule 0).
+ * A printed instruction that names the same nine scripts on every run is a
+ * disclaimer by this project's own test: it could have been printed before the
+ * change. The remedy is this project's standing move — make the roster a thing
+ * that runs rather than a roster somebody reads.
  *
- * So the mode is made unavailable rather than forbidden — the same move the
- * escape-write hook made over a rule that had been written down seven times.
- * There is no override for the same reason there is none there: an escape hatch
- * would be a workaround with a flag on it.
+ * **The condition is derived from the SELECTION rather than from the flag.** A
+ * run that selected only checks is a run about to reach no proof at all, and
+ * these are exactly the proofs no changed-file analysis could have named for it.
+ * `--only proof:kernelload` selects a proof, so it is a deliberate single-script
+ * run and is left alone.
  *
- * THE BOUNDARY IS WHERE THE DEFECT CANNOT OCCUR, not a round number. The
- * failures are cross-script contamination, so a run that executes at most one
- * `proof:*` script has nothing to be contaminated BY. `--only check:` — the
- * habitual pre-push sweep, eleven scripts, repeatedly green — is unaffected
- * because it selects no proofs at all, which is evidence the check half does not
- * contaminate.
- *
- * Scoped to THIS repository. A fixture repository built by
- * `checkLocal.proof.mjs` has three trivial scripts and no wreckage, and the
- * measurement was never taken there; refusing it would block the only way this
- * file's own failure paths can be exercised (QQQ-2).
- *
- * WHAT WOULD UNBLOCK IT is no longer the mechanism, and the job object half is
- * withdrawn — measured, an ordinary Windows grandchild dies with the harness 3
- * of 3 and only a `detached` one survives, and this repository spawns nothing
- * detached. What unblocks it is the property {@link multiProofSweepRefusal}'s
- * message now names: a spawn that never became a process is classified as its
- * own state rather than as a failure, and the run stops there. Both halves are
- * asserted against an injected non-start, with the control the other way.
- *
- * The decision and its message live in {@link multiProofSweepRefusal} — the
- * boundary has a side this end-to-end path cannot exercise cheaply, and that
- * side is the one whose failure gets a guard disabled.
+ * Measured 2026-08-27: the roster costs 171s here — `boundaries` 82.1s,
+ * `electronimports` 38.4s, `stackowner` 33.9s, `jobplacement` 9.5s,
+ * `affectedproofs` 5.7s, the other four under a second — against a check sweep
+ * that already takes about three minutes. It is not in `prePush.mjs` for the
+ * same figure: three minutes on every push is how a hook earns `--no-verify`.
  */
-const refusal = multiProofSweepRefusal({
-  rootDir: ROOT_DIR,
-  repoRoot: ROOT,
-  selected: filtered,
-  // Relative, because the message is read by someone standing in a repository
-  // and an absolute path from this machine is noise to them. Passed rather than
-  // spelt in the message: see the parameter's note (AAAA-28).
-  runLogDir: `${relative(ROOT_DIR, RUN_LOG_DIR).replaceAll('\\', '/')}/`,
-});
-if (refusal !== null) {
-  process.stderr.write(refusal);
+// THE ANCHOR IS READ HERE TOO, and it was not in the first version of this
+// (found by the stage audit of this range). `SCANNING_PROOF_COUNT` exists
+// because the failure to fear makes the roster SMALLER — item 4c — and a list
+// that derived its own count would agree with any deletion. This caller reached
+// past that to the raw array, so removing an entry and its count together would
+// have left the sweep quietly running eight while every consumer agreed.
+//
+// Staleness is not checked here: `derived.includes` below already restricts the
+// roster to scripts THIS root declares, which is what makes a fixture
+// repository — declaring none of them — run normally instead of refusing.
+if (SCANNING_PROOFS.length !== SCANNING_PROOF_COUNT) {
+  process.stderr.write(
+    `The scanning roster holds ${String(SCANNING_PROOFS.length)} entries and ` +
+      `SCANNING_PROOF_COUNT says ${String(SCANNING_PROOF_COUNT)}. One moved without the other, ` +
+      `and this sweep would run whichever set survived without saying so.\n`,
+  );
   process.exit(78);
 }
+
+const selectsNoProof = requested.length > 0 && requested.every((name) => name.startsWith('check:'));
+const filtered = selectsNoProof
+  ? [...requested, ...SCANNING_PROOFS.filter((name) => derived.includes(name))]
+  : requested;
+
+/*
+ * THE MULTI-PROOF SWEEP WAS REFUSED HERE, AND IS NOT ANY MORE (WWW-2 → UUUU-1).
+ *
+ * What stood here refused any run selecting more than one `proof:*` script,
+ * because a full sweep on 2026-08-23 printed **35 failures at 0.0 seconds each,
+ * every one of which passed when run alone** — invented failures, and a tool
+ * that cries wolf is a tool someone relaxes.
+ *
+ * It is removed because the harm it prevented is now unrepresentable rather than
+ * merely unobserved, which is B5 superseding a runtime prohibition. Those 35
+ * were spawns that never became processes, reported as failures because nothing
+ * read `spawnSync`'s `error`. Today `spawnOutcome.mjs` classifies a non-start as
+ * its own state, this harness reports it as `DID NOT START` rather than as a
+ * failure, and it stops there — so a sweep can no longer invent one red, let
+ * alone thirty-five. Both halves are asserted in `checkLocal.proof.mjs` against
+ * an INJECTED non-start (a command line past Windows' 32767-character limit,
+ * which fails `CreateProcess` in ~2.5ms with `status: null` and no output —
+ * WWW-2's signature exactly), with the control the other way: a genuine failure
+ * is still a failure, still counted, and does not stop the run.
+ *
+ * **The mechanism behind the original 35 is still unknown, and that is why the
+ * refusal is removed rather than declared unnecessary.** Its old message named
+ * one unblocking condition, *the errno and nothing else* — a condition only the
+ * defect recurring can satisfy. The investigation it prescribed was run on
+ * 2026-08-27, twice, the second against a clone built and provisioned so its
+ * proofs do the work they do here: **81 of 81 both times, zero never-started,
+ * not one row at 0.0s.** A condition success prevents is not a strategy that
+ * terminates. The refusal was protective; the errno is explanatory; only the
+ * first was ever load-bearing, and it now has a mechanism instead of a
+ * prohibition.
+ *
+ * If the signature returns, this harness stops at it and says so — which is
+ * strictly better than a permanent refusal, because the capability is then
+ * unavailable only while the machine is actually in that state.
+ */
 
 /**
  * Three buckets, and the middle one is the whole point (finding SSS-1).

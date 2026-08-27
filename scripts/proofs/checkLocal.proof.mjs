@@ -78,7 +78,7 @@ import { fileURLToPath } from 'node:url';
 import { createRoster } from '../lib/passRoster.mjs';
 import { retention, runLogState } from '../lib/runLog.mjs';
 import { classifySpawn } from '../lib/spawnOutcome.mjs';
-import { multiProofSweepRefusal } from '../lib/sweepScope.mjs';
+import { SCANNING_PROOFS } from '../lib/scanningProofs.mjs';
 import { UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
 
 const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
@@ -86,7 +86,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 51 });
+const roster = createRoster(failures, { cases: 50 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -1396,98 +1396,78 @@ try {
   }
 
   // -------------------------------------------------------------------------
-  // 15-19. THE MULTI-PROOF SWEEP IS REFUSED (finding WWW-2).
+  // 15-18. THE MULTI-PROOF SWEEP RUNS, AND A CHECK-ONLY SELECTION PICKS UP THE
+  // SCANNING ROSTER (finding UUUU-1, replacing WWW-2's refusal).
   //
-  // Four of these drive the judgement directly and one drives the harness,
-  // because the BOUNDARY has a side the harness cannot exercise cheaply: the
-  // refusing side costs nothing, and the permitted side costs whatever the
-  // selected scripts cost. Testing only the refusing side would leave the
-  // question *does this guard block the pre-push sweep* answered by nobody —
-  // and a guard that blocks ordinary work is the one that gets turned off,
-  // which this project has already paid for in the escape hook.
+  // These five cases used to assert that a run selecting more than one proof
+  // was REFUSED. The refusal is gone — see the block comment where it stood —
+  // so what they assert is inverted, and the inversion needs the same two
+  // directions the old ones had: a sweep runs, and a deliberate single-proof
+  // run is not quietly widened.
   // -------------------------------------------------------------------------
-  check(
-    'two proofs selected in THIS repository is refused, and the message names the finding',
-    (() => {
-      const refusal = multiProofSweepRefusal({
-        rootDir: REPO,
-        repoRoot: REPO,
-        selected: ['check:docs', 'proof:one', 'proof:two'],
-        runLogDir: '.cache/checkLocal-runs/',
-      });
-      return refusal !== null && refusal.includes('WWW-2') && refusal.includes('job object');
-    })(),
-    'a refusal that does not name the finding or what would unblock it is read as a bug in ' +
-      'the tool, and the pressure lands on adding an override.',
-  );
-  check(
-    '  ...and every path it prints is the one it was GIVEN, not one it spells itself',
-    (() => {
-      // A directory this caller would never pass, so a hardcoded path cannot
-      // satisfy the assertion by coincidence.
-      const given = '.cache/somewhere-nobody-would-hardcode/';
-      const refusal =
-        multiProofSweepRefusal({
-          rootDir: REPO,
-          repoRoot: REPO,
-          selected: ['proof:one', 'proof:two'],
-          runLogDir: given,
-        }) ?? '';
-      // Present where it was asked for, AND no `.cache/` path in the message
-      // that is not the given one — the defect was two paths in one string, so
-      // asserting only that the right one appears would have passed with the
-      // stale one still ten lines below it (AAAA-28).
-      const others = [...refusal.matchAll(/\.cache\/[\w./-]*/gu)].map((m) => m[0]);
-      return refusal.includes(given) && others.every((path) => given.startsWith(path));
-    })(),
-    'This message named .cache/checkLocal-lastrun.json — a file deleted the commit before FOR ' +
-      'BEING THE DEFECT — ten lines above the correct directory in the same string, and the ' +
-      'only case on it asserted two substrings. Nothing here may own a path: the caller has ' +
-      'the authority and passes it in.',
-  );
-  check(
-    'CONTROL: ONE proof is permitted — the boundary is where contamination cannot occur',
-    multiProofSweepRefusal({
-      rootDir: REPO,
-      repoRoot: REPO,
-      selected: ['proof:hostcontainment'],
-      runLogDir: '.cache/checkLocal-runs/',
-    }) === null,
-    'a single proof has no earlier script in the same run to be contaminated by. A guard ' +
-      'that refuses it is refusing the ordinary way to run one proof.',
-  );
-  check(
-    'CONTROL: `--only check:` selects no proofs and is permitted',
-    multiProofSweepRefusal({
-      rootDir: REPO,
-      repoRoot: REPO,
-      selected: ['check:docs', 'check:lockfile', 'check:emittedtemplates'],
-      runLogDir: '.cache/checkLocal-runs/',
-    }) === null,
-    'this is the habitual pre-push sweep. If it ever refuses, the guard has widened past ' +
-      'the measurement behind it.',
-  );
-  check(
-    'CONTROL: a FIXTURE repository is exempt, whatever it declares',
-    multiProofSweepRefusal({
-      rootDir: join(scratch, 'somewhere-else'),
-      repoRoot: REPO,
-      selected: ['proof:a', 'proof:b', 'proof:c', 'proof:d'],
-      runLogDir: '.cache/checkLocal-runs/',
-    }) === null,
-    'every case above this line builds a fixture repository declaring several proofs. A ' +
-      'guard scoped to the tree rather than to this one would make the harness untestable ' +
-      'by its own proof (QQQ-2).',
-  );
   {
-    const swept = spawnSync(process.execPath, [HARNESS], { encoding: 'utf8' });
-    const output = `${swept.stdout ?? ''}${swept.stderr ?? ''}`;
+    const many = runFixture(
+      { 'a.mjs': EXIT_ZERO, 'b.mjs': EXIT_ZERO, 'c.mjs': EXIT_ZERO },
+      {
+        'proof:a': 'node scripts/a.mjs',
+        'proof:b': 'node scripts/b.mjs',
+        'proof:c': 'node scripts/c.mjs',
+      },
+    );
     check(
-      'the harness itself refuses the real sweep, and refuses it BEFORE running anything',
-      swept.status === 78 && /WWW-2/u.test(output) && !/declared check\/proof script/u.test(output),
-      `exit=${String(swept.status)}. The second half is the vacuity guard: a harness that ` +
-        `refused only after sweeping would satisfy the exit code while still costing twenty ` +
-        `minutes and inventing the failures. Output:\n${output}`,
+      'a run selecting three proofs executes all three rather than refusing',
+      many.ok && /3 of 3 attempted/u.test(many.output),
+      `ok=${String(many.ok)}. This is the capability WWW-2's refusal cost, and it is what the ` +
+        `non-start cases above pay for.\n${many.output.slice(0, 700)}`,
+    );
+  }
+  {
+    // `proof:kernelload` is a roster member; `proof:unrelated` is not. Both are
+    // declared, and only one may be picked up.
+    const roster = runFixture(
+      { 'k.mjs': EXIT_ZERO, 'ok.mjs': EXIT_ZERO },
+      {
+        'check:ok': 'node scripts/ok.mjs',
+        'proof:kernelload': 'node scripts/k.mjs',
+        'proof:unrelated': 'node scripts/ok.mjs',
+      },
+      ['--only', 'check:'],
+    );
+    check(
+      'a check-only selection also RUNS the scanning roster rather than printing it',
+      /2 of 2 attempted/u.test(roster.output) && /proof:kernelload/u.test(roster.output),
+      `the roster was not picked up. A sweep that selects only checks reaches no proof at all, ` +
+        `and these are exactly the proofs no changed-file analysis can name for it — which is ` +
+        `why the printed list reddened main three times.\n${roster.output.slice(0, 700)}`,
+    );
+    check(
+      'CONTROL: it picks up the ROSTER, not every proof the manifest declares',
+      !/proof:unrelated/u.test(roster.output),
+      `a non-roster proof was swept in. Then the rule is "run everything", the check sweep ` +
+        `costs what a full sweep costs, and the roster's whole point — that these nine are the ` +
+        `ones an import walk structurally cannot see — has been thrown away.\n` +
+        `${roster.output.slice(0, 700)}`,
+    );
+  }
+  {
+    const single = runFixture(
+      { 'k.mjs': EXIT_ZERO, 'ok.mjs': EXIT_ZERO },
+      { 'check:ok': 'node scripts/ok.mjs', 'proof:kernelload': 'node scripts/k.mjs' },
+      ['--only', 'proof:kernelload'],
+    );
+    check(
+      'CONTROL: a deliberate single-proof run stays one script',
+      /1 of 1 attempted/u.test(single.output),
+      `\`--only proof:x\` is someone asking for one thing. Widening it would make the roster ` +
+        `unavoidable, and the first person who wanted one proof would stop using --only.\n` +
+        `${single.output.slice(0, 700)}`,
+    );
+    check(
+      'the roster this all turns on is the shared one, not a list spelled here',
+      SCANNING_PROOFS.includes('proof:kernelload') && SCANNING_PROOFS.length >= 9,
+      `SCANNING_PROOFS is ${JSON.stringify(SCANNING_PROOFS)}. The fixtures above name ` +
+        `proof:kernelload as a roster member; if this file decided that for itself the cases ` +
+        `would pass against a roster that no longer contains it.`,
     );
   }
 } finally {
