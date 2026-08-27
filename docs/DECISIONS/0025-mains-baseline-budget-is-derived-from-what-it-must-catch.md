@@ -272,6 +272,69 @@ never lower, so the true honest cost is ≥ 93.6 MB and the real slack is ≤ 34
 Both errors run in the direction that makes the finding stronger, which is why it
 is recorded now rather than held for a better instrument.
 
+### Addition, 2026-08-27 — the window is NOT empty, and the ratio is the noisier statistic rather than the safer one
+
+The note above named its own missing half — *one machine and one run* — and made
+the emptiness question turn on a variance figure measured on **`main`**, a
+different process running a different workload. That was item 5's asserted
+column. It is measured now, on the host itself.
+
+**The probe is tracked this time, and that is the first finding.**
+`scripts/research/hostFixedCost.mjs` and its child. The instrument that produced
+the table above was a scratchpad throwaway and no longer exists, so its two
+numbers could not be re-derived by anyone — including their author, one day
+later, which is how the replacement came to be written. **A measurement that
+decides something is an instrument, and an untracked instrument has an expiry of
+one session.** The new one takes its control in the same run, and refuses to
+report at all unless it first recovers a known 8 MB difference between two
+control cells — because *the readings agree* is this instrument's reassuring
+answer, and a spread of zero is what an instrument that cannot see also reports.
+
+**Two runs of fifteen paired readings, 2026-08-27, resolution test passing in
+both (7.9 MB and 10.7 MB recovered of 8 MB):**
+
+| statistic | run A | run B |
+|---|---|---|
+| host, median | 69.9 MB | 70.1 MB |
+| **host, spread** | **3.1 MB** | **2.9 MB** |
+| control, median | 43.6 MB | 43.6 MB |
+| control, spread | 8.6 MB | 8.7 MB |
+| engine's share, spread | 8.7 MB | 11.5 MB |
+| ratio, median | 0.60× | 0.60× |
+| **ratio, spread** | **0.35×** | **0.42×** |
+
+**The host's own variance is ~3 MB, so by the criterion set for it the window is
+not empty and this is a number problem rather than a shape problem.**
+
+**And the proposed remedy runs the wrong way.** The reasoning for preferring a
+ratio was that *"an absolute must absorb machine and run variance; a ratio
+measured against a bare-node control taken in the same run cancels most of it"*.
+Measured, the ratio is roughly **three times noisier** than the absolute. The
+mechanism is that cancellation needs **common-mode** noise: the host cell and the
+control cell are different programs whose fluctuations are not correlated, so
+subtracting one from the other **adds** variance rather than removing it. A
+control cancels a machine's contribution only where both readings share it.
+
+**What else is different about the odd point** (AAAA-8's tell, asked before
+concluding): the control's 8.6 MB spread is not spread at all — it is one cold
+reading. The **first** paired control is 37.6, 37.7 and 37.7 MB across three
+separate sessions of the probe, and every later one sits at 43.5–46.4. Excluding
+the first reading the control's range is ~2.9 MB, the same order as the host's.
+So the honest statement is that both cells are stable once warm, and the ratio's
+extra noise is real but concentrated at the start of a run. **Dropping a first
+reading is a decision, not a measurement**, so both figures are given above and
+neither is presented alone.
+
+**One thing is NOT reconciled and is not glossed.** The absolute figures here —
+host ~70 MB, control ~43.6 MB — sit about 20 MB below the 93.6 MB and 52.7 MB in
+the table above, and both cells moved together. Two probes, two readings, and no
+explanation established; the difference is methodological rather than noise,
+since the spread within either instrument is a few MB. **The spread is the
+quantity this addition claims, and it is a within-instrument figure that survives
+whatever systematic offset separates the two.** The absolutes above are left
+standing rather than replaced, because an ADR is a record; the way to settle
+which is right is to run the tracked probe, which is now possible.
+
 ---
 
 ## Note, 2026-08-27 — the runner's clean baseline is waiting on an event that SUCCESS PREVENTS
