@@ -742,6 +742,24 @@ jobs:
       - name: Prove the container grant derives, takes and reverses
         run: node scripts/ci/annotate.mjs scripts/proofs/containerGrants.proof.mjs
 
+      # THE ACCEPTANCE TEST, and the anchor the grant roster never had.
+      #
+      # `proof:containergrants` asks whether the set is well formed; it cannot
+      # ask whether it is COMPLETE, and incompleteness is the failure this whole
+      # thread paid for — the four-path set was well formed for four days while a
+      # contained host could not read its own program. The roster can go stale
+      # again the next time the host loads something new, and the only thing that
+      # cannot agree with a roster gone quiet is a host actually starting.
+      #
+      # It revokes before it grants, because a machine already granted cannot
+      # tell "the grant works" from "it would have worked anyway" — refusal and
+      # impossibility produce the same observation otherwise. Grants are restored
+      # on every path and read back.
+      #
+      # Needs the build and the provisioned runtime, which this job has.
+      - name: A contained host starts, and does not without the grant
+        run: node scripts/ci/annotate.mjs --always scripts/research/containedStart.mjs
+
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous

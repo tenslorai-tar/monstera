@@ -60,12 +60,12 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { shimPath } from '../lib/shimBinary.mjs';
-import { electronRoot, platformKey } from './electron.mjs';
+import { electronRoot } from './electron.mjs';
 
 /**
  * `ALL APPLICATION PACKAGES`, by SID rather than by name.
@@ -84,14 +84,67 @@ export const ALL_APPLICATION_PACKAGES = 'S-1-15-2-1';
  * @returns {Array<{ path: string, rights: string, why: string }>}
  */
 export function grantSet(root = repoRoot()) {
-  const koffi = join(root, 'node_modules', 'koffi');
-  const sibling = join(root, 'node_modules', '@koromix', `koffi-${platformKey()}`);
   return [
     { path: electronRoot(root), rights: 'RX', why: 'the runtime binary and its resources' },
-    { path: koffi, rights: 'RX', why: 'the FFI' },
-    { path: sibling, rights: 'RX', why: "the FFI's platform sibling" },
+    // NODE_MODULES WHOLE, which subsumes the two koffi entries this list used to
+    // name separately. The host's program is ordinary Node code: it resolves
+    // `@monstera/contract`, `@monstera/shared`, `mupdf`, `@cantoo/pdf-lib` and
+    // `zod` by walking node_modules, and a set naming only the packages known
+    // today is one that goes stale the next time a dependency is added — 4c's
+    // direction, since the failure to fear is a MISSING grant.
+    { path: join(root, 'node_modules'), rights: 'RX', why: 'the dependency graph the host resolves' },
     { path: dirname(shimPath(root)), rights: 'RX', why: 'the engine shim' },
+    // THE APPLICATION'S OWN CODE, which the four-path set omitted entirely and
+    // which SSSS-1 measured the host dying on: `Cannot find module
+    // …dist/host/hostEntry.js`, from a token that could not read it.
+    //
+    // The package ROOT rather than its `dist`, and that is measured rather than
+    // reasoned: resolving a bare specifier reads the package's own
+    // `package.json` for its `exports` map, and that sits beside `dist` rather
+    // than inside it. Granting the `dist` directories instead — everything else
+    // held fixed — leaves the contained cell dying at `module-resolution`,
+    // which is the same failure the four-path set produced and one step earlier
+    // than the one it was meant to fix. Measured 2026-08-27 by making exactly
+    // that substitution and running the acceptance test.
+    ...workspacePackages(root).map((path) => ({
+      path,
+      rights: /** @type {const} */ ('RX'),
+      why: 'a workspace package the host loads',
+    })),
   ];
+}
+
+/**
+ * The workspace package directories, from the filesystem rather than a list.
+ *
+ * `package.json` declares `packages/*` and `apps/*`; reading the directories is
+ * the same answer without a glob implementation, and it grows on its own when a
+ * package is added — which is the direction 4c asks for here, because the
+ * failure to fear is a package the container cannot read.
+ *
+ * @param {string} root
+ * @returns {string[]}
+ */
+function workspacePackages(root) {
+  /** @type {string[]} */
+  const found = [];
+  for (const group of ['packages', 'apps']) {
+    let entries;
+    try {
+      entries = readdirSync(join(root, group), { withFileTypes: true });
+    } catch {
+      // The group is absent. Returning nothing for it would make the grant set
+      // silently smaller, so the caller's own "not provisioned" refusal is what
+      // reports it — but only for paths this returns, so an absent GROUP would
+      // be invisible. It cannot be absent in a checkout of this repository, and
+      // `proof:containergrants` asserts the set is non-empty for that reason.
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) found.push(join(root, group, entry.name));
+    }
+  }
+  return found.sort();
 }
 
 /**

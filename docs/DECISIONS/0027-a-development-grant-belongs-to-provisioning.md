@@ -202,3 +202,62 @@ when `createSessionDirectories` began passing a security descriptor to
 ungranted. `grantSet()` and the spike's `GRANTS` are the same four paths today —
 which is itself a second opinion about one question (B3a), and is left standing
 here only because this correction does not settle what that set should contain.
+
+## Correction, 2026-08-27 — the set is reshaped, a contained host starts, and the exposure is stated
+
+The correction above left the set unsettled and asked whether rejected
+alternative (b) reopened. **It does not.** This ADR's principle — the development
+grant mirrors what MSIX inheritance provides, and belongs to provisioning rather
+than to the application — is untouched by anything measured. What was wrong was
+the SHAPE: four artefacts is not what MSIX inheritance provides. A package grants
+the container read-and-execute over the whole install tree, which is the
+application's built output and everything it loads, not a hand-picked list.
+
+And the four-path set was a roster whose failure makes it **smaller** — 4c's own
+direction test — with nothing able to report a path missing from it.
+
+**The set is now directories with inheritance**, ten of them on this machine:
+the pinned runtime, `node_modules` whole (which subsumes the two koffi entries),
+the shim, and one per workspace package.
+
+**The package ROOT rather than its `dist`, and that is measured.** Resolving a
+bare specifier reads the package's own `package.json` for its `exports` map, and
+that sits beside `dist` rather than inside it. Substituting the `dist`
+directories with everything else held fixed leaves the contained cell dying at
+`module-resolution` — the same failure the four-path set produced, one step
+earlier than the one it was meant to fix.
+
+**The acceptance test now says a contained host starts:**
+
+| cell | contained | grants | outcome |
+|---|---|---|---|
+| `uncontained` | no | present | ran — reached the entry's refusal |
+| `revoked` | yes | removed | dead at **runtime-init**, `icu_util.cc:232` |
+| `granted` | yes | present | **ran** — reached the entry's refusal |
+
+`OBTAINED`. `scripts/research/containedStart.mjs` runs on every push, revoking
+before it grants, because a machine already granted cannot tell *the grant works*
+from *it would have worked anyway*. It is the anchor the roster never had: a
+roster can go stale the next time the host loads something new, and the one thing
+that cannot agree with a roster gone quiet is a host actually starting.
+
+## The exposure this buys, stated rather than implied
+
+**Granting `node_modules` and every workspace package read-and-execute to
+`ALL APPLICATION PACKAGES` means any AppContainer application on that machine can
+read them.** Not only ours — the principal is the whole class.
+
+That is a **development-machine property and not a product one**. Nothing here
+ships: MSIX-installed files are read-only to the app itself and the install root
+grants this principal by inheritance, so the shipped configuration takes none of
+these ACEs. The row already says development containment is not production
+containment; this belongs in the same sentence rather than a paragraph away from
+it.
+
+What a reader should weigh: the checkout contains this project's source and its
+dependency tree, which are public — this repository develops in the open (B10) —
+so the material exposed is material already published. What is **not** exposed is
+anything outside those paths: no user profile, no credentials directory, no
+sibling checkout. `provision:grants --revoke` removes every ACE it added, and
+`--check` reports the current state, so the exposure is reversible and readable
+rather than permanent and silent.

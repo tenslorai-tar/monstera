@@ -38,7 +38,13 @@ import {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 7 });
+const roster = createRoster(failures, { cases: 9 });
+
+/** The program a contained host runs, which the grant set must cover. */
+const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
+
+/** The two workspace groups `package.json` declares, each of which must appear. */
+const workspaceGroups = [join(repoRoot(), 'packages'), join(repoRoot(), 'apps')];
 
 /** @param {string} label @param {boolean} condition @param {string} detail @param {boolean} [ran] */
 function check(label, condition, detail, ran = true) {
@@ -53,9 +59,37 @@ try {
   const paths = set.map((entry) => entry.path);
 
   check(
-    'the set names four artefacts, each with a stated reason',
-    set.length === 4 && set.every((entry) => entry.why.length > 0),
+    'every entry carries a stated reason, and the set is not empty',
+    set.length > 0 && set.every((entry) => entry.why.length > 0),
     `got ${set.length}: ${JSON.stringify(set.map((entry) => entry.why))}`,
+  );
+
+  // NOT A COUNT ANY MORE, and the reason is 4c's direction test rather than
+  // convenience. This asserted `set.length === 4` while the set was a hand-kept
+  // list of four artefacts, where a literal count is the anchor against
+  // shrinkage. The set is now partly DERIVED — one entry per workspace package —
+  // so a count would have to change with every package added, which makes it a
+  // number people update to make a red thing green rather than a claim.
+  //
+  // What replaces it is the property that actually matters and that the
+  // four-path set FAILED: the host's own program must be inside the set.
+  // SSSS-1 measured a contained host dying at `Cannot find module
+  // …dist/host/hostEntry.js` for exactly this omission.
+  check(
+    'the set covers the package the host ENTRY lives in',
+    paths.some((path) => join(path, 'dist', 'host', 'hostEntry.js') === HOST_ENTRY),
+    `paths: ${JSON.stringify(paths)}. The four-path set granted the runtime, the FFI and the ` +
+      `shim, and not the application's own code — so a contained host started and could not ` +
+      `read its own entry. A set that omits it again passes every other case here.`,
+  );
+
+  check(
+    'and every workspace package, since the entry imports across them',
+    workspaceGroups.every((group) => paths.some((path) => path.startsWith(group))),
+    `paths: ${JSON.stringify(paths)}. \`hostEntry.js\` resolves @monstera/contract and ` +
+      `@monstera/shared by bare specifier, which reads each package's own package.json for its ` +
+      `exports map — measured: granting the dist directories instead leaves the contained cell ` +
+      `dying at module-resolution.`,
   );
 
   check(
@@ -65,10 +99,17 @@ try {
       `what \`electronRoot\` already answers, and the two would drift on the next bump.`,
   );
 
+  // THE FFI SIBLING NO LONGER HAS ITS OWN ENTRY, and its case is replaced
+  // rather than deleted. `node_modules` is granted whole with inheritance, which
+  // subsumes both koffi entries — so the platform-keyed path this used to assert
+  // is now covered by containment rather than by naming, and asserting the old
+  // shape would require re-adding a redundant grant to keep a case green.
   check(
-    'and the FFI sibling carries THIS platform, not a hard-coded one',
-    paths.some((path) => path.includes(`koffi-${process.platform}-${process.arch}`)),
-    `paths: ${JSON.stringify(paths)}`,
+    'the FFI is still reachable — node_modules is granted whole, with inheritance',
+    paths.some((path) => path === join(root, 'node_modules')),
+    `paths: ${JSON.stringify(paths)}. koffi and its platform sibling live under node_modules, ` +
+      `and naming only the packages known today is a set that goes stale the next time a ` +
+      `dependency is added.`,
   );
 
   check(
