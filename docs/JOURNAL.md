@@ -644,6 +644,213 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `e48b265..acb2cbb` — a caller reached past the anchor it depends on, and a census miscounted by 22%
+
+**Audited through `acb2cbb`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: e48b265..HEAD
+  commits: 9 (one batch is 9)
+  files:   22 (one batch is 24)
+  proofs ADDED (1):     borderTokens.proof.mjs
+  proofs MODIFIED (6):  remoteLifecycle.test.ts +30 -1
+                        blockEscapeResolvingWrites.proof.mjs +120 -11
+                        preCommit.proof.mjs +39 -4 · annotate.proof.mjs +62 -3
+                        checkLocal.proof.mjs +80 -5 · electronImports.proof.mjs +14 -0
+  proofs REMOVED: none
+  source FILES ADDED (2):   borderTokens.mjs · baselineSpread.mjs
+  source FILES CHANGED (5): checkLocal.mjs +7 -4 · preCommit.mjs +1 -9
+                            sweepScope.mjs +19 -5 · budgetGate.mjs +13 -2
+                            barrelCost.mjs +3 -0
+  source FILES REMOVED: none
+```
+
+Queue items 1–5 and the UUUU findings: the hung `vitest` tree, two temp-directory
+leaks, `docs/UI-GUIDE.md`, `main`'s spread, the border scan, and Track C's
+precondition.
+
+**`preCommit.mjs` is the only net-negative file (`+1 -9`) and the deletion is
+TTTT-1's** — the stale comment block asserting the opposite of what the gate
+does. Read against its destination: nothing was carried away with it, the WW-4
+sentence above it survives, and the correct paragraph below it is untouched.
+
+### 1. Root cause or workaround?
+
+Nine commits, no workaround. Three repairs are worth separating from their
+symptoms:
+
+- the temp leaks are fixed **at the two call sites**, not by a sweeper that
+  deletes `monstera-*` on start — which would have been the classic
+  regenerating repair;
+- `ask`'s crashed-hook branch narrows to *silence at a non-zero exit* rather
+  than throwing on all silence, because silence at exit 0 is the protocol's
+  allow. The first repair was the wide one and every ALLOWS case went red;
+- the border rule inverts the burden instead of inferring interactivity, which
+  is the analysis ADR-0003 rejected as having silence for a failure mode.
+
+**No check was loosened.** The one candidate is `baselineFor` becoming exported
+and gaining an options parameter; the gate's call is unchanged and passing `{}`
+is identical to passing nothing.
+
+### 2. Verified against the easy shape only?
+
+The hard shape for the leak fixes is *a run that fails*, and the `preCommit`
+cleanup is placed before the verdict for exactly that reason — `process.exit`
+below it would skip anything written after.
+
+The hard shape for `ask` was the one that broke it: the ordinary allow. Testing
+only crashed hooks would have shipped a repair that reddens 245 cases.
+
+**A shape still untested, stated:** `baselineSpread.mjs` has been run at
+`--runs 15` on one machine in one session. Its own finding is that between
+sessions matters more than within one, so its untested shape is the one it
+proved important.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and it is a gain. `checkLocal.proof.mjs`'s non-start cases were
+previously a claim about a classifier called directly, with the harness's own
+branch recorded as unreachable from a fixture. It is reachable — a command line
+past 32767 characters — so the assertion moved from *the function classifies
+this correctly* to *the harness reports and stops*. Strictly more coverage, on
+the same runners.
+
+### 3. Would CI have caught it?
+
+**Answered from runs.** `798e2ee`, `fa2138c`, `07fcd78` and `8288aac` were each
+green on both jobs, and `acb2cbb` was green before this audit began. Nothing in
+this range reddened `main` — which is the first range this session that did not,
+and the difference is that every push waited for the board.
+
+**What CI could NOT have caught is the whole subject of two commits.** The temp
+leaks are invisible to every assertion in both files — 10 tests and 32 hook
+cases pass identically with the fix reverted, and the observable is a directory
+count. Nothing in CI counts directories, and a runner is discarded after each
+job, so this class can only be seen on a machine that persists. That is stated
+rather than closed: the fix is proven by a before/after delta measured by hand,
+and by the mutation that makes the delta non-zero.
+
+**Is there a defect this machine cannot see?** `borderTokens.mjs` examines zero
+declarations here and everywhere, so its scan half is unexercised on every
+runner until the first component stylesheet lands. It prints `NOTHING TO SCAN`
+rather than reporting clean, and the proof carries the whole claim.
+
+### 4. Are the proofs non-vacuous?
+
+Six mutations, each reddening the case written for it:
+
+| mutation | result |
+|---|---|
+| `remoteLifecycle.test.ts`: roots unregistered | red — 284 → +12 per run |
+| `preCommit.proof.mjs`: dirs unregistered | red — +3 and +2 per run |
+| `ask`: silence at non-zero read as allow | red, one case |
+| `spawnOutcome`: a spawn error classified `ran` | red, three cases; control stays green |
+| `checkLocal`: the non-start `break` → `continue` | red, the stop case alone |
+| `borderTokens`: (two defects found by the proof itself) | see below |
+
+**The two leak mutations pass every assertion in their files**, which is the
+point: 10 tests and 32 hook cases are green either way. The observable is the
+directory count, and that is a measurement rather than a case.
+
+### 4a. Has every instrument passed a resolution test?
+
+| instrument | resolution test | result |
+|---|---|---|
+| `baselineSpread.mjs` | `main` against `main-service`, known to differ | 49.1 vs 52.1 MB — separated, and it refuses below 0.5 MB |
+| `borderTokens.mjs` | the control fixture's violation against its four near-misses | exactly one, and the right line |
+| the catch census (scratchpad) | four classification fixtures plus three that must NOT match | held after two corrections |
+
+### 4b. Does every search carry a positive control?
+
+`borderTokens.mjs` ships `CONTROL_FIXTURE` and its proof asserts the count, the
+line, and the near-misses — the load-bearing one being that `--border-control`
+must not match `--border` as a substring, since a check that fires on correct
+code is deleted within a day.
+
+**And the control caught the instrument twice on its first two runs**: the
+property pattern was anchored at line start and examined **zero** declarations
+in its own fixture, and the marker accepted an empty reason because a CSS
+comment's terminator satisfies `\S+`.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**VVVV-1, and it is this audit's finding.** `checkLocal.mjs` now appends the
+scanning roster to a check-only selection — and it read `SCANNING_PROOFS`
+directly, reaching past `SCANNING_PROOF_COUNT`. That anchor exists because the
+failure to fear makes the roster **smaller**: a list deriving its own count
+agrees with any deletion. So removing an entry together with its count would
+have left the sweep running eight of nine, with `affectedProofs.mjs` — which
+also reads the raw array — agreeing that all of them ran.
+
+Fixed in the commit that follows this audit: the count is checked before the
+roster is used, and the sweep refuses when the two disagree. Staleness stays
+handled by `derived.includes`, which is what lets a fixture repository declaring
+none of them run normally rather than refuse.
+
+**The shape to carry:** an anchor protects only the callers that read it. This
+one had a guarded accessor, `scanningProofRoster`, and the new consumer imported
+the constant beside it instead — B3a's *a helper sitting beside a bare inline
+expression is the same trap one step on*.
+
+### 5. Executed, or asserted?
+
+**Executed:** three baseline sweeps of 15 readings; two `perf:gate` runs;
+before/after directory counts for three temp prefixes and their mutations; the
+five spawn shapes in the non-start measurement; every proof named above.
+
+**Asserted and NOT executed:** that the ~5.8 MB between-session baseline shift
+was caused by the hung `vitest` tree. All three roles moved by the same amount
+across the kill, which is why it is recorded as a machine property with a size
+and no mechanism.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. ADR-0003 gains a dated note that its named mechanism was unavailable,
+which is a record of what was built rather than a change to what was decided.
+
+### 7. Do the documents still match the code?
+
+`docs/UI-GUIDE.md` is new and marks its own four unbuilt mechanisms.
+ADR-0025 and ADR-0003 gain dated corrections. FEATURES rows 288 and 328 are
+edited true, and 328's title changes because its subject did.
+
+**The NNN-4 sweep fired on the roster claim** — this range states that the
+scanning roster is what an import walk cannot name, which is a cross-document
+relationship — and it is what surfaced VVVV-1's second half: `affectedProofs.mjs`
+states the same thing and reads the same raw array.
+
+### VVVV-2. The census miscounted by 22%, in the file that documents the defect
+
+The swallowed-error census matched `catch { return; }` inside a **comment** —
+in `documentConsistency.mjs`, the file whose comment documents exactly that
+defect — and inside a **string** in an emitted-source fixture. 194 catch blocks
+became 151 once comments and strings were masked.
+
+Then its width metric counted the sentinel in
+`try { call(); return false; } catch { return true; }`, reporting eleven sound
+sites as defects — `electron.mjs`'s `stat`, `lockfileIntegrity.mjs`'s
+`JSON.parse`, six must-throw proof cases. Excluding a trailing `return` took the
+candidates from 40 to 13.
+
+**Both corrections are the finding rather than footnotes.** An instrument built
+to find one class of reassuring answer produced two of its own, and the second —
+a metric that is *nearly* right — is the more dangerous, because its output
+looked like a list of real defects rather than like noise.
+
+### VVVV-3. A delimiter in prose closed a comment, which is the seventh class in a new costume
+
+Writing `*/` inside a JSDoc block in `borderTokens.mjs` ended the comment early
+and node refused the file. That is the emitted-template class — prose and code
+sharing a delimiter — arriving in an ordinary comment rather than in a
+`String.raw`, where `check:emittedtemplates` does not look.
+
+It cost nothing, because running the file is what found it. Recorded because the
+scan's scope is `String.raw` regions by design (VV-1 measured that widening it
+to every template produces 36 unusable reports), so this variant has no
+mechanism and will recur.
+
+---
+
 ## 2026-08-27 — Stage audit: `9bbfbbb..e48b265` — a swapped gate left its old comment standing, and I pushed twice onto a red board
 
 **Audited through `e48b265`.** Pasted from `npm run audit:scope`:
@@ -5104,7 +5311,15 @@ Secret scan and file policy (windows-latest) :: success
   success  2026-08-24T13:02:49Z  Prove the local check sweep can report a failure at all
 ```
 
-`checkLocal.proof.mjs` imports `scripts/lib/sweepScope.mjs` and asserts on the
+> **Correction, 2026-08-27 (UUUU-1).** The paragraph below stands as what was
+> true then. Since it was written, the refusal it describes has been lifted and
+> its module **removed**: a spawn that never became a process is now classified
+> as its own state, reported as `DID NOT START` rather than as a failure, and
+> stops the run — asserted against an injected non-start with the control the
+> other way. `npm run local` runs the scanning roster instead of printing it.
+
+`checkLocal.proof.mjs` imports `scripts/lib/sweepScope.mjs` (since **removed**,
+per the correction above) and asserts on the
 refusal's text directly, and it **spawns the real harness** against fixture
 repositories it builds in a temporary directory. So `sweepScope.mjs`'s
 judgement, the whole refusal message, `scripts/audit/scope.mjs` and
