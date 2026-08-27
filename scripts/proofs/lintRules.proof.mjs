@@ -1,7 +1,11 @@
 // @ts-check
 /**
- * Proof that the React rules two documents claim are enforced actually are
- * (rule B2, audit finding 31).
+ * Proof that the lint rules this project's documents claim are enforced
+ * actually are (rule B2, audit finding 31, extended by OOOO-1).
+ *
+ * Two families, here rather than in two files. The question — *does the config
+ * really enforce what a document says it enforces* — has one owner, and a second
+ * registration check beside this one would be B3a's second opinion about it.
  *
  * CLAUDE.md and CONTRIBUTING.md both stated the React Compiler lint rules were
  * errors. `eslint --print-config packages/ui/src/index.ts` returned an empty
@@ -22,6 +26,26 @@
  *   2. The scope is packages/ui, and only packages/ui.
  *   3. The rules FIRE. A configured-but-inert rule prints the same
  *      `--print-config` output as a working one.
+ *
+ * ## The second family, and why it needed this file rather than a green check
+ *
+ * `@typescript-eslint/no-import-type-side-effects` closes ADR-0026's class:
+ * `import { type X } from './y.js'` elides the specifiers and keeps the
+ * statement, emitting a runtime load. `docs/FEATURES.md` states the rule is an
+ * error over every `.ts`, and **`check:lint` being green does not establish
+ * that**. Delete the line from `eslint.config.js` and the tree is still clean,
+ * because all seventy violations were rewritten first.
+ *
+ * That ordering is not an accident of this change; it is the general shape, and
+ * it is the reason this proof exists at all: **fixing a class removes the
+ * evidence that the guard against it works.** While violations remain, a broken
+ * rule and a working one give different answers. Once they are gone the two are
+ * indistinguishable, so the proof has to supply its own violation — which is
+ * what the probe below is.
+ *
+ * Scope is checked across three trees rather than one, because `apps/desktop`
+ * held 23 of the 70 and a config block matching only `packages/**` would pass a
+ * single-tree check while covering a third of the class.
  *
  * Usage: node scripts/proofs/lintRules.proof.mjs
  */
@@ -141,6 +165,91 @@ async function main() {
     );
   } finally {
     rmSync(probeDirectory, { recursive: true, force: true });
+  }
+
+  // ---------------------------------------------------------------------
+  // ADR-0026's rule: configured at error in every tree that held the class.
+  // ---------------------------------------------------------------------
+  const SIDE_EFFECTS = '@typescript-eslint/no-import-type-side-effects';
+
+  /** One file per tree where the 70 occurrences lived. */
+  const trees = [
+    ['packages/kernel', join(ROOT, 'packages', 'kernel', 'src', 'index.ts')],
+    ['packages/contract', join(ROOT, 'packages', 'contract', 'src', 'channels.ts')],
+    ['apps/desktop', join(ROOT, 'apps', 'desktop', 'src', 'main.ts')],
+  ];
+
+  /** @type {string[]} */
+  const notEnforced = [];
+  for (const [label, file] of trees) {
+    /** @type {Record<string, unknown>} */
+    const config = await eslint.calculateConfigForFile(/** @type {string} */ (file));
+    const rules = /** @type {Record<string, unknown>} */ (config['rules'] ?? {});
+    if (severity(rules[SIDE_EFFECTS]) !== 'error') {
+      notEnforced.push(`${label} (${severity(rules[SIDE_EFFECTS])})`);
+    }
+  }
+  check(
+    `${SIDE_EFFECTS} is an error in all ${trees.length} trees that held the class`,
+    notEnforced.length === 0,
+    `not enforced at error in: ${notEnforced.join(', ')}\n      docs/FEATURES.md states this ` +
+      `rule closes ADR-0026's import half. apps/desktop held 23 of the 70 occurrences, so a ` +
+      `block scoped to packages/** would leave a third of the class unwatched while every ` +
+      `other check stayed green.`,
+  );
+
+  // The resolution test for it, and the reason this proof was written: with the
+  // tree fixed there is no violation left anywhere, so the proof brings its own.
+  const sideEffectDirectory = join(ROOT, 'packages', 'kernel', 'src', 'side-effect-probe-temp');
+  const offender = join(sideEffectDirectory, 'offender.ts');
+  const innocent = join(sideEffectDirectory, 'innocent.ts');
+  try {
+    mkdirSync(sideEffectDirectory, { recursive: true });
+    // The spelling that emits `import {} from '…'`.
+    writeFileSync(
+      offender,
+      "import { type WriterOfRecord } from '../commandDeclarations.js';\n\n" +
+        'export type Probe = WriterOfRecord;\n',
+      'utf8',
+    );
+    // The spelling that is erased whole. A rule that reported BOTH would satisfy
+    // the case above while saying nothing about which shape it objects to.
+    writeFileSync(
+      innocent,
+      "import type { WriterOfRecord } from '../commandDeclarations.js';\n\n" +
+        'export type Probe = WriterOfRecord;\n',
+      'utf8',
+    );
+
+    const results = await eslint.lintFiles([offender, innocent]);
+    /** @param {string} file */
+    const findingsIn = (file) =>
+      results
+        .filter((result) => result.filePath === file)
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === SIDE_EFFECTS);
+
+    check(
+      'the inline-type import IS reported, at error severity',
+      findingsIn(offender).some((message) => message.severity === 2),
+      `findings on the offender: ${
+        findingsIn(offender)
+          .map((m) => `${m.ruleId}(${m.severity})`)
+          .join(', ') || 'none'
+      }\n      A rule listed by --print-config and never firing produces identical output to a ` +
+        `working one — and with the class already fixed, an identical CLEAN tree as well.`,
+    );
+
+    check(
+      'and the top-level type import is NOT, so the rule objects to the spelling',
+      findingsIn(innocent).length === 0,
+      `findings on the innocent file: ${findingsIn(innocent)
+        .map((m) => `${m.ruleId}(${m.severity})`)
+        .join(', ')}\n      A rule that reported both spellings would pass the case above while ` +
+        `distinguishing nothing, which is the fixture the defect also handles correctly.`,
+    );
+  } finally {
+    rmSync(sideEffectDirectory, { recursive: true, force: true });
   }
 
   if (failures.length > 0) {
