@@ -644,6 +644,162 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-27 — Stage audit: `f75005d..cc1e54e` — a move dropped B3's own rationale, in the commit whose author was watching for exactly that
+
+**Audited through `cc1e54e`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: f75005d..HEAD
+  commits: 3 (one batch is 9)
+  files:   19 (one batch is 24)
+  proofs ADDED — new coverage (1):
+    packages/kernel/src/host/hostSessions.test.ts
+  proofs MODIFIED — read each diff (4):
+    documentCommands.test.ts +4 -3 · engineSessions.test.ts +6 -1
+    contract.proof.mjs +10 -10 · kernelLoad.proof.mjs +54 -10
+  proofs REMOVED: none
+  source FILES ADDED (2):
+    packages/kernel/src/commandDeclarations.ts · engine.ts
+  source FILES CHANGED (8):
+    documentCommands.ts +7 -3 · commandBus.ts +16 -7
+    commandSpecs.ts +27 -64 · engineHandlers.ts +1 -1 · hostBody.ts +1 -1
+    hostSessions.ts +1 -1 · remoteEngine.ts +1 -1 · kernel/index.ts
+  source FILES REMOVED: none
+```
+
+The range: ADR-0026 built and measured, JJJJ-1's cases, and KKKK-1/2/3's three
+record corrections.
+
+### LLLL-1. The declaration move dropped B3's rationale, and the author was watching for that exact class at the time
+
+`commandSpecs.ts` is **+27 −64**, and net figures are how a move hides what it
+loses. Three doc comments moved to `commandDeclarations.ts`. Two arrived whole.
+One did not:
+
+> One writer per concern. Two writers is how a codebase acquires sidecar hacks,
+> and for a document it is how one engine's idea of the page tree overwrites
+> another's.
+
+That is **B3's own reason for existing**, attached to `WriterOfRecord` — the type
+the whole writer-of-record matrix is built on. What survived was the mechanical
+half (*derived from the seam, so a writer without an adapter is a compile error*)
+and what left was the half that says why anybody should care.
+
+**The sharp part is not the loss, it is who lost it.** In the same move the same
+author noticed this exact class on a different comment — `Reproducibility`'s
+richer text, naming signing, OCR, AI and random object identifiers — and
+deliberately carried the original over rather than keeping the thinner
+replacement, with a commit line saying so. **Attention to one instance of a
+class is not coverage of the class**, and being alert to it in the same hour, in
+the same file, in the same operation, did not generalise.
+
+**Why no check is proposed.** A moved comment is not decidable: the same words
+at a new address and words that were dropped look identical to any scan that
+does not know what a move is. What is checkable is the tell, and it is the one
+this report already prints — a **net** figure on a file that moved code. Item 4b
+covers it in the abstract; this is the instance that says the abstraction has a
+concrete trigger: *read the deletions of any file whose diff is net-negative
+after a move, against the file the code moved to.*
+
+**Not fixed here** — an audit-recording commit is docs-only and alone.
+
+### LLLL-2. A 33-file mechanical change cannot land as one commit, and auditing first does not help
+
+Computed rather than discovered by hitting it. `BATCH = { commits: 9, files: 24 }`,
+and `auditWatermark.mjs` builds the pre-commit figure as
+`files = committed.files ∪ staged`, failing when the union exceeds 24. So for a
+commit staging 33 files the union is 33 **whatever the range holds** — a fresh
+watermark makes `committed.files` empty and changes nothing.
+
+That matters because the obvious remedy is wrong in a specific way: *audit first*
+clears the **range**, not the commit, and the commit is what exceeds the budget.
+
+**This is not filed as a defect in the gate.** The threshold is the median of
+batches 4–7 and exists so the checklist stays applicable to a diff somebody
+reads, which is a good reason. It is filed because the consequence is not
+obvious from the gate's own message: a **whole-class, auto-fixable, mechanically
+uniform** change — the shape whose entire value is that the diff is legible in
+one piece — is exactly the shape the budget refuses, and splitting it is what
+makes it less legible rather than more.
+
+The disposition is the owner's, and it is named here rather than resolved by
+whichever agent next meets it: split with an audit between, raise the budget for
+a mechanically-uniform diff, or accept that such changes land in parts.
+
+### 1. Root cause, or workaround?
+
+| the fix | the mechanism |
+|---|---|
+| ADR-0026's edges | the spec table bundled *what a command is* with *how it is performed*, so every routing consumer got an engine. Split by layer, one declaration in two of them |
+| KKKK-3's tautology | `>= 0` cannot be false and `importsOf` returns `[]` for that file on every run — the clause asserted nothing and the **title** asserted something untrue |
+| KKKK-2's title | a live specification whose leading words said `OPEN` and whose body said closed |
+
+**None is a workaround, and one is worth naming as a near-miss.** ADR-0026's
+declaration split, taken alone, would have been a workaround wearing a fix's
+clothes: it is the tidy change, it reads as the fix, and it moved **nothing** —
+the first re-measurement was identical. What made it a fix was reading the emit.
+
+### 2. Verified against the easy shape only?
+
+**No, and the hard shape is where the whole change was.** The easy shape is the
+source, which cannot distinguish `import type { X }` from `import { type X }`.
+Every conclusion in this range comes from `dist/*.js`.
+
+### 3. Would CI have caught it?
+
+**Yes, from a run.** `proof:kernelload` and `proof:contract` are unconditional
+steps in `ci.yml`, and the board is GREEN at `34348d4` with both workflows
+successful. The `9c7f078` precedent is the control for this answer: the last
+time this class reached `main`, CI is what went red.
+
+**The inverse — a defect this machine cannot see?** The `barrelCost.mjs` figures
+are one machine's. They are used here as a **differential** (before against
+after, same machine, same session), which is the reading that survives that
+limitation; no absolute number from it is load-bearing.
+
+### 4. Are the proofs non-vacuous?
+
+| mutation | outcome |
+|---|---|
+| one `export type { … } from` restored to `export { type … } from` | `proof:kernelload` red, naming `index.js -> commandSpecs.js -> rotatePages.js -> mupdfWriter.js` |
+| the collision guard deleted | the refusal case red |
+| the store mints from its own counter | the refusal case **and** the draw-count control red |
+| case 6's second `existsSync` pointed at a name that is not there | red |
+
+**The third row is why the control exists**, and it is the direction rule again:
+a store minting its own ids makes the refusal case *unreachable* rather than
+false, and an unreachable case proves nothing while reading as coverage.
+
+**The fourth exists because the case could not fail before.** KKKK-3's tautology
+meant the sixth case had never been able to go red for the reason it names.
+
+### 5. Executed, or asserted?
+
+**Executed:** 514 vitest cases · 38 contract compile cases · `proof:kernelload`
+with two mutations · the nine scan proofs the harness named · `barrelCost.mjs`
+three times · the dist counts by two commands · the board.
+
+**Asserted:** nothing new this range. The one open assertion — that a contained
+client is admitted by the shipped pipe DACL — is unchanged and is now known to
+be unreachable in this checkout.
+
+### 6. Architecture before the feature?
+
+**Yes**, and completed this range: ADR-0026, then the §1/§3.2 amendment in its
+own commit, then the build. Three commits in B4's order.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md` gained the KKKK-1 row and lost its one `OPEN —` title;
+`kernelLoad.proof.mjs`'s sixth case now says what it asserts.
+
+**And LLLL-1 is an item 7 failure inside a source comment rather than a
+document**, which is the category this item does not usually reach: the moved
+text is the specification of *why* one writer per concern is a rule, and it is
+now absent from both files.
+
+---
+
 ## 2026-08-27 — Stage audit: `d92737f..f75005d` — a module arrived with a guard no case reaches, and the property it guards has been lost once before
 
 **Audited through `f75005d`.** Pasted from `npm run audit:scope`:
