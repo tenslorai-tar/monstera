@@ -25,6 +25,8 @@
  * than a wrong one, and those are not the same finding.
  */
 
+import { peakRssBytes } from '../perf/peakRss.mjs';
+
 const megabytes = Number(process.argv[2] ?? '0');
 if (!Number.isInteger(megabytes) || megabytes < 0) {
   process.stderr.write(`hostFixedCostChild: expected a non-negative integer, got ${process.argv[2]}\n`);
@@ -34,7 +36,11 @@ if (!Number.isInteger(megabytes) || megabytes < 0) {
 /** Held in a module-scope binding so nothing collects it while the parent reads. */
 const resident = megabytes === 0 ? null : Buffer.allocUnsafe(megabytes * 1024 * 1024).fill(0x5a);
 
-process.stdout.write(`ready ${resident === null ? 0 : resident.length}\n`);
+// The self-reported peak is what lets the parent prove `PeakWorkingSet64` and
+// `maxRSS` are one counter reached two ways, on every run rather than once in an
+// argument. This cell is our own program and may report on itself; the HOST may
+// not, which is the whole reason the parent-side spelling exists.
+process.stdout.write(`ready ${resident === null ? 0 : resident.length} ${peakRssBytes()}\n`);
 
 // Idle without spinning. An open handle keeps the loop alive and costs nothing
 // measurable; a busy wait would put CPU pressure into a memory measurement, and

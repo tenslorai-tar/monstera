@@ -335,6 +335,61 @@ whatever systematic offset separates the two.** The absolutes above are left
 standing rather than replaced, because an ADR is a record; the way to settle
 which is right is to run the tracked probe, which is now possible.
 
+### Addition, 2026-08-27 — both offsets are explained, and the corrected ratio contradicts §9.17's own argument for the host term (finding PPPP-1)
+
+**Axis 1, the quantity.** `hostFixedCost.mjs` read `WorkingSet64` — the *current*
+set — while §9.17 is enforced against the peak, through `peakRss.mjs`'s
+`process.resourceUsage().maxRSS` (`PeakWorkingSetSize` on Windows). Reading from
+the parent is right and unchanged, for `hostContainment.mjs` step 3's reason; the
+**quantity** was a second opinion about a question `peakRss.mjs` owns (B3a).
+Fixed by adding `peakWorkingSetOf(pid)` there — `Get-Process … PeakWorkingSet64`,
+the same kernel counter reached the other way. Every probe run now prints a
+cross-check: parent **40.5 MB** against the child's own `maxRSS` **40.4 MB**,
+agreeing to **0.2 MB**, and the run refuses to report if they diverge past 2 MB.
+
+**Axis 2, the runtime, which the quantity fix did not touch.** The fix moved the
+host **69.9 → 89.5 MB** and the control **43.6 → 43.7 MB**. A control that does
+not move under a current→peak correction is one whose current set was already at
+its peak, which an idle process's is; a host that moves 20 MB is one Windows had
+been trimming. The remaining 9 MB therefore sat in the control alone, and
+`--runtime` was added to make that reproducible. Measured, 4 runs against
+`C:/Program Files/nodejs/node.exe`: control **54.0–54.3 MB**, host
+**102.3–102.6 MB**.
+
+**The note above was system Node, read as a current set.** 52.7 MB is within
+1.3 MB of system Node's 54.0 MB peak, and 93.6 ≤ 102.3, with the host trimmed
+8.7 MB against the idle control's 1.3 — the trimming mechanism, in the direction
+it predicts. It is **inconsistent** with the pinned binary for the host: a current
+reading cannot exceed the peak, and 93.6 MB exceeds every Electron-as-Node host
+peak observed (max **92.2 MB** over 15 runs). The older figures are rescued
+rather than discarded, and the **0.78×** they yielded was a subtraction across
+two different runtimes.
+
+**Withdrawn from the addition above:** *"both cells moved together"*. They did
+not — 20 MB and 0.1 MB — and that asymmetry is what located axis 2.
+
+**The corrected figures**, 15 paired readings against the pinned binary, which is
+what ADR-0022 makes the host:
+
+| | median | spread |
+|---|---|---|
+| control (bare runtime) | 43.7 MB | 5.9 MB |
+| **host, connected, no document** | **89.5 MB** | **2.9 MB** |
+| the engine's share | 45.8 MB | 6.1 MB |
+| **ratio** | **1.05×** | 0.28× |
+
+**§9.17 argues for the host term as *"a fraction of the runtime's, not a multiple
+of it"*. At 1.05× it is not a fraction** — the engine's share is slightly larger
+than the runtime it sits on. That clause is the stated basis for the term's
+shape, and it is contradicted by the first matched-runtime measurement of it.
+Reported, not acted on: §9.17's writer of record is `docs/ARCHITECTURE.md` and
+moving it is a B4.
+
+**No number is proposed.** `base 128 MB` against 89.5 MB leaves **38.5 MB** of
+slack, so the detector question stands where the previous addition left it — the
+absolute is the only stable statistic, and both subtraction-based candidates
+inherit the share's 6.1 MB spread on a quantity of 45.8.
+
 ---
 
 ## Note, 2026-08-27 — the runner's clean baseline is waiting on an event that SUCCESS PREVENTS

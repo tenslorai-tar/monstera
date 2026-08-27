@@ -58,13 +58,14 @@
  * Usage: node scripts/research/hostFixedCost.mjs [--runs N] [--probe-mb M] [--json]
  */
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { formatError } from '../lib/reportError.mjs';
+import { peakWorkingSetOf } from '../perf/peakRss.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -101,31 +102,23 @@ function numericFlag(flag, fallback) {
 }
 
 /**
- * The working set of a process this run created, read from OUTSIDE it.
+ * The peak working set of a process this run created, read from OUTSIDE it.
  *
- * A process reporting its own memory is the shape `hostContainment.mjs` records
- * as unsafe for a host: the host is hostile by invariant 25's own premise, and
- * an instrument that shares its subject's failure meets that failure while
- * reporting. So this reads the kernel's figure through the parent.
+ * `peakWorkingSetOf` rather than a `Get-Process` call written here: what the
+ * phrase *how much memory a process uses* means on Windows is `peakRss.mjs`'s
+ * question, and a second spelling in this file is a second opinion about it
+ * (B3a). This wrapper exists only to name the pid's provenance.
+ *
+ * The FIRST version of this probe read `WorkingSet64` — the current set — and
+ * that is finding PPPP-1. Reading from the parent is right and unchanged; the
+ * quantity was wrong, and wrong in the reassuring direction, since current is
+ * never above peak and Windows trims it under pressure.
  *
  * @param {number} pid a pid THIS process spawned
  * @returns {number | null} bytes, or null if the process is already gone
  */
-function workingSetBytes(pid) {
-  const read = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $p.WorkingSet64 } else { 'gone' }`,
-    ],
-    { encoding: 'utf8' },
-  );
-  const text = `${read.stdout}`.trim();
-  if (text === 'gone' || text === '') return null;
-  const bytes = Number(text);
-  return Number.isFinite(bytes) ? bytes : null;
+function peakBytes(pid) {
+  return peakWorkingSetOf(pid);
 }
 
 /** @param {import('node:child_process').ChildProcess} child */
@@ -147,7 +140,7 @@ const wait = (ms) => new Promise((settle) => setTimeout(settle, ms));
  *
  * @param {string} runtime
  * @param {number} megabytes
- * @returns {Promise<number>} working set in bytes
+ * @returns {Promise<{ parent: number, self: number }>} peak bytes, read both ways
  */
 async function measureControl(runtime, megabytes) {
   // stdin is a live pipe rather than `ignore` because the child holds the event
@@ -160,15 +153,22 @@ async function measureControl(runtime, megabytes) {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   try {
-    await new Promise((settle, fail) => {
-      child.stdout.once('data', settle);
+    const ready = await new Promise((settle, fail) => {
+      child.stdout.once('data', (chunk) => settle(`${chunk}`));
       child.once('error', fail);
       child.once('exit', (code) => fail(new Error(`control exited early with ${code}`)));
     });
+    // `ready <residentBytes> <ownPeakBytes>` — the third field is the child's own
+    // `peakRssBytes()`, kept so the parent can show the two spellings of the
+    // counter agree rather than asserting that they do.
+    const self = Number(`${ready}`.trim().split(/\s+/u)[2] ?? '0');
+    if (!Number.isFinite(self) || self <= 0) {
+      throw new Error(`the control reported no self peak: ${JSON.stringify(`${ready}`.trim())}`);
+    }
     await wait(SETTLE_MS);
-    const bytes = workingSetBytes(child.pid ?? -1);
-    if (bytes === null) throw new Error('the control was gone before it could be read');
-    return bytes;
+    const parent = peakBytes(child.pid ?? -1);
+    if (parent === null) throw new Error('the control was gone before it could be read');
+    return { parent, self };
   } finally {
     terminate(child);
   }
@@ -221,7 +221,7 @@ async function measureHost(runtime, index) {
       );
     }
     await wait(SETTLE_MS);
-    const bytes = workingSetBytes(child.pid ?? -1);
+    const bytes = peakBytes(child.pid ?? -1);
     if (bytes === null) throw new Error('the host was gone before it could be read');
     return bytes;
   } finally {
@@ -243,7 +243,13 @@ async function main() {
   if (runs < 2) throw new Error('--runs must be at least 2; a spread needs two readings');
   if (probeMb < 1) throw new Error('--probe-mb must be at least 1; the resolution test needs a difference');
 
-  const runtime = electronBinaryPath();
+  // `--runtime` exists because the control cell is where an unexplained 9 MB
+  // sits (PPPP-1's second axis): the quantity fix moved the HOST ~20 MB and the
+  // control ~0.1 MB, so whatever separates this control from the one behind
+  // ADR-0025's 52.7 MB is not the counter. Which binary was measured is the next
+  // candidate, and a flag makes that reproducible rather than argued.
+  const runtimeAt = process.argv.indexOf('--runtime');
+  const runtime = runtimeAt === -1 ? electronBinaryPath() : (process.argv[runtimeAt + 1] ?? '');
   if (!existsSync(runtime)) {
     throw new Error(`${runtime} does not exist. Run \`npm run provision:electron\` first.`);
   }
@@ -252,11 +258,34 @@ async function main() {
   }
 
   // ---- The resolution test, before anything real is measured (item 4a) ----
-  const flat = await measureControl(runtime, 0);
-  const loaded = await measureControl(runtime, probeMb);
+  const flatCell = await measureControl(runtime, 0);
+  const loadedCell = await measureControl(runtime, probeMb);
+  const flat = flatCell.parent;
+  const loaded = loadedCell.parent;
   const recovered = loaded - flat;
   const expected = probeMb * MB;
   const separated = Math.abs(recovered - expected) <= expected * RESOLUTION_TOLERANCE;
+
+  // The two spellings of one counter, shown to agree rather than argued to.
+  // `PeakWorkingSet64` read by the parent and `maxRSS` read by the child both
+  // resolve to `PeakWorkingSetSize`; if they ever disagree, the parent-side
+  // figure is not the quantity §9.17's budgets are enforced against and nothing
+  // below means what it says.
+  const counterGap = Math.abs(flatCell.parent - flatCell.self);
+  const countersAgree = counterGap <= 2 * MB;
+  if (!countersAgree) {
+    process.stderr.write(
+      `COUNTER CROSS-CHECK FAILED — refusing to report.\n\n` +
+        `  parent, PeakWorkingSet64   ${mb(flatCell.parent)} MB\n` +
+        `  child,  maxRSS             ${mb(flatCell.self)} MB\n` +
+        `  difference                 ${mb(counterGap)} MB\n\n` +
+        `These are meant to be one kernel figure reached two ways. A disagreement means the ` +
+        `parent-side reading is not the quantity §9.17 is enforced against, which is finding ` +
+        `PPPP-1 recurring in a new spelling.\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   if (!separated) {
     process.stderr.write(
@@ -278,7 +307,7 @@ async function main() {
   for (let index = 0; index < runs; index += 1) {
     const control = await measureControl(runtime, 0);
     const host = await measureHost(runtime, index);
-    cells.push({ control, host });
+    cells.push({ control: control.parent, host });
   }
 
   const hosts = cells.map((cell) => cell.host);
@@ -299,7 +328,10 @@ async function main() {
   }
 
   process.stdout.write(
-    `Resolution test PASSED — the instrument separates two readings before reporting one.\n` +
+    `Quantity: PEAK working set, read from the parent through peakRss.mjs.\n` +
+      `  counter cross-check: parent PeakWorkingSet64 ${mb(flatCell.parent)} MB vs ` +
+      `child maxRSS ${mb(flatCell.self)} MB — agree to ${mb(counterGap)} MB\n` +
+      `Resolution test PASSED — the instrument separates two readings before reporting one.\n` +
       `  bare runtime ${mb(flat)} MB · +${probeMb} MB cell ${mb(loaded)} MB · recovered ${mb(recovered)} MB\n\n` +
       `${runs} paired readings, control taken in the same run as its host:\n\n` +
       `  run   control      host      engine's share    ratio\n` +

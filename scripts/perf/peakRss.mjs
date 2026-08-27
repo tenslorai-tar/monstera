@@ -66,6 +66,59 @@ export function reportPeak(detail = {}) {
 }
 
 /**
+ * The same counter as {@link peakRssBytes}, read from OUTSIDE the process.
+ *
+ * Two spellings of one kernel figure. `maxRSS` above and `PeakWorkingSet64`
+ * here both resolve to `PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize`; the only
+ * difference is who asks. This exists because some subjects cannot be trusted
+ * to report on themselves — `hostContainment.mjs` step 3 refuses exactly that
+ * for the engine host, which is hostile by invariant 25's own premise.
+ *
+ * **Source and quantity are separate questions, and conflating them cost a
+ * 20 MB discrepancy** (finding PPPP-1): a probe read from the parent, correctly,
+ * and took `WorkingSet64` — the CURRENT set — while every budget in §9.17 is
+ * enforced against the peak. Current is never higher than peak and Windows trims
+ * it under memory pressure, so that reading moves with the machine's mood and
+ * always in the reassuring direction. This entry point exists so the parent-side
+ * question has one answer here rather than a second opinion at each caller (B3a).
+ *
+ * Windows only, and it throws rather than guessing elsewhere: `Get-Process` has
+ * no meaning on another platform, and a parent-side peak there needs a different
+ * mechanism rather than a different string.
+ *
+ * @param {number} pid a process the caller is entitled to read
+ * @returns {number | null} peak working set in bytes, or null if it has exited
+ */
+export function peakWorkingSetOf(pid) {
+  if (process.platform !== 'win32') {
+    throw new Error(
+      `peakWorkingSetOf is Get-Process, which is Windows-only; this is ${process.platform}. ` +
+        `A parent-side peak elsewhere needs its own mechanism, not another string.`,
+    );
+  }
+  const read = spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $p.PeakWorkingSet64 } else { 'gone' }`,
+    ],
+    { encoding: 'utf8' },
+  );
+  const text = `${read.stdout ?? ''}`.trim();
+  if (text === 'gone' || text === '') return null;
+  const bytes = Number(text);
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    throw new Error(
+      `Get-Process returned ${JSON.stringify(text)} for pid ${pid}. A non-positive peak is a ` +
+        `read failure, not a cheap process, and must not be returned as one.`,
+    );
+  }
+  return bytes;
+}
+
+/**
  * @typedef {{ peakRssBytes: number, detail: Record<string, unknown>, output: string }} Measurement
  */
 
