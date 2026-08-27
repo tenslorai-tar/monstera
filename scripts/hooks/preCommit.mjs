@@ -146,15 +146,7 @@ async function main() {
   // Here rather than CI only, for WW-4's reason: a CI-only guard catches the
   // defect after the commit is public, and B10 makes that permanent.
   //
-  // IT READS THE BUILD ON DISK, WHICH THE INDEX IS NOT, and that is the one
-  // thing this caller has to say out loud. The emit is the only place the two
-  // spellings differ, so there is nothing in the index to read; a commit that
-  // changes source without rebuilding is therefore scanned against the previous
-  // emit. The staged TypeScript files are named below rather than a general
-  // disclaimer printed, because a sentence that could have been written before
-  // the change is furniture by its third reading.
-  // ADR-0026's class, the half no lint rule covers — against the INDEX, and
-  // never blind (finding QQQQ-1's remedy).
+  // AGAINST THE INDEX, and never blind (finding QQQQ-1's remedy).
   //
   // This used to be `emittedSideEffects.mjs`, which reads `dist`. Registered
   // fail-closed it blocked every case in `proof:guards`, whose fixture

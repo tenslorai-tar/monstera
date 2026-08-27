@@ -412,6 +412,20 @@ try {
           'package, which is invariant 26 satisfied rather than evaded.',
       },
     ],
+    [
+      'scripts/research/containedStart.mjs',
+      {
+        sites: 1,
+        reason:
+          'imports apps/desktop/dist/win32HostSurface.js through a file:// URL, for the same ' +
+          'reason its sibling probe does: the measurement is about the SHIPPED surface, so a ' +
+          'copy of it would answer a different question. The path needs Windows backslash ' +
+          'conversion at run time. Like that sibling it starts the Electron BINARY in Node ' +
+          'mode by path and never imports the electron package — and here that is the subject ' +
+          'rather than a detail, since what it measures is whether an AppContainer token can ' +
+          'reach that binary at all (ADR-0027).',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */

@@ -227,6 +227,9 @@ if (mode !== undefined) {
   const sorted = [...regressions].sort((left, right) => left - right);
   const min = sorted[0] ?? 0;
   const max = sorted[sorted.length - 1] ?? 0;
+  // Upper-middle rather than an interpolated median on an even count. It is
+  // reported for shape only — the figure ADR-0025 consumes is `min`, and an
+  // approximate middle cannot move it.
   const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
   process.stdout.write(
     `\n  R (ADR-0025): barrel − bare, ${String(runs)} sweep(s) under ${runtimeName}\n` +
