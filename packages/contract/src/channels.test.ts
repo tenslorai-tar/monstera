@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
 import { channelIds, channels, type ContractHandlers } from './channels.js';
-import { type Incident } from './incident.js';
+import type { Incident } from './incident.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
 function ignore(_incident: Incident): void {

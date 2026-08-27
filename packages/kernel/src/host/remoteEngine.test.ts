@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
-import { type ByteImage, type MupdfSession } from '../engineSeam.js';
+import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter, withDocument } from '../mupdfWriter.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';

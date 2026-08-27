@@ -1,9 +1,9 @@
-import { type ClientApi, type CommandOfKind } from '@monstera/contract';
+import type { ClientApi, CommandOfKind } from '@monstera/contract';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
-import { type CaptureResult, type CommandPrior } from '../commandLog.js';
-import { type MupdfSession } from '../engineSeam.js';
-import { type EngineChannels } from './engineChannels.js';
+import type { CaptureResult, CommandPrior } from '../commandLog.js';
+import type { MupdfSession } from '../engineSeam.js';
+import type { EngineChannels } from './engineChannels.js';
 
 /**
  * Running commands against a session an engine host holds (ADR-0023 Decision

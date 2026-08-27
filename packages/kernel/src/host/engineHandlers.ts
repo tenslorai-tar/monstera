@@ -1,9 +1,9 @@
-import { type Handlers } from '@monstera/contract';
+import type { Handlers } from '@monstera/contract';
 
 import type { CommandExecution } from '../commandSpecs.js';
-import { type EngineWriter, type MupdfSession } from '../engineSeam.js';
-import { type ContainmentProbePaths, type ContainmentReport } from './containment.js';
-import { type EngineChannels } from './engineChannels.js';
+import type { EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
+import type { EngineChannels } from './engineChannels.js';
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it

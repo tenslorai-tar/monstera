@@ -9,7 +9,7 @@ import {
 import { localMupdfExecution } from '../commandSpecs.js';
 import { TOKEN_BYTES } from '../token.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
-import { type HostTermination } from './runtime.js';
+import type { HostTermination } from './runtime.js';
 
 /**
  * The engine host's program, driven without a pipe, a container or a document.

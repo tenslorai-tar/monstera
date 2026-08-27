@@ -1,8 +1,8 @@
-import { type ClientApi } from '@monstera/contract';
+import type { ClientApi } from '@monstera/contract';
 
-import { type ByteImage, type EngineWriter, type MupdfSession } from '../engineSeam.js';
-import { type EngineChannels } from './engineChannels.js';
-import { type RemoteSessions } from './remoteEngine.js';
+import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { EngineChannels } from './engineChannels.js';
+import type { RemoteSessions } from './remoteEngine.js';
 
 /**
  * `EngineWriter`'s three lifecycle methods against a session an engine host
