@@ -118,6 +118,56 @@ check(
   }
 }
 
+// ---------------------------------------------------------------------------
+// THE RUNTIME OPTION IS HONOURED — a harness fix asserted at the harness.
+//
+// `runtime` was added because ADR-0025 added a figure measured under system
+// node to a floor measured under the pinned Electron binary (SSSS-2). The
+// repair is one `??`, and every assertion in this file reads a peak the default
+// runtime produces perfectly well — so with the option deleted the whole file
+// still passes, which is the shape a harness fix always has: it changes an
+// INPUT, and assertions look at outputs.
+//
+// The case therefore asserts what `measurePeak` PASSES, and it does so without
+// needing a second working interpreter — a case keyed on the Electron binary
+// would be UNVERIFIABLE on any runner that installs nothing, which is a branch
+// keyed on provisioning and the richer world is the one that hides the defect.
+// A runtime that cannot exist separates the two states with nothing installed:
+// honoured, the spawn fails and the message names the path; ignored, the
+// measurement succeeds.
+// ---------------------------------------------------------------------------
+{
+  const absent = join(PERF, '__no_such_runtime__.exe');
+  let threw = false;
+  let message = '';
+  try {
+    measurePeak(ALLOCATE, ['10'], { runtime: absent });
+  } catch (error) {
+    threw = true;
+    message = error instanceof Error ? error.message : String(error);
+  }
+  check(
+    'measurePeak spawns the runtime it was given rather than this process',
+    threw && message.includes(absent),
+    threw
+      ? `It failed, but the message does not name the runtime it tried, so this case cannot ` +
+        `tell "used the option" from "failed for another reason": ${message.slice(0, 300)}`
+      : `It SUCCEEDED with a runtime that does not exist, which means the option was ignored ` +
+        `and every caller silently gets this process's interpreter.`,
+  );
+
+  // VACUITY GUARD. The case above proves nothing if the fixture would fail
+  // anyway — the negative-probe rule: build the input from something that
+  // WOULD succeed if the guard were absent.
+  const control = measurePeak(ALLOCATE, ['10']);
+  check(
+    'the same call with no runtime option succeeds, so the refusal above is the option',
+    control.peakRssBytes > 0,
+    `The default-runtime control failed too, so the case above is impossibility rather than ` +
+      `refusal and separates nothing.`,
+  );
+}
+
 if (failures.length > 0) {
   process.stderr.write(
     `\nPeak-RSS instrument proof — ${failures.length} failure(s):\n\n` +

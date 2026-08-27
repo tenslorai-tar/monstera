@@ -567,3 +567,55 @@ well, or write them to a public artefact. A blanket success-notice in
 `annotate.mjs` is the wrong shape — every annotated step would emit one, and
 GitHub caps annotations per run, so real error annotations would be crowded out
 by routine ones. Narrow it to the gate that owns the figure.
+
+---
+
+## Correction, 2026-08-27 — `R` was measured under the wrong runtime, and it is larger
+
+**Finding SSSS-2.** Every figure above is a peak taken under a named runtime, and
+`R = 9.6 MB` was not. It came from `barrelCost.mjs`, which called `measurePeak`,
+which spawned `process.execPath` — **system node**, because that is what started
+the harness. The floor and the ceiling's base come from `main-service` under the
+**pinned Electron binary in Node mode**. So the ceiling added a term measured
+under one runtime to a base measured under another, with 2.2 MB of margin
+standing on it — the same shape this ADR already withdrew once for `0.78×`.
+
+`measurePeak` now takes a `runtime`, and `barrelCost.mjs` takes `--runtime` and
+`--runs`. Five sweeps of all six cells under each, this machine, 2026-08-27:
+
+| runtime | min | median | max | spread |
+|---|---|---|---|---|
+| system node (`node.exe` 24.12.0) | 7.5 MB | 7.8 MB | 8.0 MB | 0.5 MB |
+| pinned Electron 43.4.1, Node mode | **10.3 MB** | 10.3 MB | 13.0 MB | 2.7 MB |
+
+**`R` is not runtime-independent.** That it might be was the plausible model —
+a marginal cost is the module's own allocation, so absolutes could differ while
+the delta did not — and it is wrong by 2.8 MB, which is a third of the figure.
+The instrument's own positive control passed under both: `mupdfWriter.js` costs
+39.3 MB and 41.4 MB over bare respectively, so both runtimes could see the
+subject.
+
+**The recorded 9.6 MB was also a single reading, and it lies outside the
+five-sweep node range entirely** (7.5–8.0). So it carried between-session
+variance on top of the runtime error, and neither was visible from the one
+number.
+
+**The consequence, under this ADR's own corrected `min + R` rule.** `min` is
+`main-service`'s smallest reading, 88.6 MB, and `R` is the smallest regression
+that must be caught — so the **minimum** of the sweeps feeds it, never the
+median: a ceiling built on a regression larger than the smallest one that can
+occur is a ceiling that lets that occurrence through.
+
+- Ceiling was 88.6 + 9.6 = **98.2 MB**.
+- Ceiling is 88.6 + 10.3 = **98.9 MB**.
+- Window: **(92.2, 98.9)**, 6.7 MB.
+
+**`base 96 MB` stands and its residual is now closed.** Its ceiling margin rises
+from 2.2 MB to **2.9 MB**, and both terms of the window are now measured under
+the runtime the role actually runs in. The number does not move, which is worth
+saying plainly: the correction was worth making because it could have moved it,
+and *it came back higher* was not the more likely outcome.
+
+**`base 98` remains withdrawn.** It would now sit 0.9 MB below the ceiling rather
+than 0.2 MB, and that is still not a margin against a `min` taken from thirty
+readings that more sampling can only lower.

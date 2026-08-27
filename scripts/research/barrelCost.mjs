@@ -30,8 +30,28 @@
  * Reports peak working set from the kernel — `peakRss.mjs` — rather than a
  * sampler, for the reason that module's own header gives.
  *
+ * ## THE RUNTIME IS A VARIABLE AND WAS NOT ONE (SSSS-2)
+ *
+ * Every figure here is a delta between two cells, and a delta is only readable
+ * when both cells ran under the same interpreter. That much was always true.
+ * What was not stated is which interpreter, and the answer was *whichever one
+ * started the harness* — system node, in practice, because `measurePeak`
+ * defaulted to `process.execPath`.
+ *
+ * ADR-0025 then took the barrel figure from here as its `R` and added it to a
+ * floor measured under the **pinned Electron binary in Node mode**. PPPP-1 put
+ * roughly 9 MB between those two runtimes on a bare control — the same order as
+ * `R` itself — so the ceiling was a subtraction across two runtimes, which is
+ * the shape ADR-0025 had already withdrawn once for `0.78×`.
+ *
+ * `--runtime electron` runs every cell under the binary the host actually uses.
+ * The delta is still within-runtime; what changes is which runtime, and the two
+ * answers are what say whether a marginal cost is runtime-independent. That was
+ * a plausible model and this project's rule is to measure it.
+ *
  * Usage: node scripts/research/barrelCost.mjs [bare|barrel|modules]
- *        node scripts/research/barrelCost.mjs            (runs all three)
+ *        node scripts/research/barrelCost.mjs                  (runs all cells)
+ *        node scripts/research/barrelCost.mjs --runtime electron
  */
 
 import { existsSync } from 'node:fs';
@@ -39,6 +59,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { measurePeak, reportPeak } from '../perf/peakRss.mjs';
+import { electronBinaryPath } from '../provision/electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SELF = fileURLToPath(import.meta.url);
@@ -85,7 +106,46 @@ const CELLS = [
   'barrel',
 ];
 
-const mode = process.argv[2];
+/**
+ * The interpreter every cell runs under, and the environment it needs.
+ *
+ * `node` is kept as the default rather than switched, because the figures this
+ * file has already produced were taken that way and a silently changed default
+ * would make the new numbers look like a continuation of the old ones.
+ */
+const argv = process.argv.slice(2);
+const runtimeAt = argv.indexOf('--runtime');
+const runtimeName = runtimeAt === -1 ? 'node' : (argv[runtimeAt + 1] ?? '');
+if (runtimeName !== 'node' && runtimeName !== 'electron') {
+  process.stderr.write(`--runtime takes \`node\` or \`electron\`, not ${JSON.stringify(runtimeName)}\n`);
+  process.exit(2);
+}
+const wantsElectron = runtimeName === 'electron';
+const runtime = wantsElectron ? electronBinaryPath() : process.execPath;
+const runtimeEnv = wantsElectron ? { ELECTRON_RUN_AS_NODE: '1' } : {};
+if (wantsElectron && !existsSync(runtime)) {
+  process.stderr.write(`${runtime} does not exist. Run \`npm run provision:electron\` first.\n`);
+  process.exit(1);
+}
+
+// EVERY value-taking flag consumes its argument, derived from one list rather
+// than named one flag at a time — the first version handled `--runtime` alone
+// and `--runs 5` then reached the cell dispatch as the cell "5".
+//
+// The `=== -1` guard on each is load-bearing for the same reason in reverse:
+// `at + 1` is 0 for an absent flag, which silently excludes the first
+// positional and turns a single-cell invocation into a sweep that recurses into
+// itself.
+const VALUE_FLAGS = ['--runtime', '--runs'];
+const consumed = new Set(
+  VALUE_FLAGS.flatMap((flag) => {
+    const at = argv.indexOf(flag);
+    return at === -1 ? [] : [at, at + 1];
+  }),
+);
+const mode = argv.find(
+  (argument, index) => !consumed.has(index) && !argument.startsWith('--'),
+);
 if (mode !== undefined) {
   if (!CELLS.includes(mode)) {
     process.stderr.write(`unknown cell: ${mode}\n`);
@@ -102,20 +162,52 @@ if (mode !== undefined) {
     process.exit(1);
   }
 
-  /** @type {{ mode: string, bytes: number }[]} */
-  const rows = [];
-  for (const each of CELLS) {
-    const { peakRssBytes } = await measurePeak(SELF, [each]);
-    rows.push({ mode: each, bytes: peakRssBytes });
+  // ONE SWEEP IS ONE POINT, and `R` was derived from one. RRRR-3's finding was
+  // that `main`'s baseline was settled with no spread measured at all; taking
+  // this figure the same way and adding it to a budget would be that again, one
+  // input along. Two sweeps under the same runtime an hour apart already
+  // disagreed by 1.6 MB, which is a sixth of the number.
+  const runsAt = argv.indexOf('--runs');
+  const runs = runsAt === -1 ? 1 : Number(argv[runsAt + 1] ?? '');
+  if (!Number.isInteger(runs) || runs < 1) {
+    process.stderr.write(`--runs takes a positive integer, not ${JSON.stringify(argv[runsAt + 1])}\n`);
+    process.exit(2);
   }
 
+  process.stdout.write(`\n  runtime: ${runtimeName} — ${runtime}\n`);
+
   const mb = (/** @type {number} */ n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+
+  /** @type {number[]} */
+  const regressions = [];
+  /** @type {{ mode: string, bytes: number }[]} */
+  let rows = [];
+
+  for (let sweep = 0; sweep < runs; sweep += 1) {
+    rows = [];
+    for (const each of CELLS) {
+      const { peakRssBytes } = await measurePeak(SELF, [each], { runtime, env: runtimeEnv });
+      rows.push({ mode: each, bytes: peakRssBytes });
+    }
+    const bareOf = rows.find((row) => row.mode === 'bare')?.bytes ?? 0;
+    const barrelOf = rows.find((row) => row.mode === 'barrel')?.bytes ?? 0;
+    regressions.push(barrelOf - bareOf);
+    if (runs > 1) {
+      process.stdout.write(
+        `  sweep ${String(sweep + 1).padStart(2)}: bare ${mb(bareOf)}  barrel ${mb(barrelOf)}  ` +
+          `R ${mb(barrelOf - bareOf)}\n`,
+      );
+    }
+  }
+
+  process.stdout.write('\n');
   const at = (/** @type {string} */ name) => rows.find((row) => row.mode === name)?.bytes ?? 0;
   const bare = at('bare');
   for (const row of rows) {
     const over = row.mode === 'bare' ? '' : `  (+${mb(row.bytes - bare)} over bare)`;
     process.stdout.write(`  ${row.mode.padEnd(18)} ${mb(row.bytes)}${over}\n`);
   }
+  if (runs > 1) process.stdout.write(`  (cells above are the LAST sweep; R below is all ${String(runs)})\n`);
 
   // THE ANCHOR. `mupdfWriter.js` binds the native library at module scope, so
   // its figure is what "this module loaded the parser" looks like on this
@@ -125,6 +217,24 @@ if (mode !== undefined) {
   process.stdout.write(
     `\n  ANCHOR: mupdfWriter.js — which binds the native library at module scope — costs\n` +
       `  ${mb(adapter)} over bare. A cell within a megabyte or two of that has loaded it too.\n`,
+  );
+
+  // ADR-0025's `R` — the barrel-class regression its ceiling is derived from —
+  // printed here rather than left as a subtraction for whoever cites it. A
+  // figure a reader computes is one they can compute from the wrong two rows,
+  // and this one is added to a floor measured under a named runtime, so the
+  // runtime belongs on the same line as the number.
+  const sorted = [...regressions].sort((left, right) => left - right);
+  const min = sorted[0] ?? 0;
+  const max = sorted[sorted.length - 1] ?? 0;
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  process.stdout.write(
+    `\n  R (ADR-0025): barrel − bare, ${String(runs)} sweep(s) under ${runtimeName}\n` +
+      `    min ${mb(min)}   median ${mb(median)}   max ${mb(max)}   spread ${mb(max - min)}\n` +
+      `  Only comparable with a floor measured under the SAME runtime. ADR-0025's ceiling\n` +
+      `  is min + R, so the figure that feeds it is the MINIMUM above and not the median:\n` +
+      `  a ceiling built on a regression larger than the smallest one that can occur is a\n` +
+      `  ceiling that lets that occurrence through.\n`,
   );
 
   // A POSITIVE CONTROL, because every number here is a peak and "it did not

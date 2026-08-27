@@ -160,7 +160,11 @@ try {
     `reachable via ${fromIndex.path.join(' -> ')}.\n` +
       `      ADR-0026: a package's public surface exports no value whose module graph binds a ` +
       `native library. Measured 2026-08-27 — the barrel cost +41.7 MB over a bare Node process ` +
-      `before this held and +9.6 MB after, against +46.0 MB for the adapter itself.\n` +
+      `before this held and +7.5 to +8.0 MB after across five sweeps, against +39.3 MB for the ` +
+      `adapter itself. The single +9.6 MB reading first recorded here sat outside that range, ` +
+      `and under the pinned Electron runtime the same delta is +10.3 MB (SSSS-2): a marginal ` +
+      `cost is not runtime-independent, so a figure without its runtime cannot be subtracted ` +
+      `from one taken under another.\n` +
       `      SIX causes were found in one change and every one was a spelling: five ` +
       `\`import { type X } from\` / \`export { type X } from\`, which keep the STATEMENT and ` +
       `emit \`import {}\`, and one plain value export of an implementation. Read the emit for ` +

@@ -130,13 +130,27 @@ export function peakWorkingSetOf(pid) {
  * parsed — into the figure being compared against a budget, and those have
  * nothing to do with the role under test.
  *
+ * **`runtime` defaults to this process's interpreter and is worth passing
+ * deliberately.** Two numbers taken under different runtimes cannot be
+ * subtracted from each other: the pinned Electron binary in Node mode and system
+ * node differ by roughly 9 MB on a bare control (PPPP-1, axis 2), which is the
+ * same size as the regressions ADR-0025's ceiling is derived from. A caller that
+ * takes the default gets *the interpreter that happened to start the harness*,
+ * which is a property of how it was invoked and not of what it measures.
+ *
+ * Nothing is inferred from the value: an Electron binary needs
+ * `ELECTRON_RUN_AS_NODE=1` and the caller passes it through `env`, because a
+ * runtime selector that also decided the environment would be a second opinion
+ * about what running the pinned binary in Node mode means.
+ *
  * @param {string} scriptPath
  * @param {readonly string[]} args
- * @param {{ env?: NodeJS.ProcessEnv, timeoutMs?: number }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, timeoutMs?: number, runtime?: string }} [options]
  * @returns {Measurement}
  */
 export function measurePeak(scriptPath, args = [], options = {}) {
-  const result = spawnSync(process.execPath, [scriptPath, ...args], {
+  const runtime = options.runtime ?? process.execPath;
+  const result = spawnSync(runtime, [scriptPath, ...args], {
     encoding: 'utf8',
     env: { ...process.env, ...options.env },
     timeout: options.timeoutMs ?? 15 * 60 * 1000,
@@ -146,8 +160,15 @@ export function measurePeak(scriptPath, args = [], options = {}) {
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
 
   if (result.status !== 0) {
+    // THE INTERPRETER IS NAMED, and it is the first thing a reader needs: a
+    // spawn that never happened and a script that exited non-zero arrive here
+    // identically, and only the runtime line separates "there is no such
+    // interpreter" from "the measured script failed".
     throw new Error(
-      `Measured run failed (exit ${String(result.status)}): ${scriptPath} ${args.join(' ')}\n${output.slice(-4000)}`,
+      `Measured run failed (exit ${String(result.status)}) under runtime ${runtime}\n` +
+        `  ${scriptPath} ${args.join(' ')}\n` +
+        `  ${result.error === undefined ? 'the process ran and exited non-zero' : `spawn error: ${result.error.message}`}\n` +
+        `${output.slice(-4000)}`,
     );
   }
 
