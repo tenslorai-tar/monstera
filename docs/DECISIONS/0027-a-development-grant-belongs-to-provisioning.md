@@ -146,3 +146,59 @@ machine state and into the application, which is (a) with a different trigger.
   development containment result is reported.
 - **The wiring itself.** `composition.ts` still calls no factory. This removes the
   reason it could not be observed; it does not do it.
+
+## Correction, 2026-08-27 — the grant is necessary and is not sufficient
+
+This decision rested on a prediction nothing had run: that granting
+`ALL APPLICATION PACKAGES` on the four provisioned paths lets a contained host
+start. `scripts/research/containedStart.mjs` now measures it, three cells through
+the shipped `win32HostSurface`, one variable, with `packages/kernel/dist/host/hostEntry.js`
+as the program and its own no-pipe-name refusal as the marker that it reached its
+own code:
+
+| cell | contained | grants | outcome |
+|---|---|---|---|
+| `uncontained` | no | present | **ran** — reached the entry's refusal |
+| `revoked` | yes | removed | dead at **runtime-init**, `icu_util.cc:232` |
+| `granted` | yes | present | dead at **module-resolution**, `Cannot find module …dist/host/hostEntry.js` |
+
+**The verdict is INSUFFICIENT.** The grant moves the failure and does not produce
+a start.
+
+Three things follow, and the third is the one that reopens a decision.
+
+**The predicted mechanism is wrong in kind.** This ADR and the FEATURES row both
+said the token *cannot execute the image* and the process *dies before its first
+line*. It does execute: the revoked cell reaches Chromium's ICU initialisation
+and dies reading the runtime's own data. The conclusion — no start without the
+grant — holds; the sentence explaining it did not, and both documents are
+corrected rather than left to vouch for each other.
+
+**The revoked cell is what makes any of this readable.** The machine is left
+granted by `provision:grants`, so a single positive reading cannot separate *the
+grant works* from *it would have worked anyway*. The uncontained cell is the
+other half: node says `Cannot find module` for a file it cannot **read** as
+readily as for one that is absent, so without a cell that reaches the entry the
+`granted` row would have been indistinguishable from a stale build path.
+
+**Rejected alternative (b) was rejected under a premise this measurement
+falsifies, and is therefore reopened rather than reaffirmed.** (b) — an
+uncontained host in development — was refused on the reading that development
+containment costs nothing beyond four grants on artefacts provisioning already
+installs. It costs more: the host's program is the application's own built
+output, which in production the install root grants by inheritance and in a
+checkout grants nothing. Making development containment work means granting
+application packages read over `packages/*/dist` and the npm dependency graph the
+host loads — `@monstera/contract`, `@monstera/shared`, `mupdf`, `@cantoo/pdf-lib`,
+`zod` — which is a materially wider surface than §5's three classes and is an
+invariant 25(d) question, not a provisioning detail. **This correction does not
+decide it.** It records that the choice between widening the set and taking (b)
+is now open on evidence, and that the wiring is blocked behind it.
+
+**And the paragraph above headed *Which paths are granted is derived* says the
+spike holds five.** It holds four: the handed pair left the list on 2026-08-26
+when `createSessionDirectories` began passing a security descriptor to
+`CreateDirectoryW`, so there is no window in which those directories exist
+ungranted. `grantSet()` and the spike's `GRANTS` are the same four paths today —
+which is itself a second opinion about one question (B3a), and is left standing
+here only because this correction does not settle what that set should contain.
