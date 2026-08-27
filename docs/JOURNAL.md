@@ -849,6 +849,50 @@ scan's scope is `String.raw` regions by design (VV-1 measured that widening it
 to every template produces 36 unusable reports), so this variant has no
 mechanism and will recur.
 
+### Correction, 2026-08-27 (WWWW-4) — the temp census reached the right conclusion on evidence that could not support it
+
+`798e2ee` concluded that most of the 1,229 `monstera-*` directories in `%TEMP%`
+were not this repository's, on the grounds that **`git log -S --all` finds no
+commit that ever contained `monstera-print`, `monstera-stamp` or
+`monstera-nested`.**
+
+That grep is blind to the likeliest candidate. This project writes uncommitted
+scratchpad probes constantly and by design — four this week alone — and one of
+those being the source would leave no commit trace at all. The conclusion was
+right; the reason given for it was not evidence for it.
+
+**What settles it is the creation dates, which were never read.** Measured
+2026-08-27 against `c767e66`, this repository's first commit at
+**2026-08-15 16:03**:
+
+| | |
+|---|---|
+| oldest directory | `monstera-proof-fo5uyo`, **2026-06-09 04:11** |
+| created before the repository existed | **713 of 732** |
+| created since | **19** |
+
+The oldest predates the first commit by **more than two months**, and 713 cannot
+be this repository's output whatever code once wrote them. Thirty prefixes
+appear in that pre-repository set, including `native` and `proof`, which the
+census had *attributed* — so a prefix matching a live call site does not
+establish that these instances came from it.
+
+**The 19 within the repository's life are all ours, and none is a missing
+cleanup:** `host-surface`, `cff`, `advisory`, `audit`, `adr`. Every one of those
+call sites removes its directory, and `hostSurfaceProbe.mjs` documents why its
+own removal fails about one run in three — `TerminateProcess` is asynchronous,
+so the kernel releases the child's handles after the call returns. They cluster
+on 08-23 to 08-25, the days runs were being killed at bounds during the WWW-2
+investigation, which is WWW-1's recorded behaviour: a killed script never runs
+its `finally`.
+
+**So the corrected finding is narrower and stronger.** The two leaks fixed in
+`798e2ee` were the only sites in this repository creating a temp directory and
+never removing it; the rest of our leftovers are killed-run debris with a known
+mechanism; and the bulk of the population predates the repository. The claim
+*"about 700 came from code that has never existed here"* is now a reading rather
+than an inference — and it is 713, dated.
+
 ---
 
 ## 2026-08-27 — Stage audit: `9bbfbbb..e48b265` — a swapped gate left its old comment standing, and I pushed twice onto a red board

@@ -88,7 +88,7 @@ import { fileURLToPath } from 'node:url';
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
-import { SCANNING_PROOFS, SCANNING_PROOF_COUNT } from './lib/scanningProofs.mjs';
+import { SCANNING_PROOFS, rosterMiscount } from './lib/scanningProofs.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 import { UNVERIFIABLE_MARKER } from './lib/unverifiable.mjs';
 
@@ -302,22 +302,19 @@ const requested = ONLY === null ? derived : derived.filter((name) => name.includ
  * that already takes about three minutes. It is not in `prePush.mjs` for the
  * same figure: three minutes on every push is how a hook earns `--no-verify`.
  */
-// THE ANCHOR IS READ HERE TOO, and it was not in the first version of this
-// (found by the stage audit of this range). `SCANNING_PROOF_COUNT` exists
-// because the failure to fear makes the roster SMALLER — item 4c — and a list
-// that derived its own count would agree with any deletion. This caller reached
-// past that to the raw array, so removing an entry and its count together would
-// have left the sweep quietly running eight while every consumer agreed.
+// THE ANCHOR IS READ HERE TOO, and it was not in the first version (VVVV-1).
+// `SCANNING_PROOF_COUNT` exists because the failure to fear makes the roster
+// SMALLER, and a list deriving its own count agrees with any deletion — so
+// removing an entry together with its count would have left this sweep running
+// eight of nine while every consumer agreed.
 //
-// Staleness is not checked here: `derived.includes` below already restricts the
-// roster to scripts THIS root declares, which is what makes a fixture
-// repository — declaring none of them — run normally instead of refusing.
-if (SCANNING_PROOFS.length !== SCANNING_PROOF_COUNT) {
-  process.stderr.write(
-    `The scanning roster holds ${String(SCANNING_PROOFS.length)} entries and ` +
-      `SCANNING_PROOF_COUNT says ${String(SCANNING_PROOF_COUNT)}. One moved without the other, ` +
-      `and this sweep would run whichever set survived without saying so.\n`,
-  );
+// `rosterMiscount` and not the whole `scanningProofRoster`, because the other
+// half — is every entry a script THIS root declares — must not fire here: a
+// fixture repository declares none of them and has to run normally. That was a
+// paragraph justifying an inline comparison until WWWW-3 made it two names.
+const miscount = rosterMiscount();
+if (miscount !== null) {
+  process.stderr.write(`${miscount}\nThis sweep would run whichever set survived, silently.\n`);
   process.exit(78);
 }
 

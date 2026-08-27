@@ -45,7 +45,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { proofScripts } from './proofCoverage.mjs';
-import { SCANNING_PROOFS } from './scanningProofs.mjs';
+import { SCANNING_PROOFS, rosterMiscount } from './scanningProofs.mjs';
 
 /**
  * An import edge that must exist, or this instrument has not looked.
@@ -203,6 +203,14 @@ export function affectedProofs(changed, options = {}) {
  * @returns {string}
  */
 function reachLimit(executed) {
+  // THE ANCHOR, READ BY THIS CALLER TOO. It imported the bare array and was
+  // protected only by `checkLocal.mjs` aborting first — a coupling nothing
+  // stated, and one that evaporates for any other consumer of this report
+  // (WWWW-3). The roster shrinking is what this paragraph would then be silent
+  // about, while sounding exactly as complete.
+  const miscount = rosterMiscount();
+  if (miscount !== null) return `      ${miscount}\n`;
+
   const ran = SCANNING_PROOFS.filter((name) => executed.has(name));
   const missed = SCANNING_PROOFS.filter((name) => !executed.has(name));
 

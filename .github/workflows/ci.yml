@@ -990,6 +990,22 @@ jobs:
       - name: Prove the performance gate follows the declared budgets
         run: node scripts/ci/annotate.mjs scripts/proofs/perfBudget.proof.mjs
 
+      # WWWW-1'S CONTROL. A ~5.8 MB shift in every role's baseline was observed
+      # here across an event — an eight-hour hung `vitest` tree being killed —
+      # and "sessions differ" and "memory pressure was released" fit that
+      # observation identically, including all three roles moving together.
+      #
+      # A runner is the strongest control available: it starts clean every time,
+      # so it has no hung process to free, and successive runs are genuinely
+      # separate sessions on identical images. `--always` because the figure is
+      # the whole point and a passing step's log is unreadable without owner
+      # authentication (ADR-0025's note of 2026-08-27).
+      #
+      # Fifteen readings, not thirty: this step exists to bound BETWEEN-run
+      # variation, and the within-run spread is already 0.2 MB from two machines.
+      - name: Measure main-service's baseline spread on a clean machine
+        run: node scripts/ci/annotate.mjs --always scripts/research/baselineSpread.mjs --runs 15 --role main-service
+
   # ---------------------------------------------------------------------------
   # INVARIANT 25 ON A SECOND WINDOWS IMAGE (finding XXX-1).
   #

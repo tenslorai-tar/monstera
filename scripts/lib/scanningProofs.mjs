@@ -254,16 +254,55 @@ export function enumeratingProofs(root = repoRoot()) {
  * @returns {RosterVerdict}
  */
 export function scanningProofRoster(root = repoRoot()) {
+  return {
+    roster: SCANNING_PROOFS,
+    stale: staleRosterEntries(root),
+    miscount: rosterMiscount(),
+  };
+}
+
+/**
+ * Is the roster internally consistent — does it hold as many entries as the
+ * anchor says?
+ *
+ * **Split out because a caller re-implemented it inline** (finding VVVV-1 → the
+ * WWWW-3 correction). `checkLocal.mjs` needs this half and must NOT have the
+ * other: it appends the roster to a check-only sweep, and a fixture repository
+ * declaring none of these scripts has to run normally rather than refuse. Its
+ * first version therefore compared `SCANNING_PROOFS.length` to
+ * `SCANNING_PROOF_COUNT` itself, with a comment explaining which half it wanted
+ * and why.
+ *
+ * That comment is the tell B3a names: *a helper sitting beside a bare inline
+ * expression is the same trap one step on, because the choice between them is a
+ * paragraph someone has to read and reject rather than two names they pick
+ * from.* So there are two names now, and the paragraph is gone.
+ *
+ * Takes no root, which is the point — this question is about two constants in
+ * this file and cannot be answered differently for a different tree.
+ *
+ * @returns {string | null} why the anchor disagrees, or `null`
+ */
+export function rosterMiscount() {
+  if (SCANNING_PROOFS.length === SCANNING_PROOF_COUNT) return null;
+  return (
+    `The roster holds ${String(SCANNING_PROOFS.length)} entries and SCANNING_PROOF_COUNT ` +
+    `says ${String(SCANNING_PROOF_COUNT)}. One of them moved without the other, which is ` +
+    `what the anchor is for — a roster that derived its own count would agree with any ` +
+    `deletion. Change both, and read the diff of the list.`
+  );
+}
+
+/**
+ * Which roster entries are not `proof:*` scripts of the given root at all.
+ *
+ * The half that depends on a tree, and therefore the half a fixture repository
+ * answers differently for a reason that is not a defect.
+ *
+ * @param {string} [root]
+ * @returns {string[]}
+ */
+export function staleRosterEntries(root = repoRoot()) {
   const known = new Set(proofScripts(root).map((proof) => proof.name));
-  const stale = SCANNING_PROOFS.filter((name) => !known.has(name));
-
-  const miscount =
-    SCANNING_PROOFS.length === SCANNING_PROOF_COUNT
-      ? null
-      : `The roster holds ${String(SCANNING_PROOFS.length)} entries and SCANNING_PROOF_COUNT ` +
-        `says ${String(SCANNING_PROOF_COUNT)}. One of them moved without the other, which is ` +
-        `what the anchor is for — a roster that derived its own count would agree with any ` +
-        `deletion. Change both, and read the diff of the list.`;
-
-  return { roster: SCANNING_PROOFS, stale, miscount };
+  return SCANNING_PROOFS.filter((name) => !known.has(name));
 }
