@@ -134,12 +134,21 @@ export interface HostTermination {
     /**
      * NEITHER END: the peer went away without a violation.
      *
-     * The host process died, or the reader stopped producing bytes. Nothing was
-     * done wrong by anyone; there is simply nobody to answer, so every
-     * outstanding call has to be settled rather than left pending.
+     * Nothing was done wrong by anyone; there is simply nobody to answer, so
+     * every outstanding call has to be settled rather than left pending.
      *
-     * A **defect** to report, which is what separates it from `shutdown`: this
-     * one is the host disappearing when it was supposed to be there.
+     * **Read it as "my peer", because this type has two readers and they mean
+     * opposite processes.** In `main` the peer is the host, and the code says
+     * the host process died or the reader stopped producing bytes — the case
+     * that is a **defect** to report, which is what separates it from
+     * `shutdown`. In the host body the peer is `main`, and the same code says
+     * main is gone: still not a violation, and this time not a defect anyone
+     * can report, because the thing that would receive the report is what
+     * disappeared. The host's answer to it is to stop.
+     *
+     * Stated both ways because the one-sided wording was written when there was
+     * one caller, and a second arrived (`hostBody.ts`, 2026-08-27) for which
+     * every clause about *the host process* read backwards.
      */
     | 'connection-lost'
     /**

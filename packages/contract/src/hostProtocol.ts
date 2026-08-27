@@ -148,6 +148,27 @@ export const ENGINE_HOST_FRAME_MAX_BYTES = 256 * 1024;
 export const HOST_CORRELATION_ID_MAX_CHARS = 64;
 
 /**
+ * How many calls may be outstanding on one engine host connection.
+ *
+ * **Declared here because both ends bound the same thing and their two answers
+ * must not be able to differ.** `createHostClient` refuses the call locally at
+ * this number; `createHostRuntime` in the host treats exceeding it as a
+ * violation and ends the connection. If main's figure were the larger of the
+ * two, an ordinarily busy main would kill its own host — a limit whose failure
+ * mode is a self-inflicted `too-many-in-flight` is exactly the second opinion
+ * B3a names, and it would look like a flaky host rather than a mismatch.
+ *
+ * 32 rather than a rounder number for a reason that is worth stating precisely,
+ * since a limit nobody can justify is one somebody later raises: the lane is
+ * **per document** and serial (ADR-0009 §7), so the concurrency that reaches a
+ * host is bounded by open documents rather than by user actions, and 32 open
+ * documents each with a call in flight is well beyond what §9.17's memory
+ * budget permits main to hold. It is a backstop against a confused main, not a
+ * throughput setting.
+ */
+export const ENGINE_HOST_MAX_IN_FLIGHT = 32;
+
+/**
  * A request travelling from main to the engine host.
  *
  * `.strict()`, for the same reason `failureSchema` is: an extra field arriving

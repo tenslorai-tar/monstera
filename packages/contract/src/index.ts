@@ -25,6 +25,7 @@ export { createClient, wrapHandler, wrapHandlers } from './boundary.js';
 export { BRIDGE_KEY, type MonsteraBridge } from './bridge.js';
 export {
   ENGINE_HOST_FRAME_MAX_BYTES,
+  ENGINE_HOST_MAX_IN_FLIGHT,
   HOST_CORRELATION_ID_MAX_CHARS,
   type HostRequest,
   type HostResponse,
