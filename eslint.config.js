@@ -336,6 +336,30 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
 
+      // ADR-0026's class, closed by a rule rather than by an author remembering.
+      // `import { type X } from './y.js'` elides the SPECIFIERS and keeps the
+      // STATEMENT, emitting `import {} from './y.js'` — a runtime load of a
+      // module the author asked only for types from. `import type { X }` is
+      // erased whole. One such statement cost the kernel barrel 41.7 MB of RSS,
+      // because the module it kept loading bound MuPDF at module scope.
+      //
+      // THE NEIGHBOURING RULE IS NOT THIS ONE, and that was established by a
+      // positive control rather than by reading either name.
+      // `consistent-type-imports` flags a type imported with NO marker; an
+      // inline `type` specifier already satisfies it, so against this tree it
+      // reported 0 while 69 statements had the defect. Enabling it would have
+      // read as watching this class while watching nothing.
+      //
+      // ITS NAME IS LITERAL AND THE EXPORT HALF IS NOT COVERED. It registers
+      // `ImportDeclaration` only. `export { type X } from './y.js'` emits
+      // `export {} from './y.js'` by the same mechanism and is reported by
+      // nothing here — `consistent-type-exports` treats an inline `type`
+      // specifier as already satisfying it too (finding MMMM-1, read from
+      // plugin 8.67.0 and then executed). There is one such statement in this
+      // repository, in `packages/kernel/src/index.ts`, and its comment says so;
+      // a check over the emit is owed on the FEATURES row.
+      '@typescript-eslint/no-import-type-side-effects': 'error',
+
       // Errors, not warnings. A warning accumulates until nobody reads the
       // output, which is how a codebase acquires hundreds of escapes.
       '@typescript-eslint/no-unused-vars': [
