@@ -41,10 +41,54 @@
  * Usage: node scripts/lib/tokenContrast.mjs
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { repoRoot } from './gitScope.mjs';
+
+/**
+ * The colour maths, from the BUILD of `packages/shared`.
+ *
+ * ## This check did not need a build until 2026-08-28, and now does
+ *
+ * Stated rather than absorbed, because a check that silently acquires a
+ * provisioning condition is one that starts answering *could not look* in the
+ * voice of *looked and found nothing* (audit item 3). The refusal below is what
+ * keeps those two apart: a missing or stale build stops the run rather than
+ * evaluating the token file against a previous version of the formula.
+ *
+ * Verified before moving it: CI's `build` job runs `npm run build` before the
+ * step that runs this, so the dependency is satisfied where it matters.
+ * `roleMainService.mjs` and `roleMupdfHost.mjs` take the same shape for the
+ * same reason.
+ *
+ * Dynamic because the freshness check has to run BEFORE the import: a static
+ * `import` is hoisted above every statement in this file, which would make the
+ * guard below dead code that reads like a guard.
+ */
+const SHARED_SOURCE = 'packages/shared/src/colour.ts';
+const SHARED_BUILT = 'packages/shared/dist/colour.js';
+
+{
+  const root = repoRoot();
+  const built = join(root, SHARED_BUILT);
+  if (!existsSync(built)) {
+    throw new Error(
+      `${SHARED_BUILT} does not exist. The contrast formula lives in packages/shared (B3a), so ` +
+        `this check needs it compiled — run \`npm run typecheck\`.`,
+    );
+  }
+  if (statSync(join(root, SHARED_SOURCE)).mtimeMs > statSync(built).mtimeMs) {
+    throw new Error(
+      `${SHARED_BUILT} is older than ${SHARED_SOURCE}, so this check would evaluate the token ` +
+        `file against the PREVIOUS contrast formula and report it as current. Run ` +
+        `\`npm run typecheck\`; if it reports nothing to do, force it with \`npx tsc --build --force\`.`,
+    );
+  }
+}
+
+const colour = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
 
 /** Contrast obligations by category. `null` means the category carries none. */
 const OBLIGATION = {
@@ -115,69 +159,25 @@ export function themesIn(css) {
 }
 
 /**
- * sRGB channels 0-255 for a hex or `rgba()` value, composited over `over`.
+ * The colour maths, RE-EXPORTED rather than implemented (B3a).
  *
- * An alpha role is evaluated POST-COMPOSITE against each surface it sits on
- * (§10.2), because that is what renders — a check against the raw rgba() would
- * be measuring a colour nobody sees.
+ * `channels`, `luminance` and `contrast` were defined here until 2026-08-28,
+ * and this file was their only caller. The UI primitives now need the same WCAG
+ * answer at the point of use (`onColor`, ADR-0003 and §10.2), and two
+ * implementations of an external authority's formula is the shape B3a forbids —
+ * so the definition moved to `packages/shared` and this became a caller.
  *
- * @param {string} value
- * @param {[number, number, number] | null} over
- * @returns {[number, number, number] | null} null when the value is not a colour
+ * They are re-exported because `tokenContrast.proof.mjs` imports them from
+ * here, and pointing that proof at a second module would make *where the
+ * contrast formula lives* a question with two answers again, one layer along.
  */
-export function channels(value, over = null) {
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/iu.exec(value.trim());
-  if (hex !== null) {
-    const digits = hex[1] ?? '';
-    const full =
-      digits.length === 3
-        ? digits
-            .split('')
-            .map((digit) => `${digit}${digit}`)
-            .join('')
-        : digits;
-    return [
-      Number.parseInt(full.slice(0, 2), 16),
-      Number.parseInt(full.slice(2, 4), 16),
-      Number.parseInt(full.slice(4, 6), 16),
-    ];
-  }
+export const channels = colour.channels;
 
-  const rgba = /^rgba?\(([^)]+)\)$/u.exec(value.trim());
-  if (rgba === null) return null;
-  const parts = (rgba[1] ?? '').split(',').map((part) => Number(part.trim()));
-  const [red, green, blue, alpha = 1] = parts;
-  if (![red, green, blue].every((part) => Number.isFinite(part))) return null;
-  if (alpha >= 1 || over === null) {
-    return [Number(red), Number(green), Number(blue)];
-  }
-  return [
-    Number(red) * alpha + over[0] * (1 - alpha),
-    Number(green) * alpha + over[1] * (1 - alpha),
-    Number(blue) * alpha + over[2] * (1 - alpha),
-  ];
-}
+/** @see {@link colour.luminance} — WCAG relative luminance. */
+export const luminance = colour.luminance;
 
-/** @param {[number, number, number]} rgb @returns {number} WCAG relative luminance */
-export function luminance([red, green, blue]) {
-  /** @param {number} raw */
-  const channel = (raw) => {
-    const value = raw / 255;
-    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue);
-}
-
-/**
- * @param {[number, number, number]} foreground
- * @param {[number, number, number]} background
- * @returns {number}
- */
-export function contrast(foreground, background) {
-  const a = luminance(foreground);
-  const b = luminance(background);
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
+/** @see {@link colour.contrast} — the WCAG ratio. */
+export const contrast = colour.contrast;
 
 /**
  * @typedef {{
@@ -298,8 +298,11 @@ export function evaluate(css) {
   // (ADR-0003), and nothing here computes that.
   if (declared.has('accent-soft')) {
     deferred.push(
-      'every theme: --accent-soft carries only the DERIVED chrome accent text, which needs ' +
-        'onColor() — the derivation half of §10.2, owed',
+      'every theme: --accent-soft carries only the DERIVED chrome accent text. onColor() now ' +
+        'EXISTS (packages/shared/src/colour.ts) and this still defers, because the derivation ' +
+        'needs an input this file does not have: the colour the design asks for before it is ' +
+        'adjusted. That arrives with the first primitive that renders on --accent-soft, and the ' +
+        'pair becomes checkable then',
     );
   }
 

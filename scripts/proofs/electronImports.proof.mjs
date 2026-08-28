@@ -443,6 +443,20 @@ try {
           '— and never imports the electron package.',
       },
     ],
+    [
+      'scripts/lib/tokenContrast.mjs',
+      {
+        sites: 1,
+        reason:
+          'loads packages/shared/dist/colour.js through a file:// URL. The WCAG contrast ' +
+          'formula lives in packages/shared because two callers need it and two ' +
+          'implementations of an external authority is what B3a forbids; this file is one of ' +
+          'the callers. The import is DYNAMIC because a build-freshness guard has to run before ' +
+          'it — a static import is hoisted above every statement, which would leave that guard ' +
+          'as dead code that reads like a guard. The path needs Windows backslash conversion at ' +
+          'run time. Nothing here touches Electron: it reads a CSS file and does arithmetic.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */

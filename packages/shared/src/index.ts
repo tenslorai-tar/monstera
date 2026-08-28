@@ -21,3 +21,4 @@ export {
   err,
   toStructuredError,
 } from './result.js';
+export { type Rgb, channels, contrast, luminance, onColor } from './colour.js';
