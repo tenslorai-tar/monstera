@@ -232,21 +232,42 @@ export interface CommandExecution<W extends WriterOfRecord> {
 }
 
 /**
- * One writer of record, as `CommandBus` needs it: a session lifecycle **and**
- * the ability to run a command against one of its sessions (ADR-0023 Decision
- * 10).
+ * One writer of record, **as `CommandBus` actually calls it**: run a command
+ * against a session, and produce that session's bytes for a checkpoint.
  *
  * The two halves are declared separately because they answer to different
  * documents — {@link EngineWriter} is ADR-0009 §8's seam, {@link
- * CommandExecution} is Decision 10's — and intersected here because a
+ * CommandExecution} is ADR-0023 Decision 10's — and intersected here because a
  * registration missing either half is a writer the bus cannot use.
+ *
+ * ## Why this is `Pick<…, 'serialise'>` and not the whole of `EngineWriter`
+ *
+ * It was the whole of it, and the excess is what made the one writer that has
+ * to be remote unregistrable
+ * ([ADR-0030](../../../docs/DECISIONS/0030-a-remote-writer-does-not-open-from-an-image.md)
+ * Decision 1). `open(image)` takes the document's bytes; the route the engine
+ * host opens through takes a **path**, decided twice in ADR-0023 (Decisions 10
+ * and 14). So the intersection demanded a member no remote writer can honour —
+ * and demanded it for nothing, because the bus never calls it.
+ *
+ * The bus calls `capture`, `apply`, `invert` and — on the terminal branch,
+ * when prior state cannot be recorded — `serialise`. That is this type.
+ *
+ * `open` and `close` did not move anywhere: they are still `EngineWriter`'s,
+ * still right for a byte-image writer whose `TSession` *is* the image, and
+ * still the supervisor's business for a live-session one. What changed is that
+ * a **registration** stopped requiring a session's whole life from a component
+ * that only runs commands against one.
  *
  * Declared in this file rather than beside the registry that holds it, so
  * `commandBus.ts` imports from here and nothing imports back: the routing table
  * is what binds a command to a writer, so the type of a usable writer is a
  * statement about routing.
  */
-export type RegisteredWriter<W extends WriterOfRecord> = EngineWriter<WriterSession[W]> &
+export type RegisteredWriter<W extends WriterOfRecord> = Pick<
+  EngineWriter<WriterSession[W]>,
+  'serialise'
+> &
   CommandExecution<W>;
 
 /**

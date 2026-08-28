@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { ENGINE_HOST_MAX_IN_FLIGHT, type IncidentSink, createClient } from '@monstera/contract';
@@ -11,9 +11,13 @@ import {
   DocumentService,
   type HostTermination,
   type ProbeTarget,
+  type RegisteredWriter,
+  type SessionAreaSurface,
+  type WriterRegistry,
   classifyContainment,
   createRemoteSessions,
   engineChannels,
+  remoteMupdfWriter,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
@@ -39,6 +43,7 @@ import {
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import {
   type DirectoryCreationSurface,
+  type DirectoryPath,
   createSessionDirectories,
   removeSessionDirectories,
   sessionDirectoryName,
@@ -185,12 +190,24 @@ export function createShellDependencies(
     teardown: engine.releaseOnClose,
   });
 
-  // EMPTY BY CONSTRUCTION, and the type says so. `WriterRegistry` is partial
-  // because the seam declares four writers of record and one has an adapter —
-  // and that one adapter binds a native library, which may not run here. A
-  // command routed to an unregistered writer is refused by name rather than
-  // failing at a native call.
-  const bus = new CommandBus({});
+  // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
+  // returns. The order is the dependency: a writer that talks to the engine
+  // host cannot exist before something can build one.
+  const engineHost = engineSessionOpener(
+    enginePlatform,
+    documents,
+    engine,
+    reportShellFailure,
+  );
+
+  // NO LONGER EMPTY. `WriterRegistry` stays partial because the seam declares
+  // four writers of record and one has an adapter; a command routed to an
+  // unregistered writer is refused by name rather than failing at a native
+  // call. What changed is that `mupdf` is now registered, and the object behind
+  // it runs commands in the engine host rather than in this process —
+  // invariant 20 is satisfied by *where the session is*, not by the registry
+  // being empty.
+  const bus = new CommandBus(engineHost.writers);
 
   // The real supervisor rather than two inline arrows: a stubbed lookup and a
   // stubbed predicate are a second implementation of a rule the supervisor owns
@@ -199,7 +216,7 @@ export function createShellDependencies(
   // host can be built and poisoned where one cannot.
   const commands = new DocumentCommands(documents, bus, engine);
 
-  const openedDocument = engineSessionOpener(enginePlatform, documents, engine, reportShellFailure);
+  const openedDocument = engineHost.openedDocument;
 
   return {
     // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
@@ -250,9 +267,58 @@ function engineSessionOpener(
   documents: DocumentService,
   sessions: EngineSessions,
   failures: ShellFailureSink,
-): (docId: DocId) => void {
+): { readonly openedDocument: (docId: DocId) => void; readonly writers: WriterRegistry } {
   /** The live host, or the attempt to build one. Cleared when it ends. */
   let host: Promise<EngineHostConnection> | null = null;
+
+  /**
+   * The writer the bus routes `mupdf` to, bound to whichever host is live.
+   *
+   * ## Why it is late-bound rather than passed in
+   *
+   * The bus is constructed once, at startup, and a writer that talks to the
+   * engine host cannot exist until a host does — which is at the first open, by
+   * this file's own decision. So the registration is a stable object whose
+   * members read this on every call.
+   *
+   * ## Why `null` here is a DEFECT and not a state to tolerate
+   *
+   * A command only reaches the bus if `documentCommands` already resolved a
+   * session for its document, and a session exists only because a host issued
+   * it. So a `mupdf` command arriving with no writer means the sessions and the
+   * host have diverged — the same inconsistency `MissingSessionError` names one
+   * layer up, and it is reported the same way rather than being papered over
+   * with a refusal that would read as an outcome.
+   */
+  let writer: RegisteredWriter<'mupdf'> | null = null;
+
+  const live = (): RegisteredWriter<'mupdf'> => {
+    if (writer === null) {
+      throw new Error(
+        'A mupdf command reached the bus with no engine host writer registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return writer;
+  };
+
+  // WRITTEN OUT rather than produced by a proxy or a generic delegator. Four
+  // named members are what a reader can check against `RegisteredWriter`; a
+  // clever one is a second opinion about what the bus calls, and it would keep
+  // compiling after the interface changed (B7's no-premature-abstraction, and
+  // the reason `localMupdfExecution` is written out too).
+  const writers: WriterRegistry = {
+    mupdf: {
+      capture: (session, command) => live().capture(session, command),
+      apply: (session, command) => live().apply(session, command),
+      // THREE ARGUMENTS, because a recorded inverse does not carry its own
+      // kind the way a command does — the asymmetry is `CommandExecution`'s and
+      // is the same one the pipe has.
+      invert: (session, kind, inverse) => live().invert(session, kind, inverse),
+      serialise: (session) => live().serialise(session),
+    },
+  };
 
   /**
    * Tokens are minted from handles ONE host issued, and
@@ -288,6 +354,11 @@ function engineSessionOpener(
         // and build a new one. Left in place, every one of them would await a
         // connection whose client has already settled every call.
         host = null;
+        // AND THE WRITER WITH IT. A writer left bound to a dead host answers
+        // every command with a rejection from a client that has already
+        // terminated — which is a worse shape than the diagnostic `live()`
+        // raises, because it names the transport rather than the divergence.
+        writer = null;
         void onEngineHostEnded(sessions, termination, {
           documents,
           failures,
@@ -335,6 +406,17 @@ function engineSessionOpener(
           ('detail' in verdict ? verdict.detail : 'no detail'),
       );
     }
+
+    // BOUND AFTER THE VERDICT, which is the whole of the ordering. A writer
+    // registered before the containment check is one the bus could route a
+    // command to while the host is still unverified — and the verdict's job is
+    // to catch a host that WORKS and is not contained, so nothing downstream
+    // would notice.
+    writer = remoteMupdfWriter(
+      createClient(engineChannels, live.value.client.invoke),
+      remote,
+      sessionAreas(platform),
+    );
     return live.value;
   };
 
@@ -407,13 +489,55 @@ function engineSessionOpener(
     return { mupdf: session };
   };
 
-  return (docId) => {
+  const openedDocument = (docId: DocId): void => {
     void onDocumentOpened(sessions, docId, {
       documents,
       failures,
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
       create,
     });
+  };
+
+  return { openedDocument, writers };
+}
+
+/**
+ * How a session's granted directories are reached once it exists.
+ *
+ * `takeOutput` reads what the host wrote and **deletes it on the way out**:
+ * every serialise is another whole copy of the user's document, and a
+ * save-heavy session would otherwise leave one per save in a directory the
+ * contained host may read.
+ *
+ * ## The paths are re-branded, and that is a restoration rather than a forgery
+ *
+ * `DirectoryPath` is minted by `sessionDirectoryPaths`, which
+ * {@link engineSessionOpener}'s own `create` calls twenty lines up — these are
+ * those strings, arriving back through a kernel type that cannot carry the
+ * brand because `packages/kernel` may not name it. The cast is visible in a
+ * diff, which is what the brand is for: it makes forging one a sentence a
+ * reviewer reads rather than an accident.
+ */
+function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
+  return {
+    // LOWER-CASE HEX, which is what `outputNameSchema` accepts. Main mints the
+    // name and sends it, so the host never names a file main reads back — a
+    // host that could would have main open an arbitrary path and take the bytes
+    // as the user's document.
+    mintName: () => randomBytes(16).toString('hex'),
+    takeOutput: async (area, name) => {
+      const path = join(area.outputDirectory, name);
+      const bytes = await readFile(path);
+      await rm(path, { force: true });
+      return new Uint8Array(bytes);
+    },
+    remove: (area) => {
+      removeSessionDirectories(platform.directories, {
+        snapshot: area.snapshotDirectory as DirectoryPath,
+        output: area.outputDirectory as DirectoryPath,
+      });
+      return Promise.resolve();
+    },
   };
 }
 

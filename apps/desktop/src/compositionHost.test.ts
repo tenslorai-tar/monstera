@@ -134,15 +134,44 @@ const CONTAINED = {
 /** A session the host issued. Lower-case hex and hyphens, like every handed name. */
 const SESSION = { ok: true, value: { session: 'ab0f' } };
 
+/**
+ * A host that answers the command channels as a working engine would.
+ *
+ * `capture` reports prior state, so the command is **invertible** and the bus
+ * takes no checkpoint — which is the ordinary path for `rotatePages` and the
+ * one a user's rotate actually travels. `apply` and `invert` answer with the
+ * empty body their channels declare, because a live-session writer mutates in
+ * place and returns nothing (§8).
+ */
+const ENGINE: FakePeer = (channel) => {
+  switch (channel) {
+    case 'engine/probe-containment':
+      return CONTAINED;
+    case 'engine/open':
+      return SESSION;
+    case 'engine/capture':
+      // `present: false` is a page that carried NO `/Rotate` key, which is the
+      // prior state a rotate most often replaces — and restoring it means
+      // deleting the key rather than rotating back, which is why the inverse
+      // records state instead of intent.
+      return {
+        ok: true,
+        value: {
+          captured: true,
+          value: { kind: 'rotatePages', prior: [{ page: 1, prior: { present: false } }] },
+        },
+      };
+    case 'engine/apply':
+    case 'engine/invert':
+      return { ok: true, value: {} };
+    default:
+      return null;
+  }
+};
+
 describe('the composition root, with an engine host platform', () => {
-  it('creates a host, verifies its containment, and opens a session for the document', async () => {
-    const spy = platformAnswering((channel) =>
-      channel === 'engine/probe-containment'
-        ? CONTAINED
-        : channel === 'engine/open'
-          ? SESSION
-          : null,
-    );
+  it('creates a host, verifies containment, opens a session, and ROTATES through it', async () => {
+    const spy = platformAnswering(ENGINE);
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('sessioned.pdf')),
@@ -152,21 +181,34 @@ describe('the composition root, with an engine host platform', () => {
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
 
-    // THE ASSERTION IS *WHICH* FAILURE, and it is the one only a sessioned
-    // document can reach. Queued behind the session entry — both run in this
-    // document's lane — the command resolves the session, finds one, and dies
-    // at the BUS, which has no mupdf adapter registered (KKKK-4 is why).
-    //
-    // `UnregisteredWriterError` THROWS rather than answering with a code, so a
-    // rejection here is the evidence: `document-poisoned` is a declared
-    // outcome and is what the no-platform file gets, and a document with no
-    // session never reaches the bus at all.
-    await expect(
-      handlers['document.execute']({
-        docId: opened.value.docId,
-        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
-      }),
-    ).rejects.toThrow(/no adapter registered/u);
+    // A ROTATE, END TO END THROUGH THE ROOT: the lane resolves the session, the
+    // bus routes `rotatePages` to the registered remote writer, and the command
+    // reaches the host. The version is stamped AFTER the work, so a bump is
+    // evidence the apply happened rather than that the call returned.
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+
+    expect(executed.ok).toBe(true);
+    if (!executed.ok) throw new Error('the command should have succeeded');
+    expect(executed.value.version).toBeGreaterThan(opened.value.version);
+
+    // CAPTURE BEFORE APPLY, asserted on the ORDER the host saw. Both happened
+    // is not the property — a bus that applied first would record an inverse
+    // holding the state its own command produced, and undo would then restore
+    // the document to something it had never been in.
+    const capture = spy.harness.calls.indexOf('peer.request:engine/capture');
+    const apply = spy.harness.calls.indexOf('peer.request:engine/apply');
+    expect(capture).toBeGreaterThanOrEqual(0);
+    expect(apply).toBeGreaterThanOrEqual(0);
+    expect(capture).toBeLessThan(apply);
+
+    // AND NO CHECKPOINT WAS TAKEN. `serialise` is the terminal branch, reached
+    // only when prior state could not be recorded — asserting its absence is
+    // what separates the invertible path from the one that copies the whole
+    // document per operation.
+    expect(spy.harness.calls).not.toContain('peer.request:engine/serialise');
 
     // And the host really was built and really was asked.
     expect(spy.harness.calls).toContain('host.createSuspended');
@@ -260,7 +302,7 @@ describe('the composition root, with an engine host platform', () => {
         ? CONTAINED
         : channel === 'engine/open'
           ? { ok: true, value: { session: `ab0${String(next)}` } }
-          : null,
+          : ENGINE(channel, null),
     );
     const { handlers } = createShellDependencies(
       appInfo,
@@ -273,14 +315,13 @@ describe('the composition root, with an engine host platform', () => {
     if (!first.ok || first.value.kind !== 'opened') throw new Error('the first did not open');
     if (!second.ok || second.value.kind !== 'opened') throw new Error('the second did not open');
 
-    // Let both lane entries settle. The rejection is the bus with no adapter,
-    // which is what a document that HAS a session reaches — see the first case.
-    await expect(
-      handlers['document.execute']({
-        docId: second.value.docId,
-        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
-      }),
-    ).rejects.toThrow(/no adapter registered/u);
+    // Let both lane entries settle, by running a command on the second — which
+    // only succeeds if that document got a session of its own.
+    const executed = await handlers['document.execute']({
+      docId: second.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+    expect(executed.ok).toBe(true);
 
     // ONE process, TWO sessions. Counting the creations rather than asserting
     // "a host exists" is the whole case: a lifecycle that rebuilt per document

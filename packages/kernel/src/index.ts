@@ -102,6 +102,7 @@ export {
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './host/remoteLifecycle.js';
+export { remoteMupdfWriter } from './host/remoteWriter.js';
 export {
   EngineCallFailed,
   EngineSessionGone,
