@@ -644,6 +644,196 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `584362b..48ad002` — two red boards in one range, and a hundred lines of new decision logic that nothing runs
+
+Range: **9 commits, 20 files**. Audited at the gate: 9 commits is one batch, so
+the next commit would have been blocked.
+
+**Two pushes reddened `main` inside this range.** That is the range's subject
+and it is why the audit is worth more than usual — both are recorded in their
+repair commits, and what follows is what reading the diffs adds to them.
+
+### KKKK-7 — the composition root grew a lifecycle, and every test short-circuits before reaching it
+
+`composition.ts` is **+371 lines**, and the new part is
+`engineSessionOpener`: connect, verify containment, memoise the host, clear it
+on death, create a session per document, retry to the poison bound.
+
+**Every case that exists calls `createShellDependencies(appInfo, pickDocument)`
+with no third argument.** `connect()`'s first statement is
+`if (platform === null) throw` — so the tests reach exactly one line of that
+function and none of the rest. Nothing runs:
+
+- the `createEngineHostConnection` call and its failure branch;
+- the containment ask, the `readableBytes` read, and the classification;
+- **the terminate-on-not-contained branch**, which is the one invariant 25
+  exists for;
+- the memoised promise — that two documents share one host, and that a rejected
+  attempt is cleared rather than cached;
+- `onEnded` clearing the host before scheduling reopens.
+
+`composition.test.ts` is a real control for the *poisoned* path and I wrote it
+believing it covered the wiring. It covers the wiring's **absence**.
+
+**This is not a platform limitation, which is what makes it a defect rather than
+a stated limit.** Every one of those surfaces is injected — that is the whole
+argument of `EngineHostPlatform`'s header — so a fake platform exercises the
+ordering with no Win32, no pipe and no process. The design was built to make
+this testable and then nothing tested it.
+
+The tell is the one from [[proven-in-the-wrong-file]] arriving through a
+parameter: **ask which changed file no case points at**, and here the answer is
+most of the largest changed file. Closed by the next commit, not carried.
+
+### The red boards, and what the diffs add
+
+**`69231c4` — one character, three jobs.** An em dash after a JSDoc `@see` tag,
+`TS1127`. eslint, the scan, its proof and the whole vitest suite all passed;
+none compiles JSDoc. It broke both CI legs **and** the Windows Server 2022
+containment job, which runs `typecheck` to put the shipped surface on disk.
+
+The scope report caught the shape on its own: `domEnvironment.mjs` reports
+**net +98/−4 against per-commit +99/−5**, with the disclosure that *"a line
+added and then rewritten inside this range nets to an insertion"*. That is
+AAAA-4's column working — the file where someone corrected themselves is the
+file worth reading, and it is named as such without anybody remembering to look.
+
+**`0698959` — a fixture pinned to a verdict designed to expire.**
+`advisoryRegister.proof.mjs` mutated `reachability['engine-host-factory-wired']`
+after that verdict fired, so `Object.values({})[0]` was `undefined`, the
+mutation landed nowhere and the case read a correct pass as a failure to refuse.
+
+**The general form, and it is new here:** the advisory register is *built* to
+expire its verdicts — that is its entire mechanism. A fixture that names one by
+key is naming something designed to change, and the expiry that is a feature at
+the register becomes a rot at the fixture. Re-pointed to locate by **shape**,
+with a control that a witnessed verdict still exists.
+
+### 1. Root cause or workaround?
+
+Six corrections, all root-cause, and two of them moved the fix **up** a level
+rather than patching the instance:
+
+- **KKKK-1** — fixed in `readStagedBlobs`, not at the two call sites, because
+  what `--batch`'s framing means is that module's question (B3a).
+- **KKKK-6** — fixed in `affectedProofs`, not by adding a hand-kept list of
+  data dependencies, which would have had the quiet failure direction.
+
+No override was added, no check disabled, no type widened. The one thing that
+*looks* like a loosening is `prePush.proof.mjs`'s re-anchor, and it is not: the
+two globs it dropped were subsets of an existing shippedPath and could not
+separate anything, while the control-scope half it gained reddens a mutation
+the old assertion survived. Mutation-tested in both directions.
+
+### 2. Verified against the easy shape only?
+
+**Yes, twice, and KKKK-7 is the larger instance.** The other:
+`engineHostPlatform.ts` (+112) has no case at all. It resolves two SIDs, a path
+and a binary, and returns `null` off win32 — the `null` path is what every test
+takes, so the *populated* return has never been constructed.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, and in the strengthening direction, stated because it is the item's job.
+`affectedProofs` gained **data edges**, which widens what every caller of it is
+told. It also widens the false-positive surface: `package.json` now attaches
+many proofs to itself. That is the accepted direction and it is written at the
+point of use, since a reader meeting a long affected list needs to know it is
+deliberate.
+
+### 3. Would CI have caught it?
+
+**CI is what caught both red boards, which is the answer and also the problem.**
+Locally: `typecheck` and `lint` would each have caught cause one in one line and
+neither was run; `proof:advisories` would have caught cause two and was not run.
+
+The sweep that covers all three exists — `npm run local`. Run afterwards it
+reported **107 passed, 0 failed, 1 timed out**, and the timeout is
+`proof:perfbudget` at exactly the 180.0 s default. Timed alone it takes
+**214.2 s** and passes. So the standard sweep **cannot complete**, stops by
+design at the timeout, and leaves eight scripts *never reached and not passes* —
+`typecheck` and `lint` among them. A gate that cannot finish is a gate people
+stop running.
+
+### 4. Non-vacuous proofs
+
+Every guard added or changed in this range was mutation-tested, each reddening
+only its own cases:
+
+| mutation | result |
+|---|---|
+| revoke on `already-open` too | 1 case, the one that exists for it |
+| remove the revoke entirely | 2 cases |
+| ask for a session on `already-open` | 1 case |
+| make the session opener a no-op | 2 cases, with `MissingSessionError` — the defect reproduced |
+| `readStagedBlobs` framing throw → `continue` | 1 case |
+| ... → `break` on truncation | 1 case |
+| drop witness scopes from `watchedPathspecs` | 1 case |
+| drop control scopes | 1 case, which the OLD assertion survived |
+| drop the data-edge pass | `importGraph` refuses by name |
+
+### 4a. Instrument resolution tests
+
+`engineHostPlatform.ts` is not an instrument — it resolves and returns.
+`affectedProofs` is, and its resolution test is the pair of readings in KKKK-6's
+commit: 0 of 85 before, 4 of 85 after, with all four genuinely reading the file.
+
+### 4b. Searches with positive controls
+
+`gitScope`'s framing parse gained a positive control that it reads a well-formed
+frame set, placed **before** the two refusal cases, because a parser that threw
+on everything would pass both while being useless.
+
+`importGraph` gained a **second** control edge. The two halves fail separately:
+an import control passing says nothing about whether data edges are built, and
+that half was absent entirely — which is what an unwatched half looks like from
+outside, a graph answering correctly about less than it was asked.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Three rosters moved and each went the right way for a stated reason:
+
+- `domEnvironment`'s exclude set is now **derived** from `vitest.config.mjs` —
+  the feared failure makes the walk's extent *smaller*, and it was a
+  hand-written copy that had already drifted.
+- its include is **pinned**, not derived, because compiling an extglob to a
+  regex is a second opinion about glob semantics. Stated as a pin.
+- `prePush.proof.mjs`'s anchor stays a **literal**, because the failure to fear
+  is a scope disappearing.
+
+### 5. Executed, or asserted?
+
+**Executed:** both red causes reproduced locally and fixed; all nine mutations;
+`npm run local` at 107/0/1; `perf:gate`'s figures; `proof:perfbudget` timed at
+214.2 s; the affected-proof readings; every proof named above.
+
+**Asserted:** that `check:typeonlyexports` would run correctly in a CI checkout
+— the reasoning is sound and nobody has run it there. It is not load-bearing
+now that KKKK-2 is withdrawn.
+
+**Never executed anywhere:** `documentPicker.ts`, `engineHostPlatform.ts`, and
+the whole populated-platform path of `engineSessionOpener` (KKKK-7).
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. The feature registered into existing seams. Two findings — KKKK-4 and
+KKKK-5 — say the architecture **is** wrong ahead of the next feature, and they
+are recorded and escalated rather than built over. Clause 3 waits on them.
+
+### 7. Do the documents still match the code?
+
+Five `docs/FEATURES.md` status cells were stale and are edited true. Row 268's
+body carried its own reason for not being done — *"no composition root
+constructs them"* — which stopped being true at `0698959`, and that is the
+compound-claim shape this item hunts, caught here by the range that falsified it
+rather than by a later sweep.
+
+`shell.proof.mjs`'s header and `composition.ts`'s stale paragraph, both named by
+KKKK-3, are corrected. The advisory register's `engine-host-factory-wired`
+narrative records its own firing rather than being deleted.
+
+---
+
 ## 2026-08-28 — `perf:gate`'s figures, read rather than inferred: the numbers behind the multiples, including a baseline nothing had recorded
 
 `docs/FEATURES.md`'s gate row has carried the **multiples** since the gate was
