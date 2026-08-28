@@ -426,6 +426,23 @@ try {
           'reach that binary at all (ADR-0027).',
       },
     ],
+    [
+      'scripts/perf/roleMupdfHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads seven built modules through file:// URLs — the four Win32 ' +
+          'surfaces, the session directories, the connection factory and the engine channel ' +
+          'declarations — so the scan sees a single computed site rather than seven. The ' +
+          'measurement is of the SHIPPED host: this role drives the same ' +
+          'createEngineHostConnection the composition root will, and a copy of any of those ' +
+          'modules would answer a different question, which is the LL-4/JJ-1 mistake this ' +
+          'file exists on the other side of. Paths need Windows backslash conversion at run ' +
+          'time. It starts the Electron BINARY in Node mode by path — through ' +
+          'electronBinaryPath(), which check:electronbinary requires by that literal spelling ' +
+          '— and never imports the electron package.',
+      },
+    ],
   ]);
 
   /** @type {Map<string, number>} */

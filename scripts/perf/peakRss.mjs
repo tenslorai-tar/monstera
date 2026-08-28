@@ -66,6 +66,43 @@ export function reportPeak(detail = {}) {
 }
 
 /**
+ * Ends a measured run whose SUBJECT IS ANOTHER PROCESS. Call once, last.
+ *
+ * A role that drives the engine host is a parent: the memory §9.17 budgets is
+ * the host's, and the role process's own peak is an artefact of the harness.
+ * `measurePeak` reads whichever number the measured script reports, so the seam
+ * already exists — what did not exist is a way to fill it with a figure that is
+ * still the kernel's.
+ *
+ * **The pid, not the bytes**, and that is the whole design of this function.
+ * Taking a caller-supplied number would let a role report a figure nobody
+ * measured, which is the failure {@link measurePeak} refuses at every other
+ * step — a missing measurement throws rather than becoming zero, and a
+ * non-positive one throws rather than passing a budget. Taking a pid means the
+ * only reachable answer comes from {@link peakWorkingSetOf}, so *whose peak* is
+ * a question the caller answers and *what a peak is* stays here (B3a).
+ *
+ * A process that has already exited is a measurement failure and throws.
+ * `peakWorkingSetOf` returns `null` for it, and a role that reported that as a
+ * cheap host would be the fourth entry in CLAUDE.md's list of blind
+ * instruments — the failure state indistinguishable from a good result.
+ *
+ * @param {number} pid a process the caller created and has not yet terminated
+ * @param {Record<string, unknown>} [detail] Anything the caller wants returned alongside.
+ */
+export function reportPeakOf(pid, detail = {}) {
+  const bytes = peakWorkingSetOf(pid);
+  if (bytes === null) {
+    throw new Error(
+      `reportPeakOf: pid ${String(pid)} was gone before its peak could be read, so this run ` +
+        `measured nothing. Read the peak while the process is still alive — a host that died ` +
+        `early and a host that cost little are the same missing number otherwise.`,
+    );
+  }
+  process.stdout.write(`\n${MARKER}${JSON.stringify({ peakRssBytes: bytes, detail })}\n`);
+}
+
+/**
  * The same counter as {@link peakRssBytes}, read from OUTSIDE the process.
  *
  * Two spellings of one kernel figure. `maxRSS` above and `PeakWorkingSet64`

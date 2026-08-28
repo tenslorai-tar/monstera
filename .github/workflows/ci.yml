@@ -760,6 +760,31 @@ jobs:
       - name: A contained host starts, and does not without the grant
         run: node scripts/ci/annotate.mjs --always scripts/research/containedStart.mjs
 
+      # THE CONNECTION, END TO END, ON A MACHINE THAT IS NOT MINE.
+      #
+      # `containedStart.mjs` above proves a contained host STARTS. Nothing
+      # proved that anything can then talk to one: the pipe, the reader thread,
+      # the `connected` message, the factory that waits for it, and the teardown
+      # had unit tests over injected surfaces and had never run against a real
+      # process anywhere but one developer machine. YYYY-1 is exactly what that
+      # gap produces — a defect no unit test could hold, found by writing the
+      # first caller.
+      #
+      # `--no-document` because the generated fixture corpus is not tracked, so
+      # a runner has none; this cell needs none, and it still exercises every
+      # part of the path above. The peak it prints is also §9.17's `mupdf-host`
+      # fixed cost read on a clean machine, which ADR-0025 needs across machines
+      # rather than across one.
+      #
+      # Runs AFTER `containedStart.mjs` deliberately: that script restores the
+      # grants on every path, including the ones where it throws, so this step
+      # inherits a granted machine rather than racing it for one.
+      #
+      # `--always` for the same reason `baselineSpread` has it — the figure is
+      # the point, and a passing step's log needs owner authentication to read.
+      - name: A contained host CONNECTS and answers, and reports its fixed cost
+        run: node scripts/ci/annotate.mjs --always scripts/perf/roleMupdfHost.mjs --no-document
+
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous

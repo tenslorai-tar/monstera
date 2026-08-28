@@ -21,11 +21,21 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { formatBytes, measurePeak } from '../perf/peakRss.mjs';
+import { formatBytes, measurePeak, reportPeakOf } from '../perf/peakRss.mjs';
 
 const PERF = join(dirname(fileURLToPath(import.meta.url)), '..', 'perf');
 const ALLOCATE = join(PERF, 'allocateFixture.mjs');
 const MB = 1024 ** 2;
+
+/**
+ * A pid no process can have.
+ *
+ * Windows pids are multiples of four and this is not one, so it cannot collide
+ * with a live process the way a large number eventually can — which matters
+ * because the case using it would then measure a real process and pass for the
+ * wrong reason.
+ */
+const GONE_PID = 999_999_999;
 
 /** @type {string[]} */
 const failures = [];
@@ -165,6 +175,57 @@ check(
     control.peakRssBytes > 0,
     `The default-runtime control failed too, so the case above is impossibility rather than ` +
       `refusal and separates nothing.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// `reportPeakOf` — the seam a role uses when its SUBJECT is another process.
+// ---------------------------------------------------------------------------
+{
+  // A pid that cannot exist. `peakWorkingSetOf` answers `null` for a process
+  // that is gone, and the whole point of this function is that it REFUSES that
+  // rather than reporting it: a host that died early and a host that cost
+  // little are the same missing number otherwise, and the second passes every
+  // budget. Fourth entry in CLAUDE.md's list of blind instruments, in the one
+  // place a role's figure comes from something it did not measure itself.
+  let refused = false;
+  try {
+    reportPeakOf(GONE_PID, {});
+  } catch {
+    refused = true;
+  }
+  check(
+    'reporting the peak of a process that is gone is REFUSED, not reported as a small number',
+    refused,
+    `reportPeakOf(${String(GONE_PID)}) returned instead of throwing. A role that reported that ` +
+      `would hand a budget check a figure nobody measured.`,
+  );
+
+  // VACUITY GUARD, and it is the negative-probe rule rather than a formality:
+  // the case above is worthless if the call would fail for ANY pid. This
+  // process exists, so a build with the refusal deleted still passes here and
+  // only the case above separates the two.
+  //
+  // It emits a real `__MONSTERA_PEAK__` line onto this proof's stdout, because
+  // emitting one is what the function does and asserting anything less would be
+  // asserting around the behaviour. Nothing reads this proof through
+  // `measurePeak`, so the line is inert — said here because a stray marker in
+  // an output is otherwise exactly the thing somebody later mistakes for a
+  // measurement.
+  let reportedForALivePid = false;
+  try {
+    reportPeakOf(process.pid, { control: true });
+    reportedForALivePid = true;
+  } catch {
+    // Left false. A throw here means the control itself failed, which is what
+    // the case below reports — re-assigning false would be the same value
+    // written twice and says nothing the initialiser did not.
+  }
+  check(
+    'the same call for a LIVE pid reports, so the refusal above is about the process being gone',
+    reportedForALivePid,
+    `reportPeakOf refused this process's own pid, so the case above is impossibility rather ` +
+      `than a refusal and separates nothing.`,
   );
 }
 
