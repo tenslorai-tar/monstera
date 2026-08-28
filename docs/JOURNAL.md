@@ -644,6 +644,213 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `af73baa..e234979` — a range whose subject was checks that never ran, and the roster that found them
+
+**Audited through `e234979`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: af73baa..HEAD
+  commits: 8 (one batch is 9)
+  files:   23 (one batch is 24)
+
+  proofs ADDED (2):
+    packages/shared/src/messages.test.ts
+    scripts/proofs/ciVerifiers.proof.mjs
+  proofs MODIFIED (3):
+    packages/ui/src/primitives/Button.test.tsx   net +53 -5
+    scripts/proofs/checkLocal.proof.mjs          net +56 -11
+    scripts/proofs/lintRules.proof.mjs           net +89 -0
+  proofs REMOVED: none
+  source FILES ADDED (4):
+    packages/shared/src/messages.ts
+    scripts/audit/unrunCheckReliance.mjs
+    scripts/lib/ciVerifiers.mjs
+    scripts/lib/noJsxLiterals.mjs
+  source FILES CHANGED (3):
+    packages/shared/src/index.ts            net   +1 -0
+    packages/ui/src/primitives/useOnColor.ts net  +41 -15
+    scripts/checkLocal.mjs                  net +134 -9
+  source FILES REMOVED: none
+```
+
+Audited at 8 commits and 23 files — one commit and two files short of the gate —
+because the next unit crosses it and being blocked mid-flight twice in a day was
+enough.
+
+The range is ZZZZ-1's remedy and FFFF-1, the reliance sweep, the `useOnColor`
+read site, §9.17's amendment, HHHH-1, and unit 7's library-independent half.
+
+### The three modified proofs, read
+
+**`checkLocal.proof.mjs` (+56/−11).** The only deletion is a fixture
+`package.json` literal, replaced by one that also writes fixture workflows —
+required because the roster now derives from the workflows rather than from the
+manifest. Same cases, richer fixtures. Nothing loosened.
+
+**`Button.test.tsx` (+53/−5).** The deletions are `declareTokens` setting
+properties on the document element; it now writes a stylesheet rule matching the
+control. That is a **strengthening**, and the reason is item 2's axis: a harness
+supplying tokens where the code no longer looks would have kept passing while
+testing a read site that does not ship.
+
+**`lintRules.proof.mjs` (+89/−0).** Pure addition — three cases for B9's rule.
+
+### 1. Root cause or workaround?
+
+Four corrections, all root-cause, and one is a withdrawal.
+
+- **The sweep's roster.** Derived from the workflows, which are the authority on
+  what must pass. Renaming was rejected on the reviewer's ruling and the reason
+  survives inspection: the same prefix space holds `brand:check` and
+  `brand:generate`, so a rename relocates the judgement rather than removing it.
+- **`useOnColor`'s read site.** Settled from §10.2 and `tokens.css`'s unqualified
+  `[data-theme]` selectors. The previous position was a workaround chosen from
+  what happy-dom implements, and it is withdrawn.
+- **The 80 MB bound.** Withdrawn from `docs/JOURNAL.md:3754` and ADR-0025. A
+  green board bounds nothing about a check that never ran.
+- **B9's lint rule written rather than installed.** `eslint-plugin-react` 7.37.5
+  declares `eslint … || ^9.7` against this project's 10.8.1 — the same finding
+  §10.4 recorded for jsx-a11y, and the same ruling.
+
+### 2. Verified against the easy shape only?
+
+The hard shape here was **the wrapper**. Every CI step runs its script through
+`scripts/ci/annotate.mjs`, so the workflows contain one unique `node scripts/…`
+path and four `npm run` targets. A derivation built on the existing helpers
+resolves CI's entire verifier set to the wrapper and reports it without
+complaint.
+
+The easy shape would have been to trust that number. It was measured instead —
+see 4a.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is the largest coverage change in this project's history: 29 to
+114.** The sweep previously ran the scripts whose names started `check:` or
+`proof:`; it now runs the scripts the workflows invoke. That is a widening of
+85 scripts, and it is also a **change of authority** — from a naming convention
+to the board.
+
+Stated rather than banked, because the direction reverses with it. The old
+roster could not shrink silently (a name is either there or not); the new one
+can, since a derived set cannot disagree with its source. That is why the anchor
+below exists.
+
+### 3. Would CI have caught it?
+
+**FFFF-1: no, and this is the finding of the build.** `perf:gate`,
+`electron:surface`, `shim:reach` and `ocr:doors` appeared **zero** times in
+either workflow, and every one of them has a proof registered in CI that imports
+the check's own functions. The machinery executed on every push against fixtures,
+proving the instrument can see, refuse and separate; nothing ever asked it about
+the repository.
+
+***The instrument can see* standing in for *the instrument was pointed at the
+tree*** — item 4b's distinction, at the highest stakes it has appeared at here:
+three security checks and the gate enforcing §9.17. **A proof that a check works
+is not evidence the check ran.**
+
+Registered at `441ba50`, and the outcome was read from the run's own step list
+rather than from the board colour, because a skipped step and an executed one
+produce the same colour: all five step instances `status=completed`,
+`conclusion=success`.
+
+**And the other direction — a defect this machine cannot see?** `check:lint`,
+`check:types`, `check:lockfile` and `check:typeonlyexports` are the four
+verifiers CI deliberately does not run; each carries a written reason naming
+what runs it instead. That list is an exception register rather than a
+derivation, deliberately: a deliberate absence has a *reason*, and a reason
+nobody wrote down is one that gets relitigated by whoever it inconveniences.
+
+### 4. Non-vacuous proofs
+
+| mutation | result |
+|---|---|
+| `monstera/no-jsx-literals` → `off` | exactly 1 of 11 lint-rule cases red |
+| `useOnColor` read moved back to the root | 5 of 11 Button cases red |
+| — | |
+
+The read-site case is the one worth reading: it works by making the two sites
+**disagree** — the root declaring a fill where `--text` already clears, the
+control declaring one where it does not. A fixture carrying the same value at
+both sites passes whichever site the hook reads, which is no case at all.
+
+### 4a. Instrument resolution tests
+
+**Applied to a RESOLVER, and that is the transferable half.** `ciVerifiers.mjs`'s
+derived set was measured before anything was wired to it. 4a asks of a measuring
+device whether two values that differ read as different; the question for a
+resolver is whether a set derived from thirty-odd workflow steps comes back with
+thirty-odd members or with **one**. Nothing downstream would ever have asked — a
+sweep handed a one-element roster runs it, passes, and prints a complete-looking
+count, exactly as the `29 of 29` it replaces did.
+
+### 4b. Searches with positive controls
+
+`unrunCheckReliance.mjs` carries one and refuses without it. **Its first scope
+was still wrong**: it looked only inside `### 3. Would CI have caught it?`
+sections, reported `0 of 33`, and the instance that prompted the whole sweep sits
+under a `### 4a / 4b` heading. Item 3 was the example in the instruction and I
+read it as the boundary.
+
+Widened to paragraph scope across the whole file: 3283 paragraphs, 19 naming one
+of the four, **6 inferring from CI on that basis**, of which 3 are the finding's
+own entry, 2 are honest records of local runs, and 1 is the defect. Paragraph
+rather than line scope because this repository hard-wraps prose — the false
+negative `withdrawnPhrases.mjs` records as its third.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**Yes, and the danger direction inverted, so it has an anchor in both.** A check
+dropped from CI would vanish from the derived roster too, and a derived count
+cannot disagree with its source.
+
+- **Growth** — a check added and forgotten — is what the derivation handles.
+- **Collapse** is `FLOOR = 30`, and the comment is explicit that this is *not*
+  the shrink anchor: 108 clears 30 as comfortably as 109 does.
+- **Shrink** is `verifiersNotRunByCi` — every `check:`/`proof:` script must
+  appear in some workflow or be a named exception with a reason.
+
+`GGGG-1` from the previous range is **not yet fixed** — `domEnvironment.mjs`
+still transcribes vitest's include pattern and exclude list rather than importing
+them. Carried, not forgotten.
+
+### 5. Executed, or asserted?
+
+**Executed:** both mutations above · the planted offender and its two
+near-misses, through the real ESLint config · the reliance sweep · the four
+checks' step statuses, read from `/actions/runs/33158004520/jobs` · `npm test`
+at 593 cases · `typecheck`, `lint`, `check:docs` · the sweep at 106 passed / 0
+failed / 110 of 114 attempted · `eslint-plugin-react`'s version and peer range,
+from the registry.
+
+**Asserted, and owed:** that the catalogue design on the i18n row is right —
+nothing is built, and a design is not a measurement. That `MessageKey` will fit
+the registry's `title` — ADR-0029 Decision 6 says so and no registry exists to
+try it against.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and in its own commit.** §9.17's `main` clause is amended at
+`86d7788`, carrying ADR-0028's ready text and naming ADR-0025's pending
+amendment as also owed on the same sentence — so two independent edits to one
+clause cannot collide silently. No feature was built on it in this range; the
+wiring is HHHH-1 and is blocked.
+
+### 7. Do the documents still match the code?
+
+`docs/UI-GUIDE.md` corrected again: it claimed `onColor` was not written and
+that the name appeared only inside `tokenContrast.mjs`. Both false since
+`d81b3fd`. **That is the second range in a row this file has been found stale**,
+which is itself the finding — it is a derived document no check reads, so
+nothing but a sweep will ever catch it.
+
+`docs/DECISIONS/README.md` updated for ADR-0028 (§9.17 amended) and ADR-0025 (a
+bound withdrawn). `docs/FEATURES.md`'s i18n row carries what landed, what is
+owed, and the trigger for each.
+
+---
+
 ## 2026-08-28 — HHHH-1: AAAA-1 has a precondition nobody has named — nothing opens a document
 
 **AAAA-1 has been queued and displaced for five rounds** — *`composition.ts`
