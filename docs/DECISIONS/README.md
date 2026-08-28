@@ -86,3 +86,4 @@ Each contains:
 | [0026](0026-a-declaration-is-not-an-implementation.md) | A declaration is not an implementation, and the kernel's public surface carries no native binding | Accepted |
 | [0027](0027-a-development-grant-belongs-to-provisioning.md) | A development grant belongs to provisioning, not to the application | Accepted; corrected 2026-08-27 — the grant is necessary and not sufficient, and the set is reshaped |
 | [0028](0028-main-holds-the-process-creation-binding.md) | `main` holds the process-creation binding, and §9.17's `main` clause is amended to say so | Accepted; §9.17 not yet amended |
+| [0029](0029-how-the-registries-are-built.md) | How the registries are built: registration is a value, not a side effect | Accepted as a design; nothing built |
