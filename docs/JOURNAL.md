@@ -644,6 +644,90 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — JJJJ-1: AAAA-3's premise is false — jsesc ships its licence text, and an exception register would have recorded that mistake in a compliance document
+
+**Investigation only, per the instruction. Nothing built, and the recommendation
+is not the one that was asked for.**
+
+AAAA-3: *"the notice generator lets one upstream packaging omission veto a
+library. `jsesc` declares MIT and ships no text, so NOTICE cannot be written at
+all… investigate whether the notice generator wants [an `[allowlist]`]."*
+
+**`jsesc` ships `LICENSE-MIT.txt`.**
+
+```
+node_modules/jsesc: bin, jsesc.js, LICENSE-MIT.txt, man, package.json, README.md
+
+  LICENCE_FILES contains 'LICENSE-MIT'   — existsSync('LICENSE-MIT') → false
+  a /^(licen[cs]e|copying)/i pattern      — matches LICENSE-MIT.txt
+```
+
+The generator's `LICENCE_FILES` is a hand-kept list of eleven filenames. It
+carries `LICENSE-MIT` and not `LICENSE-MIT.txt`. So the refusal was **correct in
+form** — it declines to write an SPDX string in place of terms, which is right —
+and **wrong in its diagnosis**, and the remedy proposed on top of that diagnosis
+would have written *"this package ships no licence text"* into the one document
+whose entire purpose is to be accurate about other people's licences.
+
+That is the finding. An exception register is a mechanism for recording a
+reviewed judgement; pointed at a misdiagnosis it launders it.
+
+### The list's blind spot, measured across the installed tree
+
+250 packages ship a file matching `/^(licen[cs]e|copying)/i`. The list misses
+**22**, in two classes that behave differently:
+
+**Class B — invisible on every platform (4).** `estraverse` and `esutils`
+(`LICENSE.BSD`), `jsesc` and `punycode` (`LICENSE-MIT.txt`).
+
+**Class A — invisible only on a case-sensitive filesystem (18).** `ansi-regex`,
+`ansi-styles`, `dequal`, `env-paths`, `escalade`, `escape-string-regexp`,
+`esquery`, `find-up`, `globals`, `locate-path`, `ms`, `p-limit`, `p-locate`,
+`path-exists`, `path-key`, `shebang-command`, `shebang-regex`, `yocto-queue` —
+all shipping lower-case `license`, `license.txt` or `license.md`.
+
+Class A is checklist item 3's question in reverse: **a defect this machine cannot
+see.** The generator calls `existsSync`, and on win32 that is case-insensitive,
+so `existsSync('.../LICENSE')` returns **true** for a file named `license` —
+measured. On a case-sensitive filesystem it returns false and the generator
+refuses. `notice:check` runs only on the Windows shim job today, so eighteen
+packages are found by the filesystem's indulgence rather than by the check, and
+nothing anywhere records that.
+
+**All 22 are devDependencies today**, checked against `npm ls --omit=dev`, so
+none is live. That is the reason this is a finding rather than a red board, and
+it is also exactly why it would have been discovered by a dependency change
+rather than by a check.
+
+### So: does the exception path want to exist?
+
+**Not yet, and possibly not at all — and the reasoning is worth more than the
+answer.**
+
+`.gitleaks.toml`'s `[allowlist]` suppresses a **finding**: it records that
+something matching a secret pattern is not a secret. That is a judgement about
+*our* code, and a person is the only thing that can make it.
+
+A missing licence text is not that shape. MIT does not stop requiring the notice
+because the tarball omitted it — the obligation survives, so an "exception" that
+suppresses the failure would suppress a duty rather than a false positive. The
+honest structure, if one is ever needed, is a **supplement with provenance**: the
+text, the URL it was obtained from, the copyright holder, and a date — none of
+which can be invented, because MIT's text carries `Copyright (c) <year>
+<holder>` and getting that wrong is a misattribution in a legal notice.
+
+**The order that follows is: fix the finder first.** Replace the eleven-name list
+with the pattern above — W-1's *a file-naming convention is not a check*, in the
+one place where being wrong misstates somebody else's licence — and only then ask
+whether any package genuinely ships no text. If the answer is none, the exception
+path is a mechanism for a case that does not occur, and ADR-0029's own standard
+applies: a check covering a class that does not exist reads as watched and is not.
+
+Not built. The finder fix touches a compliance document's generator and belongs
+in its own commit with `proof:licences` run against the result.
+
+---
+
 ## 2026-08-28 — IIII-1: the pre-commit hook was 97 seconds, and 94 of them were reading files two spawns at a time
 
 Measured rather than modelled, because *which step dominates* is a question a
