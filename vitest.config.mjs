@@ -33,5 +33,13 @@ export default defineConfig({
     // comment here used to claim it closed both, and that claim cost 27 green
     // tests over a deleted line of source.
     exclude: ['**/node_modules/**', '**/dist/**', '.tools/**', '.probe/**', 'release/**'],
+
+    // Unmounts rendered React trees after each test. Applied to every file
+    // rather than to the ones that render, because the library's own
+    // registration is conditional on `globals: true` and this repository runs
+    // with globals off — so without this, cleanup silently never happens and a
+    // query finds a previous test's node. The file is inert where there is no
+    // DOM, which is everywhere outside `packages/ui`.
+    setupFiles: ['packages/testing/src/domCleanup.ts'],
   },
 });

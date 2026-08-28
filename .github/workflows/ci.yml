@@ -207,6 +207,12 @@ jobs:
       - name: No decorative border token bounds an unmarked control
         run: node scripts/ci/annotate.mjs scripts/lib/borderTokens.mjs
 
+      - name: Prove the DOM-environment scan can see, refuse and tolerate
+        run: node scripts/ci/annotate.mjs scripts/proofs/domEnvironment.proof.mjs
+
+      - name: Only packages/ui may name a DOM environment
+        run: node scripts/ci/annotate.mjs scripts/lib/domEnvironment.mjs
+
       - name: Prove the type-only export scan can see, separate and never be blind
         run: node scripts/ci/annotate.mjs scripts/proofs/typeOnlyExports.proof.mjs
 

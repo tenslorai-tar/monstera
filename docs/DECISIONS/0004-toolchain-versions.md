@@ -144,3 +144,85 @@ requires changing Vite and electron-vite only, not the React plugin.
   full-tree scan generated from the lockfile is required before the first public
   release, which is what Part J already mandates by insisting the NOTICE be
   generated rather than hand-maintained.
+
+## Addition — 2026-08-28 — the component-test vehicle
+
+Added by the project owner's ruling. Not a correction to anything above: the
+stack this ADR pinned had no way to render a React component in a test, and
+nothing had needed one until Stage 0's four UI primitives came up.
+
+| Package | Version | Licence | Scope |
+|---|---|---|---|
+| happy-dom | 20.11.12 | MIT | devDependency |
+| @testing-library/react | 16.3.3 | MIT | devDependency |
+| @testing-library/dom | 10.4.1 | MIT | devDependency |
+
+All three fetched from `registry.npmjs.org` on 2026-08-28. `@testing-library/dom`
+is a **peer** of `@testing-library/react`, declared here explicitly so the
+lockfile pins it rather than leaving the version to peer resolution.
+
+### happy-dom over jsdom, on a measured cost
+
+Counted with `npm i --save-dev --dry-run` against this lockfile on 2026-08-28,
+reading the number of `add` lines:
+
+| option | packages added |
+|---|---|
+| `happy-dom@20.11.12` | **7** |
+| `jsdom@30.0.1` | 38 |
+| `@testing-library/react` + `@testing-library/dom` | 11 |
+
+Nothing in the primitives needs what jsdom has and happy-dom does not — no
+navigation, no canvas, no XHR. Five times the tree for capabilities this
+project's renderer is forbidden to use is the wrong trade, and the revisit
+trigger is concrete: the first component test that needs a jsdom-only API.
+
+### This decision does not touch ADR-0005's supply-chain argument
+
+`npm ls --omit=dev --all --parseable` counts **43** production packages before
+this change and **43** after. Development-only tooling is never conveyed to a
+user and never enters the AGPL combined work, which is the same split the
+`electron-builder`-versus-`electron` consequence above already draws. The Lingui
+question is about the **production** tree and is decided on its own evidence;
+the two must not be allowed to blur.
+
+### Vitest globals stay off, and that has one consequence worth writing down
+
+`@testing-library/react` registers its own `afterEach(cleanup)` — but only when
+`afterEach` is a global, which means `test.globals: true`. This repository runs
+with globals off and every test imports its own `describe`/`it`/`expect`, so the
+library's registration silently does not happen. The symptom is not an error:
+renders accumulate in `document.body` and a later query finds an earlier test's
+node.
+
+Turning globals on was rejected. It changes what every existing test inherits
+from its runner — the *rich ambient environment* axis of the stage audit's item
+2, which has already cost this project one guard whose proof and subject
+disagreed about which npm existed. Instead `vitest.config.mjs` gains one
+`setupFiles` entry, `packages/testing/src/domCleanup.ts`, which registers
+cleanup where a DOM exists and is inert everywhere else.
+
+Measured, not assumed: with that entry removed, exactly one case of
+`packages/ui/src/renderVehicle.test.tsx` fails — `expected 1 to be +0` — and the
+other four pass. That is the control.
+
+### The DOM stays inside `packages/ui`
+
+A DOM is selected per file by a vitest docblock, which the config cannot
+forbid — vitest honours the docblock whatever the config says, and scoping the
+environment through `test.projects` would not change that while putting the
+alias map at risk, which is the one part of that config that has already cost 27
+green tests over a deleted line of source.
+
+So the config decides the default, `node`, and `npm run check:domenvironment`
+decides who may depart from it: outside `packages/ui` the environment must be
+`node`. Stated that way round rather than as a deny-list of `happy-dom` and
+`jsdom`, because a deny-list passes whatever vitest ships next with silence as
+the failure mode. `proof:domenvironment` is what says the scan can see, and the
+scan refuses to report when its own control fixture goes unfound.
+
+The rule being enforced is `CLAUDE.md`'s, and it predates the capability: *a
+test that must fake `DOMMatrix` or a window bridge just to exercise a save is
+evidence the boundary is wrong.* Until happy-dom was installed there was nothing
+to erode it with. Installing it created the capability, and a capability with a
+rule over it and no mechanism is what this project's record says gets spent.
