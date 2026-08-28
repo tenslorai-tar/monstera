@@ -71,7 +71,7 @@ import { repoRoot } from './gitScope.mjs';
  * over a smaller tree. That is the reassuring answer, which is why the extent
  * comes from the rule rather than from a copy of it.
  *
- * @see ADDED — the two entries that are ours, declared as such rather than
+ * The two entries that are ours are declared in `ADDED` below, rather than
  * hidden among the derived ones.
  */
 const ADDED = new Set([

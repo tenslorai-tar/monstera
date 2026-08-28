@@ -85,7 +85,7 @@ const failures = [];
  * witnessed verdict is not a derived one. That case is world-independent, so it
  * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 39 });
+const roster = createRoster(failures, { cases: 40 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -985,15 +985,40 @@ try {
         `removed, this case is what has to be rewritten — not deleted.`,
     );
 
+    // LOCATED BY SHAPE, NOT BY NAME — and the rename is the finding, not the
+    // tidy-up. This named `engine-host-factory-wired`, whose verdict FIRED on
+    // 2026-08-28: its symbol went, its witness went with it (a witness whose
+    // symbol is gone is refused), and `Object.values({})[0]` is `undefined`.
+    // The mutation then landed nowhere, the checker passed on an unmutated
+    // register, and the case reported the pass as a failure of the checker.
+    //
+    // That is ZZ-1's shape: a locator that picks a specific entry, and an
+    // entry that legitimately stopped having the property the case needs. The
+    // register is BUILT to expire its verdicts, so naming one in a fixture is
+    // naming something designed to change.
+    const witnessed = Object.values(JSON.parse(pristine).reachability).find(
+      (claim) => Object.keys(claim.witness ?? {}).length > 0,
+    );
+    check(
+      'CONTROL: and the register still contains a verdict carrying a witness to mutate',
+      witnessed !== undefined,
+      `every verdict's witness map is empty, so the mutation below lands nowhere and the case ` +
+        `passes by checking an unmutated register — which is exactly how it failed when this ` +
+        `was pinned to a verdict by name.`,
+    );
+
     const unknownWitnessKey = runAgainst(
       'unknown-witness-key',
       withRegister((reachability) => {
-        const claim = reachability['engine-host-factory-wired'];
-        const witness = /** @type {Record<string, Record<string, unknown>> | undefined} */ (
-          claim?.['witness']
-        );
-        const entry = witness === undefined ? undefined : Object.values(witness)[0];
-        if (entry !== undefined) entry['acceptedWhilst'] = { absent: 'x', from: ['y'] };
+        for (const claim of Object.values(reachability)) {
+          const witness = /** @type {Record<string, Record<string, unknown>> | undefined} */ (
+            claim?.['witness']
+          );
+          const entry = witness === undefined ? undefined : Object.values(witness)[0];
+          if (entry === undefined) continue;
+          entry['acceptedWhilst'] = { absent: 'x', from: ['y'] };
+          return;
+        }
       }),
     );
     check(
