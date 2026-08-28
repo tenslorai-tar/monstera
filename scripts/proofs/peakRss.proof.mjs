@@ -41,6 +41,14 @@ const GONE_PID = 999_999_999;
 const failures = [];
 /** @type {string[]} */
 const passed = [];
+/**
+ * Cases this platform cannot run, named.
+ *
+ * Three states rather than two, for the reason `checkLocal.mjs` reports three:
+ * a case that did not run has not passed, and printing only `ok` lines would
+ * make a proof that skipped half of itself look identical to one that did not.
+ */
+const skipped = [];
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -181,7 +189,24 @@ check(
 // ---------------------------------------------------------------------------
 // `reportPeakOf` — the seam a role uses when its SUBJECT is another process.
 // ---------------------------------------------------------------------------
-{
+// WINDOWS ONLY, AND SKIPPED RATHER THAN QUIETLY ABSENT.
+//
+// `peakWorkingSetOf` is `Get-Process` and throws on every other platform by
+// design. On Linux BOTH calls below throw, so the refusal case passes for the
+// wrong reason and the control fails — which is exactly what happened: this
+// proof reddened `main` on ubuntu the first time it ran (finding YYYY-2). The
+// control did its job on the platform where the pair stops separating anything.
+//
+// Reported as skipped rather than omitted, because *could not look* and *looked
+// and found nothing* are the distinction this repository draws everywhere else,
+// and a case that silently does not exist on a platform is the second one
+// wearing the first one's clothes.
+if (process.platform !== 'win32') {
+  skipped.push(
+    `reportPeakOf's two cases need Win32: peakWorkingSetOf is Get-Process and throws ` +
+      `elsewhere, so refusal and impossibility are the same observation here`,
+  );
+} else {
   // A pid that cannot exist. `peakWorkingSetOf` answers `null` for a process
   // that is gone, and the whole point of this function is that it REFUSES that
   // rather than reporting it: a host that died early and a host that cost
@@ -239,4 +264,9 @@ if (failures.length > 0) {
 }
 
 for (const label of passed) process.stdout.write(`  ok  ${label}\n`);
-process.stdout.write(`\n${passed.length} peak-RSS instrument cases passed.\n`);
+for (const reason of skipped) process.stdout.write(`  --  SKIPPED: ${reason}\n`);
+process.stdout.write(
+  `\n${passed.length} peak-RSS instrument cases passed` +
+    (skipped.length > 0 ? `, ${skipped.length} skipped on ${process.platform}` : '') +
+    `.\n`,
+);

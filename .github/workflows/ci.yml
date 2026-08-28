@@ -785,6 +785,20 @@ jobs:
       - name: A contained host CONNECTS and answers, and reports its fixed cost
         run: node scripts/ci/annotate.mjs --always scripts/perf/roleMupdfHost.mjs --no-document
 
+      # THE SAME PROOF THE UBUNTU JOB RUNS, HERE FOR THE HALF IT CANNOT (YYYY-2).
+      #
+      # `peakWorkingSetOf` is `Get-Process` and throws on every other platform,
+      # so `reportPeakOf`'s two cases skip on ubuntu — and a case that runs
+      # nowhere in CI is a case that does not exist. This job is where the
+      # parent-side peak is a real question, and it is the reading every
+      # `--always` figure above depends on being sound.
+      #
+      # Running one proof on two platforms is deliberate rather than
+      # duplication: the two runs cover disjoint halves and each says which half
+      # it skipped.
+      - name: Prove the peak-RSS instrument on the platform its parent-side read needs
+        run: node scripts/ci/annotate.mjs scripts/proofs/peakRss.proof.mjs
+
       # And proves that export check can fail, by pointing it at a DLL missing a
       # declared symbol — the state a build that silently did not run leaves.
       - name: Prove the shim's export check is not vacuous
