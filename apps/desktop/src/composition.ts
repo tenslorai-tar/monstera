@@ -393,7 +393,14 @@ function engineSessionOpener(
         outputDirectory: paths.output,
       });
       if (!answer.ok) throw new Error(`engine/open answered ${answer.error.code}`);
-      return remote.adopt(answer.value.session);
+      // THE AREA GOES IN WITH THE HANDLE. A token stands for both halves and
+      // the registry owns the pair (ADR-0030 Decision 2), which is what lets
+      // `serialise` and `close` work on a session this root opened — they read
+      // the area from here rather than from a map private to the adapter.
+      return remote.adopt(answer.value.session, {
+        snapshotDirectory: paths.snapshot,
+        outputDirectory: paths.output,
+      });
     };
 
     const { session } = await openEngineSession(documents, docId, areas, open);

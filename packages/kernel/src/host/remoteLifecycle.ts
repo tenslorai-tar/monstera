@@ -1,8 +1,8 @@
 import type { ClientApi } from '@monstera/contract';
 
-import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import type { EngineChannels } from './engineChannels.js';
-import type { RemoteSessions } from './remoteEngine.js';
+import type { RemoteSessions, SessionArea } from './remoteEngine.js';
 
 /**
  * `EngineWriter`'s three lifecycle methods against a session an engine host
@@ -80,30 +80,25 @@ export class EngineSerialiseMismatch extends Error {
 /**
  * The per-session directories, from whoever creates and grants them.
  *
- * Injected as an interface rather than imported, and that is a boundary rather
- * than a preference: creating a directory with a DACL is Win32 work that lives
- * in `apps/desktop`, which `packages/kernel` may not import. It is also what
- * lets every case in this module's proof run against ordinary temp directories
- * with no container in sight.
+ * `SessionArea` moved to `remoteEngine.ts` on 2026-08-28: the registry that
+ * mints a token holds one now (ADR-0030 Decision 2), so the type belongs beside
+ * the registry rather than beside a reader of it.
  */
-export interface SessionArea {
-  /** The directory the host may READ. Main writes the canonical image here. */
-  readonly snapshotDirectory: string;
-  /** The directory the host may MODIFY. It writes serialised bytes here. */
-  readonly outputDirectory: string;
-}
 
-/** What this adapter needs from the host of the two directories. */
+/**
+ * What this adapter needs from the host of the two directories.
+ *
+ * **`create` and `writeSnapshot` are gone**, and their absence is the decision.
+ * Creating the pair and putting the document in it is the supervisor's, through
+ * `writeCanonicalImage(supervisor, docId, destination)` — ADR-0023 Decision 14,
+ * which refused an accessor on `DocumentService` because a second reference to
+ * the image in main is 2.00× of file size against a 1.5× ceiling, measured.
+ * This module used to call `writeSnapshot(area, name, image)`, which is that
+ * route, and it predates the decision that refused it.
+ *
+ * What is left is what a *reader* of an existing session needs.
+ */
 export interface SessionAreaSurface {
-  /**
-   * Creates one session's granted pair.
-   *
-   * Called before any bytes are written, so a failure here has produced no copy
-   * of the document.
-   */
-  readonly create: () => Promise<SessionArea>;
-  /** Writes the canonical image into the snapshot directory under `name`. */
-  readonly writeSnapshot: (area: SessionArea, name: string, image: ByteImage) => Promise<void>;
   /** Reads back what the host wrote, then deletes it. */
   readonly takeOutput: (area: SessionArea, name: string) => Promise<ByteImage>;
   /** Removes both directories and everything under them. Must not throw. */
@@ -120,61 +115,37 @@ export interface SessionAreaSurface {
 }
 
 /**
+ * What a session that already EXISTS supports: its bytes back, and its end.
+ *
+ * **No `open`.** A registered writer supplies `serialise` and the command
+ * members and nothing else (ADR-0030 Decision 1), because those are what
+ * `CommandBus` calls; a session comes into existence through the supervisor, in
+ * the process that can create a contained host. Typing this as
+ * `EngineWriter<MupdfSession>` is what forced an `open(image)` here that could
+ * only be implemented the one way ADR-0023 Decision 14 had already refused.
+ */
+export interface RemoteMupdfLifecycle {
+  /** The canonical bytes for the session's current state. */
+  readonly serialise: (session: MupdfSession) => Promise<ByteImage>;
+  /** Ends the session on the host and removes its granted pair. */
+  readonly close: (session: MupdfSession) => Promise<void>;
+}
+
+/**
  * @param client the engine host's channels, through the contract's own
  *   validating client.
  * @param sessions main's token registry — the same one `remoteMupdfExecution`
- *   uses, so a token minted here is one that adapter can run commands against.
- * @param areas how the granted directories are made and reached.
+ *   uses, so a token minted there is one this can read an area for.
+ * @param areas how the granted directories are reached and removed.
  */
 export function remoteMupdfLifecycle(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
   areas: SessionAreaSurface,
-): EngineWriter<MupdfSession> {
-  /** Which directories each live session's bytes travel through. */
-  const held = new WeakMap<MupdfSession, SessionArea>();
-
-  const areaFor = (session: MupdfSession): SessionArea => {
-    const area = held.get(session);
-    if (area === undefined) {
-      // The same shape `handleFor` refuses, and for the same reason: a token
-      // this registry never adopted, or one already released. Throwing beats
-      // falling through to a path built from `undefined`.
-      throw new Error(
-        'This session token has no granted directories in this registry. It was not opened ' +
-          'here, or it has already been closed.',
-      );
-    }
-    return area;
-  };
-
+): RemoteMupdfLifecycle {
   return {
-    open: async (image) => {
-      const area = await areas.create();
-      const snapshotName = areas.mintName();
-      try {
-        await areas.writeSnapshot(area, snapshotName, image);
-        const answer = await client['engine/open']({
-          snapshotDirectory: area.snapshotDirectory,
-          snapshotName,
-          outputDirectory: area.outputDirectory,
-        });
-        if (!answer.ok) throw new EngineOpenFailed(answer.error.code);
-
-        const session = sessions.adopt(answer.value.session);
-        held.set(session, area);
-        return session;
-      } catch (error) {
-        // EVERY FAILURE AFTER THE CREATE REMOVES THE PAIR. By this point the
-        // image may already be on disk, and the caller is about to be handed an
-        // error rather than a session — so nothing else will ever remove it.
-        await areas.remove(area);
-        throw error;
-      }
-    },
-
     serialise: async (session) => {
-      const area = areaFor(session);
+      const area = sessions.areaFor(session);
       const into = areas.mintName();
       const answer = await client['engine/serialise']({
         session: sessions.handleFor(session),
@@ -190,7 +161,13 @@ export function remoteMupdfLifecycle(
     },
 
     close: async (session) => {
-      const area = areaFor(session);
+      // READ BEFORE THE CALL, because `release` below makes it unreadable and
+      // the `finally` needs it. This is also the statement that used to throw
+      // for every session the composition root opened — `close` read the
+      // adapter's private map as its FIRST statement exactly as `serialise`
+      // did, and the first write-up of that finding named `serialise` and
+      // stopped there (ADR-0030 Decision 2).
+      const area = sessions.areaFor(session);
       try {
         // The ANSWER is not checked, and that is deliberate: there is nothing
         // this side would do differently for a session the host has already
@@ -205,7 +182,6 @@ export function remoteMupdfLifecycle(
         // otherwise be left on disk.
         await client['engine/close']({ session: sessions.handleFor(session) });
       } finally {
-        held.delete(session);
         sessions.release(session);
         await areas.remove(area);
       }

@@ -4,21 +4,40 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { createClient, type Incident, wrapHandlers } from '@monstera/contract';
+import { type ClientApi, createClient, type Incident, wrapHandlers } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
-import type { ByteImage } from '../engineSeam.js';
+import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter } from '../mupdfWriter.js';
-import { engineChannels } from './engineChannels.js';
+import { type EngineChannels, engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
-import { createRemoteSessions } from './remoteEngine.js';
+import {
+  type RemoteSessions,
+  type SessionArea,
+  createRemoteSessions,
+} from './remoteEngine.js';
 import {
   EngineOpenFailed,
   EngineSerialiseMismatch,
-  type SessionArea,
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './remoteLifecycle.js';
+
+/**
+ * The surface the adapter needs, plus what the CALLER of it needs.
+ *
+ * `create`, `writeSnapshot` and `mintName` left `SessionAreaSurface` when the
+ * adapter stopped opening (ADR-0030). They are still how a session is made —
+ * by the supervisor, in `apps/desktop` — so the fixture keeps them here, on the
+ * side that opens rather than on the side that reads.
+ */
+type FakeAreas = SessionAreaSurface & {
+  readonly made: SessionArea[];
+  readonly removed: SessionArea[];
+  readonly create: () => Promise<SessionArea>;
+  readonly writeSnapshot: (area: SessionArea, name: string, image: Uint8Array) => Promise<void>;
+  readonly mintName: () => string;
+};
 
 /**
  * BOTH HALVES, JOINED, AGAINST ONE REAL DOCUMENT AND REAL DIRECTORIES.
@@ -85,10 +104,7 @@ beforeAll(async () => {
  */
 const mintedRoots: string[] = [];
 
-function realAreas(): SessionAreaSurface & {
-  readonly made: SessionArea[];
-  readonly removed: SessionArea[];
-} {
+function realAreas(): FakeAreas {
   const made: SessionArea[] = [];
   const removed: SessionArea[] = [];
   let minted = 0;
@@ -150,7 +166,7 @@ async function exists(path: string): Promise<boolean> {
  * against a writer override, because nothing was throwing).
  */
 function joined(
-  areas: SessionAreaSurface,
+  areas: FakeAreas,
   override: Partial<typeof mupdfWriter> = {},
   transport?: (id: string) => Promise<never> | undefined,
 ) {
@@ -195,11 +211,65 @@ function joined(
     return wrapped[id](params);
   });
   const sessions = createRemoteSessions();
+
+  /**
+   * OPENS THE WAY THE COMPOSITION ROOT OPENS, AND THAT IS THE CONTROL.
+   *
+   * Every case below drives a session made here rather than by the adapter,
+   * because the adapter no longer makes one — and because a session opened by
+   * the adapter is not the session the product has. `remoteMupdfLifecycle`
+   * used to record the area in a `WeakMap` populated only inside its own
+   * `open`, so `serialise` and `close` both worked for sessions it had opened
+   * and threw for every session anything else opened. Its proof opened through
+   * it, so the whole file passed while the product could not use it once.
+   *
+   * **If that route comes back, these cases fail** — not because they assert
+   * against it, but because the session they hold was minted by `adopt` and the
+   * `WeakMap` would have no entry for it. That is the control the reviewing
+   * seat asked for, and it is structural rather than an assertion someone has
+   * to remember to keep.
+   *
+   * The sequence is `openEngineSession`'s: create the pair, put the document in
+   * it, ask the host, adopt the token — and remove the pair on every failure
+   * after the create, because by then the user's bytes are on disk and the
+   * caller is about to be handed an error rather than a session.
+   */
   return {
     incidents,
     held,
+    open: (image: Uint8Array) => openAsSupervisor(client, sessions, areas, image),
     lifecycle: remoteMupdfLifecycle(client, sessions, areas),
   };
+}
+
+/**
+ * ONE SPELLING OF IT, because two would be the defect being fixed.
+ *
+ * The size-measuring case below builds its own client, and a second copy of
+ * this sequence there would be a second opinion about how a session comes to
+ * exist — which is exactly what `remoteMupdfLifecycle.open` was.
+ */
+async function openAsSupervisor(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+  areas: FakeAreas,
+  image: Uint8Array,
+): Promise<MupdfSession> {
+  const area = await areas.create();
+  const snapshotName = areas.mintName();
+  try {
+    await areas.writeSnapshot(area, snapshotName, image);
+    const answer = await client['engine/open']({
+      snapshotDirectory: area.snapshotDirectory,
+      snapshotName,
+      outputDirectory: area.outputDirectory,
+    });
+    if (!answer.ok) throw new EngineOpenFailed(answer.error.code);
+    return sessions.adopt(answer.value.session, area);
+  } catch (error) {
+    await areas.remove(area);
+    throw error;
+  }
 }
 
 describe('remoteMupdfLifecycle', () => {
@@ -214,6 +284,40 @@ describe('remoteMupdfLifecycle', () => {
   });
 
   /**
+   * THE CONTROL FOR ADR-0030 DECISION 2, named so it is not merely implied.
+   *
+   * A session opened the way the supervisor opens one — create the pair, put
+   * the document in it, ask the host, adopt the token — must be **serialisable
+   * and closable**. That was false for the whole life of this module: the area
+   * lived in a `WeakMap` populated only inside the adapter's own `open`, so
+   * both members threw on their first statement for any session opened
+   * anywhere else, and every session the product has is opened anywhere else.
+   *
+   * Its own proof opened through the adapter, so the file passed while the
+   * product could not use it once. That is why this case asserts on a session
+   * this file did not get from the adapter, and why restoring the private map
+   * reddens it rather than being caught by review.
+   */
+  it('CONTROL: a session the SUPERVISOR opened is serialisable and closable', async () => {
+    const areas = realAreas();
+    const { lifecycle, open } = joined(areas);
+
+    const session = await open(flat);
+
+    // Both members, because both read the area as their first statement and
+    // the first write-up of this finding named `serialise` and stopped there.
+    await expect(lifecycle.serialise(session)).resolves.toBeInstanceOf(Uint8Array);
+    await expect(lifecycle.close(session)).resolves.toBeUndefined();
+
+    // AND THE PAIR IS GONE. A `close` that resolved without removing the
+    // directories leaves a readable copy of the user's document in a directory
+    // the contained host was granted, which is the failure the pair's lifetime
+    // exists to bound.
+    expect(areas.removed).toHaveLength(1);
+    expect(await exists(areas.made[0]?.snapshotDirectory ?? '')).toBe(false);
+  });
+
+  /**
    * THE LOAD-BEARING CASE. Bytes go in through a directory, come back through
    * another, and the returned image is one MuPDF can open again — which is the
    * only evidence that a real document made the round trip rather than a
@@ -221,9 +325,9 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('carries a document in and out through files, and the result reopens', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas);
+    const { lifecycle, open } = joined(areas);
 
-    const session = await lifecycle.open(flat);
+    const session = await open(flat);
     const round = await lifecycle.serialise(session);
 
     expect(round.length).toBeGreaterThan(0);
@@ -287,8 +391,9 @@ describe('remoteMupdfLifecycle', () => {
       return answer;
     });
 
-    const lifecycle = remoteMupdfLifecycle(client, createRemoteSessions(), areas);
-    const session = await lifecycle.open(bulky);
+    const sessions = createRemoteSessions();
+    const lifecycle = remoteMupdfLifecycle(client, sessions, areas);
+    const session = await openAsSupervisor(client, sessions, areas, bulky);
     const round = await lifecycle.serialise(session);
     await lifecycle.close(session);
 
@@ -313,9 +418,9 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('removes both directories on close, with the snapshot gone from disk', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas);
+    const { lifecycle, open } = joined(areas);
 
-    const session = await lifecycle.open(flat);
+    const session = await open(flat);
     const [area] = areas.made;
     expect(area).toBeDefined();
     if (area === undefined) return;
@@ -340,13 +445,13 @@ describe('remoteMupdfLifecycle', () => {
   it('removes the directories when the TRANSPORT is gone mid-close', async () => {
     const areas = realAreas();
     let dead = false;
-    const { lifecycle } = joined(areas, {}, (id) =>
+    const { lifecycle, open } = joined(areas, {}, (id) =>
       dead && id === 'engine/close'
         ? Promise.reject(new Error('the pipe is gone; this call will never be answered'))
         : undefined,
     );
 
-    const session = await lifecycle.open(flat);
+    const session = await open(flat);
     const [area] = areas.made;
     expect(area).toBeDefined();
     if (area === undefined) return;
@@ -377,11 +482,11 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('resolves when the host itself refuses the close, and still removes', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas, {
+    const { lifecycle, open } = joined(areas, {
       close: () => Promise.reject(new Error('the engine faulted mid-close')),
     });
 
-    const session = await lifecycle.open(flat);
+    const session = await open(flat);
     await expect(lifecycle.close(session)).resolves.toBeUndefined();
     expect(areas.removed).toHaveLength(1);
   });
@@ -393,11 +498,11 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('removes the directories when the engine refuses the image', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas, {
+    const { open } = joined(areas, {
       open: () => Promise.reject(new Error('not a PDF')),
     });
 
-    await expect(lifecycle.open(flat)).rejects.toThrow(EngineOpenFailed);
+    await expect(open(flat)).rejects.toThrow(EngineOpenFailed);
 
     expect(areas.made).toHaveLength(1);
     expect(areas.removed).toHaveLength(1);
@@ -415,11 +520,11 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('reports a refused document as a declared code, never as an incident', async () => {
     const areas = realAreas();
-    const { lifecycle, incidents } = joined(areas, {
+    const { incidents, open } = joined(areas, {
       open: () => Promise.reject(new Error('not a PDF')),
     });
 
-    await expect(lifecycle.open(flat)).rejects.toThrow(EngineOpenFailed);
+    await expect(open(flat)).rejects.toThrow(EngineOpenFailed);
     expect(incidents).toEqual([]);
   });
 
@@ -430,20 +535,20 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('refuses a byte count that disagrees with the file it read', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas, {
+    const { lifecycle, open } = joined(areas, {
       // Writes a SHORTER image than the count the handler reports, by
       // serialising something the host then truncates on the way to disk. The
       // handler returns what it wrote, so the disagreement is injected in the
       // surface main reads through instead.
     });
-    const session = await lifecycle.open(flat);
+    const session = await open(flat);
 
-    const shortened: SessionAreaSurface = {
+    const shortened: FakeAreas = {
       ...areas,
       takeOutput: async (area, name) => (await areas.takeOutput(area, name)).slice(0, 10),
     };
-    const { lifecycle: lying } = joined(shortened);
-    const other = await lying.open(flat);
+    const { lifecycle: lying, open: openLying } = joined(shortened);
+    const other = await openLying(flat);
     await expect(lying.serialise(other)).rejects.toThrow(EngineSerialiseMismatch);
 
     await lifecycle.close(session);
@@ -457,9 +562,9 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('refuses a session it has already closed', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas);
+    const { lifecycle, open } = joined(areas);
 
-    const session = await lifecycle.open(flat);
+    const session = await open(flat);
     await lifecycle.close(session);
 
     await expect(lifecycle.serialise(session)).rejects.toThrow();
@@ -472,10 +577,10 @@ describe('remoteMupdfLifecycle', () => {
    */
   it('gives each session its own pair of directories', async () => {
     const areas = realAreas();
-    const { lifecycle } = joined(areas);
+    const { lifecycle, open } = joined(areas);
 
-    const first = await lifecycle.open(flat);
-    const second = await lifecycle.open(flat);
+    const first = await open(flat);
+    const second = await open(flat);
 
     expect(areas.made).toHaveLength(2);
     const [one, two] = areas.made;

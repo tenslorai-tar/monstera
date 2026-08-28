@@ -53,12 +53,44 @@ export class EngineCallFailed extends Error {
  * with main free to construct a handle the host never issued.
  */
 export interface RemoteSessions {
-  /** Records a handle the host issued, returning the token main holds. */
-  readonly adopt: (handle: string) => MupdfSession;
+  /**
+   * Records a handle the host issued **and the area its bytes travel through**,
+   * returning the token main holds.
+   *
+   * The area arrives here rather than being kept by whoever opened, because a
+   * token stands for both halves and one registry has to own the pair
+   * ([ADR-0030](../../../../docs/DECISIONS/0030-a-remote-writer-does-not-open-from-an-image.md)
+   * Decision 2). `remoteMupdfLifecycle` kept it in a module-private `WeakMap`
+   * populated only inside its own `open`, so a session opened anywhere else —
+   * which is where every session now comes from — threw from `serialise` **and**
+   * from `close`, each on its first statement.
+   */
+  readonly adopt: (handle: string, area: SessionArea) => MupdfSession;
   /** The handle behind a token this registry adopted and has not released. */
   readonly handleFor: (session: MupdfSession) => string;
+  /** The granted directories behind that token. Same lifetime, same refusal. */
+  readonly areaFor: (session: MupdfSession) => SessionArea;
   /** Forgets a token. A later call through it is refused rather than reusing a handle. */
   readonly release: (session: MupdfSession) => void;
+}
+
+/**
+ * The per-session directories, from whoever creates and grants them.
+ *
+ * Injected as an interface rather than imported, and that is a boundary rather
+ * than a preference: creating a directory with a DACL is Win32 work that lives
+ * in `apps/desktop`, which `packages/kernel` may not import. It is also what
+ * lets every case in this module's proof run against ordinary temp directories
+ * with no container in sight.
+ *
+ * Declared here rather than beside the lifecycle that reads it, because the
+ * registry above is what holds one now.
+ */
+export interface SessionArea {
+  /** The directory the host may READ. Main writes the canonical image here. */
+  readonly snapshotDirectory: string;
+  /** The directory the host may MODIFY. It writes serialised bytes here. */
+  readonly outputDirectory: string;
 }
 
 /** A token whose handle this registry does not hold. */
@@ -77,23 +109,31 @@ export class UnknownRemoteSession extends Error {
  * @returns a registry with no sessions in it.
  */
 export function createRemoteSessions(): RemoteSessions {
-  const handles = new WeakMap<MupdfSession, string>();
+  const held = new WeakMap<MupdfSession, { handle: string; area: SessionArea }>();
   return {
-    adopt: (handle) => {
+    adopt: (handle, area) => {
       // The same mint `mupdfWriter.open` makes, and the same reason it is a cast
       // rather than a constructor: the brand exists so nothing outside an
       // adapter can produce one, and an exported mint would be exactly that.
       const session = { engine: 'mupdf' } as MupdfSession;
-      handles.set(session, handle);
+      held.set(session, { handle, area });
       return session;
     },
     handleFor: (session) => {
-      const handle = handles.get(session);
-      if (handle === undefined) throw new UnknownRemoteSession();
-      return handle;
+      const entry = held.get(session);
+      if (entry === undefined) throw new UnknownRemoteSession();
+      return entry.handle;
+    },
+    areaFor: (session) => {
+      // ONE REFUSAL FOR ONE IDENTITY. A token whose handle this registry does
+      // not hold has no area either, and the two answering differently is how a
+      // session becomes valid for one operation and not another.
+      const entry = held.get(session);
+      if (entry === undefined) throw new UnknownRemoteSession();
+      return entry.area;
     },
     release: (session) => {
-      handles.delete(session);
+      held.delete(session);
     },
   };
 }

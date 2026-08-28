@@ -98,7 +98,7 @@ export {
   EngineOpenFailed,
   EngineSerialiseFailed,
   EngineSerialiseMismatch,
-  type SessionArea,
+  type RemoteMupdfLifecycle,
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './host/remoteLifecycle.js';
@@ -106,6 +106,7 @@ export {
   EngineCallFailed,
   EngineSessionGone,
   type RemoteSessions,
+  type SessionArea,
   UnknownRemoteSession,
   createRemoteSessions,
   remoteMupdfExecution,

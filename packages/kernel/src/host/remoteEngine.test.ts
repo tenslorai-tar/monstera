@@ -39,6 +39,15 @@ beforeAll(async () => {
   flat = await document.save();
 });
 
+/**
+ * A token stands for a handle AND an area since ADR-0030 Decision 2.
+ *
+ * This file's subject is running a command against a session, which touches
+ * neither directory — so one shared value is honest here, and a case that
+ * needed two would be a case about the lifecycle in the wrong file.
+ */
+const AREA = { snapshotDirectory: 'in', outputDirectory: 'out' };
+
 const rotateFirst: CommandOfKind<'rotatePages'> = {
   kind: 'rotatePages',
   pages: [0],
@@ -125,7 +134,7 @@ async function joined(): Promise<{
   const sessions = createRemoteSessions();
   return {
     session,
-    token: sessions.adopt('h1'),
+    token: sessions.adopt('h1', AREA),
     remote: remoteMupdfExecution(client, sessions),
     sessions,
     requests: () => requests,
@@ -192,7 +201,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
   it('CONTROL: a session the host does not hold is a DECLARED failure, and nothing is applied', async () => {
     const { session, remote, sessions } = await joined();
     try {
-      const stranger = sessions.adopt('h-does-not-exist');
+      const stranger = sessions.adopt('h-does-not-exist', AREA);
 
       await expect(remote.apply(stranger, rotateFirst)).rejects.toThrow(EngineSessionGone);
 
@@ -287,7 +296,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     const remote = remoteMupdfExecution(client, sessions);
 
     try {
-      await expect(remote.apply(sessions.adopt('h1'), rotateFirst)).rejects.toThrow(
+      await expect(remote.apply(sessions.adopt('h1', AREA), rotateFirst)).rejects.toThrow(
         /engine\/apply/u,
       );
 
