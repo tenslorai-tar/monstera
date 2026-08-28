@@ -21,18 +21,26 @@
  * `GetOverlappedResult` and the lifetime of an `OVERLAPPED` belong to the
  * adapter that may carry an `any` under B7.
  *
- * ## Every refusal is terminal, and that is the shape rather than a policy
+ * ## A refusal is terminal WHERE THERE IS A STREAM TO DESYNCHRONISE
  *
  * A write that was not issued means a frame the peer will never see, and the
  * next frame's length prefix then arrives where the missing one's body should
  * be — the stream is desynchronised from OUR side. There is no resynchronising
  * from that, for the same reason the runtime loop refuses to resynchronise a
  * violated stream: guessing where the next message starts is the peer choosing
- * our parse offsets.
+ * our parse offsets. Decision 8's shape — kill, never resume — arriving one
+ * layer down.
  *
- * So {@link HostWriteQueue.write} has two outcomes, not three, and every
- * non-success closes the queue. Decision 8's shape — kill, never resume —
- * arriving one layer down.
+ * **That argument needs a stream, and there is exactly one refusal where there
+ * is not one yet.** `ERROR_PIPE_LISTENING` says the instance has no peer
+ * connected, so nothing has been written and no offsets exist to be wrong; it
+ * is reported as {@link WriteRefusal} `not-connected` and leaves the queue
+ * open. Every other refusal still closes it. The reasoning, the measurement and
+ * the finding are at {@link ERROR_PIPE_LISTENING}.
+ *
+ * This paragraph read *"every refusal is terminal, and that is the shape rather
+ * than a policy"* until 2026-08-28. It was a shape derived from an argument,
+ * and the argument had a case it did not cover.
  *
  * ## The bound is a limit, not a watermark
  *
@@ -114,7 +122,13 @@ export interface OverlappedWriteSurface {
   readonly lastError: () => number;
 }
 
-/** Why the queue closed. Every value is terminal; there is no resuming one. */
+/**
+ * Why a write did not go out.
+ *
+ * **All but one are terminal**, and the exception is not a softening of the
+ * rule above — it is the one case the rule's own argument does not cover. See
+ * {@link NOT_CONNECTED}.
+ */
 export type WriteRefusal =
   /** The queue had already ended, by an earlier refusal or by `close`. */
   | { readonly reason: 'closed'; readonly detail: string }
@@ -123,7 +137,52 @@ export type WriteRefusal =
   /** The outstanding set was at its limit after collecting what it could. */
   | { readonly reason: 'overrun'; readonly detail: string }
   /** The surface refused the call. */
-  | { readonly reason: 'refused'; readonly detail: string };
+  | { readonly reason: 'refused'; readonly detail: string }
+  /**
+   * The peer has not connected yet. **The one non-terminal refusal**: the queue
+   * stays open and a later write can succeed.
+   */
+  | { readonly reason: 'not-connected'; readonly detail: string };
+
+/**
+ * `ERROR_PIPE_LISTENING` — the server instance exists and no client has
+ * connected to it.
+ *
+ * ## Why this one errno is not an ending, stated as a mechanism
+ *
+ * The header's argument for every refusal being terminal is that a frame the
+ * peer never sees leaves the next length prefix landing in the wrong place, so
+ * the stream is desynchronised from our side. That argument needs a stream.
+ *
+ * `536` says there is not one: the instance is in its **listening** state, so
+ * nothing has been written to it and no peer has read anything. A first frame
+ * refused for this reason leaves no offsets wrong, because there are no
+ * offsets. Nor can it arrive mid-stream — an instance returns to listening only
+ * through `DisconnectNamedPipe`, which nothing in this design calls; a peer that
+ * goes away mid-stream produces `ERROR_BROKEN_PIPE` or `ERROR_NO_DATA`, and
+ * those stay terminal.
+ *
+ * ## Why the branch exists at all (finding YYYY-1)
+ *
+ * `surface.lastError()` was already being read here and spent on a string. The
+ * one number that separates *the peer has not connected* from *the peer is
+ * gone* was fetched, interpolated into a diagnostic, and discarded — Rule 0's
+ * own listed shape, a request whose response nobody reads.
+ *
+ * Measured 2026-08-28: `createEngineHostConnection` returns as soon as the host
+ * process is created, so the first frame beats the host's `CreateFile` on the
+ * pipe every time — 3 of 3, deterministic rather than a race. Collapsed into
+ * `refused`, that shut the queue and ended the connection as `connection-lost`,
+ * which `engineSessions` counts as a death; two deaths poison the document
+ * under ADR-0023 Decision 9a. A startup ordering problem was being routed into
+ * the recovery path for a crash.
+ *
+ * The factory not handing out a client until the peer has connected is the
+ * design fix and makes this state unreachable from that path. This branch is
+ * correct independently of it: a classifier that reads the discriminating value
+ * and throws it away is wrong whatever the caller does.
+ */
+const ERROR_PIPE_LISTENING = 536;
 
 /** Success carries nothing: a queued write has no result yet, by construction. */
 export type WriteOutcome = { readonly ok: true } | { readonly ok: false; readonly refusal: WriteRefusal };
@@ -246,9 +305,26 @@ export function createHostWriteQueue(
 
       const issued = surface.issue(frame);
       if (issued === null) {
+        // READ ONCE, then branched on AND reported. It used to be read only to
+        // be interpolated — see {@link ERROR_PIPE_LISTENING} for why that made a
+        // startup ordering problem indistinguishable from a dead host.
+        const errno = surface.lastError();
+        if (errno === ERROR_PIPE_LISTENING) {
+          return {
+            ok: false,
+            refusal: {
+              reason: 'not-connected',
+              detail:
+                `the write was refused with GetLastError ${String(errno)} ` +
+                `(ERROR_PIPE_LISTENING): the pipe instance exists and the host has not ` +
+                `connected to it yet. Nothing was written, so no length prefix is misplaced ` +
+                `and the queue stays open`,
+            },
+          };
+        }
         return shut({
           reason: 'refused',
-          detail: `the write was refused with GetLastError ${String(surface.lastError())}`,
+          detail: `the write was refused with GetLastError ${String(errno)}`,
         });
       }
       queued.push(issued);

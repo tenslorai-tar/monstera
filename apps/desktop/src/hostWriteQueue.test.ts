@@ -180,6 +180,38 @@ describe('createHostWriteQueue', () => {
     expect(only.ok).toBe(false);
     expect(!only.ok && only.refusal.reason).toBe('refused');
     expect(!only.ok && only.refusal.detail).toContain('232');
+
+    // AND THE QUEUE IS SHUT, which the assertions above do not establish. This
+    // is YYYY-1's control: `ERROR_NO_DATA` is a genuinely lost pipe and must
+    // stay terminal, so a build that treated every errno as `not-connected`
+    // would satisfy every line above and fail here. Asserting the decision
+    // rather than the message, per the stage audit's own rule.
+    const after = queue.write(encode('two'));
+    expect(!after.ok && after.refusal.reason).toBe('closed');
+  });
+
+  it('does NOT close when the host has not connected yet, and a later write goes out', () => {
+    const win32 = surface();
+    const queue = createHostWriteQueue(win32, 4);
+
+    // 536 is ERROR_PIPE_LISTENING: the instance exists and nothing has connected
+    // to it. Nothing was written, so no length prefix is misplaced — the
+    // argument that makes every other refusal terminal does not apply.
+    win32.refuseNext(536);
+    const early = queue.write(encode('one'));
+
+    expect(early.ok).toBe(false);
+    expect(!early.ok && early.refusal.reason).toBe('not-connected');
+    expect(!early.ok && early.refusal.detail).toContain('536');
+
+    // THE LOAD-BEARING LINE. A refusal reason is a string and a build that
+    // renamed it while still shutting the queue would pass the three assertions
+    // above; what separates non-terminal from terminal is that the NEXT write
+    // is issued. Before this branch existed, the host connecting a moment later
+    // met a queue that had already been abandoned.
+    const later = queue.write(encode('two'));
+    expect(later.ok).toBe(true);
+    expect(win32.calls).toContain('issue(two)');
   });
 
   it('reports every later write as closed, naming what ended it', () => {
