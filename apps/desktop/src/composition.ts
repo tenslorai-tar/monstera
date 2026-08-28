@@ -2,7 +2,7 @@ import type { IncidentSink } from '@monstera/contract';
 import { CapabilityRegistry, CommandBus, DocumentService } from '@monstera/kernel';
 
 import { MAIN_DOCUMENT_BYTES_CEILING } from './budget.js';
-import { type AppInfo, createContractHandlers } from './contractHandlers.js';
+import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import { DocumentCommands } from './documentCommands.js';
 import { EngineSessions } from './engineSessions.js';
 import type { ShellFailureSink } from './shellFailure.js';
@@ -61,7 +61,10 @@ import type { ShellDependencies } from './main.js';
  * The host is still what completes the feature, and the `docs/FEATURES.md` row
  * names it.
  */
-export function createShellDependencies(appInfo: AppInfo): ShellDependencies {
+export function createShellDependencies(
+  appInfo: AppInfo,
+  pickDocument: PickDocument,
+): ShellDependencies {
   const capabilities = new CapabilityRegistry();
 
   // Built before the service because the service **registers** it, not after
@@ -100,7 +103,19 @@ export function createShellDependencies(appInfo: AppInfo): ShellDependencies {
   const commands = new DocumentCommands(documents, bus, engine);
 
   return {
-    handlers: createContractHandlers({ commands, appInfo }),
+    // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
+    // file's stated property true: nothing here imports Electron, so the whole
+    // graph can be built and inspected in a plain Node test. The picker is the
+    // one part of opening that genuinely needs a runtime, so it is the one part
+    // that arrives from `entry.ts` — the same trade this file already makes for
+    // `AppInfo`, which is a value rather than a call to `app.getVersion()`.
+    handlers: createContractHandlers({
+      appInfo,
+      capabilities,
+      commands,
+      documents,
+      pickDocument,
+    }),
     incidents: reportIncident,
     failures: reportShellFailure,
   };

@@ -1,4 +1,5 @@
 import {
+  type ChannelResult,
   type ContractClient,
   type ContractHandlers,
   type Incident,
@@ -70,6 +71,16 @@ import { type DocId, type DocVersion, asDocId, asDocVersion, err, ok } from '@mo
  */
 
 /** How the shim was configured, and what a test can observe afterwards. */
+/**
+ * One answer from the shim's picker.
+ *
+ * The contract's own result type, narrowed to what a shim can produce: it is
+ * `ChannelResult<'document.open'>`, so a variant added to the channel makes
+ * every construction of one here a compile error rather than a silently
+ * unhandled case.
+ */
+export type OpenAnswer = ChannelResult<'document.open'>;
+
 export interface BrowserShim {
   /** The renderer-facing surface. Complete by construction. */
   readonly client: ContractClient;
@@ -102,6 +113,20 @@ export interface BrowserShimOptions {
    * display-only sin one level down.
    */
   readonly faulty?: ReadonlySet<string>;
+  /**
+   * What `document.open` answers, in order, one per call.
+   *
+   * **A queue rather than a single value**, because the interesting cases are
+   * sequences: cancel then open, open then open-again-already-open. A shim that
+   * returned one fixed outcome forever could not express either, and a test
+   * wanting the second would have to build its own client — which is the second
+   * implementation of the boundary this shim exists to be.
+   *
+   * Unset, or exhausted, answers `cancelled`: the outcome that changes no state
+   * and is a user closing a dialog. A default of `opened` would make every test
+   * that never mentions opening quietly open a document.
+   */
+  readonly opens?: readonly OpenAnswer[];
 }
 
 /**
@@ -126,6 +151,10 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const incidents: Incident[] = [];
   let minted = 0;
 
+  // Copied, not aliased: `options` is the caller's, and a handler that shifted
+  // entries off it would mutate a value the caller may still be reading.
+  const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
+
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
   // body with no `await` is a lint error rather than a style preference. A
@@ -143,6 +172,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           installChannel: options.installChannel ?? 'development',
         }),
       ),
+
+    'document.open': () => {
+      const answer = queuedOpens.shift() ?? { kind: 'cancelled' as const };
+
+      // AN `opened` ANSWER SEEDS THE DOCUMENT, so the id it returns is one
+      // `document.execute` will accept. A shim that reported a document open
+      // and then refused every command against it would hand a test the one
+      // state the real boundary cannot produce, and the test written against it
+      // would assert on a shape nothing ships.
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
 
     'document.execute': ({ docId }) => {
       if (options.faulty?.has(docId) === true) {

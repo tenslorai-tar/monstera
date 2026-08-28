@@ -80,6 +80,73 @@ export const channels = {
    * inconsistency's clothes: without it a poisoned document has no session, and
    * a missing session is a defect by name (Decision 9c).
    */
+  /**
+   * Opens a document, through a picker main owns.
+   *
+   * ## IT TAKES NO PARAMETERS, AND THAT IS THE INVARIANT RATHER THAN A DEFAULT
+   *
+   * A string path in a renderer-facing type is a compile error (§2, invariant
+   * 1). The obvious signature — the renderer passes a path, or a handle it got
+   * from somewhere — reintroduces the thing the whole capability design exists
+   * to forbid: a renderer that can name a location can name any location, and
+   * the rejected alternative is a runtime allowlist that fails open at every
+   * handler which forgets to call it.
+   *
+   * So the renderer **asks**, and main decides what was asked for. The picker,
+   * the path, and the mint are all main's; what comes back is a `DocId` and a
+   * `DocVersion`. The renderer cannot express which file it wants, which is why
+   * it cannot express the wrong one.
+   *
+   * ## NOT A DOCUMENT-CARRYING CHANNEL, and the L11 gate above stays owed
+   *
+   * The note at the top of this file says the first channel that carries bytes
+   * owes invariant L11's check. **This is not that channel** — opening a 2 GB
+   * PDF and a 20 kB one put exactly the same two identifiers on the wire, and
+   * the canonical image never leaves main. Said here rather than left to be
+   * inferred, because *a document channel* and *a document-carrying channel*
+   * are different things and the gate is owed by the second.
+   *
+   * ## The result mirrors the kernel's `OpenOutcome`, plus one
+   *
+   * `opened`, `already-open`, `absent` and `at-capacity` are the kernel's own
+   * variants. Restating them as failure codes here would be a second taxonomy
+   * for a question `DocumentService` already answers, and the two would drift
+   * (B3a) — so the shape is mirrored and the kernel stays the writer of record
+   * for what opening produces.
+   *
+   * `cancelled` is the one variant the kernel cannot have, because the picker
+   * is main's and dismissing it never reaches the service. It is an **outcome**:
+   * a user closing a dialog is not a failure, and reporting it as one would put
+   * an error in front of somebody who changed their mind.
+   *
+   * `already-open` carries no version, matching ADR-0009 §2 — *render a second
+   * copy of an already-open document* is a sentence that cannot be written down
+   * rather than a bug to be caught, so the only thing a caller can do with this
+   * variant is focus the document that is already there.
+   *
+   * There are **no declared failure codes**. Every way this can end that a user
+   * can cause is above; everything else — a picker that throws, a registry
+   * miss, a read fault — is a defect, and defects are `internal` with the
+   * diagnostic recorded main-side.
+   */
+  'document.open': channel(
+    'Opens a document chosen in a picker main owns, returning its id and version.',
+    z.object({}),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('opened'), docId: docIdSchema, version: docVersionSchema }),
+      z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
+      z.object({ kind: z.literal('absent') }),
+      z.object({
+        kind: z.literal('at-capacity'),
+        /** What the resident total would have become, in bytes. */
+        wouldHold: z.number().int().nonnegative(),
+        /** The ceiling it would have crossed. */
+        ceiling: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+    ]),
+  ),
+
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
     z.object({ docId: docIdSchema, command: commandSchema }),

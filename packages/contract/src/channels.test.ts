@@ -31,6 +31,7 @@ function ignore(_incident: Incident): void {
  */
 const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' })),
+  'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
 };
 

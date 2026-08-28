@@ -1,4 +1,4 @@
-import { INTERNAL_FAILURE, asDocId } from '@monstera/shared';
+import { INTERNAL_FAILURE, asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { createBrowserShim } from './browserShim.js';
@@ -180,6 +180,82 @@ describe('browser shim', () => {
     // The registry is the source of truth; this reads the client's own keys
     // rather than restating the channel list, which would be the second place a
     // channel is written down.
-    expect(Object.keys(shim.client).sort()).toEqual(['app.info', 'document.execute']);
+    //
+    // THE LITERAL IS THE ANCHOR AND IS DELIBERATE (checklist 4c). Comparing the
+    // client's keys with `channelIds` alone would agree when both are empty —
+    // a `channels` that failed to build and a client that built nothing from it
+    // produce the same clean result. The literal is the one side a shrink has to
+    // touch separately, so it grows by hand when a channel lands.
+    expect(Object.keys(shim.client).sort()).toEqual([
+      'app.info',
+      'document.execute',
+      'document.open',
+    ]);
+  });
+
+  describe('document.open', () => {
+    it('cancels when nothing was queued, changing no state', async () => {
+      // The DEFAULT, and it is the outcome that does nothing. A shim defaulting
+      // to `opened` would quietly open a document in every test that never
+      // mentions opening, and those tests would pass for a reason none of them
+      // states.
+      const shim = createBrowserShim();
+
+      const result = await shim.client['document.open']({});
+
+      expect(result).toStrictEqual({ ok: true, value: { kind: 'cancelled' } });
+    });
+
+    it('answers queued outcomes in order, so a sequence can be expressed', async () => {
+      const docId = asDocId('doc-7');
+      const shim = createBrowserShim({
+        opens: [{ kind: 'cancelled' }, { kind: 'opened', docId, version: asDocVersion(1) }],
+      });
+
+      expect(await shim.client['document.open']({})).toStrictEqual({
+        ok: true,
+        value: { kind: 'cancelled' },
+      });
+      expect(await shim.client['document.open']({})).toStrictEqual({
+        ok: true,
+        value: { kind: 'opened', docId, version: 1 },
+      });
+      // Exhausted, so back to the default rather than repeating the last.
+      expect(await shim.client['document.open']({})).toStrictEqual({
+        ok: true,
+        value: { kind: 'cancelled' },
+      });
+    });
+
+    it('an opened document is one document.execute will accept', async () => {
+      // THE CASE THAT KEEPS THE DOUBLE HONEST. A shim reporting a document open
+      // and then refusing every command against it would offer a state the real
+      // boundary cannot produce, and a test written against that state would
+      // assert on a shape nothing ships.
+      const docId = asDocId('doc-8');
+      const shim = createBrowserShim({ opens: [{ kind: 'opened', docId, version: asDocVersion(3) }] });
+
+      await shim.client['document.open']({});
+      const executed = await shim.client['document.execute']({
+        docId,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+
+      expect(executed).toStrictEqual({ ok: true, value: { version: 4 } });
+    });
+
+    it('carries no path in either direction', async () => {
+      // Invariant 1, asserted at the surface a renderer actually holds. The
+      // params type is `Record<string, never>`, so this is the runtime half of
+      // a claim the type already makes — and it is the half that would survive
+      // somebody widening the schema.
+      const shim = createBrowserShim({
+        opens: [{ kind: 'opened', docId: asDocId('doc-9'), version: asDocVersion(1) }],
+      });
+
+      const result = await shim.client['document.open']({});
+
+      expect(JSON.stringify(result)).not.toMatch(/[/\\]/u);
+    });
   });
 });

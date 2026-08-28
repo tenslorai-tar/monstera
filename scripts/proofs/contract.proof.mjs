@@ -78,6 +78,7 @@ import type { ContractHandlers } from '@monstera/contract';
 import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
 };
 `,
@@ -98,11 +99,20 @@ export const handlers: ContractHandlers = {
     // that names no particular channel and whose code changes the day a second
     // one is declared. Omitting one keeps the failure singular, so the matcher
     // can anchor on the name of the thing that is missing.
+    //
+    // THAT DAY ARRIVED: `document.open` landed 2026-08-28 and this fixture went
+    // from missing one to missing two, turning TS2741 into TS2739 — the exact
+    // drift the paragraph above predicted. The repair is the one it prescribes,
+    // not a looser code: every channel but one is present, so the failure stays
+    // singular. **Every channel added from here owes this fixture a line**, and
+    // that cost is what a compile-fail proof buys — `typecheck` cannot see
+    // inside a string, which is the whole point and also the whole price.
     source: `
 import type { ContractHandlers } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
 };
 `,
   },
@@ -192,12 +202,15 @@ export const handlers: ContractHandlers = {
     // about the real application.
     // One channel short, for the same reason as its handler sibling: an empty
     // stub is missing every channel and TypeScript reports a LIST under a
-    // different code, naming nothing in particular.
+    // different code, naming nothing in particular. `document.open` is present
+    // here for that reason and not as decoration — see the handler fixture for
+    // what happened the day it landed.
     source: `
 import type { ContractClient } from '@monstera/contract';
 import { ok } from '@monstera/shared';
 export const shim: ContractClient = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
+  'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
 };
 `,
   },

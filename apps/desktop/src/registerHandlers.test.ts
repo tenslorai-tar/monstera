@@ -1,4 +1,5 @@
 import { type Incident, channelIds } from '@monstera/contract';
+import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
 import { describe, expect, it } from 'vitest';
 
 import { type AppInfo, createContractHandlers } from './contractHandlers.js';
@@ -59,7 +60,19 @@ const unusedCommands = {} as unknown as DocumentCommands;
 const trustAll: IpcSenderCheck = () => true;
 
 function handlers() {
-  return createContractHandlers({ commands: unusedCommands, appInfo });
+  return createContractHandlers({
+    appInfo,
+    // Same reasoning as `unusedCommands` above: these cases are about which
+    // channels get registered and by what route, not about what any handler
+    // does. A picker that throws says so — if a case in this file ever reaches
+    // it, the case is about something else than it claims.
+    capabilities: {} as unknown as CapabilityRegistry,
+    commands: unusedCommands,
+    documents: {} as unknown as DocumentService,
+    pickDocument: () => {
+      throw new Error('registration cases must not reach the picker');
+    },
+  });
 }
 
 describe('main-process contract registration', () => {

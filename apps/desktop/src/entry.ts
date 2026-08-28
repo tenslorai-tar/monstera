@@ -1,6 +1,7 @@
 import { app } from 'electron';
 
 import { createShellDependencies } from './composition.js';
+import { createDocumentPicker } from './documentPicker.js';
 import { startShell } from './main.js';
 
 /**
@@ -33,8 +34,15 @@ import { startShell } from './main.js';
  * of one package is exactly what an update decision must not be.
  */
 startShell(
-  createShellDependencies({
-    version: app.getVersion(),
-    installChannel: 'development',
-  }),
+  createShellDependencies(
+    {
+      version: app.getVersion(),
+      installChannel: 'development',
+    },
+    // Built here, for the same reason `AppInfo` is: this is the only file that
+    // may hold both Electron and the graph. `composition.ts` takes the picker
+    // as a value so that everything opening does with what was picked stays
+    // decidable without a runtime.
+    createDocumentPicker(),
+  ),
 );

@@ -86,4 +86,15 @@ app.on('browser-window-created', (_event, window) => {
 });
 
 // The same two calls `entry.ts` makes, in the same order, with the same values.
-startShell(createShellDependencies({ version: app.getVersion(), installChannel: 'development' }));
+//
+// The picker is the ONE value this harness does not take from `entry.ts`. It
+// drives the shell headlessly, so a real `showOpenDialog` would block forever
+// on a window nobody can dismiss — and every case this harness runs is about
+// the shell starting and the boundary registering, not about opening. It
+// throws rather than returning `null`: a silent cancel would let a case about
+// opening pass here while proving nothing, which is the display-only shape.
+startShell(
+  createShellDependencies({ version: app.getVersion(), installChannel: 'development' }, () => {
+    throw new Error('the shell harness has no picker: it does not exercise opening');
+  }),
+);
