@@ -644,6 +644,88 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — IIII-1: the pre-commit hook was 97 seconds, and 94 of them were reading files two spawns at a time
+
+Measured rather than modelled, because *which step dominates* is a question a
+guess answers plausibly and wrongly. The hook prints as it goes, so its own
+output was piped through a timestamper:
+
+```
+node scripts/hooks/preCommit.mjs | <stamp>     empty index, two runs
+
+  69281ms    ok  12 emitted-source template(s) carry no backtick
+  94907ms    0 of 3 per-document rule(s) apply …
+  97071ms    gitleaks: no leaks found
+  97099ms  [stream ended]                       (second run: 97401ms)
+```
+
+**Sixty-nine seconds before the first line of output.** The boundaries inside
+that silence are invisible, so the prologue's steps were then called in order and
+timed individually — a model, used only to locate the dominant one, and checked
+against the real total (94.5 s modelled against 97.1 s measured, 3% apart):
+
+| step | cost | share |
+|---|---|---|
+| `scanEmittedTemplates({source:'staged'})` | **68.7 s** | 71% |
+| `scanTypeOnlyExports()` | **25.2 s** | 26% |
+| gitleaks | 2.2 s | 2% |
+| everything else | ~0.5 s | <1% |
+
+**That corrected my own reading of the stream.** I had attributed the 25.6 s
+between the templates line and the gitleaks line to the document rules; it is the
+type-only export scan, which prints nothing. The two methods disagreeing is what
+made the difference visible.
+
+### The mechanism, which is a helper that exists and is not called
+
+Both scans read every file's staged content through `readStagedBlob` — **which
+spawns git twice per path**, a `cat-file -e` probe and a `cat-file blob`. 343
+matching files, ~686 spawns, ~100 ms each on Windows. That is the 68 seconds, and
+it is spent entirely on process creation: with an **empty index** the scans have
+no violations to find and no work to do with the bytes.
+
+`readStagedBlobs` — plural, one `git cat-file --batch` for the whole set — has
+been in the same module since 2026-08-23, and its header says so:
+
+> *"For more than a couple of paths use `readStagedBlobs`: this spawns git twice
+> per call, and on Windows that dominates everything downstream of it."*
+
+**Neither call site took it.** That is QQQ-3 exactly — *a helper sitting beside a
+bare inline expression is the same trap one step on, because the choice between
+them is a paragraph someone has to read and reject rather than two names they
+pick from.* The measurement that produced that sentence was taken on seven blobs;
+these loops run on 343 and 218, so the finding was recorded at a twentieth of its
+real scale and the recommendation stayed a recommendation.
+
+### After
+
+```
+node scripts/hooks/preCommit.mjs | <stamp>     empty index, two runs
+
+    973ms    ok  12 emitted-source template(s) carry no backtick
+   1861ms    0 of 3 per-document rule(s) apply …
+   4078ms    gitleaks: no leaks found
+   4120ms  [stream ended]                       (second run: 4026ms)
+```
+
+**97.4 s → 4.1 s**, a 24× reduction, from one batched read in each scan.
+`scanEmittedTemplates` 68.7 s → 702 ms; `scanTypeOnlyExports` 25.2 s → 450 ms.
+
+### Two things worth carrying
+
+**Ruling gitleaks out by size was right, and it has now become the dominant
+step.** It was 2.2 s of 97 s — 2% — and is 2.2 s of 4.1 s, which is **54%**. The
+number did not change; everything around it did. A share is a ratio and reads
+like a property of the thing.
+
+**The asymmetry this closes is not the wait.** A hook that outlives a common
+two-minute tool timeout makes a mid-flight commit and a failed one
+indistinguishable — the caller sees a kill signal either way and has to go and
+read `git log` to find out which. This project has hit that exact ambiguity
+during this build. At 4 seconds it cannot arise.
+
+---
+
 ## 2026-08-28 — Stage audit: `af73baa..e234979` — a range whose subject was checks that never ran, and the roster that found them
 
 **Audited through `e234979`.** Pasted from `npm run audit:scope`:

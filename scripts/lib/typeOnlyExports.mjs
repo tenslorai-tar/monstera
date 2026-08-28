@@ -46,7 +46,7 @@
  * Usage: node scripts/lib/typeOnlyExports.mjs
  */
 
-import { readStagedBlob, repoRoot } from './gitScope.mjs';
+import { readStagedBlobs, repoRoot } from './gitScope.mjs';
 import { filesInCommit } from './gitScope.mjs';
 
 /**
@@ -145,9 +145,18 @@ export function scan({ root = repoRoot() } = {}) {
   /** @type {Array<{ file: string, line: number, specifier: string, kind: string }>} */
   const violations = [];
   let scanned = 0;
+
+  // ONE `git cat-file --batch` FOR THE WHOLE SET. `readStagedBlob` spawns twice
+  // per path, and on Windows the spawn dominates everything downstream — this
+  // loop measured **25.2 s** of a 97 s pre-commit hook on 2026-08-28, doing
+  // nothing but reading. Its own helper's header has recommended the batch since
+  // 2026-08-23; see `emittedTemplates.mjs` for why the recommendation not being
+  // taken is the finding rather than the slowness.
+  const staged = readStagedBlobs(files, { cwd: root });
+
   for (const file of files) {
-    const blob = readStagedBlob(file, { cwd: root });
-    if (blob === null) continue;
+    const blob = staged.get(file);
+    if (blob === undefined) continue;
     scanned += 1;
     for (const violation of violationsIn(`${blob}`)) {
       violations.push({ file, ...violation });

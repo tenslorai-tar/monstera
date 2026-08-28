@@ -112,7 +112,7 @@
 
 import { readFileSync } from 'node:fs';
 
-import { filesInCommit, readStagedBlob, repoRoot } from './gitScope.mjs';
+import { filesInCommit, readStagedBlobs, repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
 
 /** Written numerically, so this file cannot contain the thing it bans. */
@@ -314,11 +314,13 @@ export function scannedFiles() {
  * reason; there is one resolver for "the bytes as staged" and this uses it.
  *
  * @param {string} relative @param {'tree' | 'staged'} source @param {string} root
+ * @param {Map<string, Buffer>} [staged] every staged blob, read in one batch —
+ *   see the caller for why this is not read per file
  * @returns {string | null} null when the path is not in the scope at all
  */
-function textFor(relative, source, root) {
+function textFor(relative, source, root, staged) {
   if (source === 'staged') {
-    const blob = readStagedBlob(relative);
+    const blob = staged?.get(relative) ?? null;
     return blob === null ? null : blob.toString('utf8');
   }
   try {
@@ -355,8 +357,24 @@ export function scan({ source = 'tree' } = {}) {
   let offending = 0;
   let regionCount = 0;
 
-  for (const relative of scannedFiles()) {
-    const text = textFor(relative, source, root);
+  const files = scannedFiles();
+
+  // ONE `git cat-file --batch` FOR THE WHOLE SET, not two spawns per file.
+  //
+  // `readStagedBlob` spawns twice per path, and on Windows a spawn costs more
+  // than any work this scan does with the bytes. Measured 2026-08-28 with an
+  // empty index: this loop took **68.7 s** of a 97 s pre-commit hook — 343
+  // files, ~686 spawns, ~100 ms each. Batched, the same set costs one spawn.
+  //
+  // `readStagedBlobs`'s own header has said *"for more than a couple of paths
+  // use this"* since 2026-08-23, and this call site did not. That is QQQ-3: a
+  // helper sitting beside the slow one is the same trap one step on, because
+  // choosing between them is a paragraph someone has to read and reject rather
+  // than two names they pick from.
+  const staged = source === 'staged' ? readStagedBlobs(files) : undefined;
+
+  for (const relative of files) {
+    const text = textFor(relative, source, root, staged);
     if (text === null) continue;
     // A file with no backtick at all cannot hold a template. Anything narrower
     // here would be a SECOND opinion about what opens one, held one level above
