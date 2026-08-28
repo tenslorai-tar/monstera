@@ -265,6 +265,67 @@ registerRule({
 // 2. The ADR index lists every ADR, and does not assert a status the file
 //    contradicts.
 // ---------------------------------------------------------------------------
+/**
+ * A dated correction heading, in every form this corpus actually writes.
+ *
+ * ## What it matches, MEASURED rather than assumed (finding XXXX-2)
+ *
+ * Counted across `docs/DECISIONS/` on 2026-08-28:
+ *
+ * | form | count |
+ * |---|---|
+ * | `## Correction, DATE — …` | 25 |
+ * | `### Correction, DATE — …` | 14 |
+ * | `> ## Correction — DATE` | 3 |
+ * | `#### Correction, DATE — …` | 2 |
+ *
+ * The previous pattern was `^>\s*##\s*Correction\s*[—–-]\s*DATE`, which matches
+ * **only the third row**. It missed the other 41 three ways at once: the `>` it
+ * required, the heading depth it fixed at two, and the ORDER — the common form
+ * puts a comma and the date first and the em dash after, where that pattern
+ * wanted the dash immediately.
+ *
+ * So nine ADRs carrying dated corrections were reported as uncorrected, and
+ * every one of their index rows read *Accepted* with nothing recorded. Three of
+ * those corrections were appended in the range that found this.
+ *
+ * **It had already been fixed once for the same class of blindness**, and its
+ * own comment recorded that: the first version omitted the em dash and *"found
+ * no corrections at all and reported that half as passing"*. The dash was
+ * widened and the other three axes were never looked at — half a fix, reporting
+ * *found nothing* in exactly the voice of a clean corpus.
+ *
+ * ## The two forms mean the same thing, which is why this widens rather than splits
+ *
+ * Nothing in `CLAUDE.md` or `DECISIONS/README.md` distinguishes a blockquoted
+ * correction from a body-level one. The rule is *append a dated correction,
+ * never edit*, and it says nothing about presentation. Checked against the
+ * corpus before widening: both forms carry outright withdrawals — ADR-0007's
+ * banner is *"largely withdrawn"*, and ADR-0023's body-level blocks include
+ * *"a poisoned document is still saveable is WITHDRAWN"*. The banner is
+ * placement, not a different kind of claim.
+ *
+ * The date is required anywhere on the heading line rather than in a fixed
+ * position, because the three orderings above are all in use and a fourth costs
+ * nothing to accept. What is NOT optional is the date itself: an undated
+ * correction is the thing the append-only rule exists to prevent.
+ */
+const CORRECTION_HEADING = /^>?\s*#{2,4}\s+Correction\b[^\n]*\d{4}-\d{2}-\d{2}/mu;
+
+/**
+ * An ADR known to carry a body-level correction, so this rule's silence means
+ * something (item 4b).
+ *
+ * *No ADR is corrected* is this rule's passing answer and it has now been the
+ * WRONG answer for weeks, so the pattern must be shown to find something on
+ * every run. Anchored on a body-level heading deliberately: the form the old
+ * pattern could see is the one least likely to regress.
+ *
+ * Safe as a permanent anchor because corrections are append-only — ADR-0023's
+ * blocks cannot be deleted by any rule this repository has.
+ */
+const CORRECTION_CONTROL = 'docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md';
+
 registerRule({
   name: 'every ADR is indexed, and no index row contradicts its file',
   // Enumerates every ADR to decide whether the index is complete: a new ADR
@@ -276,6 +337,27 @@ registerRule({
   const adrFiles = trackedFiles()
     .filter((path) => /^docs\/DECISIONS\/\d{4}-.*\.md$/.test(path))
     .sort();
+
+  // THE POSITIVE CONTROL, BEFORE ANY VERDICT. Every way of breaking the
+  // correction scan — a wrong pattern, an empty file list, a heading form
+  // nobody anticipated — reports the same clean *no ADR is corrected*, and that
+  // is the answer this rule is hoping for. It was also the WRONG answer for
+  // weeks (XXXX-2). So the pattern has to find something known to be there
+  // before its silence about anything else is worth reading.
+  if (!adrFiles.includes(CORRECTION_CONTROL)) {
+    failures.push(
+      `the correction control ${CORRECTION_CONTROL} is not in the enumerated ADR set, so this ` +
+        `rule cannot establish that it can see anything. Point the control at another ADR that ` +
+        `carries a dated correction rather than deleting it.`,
+    );
+  } else if (!CORRECTION_HEADING.test(read(CORRECTION_CONTROL))) {
+    failures.push(
+      `the correction scan did not find a dated correction in ${CORRECTION_CONTROL}, which is ` +
+        `known to carry several. Every clean result from this rule is therefore worthless: a ` +
+        `pattern that cannot match its subject reads exactly like a corpus with nothing to ` +
+        `report, which is the failure this rule has already had once.`,
+    );
+  }
 
   for (const path of adrFiles) {
     const id = /(\d{4})/.exec(path)?.[1] ?? '';
@@ -296,12 +378,7 @@ registerRule({
     // A correction is a dated block the ADR carries. Its status must not read as
     // though nothing happened.
     const body = read(path);
-    // The dash class covers em, en and hyphen. The first version of this check
-    // omitted the EM dash, which is the one the ADRs actually use — so it found
-    // no corrections at all and reported that half as passing. A check that
-    // cannot match its subject is indistinguishable from a subject that is
-    // clean, which is the failure this whole file exists to prevent.
-    const corrected = /^>\s*##\s*Correction\s*[—–-]\s*\d{4}-\d{2}-\d{2}/m.test(body);
+    const corrected = CORRECTION_HEADING.test(body);
     const rowMentionsCorrection = /correct/i.test(row);
 
     if (corrected && !rowMentionsCorrection) {
