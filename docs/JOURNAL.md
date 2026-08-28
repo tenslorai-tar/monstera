@@ -644,6 +644,86 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — HHHH-1: AAAA-1 has a precondition nobody has named — nothing opens a document
+
+**AAAA-1 has been queued and displaced for five rounds** — *`composition.ts`
+calls the factory, discharging `engine-host-factory-wired` and bringing
+`onDocumentOpened`, `onEngineHostEnded`, the host body and the session store into
+service together.* Every blocker previously named for it has cleared: YYYY-1
+fixed the connect race, ADR-0028 decided the FFI question and §9.17 is amended,
+ADR-0027 settled the grant, and a contained host has started and answered on two
+machines.
+
+**It is still blocked, and by something else. There is no code path that opens a
+document.**
+
+```
+grep -rn "documents\.open|\.open\(" apps/desktop/src --include=*.ts | grep -v test
+    → apps/desktop/src/rendererHarness.ts:479   window.open('https://example.org/')
+      (a negative CSP probe, not a document)
+
+grep -oE "'(app|document)\.[a-z]+'" packages/contract/src/channels.ts | sort -u
+    → 'app.info'
+    → 'document.execute'
+```
+
+`DocumentService.open` has **no shipped caller.** The contract declares two
+channels and neither of them opens anything — which `composition.ts`'s own header
+already records for a different purpose: *"the missing-session path needs an OPEN
+document, and opening one is not a channel."*
+
+### Why this makes the wiring a defect rather than a step
+
+`onDocumentOpened` is called when a document is opened, by whoever called
+`open`. `create`, `reopen` and `rebuild` are reached from there or from a host
+death that only a live session can suffer. Wiring all four into
+`createShellDependencies` today produces a complete graph in which **every edge
+is unreachable**, and the definition of done says what that is: a control that
+renders but does nothing is a defect, not a placeholder. The wired-tools rule is
+sharper still — *use it on a real document → observable, correct effect →
+survives save and reopen* — and none of that is constructible.
+
+It would also be unfalsifiable in the direction that matters. A host built at
+startup with no document to serve costs ~89 MB measured and can be exercised by
+nothing, so the first evidence that any of the wiring is wrong would arrive with
+the feature that finally opens a document.
+
+### What this is not
+
+**Not a grant problem.** ADR-0027 settled that, and provisioning grants to `ALL
+APPLICATION PACKAGES` rather than to a container SID — deliberately — so the
+composition root's container name is not coupled to provisioning at all.
+`containerSidText` calls `CreateAppContainerProfile`, which is per-user and needs
+no elevation, so a shipped binary can mint its own profile.
+
+**Not missing machinery.** Every piece exists and is tested:
+`createWin32HostSurface`, `createContainedHost`, `createEngineHostConnection`,
+`createHostPipe`, `createSessionDirectories`, `hostPipeDacl`, `openEngineSession`,
+`onDocumentOpened`, `onEngineHostEnded`. `scripts/perf/roleMupdfHost.mjs` already
+assembles them against a real host and a real document.
+
+### The decision, which is the owner's
+
+Adding `document.open` to the contract is a **feature**, and the contract's
+two-channel surface is deliberate. Three shapes, none of them mine to pick:
+
+1. **Add the open path now** as part of Stage 0's skeleton, and wire the host in
+   the commit after it. This is the only order in which AAAA-1 can be proven
+   end-to-end.
+2. **Wire the surfaces now and accept unreachable edges**, with the open path as
+   the stated expiry. This is the display-only shape and I would argue against
+   it, but it is a defensible call if the intent is to freeze the graph's shape
+   before the feature lands.
+3. **Leave AAAA-1 blocked** and record the precondition on its FEATURES row, so
+   the next five rounds do not re-derive this.
+
+Recorded rather than taken, per the standing instruction. **The transferable
+part is why it stayed hidden for five rounds:** every previously named blocker
+was a property of the host, so each round asked *can we build a host yet* and
+the answer kept becoming more yes. Nobody asked what would ever CALL it.
+
+---
+
 ## 2026-08-28 — Stage audit: `2091b91..af73baa` — the fix for a second opinion replaced it with two copies, and the source is importable
 
 **Audited through `af73baa`.** Pasted from `npm run audit:scope`:
