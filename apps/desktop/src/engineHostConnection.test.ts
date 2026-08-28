@@ -1,32 +1,18 @@
 import { ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
-import type { HostTermination } from '@monstera/kernel';
-import type { ReaderMessage } from '@monstera/nodemode';
-import { ok } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PipeHandle, SecurityDescriptor } from './enginePipeFactory.js';
-import type { ContainerSid, UserSid } from './hostDacl.js';
+import { HOST_CONNECT_TIMEOUT_MS, createEngineHostConnection } from './engineHostConnection.js';
 import {
-  type EngineHostConnectionSurfaces,
-  HOST_CONNECT_TIMEOUT_MS,
-  createEngineHostConnection,
-} from './engineHostConnection.js';
-import type { ReaderWorkerHandle } from './engineReaderChannel.js';
-import type { CreatedProcess, JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory.js';
-import type { PendingWrite } from './hostWriteQueue.js';
-import type { StopEvent } from './win32PipeSurface.js';
+  FAKE_CONTAINER,
+  FAKE_PIPE_NAME,
+  FAKE_USER,
+  type HostHarness,
+  hostHarness,
+} from './engineHostFake.js';
 
-const USER: UserSid = { __sid: 'user', value: 'S-1-5-21-1-2-3-1001' };
-const CONTAINER: ContainerSid = { __sid: 'container', value: 'S-1-15-2-1-2-3' };
-const PIPE_NAME = String.raw`\\.\pipe\monstera-test`;
-
-const DESCRIPTOR: SecurityDescriptor = { __handle: 'security-descriptor' };
-const INSTANCE: PipeHandle = { __handle: 'pipe' };
-const STOP_EVENT: StopEvent = { __handle: 'stop-event' };
-const PROCESS: ProcessHandle = { __handle: 'process' };
-const THREAD: ThreadHandle = { __handle: 'thread' };
-const JOB: JobHandle = { __handle: 'job' };
-const CREATED: CreatedProcess = { pid: 4242, process: PROCESS, thread: THREAD };
+const USER = FAKE_USER;
+const CONTAINER = FAKE_CONTAINER;
+const PIPE_NAME = FAKE_PIPE_NAME;
 
 /**
  * ONE call list across every surface, which is the point rather than a
@@ -38,140 +24,18 @@ const CREATED: CreatedProcess = { pid: 4242, process: PROCESS, thread: THREAD };
  * and per-surface spies would let a composition that did them backwards pass
  * each of them individually.
  */
-interface Harness {
-  readonly calls: string[];
-  readonly surfaces: EngineHostConnectionSurfaces;
-  readonly endings: HostTermination[];
-  /** Posts a reader message, as the worker thread would. */
-  readonly post: (message: ReaderMessage) => void;
-  /**
-   * Makes `resume` deliver `connected` SYNCHRONOUSLY, before the composer can
-   * be listening. Models a host already at the pipe, and is how the latch in
-   * `onConnected` is exercised rather than assumed.
-   */
-  readonly connectOnResume: () => void;
-  /** Ends the reader thread, as an exit would. */
-  readonly exit: (code: number) => void;
-}
+type Harness = HostHarness;
 
-function harness(
-  failures: {
-    pipe?: boolean;
-    stopEvent?: boolean;
-    worker?: boolean;
-    host?: boolean;
-    /** The process starts and never reaches the pipe. */
-    connect?: boolean;
-  } = {},
-): Harness {
-  const calls: string[] = [];
-  const endings: HostTermination[] = [];
-  let eager = false;
-  const sinks: {
-    message: ((message: ReaderMessage) => void)[];
-    exit: ((code: number) => void)[];
-  } = { message: [], exit: [] };
-
-  const worker: ReaderWorkerHandle = {
-    onMessage: (sink) => sinks.message.push(sink),
-    onError: () => undefined,
-    onExit: (sink) => sinks.exit.push(sink),
-    terminate: () => calls.push('worker.terminate'),
-  };
-
-  const surfaces: EngineHostConnectionSurfaces = {
-    pipes: {
-      describe: () => {
-        calls.push('pipe.describe');
-        return DESCRIPTOR;
-      },
-      createInstance: () => {
-        calls.push('pipe.createInstance');
-        return failures.pipe === true ? null : INSTANCE;
-      },
-      freeDescriptor: () => calls.push('pipe.freeDescriptor'),
-      close: () => calls.push('pipe.close'),
-      lastError: () => 5,
-    },
-    reader: {
-      createStopEvent: () => {
-        calls.push('reader.createStopEvent');
-        return failures.stopEvent === true ? null : STOP_EVENT;
-      },
-      signal: () => {
-        calls.push('reader.signal');
-        return true;
-      },
-      closeEvent: () => calls.push('reader.closeEvent'),
-      addressOf: () => '1234',
-      startWorker: () => {
-        calls.push('reader.startWorker');
-        return failures.worker === true ? null : worker;
-      },
-      lastError: () => 6,
-    },
-    writesFor: () => {
-      calls.push('writes.for');
-      return {
-        issue: (): PendingWrite | null => null,
-        collect: () => 'completed' as const,
-        release: () => undefined,
-        abandon: () => calls.push('writes.abandon'),
-        lastError: () => 7,
-      };
-    },
-    hostFor: () => {
-      calls.push('host.surfaceBuilt');
-      return {
-        createSuspended: () => {
-          calls.push('host.createSuspended');
-          return ok(CREATED);
-        },
-        createJob: () => {
-          calls.push('host.createJob');
-          return failures.host === true ? null : JOB;
-        },
-        applyLimits: () => true,
-        assignToJob: () => true,
-        readJobMembership: () => 'in-job' as const,
-        resume: () => {
-          // THE PEER ARRIVES WHEN THE PROCESS IS RESUMED, which is the fake's
-          // one piece of modelling and is where reality puts it: a suspended
-          // process has not run a line, so it cannot have opened the pipe.
-          //
-          // Posted on a microtask by default, because that is the shape the
-          // composer has to cope with — a `connected` delivered inside `resume`
-          // arrives before the composer ever awaits, so every case would then be
-          // proving the LATCH works rather than the wait. `connectOnResume`
-          // selects that other shape deliberately, for the one case about it.
-          const deliver = (): void => {
-            for (const sink of sinks.message) sink({ kind: 'connected' });
-          };
-          if (eager) deliver();
-          else if (failures.connect !== true) queueMicrotask(deliver);
-          return 1;
-        },
-        terminate: () => calls.push('host.terminate'),
-        close: (handle) => calls.push(`host.close:${handle.__handle}`),
-      };
-    },
-  };
-
-  return {
-    calls,
-    surfaces,
-    endings,
-    post: (message) => {
-      for (const sink of sinks.message) sink(message);
-    },
-    exit: (code) => {
-      for (const sink of sinks.exit) sink(code);
-    },
-    connectOnResume: () => {
-      eager = true;
-    },
-  };
-}
+/**
+ * The fake moved to `engineHostFake.ts` on 2026-08-28, unchanged.
+ *
+ * The composition root's cases needed the same surfaces, and writing them a
+ * second time would have been a second opinion about how this protocol behaves
+ * (B3a) — two fakes agree until the ordering changes, at which point one file
+ * passes while the product cannot talk to itself. This file remains where the
+ * fake is exercised hardest; it is no longer where it lives.
+ */
+const harness = hostHarness;
 
 /**
  * Asserts one call happened before another, and that BOTH happened.

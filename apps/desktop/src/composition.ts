@@ -292,8 +292,21 @@ function engineSessionOpener(
           documents,
           failures,
           closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+          // SWALLOWED HERE, DELIBERATELY, AND THIS IS THE ONE PLACE IT IS
+          // CORRECT. `onEngineHostEnded` awaits this before entering each
+          // document's lane, and a rejection would escape into a `void`ed
+          // promise — an unhandled rejection in `main`, with the reopen
+          // entries never queued and no diagnostic naming why.
+          //
+          // A failed rebuild is not lost: every document's reopen then fails to
+          // create a session, `recordFailure` counts it, and Decision 9a
+          // poisons at the bound. The state each document ends in is the same
+          // whether the host could not be built or its session could not be
+          // opened, which is what makes discarding the reason here safe rather
+          // than convenient. Found by a case that reddened with an unhandled
+          // rejection rather than a failure (KKKK-7).
           rebuild: async () => {
-            await ensure();
+            await ensure().catch(() => undefined);
           },
           reopen: create,
         });
