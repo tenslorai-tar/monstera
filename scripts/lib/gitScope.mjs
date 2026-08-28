@@ -30,8 +30,13 @@
  * - **tree** — every tracked file at HEAD. The CI mirror.
  * - **history** — every blob reachable in the range, including blobs whose path
  *   no longer exists. Addressed by SHA, because a deleted object has no path.
+ * - **uncommitted** — everything that differs from HEAD, **tracked or not**.
+ *   The question "what have I changed since the last commit", which is what a
+ *   pre-push report about coverage is asking. It is the only scope here that
+ *   includes files git does not yet know about, and that is the whole reason it
+ *   exists — see {@link uncommittedPaths}.
  *
- * A guard that reads the filesystem directly is choosing a fifth scope —
+ * A guard that reads the filesystem directly is choosing a sixth scope —
  * "whatever is on disk right now" — and that is almost never the question.
  *
  * ## Where the scope is rooted
@@ -204,6 +209,51 @@ export function changedPaths(args, options = {}) {
   return parseNameStatus(
     `${git(['diff', '--name-status', '-z', ...args], options).stdout}`,
   );
+}
+
+/**
+ * Every path that differs from HEAD, **including files git does not track yet**.
+ *
+ * ## Why `git diff` alone is the wrong question here, measured
+ *
+ * `git diff --name-only HEAD` reports tracked modifications and nothing else, so
+ * a brand-new module — the ordinary shape of adding a feature — contributes
+ * **nothing**. A caller asking "which proofs does my work reach" then gets an
+ * empty set and prints *"nothing is changed against HEAD"*: the reassuring
+ * answer, produced by a hole in the input rather than by a clean tree. Measured
+ * on 2026-08-28, when `npm run local` said exactly that about a run whose only
+ * subject was two untracked files.
+ *
+ * That is audit item 4b's failure — an empty result that is indistinguishable
+ * from a genuine absence — arriving in the INPUT to a search rather than in the
+ * search. A positive control on the walk's edges cannot see it, because the walk
+ * is working perfectly on the set it was handed.
+ *
+ * ## Two commands rather than `git status --porcelain`
+ *
+ * `--porcelain -z` would answer both halves at once, and its framing is a THIRD
+ * format this module would have to own — `XY <path>` with renames carrying two
+ * NUL-separated paths in the opposite order to `--name-status`. Composing the
+ * two scopes that already have parsers keeps the framing count at two (B3a).
+ *
+ * `--exclude-standard` is what stops `node_modules`, `dist` and `.cache` from
+ * arriving as changes; without it this returns tens of thousands of paths and
+ * every caller looks affected by everything.
+ *
+ * Renames report the **new** path, which is {@link parseNameStatus}' answer and
+ * the right one here: the file a proof would now read is the destination.
+ * Deletions report their path too — removing a source file changes which proofs
+ * are owed a run just as surely as editing one.
+ *
+ * @param {{ cwd?: string }} [options]
+ * @returns {string[]} Repository-relative, forward-slashed by git, deduplicated.
+ */
+export function uncommittedPaths(options = {}) {
+  const tracked = changedPaths(['HEAD'], options).map((entry) => entry.path);
+  const untracked = `${git(['ls-files', '--others', '--exclude-standard', '-z'], options).stdout}`
+    .split('\0')
+    .filter((path) => path !== '');
+  return [...new Set([...tracked, ...untracked])];
 }
 
 /**

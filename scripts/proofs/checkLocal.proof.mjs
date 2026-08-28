@@ -86,7 +86,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 50 });
+const roster = createRoster(failures, { cases: 54 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -172,6 +172,68 @@ function runFixture(files, manifestScripts, extraArgs = []) {
     [HARNESS, '--root', root, '--floor', '1', ...extraArgs],
     { encoding: 'utf8' },
   );
+  return { root, ok: run.status === 0, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
+}
+
+/**
+ * A fixture that is a REAL git repository, with a committed baseline.
+ *
+ * The changed-file disclosure asks git what differs from HEAD, and a fixture
+ * with no HEAD cannot answer — which is why every case above is silent about
+ * that block. `untracked` is written **after** the commit, so those paths exist
+ * on disk and git has never heard of them: the shape of adding a new module, and
+ * the one `git diff` cannot see.
+ *
+ * @param {Record<string, string>} files under `scripts/`, committed
+ * @param {Record<string, string>} manifestScripts
+ * @param {Record<string, string>} untracked under `scripts/`, written after the commit
+ * @param {string[]} [extraArgs]
+ * @returns {{ root: string, ok: boolean, output: string }}
+ */
+function runGitFixture(files, manifestScripts, untracked, extraArgs = []) {
+  const root = mkdtempSync(join(scratch, 'repo git '));
+  mkdirSync(join(root, 'scripts'), { recursive: true });
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(root, 'scripts', name), body, 'utf8');
+  }
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'fixture', scripts: manifestScripts }, null, 2),
+    'utf8',
+  );
+  giveFixtureWorkflows(root, manifestScripts);
+  // THE HARNESS WRITES INTO THE ROOT IT IS MEASURING — `.cache/checkLocal-runs/`
+  // and the tree witness — so without this the fixture is never clean and the
+  // control below cannot exist. The real repository ignores the same directory,
+  // which is why the production run does not see it either.
+  writeFileSync(join(root, '.gitignore'), '.cache/\n', 'utf8');
+
+  const inRepo = (/** @type {string[]} */ args) =>
+    spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  inRepo(['init', '-q']);
+  inRepo(['add', '-A']);
+  // Identity on the command line rather than from the machine's config: a
+  // runner with no `user.email` set would fail the commit, and the fixture
+  // would then have no HEAD — which is the state this helper exists to avoid,
+  // arriving as a silently different test rather than as an error.
+  inRepo([
+    '-c',
+    'user.email=fixture@example.invalid',
+    '-c',
+    'user.name=fixture',
+    'commit',
+    '-q',
+    '-m',
+    'baseline',
+  ]);
+
+  for (const [name, body] of Object.entries(untracked)) {
+    writeFileSync(join(root, 'scripts', name), body, 'utf8');
+  }
+
+  const run = spawnSync(process.execPath, [HARNESS, '--root', root, '--floor', '1', ...extraArgs], {
+    encoding: 'utf8',
+  });
   return { root, ok: run.status === 0, output: `${run.stdout ?? ''}${run.stderr ?? ''}` };
 }
 
@@ -1526,6 +1588,66 @@ try {
       `SCANNING_PROOFS is ${JSON.stringify(SCANNING_PROOFS)}. The fixtures above name ` +
         `proof:kernelload as a roster member; if this file decided that for itself the cases ` +
         `would pass against a roster that no longer contains it.`,
+    );
+  }
+  {
+    // THE FIXTURE IS BUILT FROM WHAT THE BUG LETS THROUGH. An untracked file is
+    // the one shape `git diff --name-only HEAD` cannot see, so a tracked edit
+    // here would be reported correctly by the defect too and separate nothing.
+    const fresh = runGitFixture(
+      { 'a.mjs': EXIT_ZERO },
+      { 'proof:a': 'node scripts/a.mjs' },
+      { 'new.mjs': EXIT_ZERO },
+      ['--only', 'proof:a'],
+    );
+    check(
+      'a brand-new UNTRACKED file counts as a change the coverage report must account for',
+      /1 file\(s\) changed against HEAD/u.test(fresh.output),
+      `the report did not name the untracked file. \`git diff\` reports tracked modifications ` +
+        `only, so adding a module — the ordinary shape of building a feature — contributed ` +
+        `nothing and the run printed the sentence a CLEAN tree prints. That is item 4b in the ` +
+        `INPUT to a search: the walk was working perfectly on the set it was handed.\n` +
+        `${fresh.output.slice(-700)}`,
+    );
+    check(
+      'and it does NOT claim the tree is unchanged',
+      !/nothing is changed against HEAD/u.test(fresh.output),
+      `both sentences cannot be true of one run, and this is the one the defect printed. ` +
+        `Asserted separately from the case above because "names the file" and "stops claiming ` +
+        `nothing changed" are two failures, and a report could regress into either.\n` +
+        `${fresh.output.slice(-700)}`,
+    );
+  }
+  {
+    // THE CONTROL, and it is the one that matters: without it, an
+    // implementation that reported "1 file changed" unconditionally would pass
+    // the pair above. Same fixture, same command, nothing written after the
+    // commit — so the only difference is the thing under test.
+    const clean = runGitFixture(
+      { 'a.mjs': EXIT_ZERO },
+      { 'proof:a': 'node scripts/a.mjs' },
+      {},
+      ['--only', 'proof:a'],
+    );
+    check(
+      'CONTROL: a genuinely clean repository still reports nothing changed',
+      /nothing is changed against HEAD/u.test(clean.output),
+      `a clean tree must still be able to say so. If this fails the report has stopped ` +
+        `distinguishing "no change" from "a change", and the case above is satisfied by an ` +
+        `instrument that always claims one.\n${clean.output.slice(-700)}`,
+    );
+  }
+  {
+    // A directory that is not a repository is a real state — every other
+    // fixture in this file is one — and the question is genuinely unaskable
+    // there. It must not arrive looking like an answer of "nothing".
+    const bare = runFixture({ 'a.mjs': EXIT_ZERO }, { 'proof:a': 'node scripts/a.mjs' });
+    check(
+      'a root that is not a repository SAYS the question could not be asked',
+      /could not ask git what this tree changed/u.test(bare.output),
+      `the previous guard skipped the block silently on a non-zero git exit, which prints ` +
+        `nothing — indistinguishable from the report not existing, and from a clean tree. ` +
+        `"Could not look" is not "looked and found nothing".\n${bare.output.slice(-700)}`,
     );
   }
 } finally {

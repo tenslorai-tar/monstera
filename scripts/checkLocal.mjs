@@ -96,6 +96,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
+import { uncommittedPaths } from './lib/gitScope.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
 import { ciVerifiers, verifiersNotRunByCi } from './lib/ciVerifiers.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
@@ -1004,12 +1005,34 @@ if (unverifiable.length > 0) {
 // So the general sentence is gone rather than kept alongside. Keeping it would
 // leave the furniture in place and let a reader take it as the coverage
 // statement, which is the state the specific list exists to end.
-const changedForProofs = spawnSync('git', ['diff', '--name-only', 'HEAD'], {
-  cwd: ROOT_DIR,
-  encoding: 'utf8',
-});
-if (changedForProofs.status === 0) {
-  const changed = changedForProofs.stdout.split('\n').filter((line) => line.trim() !== '');
+// THROUGH `gitScope`, WHICH IS THE MODULE THAT OWNS "WHICH SCOPE" (B3a). This
+// spawned its own `git diff --name-only HEAD` — a second opinion, and the wrong
+// scope: `diff` reports TRACKED modifications only, so a brand-new module
+// contributed nothing and the fallback below printed "nothing is changed against
+// HEAD" about a run whose entire subject was two untracked files. Measured
+// 2026-08-28, on this file's own commit.
+//
+// Which is item 4b in the input rather than in the search: the walk was working
+// perfectly on the set it was handed, so no control on the walk could see it,
+// and the empty set produced exactly the sentence a clean tree produces.
+/** @type {string[] | null} */
+let changedForProofs = null;
+try {
+  changedForProofs = uncommittedPaths({ cwd: ROOT_DIR });
+} catch (cause) {
+  // NOT SWALLOWED, and not a fallback to an empty set. `--root` may name a
+  // directory that is not a repository — every fixture in this file's proof is
+  // one — and there the report cannot be produced at all. Saying so is the
+  // whole point: an unaskable question must not arrive looking like an answer
+  // of "nothing", which is what the previous `status === 0` guard did by
+  // printing nothing at all.
+  process.stdout.write(
+    `  ??  could not ask git what this tree changed, so no proof is named either way: ` +
+      `${cause instanceof Error ? cause.message.split('\n')[0] : 'unknown'}\n`,
+  );
+}
+if (changedForProofs !== null) {
+  const changed = changedForProofs;
   // WHAT THIS RUN ACTUALLY REACHED, derived from the rows rather than counted
   // alongside them. A row carries a non-null `exit` exactly when a script
   // produced a verdict; a timeout, a spawn that never started and a non-node
