@@ -22,3 +22,4 @@ export {
   toStructuredError,
 } from './result.js';
 export { type Rgb, channels, contrast, luminance, onColor } from './colour.js';
+export { type MessageKey, messageDomain, messageKey } from './messages.js';

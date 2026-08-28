@@ -57,6 +57,7 @@ import { ESLint } from 'eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import { PLANTED_OFFENDER } from '../lib/noJsxLiterals.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
@@ -250,6 +251,94 @@ async function main() {
     );
   } finally {
     rmSync(sideEffectDirectory, { recursive: true, force: true });
+  }
+
+  // ---------------------------------------------------------------------
+  // B9's literal-string ban, and the planted offender that makes its silence
+  // mean something.
+  //
+  // This rule is WRITTEN HERE rather than taken from `eslint-plugin-react`,
+  // whose 7.37.5 declares no ESLint 10 support — so there is no upstream test
+  // suite behind it and every claim about it lives in this file.
+  //
+  // `zero violations` is what a rule that does not match reports, and also what
+  // a clean tree reports. This project already paid for that confusion once:
+  // `@typescript-eslint/consistent-type-imports` was enabled against a class it
+  // is structurally silent about, reported 0, and read as coverage until a
+  // planted offender showed it.
+  // ---------------------------------------------------------------------
+  const LITERALS = 'monstera/no-jsx-literals';
+  const literalDirectory = join(ROOT, 'packages', 'ui', 'src', 'literal-probe-temp');
+  try {
+    mkdirSync(literalDirectory, { recursive: true });
+
+    const offender = join(literalDirectory, 'offender.tsx');
+    writeFileSync(offender, `${PLANTED_OFFENDER}\n`, 'utf8');
+
+    const offences = (await eslint.lintFiles([offender]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === LITERALS);
+
+    check(
+      'a literal user-facing string in JSX is reported, at error severity',
+      offences.some((message) => message.severity === 2),
+      `findings on the planted offender: ${
+        offences.map((m) => `${m.ruleId}(${m.severity})`).join(', ') || 'none'
+      }\n      The rule is written in this repository and has no upstream suite behind it. ` +
+        `A visitor keyed on a node name the parser never emits is silent, and silent is what a ` +
+        `clean tree looks like.`,
+    );
+
+    // The near-misses. A rule that fired on these would fire on correct code,
+    // and a check that fires on correct code is one somebody turns off — which
+    // is the failure mode B9 cannot survive, because it cannot be retrofitted.
+    const innocent = join(literalDirectory, 'innocent.tsx');
+    writeFileSync(
+      innocent,
+      'export function Probe({ label }: { label: string }): unknown {\n' +
+        '  return (\n' +
+        '    <div>\n' +
+        '      <button type="button">{label}</button>\n' +
+        '      <span>·</span>\n' +
+        '      <em>42</em>\n' +
+        '    </div>\n' +
+        '  );\n' +
+        '}\n',
+      'utf8',
+    );
+
+    const falsePositives = (await eslint.lintFiles([innocent]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === LITERALS);
+
+    check(
+      'an expression, a separator glyph and a bare number are NOT reported',
+      falsePositives.length === 0,
+      `findings on the innocent file: ${falsePositives
+        .map((m) => `${m.ruleId}: ${m.message}`)
+        .join(' | ')}\n      Nobody translates "·" or "42", and a rule that demands a catalogue ` +
+        `key for them is a rule that gets disabled within a day.`,
+    );
+
+    // The scope, asserted rather than assumed: a test's JSX is a fixture that
+    // reaches no user. If this exclusion silently stopped applying, every
+    // component test in the repository would go red at once — loudly, which is
+    // why the dangerous direction is the other one: an exclusion that WIDENS
+    // takes production code out of the rule with nothing to show for it.
+    const inTest = join(literalDirectory, 'fixture.test.tsx');
+    writeFileSync(inTest, `${PLANTED_OFFENDER}\n`, 'utf8');
+    const testFindings = (await eslint.lintFiles([inTest]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === LITERALS);
+
+    check(
+      'the same offender in a .test.tsx is not reported, and that scope is deliberate',
+      testFindings.length === 0,
+      `the rule fired inside a test file. The exclusion is declared in eslint.config.js; if it ` +
+        `has stopped applying, every component test goes red for writing literal fixture text.`,
+    );
+  } finally {
+    rmSync(literalDirectory, { recursive: true, force: true });
   }
 
   if (failures.length > 0) {

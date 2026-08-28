@@ -12,6 +12,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import { monsteraPlugin } from './scripts/lib/noJsxLiterals.mjs';
 import { PLAIN_NODE_GLOBS } from './scripts/lib/plainNodeScope.mjs';
 
 /**
@@ -412,6 +413,26 @@ export default tseslint.config(
       'react-hooks/exhaustive-deps': 'error',
       'react-hooks/incompatible-library': 'error',
       'react-hooks/unsupported-syntax': 'error',
+    },
+  },
+
+  {
+    // B9's literal-string ban. Written here rather than taken from
+    // `eslint-plugin-react`, whose 7.37.5 (2025-04-03) declares no ESLint 10
+    // support — the same finding, and the same ruling, as §10.4's on
+    // `eslint-plugin-jsx-a11y`. See `scripts/lib/noJsxLiterals.mjs`.
+    //
+    // SCOPED TO WHAT SHIPS. A test's JSX is a fixture that reaches no user, and
+    // requiring a catalogue key for `<button>Open</button>` in a harness adds
+    // ceremony exactly where literal text is the clearest thing to write. The
+    // exclusion is here, with every other scope decision in this file, rather
+    // than inside the rule — a rule that knows about test files is a rule with a
+    // second opinion about what a test file is.
+    files: ['packages/ui/**/*.tsx', 'apps/desktop/**/*.tsx'],
+    ignores: ['**/*.test.tsx', '**/*.spec.tsx'],
+    plugins: { monstera: monsteraPlugin },
+    rules: {
+      'monstera/no-jsx-literals': 'error',
     },
   },
 
