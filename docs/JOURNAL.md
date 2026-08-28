@@ -644,6 +644,293 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `e234979..584362b` — the open path, and the premise it falsified in four places while every check stayed green
+
+Range: **5 commits, 22 files** — under both batch thresholds. Audited early
+rather than at the gate, because the next unit (the composition root calling the
+host factory) will cross 25 files on its own and the last two ranges were each
+interrupted mid-commit by the gate firing.
+
+Board **GREEN at 584362b**: CI run `33169057209` and Guards run `33169057207`,
+both `conclusion: success`, read from
+`/repos/tenslorai-tar/monstera/actions/runs?head_sha=584362b…`. Guards reports
+**124 steps, all `success`, none skipped** — read from the job list rather than
+from the colour, per FFFF-1.
+
+### KKKK-3 — the open path falsified a premise stated in four places, and the one it falsified in CODE is now a reachable defect
+
+**This is the finding. The other two are ordinary.**
+
+Four places state, as a live premise, that *opening a document is not a
+channel*:
+
+| where | kind | what it concludes from it |
+|---|---|---|
+| `apps/desktop/src/composition.ts` | code comment | the renderer *"cannot construct an input that reaches the miss"*, so `document.execute` never answers `internal` |
+| `scripts/proofs/shell.proof.mjs:23` | proof header | the same, as that proof's stated reason for its unhappy-path case |
+| `docs/FEATURES.md:282` | **live specification**, marked **done** | the same, as the recorded cost of the engine having no session |
+| `docs/JOURNAL.md:1046`, `:11299` | records | as believed at the time |
+
+`document.open` landed in this range. **All four are now false**, and the first
+two are false in a way that changes behaviour rather than only prose:
+
+- `document.open` answers `{ kind: 'opened', docId, version }`;
+- `document.execute({ docId, … })` then resolves the session inside the lane;
+- `EngineSessions` holds nothing, so the lookup misses;
+- a miss is `MissingSessionError`, which `documentCommands.ts` defines as a
+  **defect** and reports as `internal`.
+
+So from `584362b`, a renderer that opens a document and rotates a page gets
+`internal` — the CC-2 shape `composition.ts` says by name is avoided. It was
+unreachable when that paragraph was written, and the commit that made it
+reachable **changed `composition.ts` in the same diff** (+18 −3) without
+touching the paragraph eighteen lines above.
+
+**Why nothing caught it, and this is the transferable half.** `proof:shell`
+still passes, correctly. Its case executes against a `DocId` that was never
+opened, so it stops at `document-not-open` exactly as asserted — the case is
+true and its stated *reason* is false. A fixture that cannot reach the state its
+prose claims is unreachable proves nothing about that claim, and it goes green
+in the same voice either way. That is the checklist's *"never build a fixture the
+bug also handles correctly"* arriving in a proof's **premise** rather than in its
+assertion, where no mutation of the code under test can reach it.
+
+**The sweep that found it is the one CLAUDE.md prescribes and I nearly skipped.**
+`composition.ts` wraps the phrase as *"opening one is not\n \* a channel"*, so a
+line-scoped grep for the sentence misses it — the fifth instance of that
+mechanism in this repository. `npm run sweep:prose` covers 43 **documents** and
+found `FEATURES.md:282`; it does not reach source, so the code half needed a
+separate grep on the fragment *"not a channel"*. **That gap is worth naming:**
+the sweep exists because prose wraps, and source comments are prose that wraps
+in exactly the same way.
+
+**Disposition.** `FEATURES.md:282` is a live specification and its body is
+edited true **in this commit** — a row whose body asserts a property the code no
+longer has is a contract that lies, and a correction underneath does not repair
+it. The two journal lines are records and are left standing. `composition.ts` and
+`shell.proof.mjs` are code and are corrected in the commit that gives the engine
+a session, which is the next unit; they are not corrected here, because an
+audit-recording commit is docs-only.
+
+### KKKK-2 — two scans of one kind, one gated in two places and one in one, with no reason recorded
+
+`check:emittedtemplates` runs in the pre-commit set **and** in Guards
+(`guards.yml:380`, `node scripts/ci/annotate.mjs scripts/lib/emittedTemplates.mjs`).
+`check:typeonlyexports` runs in the pre-commit set and in `checkLocal.mjs:160`
+and **in no workflow** — CI carries only `proof:typeonlyexports`
+(`ci.yml:223`), which exercises the machinery on fixtures.
+
+That is FFFF-1's shape one notch weaker: the check is genuinely gated on every
+commit made through the hook, so it is not unrun. What it is not gated on is a
+commit made without the hook, or a push from a machine whose hooks are not
+installed — and CLAUDE.md's own argument for moving `emittedTemplates` into
+pre-commit was that *both* are needed, because a CI-only guard catches the defect
+after it is public and a hook-only guard catches nothing when the hook did not
+run.
+
+Nothing decided this. `typeOnlyExports.scan()` reads the index, and a CI checkout
+has an index that equals HEAD, so the obstacle is not technical. **The asymmetry
+is the finding** — the same reading the audit-scope report already applies to its
+own columns.
+
+### KKKK-1 — the batched staged read turns a broken read into a clean input
+
+IIII-1 converted two scans from `readStagedBlob` (two git spawns per path) to one
+`readStagedBlobs` batch. The conversion is right and the measurement behind it is
+real. What it changed and nobody stated is the **failure mode**.
+
+Both call sites treat a path that is absent from the returned Map as a file to
+skip:
+
+- `typeOnlyExports.mjs`: `const blob = staged.get(file); if (blob === undefined) continue;`
+- `emittedTemplates.mjs`: `return staged?.get(relative) ?? null` → the caller
+  `continue`s on null.
+
+**A miss there is never legitimate.** Both scans take their file list from
+`filesInCommit`, which is `git ls-files` ∪ `git diff --cached --diff-filter=d`.
+`ls-files` enumerates the index, and staged deletions are excluded by the filter,
+so **every** path in that list resolves as `:path`. An absent entry means the
+batch parse desynchronised — `readStagedBlobs` walks one buffer with an offset
+and `break`s on a header it cannot read, which drops the whole tail — not that
+the file is unstaged.
+
+Per-path, that failure used to be per-path. Batched, one bad header silently
+shrinks the scanned set, and both scans then report **no violations**, which is
+the answer everybody wants. `scanned` is derived from the same collection, so it
+agrees; the positive controls run against in-memory fixtures and prove the
+**matcher** can see, never that the **reader** delivered anything.
+
+This is checklist item 4c read the dangerous way round — the failure to fear
+makes the set *smaller*, so the count cannot come from the set — and the
+corollary the same section states in one line: *an empty intermediate result is a
+broken parse, not a clean input.* The anchor is free here: `files.length` is
+known before the read.
+
+**Not fixed in this commit** (docs-only). Fixed in the next.
+
+### 1. Root cause or workaround?
+
+Three corrections in the range, all root-cause:
+
+- **IIII-1** — the hook was 97.1 s and 94 of them were process creation. The fix
+  calls the batch helper that has existed since 2026-08-23. Mechanism named, and
+  the *finding* recorded was not the slowness but QQQ-3: a helper beside the slow
+  one is a paragraph someone has to read and reject.
+- **JJJJ-1** — AAAA-3's premise was false; the correction withdraws the premise
+  rather than patching around it.
+- **HHHH-1** — resolved by the owner as a missing row rather than an undecided
+  design. The row was written into `docs/FEATURES.md` **before** the code, which
+  is what makes the omission unrepeatable.
+
+No repair in this range can regenerate, no override or escape hatch was added,
+and no check was loosened. `contract.proof.mjs`'s fixture went from missing one
+channel to missing two — TS2741 became TS2739 — and was repaired by **adding the
+line** to keep the failure singular, which is the tightening its own comment
+prescribes, not by relaxing the matcher.
+
+### 2. Verified against the easy shape only?
+
+**Yes, and here is the hard shape.** Every case for the open path runs against a
+stub: `contractHandlers.test.ts` hands a fake `DocumentService` that records
+handles into an array, and a `pickDocument` that returns a string. What has never
+run is the pair at the ends —
+
+- `documentPicker.ts` (47 lines, new this range) calls Electron's
+  `dialog.showOpenDialog`. Its only caller is `entry.ts`. **It has no test and has
+  never executed anywhere**, including in `proof:shell`, whose harness calls
+  `app.info` and not `document.open`.
+- the real `DocumentService.open`, reached through the real handler, is exercised
+  by nothing — the service's own cases call it directly.
+
+Both are the *rich-ambient-environment* axis the checklist names: the handler is
+proven against an environment a harness supplies, and the two surfaces the real
+caller gets are the two nothing has driven.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+One, and it moves the right way. `browserShim.test.ts` kept a **hand-written
+literal** of the client's channel ids rather than comparing against `channelIds`,
+with the reason stated at the point of use: comparing the client's keys against
+the registry agrees when both are empty, so a `channels` that failed to build and
+a client that built nothing from it produce the same clean result. The literal is
+the one side a shrink has to touch separately.
+
+That is an assertion **retained** where a derivation was available, decided by
+asking which direction the danger runs (item 4c). Recorded because the reverse
+move — derivation replacing assertion — is what item 2a exists to catch, and this
+range shows the rule being applied rather than paid for.
+
+### 3. Would CI have caught it?
+
+**Answered from the run, not from the workflow file.** Guards' 124 steps and
+CI's set both executed at `584362b`, all `success`.
+
+- **KKKK-3: no, and no check could.** It is a claim about a *premise*. Both
+  documents parse, the proof's assertion is still true, and its stated reason is
+  false. Nothing red is available to make.
+- **KKKK-2: structurally, no.** The gap *is* the absence of a CI step, so CI is
+  the thing that cannot see it. The Guards step *"Every proof script is invoked by
+  some job"* answers about proofs; there is no equivalent for checks, which is
+  precisely FFFF-1's asymmetry surviving in a narrower form.
+- **KKKK-1: no.** Its failure mode is the reassuring answer, and both scans exit
+  0 while blind. Their positive controls run before the read and would still pass.
+
+Three for three, and each for a different reason. This is not a range where the
+board was blind by accident — it is one where all three findings live in the
+class of thing a green board is structurally unable to report.
+
+### 4. Non-vacuous proofs
+
+Mutation-tested the range's headline claim — the handle-revoke asymmetry, which
+is the subtlest thing the open path asserts. Two mutations, opposite directions:
+
+| mutation | result |
+|---|---|
+| `outcome.kind !== 'opened'` — revoke on `already-open` too | **1 case red**: *"does NOT revoke it when the document is already open"* |
+| revoke removed entirely | **2 cases red**: the `absent` and `at-capacity` cases |
+
+Each mutation reddens exactly the cases that exist for it and no others. The
+suite separates all three outcomes rather than asserting one and inheriting the
+rest. Reverted; tree clean.
+
+### 4a. Instrument resolution tests
+
+Two new source files. `documentPicker.ts` is not an instrument — it measures
+nothing and decides nothing; it returns what a dialog returned.
+`scripts/lib/secondWiringPlace.mjs` is, and it carries a control fixture driven
+**inside the scan** (`scanModule('control.tsx', CONTROL_FIXTURE)`, refusing to
+report unless exactly one violation comes back), not only in its proof.
+
+The two changed instruments — `emittedTemplates.mjs`, `typeOnlyExports.mjs` —
+both changed how they *read*, and neither's control was re-pointed at the new
+read path. That is KKKK-1.
+
+### 4b. Searches with positive controls
+
+`secondWiringPlace.mjs` has three states and the third is the one worth having:
+no registry → *nothing to scan*, exit 0; registry plus surfaces → scan; **registry
+and no surfaces → REFUSE**. A search that would report clean because its
+haystack is missing refuses instead.
+
+The two changed scans have controls that prove the **matcher** sees and do not
+prove the **reader** delivered. See KKKK-1 — this is the item that found it.
+
+And one against myself: I reached for `grep` before `npm run sweep:prose` on
+KKKK-3's sweep, and the phrase wraps in the file that matters most. The sweep
+found the documents; the source half was found by dropping to a
+three-word fragment. **A multi-word pattern over hard-wrapped prose is a search
+whose reassuring answer is available to it at all times.**
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Two rosters in the range, and they went opposite ways for stated reasons:
+
+- `browserShim.test.ts` **kept a literal** as its anchor — correct, the feared
+  failure makes the set smaller (see 2a).
+- `typeOnlyExports.mjs` and `emittedTemplates.mjs` **derive `scanned` from the
+  set they read** — the same feared direction, no anchor. KKKK-1.
+
+Same question, asked in one file and not in the other two, in the same range.
+
+### 5. Executed, or asserted?
+
+**Executed:** the board at `584362b` from the runs API; Guards' 124 step
+conclusions; both revoke mutations; `npm run sweep:prose` (43 documents, control
+found); `npm run audit:scope`; the four modified proof diffs, read.
+
+**Asserted:** that `typeOnlyExports.scan()` runs correctly in a CI checkout — the
+reasoning is that `ls-files` plus a matching index makes `:path` resolve, and
+nobody has run it there. It is the load-bearing premise of KKKK-2's fix and it
+is checked by running it, not by this paragraph.
+
+**Never executed anywhere:** `documentPicker.ts`, and therefore the whole of the
+open path's Electron end.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before. The owner ruled HHHH-1 a missing row rather than an undecided design; the
+row was written into `docs/FEATURES.md` first and built afterwards. No seam was
+bent and no amendment was owed — the direction was already fixed by the standing
+invariant that renderer-facing types carry handles and never paths.
+
+**But a documented property was invalidated underneath a feature**, which is the
+softer half of the same question and is KKKK-3. Nothing was retrofitted; a claim
+three documents and one proof rested on stopped being true, in the commit that
+also edited one of them.
+
+### 7. Do the documents still match the code?
+
+No, in four places, and they are KKKK-3. `docs/FEATURES.md:282` is edited true in
+this commit because it is a live specification. The journal lines stand as
+records. The two code comments are corrected in the next commit, with the change
+that makes them true again.
+
+Nothing else in the range moved a document's subject: `channels.ts`,
+`contractHandlers.ts`, `browserShim.ts` and `entry.ts` all gained a channel that
+`docs/FEATURES.md` already had a row for, written first.
+
+---
+
 ## 2026-08-28 — JJJJ-1: AAAA-3's premise is false — jsesc ships its licence text, and an exception register would have recorded that mistake in a compliance document
 
 **Investigation only, per the instruction. Nothing built, and the recommendation
