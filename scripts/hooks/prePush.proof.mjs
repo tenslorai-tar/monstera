@@ -275,11 +275,36 @@ try {
       anyGlobResolves(globs, ROOT),
       'The positive control, run against the real register rather than a fixture.',
     );
+    // RE-ANCHORED 2026-08-28, and the reason is why the old anchor could not
+    // stay. It named `packages/shared/src/**` and `packages/kernel/src/**` —
+    // both witness scopes, and **both subsets of the `packages/*/src/**` that
+    // every verdict already lists as a shippedPath**. Either could vanish
+    // without changing which pushes are watched by one file, so neither could
+    // separate *witness scopes are taken* from *only shippedPaths are taken*.
+    //
+    // It went red rather than quiet, which is the anchor doing its job: the
+    // `engine-host-factory-wired` verdict fired, its symbol and witness were
+    // removed together, and `packages/kernel/src/**` stopped being produced.
+    // A literal roster is what catches a shrink (item 4c) — and this one caught
+    // a shrink that cost no coverage, which is the case it could not tell apart.
+    //
+    // The two below are the scopes NO shippedPath subsumes, so each one's
+    // absence is a real reduction in what a push is checked against:
+    //
+    //   - `docs/DECISIONS/**` is a WITNESS scope. Nothing else in the register
+    //     names it, and an ADR is exactly where a symbol's justification decays
+    //     without any source file changing.
+    //   - `packages/kernel/src/documentService.ts` comes from a
+    //     `reachabilityControl`, which is the other half this case's own name
+    //     claims and which the old assertion never touched at all.
     check(
       'and the witness and control scopes are included, not only shippedPaths',
-      globs.includes('packages/shared/src/**') && globs.includes('packages/kernel/src/**'),
+      globs.includes('docs/DECISIONS/**') &&
+        globs.includes('packages/kernel/src/documentService.ts'),
       `globs = ${JSON.stringify(globs)}. A change that breaks a WITNESS is how a verdict goes ` +
-        `green forever, and taking only the scanned scope would leave it unchecked.`,
+        `green forever, and taking only the scanned scope would leave it unchecked. These two ` +
+        `are the scopes no shippedPath already covers, so losing either is a real reduction ` +
+        `rather than a duplicate leaving.`,
     );
   }
 
