@@ -36,13 +36,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { changedPaths, readStagedBlob, readStagedBlobs } from '../lib/gitScope.mjs';
+import {
+  changedPaths,
+  parseStagedBatch,
+  readStagedBlob,
+  readStagedBlobs,
+} from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { report, scan } from '../lib/stagedSyntax.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 13 });
+const roster = createRoster(failures, { cases: 18 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -300,6 +305,133 @@ try {
       !batch.has('no/such/path.mjs'),
       'An empty buffer and a missing file are different answers, and a reader that returns ' +
         'the first for the second makes a deleted file look like an empty one.',
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FRAMING, DRIVEN DIRECTLY — finding KKKK-1.
+  //
+  // git cannot be asked to answer wrongly, so a desynchronised batch is not
+  // reachable through `readStagedBlobs`. What is reachable is the consequence:
+  // the map comes back SHORT, and both call sites skip a path the map does not
+  // carry, so a dropped tail arrives as *those files were clean*. That is the
+  // answer both scans exist to be able to give.
+  //
+  // The fixture is built here rather than staged, because the property is about
+  // bytes that no repository can produce.
+  // -------------------------------------------------------------------------
+  {
+    /** @param {string} sha @param {string} body @param {number} [declared] */
+    const frame = (sha, body, declared) =>
+      Buffer.concat([
+        Buffer.from(`${sha} blob ${String(declared ?? body.length)}\n`, 'utf8'),
+        Buffer.from(body, 'utf8'),
+        Buffer.from('\n', 'utf8'),
+      ]);
+
+    const asked = ['a.mjs', 'b.mjs', 'gone.mjs', 'c.mjs'];
+    const missLine = Buffer.from(':gone.mjs missing\n', 'utf8');
+
+    const wellFormed = parseStagedBatch(
+      Buffer.concat([frame('aaa1', 'AAA'), frame('bbb2', 'BB'), missLine, frame('ccc3', 'CCCC')]),
+      asked,
+    );
+    check(
+      'the framing parser reads every hit, skips the miss, and keeps the bytes',
+      wellFormed.size === 3 &&
+        wellFormed.get('a.mjs')?.toString('utf8') === 'AAA' &&
+        wellFormed.get('b.mjs')?.toString('utf8') === 'BB' &&
+        wellFormed.get('c.mjs')?.toString('utf8') === 'CCCC' &&
+        !wellFormed.has('gone.mjs'),
+      `read ${String(wellFormed.size)} of 3 expected. This is the POSITIVE CONTROL for the two ` +
+        `cases below: a parser that threw on everything would pass them both while being ` +
+        `useless, and its failure and its correctness are otherwise the same absence of output.`,
+    );
+
+    // ONE BYTE SHORT — the smallest lie a header can tell. The offset then
+    // lands inside the frame it was meant to step over, and the two paths after
+    // it are read from the wrong place.
+    const lying = Buffer.concat([
+      frame('aaa1', 'AAA'),
+      frame('bbb2', 'BB', 1),
+      missLine,
+      frame('ccc3', 'CCCC'),
+    ]);
+
+    let threw = null;
+    try {
+      parseStagedBatch(lying, asked);
+    } catch (error) {
+      threw = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'a declared size that does not match its bytes THROWS, naming where it was lost',
+      threw !== null && threw.includes('gone.mjs') && threw.includes('3 of 4'),
+      threw === null
+        ? 'It returned a map. A short map is what the callers read as "those files were clean".'
+        : `threw, but the message does not say which request lost the framing: ${threw}`,
+    );
+
+    // THE CONTROL, and it is the one that makes the case above mean anything.
+    // It reproduces the rule this fix replaced — skip a header that is not a
+    // blob line, stop at the end of the stream — and requires the SAME fixture
+    // to be accepted quietly by it. Without this, the case above could be
+    // passing because the fixture is malformed in some way the old rule also
+    // rejected, and the throw would be evidence of nothing.
+    let lenient = 0;
+    let offset = 0;
+    for (const path of asked) {
+      const newline = lying.indexOf('\n', offset);
+      if (newline === -1) break;
+      const header = lying.toString('utf8', offset, newline);
+      offset = newline + 1;
+      const size = /\bblob\s+(\d+)$/u.exec(header)?.[1];
+      if (size === undefined) continue;
+      lenient += 1;
+      offset += Number(size) + 1;
+      void path;
+    }
+    check(
+      'CONTROL: the rule this replaced accepts that same fixture, and just returns fewer',
+      lenient < asked.length - 1,
+      `the tolerant parse produced ${String(lenient)} entries for ${String(asked.length)} ` +
+        `requests, which is not short — so the fixture does not reproduce the defect and the ` +
+        `throw above proves nothing about it.`,
+    );
+
+    // A path that names a DIRECTORY resolves to a tree, and a submodule's to a
+    // commit. Both are well-formed answers and neither is a lost offset, so
+    // they get their own message — a reader sent hunting a framing bug that is
+    // not there is worse off than one told what it actually asked for.
+    let wrongType = null;
+    try {
+      parseStagedBatch(
+        Buffer.concat([Buffer.from('aaa1 tree 3\n', 'utf8'), Buffer.from('AAA\n', 'utf8')]),
+        ['some/dir'],
+      );
+    } catch (error) {
+      wrongType = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'a path that resolves to a tree is refused BY TYPE, not reported as lost framing',
+      wrongType !== null && wrongType.includes('is a tree') && !wrongType.includes('framing'),
+      wrongType === null
+        ? 'It returned a tree object as though it were a staged file body.'
+        : `threw with the wrong diagnosis: ${wrongType}`,
+    );
+
+    let truncated = null;
+    try {
+      parseStagedBatch(Buffer.concat([frame('aaa1', 'AAA')]), asked);
+    } catch (error) {
+      truncated = error instanceof Error ? error.message : String(error);
+    }
+    check(
+      'a stream that ends before the last header THROWS rather than returning what it got',
+      truncated !== null && truncated.includes('the stream ended'),
+      truncated === null
+        ? 'It returned one entry for four requests, silently.'
+        : `threw for the wrong reason: ${truncated}`,
     );
   }
 } finally {

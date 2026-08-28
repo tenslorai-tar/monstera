@@ -733,6 +733,37 @@ has an index that equals HEAD, so the obstacle is not technical. **The asymmetry
 is the finding** — the same reading the audit-scope report already applies to its
 own columns.
 
+> **WITHDRAWN the same day, before it was acted on. KKKK-2 is not a finding, and
+> how it was reached is worth more than it was.**
+>
+> The placement was decided, and the reason is written **four lines below the
+> line I read**, in `ci.yml` itself:
+>
+> > *"THE GATE is the source scan, in the pre-commit set, against the index. This
+> > one is the COMPLETENESS CONTROL over both halves: it reads the EMIT and so
+> > answers* did a build emit a side-effect statement*, which is a different
+> > question from* did you write one*."*
+>
+> CI carries `check:emittedsideeffects`, which walks `dist` and is the
+> **stronger** half: the source cannot distinguish
+> `export { type X } from './y.js'` from `export type { X } from './y.js'`, and
+> one of them runs. The fast source scan is in the hook where a fast scan
+> belongs, and the authoritative one is in CI where a build exists. The
+> asymmetry with `emittedTemplates` is real and it is the *other* check that has
+> no emit to read.
+>
+> **How I got it wrong:** I grepped the workflows for the script path, got no
+> hit, and wrote *decided by nobody*. An absent grep result and an absent
+> decision are the same output — this file's own recurring subject, arriving in
+> the one place I was not watching for it, which is the sentence I was writing
+> about somebody else's check. The four lines that answer it were in the file I
+> had already opened, below the match.
+>
+> **The rule that would have caught it costs nothing: when a check appears to be
+> registered nowhere, read what is registered AROUND its proof before concluding
+> nobody chose.** A deliberate placement leaves its reason next to the thing it
+> placed, not next to the thing it declined to place.
+
 ### KKKK-1 — the batched staged read turns a broken read into a clean input
 
 IIII-1 converted two scans from `readStagedBlob` (two git spawns per path) to one

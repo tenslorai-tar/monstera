@@ -229,35 +229,115 @@ export function changedPaths(args, options = {}) {
  * @param {readonly string[]} paths
  * @param {{ cwd?: string }} [options]
  * @returns {Map<string, Buffer>} Only the paths that are in the index.
+ * @throws when the answer's framing does not line up with the request — see
+ *   {@link parseStagedBatch}.
  */
 export function readStagedBlobs(paths, options = {}) {
-  /** @type {Map<string, Buffer>} */
-  const blobs = new Map();
-  if (paths.length === 0) return blobs;
+  if (paths.length === 0) return new Map();
 
   const { stdout } = git(['cat-file', '--batch'], {
     ...options,
     binary: true,
     input: `${paths.map((path) => `:${path}`).join('\n')}\n`,
   });
-  const buffer = stdout instanceof Buffer ? stdout : Buffer.from(stdout);
+  return parseStagedBatch(stdout instanceof Buffer ? stdout : Buffer.from(stdout), paths);
+}
+
+/**
+ * `--batch`'s framing, parsed — separated from the spawn so it can be driven.
+ *
+ * A framing failure cannot be produced by asking git for something: git answers
+ * correctly, and what this guards against is the answer and the request drifting
+ * apart. So the only way to exercise it is to hand the parser bytes, which is
+ * what this separation is for and the whole of what it is for.
+ *
+ * @param {Buffer} buffer @param {readonly string[]} paths
+ * @returns {Map<string, Buffer>}
+ */
+export function parseStagedBatch(buffer, paths) {
+  /** @type {Map<string, Buffer>} */
+  const blobs = new Map();
 
   let offset = 0;
-  for (const path of paths) {
+  for (const [index, path] of paths.entries()) {
     const newline = buffer.indexOf('\n', offset);
-    if (newline === -1) break;
+    if (newline === -1) {
+      throw desynchronised(index, paths.length, path, 'the stream ended');
+    }
     const header = buffer.toString('utf8', offset, newline);
     offset = newline + 1;
-    // `<sha> blob <size>` for a hit, `<request> missing` for a miss. Splitting
-    // on the LAST space keeps a path containing one from breaking the size.
-    const size = /\bblob\s+(\d+)$/u.exec(header)?.[1];
-    if (size === undefined) continue;
-    const length = Number(size);
+
+    // `<request> missing` is git's own answer for a path that is not in the
+    // index, and it echoes the request verbatim — so the miss is recognised by
+    // EQUALITY with what was asked for, never by a pattern that a byte of some
+    // other blob's content could satisfy. That is what separates *absent* from
+    // *lost*, and the two are otherwise the same skipped entry.
+    if (header === `:${path} missing`) continue;
+
+    // `<sha> <type> <size>` for a hit. Anchored at the end, so a path
+    // containing a space cannot break the size off the header.
+    //
+    // THE TYPE IS READ RATHER THAN ASSUMED, so that a path naming a tree or a
+    // submodule's commit gets its own answer. That is a caller error and not a
+    // lost offset, and reporting it as the latter would send the next reader
+    // hunting a framing bug that is not there.
+    const hit = /\s(blob|tree|commit|tag)\s+(\d+)$/u.exec(header);
+    if (hit === null) {
+      throw desynchronised(index, paths.length, path, `read ${JSON.stringify(header)}`);
+    }
+    if (hit[1] !== 'blob') {
+      throw new Error(
+        `git cat-file --batch: :${path} is a ${String(hit[1])}, not a blob. This reader answers ` +
+          `about staged FILE contents; a directory or a submodule has none.`,
+      );
+    }
+    const length = Number(hit[2]);
     blobs.set(path, buffer.subarray(offset, offset + length));
     // The bytes are followed by a newline git adds, which is not content.
     offset += length + 1;
   }
   return blobs;
+}
+
+/**
+ * The error a lost offset raises, and why it is an error rather than a stop.
+ *
+ * ## An absent entry is a legitimate answer here and a broken read is not
+ *
+ * This parser walks ONE buffer with an offset it advances by each blob's
+ * declared size. Every framing failure has the same consequence: the offset
+ * stops pointing at a header, and every remaining path is dropped. The map then
+ * comes back short.
+ *
+ * Its callers cannot tell that apart from absence. `emittedTemplates.mjs` and
+ * `typeOnlyExports.mjs` both take their path list from {@link filesInCommit} —
+ * `ls-files` plus staged additions, every entry of which resolves as `:path` —
+ * and both skip a path the map does not carry. So a dropped tail arrives as
+ * *those files contain no violations*, which is the answer both scans exist to
+ * be able to give and the answer everybody wants. Their positive controls run
+ * against in-memory fixtures **before** this read, so they prove the matcher can
+ * see and say nothing about whether the reader delivered.
+ *
+ * Stopping quietly was this function's own choice — a `break` and a `continue`,
+ * written when the batch reader replaced a per-path one whose failures were
+ * per-path. Recorded as finding KKKK-1.
+ *
+ * The repair is placed HERE and not at the two call sites, because *what
+ * `--batch`'s framing means* is this module's question (B3a). A caller checking
+ * the map's size against its input would be a second opinion about it, and the
+ * third caller would not have one.
+ *
+ * @param {number} index @param {number} total @param {string} path
+ * @param {string} what
+ * @returns {Error}
+ */
+function desynchronised(index, total, path, what) {
+  return new Error(
+    `git cat-file --batch: lost the framing at request ${String(index + 1)} of ` +
+      `${String(total)} (${path}) — ${what}. A blob whose declared size does not match its ` +
+      `bytes leaves the offset inside content, and every path after this one would be dropped ` +
+      `silently. Callers read a short map as "those files were clean", so this throws instead.`,
+  );
 }
 
 /**
