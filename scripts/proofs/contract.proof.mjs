@@ -80,6 +80,7 @@ export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
+  'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
 };
 `,
   },
@@ -113,6 +114,7 @@ import { ok } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
 };
 `,
   },
@@ -189,8 +191,18 @@ export const handlers: ContractHandlers = {
     name: 'a client stub missing a channel does not compile',
     expect: 'reject',
     code: 'TS2741',
-    because:
-      /Property ''document\.execute'' is missing in type '\{…\}' but required in type 'ClientApi<\{…\}>'/u,
+    // STOPS AT THE TYPE CONSTRUCTOR, as its handler sibling above already did.
+    // It used to require `'ClientApi<{…}>'` with the closing bracket, and that
+    // broke the day `document.undo` landed — not because the reason changed,
+    // but because the dump grew past tsc's printer limit and was TRUNCATED, so
+    // the elision pass that handles truncation consumed the `>` along with the
+    // content it replaced.
+    //
+    // Matching the bracket was asserting a property of tsc's line-length
+    // budget. What this case is about is which type demanded the member, and
+    // `ClientApi<` pins that exactly. The depth control below is untouched and
+    // is what still fires if elision stops handling nesting.
+    because: /Property ''document\.execute'' is missing in type '\{…\}' but required in type 'ClientApi</u,
     // THE NESTED-DUMP CONTROL, and it needed no synthetic fixture — this
     // diagnostic already nests: `ClientApi<{ … Channel<ZodObject<{ … }>> }>`.
     // Collapsing only the innermost level leaves `installChannel` visible in
@@ -211,6 +223,7 @@ import { ok } from '@monstera/shared';
 export const shim: ContractClient = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
 };
 `,
   },

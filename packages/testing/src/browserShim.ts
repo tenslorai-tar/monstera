@@ -148,6 +148,8 @@ function acrossTheWire<T>(value: T): T {
  */
 export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim {
   const versions = new Map<string, number>();
+  /** How many entries each document's log would have to step back through. */
+  const undoable = new Map<string, number>();
   const incidents: Incident[] = [];
   let minted = 0;
 
@@ -199,7 +201,32 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
 
       const next = current + 1;
       versions.set(docId, next);
+      undoable.set(docId, (undoable.get(docId) ?? 0) + 1);
       return Promise.resolve(ok({ version: asDocVersion(next) }));
+    },
+
+    'document.undo': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      // A DEPTH, not a boolean, because the real log is a cursor. A shim that
+      // answered `nothing-to-undo` after one undo would let a test assert a
+      // single level and pass, which is the one behaviour §4 is explicit is
+      // wrong — undo steps back and never pops.
+      const depth = undoable.get(docId) ?? 0;
+      if (depth === 0) return Promise.resolve(ok({ kind: 'nothing-to-undo' as const }));
+
+      undoable.set(docId, depth - 1);
+      // THE VERSION GOES UP, and that is not a mistake for an operation that
+      // moves a document backwards. §4: the counter is bumped by every applied
+      // mutation *"including undo and redo"* — it identifies a state, not a
+      // position in the history, and a shim that decremented would teach a test
+      // the opposite.
+      const next = current + 1;
+      versions.set(docId, next);
+      return Promise.resolve(ok({ kind: 'undone' as const, version: asDocVersion(next) }));
     },
   };
 

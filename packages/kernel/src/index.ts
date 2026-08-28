@@ -44,6 +44,7 @@ export {
   CommandBus,
   type Executed,
   type Undone,
+  MissingWriterSessionError,
   UnregisteredWriterError,
   type WriterRegistry,
 } from './commandBus.js';
@@ -102,6 +103,7 @@ export {
   type SessionAreaSurface,
   remoteMupdfLifecycle,
 } from './host/remoteLifecycle.js';
+export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
 export {
   EngineCallFailed,

@@ -340,7 +340,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       // tracks its branch.
       expect(await ownRotation(session, 0)).toBe(180);
 
-      const undone = await bus.undo(session, context);
+      const undone = await bus.undo({ mupdf: session },context);
 
       // THE ASSERTION §3 EXISTS FOR, and it is STRUCTURAL. Restoring the value
       // that was showing — writing 90 back — renders identically and leaves the
@@ -362,7 +362,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      await bus.undo(session, context);
+      await bus.undo({ mupdf: session },context);
 
       // The point of the control: the effective rotation after a correct undo
       // and after the WRONG one are identical. A test comparing rendered output
@@ -390,7 +390,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       expect(await ownRotation(session, 0)).toBe(180);
       expect(await ownRotation(session, 1)).toBe(0);
 
-      await bus.undo(session, context);
+      await bus.undo({ mupdf: session },context);
 
       // Forward NORMALISES; the inverse restores VERBATIM. If prior state were
       // typed as a quarter turn these would come back as 90 and 270 — silently
@@ -409,7 +409,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      await bus.undo(session, context);
+      await bus.undo({ mupdf: session },context);
       const written = await mupdfWriter.serialise(session);
 
       // pdf-lib resolves inheritance the way a reader does, so this asserts the
@@ -429,10 +429,10 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      await bus.undo(session, context);
+      await bus.undo({ mupdf: session },context);
       expect(context.log.redoDepth).toBe(1);
 
-      await bus.redo(session, context);
+      await bus.redo({ mupdf: session },context);
 
       expect(await ownRotation(session, 0)).toBe(180);
       expect(context.log.redoDepth).toBe(0);
@@ -452,7 +452,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       await bus.execute(session, context, rotateFirst);
       expect(await ownRotation(session, 0)).toBe(90);
 
-      await expect(bus.undo(session, context)).rejects.toThrow(CheckpointRestoreNotBuiltError);
+      await expect(bus.undo({ mupdf: session },context)).rejects.toThrow(CheckpointRestoreNotBuiltError);
 
       // Refused rather than half-done: the cursor has not moved and the
       // document is untouched. A checkpoint restore opens a NEW session from
@@ -470,8 +470,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(flat);
     try {
-      expect(await bus.undo(session, contextStub())).toBeUndefined();
-      expect(await bus.redo(session, contextStub())).toBeUndefined();
+      expect(await bus.undo({ mupdf: session },contextStub())).toBeUndefined();
+      expect(await bus.redo({ mupdf: session },contextStub())).toBeUndefined();
     } finally {
       await mupdfWriter.close(session);
     }
@@ -516,7 +516,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       expect(first.log.entries).toHaveLength(1);
       expect(second.log.entries).toHaveLength(1);
 
-      await bus.undo(session, first);
+      await bus.undo({ mupdf: session },first);
       expect(first.log.canUndo).toBe(false);
       expect(second.log.canUndo).toBe(true);
     } finally {
@@ -629,7 +629,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       await real.execute(session, context, rotateFirst);
       expect(await rotationOf(session)).toBe(90);
 
-      await substituted.undo(session, context);
+      await substituted.undo({ mupdf: session }, context);
 
       // A recorded inverse carries no kind, so `invert` takes one — the
       // asymmetry with `apply` that `CommandExecution` states.
@@ -660,10 +660,10 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const context = contextStub();
     try {
       await real.execute(session, context, rotateFirst);
-      await real.undo(session, context);
+      await real.undo({ mupdf: session }, context);
       expect(await rotationOf(session)).toBeNull();
 
-      await substituted.redo(session, context);
+      await substituted.redo({ mupdf: session }, context);
 
       expect(applied).toStrictEqual([rotateFirst]);
       // The declared apply did not also run: it would have written 90 back.
@@ -687,7 +687,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       // outlive the registration that produced it. Without the guard this is a
       // property access on `undefined`, which is a TypeError rather than a
       // named refusal — so the error CLASS is what separates the two.
-      await expect(empty.undo(session, context)).rejects.toThrow(UnregisteredWriterError);
+      await expect(empty.undo({ mupdf: session }, context)).rejects.toThrow(UnregisteredWriterError);
 
       // And nothing moved.
       expect(await rotationOf(session)).toBe(90);
@@ -705,9 +705,9 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const context = contextStub();
     try {
       await real.execute(session, context, rotateFirst);
-      await real.undo(session, context);
+      await real.undo({ mupdf: session }, context);
 
-      await expect(empty.redo(session, context)).rejects.toThrow(UnregisteredWriterError);
+      await expect(empty.redo({ mupdf: session }, context)).rejects.toThrow(UnregisteredWriterError);
 
       expect(await rotationOf(session)).toBeNull();
       expect(context.log.canRedo).toBe(true);

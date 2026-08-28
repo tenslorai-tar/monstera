@@ -153,6 +153,52 @@ export const channels = {
     z.object({ version: docVersionSchema }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
+
+  /**
+   * Steps one entry back in a document's command log.
+   *
+   * ## The request carries a `DocId` AND NOTHING ELSE, which is the invariant
+   *
+   * [ADR-0009](../../../docs/DECISIONS/0009-document-identity-and-the-command-log.md)
+   * §3a: *"inverses stay kernel-only: they carry structural prior state the
+   * renderer must not see, and a renderer-supplied inverse would let the UI
+   * dictate undo."* Both halves of that sentence are load-bearing here. The
+   * prior state is structural — a page's `/Rotate` may have been **absent**,
+   * and restoring it means deleting the key rather than rotating back — so an
+   * inverse is not something a renderer could compute even if it were allowed
+   * to. Folding undo into {@link commandSchema} would put one on the wire.
+   *
+   * So the renderer says *undo this document* and the kernel decides what that
+   * means. The same shape `document.open` has, for the same reason: a request
+   * that carries no choice is one the caller cannot get wrong.
+   *
+   * ## `nothing-to-undo` is an OUTCOME, and that is not politeness
+   *
+   * An empty log is a state a user reaches by undoing to the start, and it is
+   * the state every document is in at open. A failure code would make the
+   * ordinary end of undoing indistinguishable from a defect, and the renderer's
+   * answer to it — leave the button alone — is not the answer to a defect.
+   *
+   * A **terminal** entry is different and is a declared failure:
+   * `checkpoint-restore-not-built`. §4's answer there is to restore the nearest
+   * checkpoint and replay forward, which needs the save pipeline, so the honest
+   * response is a code naming what is missing rather than a silent no-op that
+   * leaves the user's document one operation ahead of what they asked for.
+   */
+  'document.undo': channel(
+    'Steps one entry back in an open document’s command log.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('undone'), version: docVersionSchema }),
+      z.object({ kind: z.literal('nothing-to-undo') }),
+    ]),
+    [
+      'document-not-open',
+      'document-busy',
+      'document-poisoned',
+      'checkpoint-restore-not-built',
+    ],
+  ),
 } as const;
 
 export type Channels = typeof channels;

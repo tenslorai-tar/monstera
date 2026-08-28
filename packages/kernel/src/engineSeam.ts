@@ -111,6 +111,24 @@ export interface WriterSession {
   readonly signpdf: ByteImage;
 }
 
+/**
+ * The sessions one open document has, keyed by writer of record.
+ *
+ * Partial because a document acquires a session per engine **lazily** — the one
+ * that opened it, plus any a later command needs — so "no session for this
+ * writer" is an ordinary state rather than a gap.
+ *
+ * Declared here rather than beside the component that holds one, because
+ * `CommandBus.undo` takes it: undo reads the log to find which writer the last
+ * entry routes to, and only then knows which session it needs. A caller cannot
+ * pick that session in advance — reading the log needs a token the bus holds —
+ * so handing over one session forced a cast at the point the bus already knew
+ * the answer, and a cast is where the type stops carrying the property.
+ */
+export type SessionsByWriter = {
+  readonly [W in keyof WriterSession]?: WriterSession[W];
+};
+
 /** Which shape each writer of record is. */
 export interface WriterShapeOf {
   readonly mupdf: 'live-session';

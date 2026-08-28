@@ -190,6 +190,7 @@ describe('browser shim', () => {
       'app.info',
       'document.execute',
       'document.open',
+      'document.undo',
     ]);
   });
 

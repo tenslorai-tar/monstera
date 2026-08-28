@@ -1,9 +1,15 @@
 import type { ChannelResult, ContractHandlers } from '@monstera/contract';
-import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
-import { type DocId, ok } from '@monstera/shared';
+import {
+  type CapabilityRegistry,
+  CheckpointRestoreNotBuiltError,
+  DocumentBusyError,
+  DocumentNotOpenError,
+  type DocumentService,
+} from '@monstera/kernel';
+import { type DocId, err, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
-import type { DocumentCommands } from './documentCommands.js';
+import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
 
 /**
  * Where a document comes from, as a value this module can be handed.
@@ -106,6 +112,51 @@ export function createContractHandlers(deps: {
     'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),
     'document.open': openDocumentHandler(deps),
     'document.execute': executeCommandHandler(deps.commands),
+    'document.undo': undoHandler(deps.commands),
+  };
+}
+
+/**
+ * Undo, and the whole of it is turning `undefined` into an outcome.
+ *
+ * `DocumentCommands.undo` answers `undefined` for a log with nothing left,
+ * which is a state every document starts in and every document reaches by
+ * undoing to the beginning. The channel says `nothing-to-undo` rather than
+ * failing, because the renderer's response to it — leave the control alone —
+ * is not the response to a defect, and a failure code would make the ordinary
+ * end of undoing indistinguishable from one.
+ *
+ * Everything that IS a failure travels the way `document.execute`'s does:
+ * thrown by class, matched by `wrapHandler`, and a terminal entry becomes
+ * `checkpoint-restore-not-built` rather than an `internal` naming a gap the
+ * user cannot act on.
+ */
+function undoHandler(commands: DocumentCommands): ContractHandlers['document.undo'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.undo']>>> => {
+    try {
+      const version = await commands.undo(docId);
+      return ok(
+        version === undefined
+          ? ({ kind: 'nothing-to-undo' } as const)
+          : ({ kind: 'undone', version } as const),
+      );
+    } catch (thrown) {
+      // MATCHED ON THE CLASS, never on the message — the reason
+      // `DocumentNotOpenError` exists as a class at all. Each of these is an
+      // outcome the renderer can act on; everything else is rethrown and
+      // becomes `internal` with the diagnostic recorded main-side.
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // NAMED RATHER THAN INTERNAL, because the user's next move differs: this
+      // says *this particular step cannot be reversed yet*, which is a fact
+      // about the build rather than an inconsistency they triggered. §4's
+      // answer is a checkpoint restore, which needs the save pipeline.
+      if (thrown instanceof CheckpointRestoreNotBuiltError) {
+        return err({ code: 'checkpoint-restore-not-built' });
+      }
+      throw thrown;
+    }
   };
 }
 

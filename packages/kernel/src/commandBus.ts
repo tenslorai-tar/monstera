@@ -17,7 +17,7 @@ import {
 // with it the native library this whole change exists to keep out of `main`.
 import type { RegisteredWriter } from './commandSpecs.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
-import type { ByteImage, WriterSession } from './engineSeam.js';
+import type { ByteImage, SessionsByWriter, WriterSession } from './engineSeam.js';
 
 /**
  * The one code path from a command to a log entry (ADR-0009 §4).
@@ -95,6 +95,26 @@ export class UnregisteredWriterError extends Error {
     super(
       `Command ${kind} is routed to the '${writer}' writer of record, which has no adapter ` +
         'registered on this bus. Nothing was applied and no checkpoint was taken.',
+    );
+  }
+}
+
+/**
+ * Undo routed to a writer this document has no session for.
+ *
+ * Distinct from {@link UnregisteredWriterError}: that one is *no adapter on
+ * this bus*, an application-wide state. This one is *this document has no
+ * session for that engine*, which is per document and reachable on its own —
+ * a document opened by MuPDF whose last command routed to PDFium has one and
+ * not the other.
+ */
+export class MissingWriterSessionError extends Error {
+  override readonly name = 'MissingWriterSessionError';
+
+  constructor(kind: string, writer: string) {
+    super(
+      `Undoing ${kind} needs this document's '${writer}' session, and it has none. Nothing was ` +
+        'inverted and the log cursor did not move.',
     );
   }
 }
@@ -230,7 +250,7 @@ export class CommandBus {
    * @template W
    */
   async undo(
-    session: WriterSession[keyof WriterSession],
+    sessions: SessionsByWriter,
     context: DocumentContext,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
@@ -257,14 +277,29 @@ export class CommandBus {
       throw new UnregisteredWriterError(entry.command.kind, spec.writer);
     }
 
+    // THE SESSION IS PICKED HERE, because here is where the writer is known.
+    // The caller cannot pick it: finding the writer means reading the log, and
+    // reading the log needs `COMMAND_WRITER`, which is module-private. This
+    // used to take one session and cast it, which put the type's guarantee on
+    // the caller having guessed right.
+    const session = sessions[spec.writer];
+    if (session === undefined) {
+      // The same shape `MissingSessionError` names one layer up, reachable
+      // independently: a document can hold a session for the writer that opened
+      // it and not for the one its last command routed to.
+      throw new MissingWriterSessionError(entry.command.kind, spec.writer);
+    }
+
     // Through the writer, for `execute`'s reason. The kind travels as its own
     // argument because a recorded inverse does not carry one — see
     // `CommandExecution.invert`.
-    await writer.invert(
-      session as WriterSession[WriterOf<typeof entry.command.kind>],
-      entry.command.kind,
-      entry.inverse,
-    );
+    //
+    // NO CAST. There was one here, and lint now reports it as unnecessary,
+    // which is the type change of 2026-08-28 confirming itself: picking the
+    // session out of the set at the point the writer is known produces the
+    // right type, where taking one session and asserting it was the type's
+    // guarantee being delegated to whoever called.
+    await writer.invert(session, entry.command.kind, entry.inverse);
 
     log.undo();
     return { entry, version: context.bumpVersion(COMMAND_WRITER) };
@@ -286,7 +321,7 @@ export class CommandBus {
    * to prevent.
    */
   async redo(
-    session: WriterSession[keyof WriterSession],
+    sessions: SessionsByWriter,
     context: DocumentContext,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
@@ -318,10 +353,15 @@ export class CommandBus {
       throw new UnregisteredWriterError(entry.command.kind, spec.writer);
     }
 
-    await writer.apply(
-      session as WriterSession[WriterOf<typeof entry.command.kind>],
-      entry.command,
-    );
+    // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
+    // the caller could not have chosen a session for it.
+    const session = sessions[spec.writer];
+    if (session === undefined) {
+      throw new MissingWriterSessionError(entry.command.kind, spec.writer);
+    }
+
+    // No cast, for `undo`'s reason.
+    await writer.apply(session, entry.command);
 
     log.redo();
     return { entry, version: context.bumpVersion(COMMAND_WRITER) };

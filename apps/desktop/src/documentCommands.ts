@@ -7,7 +7,7 @@ import {
   type CommandBus,
   type DeclaredCommands,
   type DocumentService,
-  type WriterSession,
+  type SessionsByWriter,
   declaredCommands,
 } from '@monstera/kernel';
 import type { DocId, DocVersion } from '@monstera/shared';
@@ -78,10 +78,16 @@ import type { DocId, DocVersion } from '@monstera/shared';
  * `WriterRegistry`: four writers of record are declared and one has an adapter,
  * so a total map could not be built today and pretending otherwise would mean a
  * placeholder that fails at a native call instead of at lookup.
+ *
+ * **The type moved to `packages/kernel` on 2026-08-28 and this is an alias.**
+ * `CommandBus.undo` takes one: undo reads the log to find which writer its last
+ * entry routes to, and only then knows which session it needs — so the bus
+ * takes the set and picks. Two declarations of the same mapped type, one on
+ * each side of a call that passes it, is the shape where they agree until they
+ * do not (B3a). The name stays because this is the vocabulary the module's
+ * seams are written in.
  */
-export type DocumentSessions = {
-  readonly [W in keyof WriterSession]?: WriterSession[W];
-};
+export type DocumentSessions = SessionsByWriter;
 
 /**
  * How this finds a document's sessions — **get-or-miss, never get-or-create**.
@@ -266,5 +272,61 @@ export class DocumentCommands {
     });
 
     return version;
+  }
+
+  /**
+   * Steps one entry back, inside the document's lane.
+   *
+   * ## Every guard is `execute`'s, in the same order, and that is the point
+   *
+   * Poison, then session, then the lane's work. An undo is a mutation — §4
+   * bumps the version for it *"including undo and redo"* — so a document that
+   * cannot be executed against cannot be undone against either, and the two
+   * paths agreeing is what stops one acquiring an exemption the other does not
+   * have.
+   *
+   * ## Which writer, when the caller names no command
+   *
+   * `execute` reads `spec.writer` from the command it was handed. Undo has no
+   * command: the bus reads the log's last entry and routes from **that**. So
+   * this cannot resolve a session before entering the lane, and asking for the
+   * one writer that has an adapter would be a routing table in a second place
+   * (B3a).
+   *
+   * The session set is handed over whole and the bus picks. That is the same
+   * shape `WriterSession` already has — a mapped lookup keyed by writer — and
+   * it keeps the *"which engine owns this command"* question in the one file
+   * that answers it.
+   *
+   * @returns the version the lane stamped, or `undefined` when the log had
+   *   nothing left. **Not an error**: an empty log is where every document
+   *   starts and where undoing to the beginning ends.
+   * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link
+   *   DocumentPoisonedError}, {@link MissingSessionError}, and
+   *   `CheckpointRestoreNotBuiltError` for a terminal entry.
+   */
+  async undo(docId: DocId): Promise<DocVersion | undefined> {
+    // HELD ON AN OBJECT rather than in a `let`, which is the idiom
+    // `engineHostConnection.ts` records for the same reason: the assignment
+    // happens inside a closure, so the compiler narrows the `let` to its single
+    // visible value and calls the read below unreachable.
+    const stepped = { yes: false };
+
+    const { version } = await this.#documents.run(docId, async (context) => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      stepped.yes = (await this.#bus.undo(sessions, context)) !== undefined;
+    });
+
+    // THE VERSION IS READ FROM THE LANE EITHER WAY and returned only when
+    // something moved. `run` stamps a version for every entry, so returning it
+    // unconditionally would report a bump for an undo that did nothing — and
+    // the renderer would show a document as changed because the user pressed a
+    // key that was already exhausted.
+    return stepped.yes ? version : undefined;
   }
 }

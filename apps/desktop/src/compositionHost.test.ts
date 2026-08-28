@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -216,6 +216,111 @@ describe('the composition root, with an engine host platform', () => {
     expect(spy.harness.calls).toContain('peer.request:engine/open');
   });
 
+  it('undoes through the host, and answers nothing-to-undo when the log is spent', async () => {
+    const spy = platformAnswering(ENGINE);
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(aDocument('undone.pdf')),
+      spy.platform,
+    );
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+    const docId = opened.value.docId;
+
+    const executed = await handlers['document.execute']({
+      docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+    if (!executed.ok) throw new Error('the rotate should have succeeded');
+
+    const undone = await handlers['document.undo']({ docId });
+    expect(undone.ok).toBe(true);
+    if (!undone.ok) throw new Error('the undo should have succeeded');
+    expect(undone.value.kind).toBe('undone');
+
+    // THE VERSION GOES UP for an operation that moves the document backwards.
+    // §4 bumps for every applied mutation *including undo*, because the counter
+    // identifies a STATE rather than a position in the history — and a renderer
+    // that saw it go down would treat a stale reply as current.
+    if (undone.value.kind !== 'undone') throw new Error('unreachable');
+    expect(undone.value.version).toBeGreaterThan(executed.value.version);
+
+    // THE INVERSE REACHED THE HOST, asserted as a call rather than as a state.
+    // A `document.undo` that stepped the log cursor and never told the engine
+    // would return exactly this same answer, and the document would be one
+    // rotation ahead of what the user sees.
+    expect(spy.harness.calls).toContain('peer.request:engine/invert');
+
+    // AND THE LOG IS SPENT. A cursor at the start is not a failure — it is
+    // where every document begins and where undoing to the beginning ends.
+    const again = await handlers['document.undo']({ docId });
+    if (!again.ok) throw new Error('the second undo should not have failed');
+    expect(again.value.kind).toBe('nothing-to-undo');
+  });
+
+  it('THE HARD SHAPE: a page whose /Rotate is non-numeric takes a CHECKPOINT', async () => {
+    // `rotatePages.ts:148` refuses to record prior state for a page carrying a
+    // non-numeric `/Rotate` — `{ captured: false }` — and that is the ONE input
+    // that reaches the bus's terminal branch, where a checkpoint is taken by
+    // calling `serialise`.
+    //
+    // A rotate clause proven only on well-formed pages is proven on the easy
+    // shape (audit item 2), and this is the shape A2's repair was about: before
+    // it, `serialise` read a map private to the adapter and threw for every
+    // session the composition root opened. So this case is the one that would
+    // have failed, and it fails again if that route returns.
+    const written: string[] = [];
+    const spy = platformAnswering((channel, params) => {
+      if (channel === 'engine/capture') {
+        return {
+          ok: true,
+          value: { captured: false, reason: 'page 1 carries a non-numeric /Rotate (/Sideways)' },
+        };
+      }
+      if (channel === 'engine/serialise') {
+        // The host writes into the directory it was granted MODIFY on, under
+        // the name MAIN chose — so main never opens a path the host named.
+        const { into } = params as { into: string };
+        const output = lastOutputDirectory(spy.directories);
+        writeFileSync(join(output, into), '%PDF-1.7 checkpoint\n');
+        written.push(into);
+        return { ok: true, value: { bytes: 20 } };
+      }
+      return ENGINE(channel, params);
+    });
+
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(aDocument('malformed.pdf')),
+      spy.platform,
+    );
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+
+    // IT SUCCEEDS. Capture failing is not the command failing — ADR-0009's
+    // 2026-08-19 decision is that invertibility is declared per command and
+    // DETERMINED per entry, so the bus takes a checkpoint and applies anyway.
+    expect(executed.ok).toBe(true);
+
+    // AND THE CHECKPOINT WAS REALLY TAKEN, through the remote writer, which is
+    // the assertion the easy shape cannot make: `serialise` is only reached
+    // here, and it is the member that used to throw.
+    expect(spy.harness.calls).toContain('peer.request:engine/serialise');
+    expect(written).toHaveLength(1);
+
+    // AND THE BYTES CAME BACK AND WERE DELETED. `takeOutput` removes the file
+    // on the way out: every serialise is another whole copy of the user's
+    // document in a directory the contained host may read.
+    expect(existsSync(join(lastOutputDirectory(spy.directories), written[0] ?? ''))).toBe(false);
+  });
+
   it('CONTROL: a host that read the negative path is CLOSED, and no session is made', async () => {
     // The loudest case in ADR-0023's table: the host looks healthy and is not
     // contained, and every cheap containment question answers yes for it. The
@@ -372,4 +477,18 @@ describe('the composition root, with an engine host platform', () => {
 /** How many times a call appears. Named so a case reads as a count. */
 function spy(calls: readonly string[], call: string): number {
   return calls.filter((entry) => entry === call).length;
+}
+
+/**
+ * The output half of the most recently created pair.
+ *
+ * Read from what the DIRECTORY SURFACE was asked to create rather than
+ * recomputed from the root, so a case cannot agree with a path the product
+ * never made.
+ */
+function lastOutputDirectory(directories: readonly string[]): string {
+  const created = directories.filter((entry) => entry.startsWith('create:'));
+  const last = created.at(-1);
+  if (last === undefined) throw new Error('no session directory was created');
+  return last.slice('create:'.length);
 }
