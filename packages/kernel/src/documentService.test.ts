@@ -27,6 +27,7 @@ import {
   type IdentityReader,
   type OpenOutcome,
   type CommandWriter,
+  type SaveWriter,
 } from './documentService.js';
 
 /**
@@ -87,6 +88,19 @@ function newService(
  * — an engine, to exercise a counter.
  */
 const COMMAND_WRITER_FOR_TEST = 'command-writer' as CommandWriter;
+
+/**
+ * The same relationship one capability along: {@link SaveWriter}'s only
+ * production mint is module-private to `savePipeline.ts`, and these are
+ * `DocumentService` tests, so this is a collaborator's capability being stubbed
+ * rather than a guard being bypassed.
+ *
+ * The cases below are about the version counter — that a bump makes a document
+ * dirty and a stamp makes it clean. Driving them through the real pipeline
+ * would need a write-target verdict, a filesystem surface and an engine flush
+ * to exercise an integer.
+ */
+const SAVE_WRITER_FOR_TEST = 'save-writer' as SaveWriter;
 
 /**
  * What carries the weight here, as in the identity tests, is the set of cases
@@ -507,7 +521,7 @@ describe('DocumentService — the per-document lane', () => {
     expect(afterBump).toStrictEqual({ value: true, version: 2 });
 
     const afterSave = await service.run(docId, (context) => {
-      context.markSaved();
+      context.markSaved(SAVE_WRITER_FOR_TEST);
       return Promise.resolve(context.isDirty());
     });
     expect(afterSave).toStrictEqual({ value: false, version: 2 });
@@ -594,7 +608,7 @@ describe('DocumentService — the per-document lane', () => {
 
     const result = await service.run(docId, (context) => {
       context.bumpVersion(COMMAND_WRITER_FOR_TEST); // a command      -> v2
-      context.markSaved(); //  saved at        -> v2
+      context.markSaved(SAVE_WRITER_FOR_TEST); //  saved at        -> v2
       context.bumpVersion(COMMAND_WRITER_FOR_TEST); // undo           -> v3
       context.bumpVersion(COMMAND_WRITER_FOR_TEST); // redo           -> v4
       return Promise.resolve(context.isDirty());

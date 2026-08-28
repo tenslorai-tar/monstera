@@ -246,6 +246,28 @@ export type CommandWriter = Brand<'command-writer', 'CommandWriter'>;
 export type EngineSupervisor = Brand<'engine-supervisor', 'EngineSupervisor'>;
 
 /**
+ * Proof that the holder is the save pipeline (rule B3).
+ *
+ * The third of these, declared beside {@link CommandWriter} and
+ * {@link EngineSupervisor} and minted the same way: one module-private line, in
+ * `savePipeline.ts`. That line is what makes *"the file now holds this
+ * version"* a claim the pipeline makes rather than one any lane entry can make.
+ *
+ * ## Why it was absent, and why that stopped being the right answer
+ *
+ * {@link DocumentContext.markSaved} carried no token until 2026-08-28, on the
+ * stated grounds that a token with no minter is a method nobody can call. That
+ * was correct while no pipeline existed and is not a general principle: the
+ * narrowing was **deferred for want of a minter**, not rejected. The minter now
+ * exists, so the parameter does.
+ *
+ * As for its two siblings, the brand does not make forgery impossible — a cast
+ * produces one. It makes stamping a document saved **by accident** impossible,
+ * and any production code that tries **visible in a diff**.
+ */
+export type SaveWriter = Brand<'save-writer', 'SaveWriter'>;
+
+/**
  * Everything a lane entry is told about the document, **as of the moment it
  * actually runs**.
  *
@@ -282,10 +304,11 @@ export interface DocumentContext {
    * accident**, and forgery visible in a diff — which is the whole difference
    * between a property with one writer and a property with a convention.
    *
-   * {@link markSaved} deliberately keeps no token. Its writer of record is the
-   * save pipeline, which does not exist, and a token with no minter is a method
-   * nobody can call — a narrowing that reads as a decision and behaves as a
-   * deletion.
+   * {@link markSaved} now carries {@link SaveWriter} for the same reason and by
+   * the same mechanism. It deliberately kept no token while the save pipeline
+   * did not exist, because a token with no minter is a method nobody can call —
+   * a narrowing that reads as a decision and behaves as a deletion. The pipeline
+   * exists and mints one, so the parameter is back.
    */
   bumpVersion(writer: CommandWriter): DocVersion;
 
@@ -325,10 +348,14 @@ export interface DocumentContext {
    * version here rather than one captured earlier: the whole save is one lane
    * entry, so nothing can bump between serialising and this call.
    *
-   * Writer of record: the save pipeline, once it exists. See
-   * {@link bumpVersion}.
+   * **After, and that ordering is invariant 18 rather than tidiness.** Stamped
+   * before the write, a save whose rename then failed would leave a document
+   * that believes the file holds its current version: the user closes it,
+   * nothing prompts, and the work is gone — with every individual step correct.
+   *
+   * Writer of record: the save pipeline, by capability. See {@link SaveWriter}.
    */
-  markSaved(): DocVersion;
+  markSaved(writer: SaveWriter): DocVersion;
 
   /**
    * Whether the document holds content the file does not.

@@ -131,9 +131,23 @@ export {
   type IdentityReader,
   type OpenOutcome,
   type CommandWriter,
+  type SaveWriter,
   type Versioned,
   type WriteTargetVerdict,
 } from './documentService.js';
+export {
+  type AtomicWriteFailure,
+  type AtomicWriteSurface,
+  RENAME_BACKOFF_MS,
+  atomicWrite,
+} from './atomicWrite.js';
+export {
+  type SaveDependencies,
+  type SaveFileNames,
+  type SaveOutcome,
+  type WriteTargetCheck,
+  saveDocument,
+} from './savePipeline.js';
 export { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 export {
   PROBE_CODE_MAX_CHARS,
