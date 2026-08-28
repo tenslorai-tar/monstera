@@ -1,6 +1,6 @@
 import type { ChannelResult, ContractHandlers } from '@monstera/contract';
 import type { CapabilityRegistry, DocumentService } from '@monstera/kernel';
-import { ok } from '@monstera/shared';
+import { type DocId, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
@@ -23,6 +23,28 @@ import type { DocumentCommands } from './documentCommands.js';
  * no parameters at all.
  */
 export type PickDocument = () => Promise<string | null>;
+
+/**
+ * What happens the moment a document becomes open, before anything else can.
+ *
+ * ## Why the handler calls this rather than the service raising it
+ *
+ * `DocumentService` already has a teardown seam for the other end of a
+ * document's life, and the symmetry is tempting. It is wrong here: giving a
+ * session to a document needs a **contained host**, which is Win32 work in
+ * `apps/desktop`, and `packages/kernel` may not reach it. A seam on the service
+ * would either import that or take it as a second injected surface, and the
+ * service would then own a lifetime it cannot fulfil.
+ *
+ * ## It returns nothing, and that is the ordering
+ *
+ * [ADR-0023](../../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * Decision 9c queues the session's creation in the document's own lane before
+ * it yields, so a command issued next sits behind it. A handler that awaited
+ * the session would make every open as slow as a host build and would buy
+ * nothing the lane does not already guarantee.
+ */
+export type OpenedDocument = (docId: DocId) => void;
 
 /**
  * What the application reports about itself.
@@ -75,6 +97,7 @@ export function createContractHandlers(deps: {
   readonly appInfo: AppInfo;
   readonly documents: DocumentService;
   readonly capabilities: CapabilityRegistry;
+  readonly openedDocument: OpenedDocument;
   readonly pickDocument: PickDocument;
 }): ContractHandlers {
   return {
@@ -116,6 +139,7 @@ export function createContractHandlers(deps: {
 function openDocumentHandler(deps: {
   readonly documents: DocumentService;
   readonly capabilities: CapabilityRegistry;
+  readonly openedDocument: OpenedDocument;
   readonly pickDocument: PickDocument;
 }): ContractHandlers['document.open'] {
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.open']>>> => {
@@ -128,6 +152,14 @@ function openDocumentHandler(deps: {
     if (outcome.kind === 'absent' || outcome.kind === 'at-capacity') {
       deps.capabilities.revoke(handle);
     }
+
+    // ONLY FOR A DOCUMENT THIS CALL OPENED, and `already-open` is the outcome
+    // that makes the distinction load-bearing rather than pedantic: that
+    // document has a session or is poisoned already, and a second entry for it
+    // would spend Decision 9a's failure bound a second time on a document that
+    // never failed.
+    if (outcome.kind === 'opened') deps.openedDocument(outcome.docId);
+
     return ok(outcome);
   };
 }

@@ -18,11 +18,25 @@
  * ## The unhappy channel is asserted too, and it is the interesting one
  *
  * `document.execute` must return a **declared** failure rather than `internal`.
- * There is no engine host — invariant 20 forbids the native parser in `main` —
- * so the session lookup misses by design; the question is whether the renderer
- * can reach that miss. It cannot: opening a document is not a channel, so every
- * input the renderer can construct stops at `document-not-open` first. Asserting
- * it is what turns that from an argument into a fact.
+ * The case here executes against a `DocId` the service never issued, so it
+ * stops at `document-not-open` — the refusal that comes before any session is
+ * looked up.
+ *
+ * **That is narrower than it used to claim, and the difference is finding
+ * KKKK-3.** This paragraph read *"opening a document is not a channel, so every
+ * input the renderer can construct stops at `document-not-open` first"*, and it
+ * was true when written. `document.open` landed at `584362b` and it stopped
+ * being true in that commit — after which a renderer could open a document,
+ * execute against it, and reach a session lookup that missed, which
+ * `documentCommands.ts` defines as a **defect** and answers with `internal`.
+ *
+ * **This proof passed throughout, correctly.** Its case cannot reach that state:
+ * a `DocId` that was never opened is refused before the lookup, so the
+ * assertion stayed true while the sentence explaining it became false. A
+ * fixture that cannot reach the state its own prose calls unreachable separates
+ * nothing, and no mutation of the code under test finds it — which is why the
+ * case that does live at the composition root (`composition.test.ts`), where an
+ * open really happens and the document ends **poisoned** rather than sessionless.
  *
  * ## UNVERIFIABLE, never passed, when the runtime is absent
  *

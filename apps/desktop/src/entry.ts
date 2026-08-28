@@ -1,7 +1,10 @@
+import { join } from 'node:path';
+
 import { app } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
+import { createEngineHostPlatform } from './engineHostPlatform.js';
 import { startShell } from './main.js';
 
 /**
@@ -44,5 +47,11 @@ startShell(
     // as a value so that everything opening does with what was picked stays
     // decidable without a runtime.
     createDocumentPicker(),
+    // Same trade, one layer along. The platform's own module may not import
+    // Electron either, so *where the app may write* — which is Electron's
+    // question and nobody else's — is resolved here and handed down. Under
+    // `sessionData` rather than `temp`: a directory the OS may empty underneath
+    // a live host is not one to hand a granted DACL to.
+    createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions')),
   ),
 );

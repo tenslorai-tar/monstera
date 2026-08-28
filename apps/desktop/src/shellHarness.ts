@@ -93,6 +93,12 @@ app.on('browser-window-created', (_event, window) => {
 // the shell starting and the boundary registering, not about opening. It
 // throws rather than returning `null`: a silent cancel would let a case about
 // opening pass here while proving nothing, which is the display-only shape.
+//
+// NO ENGINE HOST PLATFORM EITHER, and that is a choice rather than an omission.
+// Supplying one would have this proof create a real contained process on every
+// run, which is a different subject with a different cost — and the cases here
+// never open a document, so nothing would ask it for a session. The absent
+// third argument is the same `null` every unit test passes.
 startShell(
   createShellDependencies({ version: app.getVersion(), installChannel: 'development' }, () => {
     throw new Error('the shell harness has no picker: it does not exercise opening');

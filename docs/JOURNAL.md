@@ -644,6 +644,146 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Exit clause 2: the composition root creates the engine host, and closes one it cannot verify
+
+**2 of 7 exit clauses.** Clause 1 (open via `FileHandle`) landed at `584362b`;
+this is clause 2. Clauses 3–7 — rotate, undo, save, render, the registry core —
+are untouched, and two of them are blocked on a decision below.
+
+### What was built
+
+`createShellDependencies` now takes an `EngineHostPlatform` and calls
+`createEngineHostConnection`. The ordering is assembled in the composition root
+where it can be read; only the foreign calls arrive from outside, in
+`engineHostPlatform.ts`, which is a separate file for one reason: every surface
+it imports binds Win32 through `koffi` at module scope, and the root's stated
+property is that the whole graph builds in a plain Node test on any platform.
+
+`createEngineHostConnection` itself is **imported, not injected** — its entire
+graph is free of Electron and of `koffi`, because every native call it makes
+already arrives through the surfaces. So the clause is met literally: this file
+calls the factory.
+
+### KKKK-3 is closed, and the shape of the closure is the point
+
+`document.open` now calls `onDocumentOpened`, which enters the document's own
+lane and creates a session there. The renderer sees no difference and the
+failure mode is transformed:
+
+| state | before | after |
+|---|---|---|
+| open, no host possible | `internal` (a `MissingSessionError`, defined as a **defect**) | `document-poisoned`, **declared** |
+| never opened | `document-not-open` | unchanged |
+
+**The no-platform case is the one worth stating**, because it is what every unit
+test and every non-Windows run is in. A document still opens, session creation
+still fails, the failure is still counted, and at Decision 9a's bound of two the
+document is poisoned. That is not a consolation prize — it is the difference
+between telling a user something and telling them nothing, and it is decided by
+whether this one call is made.
+
+`composition.test.ts` is the first caller of the assembled graph and the only
+place the join is visible: every piece below it was already proven in its own
+file, and none of those files could see that nothing joined them. Mutation:
+making the opener a no-op reddens two of its three cases with
+`MissingSessionError` — the defect, reproduced exactly. The third, a document
+that never opened, stays green, and that pair is what separates *the supervisor
+decided* from *the service refused first*.
+
+### The advisory register fired, on purpose, and was re-triaged
+
+`engine-host-factory-wired` watched for `classifyContainment` being named from
+`apps/*/src/**`. Wiring the root named it, and `check:advisories` went red with
+*"this INVALIDATES the NOT-REACHABLE half of INVARIANT-25, INVARIANT-26."*
+
+That is the mechanism working: an absence verdict is a one-shot tripwire that
+dies the day the code it watches is written. The symbol was **removed rather
+than narrowed**, and its witness removed in the same edit — leaving witnesses
+behind after removing symbols is a recorded defect of that file which
+`check:advisories` once stayed green through. The three obligations the entry
+always said it could not see now live on a `docs/FEATURES.md` row, because each
+expires on an **event** and a symbol scan cannot see one.
+
+**And the trigger did its job in the strong sense**: it is what made me look at
+whether the host I had just wired was ever verified. It was not. The root now
+takes ADR-0023 §5's check against the live host before it is handed anything,
+reads the negative probe path **itself immediately before asking** — a refusal
+against a path an uncontained reader could not read either is evidence of
+nothing, which the classifier refuses outright — and closes any host whose
+verdict is not `contained`.
+
+### DECISION TAKEN: the host is built at the first open, not at startup
+
+ADR-0023 does not settle this and a first implementation would have settled it
+silently, which is the exact shape Decision 9 exists to prevent one level down.
+
+**Rejected: at startup.** Every launch would pay for a `CreateProcessW` with an
+AppContainer and a job object whether or not a document is opened, and this
+application has a start screen — *no document* is a state it is designed to sit
+in.
+
+**The argument is the rebuild path rather than the cost.** Decision 9c already
+requires the supervisor to rebuild a dead host, so a build-if-absent call has to
+exist regardless. Making the first open take that same path means there is one
+way a host comes into existence; adding a startup build would have made the
+second (B3a).
+
+### KKKK-4 — `remoteMupdfLifecycle` is a second opinion about opening a session, and it cannot be wired
+
+Two shipped, proven components answer *how does a document's bytes reach the
+contained host and become a session*:
+
+| | `openEngineSession` (`apps/desktop`) | `remoteMupdfLifecycle` (`packages/kernel`) |
+|---|---|---|
+| takes | a `DocId` and a directory owner | `open(image: ByteImage)` — the bytes |
+| writes the snapshot | `documents.writeCanonicalImage(SUPERVISOR, docId, path)` | `areas.writeSnapshot(area, name, image)` |
+| owns the directory pair | `SessionAreaOwner` — create, remove | `SessionAreaSurface` — create, writeSnapshot, takeOutput, remove, mintName |
+| production callers | **this commit's** | **none** |
+
+`ByteImage` is `Uint8Array`, and **`DocumentService` has no method that returns
+canonical bytes** — only `writeCanonicalImage(destination)`, which exists
+precisely so the supervisor never holds them. So `remoteMupdfLifecycle.open`
+cannot be called against a real document without adding a getter that
+`engineSessions.ts`'s own B3 split rejects by name.
+
+`scripts/perf/roleMupdfHost.mjs` — the working reference — settles which is
+real: it drives `client['engine/open']` directly and copies the document into
+the granted directory by **path**. It uses neither adapter.
+
+**This blocks clauses 3 and 4.** `CommandBus` takes a `RegisteredWriter`, which
+is `EngineWriter & CommandExecution`, and `EngineWriter.open` takes the image.
+The bus never calls `open` — it calls `capture`, `apply`, `invert` and
+`serialise` — but `remoteMupdfLifecycle.serialise` reads back through a
+`SessionArea` its **own** `open` recorded in a `WeakMap`, so a session opened by
+the supervisor cannot be serialised by it. One of the two has to change, and
+which one is an architecture decision rather than a coding one.
+
+### KKKK-5 — engine handles have two owners, and the ADR that moved them amended nothing
+
+`docs/ARCHITECTURE.md` §2 line 205: *"Per document, `DocumentService` owns:
+canonical bytes, **lazily-created engine handles** (invalidated together on any
+mutation), the command log and checkpoints, and the originating `FileHandle`."*
+
+`EngineSessions` in `apps/desktop` holds the per-document sessions, and
+ADR-0023 Decision 9a puts them there deliberately — *"the supervisor holds a
+single per-document entry … precisely so the count and the sessions cannot
+acquire separate owners."*
+
+Decision 9 opens by checking §2 and concluding *"session lifetime needs no
+amendment"* — and it is right about **lifetime**. It says nothing about
+**ownership**, which it moved. The move is forced and correct: `DocumentService`
+is in the kernel and cannot create a remote session, because that needs Win32
+and a pipe. But §2 still names it as the owner, and §2 is the law.
+
+This is what KKKK-4 is downstream of. `EngineWriter.open(image)` is the natural
+seam for an owner that **holds the bytes**, which `DocumentService` does and the
+supervisor does not — so the two adapters disagree because the two documents do.
+
+**Both are for the owner and both are B4.** Neither blocked this commit, which
+uses the path route the instrument and `openEngineSession` already agree on.
+
+---
+
 ## 2026-08-28 — Stage audit: `e234979..584362b` — the open path, and the premise it falsified in four places while every check stayed green
 
 Range: **5 commits, 22 files** — under both batch thresholds. Audited early

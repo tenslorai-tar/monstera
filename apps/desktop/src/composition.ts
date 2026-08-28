@@ -1,12 +1,93 @@
-import type { IncidentSink } from '@monstera/contract';
-import { CapabilityRegistry, CommandBus, DocumentService } from '@monstera/kernel';
+import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
-import { MAIN_DOCUMENT_BYTES_CEILING } from './budget.js';
+import { ENGINE_HOST_MAX_IN_FLIGHT, type IncidentSink, createClient } from '@monstera/contract';
+import {
+  CapabilityRegistry,
+  CommandBus,
+  type ContainmentVerdict,
+  DocumentNotOpenError,
+  DocumentService,
+  type HostTermination,
+  type ProbeTarget,
+  classifyContainment,
+  createRemoteSessions,
+  engineChannels,
+} from '@monstera/kernel';
+import type { DocId } from '@monstera/shared';
+
+import {
+  ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+  MAIN_DOCUMENT_BYTES_CEILING,
+} from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
-import { DocumentCommands } from './documentCommands.js';
-import { EngineSessions } from './engineSessions.js';
+import { DocumentCommands, type DocumentSessions } from './documentCommands.js';
+import {
+  type EngineHostConnection,
+  type EngineHostConnectionSurfaces,
+  createEngineHostConnection,
+} from './engineHostConnection.js';
+import {
+  type EngineOpenFromPath,
+  type SessionAreaOwner,
+  EngineSessions,
+  onDocumentOpened,
+  onEngineHostEnded,
+  openEngineSession,
+} from './engineSessions.js';
+import type { ContainerSid, UserSid } from './hostDacl.js';
+import {
+  type DirectoryCreationSurface,
+  createSessionDirectories,
+  removeSessionDirectories,
+  sessionDirectoryName,
+  sessionDirectoryPaths,
+} from './sessionDirectories.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellDependencies } from './main.js';
+
+/**
+ * Everything creating a contained engine host needs that this file may not hold.
+ *
+ * ## Injected for the same reason `PickDocument` is, and a second one
+ *
+ * The four surfaces bind Win32 through `koffi`. Importing them here would put a
+ * native binding in every process that builds this graph — including
+ * `perf:gate`'s main-service role, whose whole subject is main's fixed cost, and
+ * including the platforms where those calls do not exist. `pickDocument` makes
+ * the same trade against Electron; this one is against the platform.
+ *
+ * `createEngineHostConnection` itself is imported rather than injected, and that
+ * is deliberate: its entire import graph is free of both Electron and `koffi`
+ * because every native call it makes arrives through these surfaces. So the
+ * ORDERING — what is created, in what order, and what happens when it dies — is
+ * assembled here where it can be read, and only the foreign calls come from
+ * outside.
+ */
+export interface EngineHostPlatform {
+  /** The Win32 surfaces the connection factory drives. */
+  readonly surfaces: EngineHostConnectionSurfaces;
+  /** This process's user, and the container the host runs as. */
+  readonly user: UserSid;
+  readonly container: ContainerSid;
+  /** Where a session's granted directory pair is created. */
+  readonly sessionRoot: string;
+  /** `CreateDirectoryW` and its siblings. */
+  readonly directories: DirectoryCreationSurface;
+  /**
+   * The two paths ADR-0023 §5's startup check is taken against.
+   *
+   * `positive` is one the host MUST reach and `negative` one it must not. The
+   * negative's bytes are read by main immediately before the ask, in
+   * {@link engineSessionOpener}, because a refusal against a path nothing could
+   * read separates nothing — which is the input the classifier refuses outright.
+   */
+  readonly probe: {
+    readonly positive: ProbeTarget;
+    readonly negative: ProbeTarget;
+  };
+}
 
 /**
  * The composition root: the one place that builds the object graph.
@@ -25,45 +106,67 @@ import type { ShellDependencies } from './main.js';
  * nothing here imports Electron, which the boundary lint enforces for every
  * package and does not enforce for this one, so it is stated instead.
  *
- * ## THE ENGINE HAS NO SESSION, AND THAT IS THE LAW RATHER THAN AN OMISSION
+ * ## THE ENGINE SESSION IS CREATED AT OPEN, AND NEVER IN THIS PROCESS
  *
  * `document.execute` resolves a session inside the document's lane and reports a
- * miss as a defect. This root supplies a lookup that always misses, and it must:
+ * miss as a defect. The session itself is never opened here:
  *
- * - §2's process diagram puts MuPDF in a **utility process**, and says of it
+ * - §2's process diagram puts MuPDF in a separate process, and says of it
  *   *"NO in-main fallback — native faults are uncatchable (L20)"*. Opening a
  *   MuPDF session here would put the native parser in `main`, which invariant 20
  *   forbids by name.
  * - §9.17 argues `main`'s budget from *"main holds canonical bytes and never
  *   parses"*. A parser in `main` is the regression that number exists to catch,
- *   and it was measured at 38.1 MB this week arriving by accident through a
- *   type-only import.
+ *   and it was measured at 38.1 MB arriving by accident through a type-only
+ *   import.
  *
- * So the session's owner is `DocumentService` (§2, §3.2) and the process it
- * lives in is a host that does not exist yet. Wiring one here to make the
- * channel work would be the architecture-under-features retrofit, and it would
- * be wiring it into the one process the law says must not have it.
+ * So what this file wires is the **contained host** and the moment a session is
+ * asked for: {@link onDocumentOpened}, entered as `document.open` returns, per
+ * [ADR-0023](../../../docs/DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+ * Decision 9c.
  *
- * **What this costs, MEASURED rather than predicted — and it is less than it
- * looks.** The obvious reading is that `document.execute` is registered and
- * fails with `internal`, which would be the CC-2 shape. Run through the real
- * bridge, it returns `{ ok: false, error: { code: 'document-not-open' } }` — a
- * **declared** failure code, because `DocumentNotOpenError` fires before the
- * session is ever looked up.
+ * ## THE HOST IS BUILT AT THE FIRST OPEN, NOT AT STARTUP
  *
- * The missing-session path needs an *open* document, and **opening one is not a
- * channel**: the contract declares `app.info` and `document.execute` and nothing
- * else. So the renderer cannot construct an input that reaches the miss, and
- * every input it can construct gets a declared outcome. That is checked by
- * `proof:shell`, not assumed — the first draft of this paragraph asserted the
- * unhappy answer and was wrong about it.
+ * Decided here because the ADR does not settle it, and a first implementation
+ * would settle it silently. The alternatives were: at startup, or at the first
+ * open.
  *
- * The host is still what completes the feature, and the `docs/FEATURES.md` row
- * names it.
+ * At startup, every launch pays for a `CreateProcessW` with an AppContainer and
+ * a job object whether or not a document is ever opened — and this application
+ * has a start screen, so *no document* is a state it is designed to sit in.
+ *
+ * The rebuild path decides it. Decision 9c already requires the supervisor to
+ * rebuild a dead host, so a **build-if-absent** call has to exist regardless;
+ * making the first open take that same path means there is one way a host comes
+ * into existence rather than two, and the startup case would have been the
+ * second (B3a). The promise is held so that two documents opened together share
+ * one host — *one host per engine* is 9c's own words — and cleared when it ends
+ * so the next open rebuilds rather than awaiting a dead one.
+ *
+ * ## WHAT HAPPENS WITH NO PLATFORM, WHICH IS NOT NOTHING
+ *
+ * `enginePlatform` is `null` wherever the Win32 surfaces do not exist — every
+ * unit test, and every platform that is not Windows. A document still opens,
+ * and {@link onDocumentOpened} still runs: creation fails, the failure is
+ * counted, and at Decision 9a's bound of two the document is **poisoned**.
+ *
+ * That is the point rather than a consolation. `document.execute` against a
+ * poisoned document answers the **declared** `document-poisoned`; against an
+ * open document with no entry at all it answers `internal`, because a
+ * `MissingSessionError` is defined as a defect. Those are two very different
+ * things to show a user, and the difference is whether this call is made.
+ *
+ * Finding KKKK-3: for one commit it was not. `document.open` landed while three
+ * documents and one proof still said *opening a document is not a channel*, and
+ * every input the renderer could construct reached a declared outcome only
+ * because it could not open one. `proof:shell` passed throughout, correctly —
+ * its case executes against a `DocId` that was never opened, so it cannot reach
+ * the state its own header called unreachable.
  */
 export function createShellDependencies(
   appInfo: AppInfo,
   pickDocument: PickDocument,
+  enginePlatform: EngineHostPlatform | null = null,
 ): ShellDependencies {
   const capabilities = new CapabilityRegistry();
 
@@ -89,18 +192,14 @@ export function createShellDependencies(
   // failing at a native call.
   const bus = new CommandBus({});
 
-  // EMPTY BY CONSTRUCTION TOO, and for the same reason as the bus above: the
-  // supervisor above holds no sessions, because nothing here builds a host to
-  // get one from. Its `sessions` therefore misses on every document and its
-  // `poisoned` answers `undefined` on every document — the latter being true
-  // rather than stubbed, since poisoning is a count of host failures and no
-  // host has been asked for anything.
-  //
-  // The real one rather than two inline arrows on purpose: a stubbed lookup and
-  // a stubbed predicate are a second implementation of a rule the supervisor
-  // owns, and the day a host is wired one of them gets replaced and the other
-  // does not (B3a).
+  // The real supervisor rather than two inline arrows: a stubbed lookup and a
+  // stubbed predicate are a second implementation of a rule the supervisor owns
+  // (B3a). It is no longer empty by construction — {@link onDocumentOpened}
+  // below puts an entry in it for every document that opens, sessioned where a
+  // host can be built and poisoned where one cannot.
   const commands = new DocumentCommands(documents, bus, engine);
+
+  const openedDocument = engineSessionOpener(enginePlatform, documents, engine, reportShellFailure);
 
   return {
     // `pickDocument` is a PARAMETER, not an import, and that is what keeps this
@@ -114,11 +213,240 @@ export function createShellDependencies(
       capabilities,
       commands,
       documents,
+      openedDocument,
       pickDocument,
     }),
     incidents: reportIncident,
     failures: reportShellFailure,
   };
+}
+
+/**
+ * The host's lifetime and one document's session, assembled.
+ *
+ * ## The returned function is deliberately not awaited by its caller
+ *
+ * {@link onDocumentOpened} queues the entry in the document's lane **before**
+ * its first `await`, so by the time this returns, the entry sits ahead of every
+ * command the user can issue next. Awaiting it would make every open as slow as
+ * a host build, and the ordering that makes *sessioned or poisoned, never
+ * neither* a property of the shape rather than a check does not depend on it.
+ *
+ * ## One host, and the promise is the thing that makes it one
+ *
+ * Two documents opened together both call `ensure`; the second finds the
+ * promise the first left and awaits the same connection. The promise is
+ * cleared on failure and on the host's ending — a rejected promise left in
+ * place would refuse every later open with the first attempt's error, which is
+ * the shape of a cache that has learnt a transient failure permanently.
+ *
+ * @param platform the Win32 surfaces, or `null` where they do not exist
+ * @param documents the service holding the canonical image
+ * @param sessions the supervisor whose state this fills in
+ * @param failures where a host death is reported
+ */
+function engineSessionOpener(
+  platform: EngineHostPlatform | null,
+  documents: DocumentService,
+  sessions: EngineSessions,
+  failures: ShellFailureSink,
+): (docId: DocId) => void {
+  /** The live host, or the attempt to build one. Cleared when it ends. */
+  let host: Promise<EngineHostConnection> | null = null;
+
+  /**
+   * Tokens are minted from handles ONE host issued, and
+   * `createRemoteSessions`' own words are that they are *"not transferable
+   * between hosts"*. So the registry is rebuilt with the host rather than held
+   * across a death, where a surviving token would name a handle in a process
+   * that no longer exists.
+   */
+  let remote = createRemoteSessions();
+
+  const connect = async (): Promise<EngineHostConnection> => {
+    if (platform === null) {
+      throw new Error(
+        'No engine host platform was supplied to the composition root, so no engine session ' +
+          'can be created. This is the state every unit test and every non-Windows run is in; ' +
+          'a document opened here is poisoned rather than left sessionless.',
+      );
+    }
+    remote = createRemoteSessions();
+    const live = await createEngineHostConnection(platform.surfaces, {
+      // A fresh name per host. A pipe name that outlived its host would be one
+      // a later process could be waiting on while a different one answers.
+      pipeName: `\\\\.\\pipe\\monstera-engine-${randomBytes(16).toString('hex')}`,
+      user: platform.user,
+      container: platform.container,
+      readBytes: 64 * 1024,
+      maxOutstandingWrites: 16,
+      maxInFlight: ENGINE_HOST_MAX_IN_FLIGHT,
+      processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+      correlate: () => randomBytes(8).toString('hex'),
+      onEnded: (termination: HostTermination) => {
+        // CLEARED FIRST, so that the reopen entries this schedules find no host
+        // and build a new one. Left in place, every one of them would await a
+        // connection whose client has already settled every call.
+        host = null;
+        void onEngineHostEnded(sessions, termination, {
+          documents,
+          failures,
+          closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+          rebuild: async () => {
+            await ensure();
+          },
+          reopen: create,
+        });
+      },
+    });
+    if (!live.ok) {
+      throw new Error(
+        `the engine host was refused at ${live.error.stage}: ${live.error.detail}`,
+      );
+    }
+
+    // ADR-0023 §5's STARTUP CHECK, before this host is handed a document, and
+    // the reason it is here rather than inside the connection factory: the
+    // factory is the side that can kill the process, and `classifyContainment`
+    // lives in `packages/kernel`, which may not name Electron. This is the one
+    // place that holds both.
+    //
+    // A host whose verdict is anything but `contained` is closed and reported.
+    // The failure it exists to catch is not a crash — it is a host that WORKS
+    // and is not contained, which every cheap question answers `yes` for.
+    const verdict = await containmentOf(live.value, platform);
+    if (verdict.kind !== 'contained') {
+      live.value.close();
+      throw new Error(
+        `the engine host was created and is not contained (${verdict.kind}): ` +
+          ('detail' in verdict ? verdict.detail : 'no detail'),
+      );
+    }
+    return live.value;
+  };
+
+  const ensure = (): Promise<EngineHostConnection> =>
+    (host ??= connect().catch((error: unknown) => {
+      host = null;
+      throw error;
+    }));
+
+  const create = async (docId: DocId): Promise<DocumentSessions> => {
+    const live = await ensure();
+    if (platform === null) throw new Error('unreachable: a host exists without a platform');
+
+    // The typed surface, derived from the channel declarations rather than
+    // spelled here: a channel name this file gets wrong is a missing property
+    // rather than a frame the host silently refuses (B3a).
+    const client = createClient(engineChannels, live.client.invoke);
+
+    // LOWER-CASE HEX, which is what both allowlists accept — the directory
+    // name's and `engine/open`'s. They agree because the host is hostile by
+    // invariant 25 and normally the one supplying such a name.
+    const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
+    if (!minted.ok) throw new Error(`the session directory name was refused: ${minted.error}`);
+    const snapshotName = randomBytes(16).toString('hex');
+    const paths = sessionDirectoryPaths(platform.sessionRoot, minted.value);
+
+    // The pair is created INSIDE `create` rather than before it, because
+    // `openEngineSession` removes it on every failure path out of itself and
+    // takes that responsibility only from the moment it calls this.
+    const areas: SessionAreaOwner = {
+      create: () => {
+        const made = createSessionDirectories(
+          platform.directories,
+          paths,
+          platform.user,
+          platform.container,
+        );
+        if (!made.ok) {
+          throw new Error(`the handed pair was not created: ${made.error.stage}: ${made.error.detail}`);
+        }
+        return Promise.resolve({ snapshotPath: join(paths.snapshot, snapshotName) });
+      },
+      remove: () => {
+        removeSessionDirectories(platform.directories, paths);
+        return Promise.resolve();
+      },
+    };
+
+    // THE PATH, NEVER THE BYTES. `openEngineSession` has the service write the
+    // canonical image straight into the granted directory, so main never holds
+    // a second copy and this function never holds the document at all.
+    const open: EngineOpenFromPath = async () => {
+      const answer = await client['engine/open']({
+        snapshotDirectory: paths.snapshot,
+        snapshotName,
+        outputDirectory: paths.output,
+      });
+      if (!answer.ok) throw new Error(`engine/open answered ${answer.error.code}`);
+      return remote.adopt(answer.value.session);
+    };
+
+    const { session } = await openEngineSession(documents, docId, areas, open);
+    return { mupdf: session };
+  };
+
+  return (docId) => {
+    void onDocumentOpened(sessions, docId, {
+      documents,
+      failures,
+      closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      create,
+    });
+  };
+}
+
+/**
+ * ADR-0023 §5's check, asked of one live host.
+ *
+ * ## Main reads the negative path FIRST, and that is the whole rigour
+ *
+ * `classifyContainment` refuses a request whose `readableBytes` is not positive
+ * before it looks at any outcome, because a refusal against a path an
+ * uncontained reader could not read either is not evidence of anything. The
+ * reading is taken here, immediately before the ask, rather than carried from
+ * a manifest or an earlier run — so the only difference between the two
+ * readings is the container.
+ *
+ * A read that throws is passed on as zero, which the classifier answers
+ * `unreadable` for. That is the correct answer and not a swallowed error: main
+ * could not establish the premise, so no verdict about the host is available.
+ */
+async function containmentOf(
+  live: EngineHostConnection,
+  platform: EngineHostPlatform,
+): Promise<ContainmentVerdict> {
+  const client = createClient(engineChannels, live.client.invoke);
+
+  let readableBytes: number;
+  try {
+    readableBytes = (await readFile(platform.probe.negative.path)).byteLength;
+  } catch {
+    // ZERO IS THE HONEST ANSWER AND THE CLASSIFIER ACTS ON IT. `unreadable` is
+    // its verdict for a request whose negative path main could not read, which
+    // is what this is — not an error to swallow, an absent premise.
+    readableBytes = 0;
+  }
+
+  const report = await client['engine/probe-containment']({
+    positive: platform.probe.positive.path,
+    negative: platform.probe.negative.path,
+  });
+  if (!report.ok) {
+    return {
+      kind: 'unreadable',
+      detail: `the host could not be asked: engine/probe-containment answered ${report.error.code}`,
+    };
+  }
+
+  return classifyContainment(
+    {
+      positive: platform.probe.positive,
+      negative: { ...platform.probe.negative, readableBytes },
+    },
+    report.value,
+  );
 }
 
 /**

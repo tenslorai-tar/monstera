@@ -37,14 +37,19 @@ function serviceAnswering(outcome: OpenOutcome): {
 function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   const capabilities = new CapabilityRegistry();
   const { documents, opened } = serviceAnswering(outcome);
+  // RECORDED RATHER THAN IGNORED. Whether a document gets an engine session is
+  // decided by this call being made, and the outcomes it must NOT be made for
+  // produce exactly the same handler result as the one it must.
+  const sessioned: DocId[] = [];
   const handlers = createContractHandlers({
     appInfo,
     capabilities,
     commands: unusedCommands,
     documents,
+    openedDocument: (docId) => sessioned.push(docId),
     pickDocument,
   });
-  return { capabilities, handlers, opened };
+  return { capabilities, handlers, opened, sessioned };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -168,6 +173,59 @@ describe('document.open', () => {
       await handlers['document.open']({});
 
       expect(capabilities.has(handleOpened(opened))).toBe(true);
+    });
+  });
+
+  describe('the engine session', () => {
+    it('asks for one, naming the document that opened', async () => {
+      const { handlers, sessioned } = harness(
+        { kind: 'opened', docId: A_DOC, version: asDocVersion(1) },
+        () => Promise.resolve('C:/docs/a.pdf'),
+      );
+
+      await handlers['document.open']({});
+
+      // The DocId, not merely that something was called. A session opened for
+      // the wrong document is the failure invariant L10 exists about, and
+      // "it was called once" cannot see it.
+      expect(sessioned).toStrictEqual([A_DOC]);
+    });
+
+    it('does NOT ask again for a document that was already open', async () => {
+      // THE DECISION, ASSERTED AS A CALL THAT WAS NOT MADE. Both outcomes hand
+      // the renderer a DocId and both leave the document open with a session,
+      // so the returned value cannot tell them apart — and a second entry would
+      // spend ADR-0023 Decision 9a's failure bound a second time on a document
+      // that never failed.
+      const { handlers, sessioned } = harness(
+        { kind: 'already-open', docId: A_DOC },
+        () => Promise.resolve('C:/docs/a.pdf'),
+      );
+
+      await handlers['document.open']({});
+
+      expect(sessioned).toStrictEqual([]);
+    });
+
+    it('does not ask when the file was absent', async () => {
+      const { handlers, sessioned } = harness({ kind: 'absent' }, () =>
+        Promise.resolve('C:/docs/gone.pdf'),
+      );
+
+      await handlers['document.open']({});
+
+      expect(sessioned).toStrictEqual([]);
+    });
+
+    it('does not ask when the picker was dismissed', async () => {
+      const { handlers, sessioned } = harness(
+        { kind: 'opened', docId: A_DOC, version: asDocVersion(1) },
+        () => Promise.resolve(null),
+      );
+
+      await handlers['document.open']({});
+
+      expect(sessioned).toStrictEqual([]);
     });
   });
 });

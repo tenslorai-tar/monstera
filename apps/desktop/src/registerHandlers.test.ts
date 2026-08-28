@@ -69,6 +69,9 @@ function handlers() {
     capabilities: {} as unknown as CapabilityRegistry,
     commands: unusedCommands,
     documents: {} as unknown as DocumentService,
+    openedDocument: () => {
+      throw new Error('registration cases must not reach the session opener');
+    },
     pickDocument: () => {
       throw new Error('registration cases must not reach the picker');
     },
