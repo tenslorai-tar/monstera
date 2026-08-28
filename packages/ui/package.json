@@ -15,5 +15,16 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "clean": "node ../../scripts/clean.mjs dist"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@zag-js/color-picker": "^1.43.3",
+    "@zag-js/react": "^1.43.3",
+    "@zag-js/signature-pad": "^1.43.3",
+    "@zag-js/splitter": "^1.43.3",
+    "@zag-js/tree-view": "^1.43.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.15"
   }
 }

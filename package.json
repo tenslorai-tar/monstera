@@ -153,6 +153,8 @@
     "@cantoo/pdf-lib": "^2.8.3",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "eslint": "^10.8.1",
     "eslint-import-resolver-typescript": "4.4.5",
     "eslint-plugin-import-x": "^4.17.1",
