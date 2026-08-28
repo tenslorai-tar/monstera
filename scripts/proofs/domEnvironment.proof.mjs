@@ -31,7 +31,7 @@
  * Usage: node scripts/proofs/domEnvironment.proof.mjs
  */
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,7 +40,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 10 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -166,6 +166,78 @@ function check(label, condition, detail) {
     `a custom environment module was not reported. Vitest accepts a specifier here, so a ` +
       `pattern that only matches bare words is evaded by writing the DOM yourself.`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// THE WALK, WHICH IS WHERE EEEE-1 LIVED. Every case above drives `scanFile`
+// directly, and `scanFile` was never the problem — it reported the probe's path
+// correctly the whole time. The scan was blind because its WALK looked in two
+// directories for two extensions while vitest collects the default pattern from
+// the whole repository.
+//
+// A positive control on the matcher does not test the roots. So these cases
+// build a tree and run `scan` over it.
+// ---------------------------------------------------------------------------
+{
+  const root = mkdtempSync(join(tmpdir(), 'monstera-domenv-walk-'));
+  try {
+    const dom = ['// @vitest-environment happy-dom', 'export {};'].join('\n');
+
+    // The regression case: the exact shape of the probe that slipped through —
+    // outside packages/ and apps/, and not a .ts file.
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(join(root, 'scripts', 'probe.test.mjs'), dom, 'utf8');
+
+    // Collected by vitest, so in scope: .tsx, .jsx and a nested .spec.mts.
+    mkdirSync(join(root, 'apps', 'desktop', 'src'), { recursive: true });
+    writeFileSync(join(root, 'apps', 'desktop', 'src', 'a.spec.mts'), dom, 'utf8');
+    writeFileSync(join(root, 'tool.test.jsx'), dom, 'utf8');
+
+    // NOT collected by vitest, so NOT this check's business: an ordinary module
+    // that happens to carry the docblock, where it is inert because nothing
+    // reads it.
+    writeFileSync(join(root, 'helper.mjs'), dom, 'utf8');
+
+    // Excluded by vitest's own `exclude`, and a rich source of false positives:
+    // a dependency's own tests are not ours.
+    mkdirSync(join(root, 'node_modules', 'x'), { recursive: true });
+    writeFileSync(join(root, 'node_modules', 'x', 'b.test.js'), dom, 'utf8');
+    mkdirSync(join(root, 'packages', 'ui', 'dist'), { recursive: true });
+    writeFileSync(join(root, 'packages', 'ui', 'dist', 'c.test.js'), dom, 'utf8');
+
+    const result = scan({ root });
+    const reported = result.violations.map((violation) => violation.file).sort();
+
+    check(
+      'the walk reaches a .mjs test outside packages/ and apps/ — EEEE-1',
+      reported.includes('scripts/probe.test.mjs'),
+      `reported ${JSON.stringify(reported)}. This is the exact file that ran under vitest with ` +
+        `a working DOM while the scan printed "no test outside packages/ui names one" over 118 ` +
+        `files and exited 0. Both halves of that walk were a second opinion about where tests ` +
+        `live; the extent now comes from vitest's own collection rule.`,
+    );
+
+    check(
+      '  ...and every other extension vitest collects',
+      reported.includes('apps/desktop/src/a.spec.mts') && reported.includes('tool.test.jsx'),
+      `reported ${JSON.stringify(reported)}. Vitest's default is ?(c|m)[jt]s?(x), so a pattern ` +
+        `matching .ts and .tsx is wrong on five extensions — and wrong silently, which is the ` +
+        `direction that matters.`,
+    );
+
+    check(
+      '  ...and stops at node_modules, dist, and files vitest does not collect',
+      result.filesScanned === 3 &&
+        !reported.some((file) => file.includes('node_modules') || file.includes('dist')) &&
+        !reported.includes('helper.mjs'),
+      `scanned ${String(result.filesScanned)} file(s): ${JSON.stringify(reported)}. The other ` +
+        `three are a dependency's own test, a build artefact, and an ordinary module where the ` +
+        `docblock is inert because nothing reads it. A check that fired on any of them fires on ` +
+        `correct trees, and gets turned off.`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
