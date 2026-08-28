@@ -97,6 +97,7 @@ import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
+import { ciVerifiers, verifiersNotRunByCi } from './lib/ciVerifiers.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
 import { SCANNING_PROOFS, rosterMiscount } from './lib/scanningProofs.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
@@ -107,14 +108,60 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /**
  * Below this, the derivation is broken rather than the repository small.
  *
- * A manifest that parsed to an empty object, a renamed `scripts` key, or a
- * filter that stopped matching all report the same clean "nothing failed" —
- * which is the one output every way of breaking a search shares. There were 60+
- * such scripts when this floor was written; it is set well under that so an
+ * A manifest that parsed to an empty object, a renamed `scripts` key, a
+ * workflow directory that read as empty, or a filter that stopped matching all
+ * report the same clean "nothing failed" — the one output every way of breaking
+ * a search shares. There were 60+ such scripts when this floor was written and
+ * 109 when the roster moved to the workflows; it is set well under that so an
  * ordinary deletion does not trip it, and well over zero so a broken derivation
  * cannot pass as a quiet repository.
+ *
+ * **It is not the shrink anchor**, and must not be mistaken for one. A floor
+ * catches a derivation that collapsed; it cannot notice a check quietly dropped
+ * from CI, because 108 clears 30 as comfortably as 109 does. That direction is
+ * `verifiersNotRunByCi`'s, below.
  */
 const FLOOR = 30;
+
+/**
+ * Every `check:`/`proof:` script CI does not run, and the mechanism that covers
+ * it instead.
+ *
+ * ## Why an exception list is the right shape here, and a roster is not
+ *
+ * The roster is derived because its danger is growth — a check added and
+ * forgotten. This list is the opposite: it is the set of deliberate absences,
+ * and a deliberate absence has a REASON, which is a thing a person writes and
+ * reads. Deriving it would mean deriving the reasons, and a reason nobody wrote
+ * down is one that gets relitigated by whoever it inconveniences — the same
+ * argument `.gitleaks.toml`'s `[allowlist]` and `electronImports.proof.mjs`'s
+ * accounted set both make.
+ *
+ * Each entry is a claim that something ELSE runs it. If that stops being true,
+ * the entry is wrong and no check here can tell — which is why the reason names
+ * the mechanism rather than saying *deliberate*.
+ */
+const NOT_RUN_BY_CI = new Map([
+  [
+    'check:lint',
+    'CI runs `npm run lint` directly; this is the sweep-side wrapper that gives lint a ' +
+      'check-shaped exit and a diagnostic line.',
+  ],
+  [
+    'check:types',
+    'CI runs `npm run typecheck` directly; same wrapper shape as check:lint.',
+  ],
+  [
+    'check:lockfile',
+    'the pre-commit hook imports lockfileIntegrity.mjs and runs it on every commit that ' +
+      'touches dependencies, which is earlier than CI and cannot be skipped.',
+  ],
+  [
+    'check:typeonlyexports',
+    'the pre-commit set is the gate, against the index; ci.yml runs the PROOF as the ' +
+      'completeness control over the emit, which is a different question.',
+  ],
+]);
 
 const argv = process.argv.slice(2);
 const timeoutIndex = argv.indexOf('--timeout');
@@ -145,9 +192,87 @@ try {
   process.exit(70);
 }
 
-const derived = Object.keys(scripts)
-  .filter((name) => name.startsWith('check:') || name.startsWith('proof:'))
-  .sort();
+/**
+ * THE ROSTER IS WHAT THE WORKFLOWS RUN, not what the names look like (ZZZZ-1).
+ *
+ * This was `Object.keys(scripts).filter(name => name.startsWith('check:') ||
+ * name.startsWith('proof:'))`, and it could not see `notice:check` — the check
+ * that caught a stale `NOTICE` and reddened the board — nor `brand:check`,
+ * `guard:tree`, `perf:gate`, `electron:surface`, `shim:reach` or `ocr:doors`.
+ * The run that missed them printed **29 of 29** and exited 0: a script outside
+ * the pattern produces no error, no warning and no absence anybody can see.
+ *
+ * Renaming them into the pattern was rejected because it relocates the
+ * judgement rather than removing it — the same prefix space holds `brand:check`
+ * and `brand:generate`, `notice:check` and `notice:generate`. The authority on
+ * what must pass is the workflow files, this repository already parses them, and
+ * `ciVerifiers.mjs` asks that question once (B3a).
+ *
+ * `local` is not in the set, which is what stops this sweep running itself:
+ * `npm run local` appears in `ci.yml` only inside a comment, and the derivation
+ * skips comment lines for the reason `annotateCoverage.mjs` already documents.
+ */
+const derived = ciVerifiers({ root: ROOT_DIR }).names;
+
+/*
+ * THE ANCHOR, AND IT RUNS THE OTHER WAY FROM THE DERIVATION (checklist 4c).
+ *
+ * A roster derived from the workflows tracks growth perfectly and **agrees with
+ * any shrink**, because a set computed from a collection cannot disagree with
+ * that collection. Delete a CI step and the check leaves this sweep too, with
+ * nothing to notice — the ZZZZ-1 failure arriving from the other side, and this
+ * time invisible in both places at once.
+ *
+ * `package.json` is where the shrink cannot reach: it still names every
+ * `check:` and `proof:` script whatever CI does. So every one of them must be
+ * run by some workflow, and an orphan is a hard failure with the name printed,
+ * not a smaller number nobody counts.
+ *
+ * This is checked BEFORE the sweep runs, because it is the claim that makes
+ * everything after it mean something.
+ */
+{
+  const { orphans, declaredNames, declared, run } = verifiersNotRunByCi({ root: ROOT_DIR });
+  const unaccounted = orphans.filter((name) => !NOT_RUN_BY_CI.has(name));
+  if (unaccounted.length > 0) {
+    process.stderr.write(
+      `${String(unaccounted.length)} check/proof script(s) are declared in package.json and run ` +
+        `by no workflow:\n` +
+        unaccounted.map((name) => `  ${name}`).join('\n') +
+        `\n\nA check the board does not run cannot redden the board, so this sweep running it ` +
+        `is the only thing standing between it and nobody. Either register it in a workflow, or ` +
+        `add it to NOT_RUN_BY_CI naming the mechanism that covers it instead.\n`,
+    );
+    process.exit(1);
+  }
+
+  // A stale exception is the same defect wearing the other hat: an entry
+  // claiming something is not in CI, for a script CI now runs, is a reason
+  // nobody will re-read and a line that makes the list look considered.
+  //
+  // SCOPED TO WHAT THIS ROOT DECLARES. An entry naming a script the manifest
+  // does not have is not stale, it is inapplicable — and every entry is
+  // inapplicable under `--root`, which is how this tool's own failure paths are
+  // exercised (QQQ-2). Without the scope the harness cannot run at all, and the
+  // repair for that would have been to weaken the check.
+  const stale = [...NOT_RUN_BY_CI.keys()].filter(
+    (name) => declaredNames.includes(name) && !orphans.includes(name),
+  );
+  if (stale.length > 0) {
+    process.stderr.write(
+      `${String(stale.length)} entr(ies) in NOT_RUN_BY_CI name a script a workflow now runs:\n` +
+        stale.map((name) => `  ${name}`).join('\n') +
+        `\n\nRemove them. An exception that no longer excepts anything reads as a considered ` +
+        `decision and is a stale sentence.\n`,
+    );
+    process.exit(1);
+  }
+
+  process.stdout.write(
+    `${String(run)} of ${String(declared)} declared check/proof script(s) are run by a workflow; ` +
+      `${String(NOT_RUN_BY_CI.size)} accounted for elsewhere.\n`,
+  );
+}
 
 if (derived.length < FLOOR_REQUIRED) {
   process.stderr.write(
@@ -426,8 +551,8 @@ const selected = [...filtered].sort((a, b) => {
 });
 
 process.stdout.write(
-  `${String(selected.length)} of ${String(derived.length)} declared check/proof script(s), ` +
-    `derived from package.json.\n\n`,
+  `${String(selected.length)} of ${String(derived.length)} script(s) the workflows run, ` +
+    `derived from the workflow files.\n\n`,
 );
 
 /** @type {string[]} */

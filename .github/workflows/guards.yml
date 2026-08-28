@@ -366,6 +366,10 @@ jobs:
       - name: Prove the local check sweep can report a failure at all
         run: node scripts/ci/annotate.mjs scripts/proofs/checkLocal.proof.mjs
 
+      # The roster that sweep derives, and the anchor that runs the other way.
+      - name: Prove the pre-push roster comes from these files, and the anchor bites
+        run: node scripts/ci/annotate.mjs scripts/proofs/ciVerifiers.proof.mjs
+
       # The proof first, because it is what establishes the scan can SEE — a
       # search's silence is worthless until something known-present proves it is
       # not blind. The scan then carries the same control itself, since it gets

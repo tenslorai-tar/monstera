@@ -866,6 +866,74 @@ row is edited true, including the correction of EEEE-3 — the row briefly claim
 ADR-0004 carries a correction rather than an edit, and
 `docs/DECISIONS/README.md` records it, which `check:docs` required rather than
 suggested.
+---
+
+## 2026-08-28 — FFFF-1: four checks have never examined this repository, and each has a proof in CI that says it works
+
+**Recorded below the audit above because it describes the same tree at
+`af73baa`** — the state that audit closed — and was found in the work that comes
+next. Nothing in the audited range caused it; it has been true for far longer.
+
+Found by ZZZZ-1's remedy — deriving the pre-push roster from what the workflows
+actually invoke — the moment the derived set was compared with `package.json`'s.
+Not by any check going red. Nothing was ever going to go red.
+
+**`perf:gate`, `electron:surface`, `shim:reach` and `ocr:doors` appear zero
+times in either workflow.** Verified against the committed tree at `af73baa`,
+not against a working copy that already contains the fix:
+
+```
+git show af73baa:.github/workflows/ci.yml     | grep -c budgetGate.mjs       → 0
+git show af73baa:.github/workflows/guards.yml | grep -c budgetGate.mjs       → 0
+   ...and the same, 0 and 0, for electronSurface.mjs, ocrDoors.mjs, shimReach.mjs
+```
+
+Three are security checks — the Electron surface parse, the OCR door
+derivation, the shim reachability walk — and the fourth is the gate enforcing
+§9.17's memory budgets.
+
+### Why nobody saw it, which is the transferable part
+
+Every one of the four **has a proof that runs in CI**, and each of those proofs
+imports the check's own functions:
+
+| proof, registered in `ci.yml` | imports from |
+|---|---|
+| `electronSurface.proof.mjs:41` | `../security/electronSurface.mjs` |
+| `ocrDoors.proof.mjs:57` | `../security/ocrDoors.mjs` |
+| `shimReach.proof.mjs:28` | `../security/shimReach.mjs` |
+| `perfBudget.proof.mjs:29` | `../perf/budgetGate.mjs` |
+
+So the machinery executes on every push, against fixtures, proving the
+instrument can see, can refuse, and can separate. **Nothing ever asked it about
+the repository.**
+
+That is ***the instrument can see* standing in for *the instrument was pointed
+at the tree*** — item 4b's distinction, at the highest stakes it has appeared at
+in this project. Every previous instance was one instrument answering a question
+nobody had asked precisely; this is four, three of them security checks, each
+carrying a green proof that certifies the half nobody was worried about.
+
+The shape to carry: **a proof that a check works is not evidence the check
+ran.** A registered proof and a registered check are two registrations, and this
+repository had a strong habit of adding the first — `check:jobplacement`
+verifies that a module-needing step sits in a job that installs, and had nothing
+to say about a step that does not exist.
+
+### What follows, and how to read a red
+
+These four have **never produced a verdict about this tree on a runner**. If any
+goes red on the push that registers it, that is four checks reporting on a
+codebase they have never examined: **investigate the finding, do not reach for
+the registration.** Recorded before the push so the prediction cannot be written
+after the outcome.
+
+### The past item-3 answers are suspect and are being swept
+
+*"Would CI have caught it?"* has been answered many times in this file, and any
+answer that leaned on `perf:gate` or one of the three security checks was wrong.
+This is a claim falsified by a fact nobody changed, so no range-scoped sweep will
+ever reach it — it needs a one-off grep, which is the commit after this one.
 
 ---
 

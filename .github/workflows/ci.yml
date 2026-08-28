@@ -270,6 +270,14 @@ jobs:
       - name: Prove the Electron surface is parsed, not searched
         run: node scripts/ci/annotate.mjs scripts/proofs/electronSurface.proof.mjs
 
+      # THE CHECK, beside the proof that says it can see. Registered 2026-08-28,
+      # having been run by no workflow at all: the proof drove the module's
+      # functions on fixtures and nothing pointed the check at this tree, so a
+      # real violation here would have been caught by nobody. Found by deriving
+      # the pre-push roster from these files and looking at what was missing.
+      - name: The Electron surface this build exposes is the declared one
+        run: node scripts/ci/annotate.mjs scripts/security/electronSurface.mjs
+
       # Invariant 1's IMPORT half, and the only half of the preload that can be
       # proven at all today: every workflow installs Electron with
       # --ignore-scripts, so electron.d.ts arrives and no binary does. A test that
@@ -966,6 +974,11 @@ jobs:
       - name: Prove the OCR door derivation can tell a call path from none
         run: node scripts/ci/annotate.mjs scripts/proofs/ocrDoors.proof.mjs
 
+      # Same shape as the Electron surface check above: the proof ran here and
+      # the check ran nowhere.
+      - name: No door into the OCR subsystem is open in this build
+        run: node scripts/ci/annotate.mjs scripts/security/ocrDoors.mjs
+
 
       # The register runs in Guards too, and there it CANNOT derive the door set:
       # that job does not provision MuPDF, so the doors report as unverifiable
@@ -991,6 +1004,9 @@ jobs:
       # returns the empty set for every input would pass everything else.
       - name: Prove no shim export reaches the OCR subsystem
         run: node scripts/ci/annotate.mjs scripts/proofs/shimReach.proof.mjs
+
+      - name: No shim export in this build reaches the OCR subsystem
+        run: node scripts/ci/annotate.mjs scripts/security/shimReach.mjs
 
       # Invariant 23 (ADR-0015). The measurement above is true today and would
       # have to be re-established at every engine release; this removes the class
@@ -1052,6 +1068,9 @@ jobs:
       # to the proof that needed it most.
       - name: Prove the performance gate follows the declared budgets
         run: node scripts/ci/annotate.mjs scripts/proofs/perfBudget.proof.mjs
+
+      - name: The measured roles are inside §9.17's budgets
+        run: node scripts/ci/annotate.mjs scripts/perf/budgetGate.mjs
 
       # WWWW-1'S CONTROL. A ~5.8 MB shift in every role's baseline was observed
       # here across an event — an eight-hour hung `vitest` tree being killed —

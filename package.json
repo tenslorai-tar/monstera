@@ -77,6 +77,7 @@
     "proof:lintcheck": "node scripts/proofs/lintcheck.proof.mjs",
     "local": "node scripts/checkLocal.mjs",
     "proof:checklocal": "node scripts/proofs/checkLocal.proof.mjs",
+    "proof:civerifiers": "node scripts/proofs/ciVerifiers.proof.mjs",
     "audit:scope": "node scripts/audit/scope.mjs",
     "proof:auditscope": "node scripts/proofs/auditScope.proof.mjs",
     "proof:workflowpins": "node scripts/proofs/workflowPins.proof.mjs",

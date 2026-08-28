@@ -104,6 +104,49 @@ function check(name, condition, detail) {
 const scratch = mkdtempSync(join(tmpdir(), 'monstera check local '));
 
 /**
+ * Gives a fixture repository the workflows its roster now comes from (ZZZZ-1).
+ *
+ * `checkLocal.mjs` used to derive its set from `package.json` by name; it now
+ * derives it from the workflow files, so a fixture without them has an empty
+ * roster and the harness refuses to run at all.
+ *
+ * **Derived from the manifest rather than listed**, and that is the same rule
+ * the change itself makes: a case that adds a script to its fixture must not be
+ * able to leave it outside the roster silently. Written once and called from
+ * every fixture builder here, because four copies of this is four places for one
+ * of them to drift.
+ *
+ * ## Steps are written BY NAME, and the first version wrote them by command
+ *
+ * `- run: npm run proof:x` rather than `- run: node scripts/x.mjs`. Writing the
+ * command looks more faithful to the real corpus and broke six cases, because
+ * some fixtures declare scripts the derivation deliberately cannot resolve —
+ * `proof:shelled` runs `npm run something-else`, which is the point of the case
+ * testing that a script the harness cannot invoke is reported NOT RUN. Emitting
+ * that command produced a workflow step naming an undeclared script, so the
+ * roster lost the very entry the case was about, and the case failed for a
+ * reason that had nothing to do with what it tests.
+ *
+ * By name, the roster equals the manifest for every fixture, which is what every
+ * case here assumed before the roster moved. Whether the derivation can follow a
+ * command through the annotate wrapper is `ciVerifiers.proof.mjs`'s question,
+ * and it should not be re-asked by forty cases about something else.
+ *
+ * @param {string} root
+ * @param {Record<string, string>} manifestScripts
+ */
+function giveFixtureWorkflows(root, manifestScripts) {
+  mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
+  writeFileSync(
+    join(root, '.github', 'workflows', 'ci.yml'),
+    ['jobs:', '  build:', '    steps:']
+      .concat(Object.keys(manifestScripts).map((name) => `      - run: npm run ${name}`))
+      .join('\n'),
+    'utf8',
+  );
+}
+
+/**
  * Builds a fixture repository and runs the harness against it.
  *
  * @param {Record<string, string>} files script name -> body
@@ -121,6 +164,9 @@ function runFixture(files, manifestScripts, extraArgs = []) {
     JSON.stringify({ name: 'fixture', scripts: manifestScripts }, null, 2),
     'utf8',
   );
+
+  giveFixtureWorkflows(root, manifestScripts);
+
   const run = spawnSync(
     process.execPath,
     [HARNESS, '--root', root, '--floor', '1', ...extraArgs],
@@ -473,6 +519,7 @@ try {
         JSON.stringify({ name: 'fixture', scripts: manifest }, null, 2),
         'utf8',
       );
+      giveFixtureWorkflows(root, manifest);
       writeFileSync(
         join(root, '.cache', 'checkLocal-durations.json'),
         JSON.stringify(table, null, 2),
@@ -581,6 +628,7 @@ try {
         ),
         'utf8',
       );
+      giveFixtureWorkflows(root, { 'check:deletes': 'node scripts/deletes.mjs' });
       git(['add', '-A']);
       git(['commit', '--quiet', '-m', 'base']);
 
@@ -798,21 +846,16 @@ try {
         `derivation makes the ordering structural; this makes it observable, which is what ` +
         `separates a case that could not be set up from a mechanism that misbehaved.`,
     );
+    const killScripts = {
+      'proof:a-fast': 'node scripts/a-fast.mjs',
+      'proof:b-hangs': 'node scripts/b-hangs.mjs',
+    };
     writeFileSync(
       join(root, 'package.json'),
-      JSON.stringify(
-        {
-          name: 'fixture',
-          scripts: {
-            'proof:a-fast': 'node scripts/a-fast.mjs',
-            'proof:b-hangs': 'node scripts/b-hangs.mjs',
-          },
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ name: 'fixture', scripts: killScripts }, null, 2),
       'utf8',
     );
+    giveFixtureWorkflows(root, killScripts);
 
     // Unmeasured scripts sort alphabetically, so `a-fast` completes and writes
     // the first row while `b-hangs` is still running. That is the state this
@@ -921,6 +964,7 @@ try {
         ),
         'utf8',
       );
+      giveFixtureWorkflows(root, { 'proof:a-spawns': 'node scripts/a-spawns.mjs' });
 
       /** @returns {number | null} */
       const tick = () => {
@@ -1376,6 +1420,7 @@ try {
       JSON.stringify({ name: 'fixture', scripts: { 'check:ok': 'node scripts/ok.mjs' } }, null, 2),
       'utf8',
     );
+    giveFixtureWorkflows(root, { 'check:ok': 'node scripts/ok.mjs' });
     git(['add', '-A']);
     git(['commit', '--quiet', '-m', 'base']);
 
