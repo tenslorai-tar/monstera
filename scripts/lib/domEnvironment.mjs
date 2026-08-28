@@ -47,15 +47,81 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import { defaultInclude } from 'vitest/config';
+
+import vitestConfig from '../../vitest.config.mjs';
 import { repoRoot } from './gitScope.mjs';
 
 /**
- * Directories vitest does not collect from, so neither does this.
+ * Directories vitest does not collect from, so neither does this — **read from
+ * the config rather than transcribed from it** (finding GGGG-1).
  *
- * Taken from `vitest.config.mjs`'s own `exclude`, plus `.git` and `.cache`,
- * which are not source at all.
+ * ## The two lists had already drifted, which is the whole finding
+ *
+ * This was a hand-written set said to be *"taken from `vitest.config.mjs`'s own
+ * `exclude`, plus `.git` and `.cache`"*. It was not: the config names five
+ * globs and the set named seven entries, and nothing could say which two were
+ * the declared additions and which were a guess. *Copy only where the reader
+ * cannot reach the source* — and this reader can, because the config is an ESM
+ * module in this repository that a plain-Node script may import.
+ *
+ * A drift in this direction is silent and one-way: a directory in the set that
+ * vitest actually collects from makes the scan skip files vitest runs, and the
+ * scan then reports *no test outside `packages/ui` names a DOM environment*
+ * over a smaller tree. That is the reassuring answer, which is why the extent
+ * comes from the rule rather than from a copy of it.
+ *
+ * @see ADDED — the two entries that are ours, declared as such rather than
+ * hidden among the derived ones.
  */
-const SKIPPED = new Set(['node_modules', 'dist', '.git', '.tools', '.probe', 'release', '.cache']);
+const ADDED = new Set([
+  // Not source, and not vitest's business either — it excludes neither.
+  '.git',
+  // Written by `checkLocal.mjs` and gitignored. Named here rather than in the
+  // config because vitest has no reason to know about it.
+  '.cache',
+]);
+
+const SKIPPED = new Set([...leadingSegments(vitestConfig.test?.exclude ?? []), ...ADDED]);
+
+/**
+ * The first path segment of each exclude glob — the directory this walk prunes.
+ *
+ * `**\/node_modules/**` and `.tools/**` both name one directory; the walk
+ * matches on `readdirSync` entry names, so that segment is what it can act on.
+ * A glob whose first meaningful segment is not a plain name is **dropped and
+ * counted**, because a pattern this cannot represent must not be silently
+ * treated as covered — the caller refuses when the derived set comes back
+ * empty, which is the broken-parse case.
+ *
+ * @param {readonly string[]} globs
+ * @returns {string[]}
+ */
+function leadingSegments(globs) {
+  /** @type {string[]} */
+  const names = [];
+  for (const glob of globs) {
+    for (const segment of glob.split('/')) {
+      if (segment === '**' || segment === '') continue;
+      if (segment.includes('*') || segment.includes('?')) break;
+      names.push(segment);
+      break;
+    }
+  }
+  return names;
+}
+
+if (SKIPPED.size <= ADDED.size) {
+  // AN EMPTY INTERMEDIATE RESULT IS A BROKEN PARSE, NOT A CLEAN INPUT. A config
+  // whose `exclude` this could not read leaves only our two additions, and the
+  // walk would then descend into `node_modules` and report on other people's
+  // test files. Throwing is the only honest answer.
+  throw new Error(
+    `domEnvironment: no directory names could be derived from vitest.config.mjs's exclude ` +
+      `(${JSON.stringify(vitestConfig.test?.exclude ?? [])}). The walk's extent comes from ` +
+      `that list, so an empty derivation is a scan that would report on the whole disk.`,
+  );
+}
 
 /**
  * A file vitest collects, by vitest's rule rather than by ours.
@@ -82,6 +148,34 @@ const SKIPPED = new Set(['node_modules', 'dist', '.git', '.tools', '.probe', 're
  * a `.spec.jsx` somewhere neither list names.
  */
 const COLLECTED = /\.(?:test|spec)\.[cm]?[jt]sx?$/u;
+
+/**
+ * What {@link COLLECTED} is a hand-compiled form of, PINNED against vitest's own.
+ *
+ * The exclude half above is derived; this half cannot be, and the difference is
+ * worth stating rather than glossing. `defaultInclude` is a glob using extglob
+ * syntax, and turning it into a regex here would be a second opinion about glob
+ * semantics — the B3a shape, agreeing with the authority right up until an edge
+ * case (finding GGGG-1's other half).
+ *
+ * So the value is pinned instead. A vitest release that widens its default
+ * fails this **loudly, naming both strings**, which is the only outcome that
+ * matters: the failure this replaces was the two diverging in silence, after
+ * which the scan reports on a smaller tree and says nothing about it.
+ *
+ * A pin is not a derivation and does not pretend to be one. What it buys is
+ * that the divergence becomes an event rather than a state.
+ */
+const PINNED_INCLUDE = ['**/*.{test,spec}.?(c|m)[jt]s?(x)'];
+
+if (JSON.stringify(defaultInclude) !== JSON.stringify(PINNED_INCLUDE)) {
+  throw new Error(
+    `domEnvironment: vitest's defaultInclude is ${JSON.stringify(defaultInclude)}, and this ` +
+      `scan's matcher was compiled from ${JSON.stringify(PINNED_INCLUDE)}. The two decide which ` +
+      `files the scan is responsible for, and a difference makes it silently answer about a ` +
+      `smaller set. Update COLLECTED and this pin together.`,
+  );
+}
 
 /** The one package whose tests may render, and therefore may name a DOM. */
 const RENDERING_PACKAGE = 'packages/ui/';
