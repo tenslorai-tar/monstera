@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,6 +11,8 @@ import {
   CommandBus,
   DocumentService,
   type MupdfSession,
+  nodeFileSurface,
+  siblingNames,
 } from '@monstera/kernel';
 // See the note in `engineSessions.test.ts`: a local engine in main's process is
 // the pre-host arrangement, and `/engine` is what makes that import say so
@@ -26,6 +28,7 @@ import {
   DocumentCommands,
   DocumentPoisonedError,
   MissingSessionError,
+  type SaveSource,
 } from './documentCommands.js';
 import { EngineSessions } from './engineSessions.js';
 
@@ -112,11 +115,36 @@ function noSessions(): EngineSessions {
 
 const rotateOnce: Command = { kind: 'rotatePages', pages: [0], quarterTurns: 1 };
 
+/**
+ * A save source for the cases that are not about saving.
+ *
+ * Every member REFUSES rather than returning something plausible. These cases
+ * exercise `execute` and `undo`, and a save source that quietly worked would let
+ * one of them reach the filesystem without any case saying it should — the
+ * failure being that nothing would ever report it. A throw names the file.
+ */
+const noSaving: SaveSource = {
+  deps: {
+    checkWriteTarget: () => Promise.reject(new Error('this case does not save')),
+    surface: {
+      write: () => Promise.reject(new Error('this case does not save')),
+      sync: () => Promise.reject(new Error('this case does not save')),
+      rename: () => Promise.reject(new Error('this case does not save')),
+      copy: () => Promise.reject(new Error('this case does not save')),
+      remove: () => Promise.reject(new Error('this case does not save')),
+      exists: () => Promise.reject(new Error('this case does not save')),
+    },
+    names: (target) => ({ temp: `${target}.tmp`, backup: `${target}.bak` }),
+    wait: () => Promise.resolve(),
+  },
+  flush: () => Promise.reject(new Error('this case does not save')),
+};
+
 describe('the composition point owns DocumentService.run -> CommandBus.execute', () => {
   beforeAll(openDocument);
 
   it('applies the command and returns the version the LANE stamped', async () => {
-    const commands = new DocumentCommands(service, bus(), engine());
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving);
 
     // Opened at 1; one applied mutation makes it 2 (ADR-0009 §5).
     await expect(commands.execute(docId, rotateOnce)).resolves.toBe(2);
@@ -133,7 +161,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // before either applies and BOTH inverses record the pre-command state —
     // so undoing twice would leave the page at 90 rather than back where it
     // started, and the document would be in a state it was never in.
-    const commands = new DocumentCommands(service, bus(), engine());
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving);
 
     await Promise.all([commands.execute(docId, rotateOnce), commands.execute(docId, rotateOnce)]);
 
@@ -162,7 +190,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   });
 
   it('a session that cannot be found is a DEFECT, not an outcome', async () => {
-    const commands = new DocumentCommands(service, bus(), noSessions());
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving);
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(MissingSessionError);
   });
@@ -183,7 +211,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     poisoned.recordFailure([docId]);
     poisoned.recordFailure([docId]);
 
-    const commands = new DocumentCommands(service, bus(), poisoned);
+    const commands = new DocumentCommands(service, bus(), poisoned, noSaving);
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(DocumentPoisonedError);
   });
@@ -192,7 +220,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // Without this the case above is satisfied by an `execute` that refuses
     // everything, and by a supervisor whose `poisoned` answers a count for a
     // document it has never heard of.
-    const commands = new DocumentCommands(service, bus(), engine());
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving);
 
     await expect(commands.execute(docId, rotateOnce)).resolves.toBeGreaterThan(0);
   });
@@ -222,7 +250,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
   it('a document that is not open is a DECLARED code, carrying no incident id', async () => {
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const commands = new DocumentCommands(closed, bus(), engine());
+    const commands = new DocumentCommands(closed, bus(), engine(), noSaving);
     const result = await wrapped(commands)({ docId, command: rotateOnce });
 
     // The whole failure, asserted as a whole: a declared outcome hides nothing,
@@ -234,7 +262,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // Without this, the case above is satisfied by a handler that reports
     // `document-not-open` for everything.
     const { sink, seen } = recorder();
-    const commands = new DocumentCommands(service, bus(), noSessions());
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving);
     const result = await wrapped(commands, sink)({ docId, command: rotateOnce });
 
     expect(result.ok).toBe(false);
@@ -272,7 +300,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           thrown.stack = `Error: Could not read ${SECRET}\n    at sessionFor (${SECRET}:2:2)`;
           throw thrown;
         },
-      });
+      }, noSaving);
     }
 
     it('the renderer-facing failure carries the path in NO field', async () => {
@@ -313,7 +341,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // The hard shape an in-process test cannot see (audit item 2): the
     // transport clones, and a value carrying anything unclonable passes every
     // function call and dies at the first Electron call.
-    const commands = new DocumentCommands(service, bus(), engine());
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving);
     const params = { docId, command: rotateOnce };
     expect(structuredClone(params)).toStrictEqual(params);
 
@@ -321,7 +349,116 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     expect(structuredClone(success)).toStrictEqual(success);
 
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const declined = await wrapped(new DocumentCommands(closed, bus(), engine()))(params);
+    const declined = await wrapped(new DocumentCommands(closed, bus(), engine(), noSaving))(params);
     expect(structuredClone(declined)).toStrictEqual(declined);
+  });
+
+  describe('save, through the real service and the real filesystem', () => {
+    /** Names each case's own file. A counter rather than a clock: same run, same names. */
+    let savables = 0;
+
+    /**
+     * ITS OWN FILE AND ITS OWN SERVICE, deliberately.
+     *
+     * These cases WRITE, and the shared fixture is opened once in `beforeAll`
+     * and read by every other case in this file. A save over it would leave
+     * later cases running against bytes MuPDF produced rather than the bytes
+     * `pdfBytes` wrote — which would not fail, and that is the problem: a
+     * fixture quietly replaced mid-file is the kind of coupling that surfaces
+     * as an unrelated case going red weeks later.
+     */
+    async function aSavableDocument(): Promise<{
+      commands: DocumentCommands;
+      saved: DocId;
+      path: string;
+      before: Uint8Array;
+    }> {
+      savables += 1;
+      const path = join(directory, `save-${String(savables)}.pdf`);
+      const before = await pdfBytes();
+      writeFileSync(path, before);
+
+      const registry = new CapabilityRegistry();
+      const own = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+      const outcome = await own.open(registry.mint(path));
+      if (outcome.kind !== 'opened') throw new Error(`fixture did not open: ${outcome.kind}`);
+
+      const held = new EngineSessions();
+      held.hold(outcome.docId, { mupdf: session });
+
+      return {
+        path,
+        before,
+        saved: outcome.docId,
+        commands: new DocumentCommands(own, bus(), held, {
+          // THE REAL SURFACE AND THE REAL CHECK. Every other case in this file
+          // is about a decision; this one is the first caller, and a seam whose
+          // every test injects its surfaces is unproven against a filesystem
+          // that has opinions about renaming open files on Windows.
+          deps: {
+            checkWriteTarget: (id) => own.checkWriteTarget(id),
+            surface: nodeFileSurface,
+            names: siblingNames,
+            wait: () => Promise.resolve(),
+          },
+          flush: (_docId, sessions) => {
+            const held_ = sessions.mupdf;
+            if (held_ === undefined) throw new Error('the fixture holds a session');
+            return mupdfWriter.serialise(held_);
+          },
+        }),
+      };
+    }
+
+    it('writes the engine bytes to the document own file, and leaves a .bak', async () => {
+      const { commands, saved, path, before } = await aSavableDocument();
+
+      const outcome = await commands.save(saved);
+
+      expect(outcome.kind).toBe('saved');
+      if (outcome.kind !== 'saved') throw new Error('the save did not happen');
+      expect(outcome.backedUp).toBe(true);
+
+      // THE BYTES ON DISK ARE THE ENGINE'S, not the ones the fixture wrote.
+      // Asserting only that the file still exists would pass for a pipeline
+      // that wrote nothing at all — and for one that copied the original over
+      // itself, which is the failure a save silently produces when the flush
+      // is wired to the wrong thing.
+      const after = readFileSync(path);
+      expect(after.byteLength).toBe(outcome.bytes);
+      expect(Buffer.from(after).equals(Buffer.from(before))).toBe(false);
+      // It is still a PDF, which is what separates "MuPDF serialised" from
+      // "something wrote bytes".
+      expect(after.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+
+      // §4's `.bak`: the user's previous version, surviving a successful save.
+      const backup = readFileSync(siblingNames(path).backup);
+      expect(Buffer.from(backup).equals(Buffer.from(before))).toBe(true);
+    });
+
+    it('CONTROL: the check RUNS — a target that vanished refuses, and does not flush', async () => {
+      // The case that proves `checkWriteTarget` is wired in at all. Without it
+      // a pipeline that never called the check passes the case above, since a
+      // sole-writer verdict and no verdict lead to the same successful write.
+      //
+      // `target-absent` rather than `contested`, and the reason is a fact about
+      // the service worth recording: `DocumentService` DEDUPLICATES — one file
+      // is one document — so opening the same path twice returns the same
+      // `DocId` and cannot produce a contest. That needs two paths naming one
+      // file, which is a hard link, and it is `documentService.test.ts`'
+      // territory rather than this seam's.
+      const { commands, saved, path } = await aSavableDocument();
+      rmSync(path);
+
+      const outcome = await commands.save(saved);
+
+      expect(outcome.kind).toBe('refused');
+      if (outcome.kind !== 'refused') throw new Error('the save should have been refused');
+      expect(outcome.verdict.kind).toBe('target-absent');
+      // NOT RECREATED. A pipeline that treated `target-absent` as permission
+      // would leave a file here, and the user's document would have been
+      // silently re-established at a path something else had removed.
+      expect(existsSync(path)).toBe(false);
+    });
   });
 });

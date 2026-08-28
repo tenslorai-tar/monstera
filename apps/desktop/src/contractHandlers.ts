@@ -5,6 +5,7 @@ import {
   DocumentBusyError,
   DocumentNotOpenError,
   type DocumentService,
+  type WriteTargetVerdict,
 } from '@monstera/kernel';
 import { type DocId, err, ok } from '@monstera/shared';
 
@@ -113,7 +114,71 @@ export function createContractHandlers(deps: {
     'document.open': openDocumentHandler(deps),
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
+    'document.save': saveHandler(deps.commands),
   };
+}
+
+/**
+ * Save, and the whole of it is keeping three outcomes out of the failure
+ * channel.
+ *
+ * `refused` and `write-failed` are things that happened to a document that is
+ * still intact, still dirty, and whose command log is untouched. Invariant 18's
+ * sentence — *"never by a dialog whose only option discards their edits"* — is a
+ * statement about what the renderer must be able to say, and it can only say it
+ * if the two arrive as outcomes rather than as error codes beside
+ * `document-not-open`.
+ *
+ * ## The verdict is narrowed EXHAUSTIVELY, on purpose
+ *
+ * `sole-writer` cannot appear: the pipeline returns `refused` only for verdicts
+ * that are not it. That is unrepresentable on the wire — the enum has four
+ * members — so the impossible case is handled by the compiler refusing a switch
+ * that does not cover the four, rather than by a default branch that would
+ * silently absorb a fifth verdict the kernel grows later.
+ */
+function saveHandler(commands: DocumentCommands): ContractHandlers['document.save'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.save']>>> => {
+    try {
+      const outcome = await commands.save(docId);
+      if (outcome.kind === 'saved') return ok({ kind: 'saved', version: outcome.version } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', reason: refusalReason(outcome.verdict) } as const);
+    } catch (thrown) {
+      // MATCHED ON THE CLASS, exactly as undo and execute do. Everything else
+      // is rethrown and becomes `internal` with the diagnostic recorded
+      // main-side — including `MissingSessionError`, which is a supervisor
+      // inconsistency rather than something a user can act on.
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The verdict's kind, and nothing else it carries.
+ *
+ * Written as an exhaustive narrowing rather than `verdict.kind`, because the
+ * two types are not the same set: the kernel's has five members and the wire's
+ * has four. Passing the field through would compile today and would silently
+ * put a fifth kernel verdict on a wire that does not declare it — a schema
+ * failure at the boundary, in production, for a case nobody wrote.
+ */
+function refusalReason(
+  verdict: Exclude<WriteTargetVerdict, { kind: 'sole-writer' }>,
+): 'contested' | 'replaced' | 'target-absent' | 'unverifiable' {
+  switch (verdict.kind) {
+    case 'contested':
+      return 'contested';
+    case 'replaced':
+      return 'replaced';
+    case 'target-absent':
+      return 'target-absent';
+    case 'unverifiable':
+      return 'unverifiable';
+  }
 }
 
 /**

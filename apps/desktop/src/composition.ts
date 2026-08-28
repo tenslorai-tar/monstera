@@ -17,7 +17,9 @@ import {
   classifyContainment,
   createRemoteSessions,
   engineChannels,
+  nodeFileSurface,
   remoteMupdfWriter,
+  siblingNames,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
@@ -26,7 +28,11 @@ import {
   MAIN_DOCUMENT_BYTES_CEILING,
 } from './budget.js';
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
-import { DocumentCommands, type DocumentSessions } from './documentCommands.js';
+import {
+  DocumentCommands,
+  type DocumentSessions,
+  MissingSessionError,
+} from './documentCommands.js';
 import {
   type EngineHostConnection,
   type EngineHostConnectionSurfaces,
@@ -214,7 +220,39 @@ export function createShellDependencies(
   // (B3a). It is no longer empty by construction — {@link onDocumentOpened}
   // below puts an entry in it for every document that opens, sessioned where a
   // host can be built and poisoned where one cannot.
-  const commands = new DocumentCommands(documents, bus, engine);
+  // THE FLUSH IS COMPOSED HERE, and here is the only place it can be. The
+  // registered writer and the session are both in scope on this line and
+  // nowhere else — `engineHost.writers` was just built and `engine` holds the
+  // sessions — so this is where §4's "flush each writer of record once" is a
+  // determinate instruction rather than a routing decision. `documentCommands`
+  // therefore names no writer of record, which is what keeps the one routing
+  // table in `commandDeclarations` (B3a).
+  //
+  // `mupdf` is named because it is the one adapter that exists, and it is
+  // reached through the registry rather than around it: an unregistered writer
+  // is refused by name here exactly as `CommandBus` refuses one.
+  const commands = new DocumentCommands(documents, bus, engine, {
+    deps: {
+      checkWriteTarget: (docId) => documents.checkWriteTarget(docId),
+      surface: nodeFileSurface,
+      names: siblingNames,
+      wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    },
+    flush: (docId, sessions) => {
+      const writer = engineHost.writers.mupdf;
+      const session = sessions.mupdf;
+      // A DEFECT, not an outcome, and the same one `MissingSessionError` names
+      // for a command: the holder of sessions and the open-document index have
+      // diverged, or a document is being saved through a writer that was never
+      // registered. Reported as a class so the boundary turns it into
+      // `internal` with the diagnostic kept main-side, rather than telling a
+      // user their save was refused for a reason they can act on.
+      if (writer === undefined || session === undefined) {
+        throw new MissingSessionError(docId, 'mupdf');
+      }
+      return writer.serialise(session);
+    },
+  });
 
   const openedDocument = engineHost.openedDocument;
 

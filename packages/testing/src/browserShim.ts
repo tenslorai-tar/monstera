@@ -106,6 +106,20 @@ export interface BrowserShimOptions {
    */
   readonly busy?: ReadonlySet<string>;
   /**
+   * Documents whose save answers something other than `saved`, by id.
+   *
+   * Same reasoning as {@link BrowserShimOptions.busy} and the same shape: the
+   * shim has no filesystem and no open-document index, so modelling a contested
+   * target or a held rename would be inventing both. A test says which answer it
+   * wants, and the renderer's handling of it becomes assertable — which is the
+   * point, since a save UI that only ever meets success is one where the two
+   * outcomes invariant 18 exists for have never been rendered.
+   */
+  readonly saveRefusals?: ReadonlyMap<
+    string,
+    'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed'
+  >;
+  /**
    * Documents whose next command throws.
    *
    * Exists so the `internal` path is reachable. A failure shape nothing can
@@ -227,6 +241,38 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const next = current + 1;
       versions.set(docId, next);
       return Promise.resolve(ok({ kind: 'undone' as const, version: asDocVersion(next) }));
+    },
+    /**
+     * Save, and the shim's job here is to make the two non-success outcomes
+     * REACHABLE.
+     *
+     * A shim that only ever answered `saved` would let a UI test assert a save
+     * control and pass while the renderer had no path for a refusal or a failed
+     * write — and those are the two invariant 18 says the user must be told
+     * about rather than shown a dialog that discards their work. So both are
+     * driven by the caller, the same way `busy` already drives one.
+     *
+     * **The version does NOT move.** §4 bumps for every applied mutation; a
+     * save applies none — it records that the file now holds the version the
+     * document is already at. A shim that incremented would teach a test that
+     * saving dirties the document it just cleaned.
+     */
+    'document.save': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const refusal = options.saveRefusals?.get(docId);
+      if (refusal !== undefined) {
+        return Promise.resolve(
+          refusal === 'write-failed'
+            ? ok({ kind: 'write-failed' as const })
+            : ok({ kind: 'refused' as const, reason: refusal }),
+        );
+      }
+
+      return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(current) }));
     },
   };
 

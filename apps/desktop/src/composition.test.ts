@@ -74,6 +74,34 @@ describe('the composition root, with no engine host platform', () => {
     expect(executed.error.code).toBe('document-poisoned');
   });
 
+  it('SAVE IS REACHABLE, and refuses through the same guard as a command', async () => {
+    // KKKK-3's shape is why this exists rather than a unit test alone: a
+    // channel can be registered while nothing runs the path behind it, and
+    // every kernel-level case still passes. This drives the real handler map,
+    // so it fails if `document.save` is declared and unwired — and it asserts
+    // the DECLARED code, because `internal` is what an unwired or half-wired
+    // path produces and it reaches the renderer as an inconsistency.
+    const { handlers } = createShellDependencies(appInfo, () =>
+      Promise.resolve(aDocument('unsaveable.pdf')),
+    );
+
+    const opened = await handlers['document.open']({});
+    expect(opened.ok).toBe(true);
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const saved = await handlers['document.save']({ docId: opened.value.docId });
+
+    // A DECLARED code, not the order. This case was written asserting that
+    // poison is read before the session and does not prove it: mutating the
+    // order left it green, because against the real supervisor a document with
+    // no entry has no failure count either, so the two guards cannot both be
+    // reachable. What it does prove is that the path runs and answers something
+    // the renderer can act on — see `save`'s comment for why the order is kept.
+    expect(saved.ok).toBe(false);
+    if (saved.ok) throw new Error('the save should not have succeeded');
+    expect(saved.error.code).toBe('document-poisoned');
+  });
+
   it('CONTROL: a document that never opened is refused by a DIFFERENT declared code', async () => {
     // Without this, the case above passes for any refusal at all — and
     // `document-not-open` is the refusal that was already there before a

@@ -110,8 +110,19 @@ export type SaveOutcome =
       /** Whether a `.bak` was left holding the user's previous version. */
       readonly backedUp: boolean;
     }
-  /** The write-target check refused. The document is untouched and still dirty. */
-  | { readonly kind: 'refused'; readonly verdict: WriteTargetVerdict }
+  /**
+   * The write-target check refused. The document is untouched and still dirty.
+   *
+   * **`sole-writer` is excluded from the type, not merely absent in practice.**
+   * It is the verdict that PERMITS the write, so a refusal carrying it is a
+   * contradiction — and a caller narrowing on the four real refusals should be
+   * able to be exhaustive without a branch for a state that cannot occur. B5:
+   * the impossible one is unrepresentable rather than handled.
+   */
+  | {
+      readonly kind: 'refused';
+      readonly verdict: Exclude<WriteTargetVerdict, { kind: 'sole-writer' }>;
+    }
   /** The filesystem refused. The original is intact and the document still dirty. */
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
 

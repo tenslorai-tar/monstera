@@ -141,6 +141,7 @@ export {
   RENAME_BACKOFF_MS,
   atomicWrite,
 } from './atomicWrite.js';
+export { nodeFileSurface, siblingNames } from './fileSurface.js';
 export {
   type SaveDependencies,
   type SaveFileNames,

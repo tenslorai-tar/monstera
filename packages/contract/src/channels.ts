@@ -199,6 +199,51 @@ export const channels = {
       'checkpoint-restore-not-built',
     ],
   ),
+  /**
+   * Save, and every part of its shape is invariant 18 or ADR-0009 §9.
+   *
+   * ## The request carries a `DocId` and nothing else
+   *
+   * Same reason as {@link 'document.undo'} and `document.open`: the destination
+   * is the file the document was opened from, which main already holds as a
+   * `FileHandle`. A renderer-supplied path would be a path in a renderer-facing
+   * type, which is a compile error here by design — and *Save As* is a
+   * different question with its own check, not a parameter on this one.
+   *
+   * ## THREE RESULTS RATHER THAN ONE SUCCESS AND TWO FAILURE CODES
+   *
+   * `refused` and `write-failed` are **outcomes**, not defects, and the
+   * distinction is the whole of invariant 18: *"never by a dialog whose only
+   * option discards their edits"*. In both, the document is intact, still
+   * dirty, and its command log is untouched — so the renderer's response is to
+   * say what happened and leave the work alone. A failure code would put them
+   * in the same bucket as an inconsistency the user cannot act on.
+   *
+   * ## `reason` is the verdict's kind and NOT its contents
+   *
+   * `WriteTargetVerdict` carries more than this — `contested` names the other
+   * open documents, `unverifiable` names which of three reads was missing. None
+   * of it crosses, because nothing consumes it: a field shipped with no reader
+   * is a declared state nobody can produce a use for, which is the shape that
+   * accumulates. It widens when a renderer has something to do with it.
+   *
+   * `sole-writer` is absent from the enum on purpose — it is the verdict that
+   * PERMITS the write, so it cannot be a refusal reason. That is a state made
+   * unrepresentable rather than a case nobody writes.
+   */
+  'document.save': channel(
+    'Writes an open document’s current content to the file it was opened from.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('saved'), version: docVersionSchema }),
+      z.object({
+        kind: z.literal('refused'),
+        reason: z.enum(['contested', 'replaced', 'target-absent', 'unverifiable']),
+      }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
 } as const;
 
 export type Channels = typeof channels;

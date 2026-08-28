@@ -4,11 +4,15 @@ import type { CommandKind, CommandOfKind } from '@monstera/contract';
 // which invariant 20 forbids by name and §9.17's budget is argued against
 // (ADR-0026). The kernel's barrel is now free of that edge too.
 import {
+  type ByteImage,
   type CommandBus,
   type DeclaredCommands,
   type DocumentService,
+  type SaveDependencies,
+  type SaveOutcome,
   type SessionsByWriter,
   declaredCommands,
+  saveDocument,
 } from '@monstera/kernel';
 import type { DocId, DocVersion } from '@monstera/shared';
 
@@ -146,6 +150,39 @@ export interface EngineSessionSource {
   readonly poisoned: (docId: DocId) => number | undefined;
 }
 
+/**
+ * What a save needs that the engine session source does not provide.
+ *
+ * ## Why `flush` is here and NOT on {@link EngineSessionSource}
+ *
+ * It was there first, and the composition order refused it: `EngineSessions` is
+ * built **before** the engine host exists, and the host is what yields the
+ * registered writer — so the supervisor cannot be handed a flush at
+ * construction without a cycle, and holding one it could be given later would
+ * make its answers mutable after the fact. That class's `implements` clause is
+ * what keeps its two answers honest, and widening the interface it satisfies to
+ * something it cannot satisfy would have cost exactly that.
+ *
+ * So the flush travels with the save's other dependencies, composed at the root
+ * where the writer and the session are both in scope — which is the only place
+ * they are known to be correlated. This module therefore names no writer of
+ * record and holds no second routing table (B3a), which matters because a save
+ * has no command to route from and so cannot ask `CommandBus` the way undo
+ * does.
+ *
+ * §4's *"flush each writer of record once"* is unambiguous at one adapter and
+ * one session per document. The day a second writer holds a session for one
+ * document, two live-session writers each return the WHOLE document from
+ * `serialise` and nothing in the law says which bytes win. That is a B4
+ * question, answered where this is composed rather than by picking one here.
+ */
+export interface SaveSource {
+  /** The write-target check and the filesystem the atomic ordering runs on. */
+  readonly deps: SaveDependencies;
+  /** A document's current bytes. */
+  readonly flush: DocumentFlush;
+}
+
 /** An open document had no session for the writer its command routes to. */
 export class MissingSessionError extends Error {
   override readonly name = 'MissingSessionError';
@@ -212,15 +249,37 @@ type SingleCommandKindToday = [CommandKind] extends ['rotatePages'] ? true : nev
 const singleCommandKind: SingleCommandKindToday = true;
 void singleCommandKind;
 
+/**
+ * How a document's current bytes are obtained for a save.
+ *
+ * **Composed where the writer and the session were created together**, which is
+ * the only place they are known to be correlated — so this module names no
+ * writer of record and holds no second routing table (B3a). `CommandBus` owns
+ * the registry; a save has no command to route from, so it cannot ask the bus
+ * the way undo does, and the honest answer is to be handed the flush rather
+ * than to re-derive it.
+ */
+export type DocumentFlush = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<ByteImage>;
+
 export class DocumentCommands {
   readonly #documents: DocumentService;
   readonly #bus: CommandBus;
   readonly #engine: EngineSessionSource;
+  readonly #save: SaveSource;
 
-  constructor(documents: DocumentService, bus: CommandBus, engine: EngineSessionSource) {
+  constructor(
+    documents: DocumentService,
+    bus: CommandBus,
+    engine: EngineSessionSource,
+    save: SaveSource,
+  ) {
     this.#documents = documents;
     this.#bus = bus;
     this.#engine = engine;
+    this.#save = save;
   }
 
   /**
@@ -328,5 +387,72 @@ export class DocumentCommands {
     // the renderer would show a document as changed because the user pressed a
     // key that was already exhausted.
     return stepped.yes ? version : undefined;
+  }
+
+  /**
+   * §4's save pipeline, inside the document's lane.
+   *
+   * ## Every guard is `execute`'s, in the same order — and here the ORDER is
+   * consistency rather than a mechanism, which is worth saying precisely
+   *
+   * Poison, then session, then the lane's work. A save calls into the contained
+   * host — `serialise` is an engine call — so a document that cannot be
+   * executed against cannot be saved either, and the three paths agreeing is
+   * what stops one acquiring an exemption the others do not have.
+   *
+   * But the order carries weight in `execute` that it does not carry here, and
+   * the difference was found by mutating it and watching nothing go red.
+   * `execute` reads `sessions?.[spec.writer]`, so a poisoned document — whose
+   * entry holds an empty session set from `begin` — misses on the writer and
+   * would report {@link MissingSessionError} if poison were read second. This
+   * reads `sessions === undefined`, which is true only for a document with no
+   * entry at all; against the real supervisor a document with no entry is also
+   * a document with no failure count, so the two guards are **mutually
+   * exclusive** and neither order can be observed.
+   *
+   * It is kept in `execute`'s order anyway, and that is not superstition: the
+   * day this check becomes per-writer — which is what a second registered
+   * adapter forces — the order starts mattering, and nobody revisits an
+   * ordering that has never been wrong.
+   *
+   * ## THE WHOLE SAVE IS ONE LANE ENTRY, and that is not an optimisation
+   *
+   * The flush and the stamp must not be split across two entries. `markSaved`
+   * records *the current version*, so a command landing between them would mark
+   * the document clean at a version whose bytes were never written — the user
+   * closes it, nothing prompts, and the work is gone. One entry makes that
+   * unrepresentable rather than unlikely.
+   *
+   * ## Which writer is flushed
+   *
+   * The session set holds one entry today and the flush is composed here, where
+   * the writer and the session are known to be correlated. §4's *"flush each
+   * writer of record once"* is unambiguous at one adapter; the day a second
+   * writer holds a session for one document, two live-session writers each
+   * return the whole document from `serialise` and nothing in the law says
+   * which bytes win. That is a B4 question, and it is not answered by picking
+   * one here.
+   *
+   * @returns what the save did — `saved`, `refused` or `write-failed`. None of
+   *   the three is an error: in all of them the document is intact and its log
+   *   untouched, which is invariant 18.
+   * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link
+   *   DocumentPoisonedError}, {@link MissingSessionError}, and anything the
+   *   engine throws.
+   */
+  async save(docId: DocId): Promise<SaveOutcome> {
+    const { value } = await this.#documents.run(docId, async (context) => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await saveDocument(this.#save.deps, context, () =>
+        this.#save.flush(docId, sessions),
+      );
+    });
+
+    return value;
   }
 }
