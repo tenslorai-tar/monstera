@@ -765,3 +765,43 @@ rounded.
 Until both land, **the §9.17 amendment waits.** Writing a number derived from
 readings whose conditions are in dispute is this document's own recurring error,
 and it has now been made three times.
+
+---
+
+## Correction, 2026-08-28 — `perf:gate` was never registered in CI, so two claims above rest on a step that does not exist (finding FFFF-1)
+
+The 2026-08-27 note is right that a green board withholds the runner's clean
+baseline, and its reasoning is **one step short of the actual situation**. It
+concludes that the closing condition *"can be met by exactly one thing today:
+`perf:gate` failing on the runner"*. It cannot be met by that either.
+
+**`perf:gate` appears zero times in `ci.yml` and zero times in `guards.yml`.**
+Verified against the committed tree at `af73baa`:
+
+```
+git show af73baa:.github/workflows/ci.yml     | grep -c budgetGate.mjs   → 0
+git show af73baa:.github/workflows/guards.yml | grep -c budgetGate.mjs   → 0
+```
+
+So the gate could not fail on the runner, because it was not on the runner. The
+note analysed the *visibility* of a step's output and the step was absent — the
+same class as `proof:perfbudget` proving the gate's machinery works while
+nothing ever pointed it at this repository.
+
+**Two consequences for this document, and the first is a withdrawal.**
+
+1. **The bound is void.** `docs/JOURNAL.md` recorded, on the day this ADR's
+   ceiling was argued, that *"the green board was itself read as an instrument:
+   `perf:gate` passes when `baseline <= budget`, so `e94e6c5` going green bounds
+   the runner's clean baseline at ≤ 80 MB."* A green board bounds nothing about
+   a check it never ran. Any reasoning in this ADR that treated the runner's
+   clean baseline as bounded above by 80 MB is withdrawn; the figure remains
+   **unmeasured**, exactly as the section at line 167 says.
+2. **The open item is unblocked, not closed.** `perf:gate` is registered as of
+   `441ba50`. From that commit the note's analysis becomes true for the first
+   time — a passing run still prints nothing, because `annotate.mjs` emits only
+   on failure — so the closing condition is unchanged in form and now actually
+   reachable. What changed is that the step exists.
+
+**Neither of the two things owed above is affected**, and this correction does
+not licence writing the amendment. It removes a bound that was never evidence.

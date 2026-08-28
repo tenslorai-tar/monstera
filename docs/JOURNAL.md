@@ -935,6 +935,35 @@ answer that leaned on `perf:gate` or one of the three security checks was wrong.
 This is a claim falsified by a fact nobody changed, so no range-scoped sweep will
 ever reach it — it needs a one-off grep, which is the commit after this one.
 
+> **Result, 2026-08-28 — one genuine reliance out of 3283 paragraphs, and the
+> sweep's first scope was wrong.**
+>
+> `scripts/audit/unrunCheckReliance.mjs` was written to answer this and is kept
+> as the record of how. **Its first version looked only inside `### 3. Would CI
+> have caught it?` sections and reported `0 of 33`** — which is the reassuring
+> answer, produced by a scope that was too narrow rather than by a clean
+> history. Item 3 was the *example* in the instruction, and I read it as the
+> boundary.
+>
+> Widened to every paragraph naming one of the four **and** inferring from CI
+> (`green`, `board`, `CI`, `runner`, `workflow`, `push`): 3283 paragraphs, 19
+> naming one of the four, **6 inferring on that basis.** Three of the six are
+> this entry itself, two are honest records of *local* `perf:gate` runs — which
+> were always legitimate and remain so — and **one is a defect**:
+>
+> `docs/JOURNAL.md:3754` read a green board as bounding the runner's clean
+> baseline at ≤ 80 MB through `perf:gate`. Corrected in place, and the matching
+> correction is appended to
+> [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md),
+> whose 2026-08-27 note reasoned that only a **failing** `perf:gate` could print
+> that figure. That note was one step short: the gate could not fail on the
+> runner because it was not on the runner.
+>
+> **The sweep is deliberately not a standing check.** From `441ba50` the four
+> are registered, so an item-3 answer naming them is correct from here on. A
+> check that kept asking this would report the same historical lines forever —
+> a permanent red nobody can close, which is how a check gets deleted.
+
 ---
 
 ## 2026-08-28 — Stage audit: `c8fa4d0..2091b91` — the fence around the DOM has a hole the shape of its own roots, and a document went stale a range ago
@@ -3755,6 +3784,18 @@ this range's last changed set.
 `perf:gate` passes when `baseline <= budget`, so `e94e6c5` going green bounds the
 runner's clean baseline at ≤ 80 MB. A bound, not a figure — but it closes the
 direction that mattered, and it was evidence already in hand.
+
+> **Correction, 2026-08-28 — the bound is void, and the reason is FFFF-1.**
+> `perf:gate` appeared **zero** times in `ci.yml` and zero times in
+> `guards.yml`; verified against the committed tree at `af73baa`. `e94e6c5`
+> going green therefore bounds nothing about it, and the runner's clean baseline
+> remains unmeasured. The paragraph is kept because *"the green board was read
+> as an instrument"* is exactly the move that failed: **a green board is
+> evidence about the checks that ran on it, and nothing whatever about the
+> checks that did not** — and the difference is invisible from a board, which
+> reports a colour rather than a roster. Registered as of `441ba50`; the same
+> inference becomes available once a run has actually executed it.
+> `docs/DECISIONS/0025-…` carries the matching correction.
 
 ### 4c. Rosters
 
