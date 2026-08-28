@@ -644,6 +644,285 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `36a988b..c8fa4d0` — two red boards, one family: half of a two-part check, read as covering both
+
+**Audited through `c8fa4d0`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 36a988b..HEAD
+  commits: 9 (one batch is 9)
+  files:   23 (one batch is 24)
+  proofs ADDED — new coverage: none
+  proofs MODIFIED (5):  engineHostConnection.test.ts  net +124 -28
+                        engineReaderChannel.test.ts   net  +55 -0
+                        hostWriteQueue.test.ts        net  +32 -0
+                        electronImports.proof.mjs     net  +17 -0
+                        peakRss.proof.mjs             net  +93 -2 (1 deletion hidden)
+  proofs REMOVED: none
+  source FILES ADDED: none
+  source FILES CHANGED (9):  engineHostConnection.ts   net +146 -5
+                             engineReaderChannel.ts    net  +51 -1
+                             hostWriteQueue.ts         net  +84 -8
+                             readerProtocol.ts         net  +31 -1
+                             readerWorker.ts           net  +12 -0
+                             checkLocal.mjs            net  +15 -5
+                             documentConsistency.mjs   net  +83 -6
+                             peakRss.mjs               net  +37 -0
+                             roleMupdfHost.mjs         net +624 -117
+  source FILES REMOVED: none
+```
+
+The range is YYYY-1 in three parts, the `mupdf-host` role driving the real host,
+YYYY-2, XXXX-2, ADR-0005's library set, and ZZZZ-1.
+
+**Nothing was added and nothing removed — every proof in the range is a
+MODIFIED one**, which the report calls its load-bearing column, and all five
+diffs were read.
+
+### The two reds, and why they are one finding
+
+`a269621` failed CI on ubuntu; `3e25b74` failed CI on the shim job. Different
+checks, different platforms, same shape: **I ran one half of a two-part
+verification and read its green as covering both halves.**
+
+| | I ran | the half I did not | what it cost |
+|---|---|---|---|
+| YYYY-2 | the two new `reportPeakOf` cases, on Windows | what they do where `peakWorkingSetOf` throws | red on ubuntu |
+| ZZZZ-1 | `proof:licences` — *can* a notice be generated | `notice:check` — does the COMMITTED notice match the tree | red on the shim job |
+
+Neither needed new information. `peakWorkingSetOf`'s Windows-only rule is in its
+own header, which I had read that hour; `notice:check` is a script in the same
+`package.json` I derive the sweep from. **Both were answerable before the push
+from material already in front of me**, which is what makes them one finding
+rather than two coincidences.
+
+### ZZZZ-1 — the pre-push sweep cannot see `notice:check`, and the reason is its name
+
+`checkLocal.mjs` derives its set from `package.json` by NAME: every script
+starting `check:` or `proof:`. `notice:check` starts with `notice:`. It is a
+real verification step — pass/fail, wired into CI, runnable locally, and the one
+that reddened `3e25b74` — and the sweep is blind to it because of what it is
+called. So are `brand:check`, `guard:staged`, `guard:tree`, `perf:gate`,
+`electron:surface`, `shim:reach` and `ocr:doors`.
+
+`checkLocal.mjs` documents two limits already, and this is a **third of a
+different kind**: those two are about *reach* — a provisioning-keyed branch, a
+CI-only proof — and this one is about the **classifier**. The classifier is a
+naming convention, which is the shape this repository has already named once:
+*a file-naming convention is not a check* (W-1), there about which FILES count
+as proofs, here about which SCRIPTS count as checks.
+
+**Its failure is silent in the way that matters.** A script outside the pattern
+produces no error, no warning and no absence anyone can see; the sweep reports a
+smaller number and calls it 29 of 29. That is item 4b's reassuring answer
+arriving in a *roster* rather than in a search.
+
+**The remedy is a decision and is recorded rather than taken.** Renaming into
+the pattern makes the name the classifier, so an unswept check cannot exist
+without being visibly misnamed (B5), at the cost of a sweep of every workflow
+reference. A roster beside the derivation is the other shape, and 4c says its
+danger runs toward shrinkage, so it would need an anchor. Both are larger than
+the board fix they were found by, and neither belonged in the commit that
+unreddened `main`.
+
+### 1. Root cause or workaround?
+
+Nine commits. **One repair is a genuine loosening and is named rather than
+absorbed**, and two more have the shape of something banned.
+
+- **`WriteRefusal` gained a non-terminal member.** `hostWriteQueue.ts`'s header
+  said *"every refusal is terminal, and that is the shape rather than a
+  policy"*. That is now false and the paragraph was corrected in the same
+  commit. What makes it a root-cause fix rather than a special case is that the
+  header's own argument — a frame the peer never sees desynchronises the stream
+  — **needs a stream**, and `ERROR_PIPE_LISTENING` says there is not one yet:
+  the instance is in its listening state, nothing has been written, no offsets
+  exist to be wrong. Nor can it arrive mid-stream, since an instance returns to
+  listening only through `DisconnectNamedPipe`, which nothing calls.
+- **The factory's signature changed from `Result` to `Promise<Result>`.** Not a
+  B4, and checked rather than assumed: ADR-0023's three *synchronous* mentions
+  are about cloning reader bytes and about `work` over a live handle, and
+  `engineSessions.ts:381`'s is about `onEnded`, which is unchanged. Nothing
+  required the factory to be synchronous.
+- **`documentConsistency.mjs`'s pattern was widened**, which is a loosening in
+  form and a strengthening in fact: it now matches four correction heading forms
+  where it matched one, and nine ADRs that were reported clean are now reported
+  correctly.
+
+**Nothing in this range could regenerate.** The closest candidate is `NOTICE`,
+which is generated rather than hand-maintained, and its check is what caught the
+staleness — the mechanism worked; what failed was that I did not run it.
+
+### 2. Verified against the easy shape only?
+
+**Yes, twice, and both are the range's two reds.** YYYY-2 is the platform axis
+(Windows measured, Linux not) and ZZZZ-1 is the two-part-check axis. Recorded
+above rather than repeated here.
+
+A third that did **not** fail, because it was taken to the hard shape
+deliberately: `roleMupdfHost --host` was run against a real contained host on
+this machine and then **registered in CI**, because the pipe, the reader thread,
+the `connected` message and the factory's wait had unit tests over injected
+surfaces and had never run against a real process off one developer machine.
+That is the gap YYYY-1 itself came out of.
+
+**A shape still untested, stated:** every contained-host reading remains from a
+checkout under a user profile. A checkout on a second volume, or under a
+directory whose inherited ACL differs, is a configuration the grant set has
+never met.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and one of the two is a reduction that had to be compensated in CI.**
+
+`reportPeakOf`'s two cases are now gated to `win32`. On its own that is a
+reduction to zero in CI, because `proof:peakrss` ran on the ubuntu job **and
+nowhere else** — the cases would have run on my machine and no other. That is
+ZZ-1's shape exactly: a branch keyed on the platform, where the side that never
+executes is a specification nobody reads. The proof is now registered on the
+Windows job as well, so the two runs cover disjoint halves and each names the
+half it skipped.
+
+The strengthening: `engineHostConnection.test.ts` gained three cases the file
+could not previously express, and its harness now models the peer arriving at
+`resume` — which is where reality puts it, since a suspended process has not run
+a line and cannot have opened a pipe.
+
+### 3. Would CI have caught it?
+
+**It did, twice, which is the honest answer and not a good one.** Both defects
+were caught by CI rather than before it, and both were answerable locally.
+
+Computed rather than assumed for the rest: `proof:checklocal` and
+`proof:affectedproofs` are unconditional steps on Guards, `proof:containergrants`
+and now `proof:peakrss` and `roleMupdfHost --no-document` on the Windows CI job,
+`proof:peakrss` also on ubuntu.
+
+**And the other direction — a defect this machine cannot see:** the whole
+containment path. `containedStart.mjs`, `containerGrants.proof.mjs` and
+`roleMupdfHost --host` need `icacls`, a provisioned runtime and a built shim, so
+the Linux job cannot run any of them. A grant-set or connection regression is
+visible on exactly one of the two boards, which is why the connection acceptance
+test was registered on the Windows job rather than left local.
+
+### 4. Non-vacuous proofs
+
+**Six mutations, each reddening only its own cases.**
+
+| mutation | result |
+|---|---|
+| delete the `ERROR_PIPE_LISTENING` branch | the 536 case reddens; the 232 case stays green |
+| treat every errno as non-terminal | the 232 case reddens; the 536 case stays green |
+| hand out a client without waiting for the peer | the `connect` case and the fast-fail case redden |
+| remove `onConnected`'s latch | the pre-registration case hangs, then times out |
+| accept `connected` after an ending | the dead-peer case reddens |
+| `reportPeakOf` returns 1 instead of refusing | the refusal case reddens; its control stays green |
+
+Two are worth naming as *pairs* rather than as mutations: the errno branch is a
+**classifier**, so one direction proves nothing — a build that treated every
+refusal as non-terminal passes the first mutation and fails the second. And the
+existing 232 case gained the assertion it never had, that the queue is actually
+**shut**; without it that case would have survived the very mutation it exists
+to catch.
+
+**The load-bearing case in the whole range is not a mutation but an assertion:**
+the `connect` failure case asserts `onEnded` was **not** called. The stage alone
+would pass for a build that reported the failure twice — as a refusal and as a
+death — and reporting it twice is precisely the defect, since `engineSessions`
+counts a death and two deaths poison the document.
+
+### 4a. Instrument resolution tests
+
+`hostFixedCost.mjs` passed its own before reporting — bare 37.8 MB against a
+deliberately +8 MB cell at 45.9 MB, recovered 8.1 MB — and its figures priced
+ADR-0028's rejected alternative.
+
+No instrument was added. `roleMupdfHost.mjs` changed heavily (+624/−117) and its
+two host cells are **paired by construction**: `--no-document` and `--host` run
+the same harness so their difference is the document, which is the only way
+§9.17's above-baseline subtraction is meaningful. Readings 86.0/86.1/86.0 against
+88.1/87.7/87.7.
+
+### 4b. Searches with positive controls
+
+`documentConsistency.mjs`'s correction rule **gained one**, and it is the range's
+best example of why: *no ADR is corrected* is that rule's passing answer and it
+had been the wrong answer for weeks. Anchored on ADR-0023, which carries
+twenty-two body-level corrections in the form the old pattern could not see.
+
+**The control does more than detect blindness — it redirects the diagnosis.**
+Mutated by restoring the old pattern, it produces ten problems and the control's
+is *first*; without it the other nine read as *these rows are wrong* and send a
+reader to the index, which is the opposite of where the defect is.
+
+`check:emittedtemplates` and `sweep:prose` both located their controls on every
+run in this range.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**ZZZZ-1 is this item**, and it is the first instance in this repository where
+the derived thing is a set of *scripts to run* rather than a set of files to
+scan. `checkLocal.mjs` derives from `package.json` by name prefix; the failure
+to fear makes that set **smaller**, and there is no anchor — nothing
+independently claims how many verification scripts exist, so seven can sit
+outside the sweep with no number disagreeing.
+
+Compare the rosters that do have anchors: `SCANNING_PROOFS` against a literal
+`SCANNING_PROOF_COUNT` read by both its callers, and `grantSet`'s derived half
+against the host-entry and workspace-group cases.
+
+### 5. Executed, or asserted?
+
+**Executed:** six mutations · both platform paths of `peakRss.proof.mjs`, the
+Linux one by forcing the branch · the real contained host, connected and driven,
+ten times · `notice:generate` and `notice:check` · `npm ls @babel/core
+--omit=dev`, which showed exactly one path · the production-tree counts with and
+without Lingui, 118/43 and 19/1 · every version in ADR-0005's set queried from
+the registry · `proof:licences` with Lingui removed, 24 cases.
+
+**Asserted, and therefore not findings:** that `roleMupdfHost --no-document`
+behaves on a runner as it does here — it is registered and the board is green,
+but I cannot read the job log from this seat, so the figure it prints is
+unverified by me · that the Zag machines work, since nothing imports them yet ·
+that renaming the non-conforming scripts would not break a workflow reference I
+have not enumerated.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before.** ADR-0028 was written and the wiring was not. The factory's signature
+change is inside an existing seam and its premise was checked against ADR-0023
+rather than assumed.
+
+**The near-miss is YYYY-1 itself, and it is worth keeping.** The design that
+would have shipped — a client handed out before its peer exists — was not caught
+by any test, because every unit test injects surfaces and the race is between a
+real process and a real pipe. It was caught by **writing the first caller**, and
+the first caller only existed because the role was made to drive the real host.
+An instrument found an architecture defect that the architecture's own tests
+could not.
+
+### 7. Do the documents still match the code?
+
+`hostWriteQueue.ts`'s header was corrected in the commit that falsified it,
+which is XXXX-1's lesson applied in advance rather than found by the next audit.
+`checkLocal.mjs`'s stale refusal paragraph and ADR-0028's *"the next commit"*
+claim were both corrected in `e4f1499`.
+
+**NNN-4's cross-document sweep fires on this range and was run.** ADR-0005's
+library set is a cross-document relationship — the ADR states versions, the
+manifests state versions — and they now disagree in one place: the ADR records
+the Zag machines at **1.43.0** and the tree carries **1.43.3**. Recorded in the
+installing commit rather than edited into the ADR, because an ADR is a record of
+what was decided and researched at the time; the manifest is the live statement.
+
+**What this range did NOT sweep, stated:** ADR-0005's supply-chain argument
+against Ark UI — *66 packages* — is now falsified by its own chosen i18n
+library, which contributes 75. That is recorded in `3e25b74`'s message and is
+owed a correction on ADR-0005 once the owner rules on Lingui. It is named here
+so the debt is visible rather than resting in a commit message.
+
+---
+
 ## 2026-08-28 — Stage audit: `acb2cbb..36a988b` — a header still describes the refusal its own file deleted, and nine corrected ADRs are indexed as uncorrected
 
 **Audited through `36a988b`.** Pasted from `npm run audit:scope`:
