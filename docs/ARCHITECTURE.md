@@ -202,8 +202,36 @@ media, navigation locked, popups denied.
 
 **Main owns the document.** The renderer holds an opaque branded `DocId` and a
 monotonic `DocVersion`. Per document, `DocumentService` owns: canonical bytes,
-lazily-created engine handles (invalidated together on any mutation), the
-command log and checkpoints, and the originating `FileHandle`.
+the command log and checkpoints, and the originating `FileHandle`. **The engine
+session is owned by the engine session supervisor**, whose per-document entry
+has the same lifetime as the record — `DocumentService` is the only component
+that knows a record ended, and it hands the supervisor that fact through
+`DocumentTeardown` rather than the supervisor watching for it.
+
+> **AMENDED 2026-08-28, and the amendment is LATE.** This sentence read
+> *"canonical bytes, **lazily-created engine handles** (invalidated together on
+> any mutation), the command log and checkpoints, and the originating
+> `FileHandle`"*, and the handles clause became false when
+> [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+> Decision 9 put the sessions on the supervisor — *"the supervisor holds a
+> single per-document entry … precisely so the count and the sessions cannot
+> acquire separate owners"*.
+>
+> **The move was forced and correct.** `DocumentService` is in `packages/kernel`
+> and cannot create a remote session: that needs Win32 and a pipe, which the
+> kernel may not name. What was missed is that Decision 9 **amended nothing**.
+> Its opening paragraph quotes this sentence and checks it — deliberately and
+> explicitly — for the **lifetime** clause only, concludes *"session lifetime
+> needs no amendment"*, and is right about lifetime. Ownership travelled with
+> the sessions and no document said so.
+>
+> Recorded as finding KKKK-5. The general shape is worth more than the instance:
+> **a four-clause sentence checked for one clause is three unchecked claims**,
+> and the check that was run is what makes the other three feel examined. Nothing
+> could have caught it — no range ever changed both this sentence and the code
+> that refuted it, so no range-scoped sweep could reach it, and the citation
+> pointed at a document that says the opposite, which resolves and therefore
+> passes every link check (UU-1).
 
 **Engine handles are disposable, and their lifetime is not the document's.**
 MuPDF reclaims a page's object graph only when the document is closed, and
@@ -1352,6 +1380,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-08-28 | **The engine session's owner is the supervisor, not `DocumentService`** (§2). The move itself happened at [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9, which put the sessions and the failure count on one per-document entry *"precisely so the count and the sessions cannot acquire separate owners"*. It was forced and correct — `DocumentService` is in `packages/kernel` and cannot create a remote session, which needs Win32 and a pipe the kernel may not name. **This amendment is LATE, and that is the finding (KKKK-5)**: Decision 9's opening quotes §2's sentence and checks it, deliberately and explicitly, for the **lifetime** clause only — *"session lifetime needs no amendment"* — and is right about lifetime, while ownership travelled with the sessions and no document said so. A four-clause sentence checked for one clause is three unchecked claims, and the check that was run is what makes the other three feel examined. No range-scoped sweep could have reached it: no commit ever changed both the sentence and the code that refuted it, and the citation resolves to a document that says the opposite, so every link check passes over it (UU-1). `DocumentTeardown` is what keeps the entry's lifetime the record's, since `DocumentService` remains the only component that knows a record ended. | §2's per-document ownership list, which read *"canonical bytes, **lazily-created engine handles** (invalidated together on any mutation), the command log and checkpoints, and the originating `FileHandle`"* | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9, where the move happened |
 | 2026-08-28 | **`main` legitimately holds the process-creation binding, and §9.17's argument for its baseline is amended to say so** (§9.17). ADR-0022 makes `main` the process that creates a contained engine host — `CreateProcessW` suspended, a job object, an AppContainer token — and that requires an FFI binding in `main`, which the same sentence that derives `main`'s budget assigned to `mupdf-host` by name. The budget is not a limit with a rationale attached; the rationale is what derives it (ADR-0025), so weakening the argument silently weakens the budget silently. The permission is bounded by **two library names**, `kernel32.dll` and `advapi32.dll`, rather than by *"the binding it needs"* — a hole the next reader widens by arguing about need, where two names are a set somebody can be wrong about in public. Invariant 20 is untouched: what `main` may load is the operating system's own libraries through an FFI loader, and MuPDF in `main` remains forbidden by name. `mupdf-host`'s clause stops saying *"also"*, which had acquired a second meaning — *and `main` does not* — and was the half of a compound claim that goes stale without looking wrong. The surface is imported **statically**: ≤2.7 MB measured, against 43.7 MB for a Node-mode helper (~16×) that merely moves the FFI to a process §9.17 does not name, and against a lazy import rejected because a session is created at *open*, `baselineFor` measures every role against a document, and **no role measures composed `main` at all** — so the deferral would protect a state no instrument observes. **A second amendment is owed to this same clause and is named in it**: ADR-0025's `mupdf-host` baseline, blocked on host readings across days through the real host. | §9.17's `main` clause, which read *"`main` runs the language runtime and nothing else"* and assigned the FFI binding to `mupdf-host` by name | [ADR-0028](DECISIONS/0028-main-holds-the-process-creation-binding.md) |
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
 | 2026-08-16 | Page reorder and form flattening move to MuPDF; field creation and content composition move to @cantoo/pdf-lib; pdf-lib removed; `rearrangePages` banned; §3.1 lifted. | `BUILD-PROMPT.md` Part C3's page-reorder and form-flatten rows and their stated justifications | [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) |
