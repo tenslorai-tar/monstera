@@ -644,6 +644,165 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `48ad002..e811719` — a move that carried everything, and an error class it left behind
+
+Range: **6 commits, 17 files.** The gate fired **on the commit being composed**
+rather than on HEAD — the pre-commit hook doing something `check:docs`
+structurally cannot, since it measures the range against a HEAD that is still
+the parent, so the commit which crosses is invisible to it and the board goes
+red one push later.
+
+### AAAAA-1 — `EngineOpenFailed` is thrown by nobody, and the shipped caller invented its own message
+
+*(Five letters because the four-letter series is exhausted: every prefix from
+`AAAA` to `ZZZZ` is taken, and `LLLL-1` already names a 2026-08-24 finding. The
+series has gone single, double, triple, quadruple; this is the next tier rather
+than a collision.)*
+
+A2 moved `open` out of `remoteMupdfLifecycle` onto the decided route
+(ADR-0030). What went with it and was not noticed: the error the adapter threw
+for a document the engine refuses. Grepping the class outside tests finds its
+declaration in `remoteLifecycle.ts` and its re-export in `index.ts`, and **no
+thrower**. Meanwhile `composition.ts`'s opener does:
+
+```ts
+if (!answer.ok) throw new Error(`engine/open answered ${answer.error.code}`);
+```
+
+A second opinion about what an open failure is (B3a) — and the one it replaced
+carries an argument the replacement does not:
+
+> *"This is the DOCUMENT's failure rather than the host's — a file that will
+> never parse must not be counted as evidence that the host is unhealthy, or a
+> rebuild-and-retry loop follows."*
+
+That distinction is **live**: `onDocumentOpened` counts a failed creation
+towards Decision 9a's poison bound, and *a file that will never parse* versus
+*a host that is unhealthy* is exactly what the bound exists to separate. Nothing
+reads the class to make that call today — but a bare `Error` makes starting
+impossible, and the class was put there to make it possible.
+
+**Two proof cases moved with it, from testing the product to testing the
+fixture.** `remoteLifecycle.test.ts` asserted `lifecycle.open(flat)` rejects with
+`EngineOpenFailed`; both now assert `open(flat)` does, where `open` is the
+proof's own `openAsSupervisor` helper — which throws it, in that same file. The
+assertion is a tautology and reads exactly like the case it replaced.
+
+**Neither half is where the diff points.** The move's audit signal was
+`engineHostConnection.test.ts` at **net +22 −158**, and that file is clean: 16
+cases before, 16 after, and no deleted line carries `it(`, `expect(` or
+`describe(`. The damage is in the file that **grew**.
+
+### 1. Root cause or workaround?
+
+Four changes, all root-cause, two of them forced rather than chosen. ADR-0030
+decides the seam and cites ADR-0023 Decision 14 as an alternative already
+refused on a measurement. The §2 amendment corrects law the code had left
+behind. `RegisteredWriter`'s narrowing removes a requirement no caller had. And
+`CommandBus.undo` taking the session **set** was forced: the writer comes from
+the log entry, reading the log needs a module-private token, so the caller could
+not pick the session it was being asked for.
+
+No override, no disabled check, no widened type. The one thing that *looks* like
+a loosening is not: two `as` casts were deleted only after lint reported them
+**unnecessary** — the type change proving itself rather than being trusted.
+
+### 2. Verified against the easy shape only?
+
+**Yes, and the range's own repair is what it missed.** A2 fixed `serialise` and
+`close`, and `serialise` is reached only on the bus's terminal branch — which
+`rotatePages` reaches for exactly one input, a page carrying a non-numeric
+`/Rotate`. Every case in this range drives the ordinary invertible path, so A2's
+repair shipped covered by nothing. The fixture that reaches it is built in the
+commit after this audit, and it is the case that fails if the WeakMap route
+returns.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, both ways. Weakened: AAAAA-1's two cases. Strengthened:
+`remoteLifecycle.test.ts`'s sessions are now minted by `adopt` through a
+supervisor-shaped opener, so the file exercises the session shape the product
+has — it used to open through the adapter, which is why it passed while the
+product could not use the adapter once.
+
+### 3. Would CI have caught it?
+
+**AAAAA-1: no, and no check exists that could.** An exported class with no
+thrower is not a lint error — unused-vars does not reach exports, and a class
+the barrel re-exports is used by definition. The nearest mechanism is the
+advisory register's absence verdicts, and this is their inverse: not *a symbol
+appeared*, but *a symbol's only caller left*.
+
+The rest was caught here before any push: `typecheck` and `lint` found the two
+unnecessary casts and a closure-narrowing `let`.
+
+### 4. Non-vacuous proofs
+
+The central mutation is the one the reviewing seat specified: **restoring the
+WeakMap route reddens 4 of 11 lifecycle cases**, including the one named for it.
+Structural rather than maintained — the sessions under test are minted by
+`adopt`, so a private map has no entry for them.
+
+Both cast deletions rest on lint calling them unnecessary, which is stronger
+than a passing test: the compiler says the property holds by construction.
+
+### 4a. Instrument resolution tests
+
+`engineHostFake.ts` is the range's one new instrument and gained a peer that
+answers. Its resolution test caught its own defect: `issue()` returned `null`,
+which means *the write was refused* — a value it had carried harmlessly since it
+was written, because nothing had sent a call through it. The first caller that
+did got `GetLastError 7` and a dead host. `remoteWriter.ts` assembles two
+existing halves and measures nothing.
+
+### 4b. Searches with positive controls
+
+No search-shaped instrument changed. AAAAA-1's grep was run by hand, and its
+positive control is that the same command finds the class's declaration and
+export — so *no thrower* is a real absence rather than a pattern matching
+nothing.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`RegisteredWriter` now derives what a registration must supply from what the bus
+calls. The feared failure makes that requirement *smaller* — a member the bus
+stopped calling would silently stop being required — and the anchor is
+`CommandBus` itself: calling a member the type no longer carries is a compile
+error at the one site that matters.
+
+### 5. Executed, or asserted?
+
+**Executed:** the WeakMap mutation; both cast deletions confirmed by lint; the
+case-count and deleted-assertion comparison across the move (16/16, no `it(` or
+`expect(` deleted); the `EngineOpenFailed` grep; 619 tests; `proof:contract` at
+38 cases after its fixtures were updated.
+
+**Asserted:** that no other error class was orphaned by the same move. Only
+`EngineOpenFailed` was checked, because only `open` moved — `serialise` and
+`close` kept theirs and still throw them.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, in its own commit, twice**: ADR-0030 alone, then the §2 amendment
+alone, then the repair. The one change no ADR covers is `CommandBus.undo`'s
+parameter, recorded as forced — the alternative was a caller re-deriving the
+routing table, which is the B3a defect this range spent two commits removing
+elsewhere.
+
+### 7. Do the documents still match the code?
+
+`docs/DECISIONS/README.md` indexes ADR-0030; §2's ownership clause is amended
+and the log names ADR-0023 Decision 9 as where the move happened. The item-7
+sweep for the amended clause found five other statements: three records that
+stand, the amendment row, and one live `FEATURES` row citing the old clause as
+its reason — edited true.
+
+**Owed and not done here:** nothing in `docs/FEATURES.md` yet records that a
+command reaches the engine host, because the clause it belongs to finishes in
+the next commit.
+
+---
+
 ## 2026-08-28 — Stage audit: `584362b..48ad002` — two red boards in one range, and a hundred lines of new decision logic that nothing runs
 
 Range: **9 commits, 20 files**. Audited at the gate: 9 commits is one batch, so
