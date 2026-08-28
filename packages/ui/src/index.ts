@@ -3,3 +3,10 @@
 // re-export would give consumers a second name for one shape and a second place
 // to look when it changes.
 export { BridgeUnavailableError, createRendererClient } from './bridge.js';
+export {
+  type DocumentActions,
+  type DocumentState,
+  type DocumentStore,
+  DocumentStores,
+  createDocumentStore,
+} from './documentStores.js';
