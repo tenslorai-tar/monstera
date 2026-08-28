@@ -111,13 +111,32 @@ it and the token file is the single writer of colour values.
 it is a second copy of an answer that has one owner, and it goes stale silently
 the moment the background it was derived against changes.
 
-> **`onColor` is not written yet.** §10.2 requires it and requires CI to exercise
-> it across every (context, minRatio) pair; today the name appears only inside
-> `scripts/lib/tokenContrast.mjs`, which reports `--accent-soft`'s derived
-> foreground as **DEFERRED** rather than skipping it. So the rule above is what
-> you must build to, not a function you can call. Do not work around its absence
-> by storing a value — that is the defect the rule names, and it is the one thing
-> here that would be expensive to undo.
+`onColor` lives in `@monstera/shared` and returns a `Result`: it refuses an empty
+background set and an unreachable ratio rather than returning a colour nobody
+asked for. In a component, call it through **`useOnColor`**, which solves against
+the tokens in effect and writes the answer onto the element.
+
+> **Two things `useOnColor` does that are not obvious, and both are load-bearing.**
+>
+> **It reads the tokens at YOUR element, not at the root.** A theme is whatever
+> element carries `data-theme` — `tokens.css` writes those selectors unqualified
+> — so an inverted panel or a preview pane showing the opposite theme remaps the
+> tokens for everything inside it. A root-side read returns the wrong values
+> there and renders something that merely looks slightly off.
+>
+> **It holds no state, and it re-solves when the theme changes.** The answer goes
+> straight onto the node through `style.setProperty`, which is a CSSOM write and
+> therefore not intercepted by §9.27's `style-src 'self'`. Storing the solved
+> colour in React state was the first version, and it was wrong twice over: it
+> cascaded a render, and its dependencies were the token *names*, which do not
+> change when the theme does — so it computed once at mount and then held a stale
+> colour. That is the stored derived colour this section forbids, arriving by the
+> back door.
+>
+> §10.2 also requires CI to exercise the derivation *across every (context,
+> minRatio) pair*. That is **not** done: `check:tokencontrast` evaluates the
+> declared pairs and still reports `--accent-soft`'s derived foreground as
+> **DEFERRED**. Owed.
 
 Tokens carry a **role**, declared in `tokens.css` beside the value, and the role
 decides what is checked:
@@ -142,6 +161,14 @@ bidirectional test exists to prevent.
 Dark and light are both first-class from the first commit, and high contrast is a
 third. Write every colour as a token so a theme swap is a token swap; a component
 that names a colour directly is a component that only works in one theme.
+
+**A theme is an element, not the page.** `tokens.css` declares its theme blocks
+as `[data-theme='light']` rather than `:root[data-theme='light']`, so the
+attribute remaps tokens for whatever element carries it and for everything below
+it. Two things follow: anything that resolves a token must resolve it *at the
+element it is styling* (`useOnColor` does), and anything watching for a theme
+change must watch the subtree, because a panel switching its own theme touches no
+attribute on the root.
 
 ---
 

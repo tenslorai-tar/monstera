@@ -735,6 +735,31 @@ on.**
   not rest on what the test environment does. Settled in its own commit; the
   code is unchanged in this range.
 
+> **Settled, 2026-08-28 — a subtree may override, so the read moves to the
+> element.** §10.2 says *"light, dark and high-contrast are token remaps under
+> `data-*` attributes"* and specifies the derivation against *"the element's
+> REAL background"*, with *"the sidebar it actually sits on"* as the worked
+> example. `tokens.css` settles it in code: the theme blocks are written
+> `[data-theme='light']`, **unqualified**, not `:root[data-theme='light']` — an
+> unqualified attribute selector matches any element carrying it, and custom
+> properties inherit into that element's subtree. So an inverted panel is a
+> supported arrangement and a root-side read is a defect.
+>
+> The observer moved with it, to `subtree: true`: a panel switching its own
+> theme touches no attribute on the root, so watching the root alone would
+> re-solve for a global switch and hold a stale colour for a scoped one.
+>
+> **A case now separates the two read sites**, by making them disagree — the
+> root declaring a near-black fill where `--text` already clears, the control
+> declaring the brand green where it does not. Reverting the read to the root
+> reddens 5 of 11 cases.
+>
+> **The environment limit is recorded rather than designed around.** happy-dom
+> resolves a rule matching the element itself and implements no custom-property
+> inheritance, so a component test proves the read happens at the target and
+> cannot prove a themed ANCESTOR reaches it — which is the case this whole
+> question is about. Owed to the Playwright pass (§10.7), not covered.
+
 ### 2. Verified against the easy shape only?
 
 The primitives were verified against the hard shape where one exists: the

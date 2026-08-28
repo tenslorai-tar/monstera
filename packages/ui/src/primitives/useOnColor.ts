@@ -52,6 +52,35 @@ import { type RefObject, useEffect } from 'react';
  * an `onColor` refusal all remove the property and let the stylesheet's own
  * colour stand. A hard-coded black would hide a missing token behind something
  * that looks deliberate.
+ *
+ * ## IT READS AT THE TARGET, AND THAT IS SETTLED BY THE DESIGN, NOT BY A TEST
+ *
+ * An earlier version read the tokens off `document.documentElement`. That was
+ * chosen after measuring that happy-dom does not inherit custom properties to a
+ * child — the test double deciding the product's behaviour — and it is wrong.
+ *
+ * The question is whether a token may carry a different value below the root,
+ * and §10.2 answers it twice. *"Light, dark and high-contrast are token remaps
+ * under `data-*` attributes"* names the attribute and does not confine it to the
+ * root; and the derivation is specified against **the element's own
+ * surroundings** — *"a derived output of that function against the element's
+ * REAL background"*, with *"the selected-thumbnail ring — `onColor(accent, the
+ * sidebar it actually sits on, 3.0)`"* as the worked example.
+ *
+ * `tokens.css` settles it in code: the theme blocks are written `[data-theme=
+ * 'light']`, **unqualified**, not `:root[data-theme='light']`. An unqualified
+ * attribute selector matches any element that carries it, and custom properties
+ * inherit into that element's subtree — so an inverted panel or a preview pane
+ * rendering the opposite theme is a supported arrangement, and a root-side read
+ * would return the wrong values for every control inside it while rendering
+ * something that merely looks slightly off.
+ *
+ * **One environment limit, with an expiry rather than a hope.** happy-dom
+ * resolves a rule that matches the element itself and does **not** implement
+ * custom-property inheritance, so a component test can verify that the read
+ * happens at the target and cannot verify that a themed ANCESTOR reaches it.
+ * That case belongs to the Playwright pass against a real engine (§10.7), and
+ * it is the case this whole section is about — so it is owed, not covered.
  */
 
 /**
@@ -80,21 +109,11 @@ export function useOnColor(
       const element = target.current;
       if (element === null) return;
 
-      // READ AT THE ROOT, WRITE AT THE ELEMENT — two nodes, each for its own
-      // reason. The question being asked is not *what colour is behind this
-      // element on screen*; it is *what does this token resolve to*, and
-      // `tokens.css` declares every token on `:root` and switches them with
-      // `[data-theme]` selectors that the application applies to the document
-      // element. So the root is the declaring node, and it is the same node the
-      // observer below watches.
-      //
-      // ONE LIMIT, with a trigger rather than a hope: if a theme is ever scoped
-      // to a subtree — `[data-theme='hc']` on a panel rather than on `<html>` —
-      // this reads the wrong values for controls inside it, and the fix is to
-      // read at `element` instead. That is a §10.2 decision nobody has taken;
-      // it becomes live the first time a theme attribute is set on anything
-      // other than the document element.
-      const style = globalThis.getComputedStyle(globalThis.document.documentElement);
+      // AT THE ELEMENT, because a token may be remapped below the root — see
+      // the section above, which settles this from §10.2 and `tokens.css`'s
+      // unqualified `[data-theme]` selectors rather than from what any test
+      // environment happens to implement.
+      const style = globalThis.getComputedStyle(element);
       const read = (token: string): Rgb | null => channels(style.getPropertyValue(token).trim());
 
       const names = backgroundKey.length === 0 ? [] : backgroundKey.split(' ');
@@ -146,6 +165,13 @@ export function useOnColor(
     observer.observe(globalThis.document.documentElement, {
       attributeFilter: ['data-theme'],
       attributes: true,
+      // SUBTREE, for the same reason the read moved to the element: a theme is
+      // whatever element carries `data-theme`, so a panel switching its own
+      // theme changes what this control's tokens resolve to and touches no
+      // attribute on the root. Watching the root alone would re-solve for a
+      // global switch and silently hold a stale colour for a scoped one —
+      // which is the stored derived colour ADR-0003 forbids, again.
+      subtree: true,
     });
     return (): void => {
       observer.disconnect();

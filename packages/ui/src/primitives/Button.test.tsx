@@ -17,13 +17,21 @@ import { Button } from './Button.js';
  * defect and the correct behaviour would produce the same colour, and the case
  * would separate nothing.
  */
-function declareTokens(): void {
-  document.documentElement.style.setProperty('--text', '#e7eaec');
-  document.documentElement.style.setProperty('--accent', '#2fb96a');
+function declareTokens(accent = '#2fb96a'): void {
+  // A STYLESHEET RULE THAT MATCHES THE CONTROL, not properties set on the root.
+  // `useOnColor` reads at the element, because §10.2 remaps tokens under
+  // `data-*` attributes and `tokens.css` writes those selectors unqualified, so
+  // a token may carry a different value below the root. Declaring them here the
+  // way the real cascade does is what keeps the harness from quietly testing a
+  // different read site than the one that ships.
+  const sheet = document.createElement('style');
+  sheet.dataset['fixture'] = 'tokens';
+  sheet.textContent = `.m-button { --text: #e7eaec; --accent: ${accent}; }`;
+  document.head.append(sheet);
 }
 
 afterEach(() => {
-  document.documentElement.removeAttribute('style');
+  for (const sheet of document.querySelectorAll('style[data-fixture="tokens"]')) sheet.remove();
   document.documentElement.removeAttribute('data-theme');
 });
 
@@ -116,7 +124,10 @@ describe('Button', () => {
       // the first version of `useOnColor` failed silently: it held the colour
       // it computed at mount for the rest of the session, which is the stored
       // derived colour ADR-0003 forbids arriving by the back door.
-      document.documentElement.style.setProperty('--accent', '#10243a');
+      //
+      // The later rule wins on equal specificity, which is how a theme block
+      // overrides the base one in `tokens.css`.
+      declareTokens('#10243a');
       document.documentElement.setAttribute('data-theme', 'light');
 
       await vi.waitFor(() => {
@@ -130,6 +141,43 @@ describe('Button', () => {
       const newAccent = channels('#10243a');
       if (applied === null || newAccent === null) throw new Error('a colour did not parse');
       expect(contrast(applied, newAccent)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('reads the tokens at the control, not at the document root', async () => {
+      // THE TWO READ SITES ARE MADE TO DISAGREE, which is the only way a case
+      // can tell them apart. The root says the fill is nearly black, where the
+      // near-white `--text` already clears 4.5 and the solve returns it
+      // unchanged; the control says the fill is the brand green, where `--text`
+      // measures ~1.8:1 and the solve must darken. A fixture where both sites
+      // carried the same value would pass whichever site the hook read — the
+      // defect and the fix producing one output, which is no case at all.
+      document.documentElement.style.setProperty('--text', '#e7eaec');
+      document.documentElement.style.setProperty('--accent', '#10243a');
+      declareTokens('#2fb96a');
+
+      render(<Button label="Save" variant="primary" />);
+      const button = screen.getByRole('button', { name: 'Save' });
+      await vi.waitFor(() => {
+        expect(button.style.color).not.toBe('');
+      });
+
+      const applied = channels(button.style.color);
+      const rootFill = channels('#10243a');
+      const controlFill = channels('#2fb96a');
+      if (applied === null || rootFill === null || controlFill === null) {
+        throw new Error('a fixture colour did not parse');
+      }
+
+      // Solved against the control's fill, so it clears there.
+      expect(contrast(applied, controlFill)).toBeGreaterThanOrEqual(4.5);
+
+      // And it is NOT what a root-side read would have produced. Asserting the
+      // negative as well, because "clears against the control" is also true of
+      // some colours a root read could return by luck.
+      expect(applied).not.toEqual(channels('#e7eaec'));
+      expect(contrast(channels('#e7eaec') ?? [0, 0, 0], rootFill)).toBeGreaterThanOrEqual(4.5);
+
+      document.documentElement.removeAttribute('style');
     });
 
     it('applies no colour when the tokens cannot be read, rather than guessing', () => {
