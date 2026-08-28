@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { CONTROL_EDGE, affectedProofs, affectedProofsReport, importGraph } from '../lib/affectedProofs.mjs';
-import { repoRoot } from '../lib/gitScope.mjs';
+import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { proofScripts } from '../lib/proofCoverage.mjs';
 import { SCANNING_PROOFS, scanningProofRoster } from '../lib/scanningProofs.mjs';
@@ -31,7 +31,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 20 });
+const roster = createRoster(failures, { cases: 21 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -94,9 +94,27 @@ function check(name, condition, detail) {
 // The empty answer is reachable, and means what it says.
 // ---------------------------------------------------------------------------
 {
-  const none = affectedProofs(['docs/JOURNAL.md'], { root: ROOT });
+  // THE FIXTURE MOVED, AND WHY IT HAD TO IS THE INTERESTING PART. This was
+  // `docs/JOURNAL.md`, chosen as "a file no proof reads". That was true only
+  // while the graph read imports alone: `auditScope.proof.mjs` reaches the
+  // journal by path — the watermark rule reads it — so the journal was always a
+  // dependency and the old fixture was asserting the instrument's blindness
+  // rather than the empty answer (finding KKKK-6).
+  //
+  // A source module under a package no `scripts/` module imports, and whose
+  // basename appears in no script as a literal, is what an unreached file
+  // actually looks like here.
+  const UNREACHED = 'packages/ui/src/primitives/iconSize.ts';
   check(
-    'CONTROL: a file no proof imports names no proofs',
+    'CONTROL: the unreached fixture is a tracked file, so its emptiness means something',
+    filesInCommit({ cwd: ROOT }).includes(UNREACHED),
+    `${UNREACHED} is not tracked. A path that does not exist reaches no proof either, and this ` +
+      `case would then pass by naming nothing about nothing — the vacuity the case below is ` +
+      `supposed to be immune to.`,
+  );
+  const none = affectedProofs([UNREACHED], { root: ROOT });
+  check(
+    'CONTROL: a file no proof reads names no proofs',
     none.proofs.length === 0 && none.examined > 10,
     `named ${String(none.proofs.length)} of ${String(none.examined)} examined. If everything ` +
       `matched, the list would be as useless as the sentence it replaces — a caller would learn ` +

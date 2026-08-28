@@ -43,7 +43,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
-import { repoRoot } from './gitScope.mjs';
+import { filesInCommit, repoRoot } from './gitScope.mjs';
 import { proofScripts } from './proofCoverage.mjs';
 import { SCANNING_PROOFS, rosterMiscount } from './scanningProofs.mjs';
 
@@ -58,6 +58,39 @@ export const CONTROL_EDGE = {
   from: 'scripts/proofs/hookProbe.proof.mjs',
   to: 'scripts/lib/hookProbe.mjs',
 };
+
+/**
+ * A DATA edge that must exist, for the reason {@link CONTROL_EDGE} exists — and
+ * it is a separate control because it fails separately (finding KKKK-6).
+ *
+ * This instrument walked import specifiers only. A module that reads a
+ * repository file by a computed path has a dependency no `import` records, and
+ * the graph could not see it — so a change to that file reached nothing and the
+ * report said so in the same words it uses for a change that genuinely reaches
+ * nothing.
+ *
+ * Measured 2026-08-28, before the fix:
+ *
+ *     ["docs/security/engine-advisories.json"] -> 0 of 85 proofs
+ *     ["scripts/hooks/prePush.mjs"]            -> 1 of 85: proof:guards
+ *
+ * The register is the file three checks take their extent from, and editing it
+ * reddened `main` on the push that followed that reading.
+ */
+export const CONTROL_DATA_EDGE = {
+  from: 'scripts/hooks/prePush.mjs',
+  to: 'docs/security/engine-advisories.json',
+};
+
+/**
+ * Extensions a script reads as DATA rather than imports as code.
+ *
+ * Deliberately not "every tracked file". A source file with the same basename
+ * as another is common — `index.ts` — and an edge to all of them would be
+ * noise; these extensions are the ones this repository's scripts open by path,
+ * and a basename among them is close to unique.
+ */
+const DATA_EXTENSIONS = ['.json', '.toml', '.yml', '.yaml', '.md', '.css'];
 
 /** A static relative import specifier. */
 const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^\n;]*?from\s*['"](\.[^'"]*)['"]/gu;
@@ -90,6 +123,37 @@ function moduleFiles(root) {
 }
 
 /**
+ * Tracked data files, grouped by basename.
+ *
+ * From `filesInCommit` rather than a walk, so the set is the tree this commit
+ * will leave — the same resolver every other check about repository state uses
+ * (B3a). A basename shared by two tracked files maps to both: an edge too many
+ * names an extra proof, and an edge too few names none.
+ *
+ * @param {string} root
+ * @returns {Map<string, string[]>}
+ */
+function dataFilesByBasename(root) {
+  /** @type {Map<string, string[]>} */
+  const byName = new Map();
+  for (const path of filesInCommit({ cwd: root })) {
+    if (!DATA_EXTENSIONS.some((extension) => path.endsWith(extension))) continue;
+    const basename = path.slice(path.lastIndexOf('/') + 1);
+    const existing = byName.get(basename);
+    if (existing === undefined) byName.set(basename, [path]);
+    else existing.push(path);
+  }
+  if (byName.size === 0) {
+    throw new Error(
+      'No tracked data files were found, so no data edge can exist. An empty set here is a ' +
+        'broken read of the tree, and every query would report the reassuring answer for every ' +
+        'file this instrument was fixed to be able to see.',
+    );
+  }
+  return byName;
+}
+
+/**
  * Who imports whom, as repo-relative paths.
  *
  * @param {string} [root]
@@ -100,6 +164,8 @@ export function importGraph(root = repoRoot()) {
   const graph = new Map();
   const files = moduleFiles(root);
   const known = new Set(files);
+  /** Each module's source, kept for the data-edge pass below. */
+  const texts = new Map();
 
   for (const file of files) {
     /** @type {Set<string>} */
@@ -114,7 +180,9 @@ export function importGraph(root = repoRoot()) {
       // unreachable names in the graph.
       if (known.has(resolved)) imports.add(resolved);
     }
+
     graph.set(file, imports);
+    texts.set(file, text);
   }
 
   const control = graph.get(CONTROL_EDGE.from);
@@ -123,6 +191,55 @@ export function importGraph(root = repoRoot()) {
       `The import graph does not carry ${CONTROL_EDGE.from} -> ${CONTROL_EDGE.to}, so it cannot ` +
         `tell "nothing was affected" from "this stopped being able to read imports". Every query ` +
         `against it would report the reassuring answer.`,
+    );
+  }
+
+  // DATA EDGES, IN A SECOND PASS, and the ordering is load-bearing.
+  //
+  // This pass needs the tracked-file list, which needs a git repository. The
+  // import control above needs neither, and its own case drives a bare
+  // directory of modules — so building data edges first would replace that
+  // case's "does not carry" refusal with a git error, and a control that
+  // refuses for the wrong reason has stopped testing what it names.
+  //
+  // The rule is the BASENAME as a QUOTED LITERAL.
+  // `join(root, 'docs', 'security', 'engine-advisories.json')` is a path no
+  // import records, and it is how every check here reaches a file it does not
+  // import. The basename is the one segment that survives every spelling of
+  // the join.
+  //
+  // FALSE POSITIVES ARE THE SAFE DIRECTION AND ARE ACCEPTED. `package.json`
+  // appears in many scripts and will attach many proofs to it, which is roughly
+  // true anyway. A miss is the dangerous direction: it produces "nothing
+  // affected", which is the answer everybody wants and is why this was
+  // invisible for as long as it was.
+  //
+  // WHAT IT CANNOT SEE, stated rather than left to be discovered: a path
+  // assembled from pieces, and a file read through a variable. Those need a
+  // different mechanism, and a rule that quietly claimed them would be worse
+  // than one that names its edge.
+  const dataByBasename = dataFilesByBasename(root);
+  for (const [file, text] of texts) {
+    const imports = graph.get(file);
+    if (imports === undefined) continue;
+    for (const [basename, paths] of dataByBasename) {
+      if (!text.includes(`'${basename}'`) && !text.includes(`"${basename}"`)) continue;
+      for (const path of paths) imports.add(path);
+    }
+  }
+
+  // A SECOND CONTROL, because the two halves fail separately. The import
+  // control passing says nothing about whether data edges are being built, and
+  // that half was absent entirely until KKKK-6 — which is what an unwatched
+  // half looks like from the outside: a graph that answers, correctly, about
+  // less than it is asked.
+  const dataControl = graph.get(CONTROL_DATA_EDGE.from);
+  if (dataControl === undefined || !dataControl.has(CONTROL_DATA_EDGE.to)) {
+    throw new Error(
+      `The graph does not carry the DATA edge ${CONTROL_DATA_EDGE.from} -> ` +
+        `${CONTROL_DATA_EDGE.to}. A script that reads a repository file by path depends on it ` +
+        `as surely as on anything it imports, and without this edge a change to that file ` +
+        `reports "nothing affected" — which is what reddened main on 2026-08-28.`,
     );
   }
 
