@@ -233,6 +233,18 @@ function run(): void {
     }
   }
 
+  // THE PEER IS HERE, AND SAYING SO IS THE POINT OF THIS LINE EXISTING AT ALL.
+  //
+  // Every path that reaches here has a connected client: the call succeeding
+  // outright, `ERROR_PIPE_CONNECTED` (the peer arrived between creating the
+  // instance and asking), and the overlapped wait completing. Every path that
+  // does NOT has already returned through `finish`.
+  //
+  // Placed after the branch rather than inside it for that reason — a `say`
+  // per success path is three chances to add a fourth and forget. See
+  // {@link ReaderConnected} for what the absence of this message cost.
+  say({ kind: 'connected' });
+
   // WAIT TWO, repeatedly: for bytes, where a running transport spends its life.
   const buffer = Buffer.alloc(data.readBytes);
   for (;;) {

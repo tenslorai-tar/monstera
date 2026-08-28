@@ -61,4 +61,34 @@ export interface ReaderEnded {
   readonly detail: string;
 }
 
-export type ReaderMessage = ReaderChunk | ReaderEnded;
+/**
+ * The host has connected to the pipe instance. Sent **once**, before any chunk.
+ *
+ * ## Why the reader is what says this, and why anything needs telling
+ *
+ * `ConnectNamedPipe` is issued here and nowhere else, so this thread is the only
+ * place that knows the moment a peer arrives. Nothing used to carry it, and the
+ * cost of that was measured (finding YYYY-1): the connection factory returned as
+ * soon as the host process existed, main's first frame beat the host's
+ * `CreateFile` on the pipe **3 times out of 3**, and `WriteFile` answered
+ * `ERROR_PIPE_LISTENING`. A startup ordering problem then arrived at
+ * `engineSessions` as a host death, which poisons the document at two in a row
+ * under ADR-0023 Decision 9a.
+ *
+ * The factory now waits for this before it hands out a client, so a host that
+ * never connects is a **creation failure with a stage**, where
+ * `createContainedHost` already reports one — rather than a live client that
+ * fails later and is counted as a crash.
+ *
+ * ## Sent once, and the layer above enforces that rather than trusting it
+ *
+ * `run()` reaches its connected state on two paths — the overlapped wait
+ * completing, and `ERROR_PIPE_CONNECTED`, which means the peer arrived between
+ * the instance being created and the call being made. Both say it, and neither
+ * knows what the other did.
+ */
+export interface ReaderConnected {
+  readonly kind: 'connected';
+}
+
+export type ReaderMessage = ReaderChunk | ReaderEnded | ReaderConnected;

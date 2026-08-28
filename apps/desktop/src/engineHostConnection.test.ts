@@ -2,11 +2,15 @@ import { ENGINE_HOST_FRAME_MAX_BYTES, encodeFrame } from '@monstera/contract';
 import type { HostTermination } from '@monstera/kernel';
 import type { ReaderMessage } from '@monstera/nodemode';
 import { ok } from '@monstera/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { PipeHandle, SecurityDescriptor } from './enginePipeFactory.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
-import { type EngineHostConnectionSurfaces, createEngineHostConnection } from './engineHostConnection.js';
+import {
+  type EngineHostConnectionSurfaces,
+  HOST_CONNECT_TIMEOUT_MS,
+  createEngineHostConnection,
+} from './engineHostConnection.js';
 import type { ReaderWorkerHandle } from './engineReaderChannel.js';
 import type { CreatedProcess, JobHandle, ProcessHandle, ThreadHandle } from './engineHostFactory.js';
 import type { PendingWrite } from './hostWriteQueue.js';
@@ -40,15 +44,29 @@ interface Harness {
   readonly endings: HostTermination[];
   /** Posts a reader message, as the worker thread would. */
   readonly post: (message: ReaderMessage) => void;
+  /**
+   * Makes `resume` deliver `connected` SYNCHRONOUSLY, before the composer can
+   * be listening. Models a host already at the pipe, and is how the latch in
+   * `onConnected` is exercised rather than assumed.
+   */
+  readonly connectOnResume: () => void;
   /** Ends the reader thread, as an exit would. */
   readonly exit: (code: number) => void;
 }
 
 function harness(
-  failures: { pipe?: boolean; stopEvent?: boolean; worker?: boolean; host?: boolean } = {},
+  failures: {
+    pipe?: boolean;
+    stopEvent?: boolean;
+    worker?: boolean;
+    host?: boolean;
+    /** The process starts and never reaches the pipe. */
+    connect?: boolean;
+  } = {},
 ): Harness {
   const calls: string[] = [];
   const endings: HostTermination[] = [];
+  let eager = false;
   const sinks: {
     message: ((message: ReaderMessage) => void)[];
     exit: ((code: number) => void)[];
@@ -116,7 +134,23 @@ function harness(
         applyLimits: () => true,
         assignToJob: () => true,
         readJobMembership: () => 'in-job' as const,
-        resume: () => 1,
+        resume: () => {
+          // THE PEER ARRIVES WHEN THE PROCESS IS RESUMED, which is the fake's
+          // one piece of modelling and is where reality puts it: a suspended
+          // process has not run a line, so it cannot have opened the pipe.
+          //
+          // Posted on a microtask by default, because that is the shape the
+          // composer has to cope with — a `connected` delivered inside `resume`
+          // arrives before the composer ever awaits, so every case would then be
+          // proving the LATCH works rather than the wait. `connectOnResume`
+          // selects that other shape deliberately, for the one case about it.
+          const deliver = (): void => {
+            for (const sink of sinks.message) sink({ kind: 'connected' });
+          };
+          if (eager) deliver();
+          else if (failures.connect !== true) queueMicrotask(deliver);
+          return 1;
+        },
         terminate: () => calls.push('host.terminate'),
         close: (handle) => calls.push(`host.close:${handle.__handle}`),
       };
@@ -132,6 +166,9 @@ function harness(
     },
     exit: (code) => {
       for (const sink of sinks.exit) sink(code);
+    },
+    connectOnResume: () => {
+      eager = true;
     },
   };
 }
@@ -169,9 +206,9 @@ function connect(h: Harness) {
 }
 
 describe('createEngineHostConnection', () => {
-  it('creates the HOST LAST, after the reader is already waiting', () => {
+  it('creates the HOST LAST, after the reader is already waiting', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
 
     expect(connection.ok).toBe(true);
     // The reader issues `ConnectNamedPipe`; a server instance nobody has
@@ -181,9 +218,9 @@ describe('createEngineHostConnection', () => {
     expectOrder(h.calls, 'pipe.createInstance', 'reader.startWorker');
   });
 
-  it('builds the host surface EXACTLY ONCE, so the kill runs through the adapter that created it', () => {
+  it('builds the host surface EXACTLY ONCE, so the kill runs through the adapter that created it', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -195,9 +232,9 @@ describe('createEngineHostConnection', () => {
     expect(h.calls.filter((call) => call === 'host.surfaceBuilt')).toHaveLength(1);
   });
 
-  it('refuses at the PIPE without starting a reader or a process', () => {
+  it('refuses at the PIPE without starting a reader or a process', async () => {
     const h = harness({ pipe: true });
-    const connection = connect(h);
+    const connection = await connect(h);
 
     expect(connection.ok).toBe(false);
     if (connection.ok) return;
@@ -207,9 +244,9 @@ describe('createEngineHostConnection', () => {
     expect(h.calls).not.toContain('onEnded:shutdown');
   });
 
-  it('refuses at the READER, closing the pipe and creating no process', () => {
+  it('refuses at the READER, closing the pipe and creating no process', async () => {
     const h = harness({ worker: true });
-    const connection = connect(h);
+    const connection = await connect(h);
 
     expect(connection.ok).toBe(false);
     if (connection.ok) return;
@@ -227,9 +264,9 @@ describe('createEngineHostConnection', () => {
    * nothing. The load-bearing assertion is that `onEnded` was never called
    * while the teardown ran anyway.
    */
-  it('refuses at the HOST, tearing down but NOT reporting an ending', () => {
+  it('refuses at the HOST, tearing down but NOT reporting an ending', async () => {
     const h = harness({ host: true });
-    const connection = connect(h);
+    const connection = await connect(h);
 
     expect(connection.ok).toBe(false);
     if (connection.ok) return;
@@ -239,9 +276,9 @@ describe('createEngineHostConnection', () => {
     expect(h.endings).toEqual([]);
   });
 
-  it('maps a reader that went away to CONNECTION-LOST, not to a framing violation', () => {
+  it('maps a reader that went away to CONNECTION-LOST, not to a framing violation', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -254,9 +291,9 @@ describe('createEngineHostConnection', () => {
     expect(connection.value.ended()).toBe(true);
   });
 
-  it('maps a deliberate close to SHUTDOWN, and reports it rather than staying silent', () => {
+  it('maps a deliberate close to SHUTDOWN, and reports it rather than staying silent', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -267,7 +304,7 @@ describe('createEngineHostConnection', () => {
 
   it('KEEPS a violation the client raised rather than relabelling it as a shutdown', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -285,9 +322,9 @@ describe('createEngineHostConnection', () => {
     await expect(connection.value.client.invoke('any', {})).rejects.toThrow(/unknown-correlation/u);
   });
 
-  it('TERMINATES the process before closing either handle', () => {
+  it('TERMINATES the process before closing either handle', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -300,9 +337,9 @@ describe('createEngineHostConnection', () => {
     expectOrder(h.calls, 'host.terminate', 'host.close:job');
   });
 
-  it('reports the ending AFTER everything is freed, so a caller may rebuild inside it', () => {
+  it('reports the ending AFTER everything is freed, so a caller may rebuild inside it', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -313,9 +350,9 @@ describe('createEngineHostConnection', () => {
     }
   });
 
-  it('is IDEMPOTENT on close, and a close after a death frees nothing twice', () => {
+  it('is IDEMPOTENT on close, and a close after a death frees nothing twice', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -330,7 +367,7 @@ describe('createEngineHostConnection', () => {
 
   it('SETTLES a waiting call when the host dies, rather than leaving it pending', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 
@@ -342,9 +379,68 @@ describe('createEngineHostConnection', () => {
     await expect(call).rejects.toThrow(/connection-lost/u);
   });
 
-  it('carries the host PID, which nothing addresses the host by', () => {
+  it('refuses at CONNECT when the host starts and never reaches the pipe', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness({ connect: true });
+      const pending = connect(h);
+      await vi.advanceTimersByTimeAsync(HOST_CONNECT_TIMEOUT_MS + 1);
+      const connection = await pending;
+
+      expect(connection.ok).toBe(false);
+      expect(!connection.ok && connection.error.stage).toBe('connect');
+
+      // THE LOAD-BEARING ASSERTION, and it is not the stage. Before this, a host
+      // that never connected was handed back as a live client and surfaced later
+      // as `connection-lost` — which `engineSessions` counts as a DEATH, and two
+      // deaths poison the document (Decision 9a). A startup failure taking the
+      // recovery path built for a crash is finding YYYY-1's real cost, and the
+      // only thing that separates the two is whether `onEnded` ran.
+      expect(h.endings).toEqual([]);
+      expect(h.calls).not.toContain('onEnded:shutdown');
+      expect(h.calls).not.toContain('onEnded:connection-lost');
+
+      // AND EVERYTHING IS FREED. A refusal that leaves the process running would
+      // be worse than the defect it replaces.
+      expect(h.calls).toContain('host.terminate');
+      expect(h.calls).toContain('pipe.close');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails FAST when the reader dies mid-wait, rather than waiting out the bound', async () => {
+    const h = harness({ connect: true });
+    const pending = connect(h);
+
+    // The factory runs synchronously as far as its first `await`, so by the time
+    // `connect` has returned a promise it is already waiting on the peer. No
+    // fake timers here on purpose: if this case ever needed them, the wait would
+    // not be failing fast and that is exactly what it exists to prove.
+    h.post({ kind: 'ended', detail: 'the reader stopped' });
+    const connection = await pending;
+
+    expect(!connection.ok && connection.error.stage).toBe('connect');
+    expect(!connection.ok && connection.error.detail).toContain('the reader ended');
+    expect(h.endings).toEqual([]);
+  });
+
+  it('accepts a peer that connected BEFORE anything waited for it', async () => {
+    const h = harness({ connect: true });
+    // Delivered synchronously from `resume`, which is earlier than the composer
+    // can possibly be listening. Without the latch in `onConnected` this is a
+    // lost wakeup and the connection times out — the same class of race the
+    // whole mechanism exists to remove, one layer up.
+    h.connectOnResume();
+
+    const connection = await connect(h);
+
+    expect(connection.ok).toBe(true);
+  });
+
+  it('carries the host PID, which nothing addresses the host by', async () => {
     const h = harness();
-    const connection = connect(h);
+    const connection = await connect(h);
     expect(connection.ok).toBe(true);
     if (!connection.ok) return;
 

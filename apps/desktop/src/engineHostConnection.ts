@@ -8,7 +8,11 @@ import {
   createHostPipe,
 } from './enginePipeFactory.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
-import { type ReaderHostSurface, createEngineReaderChannel } from './engineReaderChannel.js';
+import {
+  type EngineReaderChannel,
+  type ReaderHostSurface,
+  createEngineReaderChannel,
+} from './engineReaderChannel.js';
 import { type HostCreationSurface, createContainedHost } from './engineHostFactory.js';
 import { type OverlappedWriteSurface, createHostWriteQueue } from './hostWriteQueue.js';
 import { type TransportEnd, createHostTransport } from './hostTransport.js';
@@ -129,8 +133,120 @@ export interface EngineHostConnectionOptions {
 
 /** Why a connection was not created. Every one of these leaves nothing running. */
 export interface EngineHostConnectionFailure {
-  readonly stage: 'pipe' | 'reader' | 'host';
+  /**
+   * `connect` is the stage a host that was created and never arrived fails at.
+   *
+   * It exists because the alternative is worse than a missing vocabulary word:
+   * without it, a host that never connects is handed back as a live client and
+   * surfaces later as `connection-lost`, which `engineSessions` counts as a
+   * **death** — and two deaths poison the document under ADR-0023 Decision 9a.
+   * A startup failure would take the recovery path built for a crash, and the
+   * user's document would pay for it (finding YYYY-1).
+   */
+  readonly stage: 'pipe' | 'reader' | 'host' | 'connect';
   readonly detail: string;
+}
+
+/**
+ * How long the host is given to connect to the pipe.
+ *
+ * **Measured rather than picked.** `scripts/perf/roleMupdfHost.mjs --host`
+ * reports the interval from asking for a connection to this factory resolving,
+ * on every run. Read 2026-08-28 on this machine across ten runs: **698ms to
+ * 1370ms** — the pinned Electron binary in Node mode, started into an
+ * AppContainer, resolving the kernel's module graph before it opens the pipe.
+ *
+ * The range is stated rather than a median, because the range is what a bound
+ * has to clear. The first three readings taken were 739.8, 697.9 and 705.9ms
+ * and would have supported *"about 700ms"*; the spread is twice that, and a
+ * ceiling argued from the tight end is one that fires on an ordinary slow
+ * moment.
+ *
+ * Ten seconds is roughly seven times the slowest observed, and the order of
+ * magnitude is the point: this bound is not a tuning knob for a slow machine,
+ * it is the line past which *the host is not coming*. `hostFixedCost.mjs`
+ * independently chose the same figure for the same event before this existed.
+ *
+ * The figure is reported by an instrument rather than recorded once here,
+ * because a bound justified by a number nobody re-reads is exactly what B6 is
+ * about: on the day a host takes four seconds, the run that shows it is one
+ * command rather than an argument.
+ *
+ * A bound is required rather than optional. Without one, a host that dies
+ * before `ConnectNamedPipe` completes — and whose reader therefore reports
+ * nothing — leaves this awaiting a message that will never arrive, and a
+ * document open hangs with no failure anywhere.
+ */
+export const HOST_CONNECT_TIMEOUT_MS = 10_000;
+
+/** Either the peer arrived, or it did not and this is why. */
+type PeerOutcome = { readonly connected: true } | { readonly connected: false; readonly detail: string };
+
+/**
+ * Waits for the peer, the reader's ending, or the bound — whichever is first.
+ *
+ * Three outcomes collapsed into two on purpose: every non-connection is a
+ * creation failure and the caller does the same thing with each, so what
+ * differs is the diagnostic and not the control flow.
+ *
+ * A discriminated pair rather than `'connected' | string`, which is a union
+ * TypeScript widens straight back to `string` — so the sentinel would have been
+ * checkable only by comparing text, and a refusal whose detail happened to read
+ * `connected` would have been a success. Caught by lint
+ * (`no-redundant-type-constituents`), which is the rule earning its place.
+ *
+ * The ending is watched as well as the timeout because they are not the same
+ * event and only one of them is worth ten seconds: a reader that has already
+ * ended tells us immediately that no peer is coming, and waiting out the bound
+ * for it would turn a fast, certain failure into a slow one.
+ */
+function connected(
+  channel: EngineReaderChannel,
+  waiting: { end: HostTermination | null; whenEnded: (() => void) | null },
+): Promise<PeerOutcome> {
+  return new Promise((settle) => {
+    const timer = setTimeout(() => {
+      settle({
+        connected: false,
+        detail:
+          `no connection within ${String(HOST_CONNECT_TIMEOUT_MS)}ms. The process was created, ` +
+          `so this is a host that started and did not reach its pipe`,
+      });
+    }, HOST_CONNECT_TIMEOUT_MS);
+    // UNREF'D, so a waiting connection cannot be the reason a process stays
+    // alive. The wait is bounded by an event we expect within a second; holding
+    // the event loop open for ten seconds on every host creation would make an
+    // ordinary exit wait for a timer nobody is interested in.
+    timer.unref();
+
+    const done = (answer: PeerOutcome): void => {
+      clearTimeout(timer);
+      waiting.whenEnded = null;
+      settle(answer);
+    };
+
+    channel.onConnected(() => {
+      done({ connected: true });
+    });
+
+    /** Whichever ending arrives — one that already has, or one that arrives while waiting. */
+    const died = (): void => {
+      const reason = waiting.end;
+      done({
+        connected: false,
+        detail: `the reader ended before any peer connected: ${reason === null ? 'no reason recorded' : reason.detail}`,
+      });
+    };
+
+    // BOTH DIRECTIONS, because they are different moments and only one of them
+    // is a poll. A reader that failed while the host was being created has
+    // already set `end`; one that fails during the wait has not, and reading the
+    // field once would leave that case to the ten-second timeout — turning a
+    // fast, certain failure into a slow one, and reporting it as *did not
+    // arrive* rather than *died*.
+    waiting.whenEnded = died;
+    if (waiting.end !== null) died();
+  });
 }
 
 /** A live connection to a contained engine host. */
@@ -157,10 +273,10 @@ export interface EngineHostConnection {
  * @param options See {@link EngineHostConnectionOptions}.
  * @returns The connection, or the stage that refused and why.
  */
-export function createEngineHostConnection(
+export async function createEngineHostConnection(
   surfaces: EngineHostConnectionSurfaces,
   options: EngineHostConnectionOptions,
-): Result<EngineHostConnection, EngineHostConnectionFailure> {
+): Promise<Result<EngineHostConnection, EngineHostConnectionFailure>> {
   const pipe = createHostPipe(
     surfaces.pipes,
     options.pipeName,
@@ -202,7 +318,13 @@ export function createEngineHostConnection(
     host: { readonly pid: number; readonly free: () => void } | null;
     started: boolean;
     end: HostTermination | null;
-  } = { client: null, host: null, started: false, end: null };
+    /**
+     * Set only while {@link connected} is waiting, so an ending that arrives
+     * mid-wait is delivered rather than waited out. Cleared by the waiter on
+     * every path, including the one where the peer arrived.
+     */
+    whenEnded: (() => void) | null;
+  } = { client: null, host: null, started: false, end: null, whenEnded: null };
 
   /**
    * Which termination the ending really is.
@@ -244,6 +366,10 @@ export function createEngineHostConnection(
     channel.dispose();
     state.host?.free();
     closePipe();
+
+    // BEFORE the `started` gate, because a connection still being waited on has
+    // not started and its waiter is the only thing that will report this.
+    state.whenEnded?.();
 
     // ONLY for a connection that started. A host that never came up reports its
     // failure through the returned `Result`, and calling this as well would
@@ -288,6 +414,21 @@ export function createEngineHostConnection(
       surface.close(host.value.job);
     },
   };
+
+  // THE PEER, BEFORE THE CLIENT. Everything above built something; this waits
+  // for the other end to exist. See {@link HOST_CONNECT_TIMEOUT_MS} for the
+  // bound and {@link createEngineHostConnection} for why a client handed out
+  // before this point is a defect rather than an optimisation.
+  const peer = await connected(channel, state);
+  if (!peer.connected) {
+    // `started` is still false, so this reports itself once — here, as a
+    // creation failure with a stage — and not a second time through `onEnded`
+    // as a death. That distinction is the whole finding: a host that never
+    // connects is not a host that crashed, and `engineSessions` poisons a
+    // document at two crashes.
+    transport.terminate({ code: 'shutdown', detail: `the host never connected: ${peer.detail}` });
+    return err({ stage: 'connect', detail: peer.detail });
+  }
 
   state.started = true;
 

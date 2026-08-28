@@ -142,6 +142,61 @@ describe('createEngineReaderChannel', () => {
     expect(made.value.finished()).toBe(true);
   });
 
+  it('tells a listener the host connected', () => {
+    const host = surface();
+    const made = createEngineReaderChannel(host, PIPE, READ_BYTES);
+    if (!made.ok) throw new Error(made.error);
+    let connected = 0;
+    made.value.onConnected(() => (connected += 1));
+
+    host.post({ kind: 'connected' });
+
+    expect(connected).toBe(1);
+
+    // ONCE. The reader says it on two of its own paths and neither knows what
+    // the other did, so the count is this module's guarantee rather than the
+    // worker's.
+    host.post({ kind: 'connected' });
+    expect(connected).toBe(1);
+  });
+
+  it('LATCHES a connection that arrived before anything was listening', () => {
+    const host = surface();
+    const made = createEngineReaderChannel(host, PIPE, READ_BYTES);
+    if (!made.ok) throw new Error(made.error);
+
+    // The reader thread starts before the host process is created, so this
+    // ordering is unusual rather than impossible — and a signal that fires with
+    // nobody listening and is then gone is a lost wakeup, which is the same
+    // class of race the `connected` message exists to remove. Registering late
+    // must still be told.
+    host.post({ kind: 'connected' });
+
+    let connected = 0;
+    made.value.onConnected(() => (connected += 1));
+
+    expect(connected).toBe(1);
+  });
+
+  it('drops a connection reported AFTER the ending, so nobody waits on a dead peer', () => {
+    const host = surface();
+    const out = sinks();
+    const made = createEngineReaderChannel(host, PIPE, READ_BYTES);
+    if (!made.ok) throw new Error(made.error);
+    made.value.channel.onEnded(out.ended);
+    let connected = 0;
+    made.value.onConnected(() => (connected += 1));
+
+    host.post({ kind: 'ended', detail: 'stopped' });
+    host.post({ kind: 'connected' });
+
+    // A composer told "connected" by a reader that has already stopped would
+    // hand out a client for a peer that is gone, and its own timeout would then
+    // blame a slow host for a dead one.
+    expect(connected).toBe(0);
+    expect(out.endings).toEqual(['stopped']);
+  });
+
   it('drops chunks that arrive after the ending', () => {
     const host = surface();
     const out = sinks();

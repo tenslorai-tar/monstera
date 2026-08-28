@@ -73,6 +73,29 @@ export interface ReaderHostSurface {
 export interface EngineReaderChannel {
   readonly channel: ReaderChannel;
   /**
+   * Runs the sink when the host has connected to the pipe, or at once if it
+   * already has.
+   *
+   * ## Why it is here and not on {@link ReaderChannel}
+   *
+   * The transport does not need this. What needs it is the **composer**, which
+   * must not hand out a client before a peer exists (finding YYYY-1), and the
+   * composer is what holds this object. Putting it on the transport's view of
+   * the reader would widen an interface for a caller that has no use for it.
+   *
+   * ## It LATCHES, and that is the whole point rather than a convenience
+   *
+   * The reader thread starts before the host process is created, so a sink
+   * registered afterwards is normally in time. *Normally* is what this class of
+   * bug is made of: a signal that fires before anyone is listening and is then
+   * gone is a lost wakeup, which is the same shape as the race this mechanism
+   * exists to remove. So the arrival is recorded, and registering late runs the
+   * sink immediately.
+   *
+   * At most one sink, and it runs at most once.
+   */
+  readonly onConnected: (sink: () => void) => void;
+  /**
    * Releases the stop event and, if the reader is still alive, ends the thread.
    *
    * Idempotent, and called by the composer after the transport reports its
@@ -127,10 +150,20 @@ export function createEngineReaderChannel(
    * call the next check unreachable, and the checks here are what stop a second
    * ending and a second signal.
    */
-  const state = { ended: false, stopped: false, disposed: false };
+  const state = { ended: false, stopped: false, disposed: false, connected: false };
   /** @see EngineReaderChannel.dispose */
   let chunkSink: ((chunk: Uint8Array) => void) | null = null;
   let endedSink: ((detail: string) => void) | null = null;
+  let connectedSink: (() => void) | null = null;
+
+  /** @see EngineReaderChannel.onConnected — records the arrival, then tells whoever asked. */
+  const arrived = (): void => {
+    if (state.connected) return;
+    state.connected = true;
+    const sink = connectedSink;
+    connectedSink = null;
+    sink?.();
+  };
 
   const finish = (detail: string): void => {
     if (state.ended) return;
@@ -139,6 +172,15 @@ export function createEngineReaderChannel(
   };
 
   worker.onMessage((message) => {
+    if (message.kind === 'connected') {
+      // AFTER AN ENDING, DROPPED, as a chunk is. A reader that ended and then
+      // reported a connection would let the composer wait on a peer that is
+      // already gone — and the composer's own timeout would then blame a slow
+      // host for a dead one.
+      if (state.ended) return;
+      arrived();
+      return;
+    }
     if (message.kind === 'chunk') {
       // AFTER AN ENDING, DROPPED. Bytes the reader posted before it stopped are
       // still in flight when the ending is reported, and the layer above drops
@@ -180,6 +222,14 @@ export function createEngineReaderChannel(
       onEnded: (sink) => {
         endedSink = sink;
       },
+    },
+
+    onConnected: (sink): void => {
+      if (state.connected) {
+        sink();
+        return;
+      }
+      connectedSink = sink;
     },
 
     dispose: (): void => {
