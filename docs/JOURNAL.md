@@ -644,6 +644,231 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `2091b91..af73baa` — the fix for a second opinion replaced it with two copies, and the source is importable
+
+**Audited through `af73baa`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: 2091b91..HEAD
+  commits: 3 (one batch is 9)
+  files:   23 (one batch is 24)
+
+  proofs ADDED — new coverage (4):
+    packages/ui/src/primitives/Button.test.tsx
+    packages/ui/src/primitives/Dialog.test.tsx
+    packages/ui/src/primitives/IconButton.test.tsx
+    packages/ui/src/primitives/Input.test.tsx
+  proofs MODIFIED (1):
+    scripts/proofs/domEnvironment.proof.mjs   net +74 -2
+  proofs REMOVED: none
+  source FILES ADDED (7):
+    packages/ui/src/primitives/{Button,Dialog,IconButton,Input}.tsx
+    packages/ui/src/primitives/{iconSize.ts,useOnColor.ts,primitives.css}
+  source FILES CHANGED (2):
+    packages/ui/src/index.ts        net +9 -0
+    scripts/lib/domEnvironment.mjs
+  source FILES REMOVED: none
+```
+
+The range is the four Stage 0 primitives and EEEE-1's fix. **Audited early** —
+3 commits and 23 files, both inside the batch — because the next commit crosses
+the gate and the hook blocked it, which is the mechanism working for the second
+time in a day.
+
+### GGGG-1 — EEEE-1's fix traded two guesses for two copies, and both sources can be imported
+
+EEEE-1 was that `check:domenvironment` walked `packages/` and `apps/` for `.ts`
+and `.tsx` while vitest collects `?(c|m)[jt]s?(x)` from the whole repository —
+a second opinion about where tests live, wrong in the silent direction. The fix
+takes its extent from vitest's rule instead, and the scan now finds the probe
+that defeated it.
+
+**But it takes that rule by transcription.** Two constants, both hand-written:
+
+| constant in `domEnvironment.mjs` | the authority | reachable? |
+|---|---|---|
+| `COLLECTED = /\.(?:test\|spec)\.[cm]?[jt]sx?$/u` | `defaultInclude` from `vitest/config` | **yes**, exported |
+| `SKIPPED = {node_modules, dist, .git, .tools, .probe, release, .cache}` | `test.exclude` in `vitest.config.mjs` | **yes**, one import |
+
+Measured, by importing them:
+
+```
+defaultInclude: ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]
+defaultExclude: ["**/node_modules/**","**/.git/**"]
+
+vitest.config.mjs test.exclude:
+  ['**/node_modules/**', '**/dist/**', '.tools/**', '.probe/**', 'release/**']
+```
+
+The transcription is faithful today and the two sets **already differ**:
+`SKIPPED` carries `.cache`, which this project's `exclude` does not, so a
+`.test.mjs` under `.cache/` is collected by vitest and skipped by the scan. That
+is the silent direction again, in the fix for the silent direction.
+
+`CLAUDE.md` states the rule this breaks: *copy only where the reader cannot
+reach the source.* The reader can reach both. **The finding is the second
+opinion, not the wrong one** (B3a) — and this is that sentence recurring inside
+the commit written to close an instance of it, which is the pattern this
+project's record keeps producing.
+
+**The trade-off is real and is why this is recorded rather than reflexively
+fixed:** importing `vitest/config` gives the scan a `node_modules` dependency it
+does not have today. `check:jobplacement` exists precisely to keep that honest,
+and `check:domenvironment` is registered in the `build` job, which installs — so
+the cost is affordable and the import is the right answer. Fixed in the commit
+after this one.
+
+### 1. Root cause or workaround?
+
+Two corrections in the range, and **one is a workaround the owner has now ruled
+on.**
+
+- **EEEE-1's fix.** Root cause as far as it went — the extent now comes from the
+  governing rule rather than from a guess — and GGGG-1 is the half it did not
+  reach.
+- **`useOnColor` reading tokens at the document element.** The previous audit
+  classified this honestly as a workaround with a stated trigger and flagged it
+  for the owner. **Ruled: do not decide it from happy-dom.** The test double was
+  deciding the product's behaviour — the ambient-environment axis running
+  backwards. The question is *may a token carry a different value below the
+  root*, answerable from §6 and ADR-0003 and nowhere else, and the comment must
+  not rest on what the test environment does. Settled in its own commit; the
+  code is unchanged in this range.
+
+### 2. Verified against the easy shape only?
+
+The primitives were verified against the hard shape where one exists: the
+contrast fixture uses the real `--text` and `--accent`, which measure ~1.8:1 and
+therefore fail the 4.5 a label needs, so a component ignoring `onColor` produces
+a visibly different value. `Input` is tested with **two instances**, which is
+the shape a hand-written `htmlFor` fails and a single instance cannot see.
+
+Not verified against the hard shape: the DOM scan after its fix was run against
+this tree and against a fixture root, and **not** against a tree whose vitest
+config excludes something new. GGGG-1 is that gap.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes. `check:domenvironment`'s walk went from two named roots to the repository
+root, which **widens** what it examines — the opposite direction from the usual
+concern, and it carries a cost worth naming: the scan now reads every collected
+test file in the tree rather than 118 files under two directories. No
+provisioning condition was added in this range; GGGG-1's fix will add one, which
+is why it is called out there rather than absorbed.
+
+### 3. Would CI have caught it?
+
+**GGGG-1: no.** Both copies are faithful today, so every check is green and will
+stay green until `vitest.config.mjs`'s `exclude` changes — at which point the
+scan silently skips a directory vitest collects. There is no check that compares
+the two, which is what makes the import rather than a comparison the right fix.
+
+Answered from a run: the board is GREEN at `af73baa`, `Guards=success,
+CI=success`, so `check:domenvironment` and its proof executed on both matrix
+legs against the widened walk.
+
+**The other direction — a defect this machine cannot see?** The primitives'
+whole appearance is unexercised: no stylesheet is loaded in a component test, so
+`primitives.css` has never been applied to anything on any machine. That is
+§10.7's visual pass, and it is owed rather than missing.
+
+### 4. Non-vacuous proofs
+
+Mutations run in the range, and the one that did not bite is the finding:
+
+| mutation | result |
+|---|---|
+| `onColor` minimum 4.5 → 1 | both Button colour cases red |
+| `MutationObserver` callback emptied | the theme-change case red |
+| `aria-label` → `data-label` | 8 cases red across two files |
+| `modal` → `modal={false}` | **exactly one** case red |
+| DOM-scan rule → deny-list | 4 of 13 cases red |
+
+`modal={false}` leaves the focus-guard case green, because Base UI installs
+guards for a non-modal popup too. So that case is evidence the dialog is a real
+Base UI popup — what goes red if someone re-derives one from a `div` — and not
+evidence that focus is trapped. Written beside the case, because a reader
+counting cases that mention focus would put its coverage at three when it is one.
+
+### 4a. Instrument resolution tests
+
+The vehicle was resolution-tested before the primitives were built on it: focus
+on A versus B must read as two different values, and a key event must reach the
+focused element. Both pass vacuously in a DOM where `focus()` does nothing.
+
+**And the resolution test that mattered most in this range was applied to a
+RESOLVER, not an instrument** — see the next range's `ciVerifiers.mjs`, whose
+derived set was measured before anything was wired to it. The question 4a asks
+of a measuring device is whether two different values read as different; the
+question for a resolver is whether a set derived from thirty-odd inputs comes
+back with thirty-odd members or with one.
+
+### 4b. Searches with positive controls
+
+`domEnvironment.mjs` keeps its control fixture and its refusal, and the proof
+executes both refusal branches rather than describing them. The control tests
+the **matcher**; EEEE-1 was in the **walk**, and GGGG-1 is in the walk's
+constants. A positive control on a pattern does not test the roots, and neither
+tests whether the roots were copied from somewhere that can move.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**This is GGGG-1 restated, and the direction is the whole point.** The scan now
+derives its extent from vitest's rule, which is correct — but it derives it from
+a *transcription* of that rule, and a transcription cannot disagree with its
+source either. The danger runs toward a smaller set (a directory vitest collects
+and the scan skips), so the extent must come from the source itself.
+
+`ICON_SIZES` in `iconSize.ts` is the counter-example done right: typed as a
+four-tuple rather than `IconSize[]`, so a fifth use added to the union without
+being added to the roster is a compile error, and the test that asserts four
+distinct classes cannot silently agree with a shrink.
+
+### 5. Executed, or asserted?
+
+**Executed:** every mutation above · `defaultInclude` and `defaultExclude`, by
+importing them · `vitest.config.mjs`'s `exclude`, read from the file · the board
+at `af73baa` · the full suite at 586 cases · `typecheck`, `lint`, the document
+checks, and the sweep at 106 passed / 0 failed / 110 of 114 attempted.
+
+**Asserted, and owed:** that `disableStyleElements` is the right answer under
+`style-src 'self'` — happy-dom enforces no CSP, so no unit test here can
+separate the guarded case from the unguarded one, and writing one would be the
+vacuous fixture item 4 forbids. **Ruled: the mechanism belongs in the Playwright
+pass** — an assertion that opening and closing a Dialog produces no CSP
+violation, with a positive control that deliberately injects a style element and
+sees it blocked, because *no violations* is the reassuring answer and a page
+that never loaded produces it too. Until then `disableStyleElements` is a rule,
+not a mechanism, and this project's record on those is seven occurrences for one
+of them.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No amendment needed and none made; the primitives register into §10.4 and
+ADR-0005 as they stand.
+
+**AAAA-1 stands and is now the oldest item on the list.** `composition.ts`
+matches the factory **zero** times. YYYY-1 cleared its blocker, ADR-0028 decided
+its FFI question, and a contained host has started on two machines.
+`docs/ARCHITECTURE.md:746` still carries the superseded clause with ADR-0028's
+replacement text written and unapplied — and **two amendments are owed to that
+one clause**, ADR-0028's and ADR-0025's `mupdf-host` baseline, so whichever
+lands first must name the other as pending in the amendment log.
+
+### 7. Do the documents still match the code?
+
+`docs/UI-GUIDE.md`'s three stale claims (EEEE-2) are corrected in the primitives
+commit rather than annotated, because it is a derived live specification and its
+own closing section asks for exactly that. `docs/FEATURES.md`'s design-substrate
+row is edited true, including the correction of EEEE-3 — the row briefly claimed
+`docs/UI-GUIDE.md` was still owed when it has existed since `8288aac`.
+
+ADR-0004 carries a correction rather than an edit, and
+`docs/DECISIONS/README.md` records it, which `check:docs` required rather than
+suggested.
+
+---
+
 ## 2026-08-28 — Stage audit: `c8fa4d0..2091b91` — the fence around the DOM has a hole the shape of its own roots, and a document went stale a range ago
 
 **Audited through `2091b91`.** Pasted from `npm run audit:scope`:
