@@ -148,6 +148,8 @@
     "proof:purge": "node scripts/proofs/purgeCensus.proof.mjs",
     "proof:lintrules": "node scripts/proofs/lintRules.proof.mjs",
     "check:domenvironment": "node scripts/lib/domEnvironment.mjs",
+    "check:secondwiring": "node scripts/lib/secondWiringPlace.mjs",
+    "proof:secondwiring": "node scripts/proofs/secondWiringPlace.proof.mjs",
     "proof:domenvironment": "node scripts/proofs/domEnvironment.proof.mjs",
     "proof:engines": "node scripts/spike/engineSpike.mjs",
     "proof:hostcontainment": "node scripts/research/lowboxSpike.mjs"

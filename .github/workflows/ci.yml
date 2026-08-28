@@ -207,6 +207,12 @@ jobs:
       - name: No decorative border token bounds an unmarked control
         run: node scripts/ci/annotate.mjs scripts/lib/borderTokens.mjs
 
+      - name: Prove the second-wiring-place scan can see, refuse and tolerate
+        run: node scripts/ci/annotate.mjs scripts/proofs/secondWiringPlace.proof.mjs
+
+      - name: No surface renders a hand-written command list
+        run: node scripts/ci/annotate.mjs scripts/lib/secondWiringPlace.mjs
+
       - name: Prove the DOM-environment scan can see, refuse and tolerate
         run: node scripts/ci/annotate.mjs scripts/proofs/domEnvironment.proof.mjs
 

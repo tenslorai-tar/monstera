@@ -109,6 +109,32 @@ the second wiring place this registry exists to forbid* is a rule, and this
 project's record on rules without mechanisms is seven occurrences for one of
 them and seven for another.
 
+> **Built, 2026-08-28 — `check:secondwiring`, before the surfaces it governs.**
+> That ordering is B9's argument one layer up: a rule about how surfaces are
+> *written* cannot be applied to surfaces already written, so the mechanism has
+> to exist on the day the first one is.
+>
+> Two conventions are now **fixed by the scan and stated here**, because a scan
+> that guesses at either goes quiet: the surfaces live under
+> `packages/ui/src/surfaces/`, and a command id is `<domain>.<name>` — the same
+> grammar as a `MessageKey`. A future builder who wants different ones changes
+> them here and in the scan together.
+>
+> **The scan has three states, and the middle one is why it is safe to write
+> now.** No registry → NOTHING TO SCAN, exit 0, since nothing can be a second
+> wiring place before a first one exists. A registry **and** a surfaces
+> directory → scanned. A registry and **no** surfaces directory → **refuse**,
+> because the projections are then being written somewhere the scan is not
+> looking, and that is the state which otherwise passes silently for the life of
+> the project. This repository has paid twice for X-1's root axis — most
+> recently in `check:domenvironment`, one range ago, in an instrument written the
+> same morning as the finding — so the root is tied to the registry's existence
+> rather than named and hoped for.
+>
+> `proof:secondwiring` executes all three states against fixture roots rather
+> than describing them, and the scan carries a positive control it refuses
+> without.
+
 ---
 
 ## Decision 5 — `when(ctx)` is pure, and `ctx` is a value the caller already has
