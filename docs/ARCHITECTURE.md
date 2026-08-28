@@ -743,12 +743,25 @@ say**.
     cache warmed at startup — so the ratio holds steady while the process grows
     by hundreds of megabytes, and the absolute cap does not object until it is
     gigabytes late. Each baseline is argued the same way as the budgets it sits
-    beside: `main` runs the language runtime and nothing else, so its fixed cost
-    should be within a small factor of a bare interpreter, and anything more
-    means it is loading something it has no business loading. `mupdf-host` also
-    carries the FFI binding and the statically linked engine, so its fixed cost
-    is larger by the engine's own footprint — but the engine's fixed cost is
-    meant to be a fraction of the runtime's, not a multiple of it.
+    beside: `main` runs the language runtime and the foreign-function binding it
+    needs to create a contained engine host — `kernel32.dll` and `advapi32.dll`,
+    and nothing else. Its fixed cost should be within a small factor of a bare
+    interpreter plus that binding, and anything more means it is loading
+    something it has no business loading. `mupdf-host` carries the same binding
+    **and** the statically linked engine, so its fixed cost is larger by the
+    engine's own footprint — but the engine's fixed cost is meant to be a
+    fraction of the runtime's, not a multiple of it.
+
+    > **A SECOND AMENDMENT IS OWED TO THIS SAME CLAUSE AND HAS NOT LANDED.**
+    > [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)
+    > owes `mupdf-host` a derived baseline, and it is blocked on two things its
+    > own closing section names: host readings across days under the pinned
+    > runtime, and those readings taken through the real host rather than
+    > `hostFixedCost.mjs`. Recorded here, in the sentence both amendments touch,
+    > because two independent edits to one clause is how a document acquires a
+    > contradiction — and the last sentence above is the one ADR-0025 will
+    > rewrite: the ratio it asserts is **already falsified on two machines**,
+    > measured at 1.06× on the runner and 1.05× here.
 
     **A baseline budget has an UPPER bound as well as a lower one, and the upper
     bound is what makes it a detector** ([ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md),
@@ -1339,6 +1352,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-08-28 | **`main` legitimately holds the process-creation binding, and §9.17's argument for its baseline is amended to say so** (§9.17). ADR-0022 makes `main` the process that creates a contained engine host — `CreateProcessW` suspended, a job object, an AppContainer token — and that requires an FFI binding in `main`, which the same sentence that derives `main`'s budget assigned to `mupdf-host` by name. The budget is not a limit with a rationale attached; the rationale is what derives it (ADR-0025), so weakening the argument silently weakens the budget silently. The permission is bounded by **two library names**, `kernel32.dll` and `advapi32.dll`, rather than by *"the binding it needs"* — a hole the next reader widens by arguing about need, where two names are a set somebody can be wrong about in public. Invariant 20 is untouched: what `main` may load is the operating system's own libraries through an FFI loader, and MuPDF in `main` remains forbidden by name. `mupdf-host`'s clause stops saying *"also"*, which had acquired a second meaning — *and `main` does not* — and was the half of a compound claim that goes stale without looking wrong. The surface is imported **statically**: ≤2.7 MB measured, against 43.7 MB for a Node-mode helper (~16×) that merely moves the FFI to a process §9.17 does not name, and against a lazy import rejected because a session is created at *open*, `baselineFor` measures every role against a document, and **no role measures composed `main` at all** — so the deferral would protect a state no instrument observes. **A second amendment is owed to this same clause and is named in it**: ADR-0025's `mupdf-host` baseline, blocked on host readings across days through the real host. | §9.17's `main` clause, which read *"`main` runs the language runtime and nothing else"* and assigned the FFI binding to `mupdf-host` by name | [ADR-0028](DECISIONS/0028-main-holds-the-process-creation-binding.md) |
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
 | 2026-08-16 | Page reorder and form flattening move to MuPDF; field creation and content composition move to @cantoo/pdf-lib; pdf-lib removed; `rearrangePages` banned; §3.1 lifted. | `BUILD-PROMPT.md` Part C3's page-reorder and form-flatten rows and their stated justifications | [ADR-0006](DECISIONS/0006-engine-capability-spike-results.md) |
 | 2026-08-16 | Token roles carry five categories and declare their permitted surfaces; `--border` splits into `--border-control` (3:1) and decorative `--border`/`--border-soft` (exempt) (§10.2). | `BUILD-PROMPT.md` Part M2's two-way "text-bearing or fill-only" role typing | [ADR-0003](DECISIONS/0003-token-role-typing-and-declared-pairings.md) |

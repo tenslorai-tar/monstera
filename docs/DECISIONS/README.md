@@ -82,8 +82,8 @@ Each contains:
 | [0022](0022-the-engine-host-is-a-process-we-create.md) | The engine host is a process we create, not a utility process | Accepted; two stale references corrected 2026-08-22/23 |
 | [0023](0023-how-the-contained-engine-host-is-built.md) | How the contained engine host is built | Accepted; corrected 22 times, 2026-08-22 to 2026-08-28 — read the corrections before the body |
 | [0024](0024-execution-mode-is-a-placement-axis.md) | Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side | Accepted; a cost read off a file rather than paid, corrected 2026-08-25 |
-| [0025](0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) | `main`'s baseline budget is derived from what it must catch, and 96 MB was not | Accepted; the ceiling, `R`'s runtime and the drift attribution corrected 2026-08-27 |
+| [0025](0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) | `main`'s baseline budget is derived from what it must catch, and 96 MB was not | Accepted; the ceiling, `R`'s runtime and the drift attribution corrected 2026-08-27, and a bound withdrawn 2026-08-28 when `perf:gate` turned out never to have run in CI |
 | [0026](0026-a-declaration-is-not-an-implementation.md) | A declaration is not an implementation, and the kernel's public surface carries no native binding | Accepted |
 | [0027](0027-a-development-grant-belongs-to-provisioning.md) | A development grant belongs to provisioning, not to the application | Accepted; corrected 2026-08-27 — the grant is necessary and not sufficient, and the set is reshaped |
-| [0028](0028-main-holds-the-process-creation-binding.md) | `main` holds the process-creation binding, and §9.17's `main` clause is amended to say so | Accepted; §9.17 not yet amended |
+| [0028](0028-main-holds-the-process-creation-binding.md) | `main` holds the process-creation binding, and §9.17's `main` clause is amended to say so | Accepted; §9.17 amended 2026-08-28 |
 | [0029](0029-how-the-registries-are-built.md) | How the registries are built: registration is a value, not a side effect | Accepted as a design; nothing built |
