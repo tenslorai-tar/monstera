@@ -145,6 +145,26 @@ requires changing Vite and electron-vite only, not the React plugin.
   release, which is what Part J already mandates by insisting the NOTICE be
   generated rather than hand-maintained.
 
+## Correction — 2026-08-28 — `lucide-react` is ISC **and** MIT
+
+The consequence above reads *"`lucide-react` is ISC, not MIT — permissive and
+compatible, but the licence manifest must say ISC."* That was read from the
+registry's licence field, and the field is not the whole grant.
+
+`node_modules/lucide-react/LICENSE` at 1.34.0 is 43 lines and contains **two**
+licences: the ISC grant, and below it *"The following Lucide icons are derived
+from the Feather project"* — 110 named icons under MIT, copyright Cole Bemis.
+`x`, the only icon Stage 0 ships, is on that list.
+
+Nothing about compatibility changes; both are permissive and AGPL-compatible.
+What changes is what the manifest owes: an SPDX string of `ISC` describes the
+package and understates the bundle. `npm run notice:generate` was already right,
+because it copies the licence **file** rather than the field — the same reason
+Part J insists NOTICE be generated. The claim above was the hand-read one.
+
+This is the `node-forge` lesson in a package nobody flagged: the registry's
+licence field is a summary, and the file is the grant.
+
 ## Addition — 2026-08-28 — the component-test vehicle
 
 Added by the project owner's ruling. Not a correction to anything above: the
@@ -156,6 +176,12 @@ nothing had needed one until Stage 0's four UI primitives came up.
 | happy-dom | 20.11.12 | MIT | devDependency |
 | @testing-library/react | 16.3.3 | MIT | devDependency |
 | @testing-library/dom | 10.4.1 | MIT | devDependency |
+| lucide-react | 1.34.0 | ISC + MIT | **production**, in `packages/ui` |
+
+`lucide-react` is not part of the test vehicle; it is §10.4's mandated icon set,
+added with the primitives in the same range. Counted the same way: the
+production tree goes **43 to 44**, so it brings nothing with it. See the
+correction above for what its licence actually is.
 
 All three fetched from `registry.npmjs.org` on 2026-08-28. `@testing-library/dom`
 is a **peer** of `@testing-library/react`, declared here explicitly so the

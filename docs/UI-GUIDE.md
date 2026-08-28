@@ -147,17 +147,23 @@ that names a colour directly is a component that only works in one theme.
 
 ## Strings, dialogs, icons
 
-**None of the four rules below has a mechanism yet**, and every one of them is
-substrate rather than a feature — B9's whole point is that they cannot be
+**Three of the four rules below still have no mechanism**, and every one of them
+is substrate rather than a feature — B9's whole point is that they cannot be
 retrofitted across tens of thousands of lines. They are listed here so the first
 component written obeys them, and each names what is owed:
 
 - **No literal user-facing string in JSX.** Strings are i18n keys from the first
   line. *Owed: the lint rule. `eslint.config.js` registers no such rule today.*
+  The primitives take their text as **props rather than children**, which puts
+  the ban at that boundary in the meantime; it is not a substitute, because a
+  feature composing its own JSX is not covered by it.
 - **Every dialog uses the one `<Dialog>` primitive.** Not a div with a role, not
   a second modal — the primitive is where focus trapping, escape handling and the
-  a11y contract live once. *Owed: the primitive. `packages/ui/src/` holds
-  `bridge.ts`, `index.ts` and `tokens.css`, and no component at all.*
+  a11y contract live once. **Landed 2026-08-28**:
+  `packages/ui/src/primitives/Dialog.tsx`, on Base UI, with `Button`,
+  `IconButton` and `Input` beside it. *Still owed: a check that no second modal
+  is written — the rule is a rule, and nothing looks for a `div` with
+  `role="dialog"`.*
 - **No emoji as icons.** Icons come from the generated set; emoji render
   differently per platform and carry no accessible name.
 - **No magic pixel values.** Spacing and radii are tokens for the same reason
@@ -176,11 +182,27 @@ users.
 So a new primitive is done when a screen containing it passes the axe run — not
 when its markup looks right.
 
-> **Neither axe-core nor Playwright is installed**, and React is not installed
-> either. This paragraph is the specification the first primitive must arrive
-> with, not a suite you can run today. It is written down now because the
-> alternative — build the primitives, then decide how they are checked — is how a
-> project ends up with a source-level linter standing in for a real screen.
+> **Neither axe-core nor Playwright is installed.** This paragraph is the
+> specification the primitives must eventually meet, not a suite you can run
+> today. It is written down because the alternative — build the primitives, then
+> decide how they are checked — is how a project ends up with a source-level
+> linter standing in for a real screen.
+>
+> **Corrected 2026-08-28.** This paragraph used to end *"and React is not
+> installed either"*. React went in at `3e25b74`, a range before that was
+> noticed, and the sentence stayed true about axe and Playwright the whole time
+> — a compound claim with one clause dead and one alive, which is the shape a
+> reader checks the living half of and passes over. Recorded as audit finding
+> EEEE-2 rather than quietly fixed, because nothing in this repository could have
+> caught it: no check reads this file, and no commit ever touched both this
+> sentence and the code that falsified it.
+>
+> **What IS runnable today**, and it is less than this section requires: 29
+> component cases over `happy-dom` and `@testing-library/react`, querying by
+> accessible role and label so a control that loses its name goes red. That is
+> not the axe gate. A screen composed of correct parts can still fail on focus
+> order and post-composition contrast, which is the whole reason §10.4 puts the
+> mechanism at runtime.
 
 ---
 

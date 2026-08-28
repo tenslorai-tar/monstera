@@ -1,0 +1,203 @@
+/*
+ * The four Stage 0 primitives (ARCHITECTURE §10.4).
+ *
+ * Tokens only. Every colour, space, radius, font size and icon size below is a
+ * `var(--…)` declared in `tokens.css`, which is the single source of visual
+ * truth — a raw hex or a magic pixel here would be the second writer §10.2
+ * forbids, and it would be right in one theme and silently wrong in the others.
+ *
+ * ## This file is where §10.4's four icon sizes become pixels
+ *
+ * `iconSize.ts` carries the four USE names and deliberately no numbers. The
+ * mapping from a use to a size lives here, once, because CSS can size an `<svg>`
+ * and so the reader can reach the source — which is the condition `CLAUDE.md`
+ * puts on making a copy at all.
+ *
+ * ## Boundaries use `--border-control`, and the exception is marked
+ *
+ * ADR-0003 splits the border tokens: `--border-control` solves for 3:1 and is
+ * the only one that may bound something a user can click, type in, drag or
+ * focus. `check:bordertokens` reports any decorative-grade border with no reason
+ * written on the line, so the one divider below carries its reason.
+ *
+ * ## No focus ring is `outline: none`
+ *
+ * A control that loses its focus ring is unusable by keyboard, which is the
+ * population §10.4's "all keyboard-first" is about. `:focus-visible` uses
+ * `--border-control` because a focus ring is the most control-like boundary
+ * there is.
+ */
+
+/* ─── Button ─────────────────────────────────────────────────────────────── */
+
+.m-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-6);
+  font-size: var(--font-chrome-13);
+  cursor: pointer;
+}
+
+.m-button--default {
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.m-button--default:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+.m-button--primary {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  /* No `color` here. The primary variant's foreground is solved against the
+     fill in effect by `useOnColor` and applied through React's style prop, so
+     that it is correct in every theme rather than in the one it was sampled in.
+     ADR-0003: storing a derived colour is a defect. */
+}
+
+.m-button--primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+.m-button:disabled {
+  cursor: default;
+  color: var(--faint);
+}
+
+.m-button:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 2px;
+}
+
+/* ─── IconButton ─────────────────────────────────────────────────────────── */
+
+.m-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-4);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.m-icon-button:hover:not(:disabled) {
+  background: var(--surface2);
+}
+
+.m-icon-button:disabled {
+  cursor: default;
+  color: var(--faint);
+}
+
+.m-icon-button:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 2px;
+}
+
+/* §10.4's four sizes, and the only place they are written as values. The
+   selector names the USE; the token names the size. */
+.m-icon-button--chrome svg {
+  width: var(--icon-12);
+  height: var(--icon-12);
+}
+
+.m-icon-button--dense svg {
+  width: var(--icon-14);
+  height: var(--icon-14);
+}
+
+.m-icon-button--control svg {
+  width: var(--icon-16);
+  height: var(--icon-16);
+}
+
+.m-icon-button--ribbon svg {
+  width: var(--icon-20);
+  height: var(--icon-20);
+}
+
+/* ─── Input ──────────────────────────────────────────────────────────────── */
+
+.m-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.m-field__label {
+  font-size: var(--font-chrome-12);
+  color: var(--muted);
+}
+
+.m-input {
+  padding: var(--space-8);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+  background: var(--bg2);
+  color: var(--text);
+  font-size: var(--font-chrome-13);
+}
+
+.m-input::placeholder {
+  color: var(--faint);
+}
+
+.m-input:focus-visible {
+  outline: 2px solid var(--border-control);
+  outline-offset: 1px;
+}
+
+/* ─── Dialog ─────────────────────────────────────────────────────────────── */
+
+.m-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--canvas);
+  opacity: 0.6;
+}
+
+.m-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-10);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elevation-3);
+}
+
+.m-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid var(--border); /* decorative: separates the dialog's title from its body; nothing here is interactive */
+}
+
+.m-dialog__title {
+  margin: 0;
+  font-size: var(--font-content-16);
+  color: var(--text);
+}
+
+.m-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
