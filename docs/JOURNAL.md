@@ -644,6 +644,329 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — Stage audit: `c8fa4d0..2091b91` — the fence around the DOM has a hole the shape of its own roots, and a document went stale a range ago
+
+**Audited through `2091b91`.** Pasted from `npm run audit:scope`:
+
+```
+Unaudited range: c8fa4d0..HEAD
+  commits: 5 (one batch is 9)
+  files:   22 (one batch is 24)
+
+  proofs ADDED — new coverage (4):
+    packages/shared/src/colour.test.ts
+    packages/ui/src/documentStores.test.ts
+    packages/ui/src/renderVehicle.test.tsx
+    scripts/proofs/domEnvironment.proof.mjs
+  proofs MODIFIED (1):
+    scripts/proofs/electronImports.proof.mjs   net +14 -0
+  proofs REMOVED: none
+  source FILES ADDED (4):
+    packages/shared/src/colour.ts
+    packages/testing/src/domCleanup.ts
+    packages/ui/src/documentStores.ts
+    scripts/lib/domEnvironment.mjs
+  source FILES CHANGED (3):
+    packages/shared/src/index.ts    net  +1 -0
+    packages/ui/src/index.ts        net  +7 -0
+    scripts/lib/tokenContrast.mjs   net +64 -61
+  source FILES REMOVED: none
+```
+
+The range is `onColor`, the per-document stores, ADR-0029, and the
+component-test vehicle. **The audit was not owed at this point** — 5 commits, 22
+files, both inside the batch — and is run here because the next commit crosses
+the gate and the pre-commit hook blocked it, which is the mechanism working.
+
+### EEEE-1 — `check:domenvironment` cannot see the thing it forbids, and I wrote it this morning
+
+The check exists because installing `happy-dom` created a capability that
+`CLAUDE.md`'s rule — *a test that must fake `DOMMatrix` or a window bridge is
+evidence the boundary is wrong* — had never needed a mechanism for. It requires
+the `node` environment outside `packages/ui`. It has a positive control, it
+refuses on an empty walk, its proof executes both refusal branches, and mutating
+its rule to a deny-list reddens 4 of 10 cases.
+
+**And it is blind to a DOM in `scripts/`.** Measured, by writing a probe file
+and **deleting it immediately** — it is not in the tree and was never committed,
+which is why the paths below resolve to nothing:
+
+```
+scripts/auditprobe.test.mjs  (written, run, deleted — no longer exists)
+  first line naming happy-dom as its environment
+
+  npx vitest run scripts/auditprobe.test.mjs   →  Test Files 1 passed
+    (since deleted)                                (typeof document === 'object')
+  node scripts/lib/domEnvironment.mjs          →  "no test outside packages/ui
+                                                   names one", 118 files, exit 0
+```
+
+Two axes, and both were narrow from the first line I typed:
+
+| axis | what I wrote | what governs |
+|---|---|---|
+| root | `['packages', 'apps']` | `vitest.config.mjs` sets **no `include`**, so vitest collects from the whole repository |
+| pattern | `.ts` and `.tsx` | vitest's default is `?(c\|m)[jt]s?(x)` — `.mjs`, `.cjs`, `.js`, `.jsx`, `.mts` all collect |
+
+These are W-1's *pattern* and X-1's *root*, the two axes of this classifier the
+audit-scope report has already been fixed on, in a new instrument, one range
+later. The remedy is not to widen the two lists — that is the same guess again —
+it is that **the governed set is the set of files vitest collects**, so the
+extent must come from vitest's own rule rather than from a second opinion about
+where tests live (B3a).
+
+**The anchor was present and on the wrong axis.** The check refuses when
+`filesScanned === 0`, which catches a walk that broke. It cannot catch a walk
+that succeeded over the wrong set, because 118 files is a confident number
+either way. Checklist 4c asks which direction the danger runs; here it runs
+toward a *smaller* set, and a count derived from the walk agrees with any
+smaller set it produces.
+
+Not fixed in this commit, which is docs-only by rule. Fixed in the next.
+
+### EEEE-2 — `docs/UI-GUIDE.md` says React is not installed, and it has been since the previous range
+
+Found by running item 7's NNN-4 compensation — *a range that states a
+cross-document relationship must sweep every other statement of that
+relationship* — for the first time since it was written. This range states one:
+`onColor`'s home is `packages/shared`, and `d81b3fd`'s whole subject is that the
+WCAG formula has one writer. Sweeping `computed at the point of use` and
+`storing a derived color` across the documents surfaced `docs/UI-GUIDE.md`,
+which no check reads and which nobody had opened.
+
+Three stale claims, all in the *"Strings, dialogs, icons"* and accessibility
+sections:
+
+1. *"Owed: the primitive. `packages/ui/src/` holds `bridge.ts`, `index.ts` and
+   `tokens.css`, and no component at all."* — false as of the next commit.
+2. *"Neither axe-core nor Playwright is installed, and React is not installed
+   either."* — **React was installed in `3e25b74`, inside the PREVIOUS range**,
+   and that audit's item 7 did not reach it. axe and Playwright are still
+   absent, so this is a compound claim with one clause dead and one alive, which
+   the checklist names as the shape no reader flags: the half you check is the
+   half that is still true.
+3. *"None of the four rules below has a mechanism yet."* — the dialog rule
+   acquires one with the primitive.
+
+This is NNN-4's own point demonstrated rather than restated: **a document is
+falsified by a commit that never touches it**, so no range-scoped sweep of
+changed files can reach it. What reached it was a sweep keyed on the *subject*
+the range asserts.
+
+### EEEE-3 — I wrote a false claim while writing up the true one
+
+The `docs/FEATURES.md` row for the design substrate, edited in the next commit,
+listed *"Still owed: `docs/UI-GUIDE.md`"*. **The file exists — 192 lines,
+committed at `8288aac`.** The claim was false at the moment it was written, so
+no sweep for staleness could ever have found it (AAAA-8), and it was caught two
+minutes later by the sweep run for EEEE-2 against a different question.
+
+The tell AAAA-8 gives is *a claim that names one axis where the evidence varies
+on two*. This one is simpler and worse: I listed what a row owed from the row's
+own text without opening the file, and `check:docs` cannot help because a
+document existing is not a link. Corrected before that commit lands.
+
+### 1. Root cause or workaround?
+
+Four corrections in the range. Three are root-cause; **one I am classifying as a
+workaround and flagging rather than defending.**
+
+- **`useOnColor` holding state → writing to the element.** Root cause.
+  `react-hooks/set-state-in-effect` rejected the first version and was pointing
+  at a defect rather than a shape it disliked: that version's dependencies were
+  the token *names*, which do not change when the theme does, so it solved once
+  at mount and then held a stale colour — the stored derived colour ADR-0003
+  forbids, arriving by the back door inside the hook written to prevent it. The
+  rewrite holds no state and a `MutationObserver` on `data-theme` makes the
+  answer follow the theme; disabling the observer reddens that case.
+- **`fireEvent.change` for the input.** Root cause, and the diagnosis is the
+  finding: React tracks an input's value through its own property descriptor, so
+  assigning `.value` and dispatching `input` is invisible to it. **It read as a
+  broken component for one run and was a broken harness.**
+- **The docblock described rather than spelled in `domCleanup.ts`.** Root cause,
+  and the same move `borderTokens.mjs` already makes: a scan cannot tell a prose
+  mention from a directive, so the marker is not written out in prose.
+- **`useOnColor` reading tokens at the document element rather than at the
+  target.** *Prompted by a harness limitation, and weaker than the alternative.*
+  happy-dom does not inherit custom properties to a child — measured — so
+  reading at the element cannot be tested there at all. Reading at the root is
+  correct **as long as every theme is applied to `<html>`**, which is how
+  `tokens.css` is written today; reading at the element would be correct in that
+  case *and* under a subtree theme. So I chose the narrower rule after the
+  broader one turned out to be untestable, which is the shape Rule 0 warns
+  about, and the honest classification is a workaround with a stated trigger
+  rather than a fix. The trigger is written into the module: *the first time a
+  theme attribute is set on anything other than the document element.* **Owner's
+  to overrule.**
+
+### 2. Verified against the easy shape only?
+
+The vehicle was verified here and then on **both CI legs** — board GREEN at
+`2091b91`, `CI=success, Guards=success` — so the ambient-environment axis is
+covered by two machines rather than one.
+
+The hard shape I did test, because it is the one that separates: the Button's
+contrast fixture uses the **real** `--text` and `--accent`, which measure about
+1.8:1 and therefore *fail* the 4.5 a label needs. A fixture whose text already
+cleared its fill is satisfied by a component that ignores `onColor` entirely —
+defect and correct behaviour produce the same colour.
+
+The hard shape I did **not** test is EEEE-1: I verified `check:domenvironment`
+against the tree it was written for and never asked what a test file outside
+that tree looks like to it.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and the commit stated it. `check:tokencontrast` implemented the WCAG
+formula; it now imports it from `packages/shared/dist`, so **a check that needed
+no build now needs one.** That is 2a's exact shape — a provisioning condition an
+assertion did not have.
+
+It differs from the electron-symbols case in the direction that matters: a
+missing or stale build **throws** rather than reporting *unverifiable*, so it
+fails closed. Verified independently rather than taken from the commit message:
+`check:tokencontrast` runs at `ci.yml:197`, in the `build` job, which runs
+`npm run build` at line 144. It appears in no other job.
+
+### 3. Would CI have caught it?
+
+**EEEE-1: no, and it never will as written** — the check is registered
+(`ci.yml`, two steps, both green at `2091b91`) and reports success over the
+wrong set, which is the failure that looks exactly like coverage.
+
+**EEEE-2 and EEEE-3: no.** `docs/UI-GUIDE.md` is read by no check. `check:docs`
+verifies that links resolve and that FEATURES rows are well-formed; neither can
+see a sentence that has become false, and EEEE-3 was never true.
+
+Answered from a run, not from the workflow file: the board at `2091b91` is
+`Guards=success, CI=success`, so every check discussed here executed.
+
+**And the other way round — a defect this machine cannot see?** One branch keyed
+on provisioning entered the range: `tokenContrast.mjs`'s build-freshness guard.
+Its throwing side executes wherever `dist` is absent, which is a fresh clone —
+not here, where `npm run typecheck` has run all day. It is exercised by
+`proof:tokencontrast`, which is registered on the same job.
+
+### 4. Non-vacuous proofs
+
+Mutations run, and what each said:
+
+| mutation | result |
+|---|---|
+| `domEnvironment` rule → deny-list of happy-dom/jsdom | 4 of 10 cases red, including both fail-closed ones |
+| `setupFiles` removed from `vitest.config.mjs` | exactly 1 of 5 vehicle cases red, `expected 1 to be +0` |
+| `onColor` minimum 4.5 → 1 | both Button colour cases red, nothing else |
+| `MutationObserver` callback emptied | the theme-change case red |
+| `aria-label` → `data-label` on `IconButton` | 8 cases red across two files |
+| `modal` → `modal={false}` on `Dialog` | **exactly one** case red |
+
+**The last one is the finding.** The focus-guard case survives it: Base UI
+installs guards for a non-modal popup too. So that case is evidence the dialog
+is a real Base UI popup — which is what goes red if someone re-derives one from
+a `div`, the failure Rule 0 names — and it is **not** evidence that focus is
+trapped. Written into the test file beside the case, because a reader counting
+cases that mention focus would otherwise count its coverage at three when it is
+one.
+
+### 4a. Instrument resolution tests
+
+The vehicle is itself an instrument, and it was resolution-tested before
+anything was built on it: focus on element A versus element B must read as two
+different values, and a key event must reach the focused element. Both would
+pass vacuously in a DOM where `focus()` does nothing and `activeElement` is
+always `body` — the primitives' entire keyboard story rests on those two, and
+four cases in `Dialog.test.tsx` would have asserted into a void.
+
+Two harness properties measured rather than assumed, both by writing a probe and
+deleting it: happy-dom **does not** inherit custom properties to a child, and it
+injects **no** `<style>` element for a Base UI dialog with or without
+`CSPProvider`.
+
+### 4b. Searches with positive controls
+
+`domEnvironment.mjs` carries a control fixture — a kernel path naming a DOM —
+run on every invocation, and refuses to report when it goes unfound. That
+control is sound and **it is not what EEEE-1 needed**: it proves the *matcher*
+can see, and the blindness is in the *walk*. A positive control on the pattern
+does not test the roots, and both produce "found nothing" in the same voice.
+
+The CSP claim about Base UI is a search and is recorded as one: grepped against
+`@base-ui/react@1.7.0` in `node_modules` on 2026-08-28, `styleDisableScrollbar`
+has exactly two `getElement` call sites, `ScrollAreaRoot.js` and
+`SelectPopup.js`, both gated on `!disableStyleElements`. It found five hits
+including two non-matches, so it was not blind — but it has no standing control
+and is a claim about one version's shipped JavaScript, not a proof.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Three rosters entered the range.
+
+- **`domEnvironment.mjs`'s file walk — the defect above.** Its extent is derived
+  from two hard-coded roots and two extensions, and its anchor (`filesScanned >
+  0`) sits on a different axis from the danger, which runs toward a *smaller*
+  set. 118 files reads as thorough whichever 118 they are.
+- **`createRoster(failures, { cases: 10 })`** in the new proof — a literal, so a
+  case silently dropped is a hard failure. Correct direction.
+- **`ICON_SIZES`** in `iconSize.ts` — typed as a four-tuple rather than
+  `IconSize[]`, so a fifth use added to the union without being added to the
+  roster is a compile error. This one is used as a roster by a test that asserts
+  all four sizes produce distinct classes, and without the tuple that test would
+  agree with any shrink.
+
+### 5. Executed, or asserted?
+
+**Executed:** every mutation in item 4 · the two happy-dom probes · the blind-spot
+demonstration in EEEE-1 · the board read at `2091b91` · `npm test` at 586 cases ·
+`typecheck`, `lint`, and the sweep-invisible seven (`notice:check`,
+`brand:check`, `guard:staged`, `guard:tree`, `perf:gate`, `electron:surface`,
+`shim:reach`, `ocr:doors`) · `check:tokencontrast`'s job placement, read out of
+`ci.yml` by line number · `docs/UI-GUIDE.md`'s existence and line count.
+
+**Asserted, and owed:** that `disableStyleElements` is the right answer for
+`Select` and `ScrollArea` under `style-src 'self'` — happy-dom enforces no CSP,
+so **no test written here can separate the guarded case from the unguarded one**,
+and writing one would be the vacuous fixture item 4 forbids. The observation is
+owed to the Playwright pass against a real Chromium. That a primary button's
+computed colour is *legible on screen* — the tests prove a ratio, and §10.7's
+visual pass is what proves a rendering. That an icon is 16 px — no stylesheet is
+loaded in a component test, and asserting it would mean building the second
+copy of §10.4's table that `iconSize.ts` exists to refuse.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No amendment was needed and none was made. The primitives register into §10.4
+and ADR-0005 as they stand; the test vehicle is a toolchain addition, which
+ADR-0004 is the writer of record for, and it was taken by the owner's ruling and
+appended there in the same commit as the install.
+
+**Two amendments remain owed to one §9.17 clause and neither knows about the
+other** — ADR-0028's ready replacement text for *"main runs the language runtime
+and nothing else"* (`docs/ARCHITECTURE.md:746`), and ADR-0025's `mupdf-host`
+baseline once the readings settle. Whichever lands first must name the other as
+pending in the amendment log. Unchanged by this range and repeated here so it
+does not fall off.
+
+### 7. Do the documents still match the code?
+
+EEEE-2 and EEEE-3 are this item's findings and both are above.
+
+Everything else checked: `docs/DECISIONS/README.md` now records ADR-0004 as
+corrected — `check:docs` caught that omission itself, which is the widened
+correction-form pattern from XXXX-2 doing the job it was widened for.
+`docs/FEATURES.md`'s design-substrate row is edited rather than annotated,
+because a FEATURES row is a live specification and a correction underneath it
+leaves the false body holding the contract position.
+
+**ADR-0004 carries a correction, not an edit:** its *"lucide-react is ISC, not
+MIT"* consequence was read off the registry's licence field, and the package's
+own `LICENSE` is 43 lines carrying **two** grants — ISC, plus 110 Feather icons
+under MIT, copyright Cole Bemis. `x`, the only icon Stage 0 ships, is on that
+list. Nothing about compatibility changes; the manifest's obligation does. The
+generator was already right, because it copies the file rather than the field —
+which is the same reason Part J insists NOTICE be generated at all.
+
+---
+
 ## 2026-08-28 — Stage audit: `36a988b..c8fa4d0` — two red boards, one family: half of a two-part check, read as covering both
 
 **Audited through `c8fa4d0`.** Pasted from `npm run audit:scope`:
