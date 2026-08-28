@@ -644,6 +644,68 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-28 — `perf:gate`'s figures, read rather than inferred: the numbers behind the multiples, including a baseline nothing had recorded
+
+`docs/FEATURES.md`'s gate row has carried the **multiples** since the gate was
+written — image-heavy 1.00×/1.30×, object-dense 1.00×/3.71×. Run here, they
+reproduce exactly. What that row has never carried is the figures the multiples
+are computed from, and one of them is a number ADR-0025 records as unreadable.
+
+**Measured 2026-08-28 on the development machine (win32), `npm run perf:gate`,
+output pasted rather than restated:**
+
+```
+image-heavy: 199.4 MB (209105721 bytes)
+  ok   main        peak  250.8 MB - baseline   51.4 MB = 1.00x  (limits: 1.5x, 1.5 GB, base 80 MB)
+  ok   main-service peak  254.0 MB - baseline   53.9 MB = 1.00x  (limits: 1.5x, 1.5 GB, base 80 MB)
+  ok   mupdf-host  peak  320.3 MB - baseline   60.7 MB = 1.30x  (limits: 6x, 3 GB, base 128 MB)
+  --   renderer    not asserted, by declaration
+
+object-dense: 25.1 MB (26315984 bytes)
+  ok   main        peak   76.5 MB - baseline   51.4 MB = 1.00x  (limits: 1.5x, 1.5 GB, base 80 MB)
+  ok   main-service peak   79.0 MB - baseline   54.0 MB = 1.00x  (limits: 1.5x, 1.5 GB, base 80 MB)
+  ok   mupdf-host  peak  154.0 MB - baseline   60.8 MB = 3.71x  (limits: 6x, 3 GB, base 128 MB)
+  --   renderer    not asserted, by declaration
+```
+
+### The baseline is the figure worth having, and it is 51.4 MB
+
+ADR-0025's 2026-08-27 note says the runner's clean baseline can only be printed
+by a **failing** gate — annotations carry a step's output only on failure, and
+job logs answer 403 without owner authentication. That reasoning is about the
+**runner** and it stands. It is also why nobody had the number from anywhere.
+
+Here it is from a machine that will answer: **main's baseline is 51.4 MB against
+an 80 MB base limit**, stable to 0.0 MB across two workloads in one run.
+`main-service` is 53.9 and 54.0 MB — the +2.5 MB being the service graph itself,
+which is the closest thing to a measurement of what `composition.ts` costs.
+`mupdf-host` is 60.7 and 60.8 MB against a 128 MB base.
+
+**This does not close ADR-0025's open item and must not be read as closing it.**
+That item is about the runner's baseline, and a development machine is not the
+runner — the axis this project has been wrong on before (AAAA-8: the odd point
+was the one not-a-CI-image point, not the one client point). What it does is put
+a number where there was none, on the machine it was taken on, with the two
+figures that would be compared if the runner's ever becomes readable.
+
+### What the multiples reproducing means, and what it does not
+
+The four multiples are identical to the recorded ones, which is evidence the
+gate is deterministic on one machine across runs — not evidence about any other
+machine. The peaks are new (250.8, 254.0, 320.3 / 76.5, 79.0, 154.0 MB) and the
+headroom against the absolute caps is large: the largest reading is 320.3 MB
+against 3 GB.
+
+### `proof:perfbudget` is the one script `npm run local` cannot finish
+
+The full sweep on 2026-08-28 recorded **107 passed, 0 failed, 1 timed out, 0
+never started**, and the timeout was `proof:perfbudget` at exactly the 180.0 s
+default. The harness then stops, by design, so eight scripts after it were
+**never reached and are not passes** — `typecheck` and `lint` among them, which
+is worth knowing on the day someone reads a sweep as covering everything.
+
+---
+
 ## 2026-08-28 — Exit clause 2: the composition root creates the engine host, and closes one it cannot verify
 
 **2 of 7 exit clauses.** Clause 1 (open via `FileHandle`) landed at `584362b`;
