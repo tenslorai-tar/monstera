@@ -928,6 +928,32 @@ codebase they have never examined: **investigate the finding, do not reach for
 the registration.** Recorded before the push so the prediction cannot be written
 after the outcome.
 
+> **Outcome, 2026-08-28 — all four green on their first real run.** Board GREEN
+> at `441ba50`, `Guards=success, CI=success`. The prediction was wrong in the
+> comfortable direction, which is worth stating plainly rather than quietly
+> banking.
+>
+> **And a green board was not accepted as the evidence**, because that is the
+> exact move JOURNAL:3754 was corrected for two commits ago: a skipped step and
+> an executed one produce the same colour. Read from the run's own step list at
+> `/actions/runs/33158004520/jobs`:
+>
+> ```
+> No door into the OCR subsystem is open in this build      completed  success
+> No shim export in this build reaches the OCR subsystem    completed  success
+> The measured roles are inside §9.17's budgets             completed  success
+> The Electron surface this build exposes is the declared one
+>                       completed  success   (windows-latest)
+>                       completed  success   (ubuntu-latest)
+> ```
+>
+> `status=completed`, not `skipped`, for every one. So the four have now
+> produced a verdict about this tree on a runner, and it is clean.
+>
+> **What this does not close:** `perf:gate` passing prints nothing, because
+> `annotate.mjs` emits only on failure. ADR-0025's open item — the runner's
+> clean baseline — is unblocked and still open, exactly as its correction says.
+
 ### The past item-3 answers are suspect and are being swept
 
 *"Would CI have caught it?"* has been answered many times in this file, and any
