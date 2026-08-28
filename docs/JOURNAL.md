@@ -644,6 +644,222 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `e811719..d8591db` — an amendment that was owed BEFORE the thing this range built
+
+Range: **6 commits, 24 files.** The gate fired on the commit being composed
+again, for the reason the previous entry recorded — and this time what it
+stopped was worth stopping.
+
+### BBBBB-1 — the save pipeline landed, and a B4 amendment was owed before it
+
+**`docs/FEATURES.md` row 288 carries an expiring claim whose trigger is written
+in capitals**, and it fired in this range:
+
+> **THE TRIGGER IS WHICHEVER OF THE SAVE PIPELINE OR CHECKPOINT RESTORE LANDS
+> FIRST** … the save pipeline expires reason 1
+
+[ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) says the
+same thing in the other direction — *"the amendment is owed **before the save
+pipeline**, not before the supervisor"*. The save pipeline landed at `d8591db`.
+The amendment did not.
+
+**What is owed:** what happens to a command log when the engine is permanently
+refused for one document — invariant 18's question, since close-and-reopen is
+9a's own rejected alternative with the user's hand on it. Reason 1 for deferring
+it was *"there is no save pipeline … L18 can today be neither violated nor
+satisfied"*, and that sentence is now false. Reason 2 — that the leading
+candidate's premise cannot be tested without a whole-log replay path — is
+**still true**, so the amendment is owed and its content is not thereby decided.
+
+**Not taken here.** Three candidates are recorded and one collides with ADR-0009
+*by construction* (letting the log outlive the record is resurrection, which that
+ADR removed by shape rather than by discipline). Choosing between them is change
+control, so it is escalated rather than guessed — CLAUDE.md's *ask rather than
+assume*, and the same handling KKKK-5 got.
+
+**Why no mechanism caught it, which is the transferable part.** The claim was
+parked correctly: an event cannot be seen by a symbol scan, so it went on a
+FEATURES row, exactly as the *where a claim's expiry lives* table prescribes.
+But **a row is read by whoever opens that row**, and nothing about writing
+`savePipeline.ts` opens row 288. The trigger fired into a document nobody was
+reading. It was found by the NNN-4 cross-document sweep — `npm run sweep:prose
+-- "the save pipeline"`, 18 matches, control found — run because this range
+states a cross-document relationship (`SaveWriter` as `markSaved`'s writer of
+record). **The sweep that found it was aimed at something else.**
+
+### BBBBB-2 — the ADR points at row 284, and row 284 has not carried that claim for some time
+
+ADR-0023: *"carried as an **expiring claim on `docs/FEATURES.md` row 284**, with
+the trigger written into the body"*. Row 284 is the composition root, and its
+body says nothing about L18; the claim is on row **288**.
+
+**A reference by ROW NUMBER into a document that grows by inserting rows.**
+Three rows landed above it in the last two days — open (277), save (280), undo
+(281) — and every number below them moved. This is UU-1's shape without the
+link: nothing to check, because there is no link to resolve, and the pointer
+still names a real row that says something else.
+
+Not repaired by renumbering, which would move again. The durable form is to name
+the row by its **subject** rather than its ordinal, and that is the correction
+made to ADR-0023 — appended, because an ADR is a record.
+
+### 1. Root cause or workaround?
+
+Four fixes, all root, and one withdrawal.
+
+- **`AtomicWriteFailure.stage` declared a `cleanup` no path returns.** Deleted
+  rather than implemented (B5): the state is unrepresentable, not handled. Third
+  instance of one shape in two ranges — `"symbols": []` watching nothing,
+  `EngineOpenFailed` thrown by nobody, this.
+- **The backup's stated mechanism was not the module's.** The comment claimed the
+  backup makes a failed rename recoverable; nothing reads it, no case asserts a
+  recovery, and a failed rename has not touched the original. Item 7's shape —
+  the live clause (*refuse rather than continue*) vouched for the dead one beside
+  it. Corrected to §4's `.bak`: the user's previous version surviving a
+  **successful** save.
+- **`checkLocal.mjs` asked git its own question.** `git diff --name-only HEAD`
+  reports tracked modifications only, so two brand-new files produced *"nothing
+  is changed against HEAD"*. Fixed at the authority (B3a): `gitScope.mjs` names
+  the scope, `checkLocal` takes it. Not patched in place, which would have left
+  the next caller free to write a third opinion.
+- **The non-repository case now SAYS the question could not be asked.** The old
+  `status === 0` guard skipped the block silently, which is indistinguishable
+  from a clean tree. *Could not look* is not *looked and found nothing*.
+- **Withdrawn, not fixed:** `DocumentCommands.save`'s poison-before-session
+  ordering was written up as load-bearing and is not. See item 4.
+
+### 2. Verified against the easy shape only?
+
+**Yes, and it is named rather than closed.** `atomicWrite` is proven entirely
+against an injected surface — deliberately, since `EPERM` and `EBUSY` cannot be
+produced on a real filesystem — but in **this range** nothing ever ran the
+ordering against a real one. The first caller that does is in the commit this
+audit blocks, which is the correct order and worth stating so the gap is not
+read backwards.
+
+`uncommittedPaths` is exercised with an untracked file. **Renames and deletions
+are not tested**, and they travel a different half of it (`changedPaths`, which
+has its own `-z` parser and its own cases). A gap, not a defect.
+
+The checkLocal fixture became a **real git repository** for these cases, which is
+the hard shape: every other fixture in that file has no HEAD, and the block under
+test cannot run without one.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+No claim moved between asserted and derived in this range.
+
+One thing did move and is worth the line: `checkLocal`'s changed-file set grew to
+include untracked paths, so the affected-proofs report now names proofs it
+previously could not. That is coverage **arriving**, in the direction that makes
+the report say more rather than less.
+
+### 3. Would CI have caught it?
+
+**Answered from a run, not from the workflow file.** `d8591db` is GREEN on both
+legs — Guards=success, CI=success, read from the runs API at the full sha.
+
+The `git diff` scope defect CI would **not** have caught: it produces a
+reassuring sentence, never a failure. It is now covered by four cases in
+`checkLocal.proof.mjs`, which runs on both legs.
+
+**Is there a defect this machine cannot see?** `proof:cff` compiles MuPDF from
+source and took **>600 s** here, so it is the one member of the sweep whose cost
+is a build rather than a check. It passed with its own control — *"removing the
+bounds checks makes the same input crash"*.
+
+### 4. Non-vacuous proofs
+
+Nine mutations run across the range, and the two that did **not** bite are the
+findings.
+
+- `RENAME_BACKOFF_MS` → `[…, 800]` reddens the sum; → `[0,50,150,400,450,450]`
+  keeps the total at 1500 and reddens the **length**. The second is the one the
+  sum alone is blind to, which is why there are two assertions.
+- `uncommittedPaths` returning the tracked half alone reddens both untracked
+  cases and leaves **both controls green** — the direction that separates, since
+  the bug makes the set smaller.
+- Save: stamping early reddens the ordering pair; permitting `target-absent`
+  reddens the refusal pair; removing the guard reddens **four**, the control
+  among them; never calling `checkWriteTarget` reddens three across two files.
+- **Did not bite:** swapping poison and session in `DocumentCommands.save`.
+  Investigated rather than filed as vacuous — `execute` reads
+  `sessions?.[spec.writer]` and a poisoned document holds an empty set, so its
+  order is load-bearing; `save` reads `sessions === undefined`, true only for a
+  document with **no entry**, and a document with no entry has no failure count
+  either. The two guards are mutually exclusive and neither order is observable.
+  The comment claiming otherwise, and the composition case asserting it, are both
+  corrected to say what they prove.
+- **Did not bite, second:** the clean-repository control failed on its first run
+  because the fixture was not clean — the harness writes `.cache/` into the root
+  it is measuring. The control caught its own fixture, which is what a control is
+  for.
+
+### 4a. Instrument resolution tests
+
+One instrument added: `uncommittedPaths`. Its resolution test is the pair of
+cases above — a tree whose only change is untracked must report **1 file**, and a
+tree with no change must report **none**. Two values that differ by the smallest
+amount that changes the decision.
+
+### 4b. Searches with positive controls
+
+`sweep:prose` refuses to report when its own deliberately-line-broken control is
+not found, and it printed *control found* on both runs here. That is what makes
+its 18 matches and its 0 matches mean different things — and the 0-match run
+(`markSaved`) is the one that would otherwise have been the reassuring answer.
+
+The affected-proofs report's positive control is on its **edges** and passed
+throughout while its **input** was wrong. Recorded because it is the axis nobody
+had applied item 4b to: the walk was working perfectly on the set it was handed.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Two rosters touched, both correct.
+
+`createRoster(failures, { cases: 54 })` in `checkLocal.proof.mjs` is a literal
+and had to be raised by hand — the anchor working. The shim's channel list in
+`browserShim.test.ts` is a literal that went red on `document.save` landing,
+which is the same mechanism catching growth.
+
+Neither derives, and the failure feared for both is a check going quiet as
+coverage **shrinks**, which is the direction a literal sees.
+
+### 5. Executed, or asserted?
+
+**Executed:** the directory-sync probe (`open(dir,'r')` throws `EPERM`,
+`open(dir,'r+')` returns, Windows 11, Node v24.12.0); the lane probe —
+`checkWriteTarget` called from inside `run` returns `sole-writer` and does not
+deadlock; nine mutations; a save that writes a real file to a real disk and reads
+the bytes back; `proof:cff`; the board at the full sha.
+
+**Asserted and marked as such:** that `FlushFileBuffers` does nothing useful for
+a directory handle. The call *returns* on Windows; that it flushed is **not**
+established, which is exactly why the durability gap is named in the header
+rather than closed with a call that would look like a fix.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Underneath it — see BBBBB-1.** This is the item this range fails, and it is the
+failure the project exists to prevent. The save pipeline registered into existing
+seams and needed no new one, which is why it did not feel like a B4 moment; the
+amendment it owed was recorded elsewhere, against an event, and the event was
+this build.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md` row 280 is edited true in the blocked commit. `documentService.ts`'
+two comments denying `markSaved` a token were corrected in the commit that gave
+it one. `docs/ARCHITECTURE.md` §4 is unchanged and still true — the pipeline
+implements it rather than altering it.
+
+**The NNN-4 sweep was run because this range states a cross-document
+relationship** (`SaveWriter` as writer of record). `markSaved`: 0 matches across
+44 documents, control found — no document states its writer, so nothing went
+stale. `the save pipeline`: 18 matches, of which two are BBBBB-1 and BBBBB-2 and
+the rest are historically-scoped statements in records, which take corrections
+rather than edits.
+
 ## 2026-08-28 — Stage audit: `48ad002..e811719` — a move that carried everything, and an error class it left behind
 
 Range: **6 commits, 17 files.** The gate fired **on the commit being composed**

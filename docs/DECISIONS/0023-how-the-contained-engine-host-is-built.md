@@ -1716,6 +1716,33 @@ the trigger written into the body — the amendment is owed **before the save
 pipeline**, not before the supervisor. A symbol scan cannot see an event, which
 is why it is on a row and not in the advisory register.
 
+> **Correction, 2026-08-29 — the trigger FIRED and the amendment did not happen
+> (findings BBBBB-1 and BBBBB-2).** Both halves of the paragraph above turned out
+> wrong in ways worth separating.
+>
+> **The row number is not the row.** The claim is on the row about the engine
+> host's failure handling, not on the composition root's. `docs/FEATURES.md`
+> grows by **inserting** rows, and three landed above this one on 2026-08-28
+> alone — open, save, undo — so every ordinal below them moved. A reference by
+> row number into a document that inserts rows is UU-1's shape with no link to
+> check: nothing resolves, so nothing can be reported, and the number still names
+> a real row that says something else. **Cite the row by its subject.**
+> Renumbering here would only move again.
+>
+> **And the trigger fired unread.** The save pipeline landed 2026-08-28/29 and
+> this amendment was not taken first, which is the ordering B4 exists to enforce.
+> The claim was parked correctly — an event cannot be seen by a symbol scan, so a
+> row is right — but **a row is read by whoever opens that row**, and nothing
+> about writing `savePipeline.ts` opens it. It was found afterwards, by a
+> cross-document prose sweep aimed at a different question.
+>
+> What that costs is stated precisely, because the deferral had two reasons and
+> only one expired. Reason 1 — *there is no save pipeline, so L18 can be neither
+> violated nor satisfied* — is now **false**. Reason 2 — the leading candidate's
+> premise cannot be tested without a whole-log replay path — is **still true**.
+> So the amendment is owed and its content is not thereby decided, and the three
+> candidates below stand as they were.
+
 ### Correction, 2026-08-25 — candidate 1 is the candidate with the LARGEST KNOWN COST, not the leading one (finding DDDD-19)
 
 The correction above called *letting the log outlive the record* "the only
