@@ -644,6 +644,240 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `02b1f65..7669d69` — a per-script time bound quietly became per-step, and the case guarding that call site tests the rule it replaced
+
+Range: **7 commits, 23 files.** The gate fired on the renderer shell, which is
+14 files and would have crossed 25.
+
+### FFFFF-1 — `checkLocal`'s timeout is now applied per STEP, and the scheduler still models one
+
+C2 replaced a single `spawnSync` with a loop:
+
+```
+for (const step of steps) {
+  run = spawnSync(process.execPath, [step.js, ...step.args], { … timeout: TIMEOUT_MS });
+  if (run.status !== 0 || run.signal !== null) break;
+}
+```
+
+`TIMEOUT_MS` defaults to **180 s** and is now the bound on **each** step rather
+than on the script. `build` resolves to `typecheck && build:preload`, so its
+worst case became 360 s the moment the loop landed — and with the renderer build
+about to join that chain it becomes 540 s.
+
+The half that makes it a defect rather than a consequence is fifty lines up:
+
+```
+const BUDGET_SECONDS = TIMEOUT_MS / 1000;
+```
+
+`costBucket` uses that to decide which scripts *fit the budget* and orders the
+sweep by it. So the scheduler's model of a script's worst case and the bound
+actually enforced parted company in the same commit, in the same file, and
+nothing says so in either place. Nobody reading the loop is looking fifty lines
+up at a constant that did not change.
+
+**Not the timeout being too generous** — a chain genuinely is several commands
+and bounding each is defensible. The finding is that one number is now doing two
+different jobs while still being derived as though it did one.
+
+**And the branch has no fixture.** Every timeout case in
+`checkLocal.proof.mjs` uses a single-step script, so *a chain that times out on
+its second step* is a branch nothing arrives at — item 4's instruction to mutate
+the branches no fixture reached rather than the ones the suite exercises.
+
+### FFFFF-2 — the call site's only case is one the OLD rule and the NEW rule both refuse
+
+`npmScriptSteps.mjs` arrived with a thorough proof. The **call site that decides
+which scripts run** — `resolveScript(...)` inside `checkLocal.mjs` — has no case
+at all, which is [proven-in-the-wrong-file]'s shape: the helper gets the rigour
+and the line that uses it gets none.
+
+The case that looks like coverage is this one, and it is worse than absent:
+
+```
+'a script that is not a bare node invocation is reported NOT RUN'
+  fixture: { 'proof:shelled': 'npm run something-else' }
+```
+
+Its **label states a rule that no longer exists** — the harness no longer
+refuses a non-`node` command, it resolves it — and its **fixture is refused by
+both versions**: `something-else` is in no manifest, so the old rule rejected it
+for not starting with `node` and the new one rejects it for resolving to
+nothing. The case passes identically against the code before C2 and after it, so
+it separates nothing about the change it now sits under. That is item 4's
+fixture rule exactly: never build a fixture the defect also handles correctly.
+
+What the new code needs a case for is the shape it was written to handle — a
+command that resolves through a **bin**, like `lint`'s `eslint .` — and there
+isn't one. A `binaryMap` that came back empty would send every such script to
+NOT RUN, and the sweep would report a tidy, complete-looking run having compiled
+and linted nothing. Which is the defect C2 exists to have fixed.
+
+### FFFFF-3 — the amendment's figures come from an instrument that is not in the repository
+
+ADR-0031 and §2's amendment-log row carry measured numbers — 7,779,129 bytes,
+3.72%, a largest single range of 5,111,808 — read from `rangeProbe.mjs`, a
+scratchpad file. `pdfjs-dist` is not a declared dependency of anything here, so
+there was nowhere to put it that would run, and the ADR says so in the sentence
+that cites it.
+
+Recorded rather than fixed, because the fix has a **trigger and a date**: the
+commit that makes `pdfjs-dist` a dependency is the commit that owes these
+figures as a committed proof. Until then the strongest claim available is *these
+were executed on one machine on 2026-08-29*, which the documents state in those
+words. The risk is the ordinary one for a number nobody can re-run — it stops
+being a measurement and becomes a quotation.
+
+### 1. Root cause or workaround?
+
+Four fixes in the range, all root-cause, and one of them is a class fix rather
+than an instance fix.
+
+- **C2** — the local gate ran no compiler. The workaround available was a table
+  of known scripts; what landed derives the node invocations from `package.json`
+  itself, so the derivation cannot drift from the manifest. Root cause.
+- **EEEEE-1** — a derived roster count. Fixed by an anchor (a literal list),
+  which is the mechanism 4c names, not by remembering.
+- **EEEEE-2** — `as never` at the mount point. Fixed by moving the erasure into
+  `declareDialog`, where both sides are in scope and it is provably safe once,
+  rather than by widening a type at the place nothing can check it.
+- **The prose sweep's normaliser** — and this is the one worth reading twice. It
+  was found by *using* the instrument for its documented purpose (NNN-4's
+  cross-document sweep, for the §2 amendment) and having it fail to find the
+  line it had been pointed at. The repair went into `normalise`, which both the
+  sweep and the withdrawn-phrase check take from one place (B3a), rather than
+  into the sweep that surfaced it.
+
+No override, no escape hatch, no loosened check in the range.
+
+### 2. Verified against the easy shape only?
+
+**Yes, in two places, and both are findings above.** FFFFF-2's fixture is the
+easy shape by construction — a command neither version can resolve — and the
+hard shape, a bin-resolved command, is untested at the call site. FFFFF-1's
+timeout cases are all single-step, and the chain is the hard shape.
+
+The range's own hard shape was found and used elsewhere: the prose sweep's new
+case asserts that a **markup-blind** normaliser misses the fixture, because a
+control the old code also passes proves nothing.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and in the strengthening direction, with one honest caveat.** C2 moved
+`typecheck`, `lint`, `build` and `test` from *reported as not run* to *executed*.
+That is coverage arriving, not moving.
+
+The caveat is that it arrives **only where `npm run local` is run**, which is a
+person's habit and not a gate — `.githooks/pre-push` invokes no npm script. So
+the sweep is a stronger instrument for whoever runs it and changes nothing for
+whoever does not, and the red board that motivated C2 would not have been
+prevented by C2.
+
+### 3. Would CI have caught it?
+
+**No, and computed rather than assumed.** `npm run local` is invoked by no
+workflow — it is a hand-run pre-push sweep — so FFFFF-1 is in code CI never
+executes. FFFFF-2 is different and worse: `proof:checklocal` **is** an
+unconditional CI step, it ran green on this range, and it will keep running
+green, because the case passes. A defect inside a check CI runs is not caught by
+CI running it.
+
+FFFFF-3 is not a code defect and has no board to be caught on.
+
+### 4. Non-vacuous proofs
+
+The prose-sweep pair was mutation-tested in the direction that separates:
+reverting the strip in `normalise` reddens *"a phrase a document dresses in a
+CODE SPAN or bold is found"* and **nothing else** — one case, the right one.
+
+The renderer-policy pair added later in the day was mutation-tested the same
+way and the second mutation is the one that mattered: removing the whole
+`assets/` directory reddens both new cases, which does not separate them, while
+removing **only the stylesheet** reddens the style case alone and leaves the
+mount case green.
+
+Not tested: FFFFF-1's chain-timeout branch and FFFFF-2's bin-resolution branch,
+which is why both are findings rather than notes.
+
+### 4a. Instrument resolution tests
+
+`npmScriptSteps.mjs` is the range's new instrument and it has one:
+`npmScriptSteps.proof.mjs` drives `&&` chains, `npm run` recursion and bin
+resolution, and reports `unresolved` rather than dropping it — a step that
+cannot be resolved is the answer, not silence.
+
+`rangeProbe.mjs` (FFFFF-3) carries its own: two inputs differing about 8× in
+size must produce two distinct byte counts, printed every run, and every row
+asserts `numPages >= 1` plus a non-empty operator list — because a document that
+fails to open serves almost no bytes, which is the answer that probe was hoping
+for.
+
+### 4b. Searches with positive controls
+
+This item is where the range's best finding came from, and it came from a
+control **failing in the field rather than in a proof**. `sweep:prose` prints
+`control found` on every run and did; the control was fine and the instrument
+was still blind, because the control phrase carried no markup and the target did.
+
+*A control proves the instrument can see its own shape, not the shape you are
+pointing it at.* The repair adds the missing shape to the proof, in both
+directions.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**Asked of everything the range touched, which is the answer 4c wants.**
+
+- `ciVerifiers.proof.mjs` went `cases: 11` → `cases: 13`: a literal, so an
+  omission stays loud.
+- `shell.proof.mjs`'s derived count gained the `EXPECTED_RULES`-shaped anchor in
+  the commit that opened this range's predecessor.
+- `rendererPolicy.proof.mjs` derives its count from `RUNTIME_CASES`, and that is
+  **correct here and was checked rather than assumed**: the list is also the
+  UNVERIFIABLE listing, so a case deleted from it stops being printed as
+  something this machine could not look at — the shrink is visible in output
+  rather than only in a count. It caught the two cases added later the same day
+  the moment they were not declared.
+
+No new derived-from-itself count in the range.
+
+### 5. Executed, or asserted?
+
+**Executed:** the transport API's existence in `build/pdf.mjs`'s export list;
+the byte counts; that a range cannot be answered in several `onDataRange` calls;
+that `disableAutoFetch`/`disableStream` change nothing here; the full unit suite
+on the downgraded Vite (716 tests); the normaliser's before/after match counts.
+
+**Asserted and marked as such:** that the round-trip *latency* of demand paging
+is acceptable. ADR-0031 says the count is measured and the latency is not, and
+names it as the first thing to measure once the seam has a real caller.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, in the order B4 requires, and the sequencing is visible in the log:**
+`5ca1d69` is the ADR alone, `7669d69` is the §2 amendment and the digest it made
+stale, and no code that reads a byte range exists yet. The amendment names the
+founding clause it supersedes — `BUILD-PROMPT.md` Part C2's snapshot sentence —
+and the row states the three rejected alternatives with the measurement that
+rejected each.
+
+### 7. Do the documents still match the code?
+
+The cross-document sweep NNN-4 requires was run for the amendment and is what
+produced the range's normaliser finding. After the repair it named three places
+and all three were handled: `BUILD-PROMPT.md` (immutable, superseded by name),
+`docs/ARCHITECTURE.md` §2 (amended), and CLAUDE.md's digest (rewritten in the
+same commit).
+
+**One stale claim found and left standing deliberately**, because it is FFFFF-2
+and belongs with its missing case rather than in a documentation pass: the label
+`'a script that is not a bare node invocation is reported NOT RUN'` asserts a
+rule C2 removed. Repairing the sentence without the fixture would leave a case
+that reads correct and still separates nothing, which is the worse of the two
+states.
+
+---
+
 ## 2026-08-29 — Stage audit: `9f51552..02b1f65` — 4c a third time, in a third file, by the seat that had just fixed it twice
 
 Range: **4 commits, 21 files.** The gate fired on the C2 commit.
