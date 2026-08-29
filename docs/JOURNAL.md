@@ -644,6 +644,159 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `9f51552..02b1f65` — 4c a third time, in a third file, by the seat that had just fixed it twice
+
+Range: **4 commits, 21 files.** The gate fired on the C2 commit.
+
+### EEEEE-1 — a roster whose declared count is computed from the list that declares it (4c)
+
+`shell.proof.mjs`:
+
+```
+const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? RUNTIME_CASES.length : 0 });
+```
+
+`passRoster` throws when the recorded total disagrees with the declared one, so
+deleting a `check()` call alone is caught loudly — that is finding Z-4's
+mechanism and it works. What it cannot see is a case removed **together with its
+label**, which is the same edit anybody deleting a case would make, in the same
+file, seconds apart. The count then agrees, and the roster shrinks in silence.
+
+Every other proof in this repository declares a literal. This one derives, and
+the derivation is what removes the anchor.
+
+**THE RECURRENCE IS THE FINDING, NOT THE INSTANCE.** CCCCC-3 was 4c in a desktop
+test; DDDDD-3 was 4c in a UI test written hours after that fix; this is 4c in a
+proof harness, found by the seat that wrote both of those corrections. Three
+ranges, three files, one choice. Deriving is the tidy-looking option and *which
+direction does the danger run* is not a question anybody asks unprompted — which
+is why CLAUDE.md's 4c refuses to become a scan and asks you to ask it of every
+roster you write. Asking it is exactly what did not happen, three times, by the
+person who had just written that sentence down.
+
+### EEEEE-2 — the dialog host erases a type with `as never`, and there is a place the erasure is provably safe
+
+`DialogHost` mounts a registered body with:
+
+```
+createElement(entry.component as never, open.props as never)
+```
+
+`never` is assignable to everything, so this is the strongest cast the language
+has — item 1's *widening a type to make an error disappear*, in the one file
+whose whole subject is validated props.
+
+The cast is not gratuitous: `DialogRegistry` stores `DialogEntry<z.ZodType>`, and
+that erases the tie between a schema and the component typed by it. But the tie
+is real at the point an entry is DECLARED, where both are in scope. Moving the
+erasure into a `dialog(...)` helper that builds the entry would make it provably
+safe once instead of unprovably safe at the mount point, which is B5's shape and
+B3a's — one place performs it, and every caller gets the checked form.
+
+Fixed in the commit after this one, with the register's own reasoning: a cast at
+the mount point is a cast where nothing can check it.
+
+### 1. Root cause or workaround?
+
+Five fixes, all root-cause, and one is a tightening of something this seat
+loosened a range earlier (DDDDD-1). No overrides, no escape hatches. The one
+**loosened** thing in the range is `check:secondwiring`'s walker, which was
+narrowed deliberately and is re-tightened in the same range by the refusal on
+the input set — recorded because a narrowing and a loosening look identical in a
+diff.
+
+`as never` (EEEEE-2) is the closest thing to a widening here, and it is filed
+rather than excused.
+
+### 2. Verified against the easy shape only?
+
+**No.** The advisory mutation disarms a **live** trigger rather than an invented
+fixture, so it fires on the exact edit the finding describes. The picker's
+scripted answers include the two-path case, because `multiSelections` being off
+is a property of the options and not a guarantee about the answer. The
+`hashFiles` fixture is the shape `ci.yml` already contains twice.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, upward, twice.** `documentPicker.ts` moved from *never executed* to
+*executed against a replaced dialog*, which is a strengthening with a stated
+ceiling — Electron honouring the options is not proven and nothing headless can
+prove it. And `proofCoverage` moved from a substring test to the owner's
+resolver, which is strictly narrower: a script named in a cache key no longer
+counts.
+
+### 3. Would CI have caught it?
+
+`proof:shell` runs in `ci.yml`'s build job, which installs a display and builds
+`apps/desktop/dist`, so the picker cases execute there. `proof:advisories`,
+`proof:secondwiring` and `proof:proofcoverage` are unconditional Guards steps.
+
+**Neither finding above would have been caught by any of them**, and that is not
+a gap to close: EEEEE-1 is a check agreeing with itself and EEEEE-2 is a cast
+that compiles. Both are audit-shaped rather than CI-shaped.
+
+### 4. Non-vacuous proofs
+
+Mutations run in this range:
+
+- `runs.has(path)` back to `workflows.includes(path)` — the cache-key case
+  fails, alone.
+- The advisory `record` key: emptying a live trigger's symbols is refused, and
+  marking a live trigger as a record is refused — each by its own case.
+
+The five modified proofs were read for loosening. Three deletions are roster
+counts raised in the commit that added cases; one is a typedef widened; one is
+DDDDD-1's case being rewritten from asserting the defect to asserting the
+refusal, which is recorded in the previous entry.
+
+### 4a. Instrument resolution tests
+
+The three new UI modules are not measuring instruments, and each has the case
+that separates its reassuring answer from a broken one: an empty ribbon, an
+`unclaimed` chord, and a host rendering nothing are all what a defect produces,
+so every case asserts positive content plus a control.
+
+### 4b. Searches with positive controls
+
+`check:secondwiring` gained the walker half it never had (DDDDD-2). No new
+search was added in this range.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**EEEEE-1.** Third range, third file.
+
+### 5. Executed, or asserted?
+
+**Executed:** both mutations; 716 tests; the full build, both halves; lint; 6
+shell cases including the three new picker ones; 42 advisory cases; 16
+second-wiring cases; 8 proof-coverage cases; 86 proofs invoked by a workflow.
+
+**Asserted, and named at the call site rather than here:** that Electron honours
+`openFile` and `dontAddToRecent`. The picker's body runs against a replacement,
+which proves what it hands Electron and not what Electron does with it. The one
+piece that would otherwise be assumed — that the API exists under that name — is
+read off the real `dialog` before the replacement.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Nothing architectural in this range. A6's channel remains stopped on its B4
+question, recorded on the render row.
+
+### 7. Do the documents still match the code?
+
+Three FEATURES rows moved from *not started* to *partly done* with what remains
+owed named in each, and one new row for the coordinate spaces. No cross-document
+relationship is newly stated, so NNN-4's sweep does not fire.
+
+**One document defect found and deliberately not fixed here:** the `npm run
+local` row is **1610 words**, six times the target, and the length guard fires
+on whoever edits it next — which was me, and is why it was found. Its body is a
+history of eight findings that each already have a JOURNAL entry, so the repair
+is to cut it to a specification with a pointer, not to move text. That is its
+own task and C2's record went into a new row instead.
+
+---
+
 ## 2026-08-29 — Stage audit: `67f38bb..9f51552` — I widened a search and gave it a new route to the reassuring answer
 
 Range: **7 commits, 22 files.** The gate fired on the A7 substrate commit. Both
