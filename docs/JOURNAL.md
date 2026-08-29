@@ -644,6 +644,273 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `d8591db..67f38bb` — the instrument I reported fixing was still printing the old number
+
+Range: **9 commits, 24 files.** The gate fired on the L18 amendment commit,
+which is the third range running where what it stopped was worth stopping.
+
+Every finding here is about an **instrument**, and three of the four were
+produced by the commits written to close the previous instrument defect. That is
+CLAUDE.md's own reason for scoping an audit to a range rather than to the tree,
+arriving as evidence rather than as a claim.
+
+### CCCCC-1 — the control I was told to build could never have fired, and its absence would have read as an answer
+
+The ruling on A6-pre asked for a positive control on the ICC result: *"make the
+log show `iccUrl:` once, for any fixture. If it never appears for any input,
+'not needed' and 'not looked at' are the same observation."* The reasoning is
+right and its premise is not — `iccUrl` is not a fourth asset kind through the
+`BinaryDataFactory` seam. Measured, in the shipped worker:
+
+| kind asked of the factory | line |
+|---|---|
+| `wasmUrl` | `pdf.worker.mjs:9735` |
+| `cMapUrl` | 34265 |
+| `standardFontDataUrl` | 34290 |
+
+There is no fourth. `iccUrl` is read by `CmykICCBasedCS` alone, through
+`fetchSync` (2678) — a **synchronous XMLHttpRequest** that never touches the
+factory. So the log can never list it, for any document, in any configuration.
+
+**Had I built the fixture and read the log, the answer would have been the one I
+was hoping for, produced by an instrument that cannot see the thing it was
+asked about** — 4b's shape one level up, because the blind instrument here was
+the *control*. The transferable question is the cheap one: **before trusting a
+positive control, ask whether its subject can appear at all.** A control needs a
+control, and the regress stops at a fact you read from the source rather than
+from a run.
+
+The replacement control runs the same document in the one configuration where
+`qcms` IS attempted, and requires the instrument to see it. It fired:
+
+```
+[error] Connecting to 'http://127.0.0.1:8137/wasm/qcms_bg.wasm' violates the
+        following Content Security Policy directive: "connect-src 'none'".
+[warn]  Warning: ICCBased color space: "NetworkError: Failed to execute 'send'
+        on 'XMLHttpRequest': Failed to load '.../qcms_bg.wasm'."
+```
+
+So the deciding directive is **`connect-src`, not `wasm-unsafe-eval`**, and the
+row previously said "no ICC path found" about a path that was closed one step
+earlier by `IccColorSpace.setOptions`'s `if (!useWorkerFetch) { … return; }`.
+The fixture was also the easy shape, as ruled: a scalar fill is short-circuited
+by component count, so it is now an image XObject whose profile has to be
+applied.
+
+**And the end state does not separate the two configurations** — `rgb@centre` is
+`140,64,128` in both, because `qcms` converts in neither. The console named the
+decision; the pixels could not. That is item 4's *assert the call, not the
+state* arriving in a measurement rather than in a case.
+
+### CCCCC-2 — the wrong-context instrument was half fixed, in the commit that reported fixing it
+
+`4fad19a` records finding and repairing a probe that hooked `WebAssembly` on the
+window while PDF.js decodes in a worker, and reported a confident `wasm=0`. The
+repair added two **new** questions — WASM asked directly on the main thread and
+in a worker — and left the per-document columns reading the window, where they
+had always read. Measured this range, one line of output against the console
+from the same run:
+
+```
+JBIG2 image: rendered; wasm=0; violations=none
+[warn] Warning: #instantiateWasm: CompileError: … 'unsafe-eval' is not an
+       allowed source of script … "script-src 'self'"
+```
+
+**The commit's conclusions were right and one of its instruments was still
+lying.** Nothing downstream could tell, because a correct new instrument printed
+beside the broken old one and the two agreed on the headline.
+
+This is Rule 0's *fix the class, not the instance* in the shape that is hardest
+to see: the fix did not patch around anything, it **added a correct measurement
+next to the wrong one instead of repairing the wrong one**. A half-fix that
+leaves six siblings open is visible in a diff; a half-fix that leaves the
+original printing looks like extra rigour.
+
+The tell, and it is checkable at the moment of writing: **after repairing an
+instrument, ask what else in the same file reads the same global.** The columns
+are now labelled `(window only)` and a worker-independent observable sits beside
+them.
+
+### CCCCC-3 — a roster whose completeness check is derived from the roster (4c), whose stated claim is already false
+
+`apps/desktop/src/shellFailure.test.ts` closes its label case with:
+
+```
+// The set must be complete as well as correct: a fifth describe function
+// added without a row here would leave its label unchecked.
+expect(new Set(cases.map(([event]) => event)).size).toBe(cases.length);
+```
+
+`cases` is the hand-kept roster, so that assertion is computed from the very
+list it polices: it catches a **duplicate** and can never catch an **omission**.
+And there is already a fifth describe function — `describeEngineHostGone` — with
+no row.
+
+Nothing is actually uncovered: that function's label is pinned by
+`contract.proof.mjs`'s IIII-1 cases, in a different file, by a different
+mechanism. **What is wrong is the sentence**, which describes a protection this
+file does not have, in the position a reader takes as the contract.
+
+4c's question is which direction the danger runs. Here it runs toward
+**shrinkage** — a describe function that never gets a row — and a derived count
+agrees with any shrink. This range then added a **sixth** `ShellFailureEvent`
+member, `document-unreadable`, with no describe function at all.
+
+Fixed in the commit after this one, since an audit-recording commit is docs-only
+and alone: an anchor the shrinker has to touch separately.
+
+### CCCCC-4 — nothing in CI has ever executed the CSP measurement, and this is the half to say out loud
+
+Answered from runs rather than from the workflow file. Everything this range
+changed in `apps/desktop/src` and `packages/*/src` is reached by `vitest` and
+`proof:contract`, both unconditional on both matrix legs, and the board was
+green at `4fad19a` after them.
+
+**The render and CSP conclusions are reached by nothing.** They come from a
+scratchpad harness serving invariant 27's policy as a real header to a real
+browser, and no job runs it. `proof:rendererpolicy` proves the derived policy
+equals §9.27 — provenance — and says nothing about what PDF.js does under it.
+Two questions, one covered.
+
+Not filed as a defect, because there is no product render code yet for a proof
+to point at. It is filed as **owed with A6**, which is the next item, and the
+thing to avoid is letting `proof:rendererpolicy`'s green stand in for it — those
+are the two halves of a two-part verification, and reading one as covering both
+is how this project has reddened `main` twice.
+
+### 1. Root cause or workaround?
+
+Four fixes, all root-cause, and one of them arrived as a half-fix first.
+
+- **The escape guard's false negative.** Mechanism: the pattern required the
+  eval flag to sit immediately after `node`, so any flag in between walked past
+  it — `node --input-type=module -e` ran. **The first repair was a half-fix**:
+  skipping only flag-shaped tokens closed that instance and left `node -r esm
+  -e` open, which is Rule 0's *fix the class, not the instance*. Caught by
+  review, and not by the proof, because the proof's controls were written
+  against the same bound as the pattern. The final form skips any run of
+  `[^\s;&|]`, which is the widest bound that cannot cross into a second command.
+- **`EngineOpenFailed` thrown by nobody** (AAAAA-1). Mechanism: the class
+  carries a decision — *this is the document's failure, not the host's* — and a
+  bare `Error` carries none, so the retry loop spent an attempt and a host build
+  establishing what the host had already said.
+- **The ICC claim.** Corrected by measurement, not reworded.
+- **The wrong-context columns** (CCCCC-2), repaired rather than annotated.
+
+No loosened check, no override, no escape hatch. One check was **tightened**: a
+`mustAllow` became a pinned `mustBlock` per the ruling.
+
+Nothing here could regenerate, with one caveat worth stating: the escape guard's
+class can recur in a fourth form, since it is a pattern over free text. Its
+bound is now the widest safe one, which is a limit of the approach rather than
+of this repair.
+
+### 2. Verified against the easy shape only?
+
+**Yes, and it was found by review rather than by me** — the ICC fixture was an
+`/ICCBased` scalar fill, which PDF.js short-circuits by component count. The
+hard shape is an image XObject whose profile must be applied across a buffer;
+built, and it is what reaches `getRgbBuffer`.
+
+The escape guard's hard shape — a flag taking a **separate value** — is covered
+by three controls in both directions. The save pipeline's hard shape is the
+truncating `ENOSPC`, already covered.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, in both directions, in one commit** — stated because it would otherwise
+be spent silently. The ICC conclusion's basis moved from a single measurement to
+a derivation from the shipped source **plus** a measurement in a diagnostic
+configuration: a strengthening. In the same pass the per-document columns'
+claimed scope **narrowed** from a document-wide verdict to a window-scoped one.
+A reader comparing the two commits would otherwise see only that numbers
+changed.
+
+### 3. Would CI have caught it?
+
+Answered from runs. Everything changed under `apps/desktop/src` and
+`packages/*/src` is reached by `vitest` and `proof:contract`, unconditional
+steps on both matrix legs; the board was green at `4fad19a` after them.
+
+**CCCCC-4 is the other direction and is a real gap**: no job has ever executed
+the CSP measurement, and `proof:rendererpolicy`'s green covers provenance only.
+
+### 4. Non-vacuous proofs
+
+Two mutations run against B1's new cases, both bite:
+
+- `if (false && surfaces.documentUnreadable(error))` — the attempt-count case
+  and the event case fail, 2 of 34.
+- `Math.max(entry.consecutiveFailures, POISON_AT)` → bare `POISON_AT` — the
+  downward case fails, reading 2 where it must read 3.
+
+**One case correctly did NOT go red** under the first mutation: *sessioned or
+poisoned, never neither* holds either way, since the transient path also
+poisons. Investigated rather than filed as vacuous — it guards a different
+property, and it now runs both rejection classes because the deterministic exit
+returns early from inside the loop.
+
+The three `document.save` rows added to reject fixtures were checked for the
+*fixture the bug also handles*: `{ kind: 'write-failed' }` carries no other
+field in the schema, so each fixture is still refused for exactly the one reason
+it names.
+
+### 4a. Instrument resolution tests
+
+The probe gained one instrument, `rgb@centre`, and its resolution is in its own
+output rather than asserted: `255,255,255` for the text and garbage-image
+documents, `51,102,153` for the ICC fill, `140,64,128` for the ICC image. Three
+distinguishable values, so it can separate. **What it cannot separate is the two
+ICC configurations**, and that is recorded in CCCCC-1 as a property of the
+question rather than of the instrument.
+
+### 4b. Searches with positive controls
+
+**This is CCCCC-1**, and it is the sharpest thing in the range: the control
+itself was blind, and the regress only stops at a fact read from the source. The
+probe's own violation listener keeps its `eval` control and refuses to report
+when it does not fire.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**CCCCC-3.** `shellFailure.test.ts`'s completeness assertion is computed from
+the roster it polices. The danger runs toward shrinkage, so a derived count
+agrees with any omission — and one already exists.
+
+### 5. Executed, or asserted?
+
+**Executed:** the factory's three asset kinds and the `fetchSync` route, read
+from the shipped worker; the ICC control's refusal, quoted from the console; the
+window-versus-worker disagreement, quoted from one run; both mutations; 643
+tests, typecheck, lint; the escape guard's denial of `node -p` in this session,
+self-certifying.
+
+**Asserted, and therefore unfinished:** that `document-unreadable` reads
+correctly in a real log — no product code consumes `ShellFailureSink` output
+yet; and that A6's render will need no policy change, which is a measurement of
+`pdfjs-dist` and not of Monstera's renderer, which does not exist.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and late.** The L18 amendment was owed before the save pipeline
+(BBBBB-1, recorded in the previous range) and is taken in the commit this gate
+blocked. Nothing was built against it, and clause (ii) takes no candidate.
+
+### 7. Do the documents still match the code?
+
+The FEATURES render row's body is edited true. ADR-0023 gains an appended
+correction rather than an edit, since it is a record. `CLAUDE.md` states nothing
+about invariant 18 and needed no digest change.
+
+NNN-4's cross-document sweep ran, because this range states a cross-document
+relationship: `sweep:prose` for *"reopening from the last-saved bytes"* and for
+*"a failed save never loses work"*, three matches each, control found. Both
+found ADR-0023's collision passage, which is corrected here, and nothing else
+that now reads false.
+
+---
+
 ## 2026-08-29 — Stage audit: `e811719..d8591db` — an amendment that was owed BEFORE the thing this range built
 
 Range: **6 commits, 24 files.** The gate fired on the commit being composed
