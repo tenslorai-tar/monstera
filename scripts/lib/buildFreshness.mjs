@@ -53,6 +53,30 @@ export function newestMtime(path) {
     const at = newestMtime(join(path, name));
     if (at > newest) newest = at;
   }
+
+  // AN EMPTY WALK IS A BROKEN LOOKUP, NOT A FRESH BUILD (finding KKKKK-2).
+  //
+  // `statSync` above is loud about a path that does not exist. What is silent is
+  // a directory that EXISTS and yields nothing — every entry skipped as
+  // `node_modules`, `dist`, `.git` or a test, or simply empty. This used to
+  // return 0, and 0 never exceeds an artefact's timestamp, so the pair passed.
+  // The reassuring answer here is *the build is current*, and an exclusion list
+  // that grew until it swallowed a whole tree would produce it on every run
+  // while the guard reported nothing wrong.
+  //
+  // Latent when it was found — `packages/ui/src` holds plenty of ordinary files
+  // — and closed anyway, because the skip list is the thing that gets widened
+  // and this is the check two proofs now trust before reading a bundle.
+  if (newest === 0) {
+    throw new Error(
+      `${path} contains no file this walk can date. Everything under it was skipped as ` +
+        `node_modules, dist, .git or a test, or the directory is empty.\n` +
+        `That is a broken lookup, not a current build: a walk returning nothing compares as ` +
+        `"not newer than the artefact", so the freshness check would pass without having ` +
+        `looked at anything. Point it at a directory that holds source, or narrow the skip ` +
+        `list back.`,
+    );
+  }
   return newest;
 }
 

@@ -70,6 +70,29 @@ function recordingClient(answer: unknown): {
 }
 
 describe('App', () => {
+  it('renders the document surface as a landmark', () => {
+    // RESTORED, finding KKKKK-1. This assertion existed, was deleted when `App`
+    // gained its props and the file was rewritten around the registry, and the
+    // property survived only in `proof:rendererpolicy` — which needs a
+    // provisioned Electron and reports UNVERIFIABLE on the job that installs
+    // nothing. A misspelt class went from reddening every runner to reddening
+    // half of them, in a commit that said nothing about the exchange.
+    //
+    // NOT REDUNDANT WITH THE HARNESS, and the difference is the subject: this
+    // says `App` renders the landmark, and the harness says the SHIPPED BUNDLE
+    // does under the pinned policy. The second is the stronger claim and it is
+    // the one that cannot run everywhere, which is exactly why the cheap one
+    // belongs here too.
+    const { client } = recordingClient({ kind: 'cancelled' });
+
+    const { container } = render(<App client={client} settings={freshSettings()} />);
+
+    // `main` is the landmark role B9 requires of the document surface, and the
+    // class is what `app.css` and the harness both key on — so the query is the
+    // conjunction rather than either half, which is what the harness asks too.
+    expect(container.querySelector('main.m-document-surface')).not.toBeNull();
+  });
+
   it('renders the start screen from the REGISTRY, with the command’s resolved title', () => {
     // Queried by the English name rather than the key: a surface that leaked the
     // key would satisfy a query for `command.open-document.title`, which is the

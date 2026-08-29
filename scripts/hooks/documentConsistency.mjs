@@ -38,6 +38,7 @@ import {
 } from '../lib/auditWatermark.mjs';
 import { filesInCommit, git, readStagedBlob, repoRoot } from '../lib/gitScope.mjs';
 import { probeCoverage, probeState } from '../lib/hookProbe.mjs';
+import { probeState as pickerProbeState } from '../lib/pickerProbe.mjs';
 import { isMain } from '../lib/isMain.mjs';
 import { memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { ANCHOR_EVENT, ANCHOR_SCRIPT, claimedHooks, mechanismName } from '../lib/registeredHooks.mjs';
@@ -604,7 +605,55 @@ registerRule({
 });
 
 // ---------------------------------------------------------------------------
-// 6. §9.17 states each budget's numbers exactly once — in the declared line.
+// 6. The open row is not marked done while the picker has never been driven.
+// ---------------------------------------------------------------------------
+registerRule({
+  name: 'the open clause is not claimed done without a picker the dialog actually drove',
+  // docs/FEATURES.md against docs/picker-probe.json against the picker's own
+  // source — the claim, its evidence, and the code the evidence is about. The
+  // third is why this cannot be per-document: the record expires when
+  // `documentPicker.ts` changes, and that file is not a document.
+  scope: 'whole-corpus',
+  documents: [],
+  run(failures) {
+    // WHAT THIS EXISTS FOR, stated once. The row carried **done** directly above
+    // its own sentence saying `documentPicker.ts` has never executed anywhere —
+    // a status column contradicting its own body, which is §10.4's display-only
+    // sin at document scale and worse than a false body, because a reader takes
+    // the status as the contract and may never reach the paragraph.
+    //
+    // Quiet until somebody claims it, for the reason rule 5 states: a gate that
+    // reddens the build for work correctly outstanding is one people learn to
+    // read past.
+    const features = read('docs/FEATURES.md');
+    const row = features
+      .split('\n')
+      .find((line) => line.includes('**Opening a document —'));
+
+    if (row === undefined) {
+      failures.push(
+        'docs/FEATURES.md no longer carries the row for opening a document. If the clause was ' +
+          'retired, delete this rule in the same commit rather than leaving one that inspects ' +
+          'nothing.',
+      );
+      return;
+    }
+    if (!/\|\s*\*\*done\*\*\s*\|?\s*$/u.test(row)) return;
+
+    const { state, detail } = pickerProbeState(ROOT);
+    if (state !== 'observed') {
+      failures.push(
+        `docs/FEATURES.md marks the open clause done, and Electron's file dialog has not been ` +
+          `observed to return a path (${state}).\n      ${detail}\n      ` +
+          `Every other part of opening is proven; this is the one a proof cannot reach, which ` +
+          `is why it is executed and recorded rather than asserted.`,
+      );
+    }
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 7. §9.17 states each budget's numbers exactly once — in the declared line.
 // ---------------------------------------------------------------------------
 registerRule({
   name: '§9.17 states each budget value once, in the machine-read line',

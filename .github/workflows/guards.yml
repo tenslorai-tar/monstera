@@ -288,6 +288,34 @@ jobs:
       - name: Prove every document rule declares a scope, and the scope selects
         run: node scripts/ci/annotate.mjs scripts/proofs/documentRuleScope.proof.mjs
 
+      # The picker's gate is the only evidence `documentPicker.ts` has ever
+      # executed, and that evidence is a JSON file in the repository — so every
+      # way of getting it wrong produces something that reads like evidence: no
+      # record, a record of a dismissed dialog, or a record written against code
+      # that has since changed. The load-bearing case is the fourth, that a
+      # record which genuinely does vouch reads as observed, because a state
+      # machine answering "not observed" to everything satisfies the other three
+      # and makes the gate permanently red — which is how a gate gets deleted.
+      #
+      # No Electron here. This proves the RECORD, against temporary trees it
+      # builds; the dialog itself is a person's job and is what the record is of.
+      - name: Prove the picker's record cannot vouch for a picker nobody drove
+        run: node scripts/ci/annotate.mjs scripts/proofs/pickerProbe.proof.mjs
+
+      # The staleness guard two renderer proofs consult before believing
+      # anything, which had no coverage at all while it lived as a private
+      # function inside one of them (finding KKKKK-2's neighbour). Every way it
+      # can be broken produces "the build is fine": a source newer than its
+      # artefact missed, a directory walk that reads nothing and returns 0, a
+      # pair list quietly shorter than the proof needs. So every case here has a
+      # partner asserting it also says YES — a guard that refused everything
+      # would satisfy the first half perfectly and be deleted within a week.
+      #
+      # Here rather than in ci.yml: it builds temporary trees and needs neither
+      # Electron nor a display, so it belongs on the job that installs nothing.
+      - name: Prove the build-staleness guard separates, and can say yes
+        run: node scripts/ci/annotate.mjs scripts/proofs/buildFreshness.proof.mjs
+
       # Facts one document states about another, checked mechanically. Three
       # separate drifts reached main because each was maintained by hand, and
       # reviewing the changed file never shows the stale one.

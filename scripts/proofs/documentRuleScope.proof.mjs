@@ -47,6 +47,7 @@ const EXPECTED_RULES = [
   'every scripts/ path named in a tracked document resolves',
   'no FEATURES row this commit edited grew past its length target',
   'no document states a claim an ADR correction withdrew',
+  'the open clause is not claimed done without a picker the dialog actually drove',
   'the threat model raises all 3 carried questions',
   "the watermark and the journal's newest audit are the same string, and the range is within one batch",
   '§9.17 states each budget value once, in the machine-read line',
