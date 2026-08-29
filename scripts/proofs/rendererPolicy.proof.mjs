@@ -45,10 +45,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { refuseStaleBuild as refuseStaleBuildIn } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -71,41 +72,6 @@ const RUNTIME_PRESENT = existsSync(ELECTRON_BINARY) && existsSync(HARNESS);
 
 /** @type {string[]} */
 const failures = [];
-
-/**
- * The newest mtime at `path`, walking it if it is a directory.
- *
- * `dist` and `node_modules` are skipped: the first is the artefact side of the
- * comparison and would make every tree newer than its own output, and the
- * second is not source.
- *
- * @param {string} path
- * @returns {number}
- */
-function newestMtime(path) {
-  const entry = statSync(path);
-  if (!entry.isDirectory()) return entry.mtimeMs;
-
-  // FILES ONLY — a directory's own mtime is not seeded here, and it is a second
-  // route to the same false alarm rather than the same one. A directory's
-  // timestamp moves when a file is CREATED IN or REMOVED FROM it, so a new test
-  // bumps the tree even with the test itself excluded below; editing one does
-  // not. Measured 2026-08-29 by restoring the seed: `touch` on an existing test
-  // passes, and creating `__scratch_probe.test.ts` stops the proof dead.
-  let newest = 0;
-  for (const name of readdirSync(path)) {
-    if (name === 'node_modules' || name === 'dist' || name === '.git') continue;
-    // A TEST IS NOT AN INPUT TO THE BUNDLE, and including one makes this guard
-    // fire for an edit that cannot change the artefact. Measured 2026-08-29 by
-    // disabling this line: build, `touch renderPage.test.ts`, and the proof
-    // stops dead on a build that is current. A guard that cries wolf is one
-    // somebody turns off, which would cost the real staleness it was added for.
-    if (/\.test\.tsx?$/u.test(name)) continue;
-    const at = newestMtime(join(path, name));
-    if (at > newest) newest = at;
-  }
-  return newest;
-}
 
 /**
  * The cases that need a runtime, named ONCE.
@@ -173,94 +139,21 @@ function check(label, condition, detail) {
 }
 
 /**
- * Refuses to run against a build older than the source it was made from.
+ * {@link refuseStaleBuild} with this repository's root already bound.
  *
- * ## The one failure a positive control cannot catch
+ * The rule itself lives in `scripts/lib/buildFreshness.mjs`, and it moved there
+ * the moment a **second** proof needed it: `canvasPixels.proof.mjs` drives the
+ * same shell and reads the same bundle, so a private copy here would be two
+ * opinions about what *stale* means, agreeing with each other until the day one
+ * of them gained a pair (B3a).
  *
- * Everything else here asks the running renderer what it does, which is the
- * strongest evidence this repository has. It is also evidence about **whatever
- * was built**, and a stale artefact answers every probe confidently and
- * correctly about the previous version of the shell. `CLAUDE.md` names this
- * exactly: a stale answer contains the known-present anchor too, so no amount of
- * "locate something you know is there" separates it.
+ * The wrapper exists only so the two call sites below keep reading as they did.
  *
- * The gap is not hypothetical and it has a specific shape. `npm run build` is
- * `typecheck` **plus** `build:preload`; `npm run typecheck` alone is what the
- * Commands section shows and what habit reaches for. Editing `preload.ts` and
- * running only `typecheck` leaves `preload.cjs` untouched — the bridge still
- * loads, all thirteen cases still pass, and they pass about the old preload
- * (finding HH-6).
- *
- * ## Freshness, compared the only way that means anything
- *
- * Source must not be **strictly newer** than the artefact built from it. Ties
- * pass: a build completing inside one filesystem timestamp tick is not
- * evidence of staleness, and a check that fails on granularity is a check
- * someone turns off.
- *
- * A missing file is reported as missing rather than as fresh — `statSync` throws
- * and the message says which pair, because "could not compare" must not read as
- * "compared and agreed".
- *
- * ## A source may be a DIRECTORY, and the renderer bundle is why
- *
- * `preload.cjs` has one source file. The Vite bundle has a tree — every module
- * reachable from `main.tsx` — so its freshness is decided by the newest file
- * under it, not by one path somebody picked. Naming a single file there would be
- * a guard that passes whenever the edit happened to land in a sibling.
- *
- * ## `expected` is an anchor, and it is per CALL SITE rather than per function
- *
- * There are two call sites, and that is deliberate: the string half of this
- * proof runs on every machine and reads `windowPolicy.js` alone, so demanding a
- * preload there would fail every runner that installs nothing. A single count
- * inside this function would therefore be wrong for one of them.
- *
- * The literal exists because the list is **hand-kept and the danger runs toward
- * growth** (rule 4c): the failure is an artefact arriving with nobody adding a
- * row, which is finding GGGGG-1 — two cases began reading the Vite bundle and
- * the list did not follow. A count derived from `pairs.length` agrees with any
- * list, including the one that is missing an entry.
- *
- * @param {[string, string][]} pairs `[source, artefact]`, repo-relative. A
- *   source that is a directory is read as the newest file beneath it.
+ * @param {[string, string][]} pairs `[source, artefact]`, repo-relative.
  * @param {number} expected How many pairs this call site declares.
  */
 function refuseStaleBuild(pairs, expected) {
-  if (pairs.length !== expected) {
-    throw new Error(
-      `refuseStaleBuild received ${String(pairs.length)} pair(s) where the call site declares ` +
-        `${String(expected)}. Raise the literal in the same edit that adds a pair; if you are ` +
-        `removing one, say why in the commit.`,
-    );
-  }
-  for (const [source, artefact] of pairs) {
-    const sourcePath = join(REPO_ROOT, source);
-    const artefactPath = join(REPO_ROOT, artefact);
-    if (!existsSync(artefactPath)) {
-      throw new Error(
-        `${artefact} does not exist. Run \`npm run build\` — which is \`typecheck\` plus ` +
-          `\`build:preload\` plus \`build:renderer\`, and not \`typecheck\` alone.`,
-      );
-    }
-    const sourceAt = newestMtime(sourcePath);
-    const artefactAt = statSync(artefactPath).mtimeMs;
-    if (sourceAt > artefactAt) {
-      throw new Error(
-        `${artefact} is OLDER than ${source}, so this proof would run against a stale build ` +
-          `and every case would pass about the previous version of the shell.\n  ` +
-          `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
-          `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
-          `Run \`npm run build\`. \`npm run typecheck\` produces neither the preload bundle nor ` +
-          `the renderer bundle, which are two of the five pairs this check exists for.\n` +
-          `And if \`build\` reports nothing to do for a \`tsc\` pair, the source's timestamp ` +
-          `moved without its CONTENT changing — a \`git stash pop\` does exactly that — so the ` +
-          `incremental build correctly considers the output current while this check does not: ` +
-          `\`npx tsc --build --force\`. The two bundled pairs have no such state; esbuild and ` +
-          `Vite rebuild them every time.`,
-      );
-    }
-  }
+  refuseStaleBuildIn(REPO_ROOT, pairs, expected);
 }
 
 /**

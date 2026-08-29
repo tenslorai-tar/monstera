@@ -478,6 +478,23 @@ jobs:
         # so they are the ones whose failures are hardest to reproduce.
         run: node scripts/ci/annotate.mjs scripts/proofs/rendererPolicy.proof.mjs
 
+      # THE RENDER CLAUSE'S ONLY EVIDENCE, and it needs the display server the
+      # step above installed for the same reason plus one more.
+      #
+      # PDF.js's display path schedules through `requestAnimationFrame`, and
+      # Chromium fires none in a page whose `visibilityState` is `hidden`. So
+      # without a display the render never completes and this proof reports a
+      # canvas nothing drew on — which is exactly the defect it is looking for, a
+      # false positive about a working renderer produced by the environment. The
+      # proof refuses up front rather than discovering it after a timeout.
+      #
+      # Every other test of this renderer stays green for a canvas that draws
+      # nothing: `renderPage.test.ts` runs against a shim with no canvas,
+      # `App.test.tsx` asserts the element is in the tree, and the step above
+      # asserts the React shell mounted. This is the one that reads pixels.
+      - name: Prove the renderer's canvas carries a drawn page
+        run: node scripts/ci/annotate.mjs scripts/proofs/canvasPixels.proof.mjs
+
       # WHICH MODE A WORKER THREAD RUNS IN, which is a placement question with a
       # three-strike record: `apps/desktop/src/` is exempted from the
       # Electron-import ban as a proxy for "runs inside Electron", and the engine
