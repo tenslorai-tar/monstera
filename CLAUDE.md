@@ -484,6 +484,16 @@ These were given directly and bind every agent on this project.
      The practical rule is the useful part: **after registering a hook, do not
      assume it is live, and do not assume it is dead either.** Probe it, and
      read the result with limit 2.
+
+     **One half of it IS now established, and it is the half that was never in
+     doubt for the right reason.** Measured 2026-08-29: editing a registered
+     hook's **script body** took effect on the very next command in the same
+     session — an evading form ran, the pattern was repaired, and the identical
+     command was denied, with no restart and no re-registration. So the delay
+     above belongs to the **registration** in `.claude/settings.json`, not to
+     the script the registration names. That matters when you are repairing a
+     guard rather than adding one: the repair is testable immediately, by limit
+     2's self-certifying direction, in the session that made it.
   2. **The two outcomes are not symmetric.** A denial is self-certifying:
      nothing that failed to load the guard can be blocked by it, so a denial
      settles the question whatever the session's age. A command that *runs* is

@@ -351,6 +351,18 @@ mustAllow('a shift-assign inside a quoted program', "awk 'BEGIN { x = 1; x >>= 2
 // so the exclusion above is never mistaken for a general amnesty on comparisons.
 // The inline-interpreter rule is independent of the redirect test.
 mustBlock('an inline perl script containing a comparison', "perl -ne 'print if $. >= 10' notes.txt");
+// THE FALSE NEGATIVE, and the fixture is the command that produced it. An
+// eval flag behind another flag walked past this guard until 2026-08-29 —
+// measured by typing it, not by reading the pattern.
+mustBlock('an eval flag behind another node flag', 'node --input-type=module -e "console.log(1)"');
+mustBlock('and behind two of them', 'node --no-warnings --experimental-vm-modules --eval "x"');
+mustBlock('the print form behind a flag', 'node --no-warnings -p "1 + 1"');
+// THE CONTROLS THAT BOUND IT. Skipping arbitrary tokens rather than flag-shaped
+// ones would deny all three of these, and a guard that denies an ordinary `sed
+// -e` in a compound is a guard someone turns off.
+mustAllow('an ordinary node invocation with flags', 'node --experimental-strip-types scripts/x.mts');
+mustAllow('a script whose own argument is -e', 'node scripts/build.mjs -e production');
+mustAllow('an eval flag in a DIFFERENT command after a separator', "node --version && sed -e 's/a/b/' f.txt");
 // A `=` elsewhere on the line must not disarm the redirect test.
 mustBlock('printf redirected to a file whose name follows an unrelated =', 'printf "a=b\\n" > out.txt');
 // The comparison and the redirect are different operators; only one is a write.

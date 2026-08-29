@@ -394,7 +394,26 @@ function eitherOrder(anchor, alsoAfter) {
 /** Commands whose own evaluation resolves escapes before anything is written. */
 export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
-    pattern: /\bnode\s+(?:-[a-zA-Z]*e|--eval|-[a-zA-Z]*p\b|--print)\b/,
+    // `(?:-\S+\s+)*` IS A FALSE-NEGATIVE REPAIR, found by tripping it.
+    //
+    // This required the eval flag to sit IMMEDIATELY after `node`, so any flag
+    // in between walked past the guard. Measured 2026-08-29: `node -e` denied,
+    // `node --input-type=module -e "…"` **ran** — typed by accident, in the
+    // middle of other work, which is how all seven occurrences of the rule this
+    // guard replaced happened.
+    //
+    // Only FLAG-SHAPED tokens are skipped, and that bound is the whole design.
+    // Allowing arbitrary tokens would let the scan cross `&&` and `;` — nothing
+    // stops a run of `\S+` at a separator — so `node --version && sed -e 's/a/b/'
+    // f` would deny on the `sed`, and a guard that blocks an ordinary `sed -e`
+    // is a guard someone turns off. A separator is not `-`-prefixed, and neither
+    // is a script path, so this form can reach neither.
+    //
+    // **The gap that remains, pinned rather than left for someone to relitigate:**
+    // a flag taking a SEPARATE value still hides one — `node -r esm -e "…"`
+    // stops the run at `esm`. Closing it needs the scan to cross a non-flag
+    // token, which is the false positive above. Not chased, deliberately.
+    pattern: /\bnode\s+(?:-\S+\s+)*(?:-[a-zA-Z]*e|--eval|-[a-zA-Z]*p\b|--print)\b/,
     what: 'node -e / --eval / --print',
     instead:
       'put the program in a file with the Write tool and run it by path. This is the exact ' +

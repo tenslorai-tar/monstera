@@ -6,12 +6,12 @@
       "outcome": "fired",
       "certifies": "detection",
       "exercise": "node -e \"console.log('hook test')\"",
-      "evidence": "Denied at 2026-08-23T22:28Z, in the session that registered the PostToolUse reporter, by running the probe command verbatim as an ordinary shell call. The refusal named the rule and offered no override. A denial is self-certifying: nothing that failed to load the guard can be blocked by it, so this is accepted whatever the session's age.",
-      "recordedAt": "2026-08-23T22:29:05.713Z",
-      "sessionStartedAt": "2026-08-16T06:29:43.686Z",
-      "inputsLastChangedAt": "2026-08-23T12:34:17+02:00",
+      "evidence": "The hook produced its own output. Nothing that failed to load it can do that.",
+      "recordedAt": "2026-08-29T01:14:47.795Z",
+      "sessionStartedAt": "2026-08-28T12:07:52.861Z",
+      "inputsLastChangedAt": "2026-08-24T00:41:52+02:00",
       "verdict": {
-        "digest": "80c964d174bf472272ce14c4837a20381a34fffeb320ddbf704d72d02b052cc4",
+        "digest": "0e36031a0457d7b5165b8f0b43fcddf75f193782fade9aa01b3d66f786f336f2",
         "inputs": [
           {
             "name": "file:.claude/settings.json",
@@ -19,7 +19,7 @@
           },
           {
             "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-            "digest": "29beb6ccf6f45bcb9d9e69fdfe66cc8b44bee77e8bbe5e0f43e9468ea74d4354"
+            "digest": "b49b9a77a7a7c11724967c23063ceda14ed57310d46eebebdb6795578d235bc1"
           }
         ]
       }
