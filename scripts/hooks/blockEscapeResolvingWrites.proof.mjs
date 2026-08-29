@@ -357,12 +357,22 @@ mustBlock('an inline perl script containing a comparison', "perl -ne 'print if $
 mustBlock('an eval flag behind another node flag', 'node --input-type=module -e "console.log(1)"');
 mustBlock('and behind two of them', 'node --no-warnings --experimental-vm-modules --eval "x"');
 mustBlock('the print form behind a flag', 'node --no-warnings -p "1 + 1"');
-// THE CONTROLS THAT BOUND IT. Skipping arbitrary tokens rather than flag-shaped
-// ones would deny all three of these, and a guard that denies an ordinary `sed
-// -e` in a compound is a guard someone turns off.
+// A FLAG TAKING A SEPARATE VALUE. This was the gap a flag-shaped-tokens-only
+// run left open, and closing it is why arbitrary tokens are skipped.
+mustBlock('an eval flag behind a flag that takes a value', 'node -r esm -e "console.log(1)"');
+// THE PINNED REFUSAL, and it is a decision rather than a limitation. A script
+// with its own `-e` argument is denied, because the alternative — a bound that
+// permits it — is what left the case above open, and permitting an ambiguous
+// case is a false negative in a fail-closed guard. Loud and costing one retyped
+// command, against silent and being the failure this guard exists to prevent.
+mustBlock('PINNED FALSE POSITIVE: a script whose own argument is -e', 'node scripts/build.mjs -e production');
+// THE CONTROLS THAT KEEP THE SCAN INSIDE ONE COMMAND. Without the separator
+// exclusion these deny, and a guard that blocks an ordinary `sed -e` in a
+// compound is a guard someone turns off.
 mustAllow('an ordinary node invocation with flags', 'node --experimental-strip-types scripts/x.mts');
-mustAllow('a script whose own argument is -e', 'node scripts/build.mjs -e production');
-mustAllow('an eval flag in a DIFFERENT command after a separator', "node --version && sed -e 's/a/b/' f.txt");
+mustAllow('an eval flag in a DIFFERENT command after &&', "node --version && sed -e 's/a/b/' f.txt");
+mustAllow('an eval flag in a DIFFERENT command after ;', "node --version ; sed -e 's/a/b/' f.txt");
+mustAllow('an eval flag in a DIFFERENT command after a pipe', "node --version | sed -e 's/a/b/'");
 // A `=` elsewhere on the line must not disarm the redirect test.
 mustBlock('printf redirected to a file whose name follows an unrelated =', 'printf "a=b\\n" > out.txt');
 // The comparison and the redirect are different operators; only one is a write.

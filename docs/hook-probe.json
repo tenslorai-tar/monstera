@@ -7,11 +7,11 @@
       "certifies": "detection",
       "exercise": "node -e \"console.log('hook test')\"",
       "evidence": "The hook produced its own output. Nothing that failed to load it can do that.",
-      "recordedAt": "2026-08-29T01:14:47.795Z",
+      "recordedAt": "2026-08-29T06:04:25.740Z",
       "sessionStartedAt": "2026-08-28T12:07:52.861Z",
-      "inputsLastChangedAt": "2026-08-24T00:41:52+02:00",
+      "inputsLastChangedAt": "2026-08-29T03:23:10+02:00",
       "verdict": {
-        "digest": "0e36031a0457d7b5165b8f0b43fcddf75f193782fade9aa01b3d66f786f336f2",
+        "digest": "89f7688a0137e9bc3e6444504e4745208b46ee214401ad0e3acee7e45b1d70cf",
         "inputs": [
           {
             "name": "file:.claude/settings.json",
@@ -19,7 +19,7 @@
           },
           {
             "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-            "digest": "b49b9a77a7a7c11724967c23063ceda14ed57310d46eebebdb6795578d235bc1"
+            "digest": "c24d7de654d74b06ef129d898175c3398bfeb31fecbdbec0f56ada77882e7681"
           }
         ]
       }

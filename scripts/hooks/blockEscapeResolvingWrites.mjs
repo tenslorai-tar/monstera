@@ -394,26 +394,34 @@ function eitherOrder(anchor, alsoAfter) {
 /** Commands whose own evaluation resolves escapes before anything is written. */
 export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
   {
-    // `(?:-\S+\s+)*` IS A FALSE-NEGATIVE REPAIR, found by tripping it.
+    // `(?:[^\s;&|]+\s+)*` IS A FALSE-NEGATIVE REPAIR, found by tripping it.
     //
-    // This required the eval flag to sit IMMEDIATELY after `node`, so any flag
-    // in between walked past the guard. Measured 2026-08-29: `node -e` denied,
-    // `node --input-type=module -e "…"` **ran** — typed by accident, in the
-    // middle of other work, which is how all seven occurrences of the rule this
-    // guard replaced happened.
+    // This required the eval flag to sit IMMEDIATELY after `node`, so anything
+    // in between walked past. Measured 2026-08-29: `node -e` denied,
+    // `node --input-type=module -e "…"` **ran** — typed by accident, mid-task,
+    // which is how all seven occurrences of the rule this guard replaced
+    // happened.
     //
-    // Only FLAG-SHAPED tokens are skipped, and that bound is the whole design.
-    // Allowing arbitrary tokens would let the scan cross `&&` and `;` — nothing
-    // stops a run of `\S+` at a separator — so `node --version && sed -e 's/a/b/'
-    // f` would deny on the `sed`, and a guard that blocks an ordinary `sed -e`
-    // is a guard someone turns off. A separator is not `-`-prefixed, and neither
-    // is a script path, so this form can reach neither.
+    // **THE BOUND IS THE SEPARATOR, NOT THE SHAPE OF THE TOKEN, and that choice
+    // inverts an earlier one.** The first repair skipped only flag-shaped
+    // tokens, to keep `node script.mjs -e prod` — a script with its own `-e`
+    // argument — allowed. That left `node -r esm -e "…"` open, because a flag
+    // taking a separate value stops a flag-only run at its value. Two
+    // dispositions were available and only one matches this guard's doctrine:
+    // every other ambiguity here is resolved by REFUSING, and permitting the
+    // ambiguous case is a false negative in a fail-closed guard, in the exact
+    // class that has cost this repository seven occurrences. A false positive
+    // is loud, immediate, and costs one retyped command; the false negative is
+    // silent and is the failure the guard exists to prevent.
     //
-    // **The gap that remains, pinned rather than left for someone to relitigate:**
-    // a flag taking a SEPARATE value still hides one — `node -r esm -e "…"`
-    // stops the run at `esm`. Closing it needs the scan to cross a non-flag
-    // token, which is the false positive above. Not chased, deliberately.
-    pattern: /\bnode\s+(?:-\S+\s+)*(?:-[a-zA-Z]*e|--eval|-[a-zA-Z]*p\b|--print)\b/,
+    // So arbitrary tokens are skipped and `node script.mjs -e prod` is now a
+    // **pinned refusal** rather than a control — recorded in the proof so it is
+    // a decision someone can read, not a bug someone rediscovers.
+    //
+    // Excluding `;`, `&` and `|` is what keeps the scan inside ONE command.
+    // Without it `node --version && sed -e 's/a/b/' f` denies on the `sed`, and
+    // a guard that blocks an ordinary `sed -e` is a guard someone turns off.
+    pattern: /\bnode\s+(?:[^\s;&|]+\s+)*(?:-[a-zA-Z]*e|--eval|-[a-zA-Z]*p\b|--print)\b/,
     what: 'node -e / --eval / --print',
     instead:
       'put the program in a file with the Write tool and run it by path. This is the exact ' +
