@@ -644,6 +644,181 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `7669d69..764522b` — the freshness guard covers one pair, and the artefact the new cases read is not it
+
+Range: **2 commits, 16 files.** The gate fired on the commit after it, which is
+22 files and would have crossed 25.
+
+### GGGGG-1 — `proof:rendererpolicy` can pass about a renderer bundle nobody rebuilt
+
+The proof already owns the mechanism for this. `refuseStaleBuild` exists because
+of finding HH-6: editing `preload.ts` and running `npm run typecheck` instead of
+`npm run build` left `preload.cjs` untouched, every case passed, and they passed
+**about the old preload**. Its own header calls that *"the one failure a positive
+control cannot catch"* — a stale artefact contains the known-present anchor too.
+
+It is called with exactly one pair:
+
+```
+refuseStaleBuild([['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js']]);
+```
+
+This range added two cases that read a **second** artefact — the Vite bundle in
+`apps/desktop/dist/renderer/` — and did not extend the guard to it. So editing
+`App.tsx` or `main.tsx`, running `typecheck`, and running this proof reports *the
+React shell mounts* and *its stylesheet arrived* about whatever was built last
+time. Both would be true statements about a bundle that is no longer the source.
+
+**The shape is the finding rather than the instance.** The guard is a **list**,
+and a list is a hand-kept roster in the exact sense 4c describes: it fails loudly
+when an entry's artefact goes missing and is completely silent when a new
+artefact appears that nobody added. The danger here runs toward *more artefacts*,
+which is the direction a hand-kept list cannot see, and the range that added one
+is the range that did not add its row.
+
+Not fixed here — an audit-recording commit is docs-only and alone — and fixed in
+the commit that follows this one. The pair is `packages/ui/**` against
+`apps/desktop/dist/renderer/index.html`: the bundle's own filename is
+content-hashed and therefore not a fixed path, while the HTML that names the hash
+is.
+
+### 1. Root cause or workaround?
+
+Nothing in the range is a fix, which is worth saying plainly rather than
+answering the question as though it were. The range builds a thing that did not
+exist. The one repair inside it is `RENDERER_HTML` — the harness held its own
+`join(HERE, '..', 'renderer', 'index.html')` beside `window.ts`'s, and that is
+B3a's second opinion rather than a wrong one. Fixed by making `window.ts` export
+it and the harness import it, so the next mover cannot leave one behind.
+
+Two decisions in the range were **taken rather than deferred**, and both are
+recorded where a reader meets them rather than here: `electron-vite` is pinned by
+ADR-0004 and deliberately not adopted (the config header says why), and the
+renderer's source lives in `packages/ui` rather than `apps/desktop` because
+ADR-0024 settled that axis by execution mode.
+
+### 2. Verified against the easy shape only?
+
+**The scratchpad probe was the easy shape, and the artefact was not.** The
+`script-src` question was first measured against a hand-written
+`<script type="module" src="./probe.js">`, which Vite's emitted tag is not: the
+real one carries `crossorigin`, and `crossorigin` on a `file://` origin is
+exactly the kind of attribute that could have changed the answer. The proof case
+reads the real artefact, so the shipped shape is what is asserted — but the probe
+alone would have been a measurement of a document nobody ships.
+
+The worker reading has the same structure and is stated here because the harder
+shape has **not** been reached: it was measured against the same synthetic page,
+with a `worker-src 'none'` control that separates, and PDF.js's own worker has
+not yet started under the pinned policy in the shipped renderer.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, and only in the strengthening direction. `script-src` and `style-src` were
+two of the nine directives this proof delivered and never exercised; both are now
+read back from a running renderer. Nothing moved from asserted to derived, and no
+case acquired a provisioning condition it did not already have — the two new ones
+are inside the runtime branch, which is where every other read-back case already
+lived.
+
+### 3. Would CI have caught it?
+
+**GGGGG-1: no, and it is the interesting kind of no.** `proof:rendererpolicy` is
+an unconditional CI step and it runs after `npm run build`, so on a runner the
+artefact is always fresh and the missing guard costs nothing. The defect is
+invisible on the board **by construction** and can only ever bite a developer
+machine, which is item 3's *is there a defect THIS MACHINE can see that CI
+cannot* — inverted, and worth noting in that form: the branch keyed on
+provisioning here is "was there a build step before this", and CI always takes
+the yes.
+
+Everything else in the range is covered: `npm run build` now includes
+`build:renderer` in the same job that runs the proof, verified from `ci.yml`'s
+step list rather than from the subject of the change.
+
+### 4. Non-vacuous proofs
+
+Both new cases were mutated, and the **second** mutation is the one that mattered.
+Removing the whole `assets/` directory reddens both, which does not separate them
+— that is the mutation the bug would be indistinguishable from. Removing **only
+the stylesheet** reddens the style case alone and leaves the mount case green,
+which is the direction that proves they measure two things.
+
+**One branch examined and ruled rather than covered:** `main.tsx`'s
+`container === null` throw has no case. Mutating it — deleting the check —
+produces a React error about the container rather than silence, so it is a
+diagnostic improvement and not a guard. Kept, ruled documentation, in JJJ-1's
+category rather than as a missing case.
+
+### 4a. Instrument resolution tests
+
+`renderer.vite.config.mjs` is the range's one new build instrument, and the
+claim it makes — that this layer is type-checked through JSDoc — was **executed
+rather than assumed**: a `/** @type {number} */ const PROBE = 'not a number'`
+placed in it turned `tsc -p tsconfig.scripts.json` red at the right line, and was
+removed. Without that, *"`scripts/**/*.mjs` covers it"* is a glob read off a
+config file, which is the same class of evidence as a workflow file standing in
+for a run.
+
+### 4b. Searches with positive controls
+
+The worker measurement is the range's search-shaped question — *is a Web Worker
+refused under this policy?* — and its reassuring answer was **"it ran"**, not
+"found nothing". The control is therefore on that side: the same page under
+`worker-src 'none'`, everything else identical, must fail to start one. It did.
+Without it, "a worker ran under the pinned policy" is also what a browser
+ignoring `worker-src` entirely would produce.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`RUNTIME_CASES` is derived and correct, and it was checked rather than assumed —
+it is simultaneously the count, the UNVERIFIABLE listing and the roster, so a
+case removed from it stops being *printed* as something this machine could not
+look at. The shrink is visible in output, not only in a number. It caught both
+new cases the first time they ran undeclared.
+
+**GGGGG-1 is 4c's other half in the same file**: `refuseStaleBuild`'s pair list
+is hand-kept, the danger runs toward growth, and a hand-kept list is blind to
+exactly that.
+
+### 5. Executed, or asserted?
+
+**Executed:** that `script-src 'self'` permits a same-directory module script
+over `file://`, against both a synthetic page and the shipped bundle; that
+`style-src 'self'` permits its stylesheet; that a Web Worker starts under the
+pinned policy and does not under `worker-src 'none'`; that the Vite config is
+type-checked; that 716 tests pass on the downgraded Vite 7.3.6; that the board is
+green at `764522b`.
+
+**Asserted:** nothing load-bearing. The one belief carried without a run is that
+`electron-vite` would buy nothing here, which is an argument from what the two
+existing build steps do rather than a measurement — and it is reversible, since
+adopting it later changes a config and not a decision.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither, and that is the right answer here: the shell registers into seams that
+already exist. §1's map already says `packages/ui` is the React app; ADR-0024
+already decided that renderer-mode source stays out of the package
+`MAY_IMPORT_ELECTRON` exempts; ADR-0004 already pinned the Vite versions. The one
+thing that could have been an amendment — the CSP — was **measured instead**, and
+the measurement is why no amendment is owed.
+
+### 7. Do the documents still match the code?
+
+The row for the shell is new and states its own owed items. `docs/FEATURES.md`'s
+render row was rewritten in the following commit and cut back under its length
+target, which the guard enforced rather than suggested.
+
+**Two documents were falsified by that following commit and corrected in it**:
+§9.27 and ADR-0019 both said the `style-src` measurement *"belongs to the commit
+that adds `pdfjs-dist`"*, and that commit does not reach the exposure — it
+rasterises to a canvas and builds no text layer. Read literally, the trigger
+would have produced a green reading for a question nobody asked, then expired.
+Re-keyed to the first render that builds a text or annotation layer.
+
+---
+
 ## 2026-08-29 — Stage audit: `02b1f65..7669d69` — a per-script time bound quietly became per-step, and the case guarding that call site tests the rule it replaced
 
 Range: **7 commits, 23 files.** The gate fired on the renderer shell, which is
