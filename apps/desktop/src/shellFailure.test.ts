@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   type ShellFailureEvent,
   describeChildProcessGone,
+  describeEngineHostGone,
   describePreloadError,
   describeRenderProcessGone,
   describeUnresponsive,
@@ -95,11 +96,44 @@ describe('shell failure messages', () => {
         describeChildProcessGone({ type: 'Utility', reason: 'oom', exitCode: 0 }).event,
       ],
       ['unresponsive', describeUnresponsive().event],
+      ['engine-host-gone', describeEngineHostGone({ code: 'connection-lost', detail: 'x' }).event],
     ];
 
     for (const [expected, actual] of cases) expect(actual).toBe(expected);
-    // The set must be complete as well as correct: a fifth describe function
-    // added without a row here would leave its label unchecked.
     expect(new Set(cases.map(([event]) => event)).size).toBe(cases.length);
+
+    // THE ANCHOR, and the line above is not one (finding CCCCC-3). A count
+    // computed from `cases` is computed from the list it polices: it catches a
+    // duplicate and can never catch an OMISSION, which is the direction the
+    // danger runs here — a describe function that simply never gets a row.
+    // This file's comment used to claim otherwise, and was already false when
+    // it did: `describeEngineHostGone` had no row, and its label was pinned
+    // only by `contract.proof.mjs`'s IIII-1 cases, in another file by another
+    // mechanism. A literal is what a shrinker has to touch separately.
+    expect(cases).toHaveLength(5);
+  });
+
+  it('every ShellFailureEvent has a message writer, or is deliberately built inline', () => {
+    // The other half, and it needs its own anchor for the same reason: the roster
+    // above covers `describe*` functions, and the UNION is what a reader takes as
+    // the set of things that can be reported. `document-unreadable` is written
+    // inline by the supervisor — where its detail names a specific document, so a
+    // parameterless describe function could not produce it — and its label is
+    // asserted in `engineSessions.test.ts`. That is a deliberate exception rather
+    // than a gap, and one nobody would notice without this line.
+    const inlineOnly: ShellFailureEvent[] = ['document-unreadable'];
+    const written: ShellFailureEvent[] = [
+      'preload-error',
+      'render-process-gone',
+      'child-process-gone',
+      'unresponsive',
+      'engine-host-gone',
+    ];
+
+    // Six because `ShellFailureEvent` has six members. A type cannot be counted
+    // at run time, so this is the anchor: adding a seventh without deciding
+    // which list it belongs in reddens here rather than passing in silence.
+    expect([...written, ...inlineOnly]).toHaveLength(6);
+    expect(new Set([...written, ...inlineOnly]).size).toBe(6);
   });
 });
