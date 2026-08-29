@@ -131,7 +131,6 @@ export const CONTROL_FIXTURE = [
   '];',
 ].join('\n');
 
-/** @param {string} dir @returns {string[]} */
 /**
  * Whether a file in the surfaces directory is one this rule governs.
  *
@@ -158,6 +157,7 @@ export function isScannable(name) {
   return name.endsWith('.ts') || name.endsWith('.tsx');
 }
 
+/** @param {string} dir @returns {string[]} */
 function modulesIn(dir) {
   /** @type {string[]} */
   const found = [];
