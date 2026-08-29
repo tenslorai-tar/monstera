@@ -1249,6 +1249,26 @@ two-thirds undecidable, is a class that **reads as watched and is not** — whic
 precisely what the first row of that table was. The rule above is what transfers;
 ask it of every roster you write.
 
+**AND THE REAL FIX IS IN THE SIGNATURE, WHICH IS WHY ASKING KEEPS FAILING.**
+`createRoster(failures, { cases: 29 })` takes a **count**, and at a call site
+`cases: chosen.length` is indistinguishable from `cases: 9` — both are a number,
+and the reader has to reconstruct where it came from. That is QQQ-3's shape
+exactly: a choice explained in prose rather than made visible, so the wrong one
+costs nothing to write and the right one has to be remembered.
+
+**The ruling: `cases` should take the expected NAMES rather than a count.** The
+circular version then has to be written `cases: chosen.map((c) => c.name)`, which
+is visibly the same collection, against `cases: ['a', 'b', 'c']`, which is
+visibly an independent claim. The wrong choice stops needing a paragraph to
+reject — B5 over a comment, which is the same move `declareDialog` made for a
+cast nothing could check.
+
+**Deferred, deliberately, and this is the record of it rather than a note to
+whoever notices next.** It is 37 call sites of tooling, so it does not happen
+inside a feature range. Nothing is at risk while it waits: the detection is
+working — all three instances were caught by their own author asking the
+question, which is precisely what the signature would stop requiring.
+
 **5. Executed, or asserted?**
 Separate the two explicitly. Anything in the "asserted" column is not a finding,
 whatever confidence it was written with. (Content composition was moved to a
@@ -1410,6 +1430,27 @@ Hooks are enabled automatically by the `prepare` lifecycle script
 (`core.hooksPath` → `.githooks/`). If a commit is rejected because the scanner
 is missing, **provision it — do not bypass the hook.** `--no-verify` on this
 repository is a Rule 0 violation with a permanent, public consequence.
+
+**Run the project's command, never the underlying tool — and this is an OPEN
+item, not a closed one.** `npm run typecheck` is two invocations:
+
+```
+tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty
+```
+
+The second checks the `.mjs` under `scripts/`, and `npx tsc -b` is the first
+half alone. That is what reddened `main` on 2026-08-29, and the same shape bit
+twice more the same day — inserting a function above another silently steals its
+JSDoc, leaving the lower one's parameter implicitly `any`, and only the scripts
+half ever sees it. `npm run build` and `tsc -b` are not synonyms either.
+
+**`npm run local` now executes `typecheck`, `lint`, `build` and `test`, and that
+does NOT close this.** A longer sweep catches the half-run later; it does nothing
+about the partial spelling being the one that comes to hand at the moment a
+command is typed, which is the same argument the escape guard's own section makes
+about a rule you must recall. The manifest is where a project records that its
+one-word verb is several commands, and reaching past it for the binary is how you
+run a subset while believing you ran the whole. No mechanism closes this today.
 
 ---
 
