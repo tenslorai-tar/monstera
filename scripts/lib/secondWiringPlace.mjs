@@ -132,6 +132,32 @@ export const CONTROL_FIXTURE = [
 ].join('\n');
 
 /** @param {string} dir @returns {string[]} */
+/**
+ * Whether a file in the surfaces directory is one this rule governs.
+ *
+ * **A test file is excluded, and that costs no coverage.** Found by this scan's
+ * first real caller: a projection's cases assert its OUTPUT, and a projection's
+ * output is a list of command ids — so every honest test of a surface contains
+ * the exact shape this rule forbids. Reported, the only ways to a green board
+ * would be to weaken the assertions or to move the cases out of the directory,
+ * and both are worse than the thing being prevented.
+ *
+ * The exclusion is safe because of what the rule is FOR. A second wiring place
+ * is dangerous because it decides what the application renders; a `.test.ts` is
+ * imported by no surface and shipped in no bundle, so a list there cannot make
+ * anything appear or fail to appear. The rule loses nothing it was protecting.
+ *
+ * Written as a named predicate rather than a clause in the walker so the proof
+ * can drive it, and so the next person to widen the walker meets the reasoning
+ * instead of a condition.
+ *
+ * @param {string} name a file's base name
+ */
+export function isScannable(name) {
+  if (name.endsWith('.test.ts') || name.endsWith('.test.tsx')) return false;
+  return name.endsWith('.ts') || name.endsWith('.tsx');
+}
+
 function modulesIn(dir) {
   /** @type {string[]} */
   const found = [];
@@ -151,7 +177,7 @@ function modulesIn(dir) {
       continue;
     }
     if (entry.isDirectory()) found.push(...modulesIn(full));
-    else if (name.endsWith('.ts') || name.endsWith('.tsx')) found.push(full);
+    else if (isScannable(name)) found.push(full);
   }
   return found;
 }

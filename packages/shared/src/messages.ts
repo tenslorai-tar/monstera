@@ -48,6 +48,28 @@ export type MessageKey = Brand<string, 'MessageKey'>;
 const KEY_SHAPE = /^[a-z][a-z0-9]*(?:\.[a-z0-9][a-z0-9-]*)+$/u;
 
 /**
+ * Whether a string has the `<domain>.<name>` shape — the grammar shared by
+ * message keys and command ids.
+ *
+ * **Exported so a command id is checked against the SAME rule and not a second
+ * opinion about it** (B3a). ADR-0029 fixes a command id as *"the same grammar
+ * as a `MessageKey`"*, and `check:secondwiring` matches ids in a surfaces
+ * module by that grammar — so an id outside it is one the scan cannot see, and
+ * a second wiring place written with such an id passes silently. That is the
+ * failure this predicate exists to make unrepresentable, and it is why the
+ * registry calls it rather than testing a regex of its own.
+ *
+ * **There is already one other opinion and it cannot be removed**:
+ * `scripts/lib/secondWiringPlace.mjs` holds the same grammar as a scanning
+ * regex, because a Node script cannot import this module. Two is what the
+ * languages force; a third would be a choice. Changing the grammar means
+ * changing both, and ADR-0029's built-note says so in the same words.
+ */
+export function isDottedName(value: string): boolean {
+  return KEY_SHAPE.test(value);
+}
+
+/**
  * Mints a key, or throws.
  *
  * **Throws rather than returning a `Result`**, and the two are not

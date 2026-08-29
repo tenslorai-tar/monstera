@@ -44,7 +44,7 @@ import {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 12 });
+const roster = createRoster(failures, { cases: 14 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -174,6 +174,32 @@ withFixtureRoot((root) => {
     '  ...and the runner reports it',
     run({ root }) === 1,
     `the runner passed a surfaces directory containing a hand-written command list.`,
+  );
+});
+
+withFixtureRoot((root) => {
+  giveRegistry(root);
+  mkdirSync(join(root, SURFACES_DIR), { recursive: true });
+  // THE SAME BYTES IN TWO FILES, which is what makes this pair separate the
+  // exclusion from a scan that simply stopped working. A list in `ribbon.tsx`
+  // must be reported and the identical list in `ribbon.test.ts` must not, so a
+  // walker that skipped everything passes neither.
+  writeFileSync(join(root, SURFACES_DIR, 'ribbon.test.ts'), `${CONTROL_FIXTURE}\n`, 'utf8');
+  check(
+    "a test file's expected-output list is not a second wiring place",
+    run({ root }) === 0 && scan({ root }).filesScanned === 0,
+    `a projection's cases assert its output, and a projection's output IS a list of command ` +
+      `ids — so reporting them leaves no route to green except weakening the assertions or ` +
+      `moving the cases out of the directory. Nothing is lost: a .test.ts is imported by no ` +
+      `surface, so a list in one cannot make anything render.`,
+  );
+
+  writeFileSync(join(root, SURFACES_DIR, 'ribbon.tsx'), `${CONTROL_FIXTURE}\n`, 'utf8');
+  check(
+    '  ...and the CONTROL: the identical list in a shipped module still is',
+    run({ root }) === 1 && scan({ root }).filesScanned === 1,
+    `the exclusion swallowed a real violation, or the walker now skips everything. Same ` +
+      `bytes, same directory, one file name apart.`,
   );
 });
 
