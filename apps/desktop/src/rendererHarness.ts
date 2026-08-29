@@ -6,11 +6,15 @@ import { fileURLToPath } from 'node:url';
 
 import { SANDBOX_PROBE_KEY } from './sandboxProbeKey.js';
 import type { ShellFailure } from './shellFailure.js';
-import { createMainWindow } from './window.js';
+// IMPORTED, not re-derived. This file held its own `join(HERE, '..',
+// 'renderer', 'index.html')` beside `window.ts`'s, which is two opinions about
+// one question (B3a) — and the two disagreed the moment the page became a build
+// artefact, in the direction where the harness loads a file that is no longer
+// there and the proof reports a load failure rather than a stale path.
+import { RENDERER_HTML, createMainWindow } from './window.js';
 import { RENDERER_WEB_PREFERENCES } from './windowPolicy.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const RENDERER_HTML = join(HERE, '..', 'renderer', 'index.html');
 
 /**
  * Reports what the renderer ACTUALLY does, for `proof:rendererpolicy`.
@@ -85,6 +89,14 @@ interface Readback {
   readonly url: string | null;
   readonly connectBlocked: boolean;
   readonly evalBlocked: boolean;
+  /**
+   * Whether the React shell mounted, and what its surface computed to.
+   *
+   * `mounted` answers `script-src 'self'` against a `file://` origin; the
+   * background answers `style-src 'self'` the same way. Both directives were
+   * pinned and delivered and neither had ever been exercised.
+   */
+  readonly shell: { readonly mounted: boolean; readonly background: string | null };
   /** Node globals reachable from page script. Must be empty. */
   readonly nodeSurface: readonly string[];
   /** Whether `contextBridge` reached the page — the control for the line above. */
@@ -467,6 +479,45 @@ export async function reportRendererPolicy(): Promise<void> {
   );
 
   // ---------------------------------------------------------------------------
+  // The shell: did the bundle run, and did its stylesheet arrive?
+  // ---------------------------------------------------------------------------
+  //
+  // `script-src 'self'` and `style-src 'self'` are two of the nine directives
+  // this proof delivered and never exercised, and `file://` is the reason they
+  // needed exercising: its origin is opaque, so whether `'self'` matches one is
+  // not a thing to reason about. Both are now answered by an artefact rather
+  // than by an argument.
+  //
+  // THE FIXTURE CANNOT PASS WITHOUT REACT. `index.html` contains one element,
+  // `<div id="root">`, and `main.m-document-surface` is what `App` renders into
+  // it. A blocked bundle leaves the root empty, which is also what a bundle that
+  // never built leaves — so this separates "mounted" from every way of not
+  // mounting, and does not have to distinguish between them.
+  //
+  // The background is the stylesheet's witness and it is read COMPUTED, not from
+  // the sheet: a `<link>` element in the DOM says a tag exists, and a refused
+  // stylesheet leaves the tag exactly where it was. `--canvas` resolves to a
+  // colour; an element with no stylesheet computes `rgba(0, 0, 0, 0)`, so the
+  // two cannot be confused.
+  const shell = await evaluate(
+    webContents,
+    `(() => {
+       const surface = document.querySelector('#root > main.m-document-surface');
+       return {
+         mounted: surface !== null,
+         background: surface === null ? null : getComputedStyle(surface).backgroundColor,
+       };
+     })()`,
+    (value): value is { mounted: boolean; background: string | null } =>
+      typeof value === 'object' &&
+      value !== null &&
+      typeof (value as { mounted?: unknown }).mounted === 'boolean' &&
+      ((value as { background?: unknown }).background === null ||
+        typeof (value as { background?: unknown }).background === 'string'),
+    'shell mount',
+  );
+
+  // ---------------------------------------------------------------------------
   // Popups.
   // ---------------------------------------------------------------------------
   //
@@ -642,6 +693,7 @@ export async function reportRendererPolicy(): Promise<void> {
     preloadNodeReach,
     connectBlocked,
     evalBlocked,
+    shell,
     nodeSurface: surface.visible,
     bridgeExposed: surface.bridge,
     preloadError: received.find((failure) => failure.event === 'preload-error')?.detail ?? null,

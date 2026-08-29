@@ -9,7 +9,9 @@
       "DOM",
       "DOM.Iterable"
     ],
-    "types": []
+    "types": [
+      "vite/client"
+    ]
   },
   "include": [
     "src/**/*"

@@ -26,7 +26,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // produces this file, and `proof:rendererpolicy` fails if the page cannot see
 // the bridge, which is how the dead artefact next to it stays dead.
 const PRELOAD = join(HERE, 'preload.cjs');
-const RENDERER_HTML = join(HERE, '..', 'renderer', 'index.html');
+
+// Inside `dist/`, because the page is a BUILD ARTEFACT. Its source is
+// `packages/ui/index.html` — renderer-mode code, which ADR-0024 keeps out of the
+// one package `MAY_IMPORT_ELECTRON` exempts — and `npm run build:renderer` emits
+// this tree. A tracked `renderer/` beside the package would be a directory the
+// build overwrites, so the file git keeps and the file Electron loads are the
+// same path and neither is authoritative.
+export const RENDERER_HTML = join(HERE, 'renderer', 'index.html');
 
 /**
  * Applies the deny-all permission policy to a session.

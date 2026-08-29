@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Monstera</title>
+  </head>
+  <body>
+    <!--
+      THE RENDERER DOCUMENT, and it lives here rather than under apps/desktop.
+
+      It is renderer-mode source, and ADR-0024 settled where that goes: not by
+      directory but by which MODE it runs in. `apps/desktop` is the one package
+      `MAY_IMPORT_ELECTRON` exempts, so a renderer file placed there could import
+      Electron and no enforcer would object — the proxy that has already failed
+      four times. Here the specifier is a red build with no rule to remember.
+
+      The Content-Security-Policy is NOT written here. It is served as a response
+      header by `applyContentSecurityPolicy`, because `frame-ancestors` and
+      `sandbox` are ignored in meta form and because two writers for one policy
+      make the effective value something nobody can state. The policy is pinned
+      as invariant 27 and this file is not one of its writers.
+
+      No chrome. The wired-tools rule makes a control that renders and does
+      nothing a defect rather than a stepping stone, so there is no toolbar here
+      and no button waiting to be connected.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

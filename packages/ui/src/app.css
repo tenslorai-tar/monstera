@@ -1,0 +1,35 @@
+/*
+ * The renderer shell's own layout, and nothing else.
+ *
+ * Tokens only, like `primitives.css`. The one property here that is not a token
+ * is the reset on `body` — a browser default of `8px` is not a value this
+ * repository chose, and removing a default is not the same as declaring a magic
+ * one.
+ *
+ * ## Why `--canvas` and not `--bg`
+ *
+ * `--canvas` is the token declared for what a document sits on; `--bg` is the
+ * application chrome behind it. The shell has no chrome yet, so the whole window
+ * is canvas — and when the ribbon lands it takes `--bg` and this stays the
+ * surface a page renders into, rather than being re-pointed at a different
+ * token because the layout changed around it.
+ *
+ * ## `100dvh` rather than `100vh`
+ *
+ * There is no mobile viewport here and no dynamic browser chrome, so the two
+ * are identical today. `dvh` is what the property means — the viewport as it
+ * currently is — and picking the unit that happens to be equivalent under one
+ * set of conditions is how a value acquires an unstated dependency.
+ */
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+}
+
+.m-document-surface {
+  display: block;
+  block-size: 100dvh;
+  background: var(--canvas);
+}

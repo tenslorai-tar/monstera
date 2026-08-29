@@ -86,6 +86,8 @@ const RUNTIME_CASES = [
   'the renderer RECEIVES the policy the shell declares',
   'CONTROL: a policy the renderer does NOT have is not reported as delivered',
   'the renderer OBEYS it: no network under connect-src none, no eval',
+  'the React shell MOUNTS under the pinned policy, so script-src self permits the bundle',
+  'and its stylesheet arrived, so style-src self permits it too',
   'no Node surface is reachable from page script',
   'CONTROL: the contextBridge key IS reachable, so the probe could look',
   "popups are denied, in the renderer's view and in main's",
@@ -314,6 +316,7 @@ function pinnedPolicy(markdown) {
  *   delivered: string | null,
  *   connectBlocked: boolean,
  *   evalBlocked: boolean,
+ *   shell: { mounted: boolean, background: string | null },
  *   nodeSurface: string[],
  *   bridgeExposed: boolean,
  *   preloadError: string | null,
@@ -539,6 +542,30 @@ try {
         `A header can arrive and be IGNORED — Chromium drops a directive list it cannot parse, ` +
         `and a dropped policy is indistinguishable from an enforced one if all you compare is ` +
         `the string. This is the set-versus-enforced distinction invariant 25 refuses to elide.`,
+    );
+
+    // -------------------------------------------------------------------------
+    // The shell, and the two directives that had only ever been delivered.
+    // -------------------------------------------------------------------------
+
+    check(
+      'the React shell MOUNTS under the pinned policy, so script-src self permits the bundle',
+      seen.shell.mounted,
+      `the renderer document's root has no mounted surface. \`index.html\` ships one element — ` +
+        `\`<div id="root">\` — so this can only be true if the bundle ran, and \`file://\` is an ` +
+        `opaque origin where whether \`'self'\` matches is not something to reason about. A ` +
+        `blocked bundle and an unbuilt one both leave the root empty; run \`npm run build\` ` +
+        `before concluding the policy refused it.`,
+    );
+
+    check(
+      'and its stylesheet arrived, so style-src self permits it too',
+      seen.shell.background !== null && seen.shell.background !== 'rgba(0, 0, 0, 0)',
+      `the mounted surface computed \`${String(seen.shell.background)}\`. Read COMPUTED rather ` +
+        `than off the \`<link>\`: a refused stylesheet leaves the tag in the DOM exactly where ` +
+        `it was, so the element's own resolved colour is the only thing that separates ` +
+        `"delivered" from "applied". \`rgba(0, 0, 0, 0)\` is what an element with no stylesheet ` +
+        `computes, and it is the value this case exists to reject.`,
     );
 
     // -------------------------------------------------------------------------
