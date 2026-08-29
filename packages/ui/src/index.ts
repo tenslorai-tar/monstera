@@ -3,6 +3,8 @@
 // re-export would give consumers a second name for one shape and a second place
 // to look when it changes.
 export { BridgeUnavailableError, createRendererClient } from './bridge.js';
+// The message resolver (ADR-0005's Lingui, ADR-0029 Decision 6's MessageKey).
+export { MessageMissing, activateCatalogue, i18n, resolve } from './i18n.js';
 // The renderer's byte-range read path (ADR-0031). PDF.js asks; these answer.
 export { DocumentRangeTransport, type OnVersionMoved } from './documentTransport.js';
 export { type DocumentView, openDocumentView } from './documentView.js';

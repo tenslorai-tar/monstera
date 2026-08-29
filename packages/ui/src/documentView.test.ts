@@ -74,6 +74,51 @@ describe('openDocumentView', () => {
     expect(view.version).toBe(VERSION);
   });
 
+  it('CLOSES ITSELF when the version moves, before telling the caller', async () => {
+    // Finding IIIII-1. The failed-open case above guards a leaked worker; this
+    // path had the same hazard and no guard, eleven lines away in the same
+    // function. A moved version is a second failure reported through a callback
+    // rather than a throw, which is what made it read as the happy path.
+    //
+    // The ORDER is asserted, not merely that both happened: a caller told first
+    // may reopen immediately, and two live parsers for one document is the state
+    // this closes rather than the one worker it saves.
+    const order: string[] = [];
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1 }),
+      destroy: () => {
+        order.push('destroyed');
+        return Promise.resolve();
+      },
+    });
+
+    // Main holds the document at 99; the view is bound to VERSION, so the first
+    // range it asks for comes back `stale`. Driven through the transport the
+    // view actually built, rather than by calling the option back — the point is
+    // the wiring, and invoking the callback directly would assert nothing about
+    // it.
+    const stale = createClient(channels, () =>
+      Promise.resolve(ok({ kind: 'stale', version: asDocVersion(99), byteLength: 2048 })),
+    );
+    await openDocumentView({
+      client: stale,
+      docId: DOC,
+      version: VERSION,
+      byteLength: 1024,
+      onVersionMoved: () => {
+        order.push('told');
+      },
+    });
+
+    const built = getDocument.mock.calls[0]?.[0] as {
+      range: { requestDataRange: (begin: number, end: number) => void };
+    };
+    built.range.requestDataRange(0, 16);
+    for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
+
+    expect(order).toStrictEqual(['destroyed', 'told']);
+  });
+
   it('close is idempotent, because two paths can reach it', async () => {
     // A view is closed both by the document closing and by its version moving
     // underneath it, and those race. A second `destroy` on a destroyed task is

@@ -48,8 +48,10 @@ export interface DocumentView {
   /**
    * Tears down the parser, its worker and the transport.
    *
-   * Idempotent, because a view is closed both by the document closing and by a
-   * version moving underneath it, and those can race.
+   * **Idempotent because two things call it**, and until finding IIIII-1 only
+   * one of them existed: the owner closing the document, and the view closing
+   * itself when its version moves. This sentence described the second before it
+   * was implemented, which is a document defect as much as a code one.
    */
   close(): Promise<void>;
 }
@@ -58,8 +60,10 @@ export interface DocumentView {
  * Opens a document for viewing, reading its bytes on demand from main.
  *
  * @param onVersionMoved Called when a command bumped the version underneath this
- *   view. The caller reopens; this view is already aborted and is not reusable,
- *   because its byte offsets belong to a document that no longer exists.
+ *   view, **after the view has closed itself**. The caller reopens; this view is
+ *   not reusable, because its byte offsets belong to a document that no longer
+ *   exists. Told afterwards rather than before, so a caller that reopens
+ *   immediately cannot end up with two live parsers for one document.
  */
 export async function openDocumentView(options: {
   readonly client: ContractClient;
@@ -68,7 +72,26 @@ export async function openDocumentView(options: {
   readonly byteLength: number;
   readonly onVersionMoved: OnVersionMoved;
 }): Promise<DocumentView> {
-  const transport = new DocumentRangeTransport(options);
+  // THE VIEW CLOSES ITSELF, and the caller is told afterwards (finding IIIII-1).
+  //
+  // The callback used to be passed straight through, which left the failed-open
+  // path below guarding a leaked worker while this one — the same hazard, eleven
+  // lines away — leaked one per version bump. What hid it is that the guarded
+  // path is the one wrapped in `try`/`catch`: a moved version is a second
+  // failure, reported through a callback rather than a throw, so it reads as the
+  // happy path and is not one.
+  //
+  // Closing here rather than asking the caller to, because there is nothing to
+  // preserve: the transport has already aborted itself and no further byte can
+  // reach this parser. `close` is idempotent, so a caller that also closes is
+  // not a second teardown.
+  let notifyMoved: OnVersionMoved = options.onVersionMoved;
+  const transport = new DocumentRangeTransport({
+    ...options,
+    onVersionMoved: (moved) => {
+      notifyMoved(moved);
+    },
+  });
 
   const task = getDocument({
     range: transport,
@@ -92,6 +115,16 @@ export async function openDocumentView(options: {
     closed = true;
     transport.abort();
     await task.destroy();
+  };
+
+  // Rebound once `close` exists. The transport is constructed before the task —
+  // `getDocument` takes it — so the callback cannot reference `close` at the
+  // point it is written, and the alternative shapes are worse: a mutable holder
+  // read on every call, or constructing the transport after the task, which is
+  // impossible.
+  notifyMoved = (moved) => {
+    void close();
+    options.onVersionMoved(moved);
   };
 
   try {
