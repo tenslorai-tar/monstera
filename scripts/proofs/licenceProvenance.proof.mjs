@@ -51,6 +51,7 @@ import {
   checkLicenceSources,
   declaredNativeComponents,
   familyLicence,
+  licenceFileIn,
   renderNotice,
   requiresLocalInstall,
   shipsOnTarget,
@@ -266,6 +267,48 @@ try {
     `npm reads \`!win32\` as "anywhere but Windows". Treating a negation as a plain list would ` +
       `include exactly the packages that exclude the shipped platform, and exclude the ones that ` +
       `permit it — wrong in both directions at once, and silent.`,
+  );
+
+  // -------------------------------------------------------------------------
+  // C3's subject, and the day it predicted. `licenceText` asked the filesystem
+  // whether `LICENSE` existed, so NTFS answered yes for a file called `license`
+  // and ext4 answered no — a NOTICE that differs by platform. Seven such
+  // packages arrived at once on 2026-08-29 with @lingui/core's Babel tree.
+  // These cases are expressible only because the matcher now takes a listing;
+  // against `existsSync` on Windows the filesystem answered before the code did.
+  // -------------------------------------------------------------------------
+  check(
+    'a LOWER-CASE licence filename is found, so the answer does not depend on the filesystem',
+    licenceFileIn(['readme.md', 'license', 'index.js']) === 'license',
+    `chalk, ms, ansi-styles, camelcase, escalade, has-flag and leven all ship \`license\`. On ` +
+      `NTFS the old code found them by collation and wrote their terms into NOTICE; on ext4 it ` +
+      `would have thrown "ships no licence text" about packages that ship one, and the C3 step ` +
+      `runs on ubuntu.`,
+  );
+
+  check(
+    'the priority order is honoured, not merely some match returned',
+    licenceFileIn(['COPYING', 'LICENSE', 'LICENCE']) === 'LICENSE' &&
+      licenceFileIn(['COPYING', 'LICENSE-MIT.txt']) === 'COPYING',
+    `The list is ordered, and lower-casing both sides must not turn it into "first entry in the ` +
+      `directory wins" — a package shipping both a licence and a COPYING would then have its ` +
+      `terms decided by readdir order, which is not stable across filesystems either.`,
+  );
+
+  check(
+    "CONTROL: a listing with no licence returns null rather than something plausible",
+    licenceFileIn(['readme.md', 'index.js', 'package.json']) === null,
+    `Without this, the two cases above pass for a matcher that returns the first filename it is ` +
+      `given. The throw that follows a null is the oldest guard in this generator.`,
+  );
+
+  check(
+    'a dual-licence name with an extension is found (the jsesc shape)',
+    licenceFileIn(['LICENSE-MIT.txt']) === 'LICENSE-MIT.txt',
+    `\`jsesc@3.1.0\` ships \`LICENSE-MIT.txt\` and nothing else. \`LICENSE\` and \`LICENCE\` were ` +
+      `listed bare, .md and .txt; \`LICENSE-MIT\` and \`LICENSE-APACHE\` were listed bare only — ` +
+      `two of the four name shapes had three spellings and two had one, which is the asymmetry ` +
+      `that made it a gap rather than a choice.`,
   );
 
   check(

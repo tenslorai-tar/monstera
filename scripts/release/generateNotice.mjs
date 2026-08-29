@@ -16,6 +16,23 @@
  * a NOTICE naming 297 build-time packages tells a reader nothing about what is
  * on their machine.
  *
+ * **`npm --omit=dev` is a definition of INSTALLED, not of SHIPPED, and for an app
+ * that bundles those differ.** This generator knowingly names more than ships,
+ * and the over-approximation is the safe direction: over-declaring a licence
+ * notice costs noise, under-declaring is a violation. Two things make the gap
+ * concrete rather than theoretical. `apps/desktop/package.json` declares **no
+ * dependencies at all** — only `electron`, as a devDependency — so npm's graph
+ * cannot be the authority on what reaches a user; and a package can be a
+ * production dependency whose code the bundler never emits, which was measured
+ * on 2026-08-29 for `@lingui/core`'s Babel plugin.
+ *
+ * **The authority is the packaging output, and it does not exist yet.** So the
+ * trigger, dated rather than left implicit: **the first packaged build re-derives
+ * this from what the package actually contains**, and until that build exists
+ * this file is a deliberate over-approximation rather than a claim about the
+ * artefact. One resolver per authority (B3a) — with the authority named and its
+ * arrival owed.
+ *
  * That set is only correct if the manifests are. Generating this found that
  * `packages/kernel` still declared the `mupdf` npm package as a production
  * dependency, which ADR-0010 withdrew when the engine moved to native linkage:
@@ -34,7 +51,7 @@
  *   node scripts/release/generateNotice.mjs --check    fail if NOTICE is stale
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,7 +63,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = repoRoot();
 const NOTICE_PATH = join(ROOT, 'NOTICE');
 
-/** Filenames a licence text is conventionally kept in. */
+/**
+ * Filenames a licence text is conventionally kept in.
+ *
+ * **The dual-licence names carry their extensions too, and that was a gap rather
+ * than a choice.** `LICENSE` and `LICENCE` were listed bare, `.md` and `.txt`;
+ * `LICENSE-MIT` and `LICENSE-APACHE` were listed bare only. `jsesc@3.1.0` ships
+ * `LICENSE-MIT.txt` and nothing else, so it failed this generator the moment it
+ * entered the production tree — with a message saying it ships no licence text,
+ * about a package that ships one. The asymmetry is the tell: two of the four
+ * name shapes had three spellings and two had one.
+ */
 const LICENCE_FILES = [
   'LICENSE',
   'LICENSE.md',
@@ -58,7 +85,11 @@ const LICENCE_FILES = [
   'COPYING.md',
   'COPYING.txt',
   'LICENSE-MIT',
+  'LICENSE-MIT.md',
+  'LICENSE-MIT.txt',
   'LICENSE-APACHE',
+  'LICENSE-APACHE.md',
+  'LICENSE-APACHE.txt',
 ];
 
 /**
@@ -241,15 +272,54 @@ function spdxOf(manifest) {
 }
 
 /**
+ * Which entry of a directory listing holds the licence, if any.
+ *
+ * ## Matched against the LISTING, never by asking the filesystem
+ *
+ * This was `existsSync(join(directory, 'LICENSE'))` and friends, which asks the
+ * filesystem's collation rather than this program: NTFS answers yes for a file
+ * actually called `license`, ext4 answers no. **That is finding C3's whole
+ * subject**, and its CI step — the dependency half run on ubuntu — exists to
+ * catch the day a package shipping a lower-case name arrives. Its own comment
+ * predicted the shape: *"it passes today and goes red on the day one arrives,
+ * which is the only day it matters."*
+ *
+ * That day was 2026-08-29 and **seven arrived at once** — `chalk`, `ms`,
+ * `ansi-styles`, `camelcase`, `escalade`, `has-flag` and `leven`, every one of
+ * them pulled in by `@lingui/core`'s production dependency on a Babel plugin.
+ *
+ * So the repair is to remove the divergence rather than to detect it a second
+ * time. The terms are genuinely present, they belong in NOTICE, and which
+ * filesystem the generator happens to run on is not a fact about the licence.
+ * Comparing lower-cased names against a listing gives one answer everywhere.
+ *
+ * **It does not weaken the C3 step.** A package with no licence file at all
+ * still fails, on both platforms, which is what that step is for. What it can no
+ * longer report is a difference between the platforms — because there is none.
+ *
+ * Pure and exported so the case-only fixture is expressible: the old shape could
+ * not be tested for this at all on Windows, since the filesystem answered before
+ * the code did.
+ *
+ * @param {readonly string[]} listing Filenames in the package directory.
+ * @returns {string | null} The filename to read, in {@link LICENCE_FILES} order.
+ */
+export function licenceFileIn(listing) {
+  for (const candidate of LICENCE_FILES) {
+    const wanted = candidate.toLowerCase();
+    const found = listing.find((name) => name.toLowerCase() === wanted);
+    if (found !== undefined) return found;
+  }
+  return null;
+}
+
+/**
  * @param {string} directory
  * @returns {string | null}
  */
 function licenceText(directory) {
-  for (const candidate of LICENCE_FILES) {
-    const path = join(directory, candidate);
-    if (existsSync(path)) return readFileSync(path, 'utf8').trim();
-  }
-  return null;
+  const found = licenceFileIn(readdirSync(directory));
+  return found === null ? null : readFileSync(join(directory, found), 'utf8').trim();
 }
 
 /**
