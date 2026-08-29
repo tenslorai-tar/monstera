@@ -123,14 +123,20 @@ export function createContractHandlers(deps: {
 /**
  * Serves one byte range to the renderer.
  *
- * ## Not `async`, and it is the same argument as the service's
+ * ## Not `async`, and one consequence of that is asserted rather than assumed
  *
  * `readDocumentRange` is synchronous precisely so that the version it reports
  * and the bytes it slices cannot belong to two different versions — the lane
- * mutates a record only at an `await`, and there is none. Wrapping it in an
- * `async` function does not reintroduce that race, because the body still runs
- * to completion before anything else can, but writing `await` *inside* one
- * would. `Promise.resolve` keeps the absence visible.
+ * mutates a record only at an `await`, and there is none. `async` on a body with
+ * no `await` is a lint error here, so this handler is the one that is not.
+ *
+ * **The consequence is that a rethrow leaves SYNCHRONOUSLY**, where every
+ * sibling's arrives as a rejected promise. That is safe for the only caller that
+ * matters — `wrapHandler` awaits the call inside its `try`, so the catch is the
+ * same one either way — and it is a real difference, so
+ * `contractHandlers.test.ts` asserts it in that form rather than in the one the
+ * neighbours have. A future move to `async` then shows up as a failing case
+ * instead of as a behaviour change nothing observes.
  *
  * ## Only `document-not-open`, and the others are not omissions
  *

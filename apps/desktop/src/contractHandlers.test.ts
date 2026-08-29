@@ -1,4 +1,4 @@
-import { CapabilityRegistry, DocumentService } from '@monstera/kernel';
+import { CapabilityRegistry, DocumentNotOpenError, DocumentService } from '@monstera/kernel';
 import { type DocId, type FileHandle, asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -226,6 +226,96 @@ describe('document.open', () => {
       await handlers['document.open']({});
 
       expect(sessioned).toStrictEqual([]);
+    });
+  });
+
+  /**
+   * `document.readRange`'s handler (finding HHHHH-1).
+   *
+   * `readDocumentRange` has seven cases in the kernel and the params schema has
+   * four in the contract; between them sat a handler with none, whose three
+   * decisions were prose in a comment. These are those three, and each asserts
+   * the decision rather than the tidy state it happens to produce.
+   */
+  describe('document.readRange', () => {
+    /** A service whose range read does whatever the case needs. */
+    function serviceReading(read: () => never | ReturnType<DocumentService['readRange']>): {
+      handlers: ReturnType<typeof createContractHandlers>;
+    } {
+      const documents = { readRange: read } as unknown as DocumentService;
+      return {
+        handlers: createContractHandlers({
+          appInfo,
+          capabilities: new CapabilityRegistry(),
+          commands: unusedCommands,
+          documents,
+          openedDocument: () => undefined,
+          pickDocument: () => Promise.resolve(null),
+        }),
+      };
+    }
+
+    const ASK = { docId: A_DOC, version: asDocVersion(1), begin: 0, end: 16 };
+
+    it('serves what the service answered', async () => {
+      const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
+      const { handlers } = serviceReading(() => ({ kind: 'bytes', bytes }));
+
+      await expect(handlers['document.readRange'](ASK)).resolves.toStrictEqual({
+        ok: true,
+        value: { kind: 'bytes', bytes },
+      });
+    });
+
+    it('maps a closed document to its DECLARED code', async () => {
+      const { handlers } = serviceReading(() => {
+        throw new DocumentNotOpenError(A_DOC, 'read a byte range');
+      });
+
+      const result = await handlers['document.readRange'](ASK);
+
+      expect(result).toStrictEqual({ ok: false, error: { code: 'document-not-open' } });
+    });
+
+    it('does NOT map an out-of-document read to a declared code', () => {
+      // The direction that matters. A `RangeError` is a defect in the caller's
+      // arithmetic, and a handler that widened its catch would hand the renderer
+      // a defect wearing an outcome's clothes — where the renderer's answer to
+      // `document-not-open` is to drop the view, which would be wrong and
+      // silent. It escapes, and the boundary turns it into `internal` with the
+      // diagnostic recorded main-side.
+      //
+      // SYNCHRONOUSLY, and that is worth asserting rather than smoothing over.
+      // Every other handler here is `async`, so its throws arrive as rejections;
+      // this one cannot be — `readDocumentRange` is synchronous, and `async` on
+      // a body with no `await` is a lint error rather than a preference. So the
+      // throw leaves before a promise exists. It is safe because `wrapHandler`
+      // awaits the call **inside** its `try`, which is the same property the
+      // browser shim's handlers rely on; the case is written this way so that a
+      // future move to `async` shows up here rather than as a behaviour change
+      // nothing observes.
+      const { handlers } = serviceReading(() => {
+        throw new RangeError('range outside the document');
+      });
+
+      expect(() => handlers['document.readRange'](ASK)).toThrow(RangeError);
+    });
+
+    it('a POISONED document is still readable, which invariant 18 depends on', async () => {
+      // Not an omission from the failure list — a claim. Poisoning is about
+      // engine sessions; the canonical image is exactly what main still holds,
+      // and it is what invariant 18 recovers from. A user told a document cannot
+      // be edited must still be able to look at it.
+      //
+      // The handler reaches the service with no knowledge of poisoning at all,
+      // so this asserts that: a service that answers is answered through,
+      // whatever the supervisor thinks of the document.
+      const bytes = new Uint8Array(16);
+      const { handlers } = serviceReading(() => ({ kind: 'bytes', bytes }));
+
+      const result = await handlers['document.readRange'](ASK);
+
+      expect(result.ok).toBe(true);
     });
   });
 });
