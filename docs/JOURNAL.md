@@ -644,6 +644,188 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `67f38bb..9f51552` — I widened a search and gave it a new route to the reassuring answer
+
+Range: **7 commits, 22 files.** The gate fired on the A7 substrate commit. Both
+findings are mine, both are in this range's own new code, and both are shapes
+this checklist names by name — which is the argument for range-scoping, made
+again by a range that would have looked clean from the tree.
+
+### DDDDD-1 — the exclusion I added to `check:secondwiring` lets it scan zero files and call that a pass
+
+`isScannable` now skips `.test.ts`, correctly: a projection's cases assert its
+output, and a projection's output IS a list of command ids, so every honest test
+of a surface contains the shape the rule forbids. The reasoning holds. **What it
+also did was break an equivalence the scan's refusal branch was resting on.**
+
+That branch has three states and the middle one is the whole design: no registry
+→ nothing to scan; a registry and a surfaces directory → scan it; a registry and
+**no** surfaces directory → **refuse**, because *"the projections are then being
+written somewhere the scan is not looking."* It is keyed on the directory
+**existing**, which used to be equivalent to it having something in it.
+
+It is not equivalent any more. A surfaces directory holding only test files is
+now `state: 'scanned', filesScanned: 0, violations: []` — semantically the third
+branch's exact condition, reported as the first branch's exact output. **My own
+proof case documents the hole while asserting it is fine**: it requires
+`run({ root }) === 0` for a directory containing one test file, which is the
+behaviour, and I wrote it without noticing what else that sentence says.
+
+The transferable form is not the instance: **narrowing a search's input set
+creates a new route to its reassuring answer, and a refusal branch keyed on
+something that USED to imply a non-empty input does not follow it there.** Ask,
+of any filter added to a walker, which existing check was relying on the
+property the filter just broke.
+
+### DDDDD-2 — the shipped positive control proves the MATCHER and has never proven the WALKER
+
+The same defect from the other side, and it predates this range — my change is
+what made it matter. `CONTROL_FIXTURE` is a **string** passed straight to
+`scanModule`, deliberately: *"the control is a string rather than a tracked file
+so tidying cannot delete it."* That is a good reason and it has a consequence
+nobody wrote down. The control exercises the regex; **no part of it goes through
+`modulesIn`**, so a walker returning an empty list on every run would leave the
+control passing and the scan reporting *none found* for ever.
+
+Checklist 4b's rule is that a search needs a positive control that finds
+something known-present on every run. This search has one for half of itself.
+The half without one is the half I just edited.
+
+Both are fixed in the commit after this one: the scan refuses a surfaces
+directory with nothing scannable in it, on the third branch's own argument, and
+the shipped control gains a walker half.
+
+### DDDDD-3 — a case computed from the roster it polices (4c), in the range that read 4c
+
+`projections.test.ts` opens by asserting the ribbon yields §10.3's eight
+sections:
+
+```
+expect(model.map((section) => section.section)).toStrictEqual([...SECTION_IDS]);
+```
+
+`SECTION_IDS` is the hand-kept roster the projection derives from, so both sides
+of that assertion move together. Delete a section and the ribbon silently stops
+rendering it while the case agrees — and §7 says `SectionId` is *exactly* the
+eight sections of §10.3, which is a claim about a **number** that nothing
+checks.
+
+4c's question is which direction the danger runs, and here it runs toward
+**shrinkage**, where a derived count agrees with any shrink. The anchor is a
+literal. Fixed with the same commit as the two above.
+
+Worth naming: the previous range's audit found this shape in
+`shellFailure.test.ts` and fixed it, and I wrote a fresh instance of it hours
+later in a new file. **Having just paid for a rule does not put it in reach when
+composing the next assertion** — the escape guard's sentence, arriving in a
+third domain.
+
+### 1. Root cause or workaround?
+
+Three fixes in range, all root-cause, and one is worth separating:
+
+- **`EngineOpenFailed` carried a decision no bare `Error` could** — the class is
+  thrown and the loop reads it.
+- **`zod` was undeclared in `@monstera/ui`** and resolved by hoisting. Declared
+  at the workspace's existing version rather than the latest, so the bundle
+  carries one zod; that is the fix, not a workaround, because two zod majors in
+  one bundle is itself the defect.
+- **`npx tsc -b` is half of `npm run typecheck`** and is what reddened the board
+  at `9a424b8`. Not a workaround either way — the repair was the JSDoc — but the
+  root cause is the local command I had been running, and it is recorded in the
+  fixing commit rather than only here.
+
+No loosened check. `check:secondwiring` was **narrowed**, which is DDDDD-1, and
+is being tightened again rather than left.
+
+### 2. Verified against the easy shape only?
+
+**No, and deliberately in three places.** The geometry fixture is a CropBox at
+(20, 30) because a box at the origin is exactly what the banned inline flip gets
+right. The XObject matrix has a non-zero `b` and `c` because a transposition is
+invisible when both are zero. The registry's bad-id case uses **camel case**
+rather than junk, because junk is refused by any check and camel case is the
+shape somebody would actually write.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, downward, and it is DDDDD-1.** `check:secondwiring`'s extent narrowed
+from *every `.ts`/`.tsx` under the surfaces directory* to *every non-test one*.
+The coverage lost is nil by the rule's own argument, and the ROUTE to a silent
+pass is new. Stated because a reader comparing the two versions sees only that a
+predicate was added.
+
+### 3. Would CI have caught it?
+
+It **did**, which is the honest answer and the useful one: `9a424b8` went red on
+ubuntu at *Typecheck and build*, and the same command fails identically on this
+machine — so this was not a platform gap, it was a local command that ran half
+of what CI runs. `proof:secondwiring` and `check:secondwiring` are unconditional
+steps on the Guards job and both would have caught a regression in the scan.
+
+**Neither would have caught DDDDD-1 or DDDDD-2**, and that is the point of an
+audit: both are states where every check passes and the thing being checked is
+not being looked at.
+
+### 4. Non-vacuous proofs
+
+Mutations run in this range:
+
+- **Decision 4's exhaustiveness**: a fifth `Placement` variant reddens **all
+  four** surfaces at their `never` cases.
+- **The banned y-flip**: `crop.y1 - point.y` → `crop.y1 - crop.y0 - point.y`
+  reddens three geometry cases; dropping the x origin reddens three.
+- **`documentUnreadable`** and the **`Math.max`** floor, from the previous
+  range's B1 work, both bite.
+
+The two modified proofs were read for loosening and neither was: the deletions
+are one false comment replaced by an anchor plus true reasoning, and one roster
+count raised in the commit that added the cases.
+
+### 4a. Instrument resolution tests
+
+`geometry.ts` is arithmetic rather than an instrument, and is mutation-tested
+above. `projections.ts` is closer to one — its reassuring answer is an empty
+ribbon — and its cases assert **specific ids in a specific order** rather than a
+count, with a control that four rotations disagree.
+
+### 4b. Searches with positive controls
+
+**DDDDD-2.** The one search in range has a control for its matcher and none for
+its walker.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**DDDDD-3**, in a file written hours after the previous range fixed the same
+shape elsewhere.
+
+### 5. Executed, or asserted?
+
+**Executed:** every mutation above; 716 tests; `npm run build` in full, both
+halves; lint; `proof:secondwiring` at 14 cases; `check:secondwiring` over three
+surface modules; the board green at `93eaabe`.
+
+**Asserted:** that the registries' seams are the right ones for a real feature —
+nothing has registered into them yet, and `the-first-caller-finds-it` says that
+is exactly when a seam is unproven. The first real command is what tests them.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and the range's last commit is a STOP rather than a build.** A6's
+document-carrying channel cannot be built without a second canonical image in
+main — `perf:gate` reads 1.00x holding one and 2.00x holding two against
+§9.17's 1.5x — and that is a decision with rejected alternatives. Recorded on
+the render row and not guessed at.
+
+### 7. Do the documents still match the code?
+
+Five FEATURES rows edited to what actually landed, three of them from *not
+started* to *partly done* with what remains owed named in each. No
+cross-document relationship is newly stated by this range, so NNN-4's sweep does
+not fire; the L18 sweep in the previous range covered the one that was.
+
+---
+
 ## 2026-08-29 — Stage audit: `d8591db..67f38bb` — the instrument I reported fixing was still printing the old number
 
 Range: **9 commits, 24 files.** The gate fired on the L18 amendment commit,
