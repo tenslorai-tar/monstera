@@ -3,11 +3,13 @@ import type { DocId, DocVersion } from '@monstera/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 
 import { openDocumentCommand } from './commands/openDocument.js';
+import { showAboutCommand } from './commands/showAbout.js';
+import { ABOUT_DIALOG } from './dialogs/about.js';
 import { type DocumentView, openDocumentView } from './documentView.js';
-import {
-  CommandRegistry,
-  type CommandContext,
-} from './registries/commands.js';
+import { CLOSE_LABEL } from './messages/en.js';
+import { CommandRegistry, type CommandContext } from './registries/commands.js';
+import { DialogRegistry } from './registries/dialogs.js';
+import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import { renderPage } from './renderPage.js';
 import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -55,9 +57,19 @@ export interface AppProps {
 export function App({ client, settings }: AppProps): ReactElement {
   const [open, setOpen] = useState<OpenDocument | undefined>(undefined);
 
+  // ONE registry instance, and the dialog host's state feeds the command that
+  // opens it. `useDialogHost` owns `show`, so the command captures it the same
+  // way it captures the client — composition, not a global.
+  const dialogs = useMemo(() => new DialogRegistry([ABOUT_DIALOG]), []);
+  const { open: openDialog, show, close } = useDialogHost(dialogs);
+
   const registry = useMemo(
-    () => new CommandRegistry([openDocumentCommand({ client, onOpened: setOpen })]),
-    [client],
+    () =>
+      new CommandRegistry([
+        openDocumentCommand({ client, onOpened: setOpen }),
+        showAboutCommand({ client, show }),
+      ]),
+    [client, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -83,6 +95,10 @@ export function App({ client, settings }: AppProps): ReactElement {
       ) : (
         <PageCanvas client={client} document={open} onVersionMoved={setOpen} />
       )}
+      {/* The ONE mount point. `DialogHost` renders nothing when none is open —
+          not a hidden dialog — so this is not a control that renders and does
+          nothing; it is the seam every dialog arrives through. */}
+      <DialogHost registry={dialogs} closeLabel={CLOSE_LABEL} open={openDialog} onClose={close} />
     </main>
   );
 }

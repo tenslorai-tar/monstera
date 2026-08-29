@@ -56,3 +56,23 @@ body {
 .m-page {
   display: block;
 }
+
+/*
+ * The About dialog's body: a definition list, laid out as label/value pairs.
+ * `grid` rather than the browser's default `dd` indent, because that indent is a
+ * user-agent value this repository did not choose and it differs between them.
+ */
+.m-about {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-4) var(--space-16);
+  margin: 0;
+}
+
+.m-about dt {
+  color: var(--muted);
+}
+
+.m-about dd {
+  margin: 0;
+}

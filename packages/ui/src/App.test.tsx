@@ -237,13 +237,59 @@ describe('App', () => {
     expect(document.documentElement.dataset['theme']).toBe('dark');
   });
 
+  it('the registered DIALOG opens with what main said, through the one mount point', async () => {
+    // Exit clause 6, and the content is the point: this dialog shows the running
+    // application's real version and channel, so it is wrong the moment anything
+    // about it breaks — rather than a dialog that renders correctly whatever the
+    // application is doing.
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'About' }).click();
+      await Promise.resolve();
+    });
+
+    // The TITLE arrives with the dialog and the BODY arrives with its chunk —
+    // Decision 7's laziness — so finding the dialog and then reading its text
+    // asserts on the Suspense fallback. Measured, exactly that: `textContent`
+    // was "About Monstera" and nothing else. Waiting for the content is the
+    // assertion; the dialog it sits in is checked by the query's own ancestry.
+    expect(await screen.findByRole('dialog', { name: 'About Monstera' })).toBeDefined();
+    expect(await screen.findByText('1.2.3')).toBeDefined();
+    expect(await screen.findByText('development')).toBeDefined();
+  });
+
+  it('CONTROL: nothing is mounted until the dialog is opened', async () => {
+    // `DialogHost` renders nothing when none is open — not a hidden dialog — so
+    // without this the case above passes for a host that mounts every registered
+    // dialog and shows one. A mounted-but-closed dialog keeps its body's state
+    // across opens, which is the defect Decision 7's laziness exists for.
+    const { client } = recordingClient({ version: '1.2.3', installChannel: 'development' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('the start screen names no command itself — it renders what the registry holds', () => {
-    // §7's rule made observable: the surface has one control because the
-    // registry has one command, not because a list in a component says so.
+    // §7's rule made observable: the surface has these controls because the
+    // registry has these commands, not because a list in a component says so.
     // `check:secondwiring` is the mechanical half; this is the behavioural one.
+    //
+    // Asserted by NAME rather than by count, and the count is a literal beside
+    // them rather than `registry.available(...).length` — a count derived from
+    // the registry agrees with any registry, which is 4c's shape in a test.
+    // This case earned its keep when the second command landed: it failed, which
+    // is what a surface following its registry is supposed to do.
     const { client } = recordingClient({ kind: 'cancelled' });
     const { container } = render(<App client={client} settings={freshSettings()} />);
 
-    expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(1);
+    expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
   });
 });

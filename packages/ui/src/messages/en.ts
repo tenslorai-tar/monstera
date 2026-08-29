@@ -31,6 +31,10 @@ export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
+export const ABOUT_TITLE = messageKey('dialog.about.title');
+export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
+export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
+export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 
 /**
  * The catalogue itself.
@@ -45,4 +49,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [CLOSE_LABEL]: 'Close',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
   [THEME_TITLE]: 'Theme',
+  [ABOUT_TITLE]: 'About Monstera',
+  [ABOUT_COMMAND_TITLE]: 'About',
+  [ABOUT_VERSION_LABEL]: 'Version',
+  [ABOUT_CHANNEL_LABEL]: 'Install channel',
 };
