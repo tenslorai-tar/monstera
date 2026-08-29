@@ -5,7 +5,7 @@ import { lazy, useState, type ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { DialogRegistry, type DialogEntry } from '../registries/dialogs.js';
+import { DialogRegistry, declareDialog } from '../registries/dialogs.js';
 import { DialogHost, useDialogHost } from './DialogHost.js';
 
 /**
@@ -13,7 +13,13 @@ import { DialogHost, useDialogHost } from './DialogHost.js';
  * from the raw ones. A body rendering fixed text would pass identically whether
  * the schema's output or the caller's object reached it.
  */
-const renameEntry: DialogEntry = {
+// NO CAST, and its absence is the assertion (finding EEEEE-2). This used to end
+// `as DialogEntry`, which is what an object literal needs when the registry's
+// storage type has severed the tie between the schema and the component.
+// `declareDialog` infers `Schema` from `props` and requires the component to
+// take exactly that output, so a body whose props disagree fails HERE — in the
+// feature's own diff — rather than being erased at the mount point.
+const renameEntry = declareDialog({
   id: 'dialog.rename',
   title: messageKey('dialog.rename.title'),
   props: z.object({ name: z.string().min(1) }),
@@ -22,7 +28,7 @@ const renameEntry: DialogEntry = {
       default: ({ name }: { name: string }) => <p>{`renaming ${name}`}</p>,
     }),
   ),
-} as DialogEntry;
+});
 
 const registry = new DialogRegistry([renameEntry]);
 

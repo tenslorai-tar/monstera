@@ -1,5 +1,5 @@
 import type { MessageKey } from '@monstera/shared';
-import { Suspense, createElement, useCallback, useState } from 'react';
+import { Suspense, useCallback, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
 import { Dialog } from '../primitives/Dialog.js';
@@ -119,9 +119,10 @@ export function DialogHost({
       title={resolve(entry.title)}
       closeLabel={closeLabel}
     >
-      <Suspense fallback={pending}>
-        {createElement(entry.component as never, open.props as never)}
-      </Suspense>
+      {/* The entry mounts itself. `declareDialog` built this closure where the
+          schema and the component were still the same type, so nothing is cast
+          here — see EEEEE-2 in the entry's own comment. */}
+      <Suspense fallback={pending}>{entry.mount(open.props)}</Suspense>
     </Dialog>
   );
 }

@@ -1,5 +1,10 @@
 import type { MessageKey } from '@monstera/shared';
-import type { ComponentType, LazyExoticComponent } from 'react';
+import { createElement } from 'react';
+// `FunctionComponent` rather than `ComponentType`, which is B7 stated in the
+// type: *React function components only*. A class component would also have made
+// `createElement` unresolvable here for a generic props type, so the rule and
+// the compiler want the same thing.
+import type { FunctionComponent, LazyExoticComponent, ReactElement } from 'react';
 import type { z } from 'zod';
 
 /**
@@ -41,7 +46,57 @@ export interface DialogEntry<Schema extends z.ZodType = z.ZodType> {
   /** Validates the props at the open call, and types them. */
   readonly props: Schema;
   /** The lazily-loaded body. `<Dialog>` supplies the chrome. */
-  readonly component: LazyExoticComponent<ComponentType<z.infer<Schema>>>;
+  readonly component: LazyExoticComponent<FunctionComponent<z.infer<Schema>>>;
+  /**
+   * Mounts this dialog's body with props its schema has already accepted.
+   *
+   * **The one place the type is erased, and the only place it is provably safe**
+   * (finding EEEEE-2). A registry holds entries with different schemas, so it
+   * must store `DialogEntry<z.ZodType>` — which severs the tie between `props`
+   * and `component` that is real at every declaration site. The mount point
+   * used to reattach it with two `as never` casts, which is the strongest
+   * erasure the language has, in the one file whose whole subject is validated
+   * props, and at the exact point where nothing can check it.
+   *
+   * {@link declareDialog} builds this closure where both types are still in
+   * scope. The cast is therefore made once, against a value the compiler has
+   * just checked, instead of once per mount against a value nobody has.
+   */
+  readonly mount: (props: unknown) => ReactElement;
+}
+
+/**
+ * Declares a dialog. **The only way to build a {@link DialogEntry}.**
+ *
+ * The `mount` closure is created here because here — and nowhere downstream —
+ * the schema and the component are the same `Schema`, so handing the parsed
+ * props to the component is a fact rather than an assertion. `openWith` returns
+ * exactly what `props.safeParse` produced, so the value this receives has been
+ * checked by the schema that types the component.
+ *
+ * @param entry everything but `mount`, which is derived from it
+ */
+export function declareDialog<Schema extends z.ZodType<object>>(
+  entry: Omit<DialogEntry<Schema>, 'mount'>,
+): DialogEntry<Schema> {
+  return {
+    ...entry,
+    mount: (props) => {
+      // TWO NARROW CASTS, AND WHAT MAKES THEM SAFE IS ABOVE THEM RATHER THAN
+      // INSIDE THEM. `Schema` is inferred from `props`, and `component` is
+      // declared as `FunctionComponent<z.infer<Schema>>` — so a component that does
+      // not take this schema's output fails at the CALL to this function, in
+      // the feature's own diff. By the time either line runs, the compiler has
+      // already checked the thing the casts assert.
+      //
+      // The first unwraps React's lazy wrapper, which `createElement` accepts at
+      // run time and cannot express in a generic signature. The second restates
+      // what `openWith` guarantees: the value reaching here is what
+      // `props.safeParse` returned, parsed by this very schema.
+      const Body = entry.component as unknown as FunctionComponent<z.infer<Schema>>;
+      return createElement(Body, props as z.infer<Schema>);
+    },
+  };
 }
 
 /** What an open call was refused for. */

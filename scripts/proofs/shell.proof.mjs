@@ -72,6 +72,22 @@ const RUNTIME_CASES = [
   'a dismissal and an empty selection are BOTH null, and a real path comes back',
 ];
 
+// THE ANCHOR, BECAUSE THE LINE BELOW IS NOT ONE (finding EEEEE-1). `passRoster`
+// throws when the recorded total disagrees with the declared one, so deleting a
+// `check()` call alone is loud. It cannot see a case removed TOGETHER with its
+// label — the same edit anybody deleting a case makes, in this file, seconds
+// apart — because the declared count is computed from the list that names them.
+// Every other proof in this repository declares a literal; this one derived, and
+// the derivation is what removed the anchor. 4c's danger here runs toward
+// shrinkage, and a derived count agrees with any shrink.
+if (RUNTIME_CASES.length !== 6) {
+  throw new Error(
+    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 6. ` +
+      `Raise or lower the literal in the same commit and say why: a case that leaves takes its ` +
+      `label and the total with it, and nothing else here would notice.`,
+  );
+}
+
 /** @type {string[]} */
 const failures = [];
 const roster = createRoster(failures, { cases: RUNTIME_PRESENT ? RUNTIME_CASES.length : 0 });

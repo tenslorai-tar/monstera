@@ -7,7 +7,12 @@ import {
   type CommandContext,
   type UiCommand,
 } from './commands.js';
-import { DialogNotRegistered, DialogPropsRejected, DialogRegistry } from './dialogs.js';
+import {
+  DialogNotRegistered,
+  DialogPropsRejected,
+  DialogRegistry,
+  declareDialog,
+} from './dialogs.js';
 import { SettingsRegistry, type SettingDefinition } from './settings.js';
 
 const context: CommandContext = {
@@ -98,14 +103,17 @@ describe('CommandRegistry', () => {
 });
 
 describe('DialogRegistry', () => {
-  const rename = {
+  // Built through `declareDialog` rather than as an object literal, because
+  // that is now the only way to obtain a `mount` — and a fixture that could
+  // sidestep the builder would be a fixture proving something no caller does.
+  const rename = declareDialog({
     id: 'dialog.rename',
     title: messageKey('dialog.rename.title'),
     props: z.object({ name: z.string().min(1) }),
     // The component is never mounted here; these cases are about the schema
     // gate, which is the half that runs before anything renders.
     component: null as never,
-  };
+  });
 
   it('refuses props its schema refuses, at the open call', () => {
     const registry = new DialogRegistry([rename]);

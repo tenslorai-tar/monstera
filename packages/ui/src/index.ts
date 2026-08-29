@@ -28,6 +28,9 @@ export {
   DialogPropsRejected,
   DialogRegistry,
   type DialogEntry,
+  // The only way to build an entry, and the only place the schema-to-component
+  // tie is erased — see EEEEE-2 in that module.
+  declareDialog,
 } from './registries/dialogs.js';
 export {
   SECTION_IDS,
