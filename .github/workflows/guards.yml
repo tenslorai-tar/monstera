@@ -464,6 +464,13 @@ jobs:
       - name: Every proof script is invoked by some job
         run: node scripts/ci/annotate.mjs scripts/lib/proofCoverage.mjs
 
+      # The local sweep resolves what an npm script RUNS instead of refusing
+      # anything that is not a bare `node` invocation — which is how typecheck,
+      # lint and build sat in its roster running nothing. The failure to fear is
+      # now a step it cannot understand being dropped rather than reported.
+      - name: Prove the npm-script resolver sees, recurses and refuses
+        run: node scripts/ci/annotate.mjs scripts/proofs/npmScriptSteps.proof.mjs
+
       # The sweep's replacement for a disclaimer that failed. It NAMES the proofs
       # a local run did not execute, derived from the changed set and the import
       # graph, so the reader gets an instruction rather than a caveat. Its

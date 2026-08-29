@@ -97,6 +97,7 @@ import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
 import { uncommittedPaths } from './lib/gitScope.mjs';
+import { binaryMap, resolveScript } from './lib/npmScriptSteps.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
 import { ciVerifiers, verifiersNotRunByCi } from './lib/ciVerifiers.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
@@ -185,9 +186,19 @@ const FLOOR_REQUIRED = floorIndex === -1 ? FLOOR : Number(argv[floorIndex + 1] ?
 
 /** @type {Record<string, string>} */
 let scripts;
+/** Executable name to the JavaScript node runs for it. See {@link binaryMap}. */
+/** @type {Map<string, string>} */
+let BINARIES;
 try {
   const manifest = JSON.parse(readFileSync(join(ROOT_DIR, 'package.json'), 'utf8'));
   scripts = manifest.scripts ?? {};
+  // Both fields, because which one a tool sits in is a packaging decision and
+  // not a statement about whether a script may run it — `tsc` and `vitest` are
+  // dev dependencies and the gate needs them most.
+  BINARIES = binaryMap(ROOT_DIR, {
+    ...(manifest.dependencies ?? {}),
+    ...(manifest.devDependencies ?? {}),
+  });
 } catch (cause) {
   process.stderr.write(`Could not read package.json: ${String(cause)}\n`);
   process.exit(70);
@@ -644,11 +655,31 @@ for (const name of selected) {
   // written that a scan which cries wolf is a scan someone relaxes. Invoking the
   // interpreter directly means the timeout kills the thing actually running.
   const command = scripts[name] ?? '';
-  const parts = command.split(/\s+/u).filter((part) => part !== '');
-  if (parts[0] !== 'node') {
+  // RESOLVED RATHER THAN REFUSED (finding C2). This used to require the command
+  // to begin with `node` and report everything else as not run — which was
+  // honest and, from inside the refusal, invisible in its consequence:
+  // `typecheck`, `lint` and `build` are three of the four words that were ever
+  // in that list, so the local gate ran no compiler and no linter, and `test`
+  // was in no roster at all.
+  //
+  // `npmScriptSteps.mjs` derives the node invocations from the command in
+  // `package.json` rather than from a table, so nothing here can drift when
+  // somebody edits that line. Still node directly and still no shell: the
+  // measurement that ruled a shell out is unchanged, and a step that cannot be
+  // resolved is reported exactly as before.
+  const { steps, unresolved } = resolveScript(name, {
+    root: ROOT_DIR,
+    scripts,
+    bins: BINARIES,
+  });
+  if (steps.length === 0 || unresolved.length > 0) {
     // Reported, not skipped. A script this harness cannot invoke is a hole in
     // the derivation, and a hole that prints nothing is the derivation lying
     // about its own coverage.
+    const why =
+      unresolved.length > 0
+        ? unresolved.map((entry) => `${entry.command}: ${entry.why}`).join('; ')
+        : 'the command resolved to no steps';
     notNode.push(`${name} (${command})`);
     // Logged as well, so the rows are a complete account of the selection rather
     // than of the part that executed. A script missing from the log and a script
@@ -659,17 +690,28 @@ for (const name of selected) {
       signal: null,
       seconds: 0,
       bytes: null,
-      firstProblem: '(not run — not a bare node invocation)',
+      firstProblem: `(not run — ${why})`,
     });
-    process.stdout.write(`  NOT RUN  ${name} — not a bare \`node\` invocation\n`);
+    process.stdout.write(`  NOT RUN  ${name} — ${why}\n`);
     continue;
   }
   const started = process.hrtime.bigint();
-  const run = spawnSync(process.execPath, parts.slice(1), {
-    cwd: ROOT_DIR,
-    encoding: 'utf8',
-    timeout: TIMEOUT_MS,
-  });
+  // Every step, in order, stopping at the first failure — which is what `&&`
+  // means and is why a chain is resolved into steps rather than flattened into
+  // one. `build` is `typecheck && build:preload`, and running the second after
+  // the first failed would report a preload built from a tree that does not
+  // compile.
+  let run = /** @type {ReturnType<typeof spawnSync>} */ (
+    /** @type {unknown} */ ({ status: 0, signal: null, stdout: '', stderr: '' })
+  );
+  for (const step of steps) {
+    run = spawnSync(process.execPath, [step.js, ...step.args], {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
+      timeout: TIMEOUT_MS,
+    });
+    if (run.status !== 0 || run.signal !== null) break;
+  }
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;
   const took = `${seconds.toFixed(1)}s`;
   // Recorded for EVERY outcome, including a timeout: a script killed at the

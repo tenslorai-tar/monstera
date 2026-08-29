@@ -107,6 +107,7 @@
     "proof:typecheck": "node scripts/proofs/typecheck.proof.mjs",
     "check:proofcoverage": "node scripts/lib/proofCoverage.mjs",
     "proof:affectedproofs": "node scripts/proofs/affectedProofs.proof.mjs",
+    "proof:npmscriptsteps": "node scripts/proofs/npmScriptSteps.proof.mjs",
     "proof:proofcoverage": "node scripts/proofs/proofCoverage.proof.mjs",
     "check:stackowner": "node scripts/lib/stackOwnership.mjs",
     "proof:jobplacement": "node scripts/proofs/nodeModulesPlacement.proof.mjs",

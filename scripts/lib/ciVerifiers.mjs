@@ -79,6 +79,21 @@ const SCRIPT_PATH = /scripts\/[\w./-]+\.mjs/gu;
 const NPM_RUN = /npm run ([\w:-]+)/gu;
 
 /**
+ * npm's own shorthands for three scripts, which `npm run <name>` does not match.
+ *
+ * `npm test` is `npm run test`, and `ci.yml` writes it the short way on both
+ * matrix legs — so the unit suite was in no roster this repository derives, and
+ * `npm run local` had no test row at all (finding C2). `start` and `stop` are
+ * the other two npm gives this treatment; they are listed because npm's rule is
+ * the authority and picking only the one that bit today is how the next one
+ * gets missed.
+ *
+ * Not `npm install`, `npm ci` or `npm publish`: those are npm's own commands
+ * rather than shorthands for a script of that name.
+ */
+const NPM_SHORTHAND = /(?:^|[^\w-])npm (test|start|stop)(?![\w:-])/gu;
+
+/**
  * A line whose first non-space character is `#` runs nothing.
  *
  * Under either reading — a YAML comment between steps, or a shell comment inside
@@ -222,6 +237,17 @@ export function ciVerifiers({ root = repoRoot() } = {}) {
       if (isComment(text)) continue;
 
       for (const match of text.matchAll(NPM_RUN)) {
+        const name = match[1];
+        if (name !== undefined && registered.has(name)) {
+          found.add(name);
+          invocationLines += 1;
+        }
+      }
+
+      // npm's shorthands, which the pattern above cannot see. `npm test` is how
+      // ci.yml runs the unit suite on both legs, and until this line the suite
+      // was in no derived roster at all.
+      for (const match of text.matchAll(NPM_SHORTHAND)) {
         const name = match[1];
         if (name !== undefined && registered.has(name)) {
           found.add(name);

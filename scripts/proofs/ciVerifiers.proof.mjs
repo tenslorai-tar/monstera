@@ -43,7 +43,7 @@ import { createRoster } from '../lib/passRoster.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 11 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -87,6 +87,7 @@ const MANIFEST = {
   'proof:thing': 'node scripts/proofs/thing.proof.mjs',
   'check:orphan': 'node scripts/lib/orphan.mjs',
   lint: 'eslint .',
+  test: 'vitest run',
 };
 
 // ---------------------------------------------------------------------------
@@ -167,6 +168,58 @@ const MANIFEST = {
       result.names.includes('lint'),
       `derived ${JSON.stringify(result.names)}. Not every step goes through the wrapper; a ` +
         `derivation that only understood paths would drop lint, build and typecheck.`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// NPM'S OWN SHORTHAND (finding C2). `npm test` is `npm run test`, and `ci.yml`
+// writes it the short way on both matrix legs — so the unit suite was in no
+// roster this repository derives, and the local sweep had no test row at all.
+// A whole test suite is a large thing to be invisible, and it was invisible
+// because of two missing words in one pattern.
+// ---------------------------------------------------------------------------
+{
+  const root = fixture({
+    manifest: MANIFEST,
+    workflow: ['jobs:', '  build:', '    steps:', '      - run: npm test'].join('\n'),
+  });
+  try {
+    const result = ciVerifiers({ root });
+    check(
+      "npm's shorthand for a script counts as invoking it",
+      result.names.includes('test'),
+      `derived ${JSON.stringify(result.names)}. \`npm run test\` and \`npm test\` are the same ` +
+        `command, and a derivation that sees only the long form reports the short one's script ` +
+        `as run by nobody — or, as here, does not report it at all.`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+{
+  const root = fixture({
+    manifest: MANIFEST,
+    workflow: [
+      'jobs:',
+      '  build:',
+      '    steps:',
+      '      - run: npm ci',
+      '      - run: npm install',
+      '      - run: node scripts/proofs/thing.proof.mjs',
+    ].join('\n'),
+  });
+  try {
+    const result = ciVerifiers({ root });
+    check(
+      "  ...and npm's OWN commands are not shorthands for a script",
+      !result.names.includes('test') && result.names.includes('proof:thing'),
+      `derived ${JSON.stringify(result.names)}. \`npm ci\` and \`npm install\` are npm's ` +
+        `commands rather than scripts of that name; the second half of the assertion is what ` +
+        `stops this passing because the derivation found nothing at all.`,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
