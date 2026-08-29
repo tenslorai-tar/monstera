@@ -9,6 +9,8 @@ import {
   type CommandContext,
 } from './registries/commands.js';
 import { renderPage } from './renderPage.js';
+import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
+import type { SettingsStore } from './settingsStore.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 
@@ -41,9 +43,16 @@ interface OpenDocument {
 
 export interface AppProps {
   readonly client: ContractClient;
+  /**
+   * The live settings values.
+   *
+   * A prop for the same reason the client is: composition builds it, so a test
+   * can hand one with a different value and watch the application follow.
+   */
+  readonly settings: SettingsStore;
 }
 
-export function App({ client }: AppProps): ReactElement {
+export function App({ client, settings }: AppProps): ReactElement {
   const [open, setOpen] = useState<OpenDocument | undefined>(undefined);
 
   const registry = useMemo(
@@ -65,6 +74,7 @@ export function App({ client }: AppProps): ReactElement {
   );
 
   useShortcuts(registry, context);
+  useTheme(settings);
 
   return (
     <main className="m-document-surface">
@@ -114,6 +124,32 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext): void 
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [context, map, registry]);
+}
+
+/**
+ * Applies the theme setting to the root element, and keeps applying it.
+ *
+ * **This is what makes the setting a setting rather than a registered key.**
+ * §10.4's rule for a setting is the wired-tools rule one layer down — a key
+ * nothing reads is the display-only sin — so the first one has to be read by a
+ * shipped path. It is: `tokens.css` remaps every token under `[data-theme]`, so
+ * writing the attribute is the whole of applying it and no component consults
+ * this value again.
+ *
+ * Subscribed rather than read once. The store is not React state, so a value
+ * changed by a settings dialog would otherwise take effect on the next unrelated
+ * render — which is the shape where a preference appears to work intermittently.
+ */
+function useTheme(settings: SettingsStore): void {
+  useEffect(() => {
+    const apply = (): void => {
+      applyTheme(document.documentElement, settings.get(THEME_SETTING.id) as Theme);
+    };
+    apply();
+    return settings.subscribe((id) => {
+      if (id === THEME_SETTING.id) apply();
+    });
+  }, [settings]);
 }
 
 /**

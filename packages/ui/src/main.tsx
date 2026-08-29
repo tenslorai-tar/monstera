@@ -6,6 +6,9 @@ import { App } from './App.js';
 import { createRendererClient } from './bridge.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import { SettingsRegistry } from './registries/settings.js';
+import { THEME_SETTING } from './settings/appearance.js';
+import { SettingsStore } from './settingsStore.js';
 
 import './tokens.css';
 import './app.css';
@@ -56,7 +59,10 @@ activateCatalogue('en', EN);
 createRoot(container).render(
   <StrictMode>
     <I18nProvider i18n={i18n}>
-      <App client={createRendererClient()} />
+      <App
+        client={createRendererClient()}
+        settings={new SettingsStore(new SettingsRegistry([THEME_SETTING]))}
+      />
     </I18nProvider>
   </StrictMode>,
 );

@@ -4,11 +4,14 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { act, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from './App.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
+import { SettingsRegistry } from './registries/settings.js';
+import { THEME_SETTING } from './settings/appearance.js';
+import { SettingsStore } from './settingsStore.js';
 
 /**
  * The UI-level half of the wired-tools pair for `document.open`.
@@ -35,6 +38,24 @@ function render(ui: ReactElement): ReturnType<typeof renderBare> {
 
 const DOC = asDocId('doc-1');
 
+/**
+ * A store per case, because a shared one carries the previous case's writes.
+ *
+ * `SettingsStore` is not React state and does not reset between renders, so a
+ * case that assumed the default would pass in file order and fail alone.
+ */
+function freshSettings(): SettingsStore {
+  return new SettingsStore(new SettingsRegistry([THEME_SETTING]));
+}
+
+// The root element is shared by every case in this file, and the theme cases
+// write to it. Without this, "no attribute at the default" would pass only while
+// it happened to run before the case that sets one — a case whose result depends
+// on file order is one that passes for a reason it does not claim.
+afterEach(() => {
+  document.documentElement.removeAttribute('data-theme');
+});
+
 /** A client that records every channel it is asked for, and answers `answer`. */
 function recordingClient(answer: unknown): {
   readonly client: ContractClient;
@@ -55,7 +76,7 @@ describe('App', () => {
     // defect the resolver exists to prevent.
     const { client } = recordingClient({ kind: 'cancelled' });
 
-    render(<App client={client} />);
+    render(<App client={client} settings={freshSettings()} />);
 
     expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
   });
@@ -65,7 +86,7 @@ describe('App', () => {
     // one that stops it being vacuous: a component that called every channel it
     // could reach would satisfy "document.open was called".
     const { client, calls } = recordingClient({ kind: 'cancelled' });
-    render(<App client={client} />);
+    render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
       screen.getByRole('button', { name: 'Open a document' }).click();
@@ -81,7 +102,7 @@ describe('App', () => {
     // a different program.
     const { client, calls } = recordingClient({ kind: 'cancelled' });
 
-    render(<App client={client} />);
+    render(<App client={client} settings={freshSettings()} />);
     await act(async () => {
       await Promise.resolve();
     });
@@ -99,7 +120,7 @@ describe('App', () => {
       version: asDocVersion(1),
       byteLength: 1024,
     });
-    const { container } = render(<App client={client} />);
+    const { container } = render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
       screen.getByRole('button', { name: 'Open a document' }).click();
@@ -115,7 +136,7 @@ describe('App', () => {
     // outcome, and the App's correct response is to do nothing — which is also
     // what a broken dispatch produces, so the case above is what separates them.
     const { client } = recordingClient({ kind: 'cancelled' });
-    const { container } = render(<App client={client} />);
+    const { container } = render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
       screen.getByRole('button', { name: 'Open a document' }).click();
@@ -131,7 +152,7 @@ describe('App', () => {
     // is a projection of the registry — so this asserts the projection reaches a
     // real key press, not that a keymap file has an entry.
     const { client, calls } = recordingClient({ kind: 'cancelled' });
-    render(<App client={client} />);
+    render(<App client={client} settings={freshSettings()} />);
 
     await act(async () => {
       document.dispatchEvent(
@@ -150,7 +171,7 @@ describe('App', () => {
     // swallowed, because an application that eats a shortcut to run nothing is
     // the report nobody can reproduce.
     const { client, calls } = recordingClient({ kind: 'cancelled' });
-    render(<App client={client} />);
+    render(<App client={client} settings={freshSettings()} />);
 
     const event = new KeyboardEvent('keydown', { key: 'j', ctrlKey: true, cancelable: true });
     await act(async () => {
@@ -164,7 +185,7 @@ describe('App', () => {
 
   it('the claimed chord IS prevented, so the browser does not act on it too', async () => {
     const { client } = recordingClient({ kind: 'cancelled' });
-    render(<App client={client} />);
+    render(<App client={client} settings={freshSettings()} />);
 
     const event = new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, cancelable: true });
     await act(async () => {
@@ -175,12 +196,53 @@ describe('App', () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it('the registered SETTING is read, and changing it moves the root attribute', async () => {
+    // Exit clause 7, and the assertion is the whole point of it: a registered
+    // key nothing reads is the display-only sin one layer down. `tokens.css`
+    // remaps every token under `[data-theme]`, so the attribute IS the effect —
+    // no component consults this value again.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    const settings = freshSettings();
+    render(<App client={client} settings={settings} />);
+
+    // `system` is a value, not an absence: the bare `:root` block is what it
+    // resolves to, so the attribute is removed rather than spelt `system`.
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+
+    await act(async () => {
+      settings.set(THEME_SETTING.id, 'dark');
+      await Promise.resolve();
+    });
+
+    expect(document.documentElement.dataset['theme']).toBe('dark');
+  });
+
+  it('CONTROL: a value the schema refuses does NOT move it', async () => {
+    // Without this, the case above passes for a component that writes whatever
+    // it is handed — and the registry's validation would then be decoration.
+    // `set` refuses, so the attribute must still say what the last valid write
+    // said rather than following the rejected one.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    const settings = freshSettings();
+    render(<App client={client} settings={settings} />);
+
+    await act(async () => {
+      settings.set(THEME_SETTING.id, 'dark');
+      await Promise.resolve();
+    });
+    expect(() => {
+      settings.set(THEME_SETTING.id, 'chartreuse');
+    }).toThrow();
+
+    expect(document.documentElement.dataset['theme']).toBe('dark');
+  });
+
   it('the start screen names no command itself — it renders what the registry holds', () => {
     // §7's rule made observable: the surface has one control because the
     // registry has one command, not because a list in a component says so.
     // `check:secondwiring` is the mechanical half; this is the behavioural one.
     const { client } = recordingClient({ kind: 'cancelled' });
-    const { container } = render(<App client={client} />);
+    const { container } = render(<App client={client} settings={freshSettings()} />);
 
     expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(1);
   });

@@ -30,6 +30,7 @@ import { messageKey } from '@monstera/shared';
 export const OPEN_DOCUMENT_TITLE = messageKey('command.open-document.title');
 export const CLOSE_LABEL = messageKey('action.close.label');
 export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
+export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 
 /**
  * The catalogue itself.
@@ -43,4 +44,5 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [OPEN_DOCUMENT_TITLE]: 'Open a document',
   [CLOSE_LABEL]: 'Close',
   [DOCUMENT_SURFACE_LABEL]: 'Document',
+  [THEME_TITLE]: 'Theme',
 };
