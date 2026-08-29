@@ -41,6 +41,15 @@ export {
   type SettingCategory,
   type SettingDefinition,
 } from './registries/settings.js';
+export { SettingsStore } from './settingsStore.js';
+export { DialogHost, type DialogHostProps, useDialogHost } from './surfaces/DialogHost.js';
+export {
+  type Dispatch,
+  type KeyChord,
+  chordOf,
+  dispatchChord,
+  shortcutsFor,
+} from './surfaces/shortcuts.js';
 export {
   ShortcutConflict,
   type OrderedEntry,
