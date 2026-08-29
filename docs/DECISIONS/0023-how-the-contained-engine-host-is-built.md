@@ -1743,6 +1743,30 @@ is why it is on a row and not in the advisory register.
 > So the amendment is owed and its content is not thereby decided, and the three
 > candidates below stand as they were.
 
+> **Correction, 2026-08-29 (later the same day) — the amendment is TAKEN, and it
+> takes none of the candidates.** `docs/ARCHITECTURE.md`'s amendment log carries
+> it and invariant 18 now states it. The shape is the one this passage argued
+> for without naming: the invariant splits into a **property** that binds today
+> and a **mechanism** that is deferred, rather than the whole invariant waiting
+> on the mechanism. Reason 2 above is still true, so no candidate is chosen —
+> and candidate 1 is now excluded rather than merely unchosen, on the DDDD-19
+> correction's own grounds.
+>
+> **What changed about the deferral is where its trigger points.** This passage
+> parked the claim on a row and was right to; the correction above found that a
+> row is read by whoever opens that row, which is nobody at the moment it fires.
+> The amendment's two triggers therefore name **code sites** —
+> `CheckpointRestoreNotBuiltError` in `packages/kernel/src/commandBus.ts`, and a
+> `document.close` appearing in `packages/contract/src/channels.ts` — so the
+> reader who fires a trigger is the one already editing the file.
+>
+> And the second trigger is a reason nothing above states: **there is no
+> `document.close` channel**, so nothing in the shipped application can drop a
+> record, so the loss path has no caller. That was carrying the deferral's weight
+> unwritten the whole time — Reason 1 expired and this one did not, and had it
+> been stated, the trigger that fired on 2026-08-28 would have been visibly
+> partial rather than apparently spent.
+
 ### Correction, 2026-08-25 — candidate 1 is the candidate with the LARGEST KNOWN COST, not the leading one (finding DDDD-19)
 
 The correction above called *letting the log outlive the record* "the only

@@ -829,7 +829,44 @@ say**.
     telling the user what failed — never by a dialog whose only option discards
     their edits. The original file is intact until the atomic rename. Proven
     with a control case that shows the same scenario losing work without the
-    guard. ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md))
+    guard.
+
+    **(i) Where the engine is permanently refused, that sequence is unavailable
+    and this invariant still binds.** [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+    Decision 9a poisons a document at two consecutive engine failures and gives
+    it **no reopen**, so *restart and reopen* has no attempt left to make. What
+    the invariant requires of a poisoned document is a **property**, not that
+    sequence: its command log is retained, the last-saved bytes on disk are
+    untouched, it is refused engine work rather than closed under the user, and
+    the user is told which document and why. Close-and-reopen is the route back
+    and it is the **user's** to take — an application that took it for them
+    would be choosing which of two documents' edits to keep.
+
+    **(ii) The mechanism that gets those retained edits back into a document is
+    NOT CHOSEN HERE, deliberately.** Naming one now would fix a design against
+    two seams that do not exist, and this project's rule is that the
+    architecture changes *before* the feature and not underneath it. Two things
+    have to land first, and each names the code site that fires it, so the
+    trigger arrives where someone is already looking rather than in a document
+    nobody opens:
+
+    - **checkpoint restore** — `CheckpointRestoreNotBuiltError` in
+      `packages/kernel/src/commandBus.ts`. Replaying a log needs something to
+      replay onto, and §4's answer is the nearest checkpoint. The day that class
+      is deleted, this clause is owed a decision.
+    - **`document.close` being declared** — `packages/contract/src/channels.ts`,
+      which today declares five channels and no close. **Until it does, the loss
+      path has no caller**: nothing in the shipped application can drop a
+      document's record, so a poisoned document's log cannot be lost while the
+      application runs. That is why this clause is deferrable at all, and it
+      stops being deferrable the moment a sixth channel appears.
+
+    One candidate is already excluded rather than merely unchosen: resurrecting
+    the poisoned session is not available, because
+    [ADR-0009](DECISIONS/0009-document-identity-and-the-command-log.md) §7
+    removed resurrection **by construction** and not by rule.
+    ([ADR-0007](DECISIONS/0007-memory-budgets-and-the-document-size-ceiling.md),
+    [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9a)
 19. A save whose purpose is **removal** — redaction, sanitize, flatten,
     encryption change, metadata scrub, password removal — is never incremental,
     and its output carries zero prior revisions. An incremental save appends and
@@ -1380,6 +1417,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-08-29 | **Invariant 18 is split into a property that binds today and a mechanism that is deferred with named triggers.** Decision 9a poisons a document at two consecutive engine failures and gives it *no reopen*, which makes invariant 18's stated recovery — *"killing the host, restarting, reopening from the last-saved bytes, replaying the log"* — unavailable for exactly the document that most needs it. The sentence was not wrong when written; ADR-0023 arrived after it and took away its second attempt. **The amendment is LATE and that is finding BBBBB-1**: the save pipeline landed first, and the collision was found by `sweep:prose -- "the save pipeline"` run for an unrelated reason, not by any check. Clause (i) is statable with nothing built and is therefore stated rather than deferred — retain the log, leave the file untouched, refuse rather than close, tell the user — because a deferral that swallows the statable half is how an invariant quietly stops binding. Clause (ii) is deferred and **takes no candidate**: choosing a restore mechanism now would fix a design against two seams that do not exist, which is the retrofit this project exists to prevent (B4, B6). Its triggers name code sites rather than events, which is the class fix for BBBBB-1 — `CheckpointRestoreNotBuiltError` and the channel table — so the trigger fires where someone is already reading. **Rejected: resurrecting the poisoned session**, which is not available to reject in the ordinary sense, since [ADR-0009](DECISIONS/0009-document-identity-and-the-command-log.md) §7 removed resurrection by construction. **Rejected: deferring the whole invariant** until checkpoint restore lands, which would leave a poisoned document's guarantee unstated for the entire interval in which it is the only guarantee there is. | Invariant 18's recovery sequence, which read as unconditional: *"a save failure is answered by killing the host, restarting, reopening from the last-saved bytes, replaying the log, and telling the user what failed"* | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9a, which removed the reopen |
 | 2026-08-28 | **The engine session's owner is the supervisor, not `DocumentService`** (§2). The move itself happened at [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9, which put the sessions and the failure count on one per-document entry *"precisely so the count and the sessions cannot acquire separate owners"*. It was forced and correct — `DocumentService` is in `packages/kernel` and cannot create a remote session, which needs Win32 and a pipe the kernel may not name. **This amendment is LATE, and that is the finding (KKKK-5)**: Decision 9's opening quotes §2's sentence and checks it, deliberately and explicitly, for the **lifetime** clause only — *"session lifetime needs no amendment"* — and is right about lifetime, while ownership travelled with the sessions and no document said so. A four-clause sentence checked for one clause is three unchecked claims, and the check that was run is what makes the other three feel examined. No range-scoped sweep could have reached it: no commit ever changed both the sentence and the code that refuted it, and the citation resolves to a document that says the opposite, so every link check passes over it (UU-1). `DocumentTeardown` is what keeps the entry's lifetime the record's, since `DocumentService` remains the only component that knows a record ended. | §2's per-document ownership list, which read *"canonical bytes, **lazily-created engine handles** (invalidated together on any mutation), the command log and checkpoints, and the originating `FileHandle`"* | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) Decision 9, where the move happened |
 | 2026-08-28 | **`main` legitimately holds the process-creation binding, and §9.17's argument for its baseline is amended to say so** (§9.17). ADR-0022 makes `main` the process that creates a contained engine host — `CreateProcessW` suspended, a job object, an AppContainer token — and that requires an FFI binding in `main`, which the same sentence that derives `main`'s budget assigned to `mupdf-host` by name. The budget is not a limit with a rationale attached; the rationale is what derives it (ADR-0025), so weakening the argument silently weakens the budget silently. The permission is bounded by **two library names**, `kernel32.dll` and `advapi32.dll`, rather than by *"the binding it needs"* — a hole the next reader widens by arguing about need, where two names are a set somebody can be wrong about in public. Invariant 20 is untouched: what `main` may load is the operating system's own libraries through an FFI loader, and MuPDF in `main` remains forbidden by name. `mupdf-host`'s clause stops saying *"also"*, which had acquired a second meaning — *and `main` does not* — and was the half of a compound claim that goes stale without looking wrong. The surface is imported **statically**: ≤2.7 MB measured, against 43.7 MB for a Node-mode helper (~16×) that merely moves the FFI to a process §9.17 does not name, and against a lazy import rejected because a session is created at *open*, `baselineFor` measures every role against a document, and **no role measures composed `main` at all** — so the deferral would protect a state no instrument observes. **A second amendment is owed to this same clause and is named in it**: ADR-0025's `mupdf-host` baseline, blocked on host readings across days through the real host. | §9.17's `main` clause, which read *"`main` runs the language runtime and nothing else"* and assigned the FFI binding to `mupdf-host` by name | [ADR-0028](DECISIONS/0028-main-holds-the-process-creation-binding.md) |
 | 2026-08-16 | Start screen and title bar use the supplied composite logo as-is; the separate circular-mark-plus-wordmark treatment is withdrawn (§10.3). | `BUILD-PROMPT.md` Part M3 "circular leaf logo, the Monstera wordmark" and Part M8's interim-placeholder step | [ADR-0002](DECISIONS/0002-brand-mark-treatment.md) |
