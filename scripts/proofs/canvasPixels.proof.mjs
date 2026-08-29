@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { buildLargeFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -68,17 +69,42 @@ const OPEN_KEY = 'command.open-document.title';
 /**
  * The document the substituted picker returns.
  *
- * `perf-baseline.pdf` and not one of the text fixtures, for a mechanism rather
- * than a preference: it is one page whose entire content is a 144x144
- * uncompressed `DeviceRGB` image scaled across the full 595x842 MediaBox. So it
- * needs no font programme, no standard font data — which PDF.js fetches over a
- * seam `connect-src 'none'` refuses — and no WebAssembly decoder. Every pixel it
- * produces comes from bytes that crossed `document.readRange`.
+ * ## BUILT, not read from disk — and CI is what proved that necessary
+ *
+ * This named `packages/testing/fixtures/generated/perf-baseline.pdf` directly,
+ * which exists on a machine that has run the performance gate and on **no
+ * runner**: that whole directory is gitignored, because a 62 kB PDF is a binary
+ * and B10 does not commit those. So the proof passed here and failed on both
+ * matrix legs at its first case — the developed-in world being the richer one,
+ * which is the world that hides the defect (CLAUDE.md item 3's second half).
+ *
+ * `buildLargeFixture` is the writer of record for what a fixture PDF is, it
+ * caches on its own generator's digest, and `documentHandlers.proof.mjs`
+ * already calls it for exactly this reason. Calling it is B3a; writing a second
+ * small-PDF emitter here would have been the second opinion.
+ *
+ * ## The shape of it is load-bearing rather than convenient
+ *
+ * One page whose entire content is a 144x144 uncompressed `DeviceRGB` image
+ * scaled across the full 595x842 MediaBox. No font programme, no standard font
+ * data — which PDF.js fetches over a seam `connect-src 'none'` refuses — and no
+ * WebAssembly decoder. Every pixel it produces comes from bytes that crossed
+ * `document.readRange`.
  *
  * A text fixture would have made this proof's failure mode "a font did not
  * arrive", which is a different finding wearing this one's clothes.
+ *
+ * The arguments are `budgetGate.mjs`'s for the same name, so the two share one
+ * cached artefact instead of overwriting each other's.
  */
-const FIXTURE = join(REPO_ROOT, 'packages', 'testing', 'fixtures', 'generated', 'perf-baseline.pdf');
+function buildFixture() {
+  return buildLargeFixture({
+    root: REPO_ROOT,
+    targetBytes: 64 * 1024,
+    pages: 1,
+    name: 'perf-baseline.pdf',
+  }).path;
+}
 
 /**
  * The canvas size {@link FIXTURE} must produce, in device pixels.
@@ -212,6 +238,7 @@ function openControlName() {
  *
  * @param {string} binary
  * @param {string} name the accessible name of the Open control
+ * @param {string} fixture absolute path to the document to render
  * @returns {{
  *   dispatched: boolean,
  *   settledBy: 'drawn' | 'failed' | 'bound',
@@ -224,7 +251,7 @@ function openControlName() {
  *   elapsedMs: number,
  * }}
  */
-function readback(binary, name) {
+function readback(binary, name, fixture) {
   const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
   const XVFB = ['/usr/bin/xvfb-run', '/bin/xvfb-run', '/usr/local/bin/xvfb-run'];
   let wrapper;
@@ -240,7 +267,7 @@ function readback(binary, name) {
     }
   }
 
-  const args = [HARNESS, FIXTURE, name];
+  const args = [HARNESS, fixture, name];
   const [command, spawnArgs] =
     wrapper === undefined ? [binary, args] : [wrapper, ['-a', binary, ...args]];
 
@@ -285,12 +312,18 @@ try {
   // ---------------------------------------------------------------------------
   const name = openControlName();
 
+  // BUILT BEFORE THE CASE THAT CHECKS IT, so the case is about what the
+  // generator produced rather than about whether somebody had run the
+  // performance gate on this machine. That distinction is the whole of what
+  // reddened both matrix legs at 46115e9.
+  const fixture = buildFixture();
+
   check(
     'the fixture this proof renders exists and is the one it describes',
-    existsSync(FIXTURE) && statSync(FIXTURE).size > 0,
-    `${FIXTURE} is missing or empty. The whole measurement is about the pixels this document ` +
-      `produces, so a proof that could not find it must say so rather than report a renderer ` +
-      `that drew nothing.`,
+    existsSync(fixture) && statSync(fixture).size > 0,
+    `${fixture} is missing or empty after the generator ran. The whole measurement is about the ` +
+      `pixels this document produces, so a proof that could not find it must say so rather than ` +
+      `report a renderer that drew nothing.`,
   );
 
   check(
@@ -335,7 +368,7 @@ try {
       6,
     );
 
-    const seen = readback(ELECTRON_BINARY, name);
+    const seen = readback(ELECTRON_BINARY, name, fixture);
     const floor = Math.floor(seen.pixels * PAINTED_FLOOR_FRACTION);
 
     check(
