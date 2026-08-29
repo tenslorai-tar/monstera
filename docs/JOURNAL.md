@@ -644,6 +644,162 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `764522b..8c4cdc5` — the kernel function has seven cases, the schema has four, and the handler that joins them has none
+
+Range: **3 commits, 16 files.**
+
+### HHHHH-1 — `readRangeHandler` is not exercised by anything
+
+`documentRanges.test.ts` drives `readDocumentRange` through seven cases. The
+contract's own tests drive the params schema through four. Between them sits
+`readRangeHandler` in `contractHandlers.ts`, and `grep -c readRange
+apps/desktop/src/contractHandlers.test.ts` returns **0**.
+
+It is not a pass-through. It makes three decisions, and all three are stated as
+prose in its comment with nothing asserting any of them:
+
+- `DocumentNotOpenError` becomes the declared code `document-not-open`, and
+  everything else is **rethrown** to become `internal`. Nothing checks that a
+  `RangeError` — the out-of-document read — does not quietly acquire a declared
+  code, which is the direction that leaks a defect to the renderer as an outcome.
+- `document-busy` is **absent**, on the argument that the read never enters the
+  lane.
+- `document-poisoned` is **absent**, on the argument that a poisoned document
+  must stay readable — invariant 18's recovery depends on main still holding the
+  image, and a user told they cannot edit a document must still be able to look
+  at it. That is a real claim about behaviour and it is asserted nowhere.
+
+**This is [proven-in-the-wrong-file]'s shape and the second instance in three
+ranges** — FFFFF-2 was the same thing one layer out, where `checkLocal.mjs`'s
+call site had no case while `npmScriptSteps.mjs` had a thorough one. The tell is
+identical both times: a **helper landed with a good test in the same commit as
+its caller**, and the thoroughness of the helper's file is what makes the
+caller's absence invisible. Nobody reviewing the diff thinks *this is untested*;
+they have just read a screen of cases.
+
+Fixed in the commit after this one, which is where the two absent codes stop
+being arguments and become assertions.
+
+### 1. Root cause or workaround?
+
+Two fixes in the range and both are root-cause.
+
+- **GGGGG-1** — the renderer bundle joins `refuseStaleBuild`. Not a
+  special-case: the guard now accepts a **directory** as a source and reads the
+  newest file beneath it, because the bundle's inputs are a tree and naming one
+  file would be a guard that passes whenever the edit landed in a sibling.
+- **The `open` outcome carries `byteLength`.** The workaround available was a
+  bootstrap where the renderer asks with a version it knows to be wrong and reads
+  the length off the `stale` answer. Rejected as a round trip and a lie told to
+  make one field travel.
+
+### 2. Verified against the easy shape only?
+
+**No, and the fixture that says so is the third L11 case.** The bound could be
+written as *"size ≤ 16 MiB"* or *"end ≤ 16 MiB"*, which read almost identically
+and **agree for every range starting at zero** — which is what the obvious two
+cases use. The third asks for 64 KiB starting 100 MB in, and it is the only one
+that separates them; mutating the rule to the offset form reddens it alone.
+
+The counting-bytes fixture is the same discipline one level down: a document of
+zeroes makes every slice of a given length equal to every other, so a service
+returning the wrong offset would satisfy every assertion about the right one.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+The browser shim gained a **modelled behaviour** rather than more bookkeeping: it
+now answers `stale` when a transport's version has moved. That is coverage
+arriving in a place a kernel test cannot reach — the renderer's handling of a
+moved version — and it is the shim's first behaviour that is not a lookup.
+
+`refuseStaleBuild` gained a per-call-site count anchor. That is a strengthening
+with a caveat worth stating: the anchor is a **literal**, so it fails loudly when
+a pair is removed and is the thing somebody must remember to raise when one is
+added. It is deliberately not derived, for 4c's reason — the danger here runs
+toward an artefact arriving.
+
+### 3. Would CI have caught it?
+
+**HHHHH-1: no, and the shape is the familiar one** — the missing case is missing
+everywhere, so there is no board on which its absence is visible. Every proof
+this range touches runs in CI and all of them are green; a defect in the handler
+would reach a renderer before it reached a check.
+
+GGGGG-1's own defect was, as its entry records, invisible on the board **by
+construction**, since CI always builds before the step.
+
+### 4. Non-vacuous proofs
+
+Four mutations, each reddening exactly one case:
+
+| mutation | reddens |
+|---|---|
+| `subarray` instead of an allocated copy | *COPIES, so the slice does not retain the whole canonical image* |
+| never report `stale` | *reports STALE … and serves nothing* |
+| bound `end` rather than `end - begin` | *the bound is on the SIZE, not on the offset* |
+| touch `App.tsx` without rebuilding | the freshness guard, before any case runs |
+
+The `stale` case asserts **what was not served**, not merely that the kind was
+`stale`: a service that reported the new version *and* returned the bytes would
+satisfy an assertion about the discriminant alone, and handing them over is the
+whole defect.
+
+### 4a. Instrument resolution tests
+
+`newestMtime` is the range's new instrument, and its resolution test is the
+mutation above: touching one file inside `packages/ui/src` must move the tree's
+reported time past the artefact's. It did, and the failure names both timestamps.
+
+### 4b. Searches with positive controls
+
+**The range's own correction is this item's material, and it is a search whose
+reassuring answer was a MATCH.** `grep -n refuseStaleBuild` returned the call at
+line 408 and the reading stopped there; the second call site is 160 lines
+further on, inside the provisioning branch. *Where is this called* has the same
+failure mode as *does this appear anywhere* — a hit is what you were hoping for,
+so nothing about receiving one prompts a second look. `grep -c` would have said
+two.
+
+The general form, which is new here: **a positive control protects a search whose
+reassuring answer is silence, and nothing protects a search whose reassuring
+answer is a hit.** For those the discipline is a count, not a control.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+Asked of both rosters this range touched. `refuseStaleBuild`'s pair count is a
+literal per call site — correct, because the danger is growth. The contract's
+channel list in `browserShim.test.ts` is also a literal and caught
+`document.readRange` on its first run, which is the mechanism working rather than
+an inconvenience.
+
+### 5. Executed, or asserted?
+
+**Executed:** every mutation above; that the vite config is type-checked; that
+the renderer-policy proof passes with five pairs and fails with a touched source.
+
+**Asserted, and now recorded as owed:** that a poisoned document stays readable,
+and that a `RangeError` becomes `internal` rather than a declared code. Both are
+HHHHH-1.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before. ADR-0031 and the §2 amendment landed in the previous range, in their own
+commits, with no code reading a byte range at the time. This range is the feature
+built into the amended seam.
+
+### 7. Do the documents still match the code?
+
+`channels.ts`'s own header said L11's gate *"is not yet mechanically checked"* and
+was rewritten in the same commit that checked it — the stale half of a compound
+claim, caught because the sentence naming the obligation is three lines above the
+sentence that discharges it.
+
+The previous audit entry took an **appended correction** rather than an edit,
+because a journal entry records what was believed. `docs/audit-watermark.json`'s
+`audited` text took the same treatment for the same reason.
+
+---
+
 ## 2026-08-29 — Stage audit: `7669d69..764522b` — the freshness guard covers one pair, and the artefact the new cases read is not it
 
 Range: **2 commits, 16 files.** The gate fired on the commit after it, which is
