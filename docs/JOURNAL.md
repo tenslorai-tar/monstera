@@ -644,6 +644,189 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `8c4cdc5..ea500d4` — one file guards a leak on one path and leaves the other open
+
+Range: **8 commits, 21 files.**
+
+### IIIII-1 — `openDocumentView` closes itself on a failed open and not on a moved version
+
+`documentView.ts` is careful about exactly one hazard and states it:
+
+```
+// The task owns a worker whether or not it produced a document, so a failed
+// open that did not destroy it leaks one per attempt — and a leaked worker is
+// invisible until the machine is out of them.
+await close();
+throw cause;
+```
+
+**The version-moved path has the same hazard and no such line.** `onVersionMoved`
+is passed straight through into the transport and appears nowhere else in the
+module — measured, `grep -n onVersionMoved documentView.ts` returns the doc
+comment and the parameter type and nothing else. So when a command bumps the
+version underneath a view: the transport aborts itself, the callback fires, and
+the **parser, its worker and the loading task stay alive**. A caller that reopens
+without closing leaks one worker per bump, which is the same failure the comment
+above calls invisible until the machine is out of them.
+
+`DocumentView.close`'s own doc makes it worse rather than better — *"Idempotent,
+because a view is closed both by the document closing and by a version moving
+underneath it, and those can race"* — which describes a contract the module does
+not implement. It relies on the caller, and says so nowhere.
+
+**This is Rule 0's *close one handler and leave its siblings*, inside a single
+function**, and the two paths are eleven lines apart. What made it invisible is
+that the guarded one is the path with a `try`/`catch` around it: the eye goes to
+the error path and treats the other as the happy one — but a moved version is not
+a happy path, it is a second failure that happens to be reported through a
+callback rather than a throw.
+
+Fixed in the commit after this one, by wrapping the callback so the view closes
+itself before notifying. The view is unusable either way — its transport has
+already aborted and no further bytes can arrive — so there is nothing to preserve
+by staying open.
+
+### 1. Root cause or workaround?
+
+Five fixes, all root-cause.
+
+- **HHHHH-1** — the handler's three decisions became assertions rather than
+  prose. Writing them found a real asymmetry: the handler throws
+  **synchronously** where every sibling rejects, because `readDocumentRange` is
+  synchronous and `async` on a body with no `await` is a lint error here. Safe —
+  `wrapHandler` awaits inside its `try` — and now asserted in the form the
+  behaviour actually has rather than the one that would read consistently.
+- **The NOTICE generator, twice.** Platform variants are selected for the shipped
+  target rather than demanded from every platform; and a variant absent *here* is
+  no longer evidence of an uninstalled tree, because the generator runs on two
+  platforms and only one of them installs any given variant.
+- **C3's own subject.** `licenceText` asked the filesystem whether `LICENSE`
+  existed. The repair removes the divergence rather than detecting it a second
+  time: matching is against the directory listing with both sides lower-cased, so
+  there is one answer everywhere. The C3 step keeps its teeth for a package with
+  no licence file at all.
+- **The freshness pair** stopped counting test files and directory mtimes.
+
+No override, no escape hatch, no loosened check.
+
+### 2. Verified against the easy shape only?
+
+**No, and one case exists only because the easy shape was measured first.** The
+`script-src` question was originally settled against a hand-written script tag;
+the shipped Vite tag carries `crossorigin`, which is exactly the sort of attribute
+that could change a `file://` answer, so the proof case reads the real artefact.
+
+The NOTICE work has the same shape. The easy platform is the one you are on: the
+generator was written on Windows, where the filesystem answers case-insensitively
+and seven packages' terms are found by luck. The hard shape is ext4, and it is a
+CI step rather than a machine anybody here has.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**One case changed what it covers and is kept with its attribution corrected.**
+`i18n.test.ts`'s catalogue-aliasing case was written to cover a spread in
+`activateCatalogue`; mutation showed it passes with the spread removed, because
+`i18n.load` copies internally. It now says so, and says what it does guard — the
+property, currently supplied by Lingui — which is the treatment `browserShim`'s
+outbound-clone case already carries.
+
+### 3. Would CI have caught it?
+
+**IIIII-1: no**, and nothing could — a leaked worker has no assertion pointed at
+it and no board turns red for one. It was found by reading the file for this
+audit, which is what this item exists for.
+
+**The two NOTICE defects: yes, and one of them did.** The first reddened CI at
+`75662ab` and `f6a0524` on the `build` job's C3 step, which runs on both matrix
+legs. The second — lower-case licence names — would have reddened the ubuntu leg
+the moment Lingui landed, and was found by installing it into a scratch tree
+first rather than by pushing.
+
+### 4. Non-vacuous proofs
+
+Every fix mutated, each reddening its own case alone:
+
+| mutation | reddens |
+|---|---|
+| size the canvas after rendering | *sizes the canvas BEFORE drawing* |
+| `Math.ceil` → `+1` | separated only by the whole-number control |
+| drop the `missing` listener | *THROWS on a missing key* |
+| restore the directory mtime seed | the freshness guard, on a **created** file |
+| disable the test-file skip | the freshness guard, on an **edited** file |
+| always-true platform predicate | reproduces the original NOTICE failure |
+
+**One mutation did NOT bite and is recorded rather than hidden**: removing the
+spread in `activateCatalogue` changes nothing, because Lingui copies. That case
+is kept with its attribution corrected — see 2a.
+
+### 4a. Instrument resolution tests
+
+`newestMtime` is the range's new instrument and its resolution test is the pair
+above: it must separate *a file created in the tree* from *a file edited in it*,
+because those are different routes to the same false alarm and only one of them
+is what a directory's own mtime records.
+
+The Lingui bundle probe carries its own: the string it reports absent from the
+artefact is **present two directories away**, in `@lingui/core/package.json` and
+its macro entry, and absent from `dist/index.mjs`. Without that, "zero
+occurrences of babel" is also what a scan of the wrong file produces.
+
+### 4b. Searches with positive controls
+
+**This range contains the second and third instances of a hit being the
+reassuring answer, an hour apart, the second after the first was written down.**
+`grep -n refuseStaleBuild` returned one call site and there were two; `grep` by
+path returned the NOTICE check on the Windows job and it also runs on both matrix
+legs. Both times the reading stopped at the first match, and the second time it
+stopped **after** the lesson had been recorded.
+
+That is this project's standing evidence, again, that writing a rule down is not
+the mechanism. The mechanism here is a **count** — `grep -c` — because a positive
+control is satisfied by the first result and cannot help.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`refuseStaleBuild` gained a per-call-site literal, deliberately not
+`pairs.length`, because the danger is an artefact arriving. `LICENCE_FILES` is
+hand-kept and the danger there runs the same way — a package shipping a name
+nobody listed — and its growth this range (`LICENSE-MIT.txt` and siblings) came
+from a package failing loudly rather than from anybody auditing the list, which
+is the behaviour a hand-kept list is supposed to have.
+
+### 5. Executed, or asserted?
+
+**Executed:** that Lingui's `TransProps` and `MessageDescriptor` declare `id`
+required with `message` optional, read from the shipped declarations of 6.6.0;
+that a Vite bundle importing the resolver's entry carries no babel or macro code;
+that `jsesc` ships `LICENSE-MIT.txt`; that seven production packages ship
+lower-case `license`; that NOTICE is byte-identical with the win32 variant moved
+aside; that the production package count goes 39 → 114 while the renderer
+artefact does not change at all.
+
+**Asserted:** nothing load-bearing.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither, and the ruling that established it is worth recording. The i18n question
+looked like a contradiction between ADR-0005 and ADR-0029 and is not: ADR-0029
+Decision 6 says in its own words that it is *"narrower than B9's lint rule and
+does not replace it … two mechanisms for two populations"*, and ADR-0005's
+rejection of i18next is a **scale** argument about *"thousands of menu items,
+tooltips, tool names and error strings"* — a population registry metadata is not
+in. **An amendment written to reconcile them would have relitigated a settled
+choice on a false premise**, which is worse than one not taken.
+
+### 7. Do the documents still match the code?
+
+`DocumentView.close`'s doc describes a contract the module does not implement —
+that is IIIII-1, and it is a document defect as much as a code one.
+
+`generateNotice.mjs`'s header gained the definition it was missing: `npm
+--omit=dev` is a definition of *installed*, not of *shipped*, with the packaging
+output named as the authority and its arrival dated as the trigger.
+
+---
+
 ## 2026-08-29 — Stage audit: `764522b..8c4cdc5` — the kernel function has seven cases, the schema has four, and the handler that joins them has none
 
 Range: **3 commits, 16 files.**
