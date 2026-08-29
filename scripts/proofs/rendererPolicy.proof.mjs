@@ -45,7 +45,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -71,6 +71,29 @@ const RUNTIME_PRESENT = existsSync(ELECTRON_BINARY) && existsSync(HARNESS);
 
 /** @type {string[]} */
 const failures = [];
+
+/**
+ * The newest mtime at `path`, walking it if it is a directory.
+ *
+ * `dist` and `node_modules` are skipped: the first is the artefact side of the
+ * comparison and would make every tree newer than its own output, and the
+ * second is not source.
+ *
+ * @param {string} path
+ * @returns {number}
+ */
+function newestMtime(path) {
+  const entry = statSync(path);
+  if (!entry.isDirectory()) return entry.mtimeMs;
+
+  let newest = entry.mtimeMs;
+  for (const name of readdirSync(path)) {
+    if (name === 'node_modules' || name === 'dist' || name === '.git') continue;
+    const at = newestMtime(join(path, name));
+    if (at > newest) newest = at;
+  }
+  return newest;
+}
 
 /**
  * The cases that need a runtime, named ONCE.
@@ -167,19 +190,48 @@ function check(label, condition, detail) {
  * and the message says which pair, because "could not compare" must not read as
  * "compared and agreed".
  *
- * @param {[string, string][]} pairs `[source, artefact]`, repo-relative
+ * ## A source may be a DIRECTORY, and the renderer bundle is why
+ *
+ * `preload.cjs` has one source file. The Vite bundle has a tree — every module
+ * reachable from `main.tsx` — so its freshness is decided by the newest file
+ * under it, not by one path somebody picked. Naming a single file there would be
+ * a guard that passes whenever the edit happened to land in a sibling.
+ *
+ * ## `expected` is an anchor, and it is per CALL SITE rather than per function
+ *
+ * There are two call sites, and that is deliberate: the string half of this
+ * proof runs on every machine and reads `windowPolicy.js` alone, so demanding a
+ * preload there would fail every runner that installs nothing. A single count
+ * inside this function would therefore be wrong for one of them.
+ *
+ * The literal exists because the list is **hand-kept and the danger runs toward
+ * growth** (rule 4c): the failure is an artefact arriving with nobody adding a
+ * row, which is finding GGGGG-1 — two cases began reading the Vite bundle and
+ * the list did not follow. A count derived from `pairs.length` agrees with any
+ * list, including the one that is missing an entry.
+ *
+ * @param {[string, string][]} pairs `[source, artefact]`, repo-relative. A
+ *   source that is a directory is read as the newest file beneath it.
+ * @param {number} expected How many pairs this call site declares.
  */
-function refuseStaleBuild(pairs) {
+function refuseStaleBuild(pairs, expected) {
+  if (pairs.length !== expected) {
+    throw new Error(
+      `refuseStaleBuild received ${String(pairs.length)} pair(s) where the call site declares ` +
+        `${String(expected)}. Raise the literal in the same edit that adds a pair; if you are ` +
+        `removing one, say why in the commit.`,
+    );
+  }
   for (const [source, artefact] of pairs) {
     const sourcePath = join(REPO_ROOT, source);
     const artefactPath = join(REPO_ROOT, artefact);
     if (!existsSync(artefactPath)) {
       throw new Error(
         `${artefact} does not exist. Run \`npm run build\` — which is \`typecheck\` plus ` +
-          `\`build:preload\`, and not \`typecheck\` alone.`,
+          `\`build:preload\` plus \`build:renderer\`, and not \`typecheck\` alone.`,
       );
     }
-    const sourceAt = statSync(sourcePath).mtimeMs;
+    const sourceAt = newestMtime(sourcePath);
     const artefactAt = statSync(artefactPath).mtimeMs;
     if (sourceAt > artefactAt) {
       throw new Error(
@@ -187,12 +239,13 @@ function refuseStaleBuild(pairs) {
           `and every case would pass about the previous version of the shell.\n  ` +
           `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
           `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
-          `Run \`npm run build\`. If you ran \`npm run typecheck\`, that does not produce the ` +
-          `preload bundle — which is the pair this check exists for.\n` +
+          `Run \`npm run build\`. \`npm run typecheck\` produces neither the preload bundle nor ` +
+          `the renderer bundle, which are two of the five pairs this check exists for.\n` +
           `And if \`build\` reports nothing to do for a \`tsc\` pair, the source's timestamp ` +
-          `moved without its CONTENT changing, so the incremental build correctly considers the ` +
-          `output current while this check does not: \`npx tsc --build --force\`. The bundled ` +
-          `preload has no such state — Vite rebuilds it every time.`,
+          `moved without its CONTENT changing — a \`git stash pop\` does exactly that — so the ` +
+          `incremental build correctly considers the output current while this check does not: ` +
+          `\`npx tsc --build --force\`. The two bundled pairs have no such state; esbuild and ` +
+          `Vite rebuild them every time.`,
       );
     }
   }
@@ -405,7 +458,10 @@ function readback(binary) {
 try {
   // The declaration is read from the build in every world, so its freshness is
   // checked in every world.
-  refuseStaleBuild([['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js']]);
+  // The string half reads exactly one artefact, and this call runs on every
+  // machine — including the ones that install no runtime — so it must not
+  // demand anything the runtime branch produces.
+  refuseStaleBuild([['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js']], 1);
 
   const { policy: declaredPolicy, background: declaredBackground } = await declared();
 
@@ -509,12 +565,28 @@ try {
   } else {
     // Everything the harness actually executes. `preload.cjs` is the pair that
     // motivated this: it is the only artefact `typecheck` does not produce.
-    refuseStaleBuild([
-      ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
-      ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
-      ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js'],
-      ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js'],
-    ]);
+    refuseStaleBuild(
+      [
+        ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
+        ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
+        ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js'],
+        ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js'],
+        // THE FIFTH, and finding GGGGG-1 (2026-08-29). Two cases here read the
+        // Vite bundle — that the React shell mounted, and that its stylesheet
+        // applied — and this list did not follow them. Editing `App.tsx`,
+        // running `typecheck` rather than `build`, and running this proof
+        // reported both about whatever was built last time.
+        //
+        // Against `index.html` rather than the chunk: the chunk's filename
+        // carries a content hash and so is not a fixed path, while the HTML
+        // that names the hash is rewritten by the same build. Against the
+        // SOURCE TREE rather than one file, because the bundle's inputs are
+        // every module reachable from `main.tsx`, and naming one of them would
+        // be a guard that passes whenever the edit landed in a sibling.
+        ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
+      ],
+      5,
+    );
 
     const seen = readback(binary);
 

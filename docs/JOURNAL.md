@@ -682,6 +682,34 @@ the commit that follows this one. The pair is `packages/ui/**` against
 content-hashed and therefore not a fixed path, while the HTML that names the hash
 is.
 
+> **Correction, 2026-08-29, written while fixing it — the finding stands and its
+> stated basis was wrong.** `refuseStaleBuild` is **not** called with one pair.
+> It is called **twice**: once before the runtime branch with the single
+> `windowPolicy` pair, and once inside it with **four** — preload, window,
+> `rendererHarness`, `rendererHarnessMain`. So the `rendererHarness` row this
+> entry proposed adding was already there, and the quoted single-pair call is
+> the first call site rather than the whole picture.
+>
+> What is true, and is the whole of the defect: **the Vite bundle is in neither
+> list.** One artefact was uncovered, not three.
+>
+> How the wrong basis was produced is worth more than the correction. `grep`
+> found the call at line 408 and the reading stopped there — a search that
+> returned a match, which is the reassuring answer for *"where is this called"*
+> in exactly the way "found nothing" is for a scan. The second call site sits
+> 160 lines further on, inside the `else` of the provisioning branch, so it is
+> in the half of the file a reader on a machine without a runtime never reaches.
+> **The instrument was `grep -n` with no count taken**; `grep -c` would have said
+> two.
+>
+> The fix in the following commit therefore differs from what this entry
+> proposed: the count anchor is **per call site** rather than one constant in
+> the function, because the two lists are legitimately different — the string
+> half runs on every machine and must not demand artefacts only a provisioned
+> one produces. A single expected count would have made this proof fail on every
+> runner that installs nothing, which is a check that fails for a reason it does
+> not claim.
+
 ### 1. Root cause or workaround?
 
 Nothing in the range is a fix, which is worth saying plainly rather than
