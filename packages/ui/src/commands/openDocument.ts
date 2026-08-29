@@ -43,6 +43,11 @@ export function openDocumentCommand(deps: {
   return {
     id: 'document.open',
     title: OPEN_DOCUMENT_TITLE,
+    // The chord is a property of the command, not an entry in a keymap — the
+    // shortcut map is a projection of this registry, so declaring it here is the
+    // whole of registering it. `Ctrl+O` because that is what every application
+    // this one replaces uses for the same thing.
+    shortcut: 'Ctrl+O',
     placements: [{ surface: 'start-screen', order: 0 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.open']({});

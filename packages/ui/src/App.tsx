@@ -4,8 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 
 import { openDocumentCommand } from './commands/openDocument.js';
 import { type DocumentView, openDocumentView } from './documentView.js';
-import { CommandRegistry } from './registries/commands.js';
+import {
+  CommandRegistry,
+  type CommandContext,
+} from './registries/commands.js';
 import { renderPage } from './renderPage.js';
+import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 
 /**
@@ -60,6 +64,8 @@ export function App({ client }: AppProps): ReactElement {
     [open],
   );
 
+  useShortcuts(registry, context);
+
   return (
     <main className="m-document-surface">
       {open === undefined ? (
@@ -69,6 +75,45 @@ export function App({ client }: AppProps): ReactElement {
       )}
     </main>
   );
+}
+
+/**
+ * Dispatches a registered chord from a real key press.
+ *
+ * ## The map is built once per registry, not once per key
+ *
+ * `shortcutsFor` walks every command and throws on a collision, so building it
+ * inside the handler would turn a startup error into one that fires on the first
+ * keystroke — and would rebuild it on every press for a set that cannot change
+ * between them.
+ *
+ * ## `preventDefault` only when the chord was CLAIMED
+ *
+ * `dispatchChord` answers `unclaimed` for a chord no available command declares,
+ * and the browser must keep that one: an application that swallowed every
+ * shortcut to run nothing is the bug report nobody can reproduce. So the answer
+ * decides, which is why `run` is not awaited — the caller needs the verdict
+ * before the event finishes, and a promise arrives too late for
+ * `preventDefault`.
+ *
+ * Bound to the document rather than to the surface: a shortcut is an application
+ * affordance, and one that only worked while a particular element had focus
+ * would be a shortcut users report as intermittent.
+ */
+function useShortcuts(registry: CommandRegistry, context: CommandContext): void {
+  const map = useMemo(() => shortcutsFor(registry), [registry]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (dispatchChord(registry, map, event, context).kind === 'ran') {
+        event.preventDefault();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return (): void => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [context, map, registry]);
 }
 
 /**
