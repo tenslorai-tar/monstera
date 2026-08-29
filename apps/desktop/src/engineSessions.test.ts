@@ -9,6 +9,7 @@ import {
   CapabilityRegistry,
   DocumentNotOpenError,
   DocumentService,
+  EngineOpenFailed,
   type HostTermination,
   type MupdfSession,
 } from '@monstera/kernel';
@@ -120,11 +121,41 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
 
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
     expect(engine.poisoned(first)).toBeUndefined();
 
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
     expect(engine.poisoned(first)).toBe(2);
+  });
+
+  it('an unreadable document reaches the bound in ONE call, where a host death needs two', () => {
+    const engine = new EngineSessions();
+    engine.hold(first, someSessions('a'));
+    engine.hold(second, someSessions('b'));
+
+    // The pair is the point. Both lines are one call with one argument
+    // different, so the reason is the only thing that can explain the two
+    // outcomes — and a version that ignored the reason would make them agree.
+    engine.recordFailure([first], 'document-unreadable');
+    engine.recordFailure([second], 'host-death');
+
+    expect(engine.poisoned(first)).toBe(2);
+    expect(engine.poisoned(second)).toBeUndefined();
+  });
+
+  it('never moves a count DOWNWARD, so this is not a route back from poisoned', () => {
+    const engine = new EngineSessions();
+    engine.hold(first, someSessions('a'));
+    engine.recordFailure([first], 'host-death');
+    engine.recordFailure([first], 'host-death');
+    engine.recordFailure([first], 'host-death');
+    expect(engine.poisoned(first)).toBe(3);
+
+    // A bare assignment to the bound would read 2 here, which still says
+    // "poisoned" — so the assertion is the NUMBER rather than the state, for
+    // the same reason as everything else on this page.
+    engine.recordFailure([first], 'document-unreadable');
+    expect(engine.poisoned(first)).toBe(3);
   });
 
   it('a death takes the sessions with it, because the process holding them is gone', () => {
@@ -132,7 +163,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     engine.hold(first, someSessions('a'));
     expect(engine.sessions(first)).toStrictEqual(someSessions('a'));
 
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
 
     // Not merely absent from the poisoned document — absent after ONE death,
     // which is the case a rebuild recovers from. A handle surviving here is one
@@ -151,9 +182,9 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
 
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
     engine.recordSuccess(first);
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
 
     expect(engine.poisoned(first)).toBeUndefined();
   });
@@ -163,8 +194,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     engine.hold(first, someSessions('a'));
     engine.hold(second, someSessions('b'));
 
-    engine.recordFailure([first, second]);
-    engine.recordFailure([first, second]);
+    engine.recordFailure([first, second], 'host-death');
+    engine.recordFailure([first, second], 'host-death');
 
     expect(engine.poisoned(first)).toBe(2);
     expect(engine.poisoned(second)).toBe(2);
@@ -183,8 +214,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     engine.hold(first, someSessions('guilty'));
     engine.hold(second, someSessions('innocent'));
 
-    engine.recordFailure([first, second]);
-    engine.recordFailure([first, second]);
+    engine.recordFailure([first, second], 'host-death');
+    engine.recordFailure([first, second], 'host-death');
 
     expect(engine.poisoned(second)).toBe(2);
   });
@@ -192,8 +223,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
   it('RECOVERY needs no mechanism: a fresh DocId has no entry', async () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first]);
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
+    engine.recordFailure([first], 'host-death');
     expect(engine.poisoned(first)).toBe(2);
 
     // Close: the entry's lifetime is the record's. Driven directly here; that
@@ -213,8 +244,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     engine.hold(first, someSessions('a'));
     await engine.releaseOnClose(first);
 
-    engine.recordFailure([first]);
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
+    engine.recordFailure([first], 'host-death');
 
     expect(engine.poisoned(first)).toBeUndefined();
     expect(engine.held).toBe(0);
@@ -225,8 +256,8 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     // first and refuses — and a supervisor whose two answers disagree.
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first]);
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
+    engine.recordFailure([first], 'host-death');
 
     expect(() => {
       engine.hold(first, someSessions('b'));
@@ -236,7 +267,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
   it('holding again replaces the sessions and leaves the count alone', () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
 
     engine.hold(first, someSessions('b'));
 
@@ -245,7 +276,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     // CONTROL for the case above: a `hold` that reset the count would make the
     // reset-on-success case pass for the wrong reason, since a rebuild holds
     // sessions again on the way back.
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
     expect(engine.poisoned(first)).toBe(2);
   });
 });
@@ -467,7 +498,7 @@ describe('a host death is reported, and every document is put back through its o
     const engine = new EngineSessions();
     const { service, first, second } = await twoOpenDocuments(engine);
     // One prior death for `first` only, so this death is its second.
-    engine.recordFailure([first]);
+    engine.recordFailure([first], 'host-death');
     engine.hold(first, someSessions('a'));
     const surface = surfaces(service);
 
@@ -641,6 +672,12 @@ describe('onDocumentOpened', () => {
     service: DocumentService,
     attempts: number,
     over: Partial<DocumentOpenSurfaces> = {},
+    // The failure's CLASS is a parameter because it is the input the loop
+    // branches on. A helper that could only produce one kind of rejection would
+    // make the deterministic path untestable through the same door the
+    // transient one uses, and comparing two cases built by two helpers proves
+    // less than comparing two cases that differ in exactly this.
+    rejection: () => Error = () => new Error('no host'),
   ): DocumentOpenSurfaces & { readonly created: DocId[]; readonly reported: ShellFailure[] } {
     const created: DocId[] = [];
     const reported: ShellFailure[] = [];
@@ -650,9 +687,10 @@ describe('onDocumentOpened', () => {
       documents: service,
       failures: (failure) => reported.push(failure),
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      documentUnreadable: (error) => error instanceof EngineOpenFailed,
       create: (docId) => {
         created.push(docId);
-        if (created.length <= attempts) return Promise.reject(new Error('no host'));
+        if (created.length <= attempts) return Promise.reject(rejection());
         return Promise.resolve(someSessions(`created-${docId.slice(0, 4)}`));
       },
       ...over,
@@ -738,19 +776,72 @@ describe('onDocumentOpened', () => {
     expect(s.reported[0]?.event).toBe('engine-host-gone');
   });
 
+  it('spends ONE attempt on a document the host says will never parse', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(
+      service,
+      Number.POSITIVE_INFINITY,
+      {},
+      () => new EngineOpenFailed('cannot-parse'),
+    );
+
+    await onDocumentOpened(engine, docId, s);
+
+    // THE ASSERTION IS THE ATTEMPT COUNT, and it has to be: the case directly
+    // above rejects for ever too, and ends with the document poisoned at a
+    // count of 2 and a report in hand. Every end state here is identical to
+    // that one. What the guard decides is whether a SECOND host is built to be
+    // told the same thing, so `1` against that case's `2` is the whole of it —
+    // delete the branch and this line reads 2.
+    expect(s.created).toHaveLength(1);
+    expect(engine.poisoned(docId)).toBe(2);
+    expect(engine.sessioned).toBe(0);
+  });
+
+  it('blames the document rather than the host, so nothing reads as an unwell engine', async () => {
+    const engine = new EngineSessions();
+    const { service, docId } = await oneOpenDocument(engine);
+    const s = openSurfaces(
+      service,
+      Number.POSITIVE_INFINITY,
+      {},
+      () => new EngineOpenFailed('cannot-parse'),
+    );
+
+    await onDocumentOpened(engine, docId, s);
+
+    // Separate from the count above because they fail independently: a version
+    // that stopped after one attempt and still said `engine-host-gone` would
+    // pass that case and be wrong in the only field anyone reads when asking
+    // whether this machine's engine is broken.
+    expect(s.reported).toHaveLength(1);
+    expect(s.reported[0]?.event).toBe('document-unreadable');
+    expect(s.reported[0]?.detail).toContain('cannot-parse');
+  });
+
   it('leaves the document sessioned OR poisoned, never neither', async () => {
     // The property the correction is for, asserted directly on both branches so
     // that a future change which makes one of them fall through is caught here
     // rather than by a `MissingSessionError` in production.
-    for (const attempts of [0, 1, Number.POSITIVE_INFINITY]) {
-      const engine = new EngineSessions();
-      const { service, docId } = await oneOpenDocument(engine);
+    const rejections: (() => Error)[] = [
+      () => new Error('no host'),
+      // The deterministic exit returns early from inside the loop, which is the
+      // shape that historically falls through to neither — so it is asserted
+      // here rather than only where its attempt count is.
+      () => new EngineOpenFailed('cannot-parse'),
+    ];
+    for (const rejection of rejections) {
+      for (const attempts of [0, 1, Number.POSITIVE_INFINITY]) {
+        const engine = new EngineSessions();
+        const { service, docId } = await oneOpenDocument(engine);
 
-      await onDocumentOpened(engine, docId, openSurfaces(service, attempts));
+        await onDocumentOpened(engine, docId, openSurfaces(service, attempts, {}, rejection));
 
-      const sessioned = engine.sessioned === 1;
-      const poisoned = engine.poisoned(docId) !== undefined;
-      expect(sessioned !== poisoned).toBe(true);
+        const sessioned = engine.sessioned === 1;
+        const poisoned = engine.poisoned(docId) !== undefined;
+        expect(sessioned !== poisoned).toBe(true);
+      }
     }
   });
 

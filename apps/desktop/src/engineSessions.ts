@@ -219,6 +219,17 @@ export interface DocumentOpenSurfaces {
   readonly documents: HostDeathSurfaces['documents'];
   readonly failures: HostDeathSurfaces['failures'];
   readonly closedMeanwhile: HostDeathSurfaces['closedMeanwhile'];
+  /**
+   * Whether a lane entry failed because the DOCUMENT will never parse, as
+   * distinct from the host being unwell.
+   *
+   * Injected for the same reason `closedMeanwhile` is, and the reason is worth
+   * restating because it is the whole of invariant 20: `EngineOpenFailed` is a
+   * class, `instanceof` needs it at run time, and `@monstera/kernel` exports
+   * only `.` — so naming it here would pull the barrel and the native MuPDF
+   * binding into `main`. The composition root already imports the kernel.
+   */
+  readonly documentUnreadable: (error: unknown) => boolean;
   /** Creates one document's sessions. Runs **inside** that document's lane. */
   readonly create: (docId: DocId) => Promise<DocumentSessions>;
 }
@@ -291,7 +302,32 @@ export async function onDocumentOpened(
         return;
       } catch (error) {
         if (surfaces.closedMeanwhile(error)) return;
-        sessions.recordFailure([docId]);
+
+        // THE DETERMINISTIC EXIT, and it is the one this loop's bound cannot
+        // decide. Everything below treats a failure as possibly transient and
+        // spends an attempt finding out; a host that answered and said the
+        // bytes will never parse has already answered the question, so a second
+        // attempt buys a host build and the identical refusal.
+        //
+        // The two predicates are mutually exclusive — different classes — so
+        // their ORDER is not load-bearing and no case asserts it. What is
+        // load-bearing is that this sits above `recordFailure`, because reaching
+        // that line at all is what turns a document's defect into evidence about
+        // the host.
+        if (surfaces.documentUnreadable(error)) {
+          sessions.recordFailure([docId], 'document-unreadable');
+          surfaces.failures({
+            event: 'document-unreadable',
+            detail:
+              `the engine host refused document ${docId.slice(0, 8)}… as unparseable, so it is ` +
+              `poisoned without a second attempt: ${String(error)}. The host is healthy and is ` +
+              `not rebuilt; commands against this document answer document-poisoned, and ` +
+              `close-and-reopen is what clears it.`,
+          });
+          return;
+        }
+
+        sessions.recordFailure([docId], 'host-death');
         if (sessions.poisoned(docId) !== undefined) {
           surfaces.failures({
             event: 'engine-host-gone',
@@ -390,7 +426,7 @@ export async function onEngineHostEnded(
   // Snapshotted BEFORE the count moves, because `recordFailure` is what decides
   // which of these are poisoned and the set itself must not change under it.
   const affected = sessions.documentIds();
-  sessions.recordFailure(affected);
+  sessions.recordFailure(affected, 'host-death');
 
   // A deliberate close is not a rebuild. Nothing is coming back, and entering
   // lanes to await a host nobody is building would hang every document.
@@ -441,6 +477,17 @@ export async function onEngineHostEnded(
  * exist to pin, so they spell the counts out.
  */
 const POISON_AT = 2;
+
+/**
+ * How many attempts a failure is worth, which is a judgement about the failure
+ * rather than about the counter. See {@link EngineSessions.recordFailure}.
+ *
+ * A union rather than a boolean, because the pair are two *classifications* and
+ * not one thing and its negation — a third (a host that is up but out of
+ * memory, say) would read as a fourth state of a flag and as one more member
+ * here.
+ */
+export type SessionFailureReason = 'host-death' | 'document-unreadable';
 
 /** One open document's supervisor state. See {@link EngineSessions}. */
 interface DocumentEntry {
@@ -602,12 +649,36 @@ export class EngineSessions implements EngineSessionSource {
    * it leaves is real and is recorded in the ADR's DDDD-17 correction — a
    * document busy at two successive deaths caused by a *third* document's bytes
    * reaches the bound having caused neither.
+   *
+   * ## Why the reason is a parameter and not two methods
+   *
+   * The counter is one concern with one writer (B3), and Decision 9a's bound is
+   * a property of the counter rather than of any caller. What the reason selects
+   * is not *whether* to record but **how many attempts the failure is worth**,
+   * and that is a judgement about the failure, which only the caller holds.
+   *
+   * `'host-death'` is the transient case the bound exists for: increment, and
+   * let a second death with no success between them decide. `'document-
+   * unreadable'` is the deterministic one — the host answered and said these
+   * bytes will never parse — so it goes straight to the bound. Retrying spends a
+   * host build to be told the same thing, and counting it as evidence about the
+   * host is what `EngineOpenFailed`'s message exists to refuse.
+   *
+   * Required rather than defaulted, deliberately: a default would be a guess
+   * about a failure the caller has already classified, and the wrong one is the
+   * silent direction — a deterministic failure counted as transient looks like
+   * an ordinary retry.
    */
-  recordFailure(docIds: Iterable<DocId>): void {
+  recordFailure(docIds: Iterable<DocId>, reason: SessionFailureReason): void {
     for (const docId of docIds) {
       const entry = this.#entries.get(docId);
       if (entry === undefined) continue;
-      entry.consecutiveFailures += 1;
+      entry.consecutiveFailures =
+        reason === 'document-unreadable'
+          ? // Never downward: a document already past the bound stays where it
+            // is, so this cannot be a route back from poisoned.
+            Math.max(entry.consecutiveFailures, POISON_AT)
+          : entry.consecutiveFailures + 1;
       entry.sessions = {};
     }
   }

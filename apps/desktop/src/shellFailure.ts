@@ -86,12 +86,21 @@ import type { HostTermination } from '@monstera/kernel';
  * process we create (ADR-0022), announced by our own transport. Sharing the name
  * would say the runtime told us when it did not — and the two carry different
  * fields, so a reader could not tell which one a detail line came from.
+ *
+ * `document-unreadable` is separate from `engine-host-gone` for the same reason
+ * one step in: the host answered, and what it said was that these bytes will
+ * never parse. Reporting that as the host having gone names a healthy process as
+ * the fault, and every reading downstream — is the engine flaky, should it be
+ * rebuilt, is this machine's install broken — is then drawn from a document's
+ * own defect. `EngineOpenFailed`'s message states the same thing at the throw
+ * site; this is where it stops being a message and becomes a category.
  */
 export type ShellFailureEvent =
   | 'preload-error'
   | 'render-process-gone'
   | 'child-process-gone'
   | 'engine-host-gone'
+  | 'document-unreadable'
   | 'unresponsive';
 
 /** One lifecycle failure, flattened for a log. */

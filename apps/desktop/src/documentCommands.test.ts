@@ -208,8 +208,8 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // accepted either would separate nothing.
     const poisoned = noSessions();
     poisoned.hold(docId, { mupdf: session });
-    poisoned.recordFailure([docId]);
-    poisoned.recordFailure([docId]);
+    poisoned.recordFailure([docId], 'host-death');
+    poisoned.recordFailure([docId], 'host-death');
 
     const commands = new DocumentCommands(service, bus(), poisoned, noSaving);
 

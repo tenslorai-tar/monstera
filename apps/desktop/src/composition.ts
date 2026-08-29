@@ -9,6 +9,7 @@ import {
   type ContainmentVerdict,
   DocumentNotOpenError,
   DocumentService,
+  EngineOpenFailed,
   type HostTermination,
   type ProbeTarget,
   type RegisteredWriter,
@@ -512,7 +513,13 @@ function engineSessionOpener(
         snapshotName,
         outputDirectory: paths.output,
       });
-      if (!answer.ok) throw new Error(`engine/open answered ${answer.error.code}`);
+      // THE CLASS, NOT A MESSAGE. `onDocumentOpened` has to tell a document
+      // that will never parse from a host that is unwell, and the only thing
+      // carrying that distinction across the throw is the error's identity —
+      // a bare `Error` arrives as the transient case and spends an attempt, a
+      // host build and a false `engine-host-gone` establishing what the host
+      // already said.
+      if (!answer.ok) throw new EngineOpenFailed(answer.error.code);
       // THE AREA GOES IN WITH THE HANDLE. A token stands for both halves and
       // the registry owns the pair (ADR-0030 Decision 2), which is what lets
       // `serialise` and `close` work on a session this root opened — they read
@@ -532,6 +539,7 @@ function engineSessionOpener(
       documents,
       failures,
       closedMeanwhile: (error) => error instanceof DocumentNotOpenError,
+      documentUnreadable: (error) => error instanceof EngineOpenFailed,
       create,
     });
   };
