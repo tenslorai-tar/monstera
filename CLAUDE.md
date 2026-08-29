@@ -217,9 +217,16 @@ is wrong** — fix the boundary, not the test.
 - **Main owns the document.** The renderer holds an opaque `DocId` and a
   `DocVersion`. It never holds a filesystem path or mutable document bytes.
 - **Mutations are commands, reads are queries.** `deletePages([3,5])` is bytes
-  of intent regardless of file size. Bytes cross once per *version*, never once
-  per *operation*. Any design where payload size scales with document size per
-  operation is wrong.
+  of intent regardless of file size. Any design where payload size scales with
+  document size per operation is wrong.
+- **The renderer never receives the document's bytes — it asks for ranges.** It
+  holds the byte length and drives PDF.js through a `PDFDataRangeTransport`
+  bound to one `DocVersion`; main answers `requestDataRange` out of the
+  canonical image and **refuses a range for any other version**, because a stale
+  offset answered from new bytes builds a document out of two of them
+  (ADR-0031). Measured: 3.72% of a 209 MB file crosses to show page 1. The
+  transient copy is bounded by the largest single object requested, not by a
+  constant — a range must be answered in exactly one call.
 - **FileHandles, not paths.** A string path in a renderer-facing type is a
   compile error. The rejected alternative — a runtime path allowlist — fails
   open at every handler that forgets to call it.
