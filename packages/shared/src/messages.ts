@@ -28,19 +28,23 @@ import { type Brand, brandValue } from './brand.js';
  * The domain prefix is not decoration. Extraction produces one catalogue file
  * per domain, and a key with no domain has nowhere to be extracted to.
  *
- * ## THIS TYPE IS NOT YET ADOPTED BY THE PRIMITIVES, AND THAT IS DELIBERATE
+ * ## THE PRIMITIVES ADOPTED IT ON 2026-08-29, WHICH IS WHAT THIS SECTION ASKED
  *
- * `Button`, `IconButton`, `Input` and `Dialog` take `label`/`title` as `string`.
- * Changing them to `MessageKey` today would make every one of them render **the
- * key** — there is no resolver, because the runtime binding is the half of the
- * i18n scaffold that is held pending the Lingui decision. A control that
- * displays `dialog.rename.title` to a user is worse than one that displays
- * English.
+ * It read: *"the primitives' text props become `MessageKey` in the commit that
+ * lands a resolver"*, and until then `Button`, `IconButton`, `Input` and
+ * `Dialog` took `string` — because changing them earlier would have made every
+ * one of them render **the key**, and a control that displays
+ * `dialog.rename.title` to a user is worse than one that displays English.
  *
- * So the trigger is explicit: **the primitives' text props become `MessageKey`
- * in the commit that lands a resolver**, not before, and `docs/FEATURES.md`
- * carries the row. What exists now is the type ADR-0029's registry can already
- * demand, which is what that ADR is waiting on.
+ * The resolver landed and they changed in the same commit. `label`, `title`,
+ * `closeLabel` and `placeholder` are all `MessageKey` now, resolved by
+ * `useLingui` at the control that renders them — and a key with no catalogue
+ * entry **throws** rather than being displayed, which is the stronger form of
+ * what this paragraph was protecting.
+ *
+ * The trigger is kept rather than deleted because it is the record of why the
+ * gap existed, and because the shape recurs: a type that would render its own
+ * placeholder is a type to hold back until the thing that resolves it exists.
  */
 export type MessageKey = Brand<string, 'MessageKey'>;
 

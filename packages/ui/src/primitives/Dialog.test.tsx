@@ -1,17 +1,45 @@
 // @vitest-environment happy-dom
-import { render, screen } from '@testing-library/react';
+import { I18nProvider } from '@lingui/react';
+import { messageKey } from '@monstera/shared';
+import { render as renderBare, screen } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { activateCatalogue, i18n } from '../i18n.js';
 import { Button } from './Button.js';
 import { Dialog } from './Dialog.js';
+
+/**
+ * `closeLabel` travels to `IconButton` as a KEY and is resolved there, so this
+ * file exercises the one property that shape has: a key handed to a child is
+ * resolved once, by the control that renders it, rather than twice.
+ */
+const TITLE = messageKey('dialog.rename.title');
+const CLOSE = messageKey('action.close.label');
+const CONFIRM = messageKey('action.confirm.label');
+const OUTSIDE = messageKey('action.outside.label');
+activateCatalogue('en', {
+  [TITLE]: 'Rename document',
+  [CLOSE]: 'Close',
+  [CONFIRM]: 'Confirm',
+  [OUTSIDE]: 'Outside',
+});
+
+function Messages({ children }: { children: ReactNode }): ReactElement {
+  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+}
+
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(ui, { wrapper: Messages });
+}
 
 /** A dialog with something focusable inside it and something outside. */
 function Harness({ onOpenChange = vi.fn() }: { onOpenChange?: () => void }): React.ReactElement {
   return (
     <>
-      <Button label="Outside" />
-      <Dialog closeLabel="Close" onOpenChange={onOpenChange} open title="Rename document">
-        <Button label="Confirm" />
+      <Button label={OUTSIDE} />
+      <Dialog closeLabel={CLOSE} onOpenChange={onOpenChange} open title={TITLE}>
+        <Button label={CONFIRM} />
       </Dialog>
     </>
   );
@@ -27,8 +55,8 @@ describe('Dialog', () => {
 
   it('renders nothing when closed', () => {
     render(
-      <Dialog closeLabel="Close" onOpenChange={vi.fn()} open={false} title="Rename document">
-        <Button label="Confirm" />
+      <Dialog closeLabel={CLOSE} onOpenChange={vi.fn()} open={false} title={TITLE}>
+        <Button label={CONFIRM} />
       </Dialog>,
     );
     expect(screen.queryByRole('dialog')).toBeNull();

@@ -1,4 +1,6 @@
+import { useLingui } from '@lingui/react';
 import { Dialog as BaseDialog } from '@base-ui/react/dialog';
+import type { MessageKey } from '@monstera/shared';
 import { X } from 'lucide-react';
 import type { ReactElement, ReactNode } from 'react';
 
@@ -52,9 +54,9 @@ export interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The dialog's accessible name, rendered as its heading. */
-  title: string;
+  title: MessageKey;
   /** The accessible name of the close control — an action, e.g. "Close". */
-  closeLabel: string;
+  closeLabel: MessageKey;
   children: ReactNode;
 }
 
@@ -65,6 +67,12 @@ export function Dialog({
   closeLabel,
   children,
 }: DialogProps): ReactElement {
+  // Only the title is resolved here. `closeLabel` travels to `IconButton` as a
+  // key and is resolved there, because resolving it twice would be two answers
+  // to one question — and passing an already-resolved string would need
+  // `IconButton` to accept one, which is the prop type this commit removes.
+  const { _ } = useLingui();
+
   return (
     <BaseDialog.Root
       modal
@@ -77,7 +85,7 @@ export function Dialog({
         <BaseDialog.Backdrop className="m-dialog__backdrop" />
         <BaseDialog.Popup className="m-dialog">
           <div className="m-dialog__header">
-            <BaseDialog.Title className="m-dialog__title">{title}</BaseDialog.Title>
+            <BaseDialog.Title className="m-dialog__title">{_(title)}</BaseDialog.Title>
             {/* Inside the popup, per Base UI's own requirement for a modal
                 dialog: a touch screen reader has no other way out. */}
             <BaseDialog.Close

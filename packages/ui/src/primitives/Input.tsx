@@ -1,5 +1,7 @@
+import { useLingui } from '@lingui/react';
 import { Field } from '@base-ui/react/field';
 import { Input as BaseInput } from '@base-ui/react/input';
+import type { MessageKey } from '@monstera/shared';
 import type { ReactElement } from 'react';
 
 /**
@@ -30,12 +32,17 @@ import type { ReactElement } from 'react';
  */
 export interface InputProps {
   /** The visible label text, associated with the control. */
-  label: string;
+  label: MessageKey;
   value: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
-  /** A hint shown when empty. Never a substitute for {@link label}. */
-  placeholder?: string | undefined;
+  /**
+   * A hint shown when empty. Never a substitute for {@link label}.
+   *
+   * A `MessageKey` too: it is text a user reads, and the only thing that made it
+   * feel different from a label is that it is optional.
+   */
+  placeholder?: MessageKey | undefined;
 }
 
 export function Input({
@@ -45,15 +52,21 @@ export function Input({
   disabled = false,
   placeholder,
 }: InputProps): ReactElement {
+  // Subscribed rather than resolved once — see `Button`.
+  const { _ } = useLingui();
+
   return (
     <Field.Root className="m-field" disabled={disabled}>
-      <Field.Label className="m-field__label">{label}</Field.Label>
+      <Field.Label className="m-field__label">{_(label)}</Field.Label>
       <BaseInput
         className="m-input"
         onValueChange={(next): void => {
           onValueChange(next);
         }}
-        placeholder={placeholder}
+        // `undefined` stays `undefined` rather than becoming the empty string:
+        // an absent placeholder and a placeholder that resolves to nothing are
+        // different, and only one of them is a catalogue defect.
+        placeholder={placeholder === undefined ? undefined : _(placeholder)}
         value={value}
       />
     </Field.Root>

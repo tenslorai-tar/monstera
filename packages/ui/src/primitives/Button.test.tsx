@@ -1,9 +1,33 @@
 // @vitest-environment happy-dom
-import { channels, contrast } from '@monstera/shared';
-import { render, screen } from '@testing-library/react';
+import { I18nProvider } from '@lingui/react';
+import { channels, contrast, messageKey } from '@monstera/shared';
+import { render as renderBare, screen } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { activateCatalogue, i18n } from '../i18n.js';
 import { Button } from './Button.js';
+
+/**
+ * The label is a `MessageKey` now, so every case needs a catalogue and a
+ * provider — `useLingui` throws without one, deliberately.
+ *
+ * The queries below are unchanged: they ask for the accessible name `Save`, and
+ * that is what the catalogue resolves this key to. **A test that queried by the
+ * KEY would pass against a control rendering the key**, which is the exact
+ * defect the resolver exists to prevent, so the name stays English on purpose.
+ */
+const SAVE = messageKey('command.save.label');
+activateCatalogue('en', { [SAVE]: 'Save' });
+
+function Messages({ children }: { children: ReactNode }): ReactElement {
+  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+}
+
+/** Every render in this file needs the provider, so it is supplied once. */
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(ui, { wrapper: Messages });
+}
 
 /**
  * `tokens.css` is not loaded in a component test, so the tokens the primitives
@@ -37,20 +61,20 @@ afterEach(() => {
 
 describe('Button', () => {
   it('renders its label as the accessible name', () => {
-    render(<Button label="Save" />);
+    render(<Button label={SAVE} />);
     expect(screen.getByRole('button', { name: 'Save' })).toBeDefined();
   });
 
   it('calls onClick when activated', () => {
     const onClick = vi.fn();
-    render(<Button label="Save" onClick={onClick} />);
+    render(<Button label={SAVE} onClick={onClick} />);
     screen.getByRole('button', { name: 'Save' }).click();
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it('does not call onClick when disabled', () => {
     const onClick = vi.fn();
-    render(<Button disabled label="Save" onClick={onClick} />);
+    render(<Button disabled label={SAVE} onClick={onClick} />);
     const button = screen.getByRole('button', { name: 'Save' });
     expect(button.hasAttribute('disabled')).toBe(true);
     button.click();
@@ -58,7 +82,7 @@ describe('Button', () => {
   });
 
   it('is reachable and activatable from the keyboard', () => {
-    render(<Button label="Save" />);
+    render(<Button label={SAVE} />);
     const button = screen.getByRole('button', { name: 'Save' });
     button.focus();
     expect(document.activeElement).toBe(button);
@@ -68,14 +92,14 @@ describe('Button', () => {
   });
 
   it('defaults to type=button, so it cannot submit a form it did not mean to', () => {
-    render(<Button label="Save" />);
+    render(<Button label={SAVE} />);
     expect(screen.getByRole('button', { name: 'Save' }).getAttribute('type')).toBe('button');
   });
 
   describe('the primary variant computes its foreground', () => {
     it('applies a colour that clears 4.5:1 against the fill in effect', async () => {
       declareTokens();
-      render(<Button label="Save" variant="primary" />);
+      render(<Button label={SAVE} variant="primary" />);
       const button = screen.getByRole('button', { name: 'Save' });
 
       // `useOnColor` solves in an effect, so the first paint carries no colour.
@@ -91,7 +115,7 @@ describe('Button', () => {
 
     it('  ...and that colour is NOT the --text token it started from', async () => {
       declareTokens();
-      render(<Button label="Save" variant="primary" />);
+      render(<Button label={SAVE} variant="primary" />);
       const button = screen.getByRole('button', { name: 'Save' });
       await vi.waitFor(() => {
         expect(button.style.color).not.toBe('');
@@ -112,7 +136,7 @@ describe('Button', () => {
 
     it('re-solves when the theme changes', async () => {
       declareTokens();
-      render(<Button label="Save" variant="primary" />);
+      render(<Button label={SAVE} variant="primary" />);
       const button = screen.getByRole('button', { name: 'Save' });
       await vi.waitFor(() => {
         expect(button.style.color).not.toBe('');
@@ -155,7 +179,7 @@ describe('Button', () => {
       document.documentElement.style.setProperty('--accent', '#10243a');
       declareTokens('#2fb96a');
 
-      render(<Button label="Save" variant="primary" />);
+      render(<Button label={SAVE} variant="primary" />);
       const button = screen.getByRole('button', { name: 'Save' });
       await vi.waitFor(() => {
         expect(button.style.color).not.toBe('');
@@ -183,13 +207,13 @@ describe('Button', () => {
     it('applies no colour when the tokens cannot be read, rather than guessing', () => {
       // No `declareTokens()`. An unresolvable token is a defect to see; a
       // hard-coded black would hide it behind something that looks deliberate.
-      render(<Button label="Save" variant="primary" />);
+      render(<Button label={SAVE} variant="primary" />);
       expect(screen.getByRole('button', { name: 'Save' }).style.color).toBe('');
     });
 
     it('leaves the default variant to the stylesheet', () => {
       declareTokens();
-      render(<Button label="Save" />);
+      render(<Button label={SAVE} />);
       // The default variant sits on `--surface`, which `--text` is declared
       // against in tokens.css and checked by `check:tokencontrast`. Solving it
       // again here would be a second opinion about a pair that already has an

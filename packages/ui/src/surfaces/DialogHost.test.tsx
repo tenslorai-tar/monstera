@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-import { messageKey, type MessageKey } from '@monstera/shared';
-import { act, render, screen } from '@testing-library/react';
-import { lazy, useState, type ReactElement } from 'react';
+import { I18nProvider } from '@lingui/react';
+import { messageKey } from '@monstera/shared';
+import { act, render as renderBare, screen } from '@testing-library/react';
+import { lazy, useState, type ReactElement, type ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { activateCatalogue, i18n } from '../i18n.js';
 import { DialogRegistry, declareDialog } from '../registries/dialogs.js';
 import { DialogHost, useDialogHost } from './DialogHost.js';
 
@@ -32,8 +34,26 @@ const renameEntry = declareDialog({
 
 const registry = new DialogRegistry([renameEntry]);
 
-/** Identity: no catalogue exists, and `messages.ts` owns that trigger. */
-const resolve = (key: MessageKey): string => key;
+/**
+ * A real catalogue, because the host no longer takes a resolver.
+ *
+ * It used to be handed an identity function, and the dialog's accessible name
+ * was therefore the KEY — `dialog.rename.title` — which is precisely the thing
+ * `messages.ts` calls worse than English. The queries below now ask for the
+ * resolved name, so a host that leaked a key past the primitives would fail
+ * here rather than read as passing.
+ */
+const RENAME_TITLE = messageKey('dialog.rename.title');
+const CLOSE = messageKey('action.close.label');
+activateCatalogue('en', { [RENAME_TITLE]: 'Rename document', [CLOSE]: 'Close' });
+
+function Messages({ children }: { children: ReactNode }): ReactElement {
+  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+}
+
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(ui, { wrapper: Messages });
+}
 
 /**
  * The smallest thing that owns the host's state — which is what a real shell
@@ -58,13 +78,7 @@ function Harness({ id, props }: { id: string; props: unknown }): ReactElement {
         Open
       </button>
       {error === undefined ? null : <p>{error}</p>}
-      <DialogHost
-        registry={registry}
-        resolve={resolve}
-        closeLabel="Close"
-        open={open}
-        onClose={close}
-      />
+      <DialogHost registry={registry} closeLabel={CLOSE} open={open} onClose={close} />
     </>
   );
 }
@@ -89,7 +103,7 @@ describe('DialogHost', () => {
     // By role and accessible name, never by test id: §10.4 puts accessibility
     // in the substrate, and this query is the one that goes red when the
     // dialog loses its name.
-    const dialog = await screen.findByRole('dialog', { name: 'dialog.rename.title' });
+    const dialog = await screen.findByRole('dialog', { name: 'Rename document' });
     // The body rendered, and rendered the props that came back from the schema
     // rather than the caller's object.
     const body = await screen.findByText('renaming chapter one');

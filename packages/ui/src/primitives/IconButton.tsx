@@ -1,4 +1,6 @@
+import { useLingui } from '@lingui/react';
 import { Button as BaseButton } from '@base-ui/react/button';
+import type { MessageKey } from '@monstera/shared';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactElement } from 'react';
 
@@ -37,7 +39,7 @@ export interface IconButtonProps {
    * The accessible name — what the control DOES, not what the glyph depicts.
    * "Close" rather than "cross".
    */
-  label: string;
+  label: MessageKey;
   /**
    * Which of §10.4's four uses this control is. The pixel size follows from it,
    * in `primitives.css` — see {@link IconSize} for why it is not written here.
@@ -54,9 +56,13 @@ export function IconButton({
   disabled = false,
   onClick,
 }: IconButtonProps): ReactElement {
+  // Subscribed rather than resolved once — see `Button` for why the module
+  // function is the wrong call here.
+  const { _ } = useLingui();
+
   return (
     <BaseButton
-      aria-label={label}
+      aria-label={_(label)}
       className={`m-icon-button m-icon-button--${size}`}
       disabled={disabled}
       nativeButton

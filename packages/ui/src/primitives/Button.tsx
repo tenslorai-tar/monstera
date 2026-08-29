@@ -1,4 +1,6 @@
+import { useLingui } from '@lingui/react';
 import { Button as BaseButton } from '@base-ui/react/button';
+import type { MessageKey } from '@monstera/shared';
 import { type ReactElement, useRef } from 'react';
 
 import { useOnColor } from './useOnColor.js';
@@ -13,9 +15,13 @@ import { useOnColor } from './useOnColor.js';
  * relying on the lint rule alone — two mechanisms for two populations, which is
  * the same pairing ADR-0029 Decision 6 makes for a command's title.
  *
- * `label` is typed `string` today and becomes `MessageKey` when the i18n
- * scaffold lands (ADR-0029 Decision 6). That is a gap with a named expiry, not a
- * decision: the type does not exist yet, so nothing can reference it.
+ * **`label` is a `MessageKey`, as of 2026-08-29.** That was a gap with a named
+ * expiry — `packages/shared/src/messages.ts` states the trigger in its own body:
+ * *"the primitives' text props become `MessageKey` in the commit that lands a
+ * resolver"*. The resolver landed, so this did. The gap's stated reason was that
+ * a `MessageKey` prop would render the key with nothing to resolve it, which is
+ * worse than English; `useLingui` is what resolves it now, and a missing entry
+ * throws rather than rendering the key.
  *
  * ## `primary` computes its foreground and does not store one
  *
@@ -33,7 +39,7 @@ import { useOnColor } from './useOnColor.js';
  */
 export interface ButtonProps {
   /** The visible text, and the accessible name. */
-  label: string;
+  label: MessageKey;
   /** Filled with `--accent` (`primary`) or bounded by `--border-control`. */
   variant?: 'primary' | 'default';
   disabled?: boolean;
@@ -50,6 +56,11 @@ export function Button({
   type = 'button',
 }: ButtonProps): ReactElement {
   const element = useRef<HTMLElement>(null);
+  // `useLingui` rather than the module-level `resolve`, so a locale change
+  // re-renders this. The module function answers correctly and answers once —
+  // it is not a subscription — which would leave every rendered control in the
+  // previous language until something unrelated re-rendered it.
+  const { _ } = useLingui();
 
   // Only the primary variant fills with a token that carries no foreground.
   // The default variant sits on `--surface`, a pair `tokens.css` declares and
@@ -66,7 +77,7 @@ export function Button({
       ref={element}
       type={type}
     >
-      {label}
+      {_(label)}
     </BaseButton>
   );
 }

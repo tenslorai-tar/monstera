@@ -22,23 +22,26 @@ import type { DialogRegistry } from '../registries/dialogs.js';
  * refuse it. Decision 7's *"validating at the open call is the only place both
  * sides exist"*, applied literally.
  *
- * ## Why the resolver is injected
+ * ## The injected resolver is GONE, and this is the commit `messages.ts` named
  *
- * A dialog's title is a `MessageKey`, and `messages.ts` records that the
- * primitives keep `string` until a runtime resolver lands, because *"a control
- * that displays `dialog.rename.title` to a user is worse than one that displays
- * English."* This host does not decide which of those it is: it takes a
- * `resolve` and the application supplies one. That keeps the trigger in
- * `messages.ts` clean — the primitives change in the commit that lands a
- * resolver — and means no key reaches a user through a choice made here.
+ * This host used to take a `resolve` and a pre-resolved `closeLabel`, because
+ * the primitives took `string` and something had to turn a key into text
+ * without deciding, here, what a missing one renders. The resolver landed, the
+ * primitives take `MessageKey`, and both props go with it: a key now travels
+ * unresolved all the way to the control that displays it, and is resolved once,
+ * where it is rendered.
+ *
+ * That removes the shape this file was carefully avoiding — a host holding text
+ * in one language while a control beside it holds a key — rather than managing
+ * it. It also unblocks mounting this host at all: its `closeLabel` was the
+ * "already resolved" string that had no honest source before a catalogue
+ * existed.
  */
 
 export interface DialogHostProps {
   readonly registry: DialogRegistry;
-  /** Turns a key into display text. Identity until a catalogue exists. */
-  readonly resolve: (key: MessageKey) => string;
-  /** The close control's accessible name, already resolved. */
-  readonly closeLabel: string;
+  /** The close control's accessible name, as a key the control resolves. */
+  readonly closeLabel: MessageKey;
   /** Shown while a lazily-loaded dialog body is still arriving. */
   readonly pending?: ReactNode;
 }
@@ -93,7 +96,6 @@ export function useDialogHost(registry: DialogRegistry): {
  */
 export function DialogHost({
   registry,
-  resolve,
   closeLabel,
   pending = null,
   open,
@@ -116,7 +118,7 @@ export function DialogHost({
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title={resolve(entry.title)}
+      title={entry.title}
       closeLabel={closeLabel}
     >
       {/* The entry mounts itself. `declareDialog` built this closure where the

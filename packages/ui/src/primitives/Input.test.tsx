@@ -1,12 +1,40 @@
 // @vitest-environment happy-dom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { I18nProvider } from '@lingui/react';
+import { messageKey } from '@monstera/shared';
+import { fireEvent, render as renderBare, screen } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { activateCatalogue, i18n } from '../i18n.js';
 import { Input } from './Input.js';
+
+/**
+ * The label and the placeholder are both `MessageKey`s now — the placeholder is
+ * text a user reads, and the only thing that made it feel different from a label
+ * is that it is optional.
+ */
+const FILE_NAME = messageKey('field.file-name.label');
+const FIRST = messageKey('field.first.label');
+const SECOND = messageKey('field.second.label');
+const UNTITLED = messageKey('field.file-name.placeholder');
+activateCatalogue('en', {
+  [FILE_NAME]: 'File name',
+  [FIRST]: 'First',
+  [SECOND]: 'Second',
+  [UNTITLED]: 'untitled',
+});
+
+function Messages({ children }: { children: ReactNode }): ReactElement {
+  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+}
+
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(ui, { wrapper: Messages });
+}
 
 describe('Input', () => {
   it('associates its label with the control', () => {
-    render(<Input label="File name" onValueChange={vi.fn()} value="" />);
+    render(<Input label={FILE_NAME} onValueChange={vi.fn()} value="" />);
     // `getByLabelText` reads the association the way an assistive technology
     // does. A visually adjacent label that is not associated fails here and
     // looks identical on screen, which is the whole reason to query this way.
@@ -16,8 +44,8 @@ describe('Input', () => {
   it('gives two instances two associations, not one shared id', () => {
     render(
       <>
-        <Input label="First" onValueChange={vi.fn()} value="" />
-        <Input label="Second" onValueChange={vi.fn()} value="" />
+        <Input label={FIRST} onValueChange={vi.fn()} value="" />
+        <Input label={SECOND} onValueChange={vi.fn()} value="" />
       </>,
     );
     const first = screen.getByLabelText('First');
@@ -34,7 +62,7 @@ describe('Input', () => {
 
   it('reports what the user typed', () => {
     const onValueChange = vi.fn();
-    render(<Input label="File name" onValueChange={onValueChange} value="" />);
+    render(<Input label={FILE_NAME} onValueChange={onValueChange} value="" />);
     const control = screen.getByLabelText('File name');
 
     // `fireEvent.change` rather than assigning `.value` and dispatching. React
@@ -52,7 +80,7 @@ describe('Input', () => {
 
   it('renders the placeholder as a hint, never as the name', () => {
     render(
-      <Input label="File name" onValueChange={vi.fn()} placeholder="untitled" value="" />,
+      <Input label={FILE_NAME} onValueChange={vi.fn()} placeholder={UNTITLED} value="" />,
     );
     const control = screen.getByLabelText('File name');
     expect(control.getAttribute('placeholder')).toBe('untitled');
@@ -62,13 +90,13 @@ describe('Input', () => {
   });
 
   it('is focusable, and disabled when told', () => {
-    const { unmount } = render(<Input label="File name" onValueChange={vi.fn()} value="" />);
+    const { unmount } = render(<Input label={FILE_NAME} onValueChange={vi.fn()} value="" />);
     const control = screen.getByLabelText('File name');
     control.focus();
     expect(document.activeElement).toBe(control);
     unmount();
 
-    render(<Input disabled label="File name" onValueChange={vi.fn()} value="" />);
+    render(<Input disabled label={FILE_NAME} onValueChange={vi.fn()} value="" />);
     expect(screen.getByLabelText('File name').hasAttribute('disabled')).toBe(true);
   });
 });
