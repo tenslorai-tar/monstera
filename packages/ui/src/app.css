@@ -33,3 +33,26 @@ body {
   block-size: 100dvh;
   background: var(--canvas);
 }
+
+/*
+ * The start screen centres what the registry holds. `gap` rather than margins on
+ * the children, so a surface with one control and a surface with six space
+ * themselves the same way and neither has a rule about being first or last.
+ */
+.m-start-screen {
+  display: flex;
+  block-size: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-16);
+}
+
+/*
+ * The rasterised page. `block` because an inline canvas sits on the text
+ * baseline and leaves a gap underneath that reads as a layout bug; the sizing is
+ * the viewport's, written by `renderPage` in device pixels, so nothing here
+ * declares a width.
+ */
+.m-page {
+  display: block;
+}

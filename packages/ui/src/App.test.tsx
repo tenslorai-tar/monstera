@@ -1,47 +1,138 @@
 // @vitest-environment happy-dom
-import { render } from '@testing-library/react';
+import { I18nProvider } from '@lingui/react';
+import { type ContractClient, channels, createClient } from '@monstera/contract';
+import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { act, render as renderBare, screen } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { App } from './App.js';
+import { activateCatalogue, i18n } from './i18n.js';
+import { EN } from './messages/en.js';
 
 /**
- * The shell's UI-level half. `proof:rendererpolicy` covers the other one — that
- * the built bundle mounts inside a real Chromium under the pinned CSP — and
- * neither counts alone: this file would pass against a bundle that never
- * reaches a browser, and the proof would pass against any component at all
- * provided it rendered something.
+ * The UI-level half of the wired-tools pair for `document.open`.
+ *
+ * §10.4: *"a control that renders but does nothing is a defect"*, and the pair
+ * is what proves otherwise — this file asserts the button **dispatches exactly
+ * that command**, and the kernel side asserts the command has an effect. Neither
+ * counts alone: this one runs against a client whose handler is a stub, so on
+ * its own it proves a button dispatches into the void.
+ *
+ * The rasterised page is not asserted here. happy-dom implements no canvas and
+ * no worker, so PDF.js cannot parse — `proof:rendererpolicy` is where pixels are
+ * read, in real Chromium.
  */
+activateCatalogue('en', EN);
+
+function Messages({ children }: { children: ReactNode }): ReactElement {
+  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+}
+
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(ui, { wrapper: Messages });
+}
+
+const DOC = asDocId('doc-1');
+
+/** A client that records every channel it is asked for, and answers `answer`. */
+function recordingClient(answer: unknown): {
+  readonly client: ContractClient;
+  readonly calls: string[];
+} {
+  const calls: string[] = [];
+  const client = createClient(channels, (id) => {
+    calls.push(id);
+    return Promise.resolve(ok(answer));
+  });
+  return { client, calls };
+}
+
 describe('App', () => {
-  it('renders the document surface as a landmark', () => {
-    const { container } = render(<App />);
+  it('renders the start screen from the REGISTRY, with the command’s resolved title', () => {
+    // Queried by the English name rather than the key: a surface that leaked the
+    // key would satisfy a query for `command.open-document.title`, which is the
+    // defect the resolver exists to prevent.
+    const { client } = recordingClient({ kind: 'cancelled' });
 
-    const surface = container.querySelector('main.m-document-surface');
-    expect(surface).not.toBeNull();
+    render(<App client={client} />);
+
+    expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
   });
 
-  it('renders no control, because none is wired yet', () => {
-    const { container } = render(<App />);
+  it('the control DISPATCHES document.open, and nothing else', async () => {
+    // The wired-tools requirement, and the second half of the assertion is the
+    // one that stops it being vacuous: a component that called every channel it
+    // could reach would satisfy "document.open was called".
+    const { client, calls } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} />);
 
-    // THE ASSERTION IS THE WIRED-TOOLS RULE, not tidiness. A control that
-    // renders and does nothing is a defect rather than a stepping stone, and the
-    // shell is the exact moment somebody reaches for a placeholder toolbar. The
-    // day a real button lands this case fails, which is when its reason gets
-    // re-read — and it should then be replaced by a case naming the command that
-    // button dispatches, never deleted.
-    expect(container.querySelectorAll('button, a, input, select, textarea')).toHaveLength(0);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Open a document' }).click();
+      await Promise.resolve();
+    });
+
+    expect(calls).toStrictEqual(['document.open']);
   });
 
-  it('CONTROL: the query that finds no control would find one', () => {
-    // Without this, the case above passes for a render that produced nothing at
-    // all — including a component that threw and was caught somewhere, or a
-    // selector with a typo in it. An empty result is a broken lookup as often as
-    // it is a clean one.
-    const { container } = render(
-      <main>
-        <button type="button" />
-      </main>,
-    );
+  it('CONTROL: nothing is dispatched until the control is used', async () => {
+    // Without this, the case above passes for an App that opens a document on
+    // mount — which would also produce exactly one `document.open` call, and is
+    // a different program.
+    const { client, calls } = recordingClient({ kind: 'cancelled' });
 
-    expect(container.querySelectorAll('button, a, input, select, textarea')).toHaveLength(1);
+    render(<App client={client} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(calls).toStrictEqual([]);
+  });
+
+  it('shows the page surface once a document is open, and stops showing the start screen', async () => {
+    // The `opened` answer is what turns the start screen into a document view.
+    // Both halves are asserted because a surface that added the canvas WITHOUT
+    // removing the start screen is a different defect from one that did neither.
+    const { client } = recordingClient({
+      kind: 'opened',
+      docId: DOC,
+      version: asDocVersion(1),
+      byteLength: 1024,
+    });
+    const { container } = render(<App client={client} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Open a document' }).click();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('canvas.m-page')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open a document' })).toBeNull();
+  });
+
+  it('a cancelled pick leaves the start screen alone', async () => {
+    // ASSERT THE STATE THAT DID NOT CHANGE. A user dismissing a picker is an
+    // outcome, and the App's correct response is to do nothing — which is also
+    // what a broken dispatch produces, so the case above is what separates them.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    const { container } = render(<App client={client} />);
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Open a document' }).click();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
+    expect(container.querySelector('canvas.m-page')).toBeNull();
+  });
+
+  it('the start screen names no command itself — it renders what the registry holds', () => {
+    // §7's rule made observable: the surface has one control because the
+    // registry has one command, not because a list in a component says so.
+    // `check:secondwiring` is the mechanical half; this is the behavioural one.
+    const { client } = recordingClient({ kind: 'cancelled' });
+    const { container } = render(<App client={client} />);
+
+    expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(1);
   });
 });

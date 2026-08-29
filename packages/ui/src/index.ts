@@ -52,6 +52,11 @@ export {
 } from './registries/settings.js';
 export { SettingsStore } from './settingsStore.js';
 export { DialogHost, type DialogHostProps, useDialogHost } from './surfaces/DialogHost.js';
+export { StartScreen, type StartScreenProps } from './surfaces/StartScreen.js';
+// The first registered command, and the catalogue its title is resolved from.
+export { openDocumentCommand } from './commands/openDocument.js';
+export { EN } from './messages/en.js';
+export { App, type AppProps } from './App.js';
 export {
   type Dispatch,
   type KeyChord,
