@@ -18,6 +18,9 @@ export {
   type Channels,
   type ContractClient,
   type ContractHandlers,
+  // Invariant L11's mechanism. Exported so a caller can size its reads under
+  // the bound rather than discover it as a refusal.
+  MAX_RANGE_BYTES,
   channelIds,
   channels,
 } from './channels.js';

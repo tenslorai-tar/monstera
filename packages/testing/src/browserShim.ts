@@ -120,6 +120,20 @@ export interface BrowserShimOptions {
     'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed'
   >;
   /**
+   * The bytes each document is readable as, by id.
+   *
+   * **Real bytes rather than a generator**, because the one caller that matters
+   * is PDF.js: a renderer test drives the shipped transport against the shipped
+   * parser, and a parser fed synthetic bytes reports a corrupt document, which
+   * is a fixture the defect also produces. A test supplies a fixture PDF and the
+   * page it expects.
+   *
+   * A document with no entry here answers `document-not-open` — not an empty
+   * range. Zero bytes is a document PDF.js rejects for a reason that has nothing
+   * to do with what a test was asking about.
+   */
+  readonly documentBytes?: ReadonlyMap<string, Uint8Array>;
+  /**
    * Documents whose next command throws.
    *
    * Exists so the `internal` path is reachable. A failure shape nothing can
@@ -273,6 +287,43 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
 
       return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(current) }));
+    },
+
+    // THE STALE RULE IS MODELLED, and it is the one behaviour here that is not
+    // bookkeeping. A transport bound to a version that has moved must be told
+    // so rather than served, because serving it is how a document gets built out
+    // of two versions — and the renderer's handling of that is precisely what a
+    // shim test can reach and a kernel test cannot.
+    'document.readRange': ({ docId, version, begin, end }) => {
+      const current = versions.get(docId);
+      const bytes = options.documentBytes?.get(docId);
+      if (current === undefined || bytes === undefined) {
+        return Promise.resolve(err({ code: 'document-not-open' }));
+      }
+
+      if (current !== version) {
+        return Promise.resolve(
+          ok({
+            kind: 'stale' as const,
+            version: asDocVersion(current),
+            byteLength: bytes.byteLength,
+          }),
+        );
+      }
+
+      // Refused rather than clamped, exactly as the service does. A shim that
+      // answered a short read where main throws would let a transport bug pass
+      // every UI test and fail in the product.
+      if (end > bytes.byteLength) {
+        throw new RangeError(
+          `Range [${String(begin)}, ${String(end)}) falls outside a ` +
+            `${String(bytes.byteLength)}-byte document.`,
+        );
+      }
+
+      const copy = new Uint8Array(end - begin);
+      copy.set(bytes.subarray(begin, end));
+      return Promise.resolve(ok({ kind: 'bytes' as const, bytes: copy }));
     },
   };
 

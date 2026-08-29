@@ -131,10 +131,13 @@ export {
   type IdentityReader,
   type OpenOutcome,
   type CommandWriter,
+  type RangeOutcome,
+  type RangeReader,
   type SaveWriter,
   type Versioned,
   type WriteTargetVerdict,
 } from './documentService.js';
+export { readDocumentRange } from './documentRanges.js';
 export {
   type AtomicWriteFailure,
   type AtomicWriteSurface,

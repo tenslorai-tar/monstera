@@ -13,15 +13,52 @@ import { docIdSchema, docVersionSchema } from './schemas.js';
  * call that is absent. The `Handlers` mapped type enforces this mechanically —
  * adding an entry here breaks the build until something implements it.
  *
- * **Invariant L11 applies to every entry below, and is not yet mechanically
- * checked.** No channel's payload may scale with document size *per operation*;
- * the single sanctioned byte crossing is a snapshot, once per **version**. The
- * check was deliberately not written at Stage 0: with one channel carrying a
- * version string it would have inspected nothing, passed, and stayed green
- * while the channels that make L11 bite were added. It is a Stage 1 gate, owed
- * as the first document-carrying channel lands — which is this file, so whoever
- * writes that channel is the person who owes it.
+ * **Invariant L11 applies to every entry below, and the gate it was owed is
+ * {@link MAX_RANGE_BYTES}.** No channel's payload may scale with document size
+ * *per operation*. That gate was deliberately not written at Stage 0: with one
+ * channel carrying a version string it would have inspected nothing, passed, and
+ * stayed green while the channels that make L11 bite were added. It was owed by
+ * the first document-carrying channel, `document.readRange` is it, and the
+ * answer is a bound in that channel's own params schema rather than a scan over
+ * this file — see the note there for why the schema is the stronger of the two.
+ *
+ * The sentence this replaced said the single sanctioned byte crossing is a
+ * snapshot once per version. There is no snapshot; §2 was amended on 2026-08-29
+ * ([ADR-0031](../../../docs/DECISIONS/0031-the-renderer-reads-the-document-by-demand-paged-ranges.md)).
  */
+
+/**
+ * The largest byte range one read may carry.
+ *
+ * **This is invariant L11's mechanism, so its size is an argument and not a
+ * preference.** Any constant satisfies L11 — a fixed bound cannot scale with
+ * document size, which is the whole of what the invariant asks. So the only real
+ * constraint is the lower one: it must sit above the largest range a working
+ * renderer actually asks for, or the bound stops being a guard and becomes a
+ * bug.
+ *
+ * Measured 2026-08-29 with `pdfjs-dist@6.2.108` against
+ * `packages/testing/fixtures/generated/perf-image-200mb.pdf` (209,105,721 bytes):
+ * the largest single range requested while opening the document and producing
+ * page 1 was **5,111,808 bytes** — the page's image XObject, asked for whole.
+ * The object-dense fixture's largest was 327,680. 16 MiB leaves 3.28× headroom
+ * over the measured maximum and is about 1% of `main`'s 1.5 GB budget, so a
+ * request at the bound is nowhere near a figure the budget notices.
+ *
+ * ## What this refuses that is not an attack
+ *
+ * A document holding one object larger than this cannot be rendered: PDF.js asks
+ * for the object whole, and a range cannot be answered in several calls —
+ * measured, the reader completes and is deleted after the first chunk. So the
+ * failure mode is real and it is the honest one, because the alternative is a
+ * channel that will hand over a 300 MB object and call L11 satisfied.
+ *
+ * **The trigger, so this is a number with an expiry rather than a guess:** the
+ * first document that fails to render with a refused range is the evidence that
+ * this bound is wrong, and the fix is a measurement of what such documents
+ * actually contain — not a larger round number.
+ */
+export const MAX_RANGE_BYTES = 16 * 1024 * 1024;
 export const channels = {
   'app.info': channel(
     'Version and install channel of the running application.',
@@ -133,7 +170,17 @@ export const channels = {
     'Opens a document chosen in a picker main owns, returning its id and version.',
     z.object({}),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('opened'), docId: docIdSchema, version: docVersionSchema }),
+      z.object({
+        kind: z.literal('opened'),
+        docId: docIdSchema,
+        version: docVersionSchema,
+        /**
+         * The document's size in bytes — what a `PDFDataRangeTransport` is
+         * constructed with. Bounded, so L11 is untouched: a number is the same
+         * size for a 2 KB document and a 2 GB one.
+         */
+        byteLength: z.number().int().nonnegative(),
+      }),
       z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
       z.object({ kind: z.literal('absent') }),
       z.object({
@@ -243,6 +290,68 @@ export const channels = {
       z.object({ kind: z.literal('write-failed') }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Reads one byte range of an open document, at a version the caller names.
+   *
+   * **This is the first document-carrying channel, so it is the one that owes
+   * the L11 gate the note at the top of this file names — and the gate is
+   * {@link MAX_RANGE_BYTES}, in the params schema, not a scan.**
+   *
+   * A range read's payload is whatever the caller asked for, so the question
+   * L11 asks — *does this scale with document size?* — is decided entirely by
+   * whether the ask can. Bounding it in the schema means a request for the whole
+   * document is refused at the boundary, before any handler runs, by the same
+   * validation that refuses a malformed one. A scan over these definitions was
+   * the alternative and it is the weaker mechanism twice over: it would have to
+   * decide by inspection which schemas *could* carry bytes, and it would leave
+   * the unbounded request expressible and merely disapproved of (B5).
+   *
+   * ## The stale outcome is an OUTCOME
+   *
+   * A transport is bound to one `DocVersion`, and a command may bump between its
+   * construction and its next ask. Byte offsets mean nothing outside the version
+   * that produced them, so answering a stale offset from new bytes would build a
+   * document out of two of them — a corruption with no symptom where it happens.
+   * The renderer's answer is to rebuild the transport, which is ordinary, so this
+   * is a variant rather than a failure code, and it carries the new version
+   * **and** the new length so rebuilding costs no second round trip.
+   *
+   * ## No `document-busy`
+   *
+   * The read does not enter the lane. It mutates nothing, a page costs tens of
+   * these, and queueing them behind a running command would serialise a reader
+   * against itself — §2's *mutations are commands, reads are queries*. So the
+   * one thing a lane can refuse is not a thing this can be refused for.
+   */
+  'document.readRange': channel(
+    'Reads one bounded byte range of an open document at a named version.',
+    z
+      .object({
+        docId: docIdSchema,
+        /** The version the caller's transport is bound to. */
+        version: docVersionSchema,
+        /** First byte, inclusive. */
+        begin: z.number().int().nonnegative(),
+        /** Last byte, exclusive. */
+        end: z.number().int().positive(),
+      })
+      .refine((range) => range.end > range.begin, {
+        message: 'end must be greater than begin',
+      })
+      .refine((range) => range.end - range.begin <= MAX_RANGE_BYTES, {
+        message: `a range may not exceed ${String(MAX_RANGE_BYTES)} bytes (invariant L11)`,
+      }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('bytes'), bytes: z.instanceof(Uint8Array) }),
+      z.object({
+        kind: z.literal('stale'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+      }),
+    ]),
+    ['document-not-open'],
   ),
 } as const;
 

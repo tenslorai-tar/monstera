@@ -6,6 +6,7 @@ import {
   DocumentNotOpenError,
   type DocumentService,
   type WriteTargetVerdict,
+  readDocumentRange,
 } from '@monstera/kernel';
 import { type DocId, err, ok } from '@monstera/shared';
 
@@ -115,6 +116,46 @@ export function createContractHandlers(deps: {
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
+    'document.readRange': readRangeHandler(deps.documents),
+  };
+}
+
+/**
+ * Serves one byte range to the renderer.
+ *
+ * ## Not `async`, and it is the same argument as the service's
+ *
+ * `readDocumentRange` is synchronous precisely so that the version it reports
+ * and the bytes it slices cannot belong to two different versions — the lane
+ * mutates a record only at an `await`, and there is none. Wrapping it in an
+ * `async` function does not reintroduce that race, because the body still runs
+ * to completion before anything else can, but writing `await` *inside* one
+ * would. `Promise.resolve` keeps the absence visible.
+ *
+ * ## Only `document-not-open`, and the others are not omissions
+ *
+ * `document-busy` cannot happen: the read does not enter the lane, so there is
+ * no queue to be full. `document-poisoned` cannot either — poisoning is about
+ * engine sessions, and this reads the canonical image main already holds, which
+ * is exactly the state a poisoned document still has and the reason invariant 18
+ * can recover from one. A poisoned document must stay readable or the user
+ * cannot look at the thing they are being told they cannot edit.
+ *
+ * A `RangeError` is rethrown and becomes `internal`. The boundary already
+ * refused a range larger than `MAX_RANGE_BYTES` and one whose end precedes its
+ * begin, so what is left is a caller asking past the end of the document — a
+ * defect in the transport, not something a user did.
+ */
+function readRangeHandler(documents: DocumentService): ContractHandlers['document.readRange'] {
+  return ({ docId, version, begin, end }) => {
+    try {
+      return Promise.resolve(ok(readDocumentRange(documents, docId, version, begin, end)));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) {
+        return Promise.resolve(err({ code: 'document-not-open' } as const));
+      }
+      throw thrown;
+    }
   };
 }
 

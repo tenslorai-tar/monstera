@@ -2,7 +2,7 @@ import { asDocId, asDocVersion, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
-import { channelIds, channels, type ContractHandlers } from './channels.js';
+import { MAX_RANGE_BYTES, channelIds, channels, type ContractHandlers } from './channels.js';
 import type { Incident } from './incident.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
@@ -35,6 +35,10 @@ const handlers: ContractHandlers = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
+  'document.readRange': ({ begin, end }) =>
+    // Echoes the SIZE it was asked for, so the L11 cases below can assert what
+    // crossed rather than that something did.
+    Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
 };
 
 describe('the shipping contract, exercised through its own map', () => {
@@ -76,5 +80,87 @@ describe('the shipping contract, exercised through its own map', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('internal');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Invariant L11, which this file's own header says is owed by the first
+  // document-carrying channel. The mechanism is MAX_RANGE_BYTES in the params
+  // schema, so these cases are about the BOUNDARY refusing rather than about a
+  // handler declining — a handler-side check would be a rule the next channel's
+  // author has to remember.
+  // ---------------------------------------------------------------------------
+
+  it('L11: a range larger than the bound is REFUSED at the boundary', async () => {
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, handlers, ignore)[id](params),
+    );
+
+    const result = await client['document.readRange']({
+      docId: asDocId('doc-1'),
+      version: asDocVersion(1),
+      begin: 0,
+      end: MAX_RANGE_BYTES + 1,
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('CONTROL: a range AT the bound is served, so the refusal is not "everything"', async () => {
+    // The case above passes for a schema that refuses every range — which is
+    // also what a typo in the refinement produces, and which would take the
+    // renderer's whole read path with it. The bound must be the largest
+    // permitted value, not merely some value that is refused.
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, handlers, ignore)[id](params),
+    );
+
+    const result = await client['document.readRange']({
+      docId: asDocId('doc-1'),
+      version: asDocVersion(1),
+      begin: 0,
+      end: MAX_RANGE_BYTES,
+    });
+
+    expect(result.ok).toBe(true);
+    // The handler echoes the size it was asked for, so this asserts what
+    // crossed rather than that something did.
+    if (result.ok && result.value.kind === 'bytes') {
+      expect(result.value.bytes.byteLength).toBe(MAX_RANGE_BYTES);
+    }
+  });
+
+  it('L11: the bound is on the SIZE, not on the offset, so a late range is served', async () => {
+    // A bound written as `end <= MAX_RANGE_BYTES` reads almost identically and
+    // is a different rule: it would refuse every read past 16 MiB into a
+    // document, which is most of a large one. The two agree for every range
+    // starting at zero — which is what the two cases above use — so this is the
+    // fixture that separates them.
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, handlers, ignore)[id](params),
+    );
+
+    const result = await client['document.readRange']({
+      docId: asDocId('doc-1'),
+      version: asDocVersion(1),
+      begin: 100_000_000,
+      end: 100_065_536,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('a range whose end precedes its begin is refused', async () => {
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, handlers, ignore)[id](params),
+    );
+
+    const result = await client['document.readRange']({
+      docId: asDocId('doc-1'),
+      version: asDocVersion(1),
+      begin: 500,
+      end: 100,
+    });
+
+    expect(result.ok).toBe(false);
   });
 });

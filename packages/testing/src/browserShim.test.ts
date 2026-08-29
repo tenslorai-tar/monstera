@@ -190,6 +190,7 @@ describe('browser shim', () => {
       'app.info',
       'document.execute',
       'document.open',
+      'document.readRange',
       'document.save',
       'document.undo',
     ]);
@@ -211,7 +212,10 @@ describe('browser shim', () => {
     it('answers queued outcomes in order, so a sequence can be expressed', async () => {
       const docId = asDocId('doc-7');
       const shim = createBrowserShim({
-        opens: [{ kind: 'cancelled' }, { kind: 'opened', docId, version: asDocVersion(1) }],
+        opens: [
+          { kind: 'cancelled' },
+          { kind: 'opened', docId, version: asDocVersion(1), byteLength: 1024 },
+        ],
       });
 
       expect(await shim.client['document.open']({})).toStrictEqual({
@@ -220,7 +224,7 @@ describe('browser shim', () => {
       });
       expect(await shim.client['document.open']({})).toStrictEqual({
         ok: true,
-        value: { kind: 'opened', docId, version: 1 },
+        value: { kind: 'opened', docId, version: 1, byteLength: 1024 },
       });
       // Exhausted, so back to the default rather than repeating the last.
       expect(await shim.client['document.open']({})).toStrictEqual({
@@ -235,7 +239,9 @@ describe('browser shim', () => {
       // boundary cannot produce, and a test written against that state would
       // assert on a shape nothing ships.
       const docId = asDocId('doc-8');
-      const shim = createBrowserShim({ opens: [{ kind: 'opened', docId, version: asDocVersion(3) }] });
+      const shim = createBrowserShim({
+        opens: [{ kind: 'opened', docId, version: asDocVersion(3), byteLength: 1024 }],
+      });
 
       await shim.client['document.open']({});
       const executed = await shim.client['document.execute']({
@@ -252,12 +258,97 @@ describe('browser shim', () => {
       // a claim the type already makes — and it is the half that would survive
       // somebody widening the schema.
       const shim = createBrowserShim({
-        opens: [{ kind: 'opened', docId: asDocId('doc-9'), version: asDocVersion(1) }],
+        opens: [
+          { kind: 'opened', docId: asDocId('doc-9'), version: asDocVersion(1), byteLength: 1024 },
+        ],
       });
 
       const result = await shim.client['document.open']({});
 
       expect(JSON.stringify(result)).not.toMatch(/[/\\]/u);
+    });
+  });
+
+  describe('document.readRange', () => {
+    const DOC = asDocId('doc-range');
+
+    /** Every byte is its own index, so a wrong slice is a different array. */
+    function countingBytes(length: number): Uint8Array {
+      const bytes = new Uint8Array(length);
+      for (let index = 0; index < length; index += 1) bytes[index] = index % 251;
+      return bytes;
+    }
+
+    function shimHolding(bytes: Uint8Array, version: number) {
+      return createBrowserShim({
+        opens: [
+          {
+            kind: 'opened',
+            docId: DOC,
+            version: asDocVersion(version),
+            byteLength: bytes.byteLength,
+          },
+        ],
+        documentBytes: new Map([[DOC, bytes]]),
+      });
+    }
+
+    it('serves exactly the requested bytes at the current version', async () => {
+      const bytes = countingBytes(600);
+      const shim = shimHolding(bytes, 2);
+      await shim.client['document.open']({});
+
+      const answer = await shim.client['document.readRange']({
+        docId: DOC,
+        version: asDocVersion(2),
+        begin: 100,
+        end: 140,
+      });
+
+      expect(answer).toStrictEqual({
+        ok: true,
+        value: { kind: 'bytes', bytes: bytes.slice(100, 140) },
+      });
+    });
+
+    it('reports a version that has moved rather than serving the wrong bytes', async () => {
+      // THE ONE BEHAVIOUR HERE THAT IS NOT BOOKKEEPING, and the reason it is
+      // modelled at all: the renderer's handling of a moved version is
+      // reachable from a shim and not from a kernel test, and serving a stale
+      // offset out of new bytes is how a document gets built out of two.
+      const bytes = countingBytes(600);
+      const shim = shimHolding(bytes, 7);
+      await shim.client['document.open']({});
+
+      const answer = await shim.client['document.readRange']({
+        docId: DOC,
+        version: asDocVersion(2),
+        begin: 100,
+        end: 140,
+      });
+
+      expect(answer).toStrictEqual({
+        ok: true,
+        value: { kind: 'stale', version: 7, byteLength: 600 },
+      });
+    });
+
+    it('a document with no bytes is not open, rather than empty', async () => {
+      // Zero bytes is a document a parser rejects for reasons that have nothing
+      // to do with what a test was asking about, so the shim refuses instead.
+      const shim = createBrowserShim({
+        opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: 600 }],
+      });
+      await shim.client['document.open']({});
+
+      const answer = await shim.client['document.readRange']({
+        docId: DOC,
+        version: asDocVersion(1),
+        begin: 0,
+        end: 40,
+      });
+
+      expect(answer).toStrictEqual({ ok: false, error: { code: 'document-not-open' } });
     });
   });
 });

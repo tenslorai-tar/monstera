@@ -268,6 +268,56 @@ export type EngineSupervisor = Brand<'engine-supervisor', 'EngineSupervisor'>;
 export type SaveWriter = Brand<'save-writer', 'SaveWriter'>;
 
 /**
+ * Proof that the holder serves the renderer's byte-range reads (rule B3).
+ *
+ * The fourth of these, minted module-privately in `documentRanges.ts`.
+ *
+ * ## It receives bytes, and its three siblings exist so that nothing does
+ *
+ * {@link EngineSupervisor}'s whole argument is that an accessor hands out a
+ * **reference** to the canonical image, so `writeCanonicalImage` takes a
+ * destination instead and nothing ever receives the bytes. This one is the
+ * exception and it is a narrow, stated one rather than a hole in that reasoning:
+ *
+ * - what it returns is a **copy of a bounded slice**, never the image. `subarray`
+ *   would be a view onto the whole allocation — the exact defect
+ *   `assertOwnsItsBuffer` exists for — so the slice is copied, and the copy's
+ *   size is what the caller asked for and nothing else.
+ * - the ask is bounded at the **boundary**, by the contract's own schema, before
+ *   this is reached ([ADR-0031](../../../docs/DECISIONS/0031-the-renderer-reads-the-document-by-demand-paged-ranges.md)).
+ *   So "the renderer asked for the whole document" is not a request this method
+ *   has to refuse; it is a request that cannot be expressed.
+ *
+ * The brand does not make forgery impossible — a cast produces one. It makes
+ * reading document bytes **by accident** impossible, and any production code
+ * that tries **visible in a diff**.
+ */
+export type RangeReader = Brand<'range-reader', 'RangeReader'>;
+
+/**
+ * The answer to a byte-range read.
+ *
+ * `stale` is an **outcome, not a failure**. A transport is bound to one
+ * `DocVersion` and a command may bump between its construction and its next
+ * ask; the renderer's answer is to rebuild it, which is ordinary. It carries the
+ * current version **and** the new length so that rebuilding costs no second
+ * round trip.
+ */
+export type RangeOutcome =
+  /**
+   * `Uint8Array<ArrayBuffer>` rather than the default `ArrayBufferLike`, and it
+   * is the type carrying the copy guarantee: a `SharedArrayBuffer`-backed view
+   * is exactly the thing that would hand the renderer a window onto memory main
+   * still owns.
+   */
+  | { readonly kind: 'bytes'; readonly bytes: Uint8Array<ArrayBuffer> }
+  | {
+      readonly kind: 'stale';
+      readonly version: DocVersion;
+      readonly byteLength: number;
+    };
+
+/**
  * Everything a lane entry is told about the document, **as of the moment it
  * actually runs**.
  *
@@ -506,7 +556,27 @@ interface DocumentRecord {
  * with this variant is focus the document that is already there.
  */
 export type OpenOutcome =
-  | { readonly kind: 'opened'; readonly docId: DocId; readonly version: DocVersion }
+  | {
+      readonly kind: 'opened';
+      readonly docId: DocId;
+      readonly version: DocVersion;
+      /**
+       * The canonical image's size, which a renderer needs before it can read
+       * any of it: a `PDFDataRangeTransport` is constructed with the document's
+       * length and asks for offsets inside it.
+       *
+       * **Bounded, and that is what keeps it out of L11's way.** A number is the
+       * same size for a 2 KB document and a 2 GB one. It is here rather than on
+       * a query of its own because the alternative — bootstrapping a transport
+       * with a version it knows to be wrong, to be told the length by the stale
+       * answer — is a round trip and a lie to make one field travel.
+       *
+       * Only on `opened`. `already-open` carries no state by design (ADR-0009
+       * §2), and adding a length to it would be the second view this variant
+       * exists to make unsayable.
+       */
+      readonly byteLength: number;
+    }
   | { readonly kind: 'already-open'; readonly docId: DocId }
   | { readonly kind: 'absent' }
   /**
@@ -904,6 +974,83 @@ export class DocumentService {
   }
 
   /**
+   * Serves one byte range of a document, or reports the version moved.
+   *
+   * ## SYNCHRONOUS, and NOT on the lane, and both are the design
+   *
+   * A demand-paged renderer issues tens of these to show one page — 42 requests
+   * measured for page 1 of a 199 MB document. Queueing them behind the lane
+   * would put every read behind whatever command is running, count each against
+   * {@link MAX_QUEUED}, and serialise a reader against itself for no benefit:
+   * a read mutates nothing. §2 says it in one line — mutations are commands,
+   * reads are queries.
+   *
+   * That leaves the race `versionOf` was removed for: reading a version outside
+   * the lane can answer with one a command has already replaced. It cannot here,
+   * and the reason is the `async` keyword this method does not have. The lane
+   * only ever mutates a record at an `await`, and there is no await between the
+   * two reads below — so the version and the bytes are the same document's, by
+   * the language's own scheduling rather than by a lock.
+   *
+   * **Add an `await` to this method and that argument is gone**, which is why it
+   * is stated here rather than left to be re-derived from the absence of a
+   * keyword.
+   *
+   * ## The slice is COPIED
+   *
+   * `subarray` returns a view that keeps the whole canonical image reachable —
+   * the defect {@link assertOwnsItsBuffer} exists to catch, arriving through the
+   * one method that is allowed to hand bytes out. A 64 KiB view of a 199 MB
+   * document retains 199 MB. `slice` copies.
+   *
+   * @param reader Proof the caller serves the renderer's reads. See {@link RangeReader}.
+   * @param docId The open document.
+   * @param expected The version the caller's transport is bound to.
+   * @param begin First byte, inclusive.
+   * @param end Last byte, exclusive.
+   * @throws DocumentNotOpenError when the document is closed or was never open.
+   * @throws RangeError when the range falls outside the document at `expected`.
+   */
+  readRange(
+    reader: RangeReader,
+    docId: DocId,
+    expected: DocVersion,
+    begin: number,
+    end: number,
+  ): RangeOutcome {
+    void reader;
+    const record = this.#records.get(docId);
+    if (record === undefined) throw new DocumentNotOpenError(docId, 'read a byte range');
+
+    // Both reads, before anything can suspend. See the note above.
+    const version = record.version;
+    const bytes = record.bytes;
+
+    if (version !== expected) {
+      return { kind: 'stale', version, byteLength: bytes.byteLength };
+    }
+
+    // REFUSED RATHER THAN CLAMPED. A read past the end of a document is the
+    // caller having got its arithmetic wrong, and a clamped answer is a short
+    // read that a parser reports later as a corrupt document — the diagnosis
+    // then lands nowhere near the mistake.
+    if (begin < 0 || end < begin || end > bytes.byteLength) {
+      throw new RangeError(
+        `Range [${String(begin)}, ${String(end)}) falls outside a ${String(bytes.byteLength)}-byte ` +
+          `document at version ${String(expected)}.`,
+      );
+    }
+
+    // Allocated and filled rather than `slice`d, because the allocation is what
+    // the type above promises: `new Uint8Array(n)` owns a plain `ArrayBuffer`,
+    // where `slice` on a view of unknown provenance carries that provenance
+    // along. The `subarray` is transient and never leaves this expression.
+    const copy = new Uint8Array(end - begin);
+    copy.set(bytes.subarray(begin, end));
+    return { kind: 'bytes', bytes: copy };
+  }
+
+  /**
    * The refusal, or `null` if `incoming` fits.
    *
    * @param incoming bytes the service would additionally hold
@@ -979,7 +1126,7 @@ export class DocumentService {
       queued: 0,
       log: new CommandLog(),
     });
-    return { kind: 'opened', docId, version };
+    return { kind: 'opened', docId, version, byteLength: bytes.byteLength };
   }
 
   /**
