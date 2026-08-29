@@ -12,6 +12,7 @@ import { type DocId, err, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
+import type { SettingsSurface } from './settingsFile.js';
 
 /**
  * Where a document comes from, as a value this module can be handed.
@@ -107,6 +108,7 @@ export function createContractHandlers(deps: {
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
   readonly pickDocument: PickDocument;
+  readonly settings: SettingsSurface;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -117,6 +119,21 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
+    // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
+    // deferring rather than the boundary being lax. `SettingsRegistry.read`
+    // runs `migrate` and falls back per setting; a schema here would be this
+    // build's opinion about last build's data, applied before the one component
+    // that knows how to read it ever sees the value (B3a).
+    'settings.load': () => Promise.resolve(ok({ stored: deps.settings.read() })),
+    'settings.save': ({ values }) => {
+      deps.settings.write(values);
+      // ANSWERED AFTER THE WRITE RETURNS, so `stored: true` is a statement about
+      // the filesystem rather than about the call having been made. The surface
+      // renames a temporary file into place, so a caller that has this answer
+      // has a complete document on disk — which is the whole difference between
+      // proving persistence and asserting a write.
+      return Promise.resolve(ok({ stored: true } as const));
+    },
   };
 }
 

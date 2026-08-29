@@ -5,6 +5,7 @@ import { app } from 'electron';
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
+import { createSettingsFile } from './settingsFile.js';
 import { startShell } from './main.js';
 
 /**
@@ -47,6 +48,11 @@ startShell(
     // as a value so that everything opening does with what was picked stays
     // decidable without a runtime.
     createDocumentPicker(),
+    // `userData` and not `sessionData` or `temp`: settings outlive every
+    // document and every session, and the two other directories are ones the
+    // application and the OS respectively are entitled to empty. Resolved here
+    // because only this file may ask Electron where the user's data lives.
+    createSettingsFile(app.getPath('userData')),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved here and handed down. Under

@@ -14,6 +14,7 @@ import {
   hostHarness,
 } from './engineHostFake.js';
 import type { DirectoryCreationSurface, DirectoryPath } from './sessionDirectories.js';
+import { createEphemeralSettings } from './settingsFile.js';
 
 /**
  * The composition root WITH an engine host platform — finding KKKK-7.
@@ -175,6 +176,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('sessioned.pdf')),
+      createEphemeralSettings(),
       spy.platform,
     );
 
@@ -221,6 +223,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('undone.pdf')),
+      createEphemeralSettings(),
       spy.platform,
     );
 
@@ -293,6 +296,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('malformed.pdf')),
+      createEphemeralSettings(),
       spy.platform,
     );
 
@@ -341,6 +345,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('uncontained.pdf')),
+      createEphemeralSettings(),
       spy.platform,
     );
 
@@ -382,6 +387,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('unreadable.pdf')),
+      createEphemeralSettings(),
       platform,
     );
 
@@ -412,6 +418,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
+      createEphemeralSettings(),
       spy.platform,
     );
 
@@ -453,6 +460,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
+      createEphemeralSettings(),
       platform,
     );
 

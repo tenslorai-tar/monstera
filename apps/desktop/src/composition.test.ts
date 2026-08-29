@@ -6,6 +6,7 @@ import { asDocId } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createShellDependencies } from './composition.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import type { AppInfo } from './contractHandlers.js';
 
 /**
@@ -49,8 +50,10 @@ function aDocument(name: string): string {
 
 describe('the composition root, with no engine host platform', () => {
   it('leaves an opened document POISONED rather than sessionless', async () => {
-    const { handlers } = createShellDependencies(appInfo, () =>
-      Promise.resolve(aDocument('poisoned.pdf')),
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(aDocument('poisoned.pdf')),
+      createEphemeralSettings(),
     );
 
     const opened = await handlers['document.open']({});
@@ -81,8 +84,10 @@ describe('the composition root, with no engine host platform', () => {
     // so it fails if `document.save` is declared and unwired — and it asserts
     // the DECLARED code, because `internal` is what an unwired or half-wired
     // path produces and it reaches the renderer as an inconsistency.
-    const { handlers } = createShellDependencies(appInfo, () =>
-      Promise.resolve(aDocument('unsaveable.pdf')),
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(aDocument('unsaveable.pdf')),
+      createEphemeralSettings(),
     );
 
     const opened = await handlers['document.open']({});
@@ -108,7 +113,11 @@ describe('the composition root, with no engine host platform', () => {
     // session was ever asked for. Two declared codes that are not the same
     // code is what separates *the supervisor decided* from *the service
     // refused first*.
-    const { handlers } = createShellDependencies(appInfo, () => Promise.resolve(null));
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(null),
+      createEphemeralSettings(),
+    );
 
     const executed = await handlers['document.execute']({
       // A well-formed DocId the service has never issued.
@@ -129,8 +138,10 @@ describe('the composition root, with no engine host platform', () => {
     // state by its own route rather than inheriting one.
     const paths = [aDocument('one.pdf'), aDocument('two.pdf')];
     let next = 0;
-    const { handlers } = createShellDependencies(appInfo, () =>
-      Promise.resolve(paths[next++] ?? null),
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(paths[next++] ?? null),
+      createEphemeralSettings(),
     );
 
     const first = await handlers['document.open']({});

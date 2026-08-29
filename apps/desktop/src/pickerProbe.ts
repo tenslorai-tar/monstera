@@ -2,6 +2,7 @@ import { app, ipcMain, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 import { registerContractHandlers } from './registerHandlers.js';
 
@@ -159,6 +160,10 @@ export async function reportPickerProbe(): Promise<void> {
       observed.pathArrived = picked !== null;
       return picked;
     },
+    // EPHEMERAL, for the same reason the canvas harness uses one: a person runs
+    // this on their own machine, and a probe that wrote into the real `userData`
+    // would leave the application configured by having been measured.
+    createEphemeralSettings(),
     null,
   );
   const window = createMainWindow(session.defaultSession, deps.failures);

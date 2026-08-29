@@ -56,6 +56,7 @@ import {
   sessionDirectoryName,
   sessionDirectoryPaths,
 } from './sessionDirectories.js';
+import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellDependencies } from './main.js';
 
@@ -178,6 +179,21 @@ export interface EngineHostPlatform {
 export function createShellDependencies(
   appInfo: AppInfo,
   pickDocument: PickDocument,
+  /**
+   * Where settings are stored, as a surface rather than a directory.
+   *
+   * REQUIRED, and deliberately not defaulted to something in memory. A default
+   * would make *this build does not persist* the state a caller gets by saying
+   * nothing, and the failure it produces — preferences that reset every launch —
+   * is invisible in every test and obvious only to a user. B5: the choice is
+   * made visible at each call site instead of explained in a paragraph nobody
+   * has to read.
+   *
+   * The parameter is a surface and not a path for the reason `pickDocument` is a
+   * function and not `dialog`: `app.getPath('userData')` is Electron's answer,
+   * and this file may not ask Electron anything.
+   */
+  settings: SettingsSurface,
   enginePlatform: EngineHostPlatform | null = null,
 ): ShellDependencies {
   const capabilities = new CapabilityRegistry();
@@ -271,6 +287,7 @@ export function createShellDependencies(
       documents,
       openedDocument,
       pickDocument,
+      settings,
     }),
     incidents: reportIncident,
     failures: reportShellFailure,

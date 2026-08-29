@@ -75,6 +75,14 @@ function handlers() {
     pickDocument: () => {
       throw new Error('registration cases must not reach the picker');
     },
+    settings: {
+      read: () => {
+        throw new Error('registration cases must not reach the settings surface');
+      },
+      write: () => {
+        throw new Error('registration cases must not reach the settings surface');
+      },
+    },
   });
 }
 

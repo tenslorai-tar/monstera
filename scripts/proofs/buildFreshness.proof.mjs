@@ -43,6 +43,7 @@ const failures = [];
 const CASES = [
   'a source NEWER than its artefact is refused',
   'CONTROL: and the same pair with the artefact newer is accepted',
+  'EQUAL timestamps pass, because a tick is not evidence of staleness',
   'a directory source is dated by the newest file BENEATH it',
   'a test file is not an input, so touching one does not refuse',
   'a source directory the walk can date NOTHING in throws rather than reading as fresh',
@@ -142,6 +143,27 @@ try {
       `a current build was refused: ${message}\n      Without this line the case above passes ` +
         `for a guard that refuses everything — which would make every proof depending on it ` +
         `permanently red, and therefore make this guard the thing somebody deletes.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // The tie. Finding LLLLL-2: the rule was in the header and in no case.
+  // -------------------------------------------------------------------------
+  {
+    const root = tree();
+    writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
+    writeAt(join(root, 'dist', 'a.js'), 'built\n', OLD);
+    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js']], 1);
+    check(
+      'EQUAL timestamps pass, because a tick is not evidence of staleness',
+      !refused,
+      `a build whose artefact carries its source's exact timestamp was refused: ${message}\n` +
+        `      The resolver's header states this rule and, until this case, nothing asserted it — ` +
+        `so changing the comparison to \`>=\` reddened NOTHING while producing exactly the ` +
+        `failure that sentence predicts: a guard refusing a build somebody just made, on a fast ` +
+        `filesystem, intermittently. That is the shape of a check people delete.\n      ` +
+        `The timestamps are SET rather than produced by writing in order, so this case is a tie ` +
+        `by construction and not by how fast the disk happens to be.`,
     );
   }
 

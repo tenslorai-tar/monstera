@@ -193,6 +193,8 @@ describe('browser shim', () => {
       'document.readRange',
       'document.save',
       'document.undo',
+      'settings.load',
+      'settings.save',
     ]);
   });
 

@@ -353,6 +353,74 @@ export const channels = {
     ]),
     ['document-not-open'],
   ),
+
+  /**
+   * Everything the last run stored, for the renderer to hydrate from.
+   *
+   * **A setting is not a document**, so none of §6's per-document machinery
+   * applies: there is one set for the application, it is the user's, and it
+   * survives every document being closed.
+   *
+   * ## The value shape is `unknown`, and that is the boundary being honest
+   *
+   * Every other channel here validates its payload precisely. This one cannot,
+   * and pretending otherwise would be the defect: what a settings file holds is
+   * whatever a *previous build* wrote, so a schema stated here would be this
+   * build's opinion about last build's data — and a value it refused would be
+   * dropped by the boundary before the one component that knows how to read it
+   * ever saw it.
+   *
+   * The registry is the writer of record for what a stored value means (B3a):
+   * `SettingsRegistry.read` runs `migrate`, validates, and falls back to the
+   * default when a value cannot be salvaged. So the channel's job is to carry
+   * the bytes faithfully and the registry's job is to decide what they were,
+   * which is one opinion rather than two.
+   *
+   * `z.record` still refuses a non-object, which is the part that IS this
+   * boundary's business: a settings file holding an array or a string is
+   * corrupt in a way no registration can migrate.
+   *
+   * ## No failure codes
+   *
+   * A settings file that does not exist yet is a first launch, and an
+   * unreadable one is a corrupt file the user cannot act on — both answer with
+   * the defaults, which is what an empty object is. Declaring `absent` here
+   * would put a decision in the renderer that main has already taken correctly.
+   */
+  'settings.load': channel(
+    'Everything the previous run stored, unvalidated, for the registry to read.',
+    z.object({}),
+    z.object({ stored: z.record(z.string(), z.unknown()) }),
+  ),
+
+  /**
+   * Stores the whole settings object.
+   *
+   * ## THE WHOLE OBJECT, not one id at a time
+   *
+   * A per-id channel would make the file the sum of a sequence of writes, so an
+   * interrupted sequence leaves a state no single write produced — and a
+   * setting removed from the registry would need its own deletion message to
+   * ever leave the file. Sending everything makes the stored document a
+   * function of the store's current state, which is the only shape where
+   * "what is on disk" has one answer.
+   *
+   * It is also within L11 by the same reasoning `document.execute` is: this
+   * scales with the number of registered settings, never with a document.
+   *
+   * ## `secret` settings ARE included, and that is deliberate
+   *
+   * §7 excludes secrets from **export**, which is a different operation. A user
+   * who set an API key expects it to survive a restart; conflating the two
+   * either leaks the key into a shared file or forgets it every launch, and
+   * which one you get would depend on which caller reached for the store first.
+   * `SettingsStore.exportable()` is the other projection and stays separate.
+   */
+  'settings.save': channel(
+    'Replaces the stored settings with the values the renderer currently holds.',
+    z.object({ values: z.record(z.string(), z.unknown()) }),
+    z.object({ stored: z.literal(true) }),
+  ),
 } as const;
 
 export type Channels = typeof channels;

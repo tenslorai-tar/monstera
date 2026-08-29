@@ -84,6 +84,8 @@ export const handlers: ContractHandlers = {
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
+  'settings.load': () => Promise.resolve(ok({ stored: {} })),
+  'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
 `,
   },
@@ -121,6 +123,8 @@ export const handlers: ContractHandlers = {
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
+  'settings.load': () => Promise.resolve(ok({ stored: {} })),
+  'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
 `,
   },
@@ -233,6 +237,8 @@ export const shim: ContractClient = {
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
+  'settings.load': () => Promise.resolve(ok({ stored: {} })),
+  'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
 `,
   },

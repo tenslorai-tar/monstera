@@ -9,6 +9,7 @@ import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { THEME_SETTING } from './settings/appearance.js';
 import { SettingsStore } from './settingsStore.js';
+import { hydrateSettings, persistSettings } from './settingsSync.js';
 
 import './tokens.css';
 import './app.css';
@@ -56,13 +57,29 @@ if (container === null) {
 // failure would look like a missing translation rather than an ordering bug.
 activateCatalogue('en', EN);
 
+const client = createRendererClient();
+const settings = new SettingsStore(new SettingsRegistry([THEME_SETTING]));
+
+// HYDRATED BEFORE THE FIRST RENDER, and subscribed before the hydrate.
+//
+// The order is the whole of it. Subscribing first means a change arriving
+// during startup is not lost; awaiting the hydrate before rendering means the
+// application paints once, in the theme the user chose, rather than painting in
+// the default and correcting itself — which is a visible flash on every launch
+// for anyone who set anything.
+//
+// `persistSettings` ignores the `'*'` a hydrate emits, so subscribing first
+// does not write the file back over itself. That is stated there, because the
+// consequence of getting it wrong is not a flash: `hydrate` drops ids this
+// build's registry does not know, so a write triggered by a hydrate would
+// delete a newer build's settings from disk on startup.
+persistSettings(client, settings);
+await hydrateSettings(client, settings);
+
 createRoot(container).render(
   <StrictMode>
     <I18nProvider i18n={i18n}>
-      <App
-        client={createRendererClient()}
-        settings={new SettingsStore(new SettingsRegistry([THEME_SETTING]))}
-      />
+      <App client={client} settings={settings} />
     </I18nProvider>
   </StrictMode>,
 );

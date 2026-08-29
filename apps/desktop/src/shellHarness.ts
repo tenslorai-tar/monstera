@@ -3,6 +3,7 @@ import { app, dialog } from 'electron';
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { startShell } from './main.js';
+import { createEphemeralSettings } from './settingsFile.js';
 
 /**
  * Runs the REAL composition root and asks the renderer to use the contract.
@@ -174,9 +175,18 @@ app.on('browser-window-created', (_event, window) => {
 // Supplying one would have this proof create a real contained process on every
 // run, which is a different subject with a different cost — and the cases here
 // never open a document, so nothing would ask it for a session. The absent
-// third argument is the same `null` every unit test passes.
+// fourth argument is the same `null` every unit test passes.
 startShell(
-  createShellDependencies({ version: app.getVersion(), installChannel: 'development' }, () => {
-    throw new Error('the shell harness has no picker: it does not exercise opening');
-  }),
+  createShellDependencies(
+    { version: app.getVersion(), installChannel: 'development' },
+    () => {
+      throw new Error('the shell harness has no picker: it does not exercise opening');
+    },
+    // EPHEMERAL, so a harness run cannot configure the developer's application.
+    // Not a throwing surface like the picker beside it: the renderer hydrates
+    // from `settings.load` before its first render, so this one IS reached on
+    // every launch, and a throw here would make the harness fail at startup for
+    // a reason unrelated to what it measures.
+    createEphemeralSettings(),
+  ),
 );

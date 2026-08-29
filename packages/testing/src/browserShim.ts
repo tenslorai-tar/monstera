@@ -133,6 +133,20 @@ export interface BrowserShimOptions {
    * to do with what a test was asking about.
    */
   readonly documentBytes?: ReadonlyMap<string, Uint8Array>;
+
+  /**
+   * What a previous run stored, as `settings.load` will answer it.
+   *
+   * A fixture rather than something a test writes first through
+   * `settings.save`: *the renderer applies what was stored* and *the renderer
+   * stores what was changed* are two claims, and a test that had to make the
+   * second true in order to set up the first could not tell them apart.
+   *
+   * **Deliberately unvalidated**, matching the channel. A stored value the
+   * registry refuses is the interesting fixture — it is what an older build
+   * wrote — so a shim that rejected one could not be used to test the fallback.
+   */
+  readonly settings?: Readonly<Record<string, unknown>>;
   /**
    * Documents whose next command throws.
    *
@@ -184,6 +198,11 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied, not aliased: `options` is the caller's, and a handler that shifted
   // entries off it would mutate a value the caller may still be reading.
   const queuedOpens: OpenAnswer[] = [...(options.opens ?? [])];
+
+  // Copied rather than aliased, for the same reason the queue above is: a test
+  // holding the object it seeded would otherwise see it change underneath as
+  // the renderer saves.
+  let stored: Record<string, unknown> = { ...(options.settings ?? {}) };
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -324,6 +343,25 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const copy = new Uint8Array(end - begin);
       copy.set(bytes.subarray(begin, end));
       return Promise.resolve(ok({ kind: 'bytes' as const, bytes: copy }));
+    },
+
+    // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.
+    //
+    // That is the real boundary's behaviour with the process boundary removed:
+    // `settings.save` then `settings.load` answers with what was saved, which is
+    // what a test of *the renderer persists what it changed* needs, and a fresh
+    // shim is a fresh install. A shim that forgot immediately would make the
+    // round trip untestable; one that reached a module-level map would make two
+    // tests in one file share a user's preferences, which is the cross-test
+    // leakage a per-instance store makes unrepresentable.
+    //
+    // `options.settings` seeds it, so *what a previous run stored* is a fixture
+    // rather than something a test has to write first through the very channel
+    // it is about to assert on.
+    'settings.load': () => Promise.resolve(ok({ stored: { ...stored } })),
+    'settings.save': ({ values }) => {
+      stored = { ...values };
+      return Promise.resolve(ok({ stored: true as const }));
     },
   };
 

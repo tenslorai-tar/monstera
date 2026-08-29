@@ -39,6 +39,13 @@ const handlers: ContractHandlers = {
     // Echoes the SIZE it was asked for, so the L11 cases below can assert what
     // crossed rather than that something did.
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
+  'settings.load': () => Promise.resolve(ok({ stored: {} })),
+  // Echoes what it was handed, so a case can assert the values SURVIVED the
+  // boundary rather than that the call was accepted. A settings payload is the
+  // one place here whose values are deliberately unvalidated, which makes "did
+  // the schema quietly rewrite this" a real question rather than a rhetorical
+  // one.
+  'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
 
 describe('the shipping contract, exercised through its own map', () => {

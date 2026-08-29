@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
+import { createEphemeralSettings } from './settingsFile.js';
 
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
 
@@ -41,6 +42,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   // decided by this call being made, and the outcomes it must NOT be made for
   // produce exactly the same handler result as the one it must.
   const sessioned: DocId[] = [];
+  const settings = createEphemeralSettings();
   const handlers = createContractHandlers({
     appInfo,
     capabilities,
@@ -48,8 +50,13 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     documents,
     openedDocument: (docId) => sessioned.push(docId),
     pickDocument,
+    // RETURNED, so cases about persistence read the same object the handlers
+    // wrote rather than a second copy. `settings.save` answering `stored: true`
+    // is a claim about a surface having accepted the values, and a test that
+    // could not look at the surface would be asserting the call was made.
+    settings,
   });
-  return { capabilities, handlers, opened, sessioned };
+  return { capabilities, handlers, opened, sessioned, settings };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -251,6 +258,7 @@ describe('document.open', () => {
           documents,
           openedDocument: () => undefined,
           pickDocument: () => Promise.resolve(null),
+          settings: createEphemeralSettings(),
         }),
       };
     }

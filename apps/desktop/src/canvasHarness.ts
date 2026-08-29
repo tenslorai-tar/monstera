@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { app, ipcMain, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
+import { createEphemeralSettings } from './settingsFile.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 import { registerContractHandlers } from './registerHandlers.js';
 
@@ -324,6 +325,10 @@ export async function reportCanvasPixels(fixture: string, openControlName: strin
     // `createDocumentPicker()` — which is the point of the seam, and the reason
     // the dialog is the only thing this proof does not reach.
     () => Promise.resolve(fixture),
+    // EPHEMERAL, because this proof runs on a developer's machine and on CI, and
+    // a harness that wrote into the real `userData` would leave the application
+    // configured by a test run.
+    createEphemeralSettings(),
     null,
   );
   const window = createMainWindow(session.defaultSession, deps.failures);
