@@ -104,6 +104,27 @@ export function shipsOnTarget(entry) {
 }
 
 /**
+ * Whether this package being absent means the tree was never installed.
+ *
+ * **A platform variant is absent by design on every other platform, and this
+ * generator runs on two** — the `shim` job on Windows and both legs of the
+ * matrix build, the ubuntu one deliberately (finding C3). So absence is evidence
+ * of nothing for a package npm would not have fetched here.
+ *
+ * A package with **no** `os` or `cpu` constraint is one npm installs everywhere,
+ * so its absence is the uninstalled-tree signal and keeps its throw. Getting
+ * this backwards in either direction is silent: too strict and the generator
+ * refuses to run on Linux, too loose and a genuinely missing dependency drops
+ * out of NOTICE without a word.
+ *
+ * @param {{ os?: string[], cpu?: string[] }} entry
+ * @returns {boolean}
+ */
+export function requiresLocalInstall(entry) {
+  return entry.os === undefined && entry.cpu === undefined;
+}
+
+/**
  * Every third-party package in the production tree.
  *
  * Read from the lockfile rather than by walking node_modules: the lockfile is
@@ -125,16 +146,23 @@ export function shipsOnTarget(entry) {
  * which the header calls worse than no notice; selecting by `process.platform`
  * would make NOTICE a property of the machine.
  *
- * **This makes the generator Windows-only, and that is stated rather than
- * discovered:** a variant that ships and is not installed still throws, so
- * running it on Linux fails loudly on the win32 package instead of quietly
- * producing a different file. CI runs `--check` in the `shim` job, which is
- * `windows-latest`.
+ * **And it runs on Linux too, which the first version of this rule got wrong.**
+ * `ci.yml` runs `--check` in the `shim` job *and* in both legs of the matrix
+ * build — the ubuntu one deliberately, because `licenceText` looks for
+ * upper-case filenames and ext4 will not match a package shipping `license`
+ * (finding C3). So a shipped variant that this platform does not install cannot
+ * throw: its terms come from the lockfile (`version`, `license`) and from the
+ * family meta-package, which carries no `os` constraint and is therefore
+ * installed everywhere. The output is identical on both platforms, which is what
+ * `--check` compares.
+ *
+ * A package with **no** platform constraint that is missing still throws. That is
+ * the tree-not-installed signal, and it keeps its teeth.
  *
  * @returns {ShippedPackage[]}
  */
 function shippedPackages() {
-  /** @type {{ packages?: Record<string, { dev?: boolean, version?: string, link?: boolean, resolved?: string, optional?: boolean, os?: string[], cpu?: string[] }> }} */
+  /** @type {{ packages?: Record<string, { dev?: boolean, version?: string, link?: boolean, resolved?: string, optional?: boolean, os?: string[], cpu?: string[], license?: unknown }> }} */
   const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'));
   const entries = Object.entries(lock.packages ?? {});
 
@@ -152,7 +180,8 @@ function shippedPackages() {
     if (name.startsWith('@monstera/')) continue;
 
     const installed = join(ROOT, path);
-    if (!existsSync(join(installed, 'package.json'))) {
+    const here = existsSync(join(installed, 'package.json'));
+    if (!here && requiresLocalInstall(entry)) {
       throw new Error(
         `${name} is in the production tree but is not installed at ${path}. NOTICE cannot be ` +
           `generated from a tree that has not been installed — run npm ci first.`,
@@ -160,7 +189,12 @@ function shippedPackages() {
     }
 
     /** @type {{ license?: unknown, licenses?: unknown, version?: string }} */
-    const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
+    const manifest = here
+      ? JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'))
+      : // The lockfile carries the same two fields for a package it resolved but
+        // this platform did not fetch, and they are what a reproducible install
+        // would have produced — which is the definition this file already uses.
+        { license: entry.license, version: entry.version };
     const licence = spdxOf(manifest);
     if (licence === null) {
       throw new Error(
@@ -170,7 +204,7 @@ function shippedPackages() {
       );
     }
 
-    const own = licenceText(installed);
+    const own = here ? licenceText(installed) : null;
     const fromFamily = own === null ? familyLicence(name, licence, `${entry.version ?? ''}`) : null;
     const text = own ?? fromFamily?.text ?? null;
     if (text === null) {

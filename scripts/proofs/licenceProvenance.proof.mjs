@@ -52,6 +52,7 @@ import {
   declaredNativeComponents,
   familyLicence,
   renderNotice,
+  requiresLocalInstall,
   shipsOnTarget,
   verifyLicenceSources,
 } from '../release/generateNotice.mjs';
@@ -265,6 +266,27 @@ try {
     `npm reads \`!win32\` as "anywhere but Windows". Treating a negation as a plain list would ` +
       `include exactly the packages that exclude the shipped platform, and exclude the ones that ` +
       `permit it — wrong in both directions at once, and silent.`,
+  );
+
+  check(
+    'an ORDINARY package missing from node_modules still means the tree is not installed',
+    requiresLocalInstall({}),
+    `This is the signal that predates every rule here and it must keep its teeth: a production ` +
+      `dependency npm installs everywhere, absent, means somebody ran this before \`npm ci\`. ` +
+      `Losing it would drop a genuinely missing package out of NOTICE without a word.`,
+  );
+
+  check(
+    'CONTROL: a platform variant missing from node_modules does NOT',
+    !requiresLocalInstall({ os: ['win32'] }) &&
+      !requiresLocalInstall({ cpu: ['x64'] }) &&
+      !requiresLocalInstall({ os: ['win32'], cpu: ['x64'] }),
+    `\`ci.yml\` runs this generator on the \`shim\` job AND on both legs of the matrix build — ` +
+      `the ubuntu one deliberately, because \`licenceText\` looks for upper-case filenames and ` +
+      `ext4 will not match a package shipping \`license\` (C3). The win32 variant NOTICE names is ` +
+      `absent there by design, and throwing for it makes this generator Windows-only, which is ` +
+      `what the first version of the platform rule did. Measured: with that directory moved ` +
+      `aside, \`--check\` reports NOTICE current and byte-identical.`,
   );
 
   check(

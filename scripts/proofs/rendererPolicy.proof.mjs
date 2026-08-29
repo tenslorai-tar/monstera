@@ -86,9 +86,21 @@ function newestMtime(path) {
   const entry = statSync(path);
   if (!entry.isDirectory()) return entry.mtimeMs;
 
-  let newest = entry.mtimeMs;
+  // FILES ONLY — a directory's own mtime is not seeded here, and it is a second
+  // route to the same false alarm rather than the same one. A directory's
+  // timestamp moves when a file is CREATED IN or REMOVED FROM it, so a new test
+  // bumps the tree even with the test itself excluded below; editing one does
+  // not. Measured 2026-08-29 by restoring the seed: `touch` on an existing test
+  // passes, and creating `__scratch_probe.test.ts` stops the proof dead.
+  let newest = 0;
   for (const name of readdirSync(path)) {
     if (name === 'node_modules' || name === 'dist' || name === '.git') continue;
+    // A TEST IS NOT AN INPUT TO THE BUNDLE, and including one makes this guard
+    // fire for an edit that cannot change the artefact. Measured 2026-08-29 by
+    // disabling this line: build, `touch renderPage.test.ts`, and the proof
+    // stops dead on a build that is current. A guard that cries wolf is one
+    // somebody turns off, which would cost the real staleness it was added for.
+    if (/\.test\.tsx?$/u.test(name)) continue;
     const at = newestMtime(join(path, name));
     if (at > newest) newest = at;
   }
