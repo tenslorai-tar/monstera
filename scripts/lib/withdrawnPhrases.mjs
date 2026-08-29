@@ -12,8 +12,8 @@
  * ## The matching unit
  *
  * A phrase is matched against a UNIT, not a line, and the same unit supplies the
- * context that can excuse it. Three separate false negatives came from getting
- * this wrong, and they are the same defect in three costumes:
+ * context that can excuse it. Four separate false negatives came from getting
+ * this wrong, and they are the same defect in four costumes:
  *
  *   1. **Literal bytes.** `(stream bytes × 3.7)` in one document,
  *      `(stream bytes × ~3.7)` in another. An approximation tilde is exactly the
@@ -27,7 +27,17 @@
  *      declared phrase long enough to wrap escaped in silence — and the longer
  *      the phrase, the likelier it wraps, which is backwards.
  *
- * All three are one rule now: build the unit, normalise it, match against it.
+ *   4. **Inline markup.** A declared phrase is read out from between backticks,
+ *      so it arrives as plain text; a document states the same claim with a code
+ *      span or bold **inside** the phrase. `one byte snapshot per DocVersion`
+ *      did not match ``**one byte snapshot per `DocVersion`**``, which is how
+ *      ARCHITECTURE §2 writes it. Worse than a miss: a phrase carrying a
+ *      backtick cannot be DECLARED either, because the extractor's own class is
+ *      `[^backtick]+` — so that claim was unmatchable from both ends.
+ *
+ * All four are one rule now: build the unit, normalise it, match against it.
+ * The fourth was found by the sweep failing to find the line it was pointed at,
+ * which is the only way an instrument of this shape ever announces itself.
  */
 
 /** A line holding only backticked phrases separated by middots. */
@@ -45,11 +55,20 @@ const QUALIFIER =
   /withdrawn|withdrew|retracted|superseded|no longer|used to|wrong response|did not|rejected/i;
 
 /**
+ * The difference prose acquires and a claim does not: an approximation tilde,
+ * a wrap, and the emphasis or code span a document dresses a phrase in. All
+ * three are removed here rather than at call sites, because this is the one
+ * place that owns what "the same phrase" means (B3a).
+ *
  * @param {string} text
  * @returns {string}
  */
 export function normalise(text) {
-  return text.replace(/~/g, '').replace(/\s+/g, ' ').toLowerCase();
+  return text
+    .replace(/~/g, '')
+    .replace(/[`*_]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
 }
 
 /**

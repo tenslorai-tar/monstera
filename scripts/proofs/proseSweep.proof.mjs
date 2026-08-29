@@ -30,6 +30,20 @@ function lineScoped(/** @type {RegExp} */ pattern, /** @type {string} */ text) {
   return text.split('\n').filter((line) => pattern.test(line.toLowerCase())).length;
 }
 
+/** How a document dresses a claim; how a declaration arrives is plain. */
+const MARKUP_TEXT = 'the **alpha** and `beta gamma` rule';
+const MARKUP_PATTERN = /alpha and beta gamma/u;
+
+/**
+ * The normaliser as it stood before emphasis and code spans were stripped —
+ * tildes and whitespace only. Kept here rather than imported because its whole
+ * job is to be the version that fails.
+ */
+function markupBlind(/** @type {RegExp} */ pattern, /** @type {string} */ text) {
+  const flat = text.replace(/~/g, '').replace(/\s+/g, ' ').toLowerCase();
+  return pattern.test(flat) ? 1 : 0;
+}
+
 // ---------------------------------------------------------------------------
 // It can see, and the control is one the thing it replaces would MISS.
 // ---------------------------------------------------------------------------
@@ -89,6 +103,22 @@ check(
   'runs of whitespace collapse, so indentation and wrapping do not matter',
   findInUnits(/one two three/u, '    one   two\n\tthree').length === 1,
   `Indented list continuations are the ordinary shape in this repository's documents.`,
+);
+
+check(
+  'a phrase a document dresses in a CODE SPAN or bold is found',
+  findInUnits(MARKUP_PATTERN, MARKUP_TEXT).length === 1,
+  `A declared phrase is read out from between backticks, so it arrives plain, while documents ` +
+    `state the same claim with markup inside it. This is the fourth false negative of the same ` +
+    `shape and it was found by the sweep missing the line it had been pointed at.`,
+);
+
+check(
+  'AND A MARKUP-BLIND NORMALISER MISSES IT, so the control separates the two',
+  markupBlind(MARKUP_PATTERN, MARKUP_TEXT) === 0,
+  `Without this the case above is a fixture the defect also handles correctly: it would pass ` +
+    `against the normaliser that stripped only tildes and whitespace, which is the exact version ` +
+    `that reported one match for a phrase this repository states three times.`,
 );
 
 // ---------------------------------------------------------------------------
