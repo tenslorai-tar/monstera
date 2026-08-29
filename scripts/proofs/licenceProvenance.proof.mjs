@@ -50,7 +50,9 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import {
   checkLicenceSources,
   declaredNativeComponents,
+  familyLicence,
   renderNotice,
+  shipsOnTarget,
   verifyLicenceSources,
 } from '../release/generateNotice.mjs';
 
@@ -222,6 +224,78 @@ try {
   } else {
     passed.push('SKIPPED: MuPDF source not provisioned — the real tree was NOT checked here');
   }
+}
+
+// ---------------------------------------------------------------------------
+// THE NPM SIDE, which had no cases at all until a production dependency brought
+// its first optional platform family (`pdfjs-dist`'s `@napi-rs/canvas`,
+// 2026-08-29). Both behaviours below were written that day and both decide what
+// NOTICE says about a native binary this project distributes.
+// ---------------------------------------------------------------------------
+{
+  check(
+    'a package with no os or cpu constraint always ships',
+    shipsOnTarget({}) && shipsOnTarget({ os: [], cpu: [] }),
+    `An ordinary package carries neither field, and every one of the 36 entries that predate ` +
+      `this rule is in that shape. If this is false the NOTICE is empty, which is the failure ` +
+      `mode the whole file exists to prevent.`,
+  );
+
+  check(
+    "the SHIPPED platform's variant is included",
+    shipsOnTarget({ os: ['win32'], cpu: ['x64'] }),
+    `ADR-0018 distributes a Windows x64 build through the Microsoft Store and nothing else, so ` +
+      `this is the variant that actually reaches a user's machine. Omitting it would state the ` +
+      `terms of every package except the native binary.`,
+  );
+
+  check(
+    'CONTROL: another platform’s variant is EXCLUDED, so the rule is not "everything"',
+    !shipsOnTarget({ os: ['android'], cpu: ['arm64'] }) &&
+      !shipsOnTarget({ os: ['linux'], cpu: ['x64'] }) &&
+      !shipsOnTarget({ os: ['win32'], cpu: ['arm64'] }),
+    `Without this the case above passes for a predicate that returns true for everything — which ` +
+      `is what the code did before, and is why generating NOTICE demanded the Android build be ` +
+      `installed on a Windows machine. The third one matters most: same os, wrong cpu.`,
+  );
+
+  check(
+    'a NEGATED constraint is honoured the way npm honours it',
+    shipsOnTarget({ os: ['!darwin'] }) && !shipsOnTarget({ os: ['!win32'] }),
+    `npm reads \`!win32\` as "anywhere but Windows". Treating a negation as a plain list would ` +
+      `include exactly the packages that exclude the shipped platform, and exclude the ones that ` +
+      `permit it — wrong in both directions at once, and silent.`,
+  );
+
+  check(
+    "a platform binary's terms are read from its family's meta-package",
+    familyLicence('@napi-rs/canvas-win32-x64-msvc', 'MIT', '1.0.8')?.from === '@napi-rs/canvas',
+    `That package contains a .node binary, ICU data and a README — no licence text of any kind. ` +
+      `Its terms are published once, in the meta-package npm installs beside it. Read from a ` +
+      `real file, with the link asserted on scope, version and SPDX id rather than assumed.`,
+  );
+
+  check(
+    'CONTROL: a family whose VERSION disagrees is refused',
+    familyLicence('@napi-rs/canvas-win32-x64-msvc', 'MIT', '9.9.9') === null,
+    `Without this the lookup would accept any prefix that happens to exist, which is how a ` +
+      `package acquires the terms of a different release of something adjacent to it. The ` +
+      `version is one of the three properties that make this an assertion rather than a guess.`,
+  );
+
+  check(
+    'CONTROL: a family whose SPDX id disagrees is refused',
+    familyLicence('@napi-rs/canvas-win32-x64-msvc', 'Apache-2.0', '1.0.8') === null,
+    `The second of the three. A parent under different terms is not this package's licensor, and ` +
+      `taking its text would state terms nobody granted — the precise harm "no guessing" names.`,
+  );
+
+  check(
+    'CONTROL: a name with no installed parent is refused rather than invented',
+    familyLicence('@monstera/not-a-real-package-x64', 'MIT', '1.0.0') === null,
+    `The third. A prefix walk that returned something for a name with no family would make the ` +
+      `two cases above pass for a function that answers anything.`,
+  );
 }
 
 if (failures.length > 0) {

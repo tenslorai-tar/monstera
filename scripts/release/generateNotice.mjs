@@ -66,16 +66,75 @@ const LICENCE_FILES = [
  */
 
 /**
+ * The platform this project distributes for.
+ *
+ * ADR-0018: the Microsoft Store, and nothing else. So the artefact whose
+ * third-party terms this file states is a Windows x64 build, and the per-platform
+ * native packages that belong in it are that build's — not the ones the machine
+ * running this generator happens to have installed.
+ *
+ * Naming the target rather than reading `process.platform` is what keeps NOTICE
+ * a property of the **artefact**. Read from the environment, this file would
+ * differ between a Windows developer and a Linux one, and `--check` would be red
+ * for whichever of them did not write it — a check failing for a reason it does
+ * not claim.
+ */
+const SHIPPED_OS = 'win32';
+const SHIPPED_CPU = 'x64';
+
+/**
+ * Whether a per-platform package belongs in the shipped artefact.
+ *
+ * npm gives an optional platform variant `os` and/or `cpu` arrays and installs it
+ * only where they match. A package with neither is not a variant and always
+ * counts. Negations (`!win32`) are honoured because npm honours them.
+ *
+ * @param {{ os?: string[], cpu?: string[] }} entry
+ * @returns {boolean}
+ */
+export function shipsOnTarget(entry) {
+  /** @param {string[] | undefined} list @param {string} value */
+  const matches = (list, value) => {
+    if (list === undefined || list.length === 0) return true;
+    const negations = list.filter((item) => item.startsWith('!'));
+    if (negations.length > 0) return !negations.includes(`!${value}`);
+    return list.includes(value);
+  };
+  return matches(entry.os, SHIPPED_OS) && matches(entry.cpu, SHIPPED_CPU);
+}
+
+/**
  * Every third-party package in the production tree.
  *
  * Read from the lockfile rather than by walking node_modules: the lockfile is
  * what a reproducible install produces, and a walk would also see whatever a
  * developer happened to install locally.
  *
+ * ## Platform variants, and the rule this file already stated
+ *
+ * The header defines the shipped set as *"the set npm resolves with
+ * `--omit=dev`"*, and that resolution is **platform-scoped**: npm installs
+ * `@napi-rs/canvas-linux-x64-gnu` on Linux and `@napi-rs/canvas-win32-x64-msvc`
+ * on Windows, and neither anywhere else. The implementation did not know that,
+ * and it never mattered until a production dependency brought its first optional
+ * platform family — `pdfjs-dist`'s `@napi-rs/canvas`, 2026-08-29 — at which point
+ * it demanded the Android build be installed on a Windows machine.
+ *
+ * So variants are selected for {@link SHIPPED_OS}/{@link SHIPPED_CPU} rather than
+ * skipped. Skipping them all would omit the native binary that actually ships,
+ * which the header calls worse than no notice; selecting by `process.platform`
+ * would make NOTICE a property of the machine.
+ *
+ * **This makes the generator Windows-only, and that is stated rather than
+ * discovered:** a variant that ships and is not installed still throws, so
+ * running it on Linux fails loudly on the win32 package instead of quietly
+ * producing a different file. CI runs `--check` in the `shim` job, which is
+ * `windows-latest`.
+ *
  * @returns {ShippedPackage[]}
  */
 function shippedPackages() {
-  /** @type {{ packages?: Record<string, { dev?: boolean, version?: string, link?: boolean, resolved?: string }> }} */
+  /** @type {{ packages?: Record<string, { dev?: boolean, version?: string, link?: boolean, resolved?: string, optional?: boolean, os?: string[], cpu?: string[] }> }} */
   const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8'));
   const entries = Object.entries(lock.packages ?? {});
 
@@ -86,6 +145,8 @@ function shippedPackages() {
     if (entry.dev === true) continue;
     // Workspace links are this repository's own code, covered by its own licence.
     if (entry.link === true) continue;
+    // Not on the shipped platform, so not in the shipped artefact.
+    if (!shipsOnTarget(entry)) continue;
 
     const name = path.slice('node_modules/'.length);
     if (name.startsWith('@monstera/')) continue;
@@ -109,11 +170,14 @@ function shippedPackages() {
       );
     }
 
-    const text = licenceText(installed);
+    const own = licenceText(installed);
+    const fromFamily = own === null ? familyLicence(name, licence, `${entry.version ?? ''}`) : null;
+    const text = own ?? fromFamily?.text ?? null;
     if (text === null) {
       throw new Error(
-        `${name} declares ${licence} but ships no licence text (looked for ${LICENCE_FILES.join(', ')}). ` +
-          `An SPDX identifier is not a licence notice — the terms have to travel with the software.`,
+        `${name} declares ${licence} but ships no licence text (looked for ${LICENCE_FILES.join(', ')}), ` +
+          `and no meta-package of the same family carries it either. An SPDX identifier is not a ` +
+          `licence notice — the terms have to travel with the software.`,
       );
     }
 
@@ -150,6 +214,57 @@ function licenceText(directory) {
   for (const candidate of LICENCE_FILES) {
     const path = join(directory, candidate);
     if (existsSync(path)) return readFileSync(path, 'utf8').trim();
+  }
+  return null;
+}
+
+/**
+ * The terms of a per-platform binary package, read from its family's
+ * meta-package.
+ *
+ * ## Why this is not the guessing the header forbids
+ *
+ * `@napi-rs/canvas-win32-x64-msvc` contains three files — a `.node` binary, ICU
+ * data and a README — and no licence text at all. Its terms are published once,
+ * in `@napi-rs/canvas`, which npm installs beside it. That is the ordinary
+ * publishing shape for a native family, and refusing it would mean this project
+ * cannot state the terms of a binary it ships, which is the outcome the rule
+ * exists to prevent rather than one it wants.
+ *
+ * So the text is read from a REAL FILE, and the link to it is **asserted rather
+ * than assumed**, on three properties the caller can check in a diff:
+ *
+ *  - the parent is a strict name prefix of the variant, in the same scope;
+ *  - it is installed at the same **version**;
+ *  - it declares the **same SPDX identifier**.
+ *
+ * Any of the three failing means this is not one family and the caller throws.
+ * A prefix that merely looks like one — `foo-bar` under `foo` at a different
+ * version, or under a different licence — is exactly what those checks refuse.
+ *
+ * The prefix is walked from the longest, one hyphen-separated segment at a time,
+ * because a platform suffix is not one segment: `-win32-x64-msvc` is three.
+ *
+ * @param {string} name
+ * @param {string} licence SPDX id the variant declares.
+ * @param {string} version
+ * @returns {{ text: string, from: string } | null}
+ */
+export function familyLicence(name, licence, version) {
+  const segments = name.split('-');
+  for (let keep = segments.length - 1; keep >= 1; keep -= 1) {
+    const parent = segments.slice(0, keep).join('-');
+    if (parent === name) continue;
+    const installed = join(ROOT, 'node_modules', parent);
+    if (!existsSync(join(installed, 'package.json'))) continue;
+
+    /** @type {{ license?: unknown, licenses?: unknown, version?: string }} */
+    const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'));
+    if (`${manifest.version ?? ''}` !== version) continue;
+    if (spdxOf(manifest) !== licence) continue;
+
+    const text = licenceText(installed);
+    if (text !== null) return { text, from: parent };
   }
   return null;
 }
