@@ -53,6 +53,11 @@ function contextStub(): DocumentContext & {
     mutableLog: log,
     docId: 'stub' as DocumentContext['docId'],
     path: 'stub',
+    // A CONSTANT, and the stub says so rather than modelling a rewrite. Nothing
+    // in this file reads it: the bus's subject is what it records and what it
+    // bumps, and a fake that pretended to resize would be inventing behaviour
+    // the real service owns.
+    byteLength: 0,
     get version(): DocVersion {
       return version;
     },

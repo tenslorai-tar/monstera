@@ -147,7 +147,17 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     const commands = new DocumentCommands(service, bus(), engine(), noSaving);
 
     // Opened at 1; one applied mutation makes it 2 (ADR-0009 §5).
-    await expect(commands.execute(docId, rotateOnce)).resolves.toBe(2);
+    const applied = await commands.execute(docId, rotateOnce);
+    expect(applied.version).toBe(2);
+
+    // THE BYTE LENGTH IS THE POST-COMMAND ONE, and asserting it is not zero is
+    // what says so. A rewrite that produced nothing, and a read taken before the
+    // bus ran, both leave a number — this separates them from a length the
+    // engine actually produced. It is deliberately not pinned to a figure: what
+    // MuPDF emits for a rotated page is MuPDF's business and would make this
+    // case fail on an engine upgrade that worked perfectly.
+    expect(applied.byteLength).toBeGreaterThan(0);
+
     await expect(ownRotation(0)).resolves.toBe(90);
   });
 
@@ -222,7 +232,8 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // document it has never heard of.
     const commands = new DocumentCommands(service, bus(), engine(), noSaving);
 
-    await expect(commands.execute(docId, rotateOnce)).resolves.toBeGreaterThan(0);
+    const applied = await commands.execute(docId, rotateOnce);
+    expect(applied.version).toBeGreaterThan(0);
   });
 });
 

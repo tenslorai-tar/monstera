@@ -392,6 +392,31 @@ export interface DocumentContext {
   readonly log: ReadonlyCommandLog;
 
   /**
+   * How long the document's canonical image is, **right now**.
+   *
+   * ## Why a lane entry may read this, when it may not read the version
+   *
+   * There is deliberately no accessor for a document's current version outside
+   * the lane, because a stamp read after an await would attribute one version's
+   * work to another. This is the same value class and it is safe for the same
+   * reason the version stamp on {@link Versioned} is: read inside the lane,
+   * which is serial, so nothing can change it between the work finishing and
+   * this being read.
+   *
+   * ## What needs it, and why the renderer cannot do without it
+   *
+   * `document.open` already answers with a byte length, because the renderer
+   * builds a `PDFDataRangeTransport` around one and PDF.js needs the total up
+   * front. A command **rewrites the document**, so a renderer that rebound its
+   * transport on the new version alone would bind it to the previous image's
+   * length: short by however much the rewrite added, or long by however much it
+   * removed, and a range past the end is a `RangeError` the handler reports as
+   * `internal`. Adding a scalar here is the same trade `document.open` already
+   * made and is nothing like putting the document on the wire.
+   */
+  readonly byteLength: number;
+
+  /**
    * Records that the document's current content is what the file now holds.
    *
    * Called by the save pipeline after the bytes land. Safe to read the current
@@ -1260,6 +1285,15 @@ export class DocumentService {
           // type over.
           commandLog: () => record.log,
           log: record.log,
+          // A GETTER, so it answers about the image the document has NOW rather
+          // than the one it had when this entry started. A command rewrites the
+          // canonical bytes, and the caller that needs this reads it after the
+          // bus returns — a value captured at entry would be the length of the
+          // document the command replaced, which is `Versioned`'s own hazard
+          // wearing a different field name.
+          get byteLength() {
+            return record.bytes.byteLength;
+          },
           markSaved: () => {
             record.savedVersion = record.version;
             return record.savedVersion;

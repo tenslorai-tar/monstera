@@ -59,6 +59,10 @@ function held(version: number): Held {
       docId: DOC,
       path: TARGET,
       version: at,
+      // Unread here, like `path` was before the pipeline existed: saving is
+      // about what reaches the file, and the canonical image's length is the
+      // renderer's question rather than this one's.
+      byteLength: 0,
       bumpVersion: (_writer: CommandWriter): DocVersion => at,
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,

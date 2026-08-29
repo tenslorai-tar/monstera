@@ -251,7 +251,12 @@ describe('browser shim', () => {
         command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
       });
 
-      expect(executed).toStrictEqual({ ok: true, value: { version: 4 } });
+      // The byte length rides with the version because a command rewrites the
+      // document, and a renderer rebinding its transport on the version alone
+      // binds to the previous image's size. This shim was given no bytes, so it
+      // answers its non-zero stand-in — zero is what an absent document reports,
+      // and a length nothing can act on reads exactly like one nobody sent.
+      expect(executed).toStrictEqual({ ok: true, value: { version: 4, byteLength: 1024 } });
     });
 
     it('carries no path in either direction', async () => {

@@ -46,10 +46,13 @@ export function executeCommandHandler(
 ): ContractHandlers['document.execute'] {
   return async ({ docId, command }) => {
     try {
-      // Only the version crosses. `Executed` carries the log entry, and an entry
-      // holds an inverse or a checkpoint — a whole byte image of the document.
-      const version = await commands.execute(docId, command);
-      return ok({ version });
+      // TWO SCALARS CROSS, and `Executed` still does not. An entry holds an
+      // inverse or a checkpoint — a whole byte image — so what the bus produced
+      // never leaves main. The version says the renderer's view is stale and the
+      // byte length is what it rebuilds that view against, both the same size
+      // for any document.
+      const applied = await commands.execute(docId, command);
+      return ok(applied);
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

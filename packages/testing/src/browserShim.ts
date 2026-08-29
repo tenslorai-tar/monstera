@@ -204,6 +204,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // the renderer saves.
   let stored: Record<string, unknown> = { ...(options.settings ?? {}) };
 
+  /**
+   * What a command reports the document's new size as.
+   *
+   * Real bytes when a test supplied them, so a renderer rebinding its transport
+   * gets a length its own ranges agree with. Otherwise a **non-zero constant**,
+   * because zero is what an absent document reports and a length nothing can act
+   * on is indistinguishable from a length nobody sent.
+   *
+   * @param docId the document a command was applied to
+   */
+  const byteLengthOf = (docId: string): number =>
+    options.documentBytes?.get(docId)?.byteLength ?? 1024;
+
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
   // body with no `await` is a lint error rather than a style preference. A
@@ -249,7 +262,14 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const next = current + 1;
       versions.set(docId, next);
       undoable.set(docId, (undoable.get(docId) ?? 0) + 1);
-      return Promise.resolve(ok({ version: asDocVersion(next) }));
+      // THE BYTE LENGTH CHANGES, and it changes by a different amount than the
+      // renderer would guess. A command rewrites the document, and a shim that
+      // answered with the length it already had would let a transport bound to
+      // the OLD size pass every test here — the fixture the defect handles
+      // correctly. `documentBytes` is what a range is served from, so a test
+      // that supplies real bytes gets a length consistent with them; one that
+      // does not gets a number that moves.
+      return Promise.resolve(ok({ version: asDocVersion(next), byteLength: byteLengthOf(docId) }));
     },
 
     'document.undo': ({ docId }) => {
@@ -273,7 +293,9 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // the opposite.
       const next = current + 1;
       versions.set(docId, next);
-      return Promise.resolve(ok({ kind: 'undone' as const, version: asDocVersion(next) }));
+      return Promise.resolve(
+        ok({ kind: 'undone' as const, version: asDocVersion(next), byteLength: byteLengthOf(docId) }),
+      );
     },
     /**
      * Save, and the shim's job here is to make the two non-success outcomes

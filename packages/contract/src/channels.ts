@@ -84,11 +84,25 @@ export const channels = {
    * with the document. The gate the note owes is still owed, by the first
    * channel that carries bytes.
    *
-   * **The result is the version and nothing else.** A log entry holds an inverse
-   * or a checkpoint — a whole byte image of the document — so returning what the
-   * bus produced would put the document on the wire once per operation, which is
-   * exactly what L11 forbids. The version is what the renderer needs to know its
-   * view is stale.
+   * **The result is two scalars, and never what the bus produced.** A log entry
+   * holds an inverse or a checkpoint — a whole byte image of the document — so
+   * returning it would put the document on the wire once per operation, which is
+   * exactly what L11 forbids.
+   *
+   * This said *"the version and nothing else"* until 2026-08-30, and the first
+   * real caller found the sentence too wide. The version tells the renderer its
+   * view is stale; **rebuilding that view needs the new byte length too**,
+   * because the renderer drives PDF.js through a `PDFDataRangeTransport` bound
+   * to a total size, and a command rewrites the document. Rebinding on the
+   * version alone binds to the previous image's length — a range past the end is
+   * a `RangeError` the handler reports as `internal`, and a range short of it is
+   * a parse of a truncated document.
+   *
+   * `document.open` already answers with a byte length for exactly this reason,
+   * so **not** answering with one here was the inconsistency rather than the
+   * discipline. Both are scalars: they are the same size for a two-page document
+   * and a twenty-thousand-page one, which is the L11 test and the only one that
+   * matters.
    *
    * All three failure codes are **outcomes, not defects**. A document closes
    * while a command is in flight (`document-not-open`), a runaway caller
@@ -197,7 +211,7 @@ export const channels = {
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
     z.object({ docId: docIdSchema, command: commandSchema }),
-    z.object({ version: docVersionSchema }),
+    z.object({ version: docVersionSchema, byteLength: z.number().int().nonnegative() }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
@@ -236,7 +250,18 @@ export const channels = {
     'Steps one entry back in an open document’s command log.',
     z.object({ docId: docIdSchema }),
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('undone'), version: docVersionSchema }),
+      // Carries the byte length for the same reason `document.execute` does:
+      // an undo is an applied mutation, it rewrites the canonical image, and a
+      // renderer rebinding its transport on the version alone binds to the
+      // image the undo replaced.
+      z.object({
+        kind: z.literal('undone'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+      }),
+      // `nothing-to-undo` carries neither, and that is not an omission: nothing
+      // moved, so the renderer's view is not stale and there is nothing to
+      // rebind. A version here would invite a caller to reopen for no reason.
       z.object({ kind: z.literal('nothing-to-undo') }),
     ]),
     [

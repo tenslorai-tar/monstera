@@ -33,7 +33,8 @@ const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
-  'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
+  'document.execute': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096 })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
   'document.readRange': ({ begin, end }) =>
     // Echoes the SIZE it was asked for, so the L11 cases below can assert what
@@ -67,7 +68,7 @@ describe('the shipping contract, exercised through its own map', () => {
         docId: asDocId('doc-1'),
         command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
       }),
-    ).resolves.toStrictEqual(ok({ version: 1 }));
+    ).resolves.toStrictEqual(ok({ version: 1, byteLength: 4096 }));
   });
 
   it('the params schema REFUSES a command the union does not declare', async () => {

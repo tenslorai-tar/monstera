@@ -263,11 +263,11 @@ function refusalReason(
 function undoHandler(commands: DocumentCommands): ContractHandlers['document.undo'] {
   return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.undo']>>> => {
     try {
-      const version = await commands.undo(docId);
+      const applied = await commands.undo(docId);
       return ok(
-        version === undefined
+        applied === undefined
           ? ({ kind: 'nothing-to-undo' } as const)
-          : ({ kind: 'undone', version } as const),
+          : ({ kind: 'undone', ...applied } as const),
       );
     } catch (thrown) {
       // MATCHED ON THE CLASS, never on the message — the reason

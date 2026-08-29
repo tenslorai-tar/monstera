@@ -79,7 +79,7 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-  'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1) })),
+  'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
   'document.readRange': ({ begin, end }) =>

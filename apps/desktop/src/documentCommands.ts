@@ -264,6 +264,27 @@ export type DocumentFlush = (
   sessions: DocumentSessions,
 ) => Promise<ByteImage>;
 
+/**
+ * What an applied mutation produced: the two scalars that describe the document
+ * it left behind.
+ *
+ * ## Why they travel together and neither is optional
+ *
+ * The version says a renderer's view is stale. The byte length is what it needs
+ * to build the replacement — PDF.js is driven through a transport bound to a
+ * total size, and a command rewrites the canonical image. A caller given only
+ * the version rebinds to the previous image's length, which is a `RangeError`
+ * past the end or a truncated parse short of it.
+ *
+ * Read at one moment inside the lane, so they describe one document rather than
+ * two. That is `Versioned`'s own argument, applied to the second value the same
+ * caller needs.
+ */
+export interface Applied {
+  readonly version: DocVersion;
+  readonly byteLength: number;
+}
+
 export class DocumentCommands {
   readonly #documents: DocumentService;
   readonly #bus: CommandBus;
@@ -316,10 +337,10 @@ export class DocumentCommands {
   async execute<K extends CommandKind>(
     docId: DocId,
     command: CommandOfKind<K>,
-  ): Promise<DocVersion> {
+  ): Promise<Applied> {
     const spec: DeclaredCommands[K] = declaredCommands[command.kind];
 
-    const { version } = await this.#documents.run(docId, async (context) => {
+    const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -328,9 +349,14 @@ export class DocumentCommands {
       if (session === undefined) throw new MissingSessionError(docId, spec.writer);
 
       await this.#bus.execute<K>(session, context, command);
+      // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
+      // the version there: the command rewrote the canonical image, and the
+      // length the renderer needs is the new one. Reading it outside the lane
+      // would be a second command's length attributed to this one.
+      return context.byteLength;
     });
 
-    return version;
+    return { version, byteLength };
   }
 
   /**
@@ -364,14 +390,14 @@ export class DocumentCommands {
    *   DocumentPoisonedError}, {@link MissingSessionError}, and
    *   `CheckpointRestoreNotBuiltError` for a terminal entry.
    */
-  async undo(docId: DocId): Promise<DocVersion | undefined> {
+  async undo(docId: DocId): Promise<Applied | undefined> {
     // HELD ON AN OBJECT rather than in a `let`, which is the idiom
     // `engineHostConnection.ts` records for the same reason: the assignment
     // happens inside a closure, so the compiler narrows the `let` to its single
     // visible value and calls the read below unreachable.
     const stepped = { yes: false };
 
-    const { version } = await this.#documents.run(docId, async (context) => {
+    const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
@@ -379,6 +405,7 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       stepped.yes = (await this.#bus.undo(sessions, context)) !== undefined;
+      return context.byteLength;
     });
 
     // THE VERSION IS READ FROM THE LANE EITHER WAY and returned only when
@@ -386,7 +413,11 @@ export class DocumentCommands {
     // unconditionally would report a bump for an undo that did nothing — and
     // the renderer would show a document as changed because the user pressed a
     // key that was already exhausted.
-    return stepped.yes ? version : undefined;
+    //
+    // The byte length rides with it and never alone, for the same reason: it is
+    // half of *what to rebuild the view against*, and a length with no version
+    // is a number nothing can act on.
+    return stepped.yes ? { version, byteLength } : undefined;
   }
 
   /**
