@@ -36,6 +36,27 @@ describe('ribbonModel', () => {
     // layout that moves under the user, so this asserts the SEQUENCE rather
     // than a count — eight in the wrong order is also eight.
     const model = ribbonModel(new CommandRegistry([]), context);
+
+    // THE LITERAL IS THE ANCHOR (finding DDDDD-3), and the line below it is
+    // not. Comparing the model against `SECTION_IDS` compares a derived value
+    // with the roster it derives from, so both sides move together: delete a
+    // section and the ribbon silently stops rendering it while this agrees.
+    // §7 says `SectionId` is EXACTLY the eight sections of §10.3, which is a
+    // claim about a number, and 4c's danger here runs toward shrinkage — where
+    // a derived count agrees with any shrink.
+    expect(model.map((section) => section.section)).toStrictEqual([
+      'home',
+      'comment',
+      'edit',
+      'organize',
+      'forms',
+      'review',
+      'protect',
+      'tools',
+    ]);
+    // Kept as well, because it is the half that catches a REORDER: the rail's
+    // order is the ribbon's, and the literal above would have to be edited to
+    // notice one while this goes red on its own.
     expect(model.map((section) => section.section)).toStrictEqual([...SECTION_IDS]);
     expect(model.every((section) => section.groups.length === 0)).toBe(true);
   });

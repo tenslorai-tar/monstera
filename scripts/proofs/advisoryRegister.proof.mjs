@@ -85,7 +85,7 @@ const failures = [];
  * witnessed verdict is not a derived one. That case is world-independent, so it
  * moves both totals by one.
  */
-const roster = createRoster(failures, { cases: 40 });
+const roster = createRoster(failures, { cases: 42 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -947,6 +947,51 @@ try {
       `exit ok=${String(orphan.ok)}. This is the fail-open: the register reported the same ` +
         `confident count with four such witnesses in the file, because a witness that is never ` +
         `consulted passes exactly as loudly as one doing its job.`,
+    );
+
+    // A VERDICT THAT WATCHES NOTHING (finding B2). Every trigger in the
+    // register is driven by `symbols`, so an empty list makes the expiry walk a
+    // no-op and the entry passes having looked at nothing — 4b's corollary at
+    // the schema level. The register legitimately holds one such entry, because
+    // `engine-host-factory-wired` fired and became a record; before the
+    // `record` key, that entry and a live trigger whose last symbol had been
+    // dropped were the same observation.
+    //
+    // The mutation is DISARMING A LIVE TRIGGER, not inventing an entry. An
+    // added fixture would prove the rule fires on something nobody ships; this
+    // proves it fires on the exact edit the finding describes.
+    const disarmed = runAgainst(
+      'symbols-emptied',
+      withRegister((reachability) => {
+        const claim = reachability['engine-host-containment'];
+        if (claim === undefined) return;
+        claim['symbols'] = [];
+        claim['witness'] = {};
+      }),
+    );
+    check(
+      'a trigger whose symbols were emptied is REFUSED rather than passing quietly',
+      !disarmed.ok && disarmed.output.includes('watches no symbols'),
+      `exit ok=${String(disarmed.ok)}. An empty symbols list is an expiry walk that iterates ` +
+        `nothing, and its output is identical to a verdict that found nothing to report.`,
+    );
+
+    // THE OTHER DIRECTION, and it is not decoration: a `record` key that could
+    // be added to a live trigger would let anybody silence one by declaring it
+    // finished. A record does not trigger; a trigger is not a record.
+    const bothWays = runAgainst(
+      'record-with-symbols',
+      withRegister((reachability) => {
+        const claim = reachability['engine-host-containment'];
+        if (claim === undefined) return;
+        claim['record'] = true;
+      }),
+    );
+    check(
+      '  ...and marking a LIVE trigger as a record is refused too',
+      !bothWays.ok && bothWays.output.includes('does not trigger'),
+      `exit ok=${String(bothWays.ok)}. Without this, "record": true is an off switch: any ` +
+        `verdict could be retired by declaring it retired, with its symbols still listed.`,
     );
 
     // THE CONTROL, and it is the case this check was written wrongly without.

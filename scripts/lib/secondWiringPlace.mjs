@@ -202,10 +202,26 @@ export function scan({ root = repoRoot() } = {}) {
     return { state: 'no-surfaces', violations: [], filesScanned: 0 };
   }
 
+  // THE REFUSAL IS KEYED ON THE INPUT SET, NOT ON THE DIRECTORY (finding
+  // DDDDD-1). It used to be keyed on the directory existing, which was
+  // equivalent while every `.ts` under it was scanned. `isScannable` broke that
+  // equivalence: a surfaces directory holding only test files is semantically
+  // *no surfaces here* and was being reported as *scanned, none found* — the
+  // third branch's own condition wearing the first branch's output.
+  //
+  // The argument is unchanged from the branch above and is what makes this a
+  // refusal rather than a warning: if the projections are not in the files this
+  // scan reads, they are somewhere it is not looking, and that state otherwise
+  // passes silently for the life of the project.
+  const modules = modulesIn(join(root, SURFACES_DIR));
+  if (modules.length === 0) {
+    return { state: 'no-surfaces', violations: [], filesScanned: 0 };
+  }
+
   /** @type {Violation[]} */
   const violations = [];
   let filesScanned = 0;
-  for (const path of modulesIn(join(root, SURFACES_DIR))) {
+  for (const path of modules) {
     const shown = relative(root, path).replaceAll('\\', '/');
     filesScanned += 1;
     violations.push(...scanModule(shown, readFileSync(path, 'utf8')));
@@ -220,6 +236,27 @@ export function scan({ root = repoRoot() } = {}) {
  * @returns {number} the process exit code
  */
 export function run({ root = repoRoot() } = {}) {
+  // THE WALKER'S HALF OF THE CONTROL (finding DDDDD-2). The fixture below
+  // exercises the MATCHER and never touches `modulesIn`, so a walker that
+  // returned the wrong files — or none — left the control passing and the scan
+  // reporting *none found* for ever. Checklist 4b asks for a positive control
+  // on a search; this search had one for half of itself, and the half without
+  // one is the half `isScannable` edits.
+  //
+  // Both directions, because a predicate that answered `true` to everything
+  // would restore the false positives the exclusion exists to remove, and one
+  // that answered `false` to everything is the blindness above.
+  if (!isScannable('ribbon.tsx') || isScannable('ribbon.test.ts')) {
+    process.stdout.write(
+      `  FAIL  the file filter does not separate a surface from its own cases.\n` +
+        `        isScannable('ribbon.tsx') must be true and isScannable('ribbon.test.ts') false.\n` +
+        `        A filter that answers no to everything makes this scan walk an empty list and\n` +
+        `        report a clean tree; one that answers yes to everything reports every\n` +
+        `        projection's own expectations. Refusing to report.\n`,
+    );
+    return 1;
+  }
+
   const control = scanModule('control.tsx', CONTROL_FIXTURE);
   if (control.length !== 1) {
     process.stdout.write(

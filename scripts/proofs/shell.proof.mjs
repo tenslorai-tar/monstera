@@ -67,6 +67,9 @@ const RUNTIME_CASES = [
   'the page can see the bridge, so it could call anything at all',
   'app.info answers OVER THE REAL CONTRACT, with the value the shell supplied',
   'document.execute returns a DECLARED failure, not internal',
+  "Electron still carries `dialog.showOpenDialog`, read before it is replaced",
+  'the picker asks for ONE file and no recent-documents entry',
+  'a dismissal and an empty selection are BOTH null, and a real path comes back',
 ];
 
 /** @type {string[]} */
@@ -87,7 +90,7 @@ function check(label, condition, detail) {
  * a display Electron does not error, it HANGS, and a hang reads as a flake.
  *
  * @param {string} binary
- * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean }}
+ * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown }}
  */
 function readback(binary) {
   const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
@@ -175,6 +178,49 @@ try {
         `renderer cannot construct an input that reaches the miss and every input it can ` +
         `construct stops at document-not-open first. An \`internal\` here would mean that ` +
         `reasoning is wrong and the channel is answering with a defect.`,
+    );
+
+    // THE PICKER, WHICH HAD NEVER RUN ANYWHERE (finding B4). `entry.ts` calls
+    // its factory, so the module loads in production; the function that factory
+    // returns — where every claim the module's comments make actually lives —
+    // had never been invoked by anything.
+    const picker = /** @type {{ apiPresent?: unknown, options?: unknown, answers?: unknown }} */ (
+      seen.picker
+    );
+    check(
+      "Electron still carries `dialog.showOpenDialog`, read before it is replaced",
+      picker?.apiPresent === true,
+      `the real dialog object does not carry showOpenDialog as a function. Read from the ` +
+        `runtime rather than assumed, because everything below runs against a REPLACEMENT — ` +
+        `and a stub is happy to be called by a name Electron no longer has, which is the ` +
+        `available:true shape wearing a passing test.`,
+    );
+
+    const options = /** @type {{ properties?: unknown[] }} */ (picker?.options);
+    check(
+      'the picker asks for ONE file and no recent-documents entry',
+      Array.isArray(options?.properties) &&
+        options.properties.includes('openFile') &&
+        options.properties.includes('dontAddToRecent') &&
+        !options.properties.includes('multiSelections') &&
+        !options.properties.includes('openDirectory'),
+      `the picker passed ${JSON.stringify(picker?.options)}. Both halves are asserted and the ` +
+        `absences are the load-bearing ones: DocumentService opens one document from one path, ` +
+        `so a picker that could return three offers a shape nothing downstream can take — and ` +
+        `the recent-documents list is one this application did not ask for and cannot clear.`,
+    );
+
+    check(
+      'a dismissal and an empty selection are BOTH null, and a real path comes back',
+      Array.isArray(picker?.answers) &&
+        picker.answers.length === 3 &&
+        picker.answers[0] === null &&
+        picker.answers[1] === null &&
+        picker.answers[2] === '/tmp/one.pdf',
+      `the picker answered ${JSON.stringify(picker?.answers)}. The third is the control: the ` +
+        `first two are satisfied by a picker that returns null for everything, which is a ` +
+        `document nobody can ever open — and it would pass an assertion about cancellation ` +
+        `alone with nothing red.`,
     );
 
     process.stdout.write(

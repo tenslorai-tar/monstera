@@ -37,6 +37,7 @@ import {
   CONTROL_FIXTURE,
   REGISTRY_MODULE,
   SURFACES_DIR,
+  isScannable,
   run,
   scan,
   scanModule,
@@ -44,7 +45,7 @@ import {
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 14 });
+const roster = createRoster(failures, { cases: 16 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -87,6 +88,25 @@ function giveRegistry(root) {
     control[0]?.ids.join(',') === 'document.save,document.print',
     `got ${JSON.stringify(control[0]?.ids)}. The report has to name the list, or the reader ` +
       `cannot tell a pasted ribbon from an unrelated array of strings.`,
+  );
+
+  // FINDING DDDDD-2. Everything above feeds the MATCHER a string and never
+  // reaches `modulesIn`, so a walker that returned nothing left the control
+  // passing and the scan silent. The filter is the walker's decidable half and
+  // the runner now refuses on it; these two cases are what make that refusal
+  // non-vacuous, in both directions.
+  check(
+    'the file filter admits a surface module',
+    isScannable('ribbon.tsx') && isScannable('ribbon.ts'),
+    `a filter that answers no to everything makes the walker return an empty list, and an ` +
+      `empty walk prints the same sentence as a clean tree.`,
+  );
+
+  check(
+    '  ...and excludes a projection’s own cases',
+    !isScannable('ribbon.test.ts') && !isScannable('ribbon.test.tsx'),
+    `a filter that answers yes to everything restores the false positives the exclusion exists ` +
+      `to remove — every projection's expected output is a list of command ids.`,
   );
 }
 
@@ -185,13 +205,18 @@ withFixtureRoot((root) => {
   // must be reported and the identical list in `ribbon.test.ts` must not, so a
   // walker that skipped everything passes neither.
   writeFileSync(join(root, SURFACES_DIR, 'ribbon.test.ts'), `${CONTROL_FIXTURE}\n`, 'utf8');
+  // FINDING DDDDD-1, AND THIS CASE USED TO ASSERT THE DEFECT. It required
+  // `run() === 0` here — a directory holding only test files reported as clean —
+  // which is the third branch's own condition wearing the first branch's
+  // output. The exclusion is still right; what was wrong is that the refusal
+  // was keyed on the DIRECTORY existing, and `isScannable` broke the
+  // equivalence between that and having anything to read.
   check(
-    "a test file's expected-output list is not a second wiring place",
-    run({ root }) === 0 && scan({ root }).filesScanned === 0,
-    `a projection's cases assert its output, and a projection's output IS a list of command ` +
-      `ids — so reporting them leaves no route to green except weakening the assertions or ` +
-      `moving the cases out of the directory. Nothing is lost: a .test.ts is imported by no ` +
-      `surface, so a list in one cannot make anything render.`,
+    'a surfaces directory with nothing scannable in it is REFUSED, not called clean',
+    run({ root }) === 1 && scan({ root }).state === 'no-surfaces',
+    `a directory holding only a projection's own cases is semantically "no surfaces here", and ` +
+      `reporting it as scanned-with-zero-files is the silent state the third branch exists to ` +
+      `make loud. Narrowing a search's input set creates a new route to its reassuring answer.`,
   );
 
   writeFileSync(join(root, SURFACES_DIR, 'ribbon.tsx'), `${CONTROL_FIXTURE}\n`, 'utf8');

@@ -293,6 +293,7 @@ async function fetchAdvisories() {
  *     why: string,
  *     shippedPaths: string[],
  *     symbols?: string[],
+ *     record?: boolean,
  *     witness?: Record<string, {
  *       in: string[] | null,
  *       acceptedWhile?: { absent: string, from: string[] },
@@ -451,7 +452,17 @@ function readBaseline() {
  * exists: a hand-edited JSON file has no compiler, so the only thing standing
  * between a mistyped key and silence is a check that reads the keys.
  */
-const VERDICT_KEYS = new Set(['guards', 'why', 'shippedPaths', 'symbols', 'symbolsWhy', 'witness']);
+const VERDICT_KEYS = new Set([
+  'guards',
+  'why',
+  'shippedPaths',
+  'symbols',
+  'symbolsWhy',
+  'witness',
+  // A verdict that watches NOTHING must say so on purpose. See
+  // {@link assertVerdictShape}'s no-input clause.
+  'record',
+]);
 const WITNESS_KEYS = new Set(['in', 'acceptedWhile', 'why']);
 
 /**
@@ -499,9 +510,44 @@ function assertVerdictShape(baseline) {
       }
     }
 
+    // A VERDICT WITH NO INPUTS CHECKS NOTHING, AND HAD NO WAY TO SAY WHETHER
+    // IT MEANT TO. Every trigger in this file is driven by `symbols`: the walk
+    // at `expiredVerdicts` iterates them, so an empty list makes that loop a
+    // no-op and the verdict passes having looked at nothing. That is 4b's
+    // corollary at the schema level — *an empty intermediate result is a broken
+    // parse, not a clean input* — and it was reachable in exactly one direction
+    // that matters: delete or misspell the last symbol on a live trigger and it
+    // becomes indistinguishable from `engine-host-factory-wired`, which watches
+    // nothing DELIBERATELY because it fired and became a record.
+    //
+    // The two now differ by a key rather than by prose. `record: true` is the
+    // author saying *this entry no longer triggers*; its absence with an empty
+    // symbols list is a trigger that has quietly stopped triggering.
+    //
+    // Deliberately NOT derived from `symbolsWhy`, which every verdict carries
+    // and which a reader would have to interpret — that is a rule living in
+    // prose, which is the thing B5 replaces with a name somebody picks.
+    const symbols = watchedSymbols(name, claim);
+    if (symbols.length === 0 && claim.record !== true) {
+      problems.push(
+        `reachability.${name} watches no symbols and is not marked "record": true. Every ` +
+          `trigger here is driven by the symbols list, so an empty one makes the expiry walk a ` +
+          `no-op and this verdict passes having looked at nothing — which is exactly what a ` +
+          `verdict that has legitimately become a record does. If it fired and is now a record, ` +
+          `say so with "record": true. If it should still fire, its symbol was dropped.`,
+      );
+    }
+    if (symbols.length > 0 && claim.record === true) {
+      problems.push(
+        `reachability.${name} is marked "record": true and still watches ${String(symbols.length)} ` +
+          `symbol(s). A record does not trigger; a trigger is not a record. Whichever of the two ` +
+          `is stale, the pair says the entry was edited on one side only.`,
+      );
+    }
+
     const witness = claim.witness;
     if (witness === undefined) continue;
-    const watched = new Set(watchedSymbols(name, claim));
+    const watched = new Set(symbols);
     for (const [symbol, entry] of Object.entries(witness)) {
       if (!watched.has(symbol)) {
         problems.push(
