@@ -644,6 +644,264 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `032375c..447d35c` — an a11y assertion moved from a millisecond test to a machine that installs a runtime
+
+Range: **8 commits, 22 files.**
+
+### KKKKK-1 — the landmark claim now needs Electron, and nothing said so
+
+`App.test.tsx` used to carry:
+
+```
+it('renders the document surface as a landmark', () => {
+  const { container } = render(<App />);
+  expect(container.querySelector('main.m-document-surface')).not.toBeNull();
+});
+```
+
+It was deleted in this range, when `App` gained its `client` and `settings`
+props and the file was rewritten around the registry. Two neighbours went with
+it — *"renders no control, because none is wired yet"* and its control — and
+**those two were correctly removed**: their subject was the absence of controls,
+which stopped being true the moment the Open button landed. That is a check whose
+premise expired, not a loosened one.
+
+The landmark test is a different animal, and it went out in the same rewrite.
+The property is still checked — `rendererHarness.ts:505` queries
+`#root > main.m-document-surface` and `proof:rendererpolicy` fails without it —
+so nothing is unproven. What changed is **where**, and the direction is the one
+item 2a names:
+
+| | before | after |
+|---|---|---|
+| runs on | every machine | machines with Electron provisioned |
+| costs | a millisecond | a spawned Chromium |
+| on the Guards job | fails | **UNVERIFIABLE** |
+
+A misspelt class used to redden every runner. It now reports *could not look* on
+the one job that installs nothing. That is the same trade invariant 25's symbols
+made when they moved from witnesses to a derivation, and it is the same size of
+trade — **and this time the commit that made it said nothing at all**, which is
+precisely the half item 2a exists to stop. Every unverifiable line reads as
+rigour, including the ones that used to be failures.
+
+Not a defect in the harness's assertion, which is stronger than the unit test was
+— it reads the mounted surface out of a real renderer. A defect in the exchange
+being silent, and in there being nothing left that runs everywhere.
+
+Fixed in the commit after this one: the unit-level assertion comes back. The two
+are not redundant — one says `App` renders the landmark, the other says the
+shipped bundle does, and the second cannot run on half this project's CI.
+
+### KKKKK-2 — the freshness guard's walk reports `0` for a directory it found nothing in, and `0` always passes
+
+`newestMtime` walks a source directory and returns the newest eligible file's
+mtime. `statSync` throws for a path that does not exist, so a mistyped root is
+loud. What is not loud is a directory that exists and yields **nothing**: every
+entry skipped as `node_modules`, `dist`, `.git` or `*.test.tsx`, or simply empty.
+It returns `0`, and `0 > artefactAt` is false, so the pair passes.
+
+That is CLAUDE.md's own corollary arriving inside the guard two proofs now
+depend on: *an empty intermediate result is a broken parse, not a clean input.*
+The reassuring answer here is "the build is fresh", and an exclusion list that
+swallowed a whole tree would produce it.
+
+Latent today — `packages/ui/src` holds plenty of non-test files — and it moved
+from one proof to two in this range, which is what makes it worth closing now
+rather than when somebody widens the skip list.
+
+Fixed in the commit after this one: a directory walk that finds no eligible file
+throws, with a case.
+
+### 1. Root cause or workaround?
+
+Four fixes in the range's last commit, all root-cause.
+
+- **The pixel counter counted transparent pixels as painted.** Fixed at the
+  definition of *painted* rather than by moving the poll condition, which was the
+  tempting repair: the loop settled early because the counter was wrong, and
+  changing when it was consulted would have left it wrong for the measurement.
+- **The post-wait read dereferenced an absent canvas**, on exactly the path the
+  proof exists to catch, so the run died on a null instead of naming the case.
+  Made null-safe at the counter, which is where both callers reach it.
+- **A case label claimed more than the observation supported.** *"...is on the
+  start screen and dispatches"* is two claims and the click establishes one. The
+  label was narrowed rather than the assertion widened — the observation was
+  right, the sentence was not.
+- **`refuseStaleBuild` moved to `scripts/lib/buildFreshness.mjs`** because a
+  second proof needed it. A private copy in each would have been two opinions
+  about what *stale* means, agreeing until one of them gained a pair (B3a).
+
+**THE MOVE WAS READ AGAINST ITS DESTINATION BY NAME**, because a net-negative
+diff conceals what a move failed to carry. Five deleted lines do not appear in
+`buildFreshness.mjs`: the import, replaced by a narrower one; two `REPO_ROOT`
+references, now the `repoRoot` parameter; and two sentences that said *"the five
+pairs"* and *"the two bundled pairs"*. Those last two are a **correction**, not
+a loss — the counts were true of one call site and there are now two callers with
+different lists, so carrying the numbers across would have made the message
+wrong at whichever site it did not describe.
+
+### 2. Verified against the easy shape only?
+
+**Yes, deliberately, and the limit is the fixture.** `proof:canvaspixels` renders
+`perf-baseline.pdf`: one page, flat page tree, `/MediaBox [0 0 595 842]` with a
+zero origin, no `/Rotate`, no font programme, no compressed stream, one
+uncompressed `DeviceRGB` image across the whole page.
+
+That choice is right for what the proof is for — it isolates *did drawing
+happen* from *did a font arrive*, and a text fixture would have made the failure
+mode "standard font data was refused by `connect-src 'none'`", which is a
+different finding wearing this one's clothes. It is still the easy shape on four
+axes at once, and the hard ones are named rather than implied: a **nested** page
+tree, an inherited `/Rotate`, a non-zero CropBox origin, and a document whose
+glyphs need standard font data. None is exercised by anything today.
+
+The rich-ambient axis is clean here: the harness passes the fixture path and the
+control's name explicitly, so nothing under test reads an inherited variable.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes — KKKKK-1, and it is the finding of this range.** An assertion that ran on
+every machine in a millisecond became one that needs a provisioned Electron, so
+it reports UNVERIFIABLE on the Guards job. Correct by the register's own
+philosophy and still a reduction, and the commit that made it was silent.
+
+The reverse also happened in this range and is worth recording beside it, because
+it is the same axis pointing the other way: the render clause's UI half moved
+from **asserted** to **executed**. `proof:canvaspixels` reads pixels out of a real
+Chromium, which nothing did before — a strengthening with a provisioning
+condition, on a job that has one.
+
+### 3. Would CI have caught it?
+
+**KKKKK-1: no, and no check could.** A deleted test is not a failing test.
+`check:proofcoverage` counts proof scripts against workflows and has no opinion
+about a `it()` that left. Nothing derives the set of assertions from anything, so
+a coverage move by deletion is invisible by construction — which is why item 2a
+is a question somebody asks rather than a gate.
+
+**KKKKK-2: no.** The branch is unreachable while `packages/ui/src` holds ordinary
+files, so no run exercises it. It is the *side of a branch that never executes
+wherever the thing it keys on is always present*, which item 3's second half
+names.
+
+**The new proof: yes, on both legs.** Computed rather than assumed — the step
+sits in `ci.yml`'s `build` matrix job, after the `xvfb` install and the Electron
+provision, so it runs on `windows-latest` and `ubuntu-latest`. It has not yet
+run: this range's push is what will produce the first reading, and the Linux
+half of it is asserted, not executed (item 5).
+
+### 4. Non-vacuous proofs
+
+`proof:canvaspixels` was mutation-tested four times, each mutation reddening a
+**different** case, which is what says the four are not one assertion wearing
+four labels:
+
+| mutation | what went red |
+|---|---|
+| `renderPage` draws nothing | 0 painted of 500,990, settled by `bound` |
+| the counter ignores transparency | 300x150 — the premature settle |
+| the counter ignores white | the blank control reports 500,990 |
+| the start screen's button returns early | no canvas at all; three cases red |
+
+The fourth was run for coverage and found a defect instead, which is the
+argument for mutating the branches no fixture reaches: it is the only one of the
+four that reaches the absent-canvas path.
+
+The control's **direction** is the whole design here. The reassuring answer is a
+*hit*, so a positive control that finds something known-present certifies
+nothing — a counter returning a large number for any input produces exactly the
+result hoped for. The separating case is the counter reporting **zero** for a
+canvas filled white, and the pair is what works: a counter stuck at zero fails
+the measurement, one stuck high fails the control.
+
+### 4a. Instrument resolution tests
+
+**`countPainted`** — the resolution test is the blank control, run on every
+invocation rather than once: two inputs that differ by the smallest amount that
+changes the verdict (a page drawn, a page not) are reported as different, in the
+same run, by the same expression.
+
+**`newestMtime` / `refuseStaleBuild`** — resolution-tested by accident and it
+passed: mid-mutation-run it stopped the proof against a renderer bundle that was
+one revert behind, naming both timestamps. That is the instrument separating two
+states it exists to separate, on a real input. KKKKK-2 is the case it cannot
+separate.
+
+**`openControlName`** — see 4b.
+
+### 4b. Searches with positive controls
+
+`openControlName()` reads the Open command's English text out of `en.ts` by
+regex. It is a search, and its reassuring output is a string — but a wrong
+pattern returns nothing, and nothing handed to the harness produces *"the
+control was not found"*, which is the instrument manufacturing the finding it
+exists to detect. It **throws** on a miss, naming the file and the key, in both
+directions: no constant mints the key, and no catalogue entry binds the constant.
+
+The harness's own click is the other half and is deliberately by **name**, not
+by a test id or a class: a control a user cannot identify has to be a failure
+here, and a test id would put an affordance in the product for the harness's
+benefit.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`refuseStaleBuild`'s `expected` is a **literal at each call site**, and the move
+to a shared module preserved that rather than tidying it into `pairs.length`.
+The danger runs toward the list being too *short* — GGGGG-1 was two cases that
+began reading the Vite bundle with no row following them — so the count has to
+come from somewhere the shrink cannot reach. The new call site declares `6` and
+the two old ones still declare `1` and `5`.
+
+`RUNTIME_CASES` in the new proof is the roster's source and is compared against
+what actually ran, so four lines describing four *different* things is a throw
+rather than a confident, wrong UNVERIFIABLE listing.
+
+### 5. Executed, or asserted?
+
+**Executed:** the pixel count, the canvas dimensions, the blank control, all four
+mutations, the freshness guard firing, the stale-build refusal, `openControlName`
+against the real catalogue. All on Windows 11, Electron 43.4.1, pdfjs-dist
+6.2.108.
+
+**Asserted, and named as such:**
+
+- **the Linux path.** The proof refuses without an X display because
+  `requestAnimationFrame` does not fire in a hidden page — that mechanism was
+  measured on 2026-08-29 in a different harness, and this proof has never run on
+  Linux. The first CI run is the reading.
+- **that 595x842 is what any correct renderer produces for this fixture.**
+  Derived from the fixture's own `/MediaBox`, not observed across versions.
+- **`canvasHarness.ts` under `xvfb`.** The window is shown by `createMainWindow`
+  on `ready-to-show`; whether a virtual display satisfies Chromium's visibility
+  check for rAF is the same unrun claim as the first item.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither — no architecture changed in this range. The new proof registers into
+seams that exist: a harness main under `apps/desktop/src/` compiled by the same
+tsconfig, an npm script, a CI step, and `PickDocument`, which was split out for
+exactly this purpose before anything needed it.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md`'s render row is rewritten in the range and carries the
+measurement with its date and where it was read. No ADR's evidence changed.
+`docs/ARCHITECTURE.md` is untouched.
+
+**The cross-document sweep (NNN-4) does not fire:** nothing in this range states
+a relationship between two documents. The render row's new sentences are claims
+about code, and the code is named.
+
+**One document defect found and not fixed here**, because an audit-recording
+commit is docs-only and alone: `docs/FEATURES.md`'s open row carries **done**
+directly above its own sentence saying `documentPicker.ts` has never executed
+anywhere. That is item 7 at document scale — a status column contradicting its
+own body, in the position a reader takes as the contract. It is the next
+commit's.
+
+---
+
 ## 2026-08-29 — Stage audit: `ea500d4..032375c` — the check compared the file against itself in the same wrong form
 
 Range: **4 commits, 23 files.**
