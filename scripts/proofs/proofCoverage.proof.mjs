@@ -20,7 +20,7 @@ import { scan } from '../lib/proofCoverage.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 6 });
+const roster = createRoster(failures, { cases: 8 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -81,6 +81,47 @@ try {
       !result.blind && result.uninvoked.length === 1,
       `This is the defect: a proof registered in package.json that CI never runs. ` +
         `uninvoked = ${JSON.stringify(result.uninvoked)}`,
+    );
+  }
+
+  // NAMED IN A CACHE KEY, RUN BY NOBODY (finding C1). The search used to be a
+  // raw `workflows.includes(path)`, so this fixture passed — a proof mentioned
+  // in `hashFiles(...)` reported as covered while running nowhere, which is
+  // this file's own defect arriving through its own door. `ci.yml` already
+  // carries two such lines for provisioning scripts, so the shape is not
+  // hypothetical; a proof reads fixtures and would go in a cache key for the
+  // same reason they do.
+  {
+    const root = fixture(
+      { 'proof:cached': 'node scripts/proofs/cached.proof.mjs' },
+      `${CONTROL_STEP}      - run: echo "\${{ hashFiles('scripts/proofs/cached.proof.mjs') }}"\n`,
+    );
+    const result = scan({ root });
+    check(
+      'a proof named only in a cache key is REPORTED, because naming is not running',
+      !result.blind && result.uninvoked.length === 1,
+      `uninvoked = ${JSON.stringify(result.uninvoked)}. A substring test cannot tell a step ` +
+        `that runs a script from one that hashes it, and the question has an owner: ` +
+        `workflowInvocations.mjs, which states that exclusion in its own header.`,
+    );
+  }
+
+  // THE CONTROL FOR THE ABOVE, and it is the direction that matters: every
+  // proof in ci.yml runs as `node scripts/ci/annotate.mjs <proof>`, so the
+  // proof's own path is an ARGUMENT. A resolver that counted only what `node`
+  // started would report all 85 as uninvoked — the opposite failure, and a
+  // loud one, but loud is not the same as right.
+  {
+    const root = fixture(
+      { 'proof:wrapped': 'node scripts/proofs/wrapped.proof.mjs' },
+      `${CONTROL_STEP}      - run: node scripts/ci/annotate.mjs scripts/proofs/wrapped.proof.mjs\n`,
+    );
+    const result = scan({ root });
+    check(
+      'a proof run THROUGH a wrapper is invoked, because the wrapper runs it',
+      !result.blind && result.uninvoked.length === 0,
+      `uninvoked = ${JSON.stringify(result.uninvoked)}. This is how every proof in ci.yml is ` +
+        `invoked, so a resolver blind to it would report the whole roster missing.`,
     );
   }
 

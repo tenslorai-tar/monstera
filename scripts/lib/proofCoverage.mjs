@@ -50,6 +50,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from './gitScope.mjs';
 import { isMain } from './isMain.mjs';
+import { runScriptPaths } from './workflowInvocations.mjs';
 
 /** A proof known to be invoked by a workflow, used as the positive control. */
 const CONTROL_PATH = 'scripts/proofs/composition.proof.mjs';
@@ -127,6 +128,15 @@ export function scan(options = {}) {
   }
   const workflows = files.map((name) => readFileSync(join(directory, name), 'utf8')).join('\n');
 
+  // ASKED OF THE OWNER, NOT OF `includes` (finding C1). This was
+  // `workflows.includes(path)`, a raw substring test — a third opinion about a
+  // question `workflowInvocations.mjs` owns, and the fail-open kind:
+  // `hashFiles('scripts/x.mjs')` names a script and runs nothing, and `ci.yml`
+  // already carries two such lines. A proof added to a cache key would have
+  // reported as covered while running nowhere, which is this file's own defect
+  // arriving through its own door.
+  const runs = new Set(runScriptPaths(workflows));
+
   /** @type {string[]} */
   const uninvoked = [];
   const proofs = proofScripts(root);
@@ -135,11 +145,11 @@ export function scan(options = {}) {
     // `proof:*` whose head runs in CI and whose tail does not is a proof
     // registered into no job wearing the head's green check — which is the
     // defect this file exists for, one level in.
-    const missing = paths.filter((path) => !workflows.includes(path));
+    const missing = paths.filter((path) => !runs.has(path));
     for (const path of missing) uninvoked.push(`${name}  ->  ${path}`);
   }
 
-  return { uninvoked, examined: proofs.length, blind: !workflows.includes(CONTROL_PATH) };
+  return { uninvoked, examined: proofs.length, blind: !runs.has(CONTROL_PATH) };
 }
 
 /**
