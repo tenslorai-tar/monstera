@@ -165,6 +165,23 @@ jobs:
       - name: Prove the React lint rules are registered and fire
         run: node scripts/ci/annotate.mjs scripts/proofs/lintRules.proof.mjs
 
+      # NOTICE's DEPENDENCY half, on the case-sensitive filesystem (finding C3).
+      # The shim job runs this too and is the only place the NATIVE half can be
+      # verified, because it is the only one with the MuPDF source — so this
+      # step prints "NOT verified — MuPDF source not provisioned here" and that
+      # is correct rather than a gap.
+      #
+      # What it adds is the platform. `licenceText` looks for `LICENSE`,
+      # `COPYING` and nine other names in upper case, and NTFS matches a file
+      # actually called `license` while ext4 does not. So a dependency shipping
+      # a lower-case licence file would have its terms found on Windows, written
+      # into NOTICE, and be unfindable by anyone acting on the source offer.
+      # Measured before adding this: 36 production packages, no case
+      # mismatches — so it passes today and goes red on the day one arrives,
+      # which is the only day it matters.
+      - name: Check NOTICE's dependency half on a case-sensitive filesystem
+        run: node scripts/ci/annotate.mjs scripts/release/generateNotice.mjs --check
+
       # ADR-0026's class, the half no lint rule covers.
       # `no-import-type-side-effects` registers ImportDeclaration only, and
       # `consistent-type-exports` treats an inline `type` specifier as already
