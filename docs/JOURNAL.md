@@ -644,6 +644,143 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `7e59803..78b28be` — the value is read after the work, and nothing separates that from reading it before
+
+Range: **2 commits, 14 files.**
+
+### NNNNN-1 — `Versioned`'s own hazard, in the file that argues about it, with no case
+
+`DocumentContext.byteLength` is a getter, and its whole correctness is *when* it
+is read: after the bus returns, inside the lane. Read at entry it is the length
+of the document the command **replaced** — which is `Versioned`'s stated hazard
+with the sign flipped, and the interface says so in as many words.
+
+The case that covers it asserts `applied.byteLength` is greater than zero. **A
+captured-at-entry value passes that too**, because the pre-command document also
+has bytes. So the property with the argument written about it is the one property
+here that nothing separates, and the assertion reads as coverage.
+
+This is the fixture-the-defect-handles-correctly shape, arriving in a case
+written an hour after the mechanism it guards. The fix is the one the checklist
+prescribes: assert something only the correct path produces — the length the open
+outcome reported, against the length the rotate returned, required to **differ**.
+
+Fixed in the commit after this one, with both figures recorded.
+
+### NNNNN-2 — the shim cannot separate a rebound transport from a stale one, by construction
+
+`browserShim`'s command answer reports `documentBytes.get(docId).byteLength` when
+a test supplied real bytes. That is right for what it is for — a renderer
+rebinding its transport gets a length its own ranges agree with, so a UI test can
+drive the shipped transport against the shipped parser — and it means the length
+is the **same** before and after a command. A test using real bytes therefore
+cannot tell a transport rebound to the new size from one still bound to the old.
+
+Not a defect, and not fixable at the shim: a synthetic different length would
+break the range serving that is the shim's reason for holding bytes at all. It is
+a **stated limit**, and the coverage that does separate the two lives one level
+down — the command-level case asserting the value the channel answered is the
+value handed on, where a hard-coded zero reddens it.
+
+Recorded because a shim that answers consistently is exactly the shape that reads
+as thorough, and the fixture that would catch the defect is the one nobody
+supplies bytes for.
+
+### 1. Root cause or workaround?
+
+One change, and it is a root-cause fix for a defect nothing had yet hit: the
+renderer cannot rebuild a view from a version alone. The alternative considered
+and rejected was to provoke a `stale` answer by asking for a range at the old
+version — no channel change, two round trips, and an answer shape that carries a
+byte length only when the version happened to move. That is a second opinion
+about what a command produced, arriving through a channel whose subject is bytes.
+
+The channel comment that said *"the version and nothing else"* is **corrected
+with a date and a reason** rather than quietly widened, because a rule nobody can
+tell was ever narrow is not a rule.
+
+### 2. Verified against the easy shape only?
+
+The lane test rotates one page of a three-page document written by
+`@cantoo/pdf-lib`. The hard shapes for *this* property are a command that makes
+the document **shorter** and one that leaves it the same length — neither is
+exercised, and the second is the one that would make NNNNN-1's fix fail
+spuriously if the fix were written as "differs" without measuring first.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+No proof changed subject. Four call sites moved from asserting a bare version to
+asserting a pair, and one of them — the lane test — moved from
+`resolves.toBe(2)` to reading two fields. That is a widening of what is asserted,
+not a move.
+
+### 3. Would CI have caught it?
+
+**NNNNN-1: no.** A case that passes for the wrong reason is green everywhere.
+Nothing derives assertions from the sentences an interface states, which is the
+same gap LLLLL-2 named one range earlier — twice now, in two files, both times a
+documented property with no case. Worth watching as a shape rather than as two
+instances.
+
+**NNNNN-2: no, and nothing should.** It is a limitation of a fixture, correctly
+traded.
+
+### 4. Non-vacuous proofs
+
+The four reddened call sites are the mutation, run by the type system rather than
+by hand: changing the result shape made every place that asserted the old one
+fail, which is what a contract change is supposed to do. The one that mattered
+was the lane test reporting `{ version: 2, byteLength: 878 }` where it expected
+`2` — a real length, from a real MuPDF rewrite, through service, lane and bus.
+
+`documentCommands.test.ts` in the renderer is not in this range; its mutations
+are recorded with the commit that adds it.
+
+### 4a. Instrument resolution tests
+
+`byteLengthOf` in the shim is the one new instrument, and NNNNN-2 is its
+resolution test failing honestly: for a document with real bytes it reports the
+same value twice, so it cannot separate the two states it is asked about. Stated
+rather than papered over, and the separating coverage named.
+
+### 4b. Searches with positive controls
+
+None added.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+The shim's channel-list literal and the compile-fail proof's fixtures are
+unchanged in this range — they fired one range earlier, correctly. Nothing new
+here counts anything.
+
+### 5. Executed, or asserted?
+
+**Executed:** the full suite (800 cases), `proof:contract` (38),
+`proof:rendererpolicy` (19), `proof:canvaspixels`, and the lane test against a
+real MuPDF rotate reporting 878 bytes.
+
+**Asserted:** that a rotate always changes the byte length. NNNNN-1's fix depends
+on it, so the fix measures both figures rather than assuming they differ.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. A field on a channel result and a member on an existing interface are
+registration into seams that exist; no document fixes what `document.execute`
+answers with, and the channel's own comment is where that lives.
+
+### 7. Do the documents still match the code?
+
+No document states what these channels return, so nothing drifted.
+`docs/FEATURES.md`'s rows for the three clauses land with the commit that wires
+them, which is the next one — a row claiming a wired control while the control is
+in a stash would be the status-above-its-own-body defect this journal recorded
+two ranges ago.
+
+**The cross-document sweep (NNN-4) does not fire:** the range states no
+relationship between two documents.
+
+---
+
 ## 2026-08-30 — Stage audit: `5152165..7e59803` — the renderer's first paint came to depend on main answering, and a bound did not fix it
 
 Range: **2 commits, 24 files.**
