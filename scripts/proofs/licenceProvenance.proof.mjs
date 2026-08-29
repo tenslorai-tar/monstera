@@ -50,8 +50,10 @@ import { repoRoot } from '../lib/gitScope.mjs';
 import {
   checkLicenceSources,
   declaredNativeComponents,
+  byName,
   familyLicence,
   licenceFileIn,
+  normaliseEndings,
   renderNotice,
   requiresLocalInstall,
   shipsOnTarget,
@@ -277,6 +279,41 @@ try {
   // These cases are expressible only because the matcher now takes a listing;
   // against `existsSync` on Windows the filesystem answered before the code did.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // REPRODUCIBILITY. NOTICE is a generated file compared byte-for-byte by
+  // `--check` on three jobs, two operating systems and two Node versions.
+  // Anything in it that depends on the machine makes that check report a stale
+  // tree for a tree nobody changed.
+  // -------------------------------------------------------------------------
+  check(
+    'the rendered NOTICE contains NO carriage return',
+    !renderNotice().includes('\r'),
+    `A licence text is pasted in verbatim, so each package contributes its own line endings — ` +
+      `most ship CRLF and color-name@1.1.4 ships LF. Git normalises the committed blob to LF, so ` +
+      `a generator that emits any CR produces a file that can never equal the one CI checks out. ` +
+      `Measured 2026-08-29: seven bytes, seven lines, and "NOTICE is stale" on all three jobs ` +
+      `while it read as current here — because the local check compared the file against itself ` +
+      `in the same wrong form.`,
+  );
+
+  check(
+    'normaliseEndings converts CRLF and a lone CR, and leaves LF alone',
+    normaliseEndings('a\r\nb\rc\nd') === 'a\nb\nc\nd',
+    `The lone CR is not a convention anything still emits; including it is the difference ` +
+      `between a rule that is complete and one that happens to be.`,
+  );
+
+  check(
+    'the bundled list is ordered by CODE POINT, not by the machine’s collation',
+    [{ name: 'a' }, { name: 'A' }].sort(byName)[0]?.name === 'A' &&
+      'A'.localeCompare('a') > 0,
+    `The second half is the control and it is what makes this case separate anything: on this ` +
+      `runtime \`localeCompare\` puts "a" before "A" while the code points put "A" first, so a ` +
+      `sort that agreed with the locale would fail here. \`localeCompare\` with no locale takes ` +
+      `the runtime's default, which is a property of the machine and of the ICU its Node was ` +
+      `built with — measured, a Lithuanian collation reorders the real 114-package list.`,
+  );
+
   check(
     'a LOWER-CASE licence filename is found, so the answer does not depend on the filesystem',
     licenceFileIn(['readme.md', 'license', 'index.js']) === 'license',

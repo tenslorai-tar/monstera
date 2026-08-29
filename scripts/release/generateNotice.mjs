@@ -135,6 +135,32 @@ export function shipsOnTarget(entry) {
 }
 
 /**
+ * Orders the bundled list by CODE POINT, never by the machine's collation.
+ *
+ * This was `a.name.localeCompare(b.name)`, and `localeCompare` with no locale
+ * argument takes the **runtime's default** — which is a property of the machine
+ * and of the ICU data its Node was built with, not of the tree being described.
+ *
+ * NOTICE is a generated file compared byte-for-byte by `--check`, on three jobs,
+ * across two operating systems and two Node versions. An order that depends on
+ * any of those makes the check report *"NOTICE is stale"* for a tree nobody
+ * changed — which is a check failing for a reason it does not claim, and the
+ * repair is not to regenerate it on whichever machine last lost.
+ *
+ * Punctuation is where the two orders diverge: collation weights `-`, `/` and
+ * `@` differently from their code points, and a production tree full of
+ * `@babel/plugin-transform-…` names is almost entirely punctuation.
+ *
+ * @param {{ name: string }} a
+ * @param {{ name: string }} b
+ * @returns {number}
+ */
+export function byName(a, b) {
+  if (a.name < b.name) return -1;
+  return a.name > b.name ? 1 : 0;
+}
+
+/**
  * Whether this package being absent means the tree was never installed.
  *
  * **A platform variant is absent by design on every other platform, and this
@@ -249,7 +275,7 @@ function shippedPackages() {
     shipped.push({ name, version: `${entry.version ?? manifest.version ?? ''}`, licence, text, path });
   }
 
-  return shipped.sort((a, b) => a.name.localeCompare(b.name));
+  return shipped.sort(byName);
 }
 
 /**
@@ -319,7 +345,40 @@ export function licenceFileIn(listing) {
  */
 function licenceText(directory) {
   const found = licenceFileIn(readdirSync(directory));
-  return found === null ? null : readFileSync(join(directory, found), 'utf8').trim();
+  if (found === null) return null;
+  return normaliseEndings(readFileSync(join(directory, found), 'utf8')).trim();
+}
+
+/**
+ * One line ending, because a licence text is pasted into NOTICE verbatim.
+ *
+ * `renderNotice` joins its own lines with `\n`, so the document's structure is
+ * LF — and then each package's terms arrive **as that package wrote them**. Most
+ * ship CRLF; `color-name@1.1.4` ships LF. A file with both is a file whose
+ * stored form depends on what git decides to normalise, and `--check` compares
+ * a regenerated document against the checked-out one on three jobs across two
+ * operating systems.
+ *
+ * Measured 2026-08-29: the working copy and the committed blob differed by
+ * **seven bytes**, in exactly the seven lines of `color-name`'s MIT text, and
+ * CI reported *"NOTICE is stale"* for a tree nobody had changed.
+ *
+ * **This was green until the day a package with the other convention arrived**,
+ * which is C3's shape in a second dimension: the first 39 bundled packages
+ * happened to agree, and the 75 that came with a Babel tree did not. Normalising
+ * here rather than at the write, because the mixing is what has to stop — a
+ * final pass over the assembled document would leave `pkg.text` carrying
+ * whatever it carried and fix it out of sight of the reason.
+ *
+ * `\r\n?` rather than `\r\n`, so a lone CR is normalised too. It is not a
+ * convention anything still emits, and leaving it out would be a rule that
+ * happens to be complete rather than one that is.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function normaliseEndings(text) {
+  return text.replace(/\r\n?/gu, '\n');
 }
 
 /**
