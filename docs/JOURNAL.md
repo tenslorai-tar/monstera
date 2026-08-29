@@ -644,6 +644,204 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `447d35c..5152165` — the proof depended on something provisioning had left behind, and only CI could see it
+
+Range: **3 commits, 16 files.**
+
+### LLLLL-1 — a gitignored fixture, present here and on no runner
+
+`proof:canvaspixels` named
+`packages/testing/fixtures/generated/perf-baseline.pdf` directly. That whole
+directory is gitignored — a 62 kB PDF is a binary and B10 does not commit those
+— so the file exists on any machine that has run the performance gate and on no
+cold checkout. Green here, red on **both** matrix legs.
+
+**Found by CI, not by this audit**, and that is the honest attribution. What
+should have found it is the question the checklist already asks and I did not:
+*is there a defect THIS MACHINE cannot see?* The tell it names is a branch keyed
+on whether something is installed, and this is the same shape with the branch
+outside the file — a dependency on an artefact provisioning leaves behind. The
+developed-in world is the richer one, and that is the world that hides it.
+
+Fixed in the range, at `5152165`: the proof calls `buildLargeFixture`, which is
+the writer of record for what a fixture PDF is, caches on its own generator's
+digest, and was already called by `documentHandlers.proof.mjs` for exactly this
+reason. Verified by moving the fixture directory aside — a cold runner's state —
+and running against nothing: it generated the document and reported the same
+`500990 of 500990 pixels at 595x842`, so the generated fixture is the one that
+was there.
+
+**The case that caught it was written for it.** *"the fixture this proof renders
+exists"* needs no runtime, so it fired on both legs and named the file, rather
+than letting the run reach a canvas and report a renderer that drew nothing.
+
+### LLLLL-2 — `refuseStaleBuild` documents that ties pass, and nothing asserts it
+
+The rule is written in the resolver's own header: *"Source must not be strictly
+newer than the artefact built from it. Ties pass: a build completing inside one
+filesystem timestamp tick is not evidence of staleness, and a check that fails on
+granularity is a check someone turns off."*
+
+`buildFreshness.proof.mjs` has eight cases and none of them is a tie. Changing
+`>` to `>=` reddens nothing, and the failure it would produce is the one the
+sentence predicts — a guard that refuses a build somebody just made, on a fast
+filesystem, intermittently. That is the shape of a check people delete.
+
+**A documented behaviour with no case is a claim, not a rule.** Fixed in the
+commit after this one.
+
+### LLLLL-3 — `PROBE_INPUTS` is hand-kept with no anchor, and the danger runs toward it being short
+
+The picker record expires when a digest over two files moves:
+`documentPicker.ts` and `pickerProbe.ts`. Hand-kept is the right choice here by
+4c's own test — the failure to fear is a **third** file that decides what the
+picker does arriving unlisted, after which a record certifies code nobody drove.
+
+But there is no anchor: nothing outside that list would notice it being wrong.
+Today the picker is one self-contained module and the list is complete, so this
+is a limitation rather than a defect, and it becomes one the first time
+`documentPicker.ts` imports something of ours. Recorded rather than built,
+because a check whose subject is *did somebody split this module* has no
+mechanical form short of a reachability walk over one file.
+
+### 1. Root cause or workaround?
+
+Four fixes, all root-cause.
+
+- **LLLLL-1**: the proof builds its fixture rather than the workflow being told
+  to generate one. A CI step would have left the proof unrunnable by hand on a
+  cold machine, which is where somebody meets it.
+- **KKKKK-1**: the deleted unit assertion is restored. Mutating `main` to a
+  `div` reddens it and none of the other thirteen cases in the file, so the gap
+  the audit named is measured rather than argued.
+- **KKKKK-2**: `newestMtime` throws on a walk that dates nothing, at the walk,
+  rather than at the one caller that noticed.
+- The **open row's status** is corrected to `partly done` and a gate now refuses
+  `done` without a record — which is a mechanism, not a status edit.
+
+### 2. Verified against the easy shape only?
+
+**The picker probe has only ever run to its readiness line.** Shell composed,
+window created, renderer loaded, real picker constructed, waiting — and no click,
+because a native dialog needs a person. So the hard shape is the whole of what
+the gate is for, and the gate is red until somebody runs it. That is the design
+rather than a gap in it, and the FEATURES row says so in the status column.
+
+`buildFreshness.proof.mjs` builds nested directories, tests, and a skip-list
+fixture made from things the skip list eats. It does **not** test a tie, which is
+LLLLL-2.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Two, in opposite directions, and both are strengthenings.**
+
+`refuseStaleBuild` went from **zero** cases as a private function to eight in a
+shared module, with no provisioning condition — it builds temporary trees, so it
+runs on every machine.
+
+And `newestMtime` gained a **throw** where it used to return `0`. That is a
+behaviour change, not only a test: any caller handing it a directory that dates
+nothing now fails where it previously passed. No caller does today. Stated
+because a widening of what fails is exactly as much a coverage move as a
+narrowing, and it is the direction nobody writes down.
+
+### 3. Would CI have caught it?
+
+**LLLLL-1: CI is what caught it**, which is this question answered from a run
+rather than from a workflow file. Both matrix legs, step 40, at `46115e9` — read
+from the check-runs API, since job logs answer 403 from this seat.
+
+**LLLLL-2: no.** A missing case is not a failing case, and nothing derives the
+set of assertions from the sentences a header states.
+
+**LLLLL-3: no, and no check could.** Its subject is whether a module has grown a
+dependency the list does not name.
+
+**The two new proofs: yes.** Both are unconditional steps on the Guards job,
+which installs no runtime and needs none — they build temporary trees. Guards
+was **green** at `46115e9` with CI red, so that is measured too.
+
+### 4. Non-vacuous proofs
+
+Every new mechanism was mutated and each mutation reddened the case that names
+it:
+
+| mutation | what went red |
+|---|---|
+| the expiry check removed from `probeState` | *a record written against different content is EXPIRED* |
+| a dismissal accepted as evidence | *a record of a dismissed dialog is UNOBSERVED* |
+| the empty-walk throw removed | *a source directory the walk can date NOTHING in throws* |
+| `main` → `div` in `App.tsx` | the restored landmark case, and nothing else |
+
+The pair that matters in `pickerProbe.proof.mjs` is the fourth case: a record
+that genuinely does vouch must read as `observed`. Without it a state machine
+answering *not observed* to everything satisfies the other three perfectly — and
+the gate is then permanently red, which is how a gate gets deleted rather than
+satisfied.
+
+### 4a. Instrument resolution tests
+
+**`probeState`** — four states, each asserted, and the `observed` case is the
+resolution test: two records differing only in outcome, or only in digest, are
+reported as different.
+
+**`currentInputDigest`** — mutated towards **disagreement**, because agreement is
+also what absence produces. A digest over files that do not exist is stable, so
+hashing an absent input throws and a case asserts the throw.
+
+**`replaceWithRetry`** is in the stashed range, not this one.
+
+### 4b. Searches with positive controls
+
+No new search landed in this range. `probeState` is a comparison, and its control
+is the direction rule above rather than a positive control — the reassuring
+answer here is `observed`, so what separates is a case that must **not** be
+observed while everything else about the record looks like evidence.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**`PROBE_INPUTS`: hand-kept, deliberately, and LLLLL-3 is the limitation that
+leaves.** The danger runs toward the list being short — a file that decides the
+picker's behaviour arriving unlisted — so a derived list would agree with any
+shrink. Correct by 4c's rule and lacking the anchor 4c also asks for.
+
+`EXPECTED_RULES` in `documentRuleScope.proof.mjs` gained a line for the new
+document rule, which is that anchor working: adding a rule without naming it
+there is a red build.
+
+### 5. Executed, or asserted?
+
+**Executed:** both new proofs and their mutations; the picker harness up to the
+readiness line, under a bounded run, with the kill arriving back through the
+shell's own failure sink; the recorder's refusal path with the harness renamed
+away; the canvas proof against a **removed** fixture directory; `check:docs`
+refusing a `done` open row with no record, then passing at `partly done`.
+
+**Asserted, and named:** that a real dialog returns a path and the record then
+reads `observed`. Nobody has run it. That is the gate, not a gap in it.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. The gate registers into the document-rule registry, the probe into
+`apps/desktop/src` and an npm script, the proof into the Guards job. No seam was
+bent.
+
+### 7. Do the documents still match the code?
+
+The open row is corrected in the range and its status now matches its body — the
+defect the previous audit recorded and could not fix, since an audit-recording
+commit is docs-only and alone.
+
+**The cross-document sweep (NNN-4) fires here and was run.** The range states a
+cross-document relationship — *`check:docs` refuses this row's done without the
+record* — so every other statement of that relationship was swept.
+`docs/FEATURES.md` and `CLAUDE.md` describe the hook probe's equivalent gate and
+neither now says or implies it is the only one; the rule is named in
+`documentRuleScope.proof.mjs`'s roster, which is where a second gate would
+otherwise have been invisible.
+
+---
+
 ## 2026-08-29 — Stage audit: `032375c..447d35c` — an a11y assertion moved from a millisecond test to a machine that installs a runtime
 
 Range: **8 commits, 22 files.**
