@@ -94,6 +94,20 @@ run time. **PDF.js's text and annotation layers are the first candidate**, and
 `pdfjs-dist` is not a dependency of `packages/ui` yet — so the measurement
 belongs to the commit that adds it, not to a note here.
 
+> **Correction, 2026-08-29 — the trigger above would have expired without
+> firing.** `pdfjs-dist@6.2.108` became a dependency of `packages/ui` today, and
+> the commit that added it did **not** owe this measurement, because the path
+> built with it rasterises a page to a canvas and builds no text layer and no
+> annotation layer. Had the sentence been read literally, that commit would have
+> reported *"measured, no violation"* about a code path that never reaches the
+> exposure — a green reading for a question nobody asked.
+>
+> The trigger is therefore re-stated where it can still fire: **the first render
+> that builds a text or annotation layer** owes the reading, and §9.27 carries
+> that wording now. What changed is not the prediction, which stands, but the
+> event it was keyed to: *the dependency arriving* and *the layer being built*
+> are two events, and only the second one reaches the thing predicted.
+
 **And one rule for when it does trip: do not split the policy between
 development and production.** A dev-only CSP means the policy
 `proof:rendererpolicy` verifies is not the policy that ships, which is the

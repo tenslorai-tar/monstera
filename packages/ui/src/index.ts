@@ -3,6 +3,10 @@
 // re-export would give consumers a second name for one shape and a second place
 // to look when it changes.
 export { BridgeUnavailableError, createRendererClient } from './bridge.js';
+// The renderer's byte-range read path (ADR-0031). PDF.js asks; these answer.
+export { DocumentRangeTransport, type OnVersionMoved } from './documentTransport.js';
+export { type DocumentView, openDocumentView } from './documentView.js';
+export { type RasterisedPage, renderPage } from './renderPage.js';
 // The Stage 0 primitive set (§10.4). A screen composed of anything other than
 // primitives and tokens is not done, so these are exported as the surface a
 // feature builds from — never as a starting point to copy.

@@ -1194,8 +1194,12 @@ say**.
     `onColor()` computed at the point of use are unaffected. What can trip is a
     library that injects a `<style>` element or sets a style attribute at run
     time. **PDF.js's text and annotation layers are the first candidate**, and
-    `pdfjs-dist` is not a dependency yet, so the measurement belongs to the
-    commit that adds it.
+    the measurement is **still owed with its trigger sharpened** rather than
+    taken: `pdfjs-dist@6.2.108` became a dependency of `packages/ui` on
+    2026-08-29, and the path built with it rasterises to a canvas and builds
+    **no text layer and no annotation layer**. So the dependency arriving did
+    not reach the exposure, and what owes the reading is now the first render
+    that builds one of those layers — not the commit that added the package.
 
     **The policy is never split between development and production.** A
     dev-only CSP means the policy `proof:rendererpolicy` verifies is not the

@@ -24,6 +24,7 @@
     "@zag-js/splitter": "^1.43.3",
     "@zag-js/tree-view": "^1.43.3",
     "lucide-react": "^1.34.0",
+    "pdfjs-dist": "6.2.108",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3",
