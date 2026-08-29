@@ -644,6 +644,182 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `5152165..7e59803` — the renderer's first paint came to depend on main answering, and a bound did not fix it
+
+Range: **2 commits, 24 files.**
+
+### MMMMM-1 — a blank window, reachable from a preferences file
+
+`hydrateSettings` was **awaited** in `main.tsx` before `createRoot().render()`,
+so that the theme would be right on the first paint rather than corrected on the
+second. That made the renderer's first paint depend on an IPC answer.
+
+`proof:rendererpolicy` loads the shipped bundle with **no contract handlers
+registered** — deliberately, because its subject is the CSP and a whole object
+graph would change that subject. So `settings.load` never resolved, the await
+never returned, and the React shell never mounted. Both matrix legs red at
+`7e59803`, on the case that asserts the bundle runs at all.
+
+**The harness exposed it; the defect is the product's.** A renderer that cannot
+start until a round trip succeeds shows a blank window for ever when the preload
+fails to load, when main is wedged, or when a handler throws before registration
+— and a blank window is the least diagnosable failure this application can have.
+Weighing a theme flash against *nothing at all* is not a close call. The first
+version weighed it against nothing, because the hang had not occurred to me.
+
+**The first repair was wrong in an instructive way.** I raced the wait against a
+250 ms bound. Still red — and the reason is the transferable part: *a bound does
+not remove a dependency, it times it.* "The shell mounted" became "the shell
+mounted within 250 ms of load", and every future reader of that DOM would have
+inherited the race. A liveness bound is the right shape when the thing you are
+waiting for is yours; it is the wrong shape when the right answer is not to wait.
+
+Fixed in the commit after this one: the hydrate is fired and not awaited, and
+`useTheme` becomes a **layout** effect so the correction lands before the next
+paint rather than after it. The cost is one IPC round trip of default theme,
+which is sub-millisecond when main is alive and irrelevant when it is not.
+
+### MMMMM-2 — `EPERM` from `renameSync`, and the investigation that made a retry legal
+
+The second write in `settingsFile.test.ts` failed once with `EPERM` on
+`renameSync` onto an existing destination. Rule 0's response is a mechanism, not
+a retry, so it was measured before anything was written:
+
+| probe | result |
+|---|---|
+| 10 consecutive renames onto an existing file, standalone | **0 failures** |
+| the same test file, three further runs | **3 clean** |
+
+A semantic error is deterministic. This is not one, so the cause is outside this
+repository — `MoveFileExW` reports access denied while another process holds the
+destination, and on Windows the indexer and the antimalware scanner both wake on
+a close. Node performs no retry.
+
+**That measurement is the whole licence for the retry**, and without it the
+honest response would have been to find out what this code does wrong. Recorded
+because the difference between this and the banned reflex is not the code — it is
+whether the transience was established or assumed.
+
+### 1. Root cause or workaround?
+
+Three fixes, all root-cause. The retry above is the one that needs the argument
+and it has it. The atomic write itself is the root fix for a different hazard: a
+settings file rewritten whole truncates on a crash mid-write, and the failure is
+silent until the next launch, when the user's preferences are simply gone.
+
+`createShellDependencies` gained a **required** parameter rather than a defaulted
+one. A default would make *this build does not persist* the state a caller gets
+by saying nothing, and that failure is invisible in every test and obvious only
+to a user. Nine call sites became compile errors and each now names where its
+settings go.
+
+### 2. Verified against the easy shape only?
+
+**Yes, on one axis, and it is worth naming.** There is exactly one registered
+setting and it is discrete. `persistSettings` writes the **whole** document on
+every change, which is right for a checkbox and unexamined for a slider — a
+continuous control would produce one file write per frame of a drag. Nothing here
+has one, so this is a shape not yet met rather than a defect; the first
+continuous setting is when it has to be looked at.
+
+The hard shapes that *are* covered: a corrupt file, a top-level array, a value
+this build cannot interpret, a first launch, a rename that fails transiently, and
+a rename that fails permanently.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**A gap rather than a move, and CI is what found it.** `settingsSync.test.ts`
+had seven cases and none of them asked what happens when the channel does not
+answer — every fixture resolved immediately, so *awaited* and *fired* were the
+same observation in every one of them. The case that separates them is a promise
+that never settles, which is exactly what an unregistered channel is: not a
+rejection, not a slow answer.
+
+That case now exists in the form the repair left it — a **late** answer still
+lands — and the property *the shell mounts with no main behind it* is
+`proof:rendererpolicy`'s, which is where it belongs: it is a claim about the
+shipped bundle in a real renderer, not about a module.
+
+### 3. Would CI have caught it?
+
+**CI is what caught MMMMM-1, twice**, and locally it was green both times —
+because I did not re-run `proof:rendererpolicy` after changing `main.tsx`. That
+is the plainest possible instance of *after a check passes, do not run it again
+until you have changed code*, read in the wrong direction: I changed the code and
+did not re-run the check. `scripts/lib/affectedProofs.mjs` names the proofs a
+changed set reaches and would have said so in under a minute.
+
+**MMMMM-2: no, and it is not clear anything could.** It is a once-in-many-runs
+condition on one operating system. What CI can do is fail if the retry stops
+working, and three cases now cover it.
+
+### 4. Non-vacuous proofs
+
+| mutation | what went red |
+|---|---|
+| a hydrate triggers a save | *a HYDRATE does not save, so a newer build's setting is not deleted* |
+| the empty-walk throw removed | *a source directory the walk can date NOTHING in throws* |
+| ties refuse (`>` → `>=`) | *EQUAL timestamps pass, because a tick is not evidence of staleness* |
+
+The last is LLLLL-2 from the previous range, closed here.
+
+The retry's own control runs the other way: every case asserts that failures are
+tried again, and without a **non-transient** case they are all satisfied by a
+loop that retries everything — which would turn a cross-device rename or a
+missing source, both permanent and both ours, into five attempts and a fifth of a
+second before saying so.
+
+### 4a. Instrument resolution tests
+
+`createSettingsFile` — the resolution test is the ephemeral surface beside it:
+the same claim, made against something known **not** to persist. Without that
+control the whole file would be asserting that a `Map` works.
+
+`replaceWithRetry` — the foreign call is injectable, and that is what makes the
+retry provable at all. The condition is transient by definition and cannot be
+summoned; a test that waited for it would never run, leaving the branch untested
+while guarding the only failure it will ever see.
+
+### 4b. Searches with positive controls
+
+None added. `settingsFile.read` is a parse rather than a search, and its
+reassuring answer — `{}` — has three separate cases distinguishing *first
+launch*, *corrupt*, and *a shape that is not a settings document*.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+**Two hand-kept anchors fired and both were right to.** The browser shim's
+channel list went red because a channel landed; the compile-fail proof's handler
+fixtures went red for the same reason, and that proof's own comment already says
+*every channel added from here owes this fixture a line*. That is the price of a
+check `typecheck` cannot see inside, and it is the price being paid rather than
+avoided.
+
+### 5. Executed, or asserted?
+
+**Executed:** every case in both new files; the three mutations; the rename
+probe's 10 attempts and the three clean test runs; `check:docs` refusing the row
+lengths until they were cut.
+
+**Asserted, and corrected by CI:** that the renderer would still mount. I ran
+`typecheck`, `lint`, `vitest` and `proof:contract` after changing `main.tsx`, and
+not `proof:rendererpolicy` — which is the one that reads the shipped bundle in a
+browser.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. `settings.load` and `settings.save` register into `packages/contract`,
+which is that seam's purpose, and the surface is injected exactly as
+`PickDocument` is. No document changed.
+
+### 7. Do the documents still match the code?
+
+The settings row is rewritten and cut back under its target. **The cross-document
+sweep (NNN-4) does not fire:** the range states no relationship between two
+documents — the row's claims are about code, and the code is named.
+
+---
+
 ## 2026-08-30 — Stage audit: `447d35c..5152165` — the proof depended on something provisioning had left behind, and only CI could see it
 
 Range: **3 commits, 16 files.**
