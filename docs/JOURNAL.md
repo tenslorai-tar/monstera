@@ -644,6 +644,150 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-29 — Stage audit: `ea500d4..032375c` — the check compared the file against itself in the same wrong form
+
+Range: **4 commits, 23 files.**
+
+### JJJJJ-1 — `notice:check` reads the working tree, and CI reads the blob
+
+`generateNotice.mjs --check` regenerates NOTICE and compares it against the file
+**on disk**. On a runner those are the same thing, because the disk holds what
+git checked out. On a developer machine they are not: git normalises line endings
+on the way into the object store, so the working copy and the committed blob can
+differ — and the check silently compares the generator against whichever one the
+developer has.
+
+That is not hypothetical; it is what happened in this range and what reddened
+three jobs. Measured:
+
+| | bytes | endings |
+|---|---|---|
+| generated here | 262,811 | mixed — CRLF from most packages, LF from `color-name` |
+| working copy | 262,811 | the same, so `--check` said **current** |
+| committed blob | 262,804 | all LF, because `.gitattributes` says `eol=lf` |
+
+The generator's defect is fixed — it normalises now, and a case asserts the
+rendered document contains no CR at all. **This finding is the other half: the
+check could not see it.** A local run compared a file against itself, in the same
+wrong form, and reported the one word that stops anybody looking further.
+
+**The general shape is worth more than the instance.** Any `--check` that
+compares a generated artefact against the working tree is answering *"does this
+match what I have"* while the board answers *"does this match what was
+committed"*. Those differ wherever git filters — line endings today, and
+anything a future `.gitattributes` adds. The subject of the comparison should be
+the committed blob, or the check should at minimum say when the two disagree,
+because that disagreement is invisible and is exactly what CI will see.
+
+Fixed in the commit after this one.
+
+### 1. Root cause or workaround?
+
+Five fixes, all root-cause.
+
+- **Line endings**, normalised at the READ rather than in a pass over the
+  assembled document, because the mixing is what has to stop.
+- **The bundled list's order**, which was `localeCompare` with no locale — the
+  runtime's default. Measured, that was *not* what broke CI, and it is fixed
+  anyway: a generated file's order must not be a property of the machine.
+- **`LICENCE_FILES`**, where two of the four name shapes had three spellings and
+  two had one.
+- **Case-insensitive matching**, which removes C3's divergence rather than
+  detecting it a second time.
+- **IIIII-1**, where the view now closes itself.
+
+### 2. Verified against the easy shape only?
+
+**Yes, and it is JJJJJ-1.** The easy shape is the file already on this machine.
+The hard shape is the one git stores, and nothing local ever looked at it.
+
+The Lingui adoption avoided the same trap deliberately: the bundle question was
+measured against a **scratch install first**, so the answer arrived before the
+dependency did rather than after a push.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is a strengthening with a real cost.** The primitives' text props
+became `MessageKey`, so every one of their test files now needs an
+`I18nProvider` — `useLingui` throws without one. What the tests assert is
+unchanged: they still query by the English accessible name, which is the point
+rather than convenience. **A test that queried by the KEY would pass against a
+control that rendered the key**, which is the defect the resolver exists to
+prevent. `DialogHost`'s suite is the sharpest case — its identity resolver meant
+the dialog's accessible name literally *was* `dialog.rename.title`.
+
+### 3. Would CI have caught it?
+
+**JJJJJ-1 is the inverse of the usual answer: CI caught it and the local gate
+could not.** `notice:check` is in the local sweep's derived roster and would have
+run — and would have said *current*, because it reads the working tree. That is
+worse than a check CI cannot see: it is a check that answers confidently about a
+different question on every machine but the runner.
+
+### 4. Non-vacuous proofs
+
+| mutation | reddens |
+|---|---|
+| stop normalising line endings | *the rendered NOTICE contains NO carriage return* |
+| always-true platform predicate | reproduces the original NOTICE failure |
+| drop the `missing` listener | *THROWS on a missing key* |
+| stop closing on a moved version | *CLOSES ITSELF when the version moves* |
+
+**One did not bite and is recorded rather than hidden**: removing the spread in
+`activateCatalogue` changes nothing, because `i18n.load` copies internally. Kept
+with its attribution corrected.
+
+### 4a. Instrument resolution tests
+
+The sort case carries its control **in the same expression**: `'A'` before `'a'`
+means nothing without the second half asserting that this runtime's
+`localeCompare` puts them the other way round. Measured separately: of `en`,
+`en-US`, `de`, `fr`, `sv`, `tr`, `da` and `lt`, only Lithuanian reorders the real
+114-name list — which is why the sort is fixed on principle and **not** claimed
+as the cause of the red board.
+
+### 4b. Searches with positive controls
+
+**A scan of the shipped artefact reported 154 hits for `macro` and every one was
+a false positive.** They are `Amacron`, `Emacron`, `Adieresismacron` — Latin
+glyph names in PDF.js's font tables. Settled by two things a bare count cannot
+do: searching the same file for `lingui` (none) and printing the **matched
+substrings** rather than the count. A grep that answers with a number invites
+the reader to believe the number.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`EN` is the first roster in this area and it is a **literal map**, which is the
+right direction here: the danger is a key being registered with no entry, and a
+catalogue derived from the registrations could not fail. The completeness check
+— every registered `MessageKey` has an entry — is owed and is stated as owed;
+it cannot be written until something is registered.
+
+### 5. Executed, or asserted?
+
+**Executed:** the byte counts above; that Lingui's declarations require `id` and
+make `message` optional; that no `@babel` or macro code reaches the shipped
+bundle, with the catalogue text present as the control that the i18n path is in
+it at all; that the production tree goes 39 → 114.
+
+**Asserted:** nothing load-bearing.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither, and the ruling is recorded in the previous entry: the i18n question was
+not a contradiction between ADR-0005 and ADR-0029, and an amendment written to
+reconcile them would have relitigated a settled choice on a false premise.
+
+### 7. Do the documents still match the code?
+
+`messages.ts`'s *"not yet adopted by the primitives"* section is the trigger this
+range discharged, and it is rewritten to say so — kept rather than deleted,
+because it records why the gap existed and the shape recurs.
+
+`DialogHost`'s header described an injected resolver that no longer exists.
+
+---
+
 ## 2026-08-29 — Stage audit: `8c4cdc5..ea500d4` — one file guards a leak on one path and leaves the other open
 
 Range: **8 commits, 21 files.**
