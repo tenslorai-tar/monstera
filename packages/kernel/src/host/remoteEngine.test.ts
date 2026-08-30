@@ -210,6 +210,23 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     }
   });
 
+  it('the PAGE LIST crosses, so the answer describes the pages this side asked about', async () => {
+    const { session, token, remote, geometry } = await joined();
+    try {
+      await remote.apply(token, rotateFirst);
+
+      // EVERY OTHER GEOMETRY CASE HERE NAMES ALL THREE PAGES IN ORDER, which is
+      // the one request an adapter that ignored the list would also produce. So
+      // this one asks out of order and short: `[2, 0]` separates a list that
+      // crossed from a list that was rebuilt on the far side, and the rotate
+      // above is what makes the two entries differ — against a flat document
+      // both answers are `[0, 0]`.
+      expect(await geometry(token, [2, 0])).toStrictEqual({ pageCount: 3, rotations: [0, 90] });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
   it('CONTROL: a session the host has forgotten is a declared miss, not an empty geometry', async () => {
     const { session, sessions, geometry } = await joined();
     try {
