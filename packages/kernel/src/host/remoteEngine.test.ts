@@ -396,4 +396,67 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       await mupdfWriter.close(session);
     }
   });
+
+  it('a rotation that is NOT a quarter turn is refused at the boundary, not drawn', async () => {
+    // The schema's `refine` is what says a host that stopped snapping cannot
+    // reach a viewport, and nothing exercised it: every geometry answer in this
+    // file comes from `readPageGeometry`, which snaps. A guard whose only input
+    // is a correct one is a guard nobody has seen work.
+    //
+    // 45 rather than a wild number, because 45 is what documents in the wild
+    // actually carry (ADR-0009 §3) and it is the value MuPDF renders as 90 —
+    // so it is the one a caller would draw half a quarter turn wrong.
+    const session = await mupdfWriter.open(flat);
+    const incidents: Incident[] = [];
+    const wrapped = wrapHandlers(
+      engineChannels,
+      createEngineHandlers(
+        {
+          lookup: () => ({ session, outputDirectory: 'unused' }),
+          issue: () => {
+            throw new Error('unused');
+          },
+          forget: () => {
+            throw new Error('unused');
+          },
+        },
+        localMupdfExecution,
+        mupdfWriter,
+        {
+          readSnapshot: () => {
+            throw new Error('unused');
+          },
+          writeOutput: () => {
+            throw new Error('unused');
+          },
+        },
+        () => {
+          throw new Error('unused');
+        },
+        // The page decides, so one harness carries the case and its control:
+        // page 0 answers a raw 45 and page 1 a legal quarter turn.
+        (_held, pages) =>
+          Promise.resolve({ pageCount: 3, rotations: pages.map((page) => (page === 0 ? 45 : 90)) }),
+      ),
+      (incident) => incidents.push(incident),
+    );
+    const sessions = createRemoteSessions();
+    const client = createClient(engineChannels, async (id, params) => wrapped[id](params));
+    const geometry = remoteMupdfGeometry(client, sessions);
+
+    try {
+      const token = sessions.adopt('h1', AREA);
+      await expect(geometry(token, [0])).rejects.toThrow(/engine\/page-geometry/u);
+      expect(incidents).toHaveLength(1);
+
+      // CONTROL: the same harness, the same channel, a legal value. Without it
+      // this case is satisfied by a boundary that refuses every geometry answer
+      // — which would be invisible here and would blank the renderer in the
+      // product.
+      expect(await geometry(token, [1])).toStrictEqual({ pageCount: 3, rotations: [90] });
+      expect(incidents).toHaveLength(1);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
 });
