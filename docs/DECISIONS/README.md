@@ -89,3 +89,4 @@ Each contains:
 | [0029](0029-how-the-registries-are-built.md) | How the registries are built: registration is a value, not a side effect | Accepted as a design; nothing built |
 | [0030](0030-a-remote-writer-does-not-open-from-an-image.md) | A remote writer does not open from an image, and the bus never asked it to | Accepted |
 | [0031](0031-the-renderer-reads-the-document-by-demand-paged-ranges.md) | The renderer reads the document by demand-paged byte ranges, not a per-version snapshot | Accepted; §2 amended 2026-08-29 |
+| [0032](0032-the-view-model-is-a-scoped-query.md) | The view model is a query scoped to the pages the renderer draws, not a delta the command returns | Accepted; §2 amended 2026-08-30 |
