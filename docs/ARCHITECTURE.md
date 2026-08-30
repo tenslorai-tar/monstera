@@ -998,14 +998,23 @@ say**.
     memory-safety bug that reaches code execution currently inherits everything
     the process has, and MuPDF's advisory history is memory-safety bugs.
 
-    The hosts do not exist yet, so this is policy before mechanism — deliberately,
-    because it is a property of processes `DocumentService` will create, and
-    fitting it underneath them afterwards is the retrofit this project exists to
-    avoid. The trigger is declared in `docs/security/engine-advisories.json`:
-    the day shipped code references `utilityProcess`, the verdict expires and
-    names this invariant. **That trigger catches "a host was written"; it cannot
-    check "and it was contained"** — the runtime assertion that does is a
-    scheduled row in `docs/FEATURES.md`, not an intention.
+    This was written as policy before mechanism — deliberately, because it is a
+    property of processes that did not exist, and fitting it underneath them
+    afterwards is the retrofit this project exists to avoid. The trigger was
+    declared in `docs/security/engine-advisories.json`: the day shipped code
+    referenced `utilityProcess`, the verdict expired and named this invariant.
+    **That trigger catches "a host was written"; it cannot check "and it was
+    contained"** — the runtime assertion that does is a scheduled row in
+    `docs/FEATURES.md`, not an intention.
+
+    **Corrected 2026-08-30 — the hosts exist, and the trigger this paragraph
+    names can never fire.** `composition.ts` creates one and takes §5's verdict
+    before binding a writer. And ADR-0022 chose `CreateProcessW` *because*
+    `utilityProcess.fork` cannot create an AppContainer, so shipped code will
+    never reference that symbol: a verdict keyed on it reads as armed and is
+    watching for something this design has ruled out. The sentence is kept as
+    the record of what was believed; what binds is the FEATURES row, whose event
+    is a verdict taken against a **real** engine host rather than a spike.
     ([Threat model §4.4](security/THREAT-MODEL.md))
 
     **Amended 2026-08-22 — every property now has a mechanism, and two of them
