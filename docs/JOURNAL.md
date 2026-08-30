@@ -644,6 +644,220 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `78b28be..bf1c9e7` — three controls dispatch, and deleting what they do with the answer reddens nothing
+
+Range: **5 commits, 23 files.**
+
+### PPPPP-1 — both command callbacks survive their own deletion
+
+`App` passes `applied` to `rotatePageCommand` and `undoCommand`. That callback is
+the entire reason `document.execute` and `document.undo` were widened to answer
+with a version **and** a byte length one commit earlier: it is what moves the open
+document forward so the view rebuilds against the right bytes.
+
+Replacing it with `() => undefined` — first for rotate, then for undo as well —
+leaves **19 of 19 cases passing**, twice. Nothing in the renderer asserts that a
+command's answer reaches the open document.
+
+The reason is the fixture set, not any one case (NNN-1's shape). Three cases were
+written about the view being rebuilt and **all three assert the negative**: an
+exhausted undo does not rebuild, a save does not rebuild, a toolbar is absent
+before a document opens. The positive — a command that *did* move the version
+**does** rebuild — is the one direction nothing looks at, and it is the one the
+callback exists for. A set that only ever asks whether the thing stayed still is
+satisfied by a thing that cannot move.
+
+It is also the audit's own *assert the decision, not the end state* rule arriving
+from the other side. Those three cases assert a call that was **not** made, which
+is right; the missing case asserts a call that **must** be made, and the two are
+not interchangeable.
+
+Not fixed in this range, deliberately: what makes a rebuild observable is the
+view model (queue item 2), and OOOOO-1 says a rebuild against unchanged bytes
+shows the same page either way. The case lands with the change that gives it
+something true to assert.
+
+### PPPPP-2 — `affectedProofs` names nothing for any renderer source
+
+The instrument that answers *"which proofs does this change reach"* was asked
+about four files and returned an empty list for every one:
+
+```
+packages/ui/src/App.tsx        => {"proofs":[],"examined":90}
+packages/ui/src/renderPage.ts  => {"proofs":[],"examined":90}
+packages/ui/src/main.tsx       => {"proofs":[],"examined":90}
+apps/desktop/src/windowPolicy.ts => {"proofs":[],"examined":90}
+```
+
+The last is the sharpest: `proof:rendererpolicy` exists to compare that file's
+policy against §9.27, and the advisor does not connect them.
+
+**The mechanism is the root, not the pattern.** `affectedProofs` walks the module
+import graph, and no proof *imports* these files — `rendererPolicy` and
+`canvasPixels` spawn Electron and read `apps/desktop/dist/`. The edge is a
+**build artefact**, which is not an import and is invisible to a graph built from
+`import` specifiers. `examined: 90` and the positive control both report
+correctly; the instrument can see, and it is looking at the wrong kind of edge.
+
+This is X-1's axis again — pattern, root, state — where the root is a *kind of
+dependency* rather than a directory. And the answer it produces is the reassuring
+one: an empty list reads as *nothing to run*.
+
+The declaration already exists in two places and is exactly the missing edge:
+`refuseStaleBuild`'s pair lists, where `packages/ui/src` →
+`apps/desktop/dist/renderer/index.html` is written down in the proof that needs
+it. Two proofs holding two copies of that map is the second-opinion shape (B3a),
+so the fix is one owner both the proofs and the advisor read. Queue item 4.
+
+### PPPPP-3 — the previous range's item 7 said no document states it, and one did
+
+That entry reads *"No document states what these channels return, so nothing
+drifted."* `ARCHITECTURE.md` §2 line 290 says `doc.command` bumps `DocVersion`
+**"and returns a view-model delta"**, and `document.execute` answers with
+`{ version, byteLength }`.
+
+Recorded against this range rather than as an edit, because the previous entry is
+a record. The claim was not false when written *about that range* — nothing in it
+touched §2 — which is precisely NNN-4: a document falsified by commits that never
+touch it, where a range-scoped sweep reaches nothing. What was missing was the
+sweep the checklist prescribes for exactly this, and `npm run sweep:prose --
+"returning a view-model delta"` finds it in one second.
+
+The half that is worth carrying: **"no document states this" is a search result,
+and it was reported without a search.** Item 4b's reassuring answer, arriving in
+the checklist item whose job is to find drift.
+
+Not corrected by editing §2. It becomes true when the view model exists (queue
+item 2), which is the range that will cite it.
+
+### 1. Root cause or workaround?
+
+Four changes, all root-cause.
+
+The host case that reddened `main` on ubuntu at `a04b808` waited for one lane and
+counted opens for two; the repair waits for both rather than raising a bound or
+retrying. The seal line answers a habit by making the wrong action produce the
+right answer instead of forbidding it. The `tsc -b` half-run's B5 route was
+**measured shut** (`TS6304`) rather than asserted shut. The viewport rotation
+proof replaces an assumption about PDF.js with six executed readings.
+
+No override, no loosened check, no widened type in the range.
+
+### 2. Verified against the easy shape only?
+
+Yes, and PPPPP-1 is the consequence. Every renderer case in this range runs
+against happy-dom with a stubbed kernel, where a command's answer is whatever the
+shim decided to return. The hard shape is the shipped renderer in Chromium
+driving a real parser, which is what `canvasPixels.proof.mjs` does for *open* and
+what nothing does for *a command*.
+
+The viewport proof's own easy shape was `/Rotate 0`, and it was caught before the
+file was committed: at zero, absolute and additive are the same function, so
+three of its six cases were passing while separating nothing.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+One, and it is a strengthening with a condition attached. `proof:viewportrotation`
+turns an assumption that was previously **implicit in the design** into an
+executed check — but only on jobs that install `node_modules`. The Guards job
+installs nothing, so it cannot run this and does not claim to; the step is
+registered on the `build` matrix, which `check:jobplacement` confirms installs.
+
+### 3. Would CI have caught it?
+
+**PPPPP-1: no, and it is the answer that matters.** The mutation was run against
+the same command CI runs (`vitest run`), on the same files, and passed. Nothing
+in either workflow reads what a command's answer does after it arrives.
+
+**PPPPP-2: no.** `affectedProofs` is a local advisor; `checkLocal.mjs` prints its
+output and CI runs the proofs unconditionally, so the empty list costs nothing on
+the board and everything at the keyboard — which is where the four defects this
+range's predecessors found were *not* caught locally.
+
+**PPPPP-3: no, and no check can.** UU-1's shape: both readings of §2 parse, and a
+cross-reference that still resolves cannot be link-checked into a contradiction.
+
+The range's own break — the ubuntu host case — **was** caught by CI, on a leg this
+machine cannot run, which is the other direction of the same question.
+
+### 4. Non-vacuous proofs
+
+`proof:viewportrotation` was mutated at `PAGE_ROTATE = 0` and went red — but on
+case **2**, not on case 1, which is the control. The control asserted
+`own === PAGE_ROTATE`: whether the parser read what was authored, which a
+constant of zero satisfies perfectly. So the control was blind to the exact
+fixture defect it was written for, and a later case going red would have read as
+*that* case being wrong. It now also requires the rotation to be non-zero.
+
+`checkLocal.proof.mjs`'s two new cases hold the seal line in both directions, and
+the failing-run case is the load-bearing one: a harness that always printed
+`SEALED: ok` satisfies the passing case exactly.
+
+The `App.tsx` mutations are PPPPP-1 and are recorded there.
+
+### 4a. Instrument resolution tests
+
+`proof:viewportrotation` is the range's one new instrument, and its resolution
+test is case 4 against case 3 — the same page read at two rotations a quarter
+turn apart, required to report different dimensions **and** a different
+transform. The second is not redundant: a swapped width and height with an
+unchanged transform sizes the canvas correctly and draws the page the old way up,
+which is the failure a dimension check alone cannot see.
+
+### 4b. Searches with positive controls
+
+`proof:viewportrotation` is not a search. PPPPP-3 is one that was performed by
+recall instead of by `sweep:prose`, and PPPPP-2 is a search-shaped instrument
+whose control passes while its root is wrong.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`checkLocal.proof.mjs` moved `cases: 54` to `cases: 56` — a literal, hand-edited,
+which is the right direction here: the danger is a case silently disappearing,
+and a count derived from what ran would agree with any list. The viewport proof
+anchors on `CASES.length` **and** compares the recorded labels to the declared
+ones in order, which is the same anchor in its stronger form.
+
+### 5. Executed, or asserted?
+
+**Executed:** `proof:viewportrotation` (6 cases, plus its `PAGE_ROTATE = 0`
+mutation) · `App.test.tsx` (19 cases) three times — baseline and two mutations ·
+`check:jobplacement` · `lint` · `tsc -p tsconfig.scripts.json` ·
+`affectedProofs` against four renderer paths · `sweep:prose` for the view-model
+delta claim · the board green at `fbe1756`.
+
+**Asserted:** that the artefact edge in PPPPP-2 is the *only* kind of dependency
+the advisor's graph misses. Fixture data and generated files are the obvious next
+candidates and were not checked; queue item 4 checks them where it fixes this.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither, and one question was closed rather than taken. OOOOO-1 was written up as
+a B4 asking how a mutation refreshes main's canonical image. It is not one: §2
+already names the view model as the other thing that crosses, §3.2 already says
+PDF.js renders and is never a source of truth, and the effect has nowhere to go
+because half of §2 has never been built. The check that route rests on is now
+executed and green. No amendment, and no serialise-per-command against ADR-0021's
+budget.
+
+### 7. Do the documents still match the code?
+
+PPPPP-3 is the answer, and it is a *no* found by sweeping rather than by
+recalling.
+
+`ADR-0031:87` carries the same claim from the other side — *"The view model
+already carries bounded structured data; it gains a byte length"* — which was
+false the day it was written. It is a record, so it takes an appended dated
+correction, and the correction is owed by the commit that builds the view model
+rather than by this one: a note saying *it did not exist* is worth less than one
+saying *it did not exist and here is where it started*.
+
+**The cross-document sweep (NNN-4) does not fire on this range's own additions:**
+the only relationship stated is the CI step's comment about which proof covers
+which clause, and it names no second document.
+
+---
+
 ## 2026-08-30 — Stage audit: `7e59803..78b28be` — the value is read after the work, and nothing separates that from reading it before
 
 Range: **2 commits, 14 files.**
