@@ -644,6 +644,194 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `c63e422..3da634a` — the branch had a fixture, and what the fixture asserted was the state an absent decision also produces
+
+Range: **9 commits, 10 files.** 1 proof added, 1 modified, 0 removed; no source
+file added or removed, 2 changed — from `npm run audit:scope`.
+
+The range is the previous audit's recording commit, the law-and-register
+correction, the command-problem dialog, three commits of row corrections, the
+picker probe's record, four more row corrections, and the containment
+terminate. Findings **TTTTT-1** to **TTTTT-5**.
+
+### The range's headline
+
+**A clause that reads as wholly outstanding can be two claims with one of them
+already closed, and the open half is not the one the sentence names.** Row 305
+owed *"a host that fails the check seen to die — the branch with no fixture, and
+the one where a zero-byte negative target would turn the whole check into the
+reassuring answer"*. The zero-byte half had had its own case since the file was
+written. The other half had a fixture too — what it did not have was an
+assertion about the decision.
+
+### 1. Root cause or workaround
+
+Nine commits, no workaround. Nothing was exempted, no check was loosened, no
+type widened, no override added.
+
+The two corrections that could have been workarounds and were not: row 305's
+owed clause was **not** deleted for being half true — the half that was open was
+found and closed, and the half that was already closed is recorded as such
+rather than quietly dropped. And row 328's literal-string clause was not struck
+out as "probably done"; `monstera/no-jsx-literals` was located in
+`eslint.config.js`, with its planted offender and `proof:lintrules`, before the
+clause moved.
+
+### 2. Verified against the easy shape only?
+
+**The picker probe's hard shape is a dismissal, and it is covered.** A record of
+a dismissed dialog is `unobserved`, however well formed, and satisfies nothing —
+`proof:pickerprobe` asserts that separately from the absent record and from the
+expired one, because those three call for different actions.
+
+**The containment terminate's hard shape is the contained host.** An assertion
+that a terminate happened is worthless if one always does, so the happy-path
+case asserts there is none. Both cases pass, which is what makes the pair
+separate two verdicts rather than reporting a teardown every run performs.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+One change, and it strengthens: `compositionHost.test.ts` gained an assertion
+and lost none. Nothing moved from a witness to a derivation, and nothing became
+conditional on provisioning — every case in that file runs against fakes on
+every platform.
+
+### 3. Would CI have caught it?
+
+**Computed from a run rather than from the subject.** The range's changed files
+reach `proof:guards`, `proof:hookintegrity`, `proof:hookprobe`,
+`proof:rendererpolicy`, `proof:canvaspixels`, `proof:advisories` and
+`proof:ocrdoors` (`scripts/lib/affectedProofs.mjs`), and both test files run
+under `npm test`, which `ci.yml` executes unconditionally on both matrix legs.
+
+So the answer is **yes for the code and no for the documents**, and the second
+half is the one worth stating: the nine stale rows in this range were found by
+reading owed clauses against the tree, and no check in this repository can see a
+row that describes something that stopped being true. `check:docs` enforces
+shape, length and cross-references; it cannot enforce *is this sentence still
+so*. That is NNN-4's stated limit and this range is nine more instances of it.
+
+### 4. Are the proofs non-vacuous?
+
+**The modified proof is the load-bearing column, and its diff is +13/−0 —
+assertions only.** Mutated by deleting `live.value.close()` from the verdict
+branch in `composition.ts`: exactly one case reddens, the uncontained control,
+and the other 262 in the package stay green. Before the commit that mutation
+left all 263 green, which is the finding.
+
+The mutation was run against **the whole package**, not the file being edited.
+That matters because the previous range's misfire went the other way — a
+mutation confined to one test file reported 19/19 green and read as a vacuous
+case, when the coverage was in a different file.
+
+`commandProblem.test.ts` arrived with a rejection control, which is what
+separates *validates precisely this* from *validates roughly this*.
+
+### 4a. Has every instrument passed a resolution test?
+
+One instrument in the range: `docs/picker-probe.json`'s state machine, and its
+resolution test is `proof:pickerprobe`'s fifth case — **the digest moves when an
+input changes**, so agreement between the record and the code means something.
+Without it the expiry check would pass for a digest that could not move.
+
+### 4b. Is the instrument a SEARCH?
+
+**TTTTT-4 — the row-length ratchet could not see a row that does not open in
+bold, and it was found by the ratchet failing to stop this range's own author.**
+
+Trimming row 328 to close its stale clause, I grew it by 108 words and
+`check:docs` printed a clean pass. `featureRowWords` keyed rows on
+`^\|\s*\*\*(.+?)\*\*`, so a row whose first cell opens in plain text was in
+neither the before map nor the after map and was compared with nothing.
+Measured: **43 rows keyed against 204 table lines**, five rows over the target
+invisible, and the design-substrate row going **390 to 498** unremarked.
+
+This is 4b's failure in a renderer rather than in a search — *a row the key
+cannot see* and *a row that did not grow* are the same output, and it is the
+output everybody wants. The bold title was a convention, and a convention is not
+a check.
+
+**TTTTT-5 — `affectedProofs.mjs` could not see an import written across lines.**
+Found immediately after, registering TTTTT-4's proof: the instrument that names
+which proofs a change reaches did not name the new one. `RELATIVE_IMPORT` was
+bounded by `[^\n;]*?`, so a wrapped specifier list — what this repository's
+formatter produces for anything over one line — matched nothing. Measured:
+**32 relative imports in 29 files**, 427 against 459, and 22 of the 29 are
+proofs.
+
+*A line is not a unit of meaning*, for the sixth time here, in the instrument
+that decides what a change reaches. Both fixes and their proofs land in the
+commit after this one, which is where the mutations are recorded.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+`commandProblem.test.ts` derives its expected code set from
+`channels[id].failures`, which is a derivation whose danger runs the shrinking
+way — a channel losing a failure would take the requirement with it. It carries
+the anchor that answer needs: `expect(declared.length).toBeGreaterThan(2)`, an
+independent claim the shrinker has to touch separately.
+
+Nothing else in the range added a roster.
+
+### 5. Executed, or asserted?
+
+**Executed.** The picker gate is the range's whole point: a person clicked, and
+the record holds 6,116 painted pixels at 596×842. `opened` is written only above
+zero painted pixels, so the reached-the-screen clause is gated rather than
+claimed.
+
+**Asserted, and named as such:** row 305's two remaining clauses — the
+containment verdict taken against a real host on a real machine, and invariant
+25's four properties measured on that host rather than on `lowboxSpike.mjs`.
+Both are recorded as owed, not as done.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No architecture changed in this range. `docs/ARCHITECTURE.md`'s only edit was
+§9.25's correction of a claim ADR-0022 had already falsified, which is item 7
+work and not an amendment.
+
+### 7. Do the documents still match the code?
+
+**TTTTT-1 — nine rows described a tree that had stopped existing, and none was
+edited by the commit that changed it.** The sharpest instance is inside one
+file: `engine-host-containment`'s `why` ended *"nothing creates a host in the
+application"* while `engine-host-factory-wired`, a sibling entry in the same
+file, recorded itself firing on exactly that event. Two watchers, one of which
+had already seen it.
+
+**TTTTT-2 — a trigger aimed at an event that can no longer happen is worse than
+a stale sentence**, because the row reads as watched. Two rows, one architecture
+section and the register waited on *"the day shipped code names
+`utilityProcess`"*, and ADR-0022 chose `CreateProcessW` precisely so that symbol
+would never be named.
+
+**TTTTT-3 — four more owed clauses had already been discharged, found by reading
+the clause rather than the row.** Row 291 owed *the root creating a host and a
+session at open*, which `composition.ts` has done since `0698959`; the same row
+still said *"the engine has no session and that is the law"*. Row 270 owed four
+things and two of them hold **done** rows directly above it. Row 280 said
+`markSaved` "keeps no token: its writer of record is the save pipeline, which
+does not exist" — `savePipeline.ts` minted that token at `d8591db` and corrected
+`documentService.ts`'s comment in the same commit, but the row was not in that
+diff. Row 295 still opened its owed section with *"nothing creates a host in the
+application"*.
+
+Row 280 also carried the same sentence twice, the second copy differing only in
+its first letter.
+
+**The pattern under all of them is one sentence:** a document is corrected by
+whoever is reading it, and nobody reads a row because they changed the code it
+describes. Range-scoped item 7 cannot reach that, because no range changes both.
+
+### What is owed out of this range
+
+TTTTT-4 and TTTTT-5's fixes and proofs (the next commit) · row 305's two
+real-host clauses · row 328's hex-ban rule, which carries an open question
+rather than an estimate · axe on a rendered screen.
+
+---
+
 ## 2026-08-30 — Stage audit: `2b9a3c4..c63e422` — a proof's CI step owed two registrations, and both checks were sitting here
 
 Range: **9 commits, 23 files.**
