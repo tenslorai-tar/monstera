@@ -216,6 +216,11 @@ describe('the composition root, with an engine host platform', () => {
     expect(spy.harness.calls).toContain('host.createSuspended');
     expect(spy.harness.calls).toContain('peer.request:engine/probe-containment');
     expect(spy.harness.calls).toContain('peer.request:engine/open');
+
+    // CONTROL FOR THE VERDICT BRANCH BELOW. A contained host is not terminated,
+    // so the terminate the uncontained case asserts separates the two verdicts
+    // rather than reporting a teardown every run performs.
+    expect(spy.harness.calls).not.toContain('host.terminate');
   });
 
   it('undoes through the host, and answers nothing-to-undo when the log is spent', async () => {
@@ -368,6 +373,14 @@ describe('the composition root, with an engine host platform', () => {
     expect(spy.harness.calls).toContain('host.createSuspended');
     expect(spy.harness.calls).toContain('peer.request:engine/probe-containment');
     expect(spy.harness.calls).not.toContain('peer.request:engine/open');
+
+    // AND THE HOST IS SEEN TO DIE, which is the half this case claimed in prose
+    // and asserted nowhere until 2026-08-30. Never opening a session is a
+    // property a host that merely failed to BUILD also has; what only the
+    // verdict branch produces is a host created, probed, and then terminated.
+    // The happy path's control below asserts the other side, because an
+    // assertion that a terminate happened is worthless if one always does.
+    expect(spy.harness.calls).toContain('host.terminate');
   });
 
   it('CONTROL: an EMPTY negative target is unreadable rather than contained', async () => {
