@@ -644,6 +644,198 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `bf1c9e7..25a0cd1` — the one argument this channel exists for was held constant by every case in the file
+
+Range: **5 commits, 18 files.**
+
+### QQQQQ-1 — the page list crossed in every case as the same three pages, in order
+
+`engine/page-geometry` exists to answer *the pages the caller named*, which is
+invariant L11's whole mechanism here. Every case in `remoteEngine.test.ts` named
+`[0, 1, 2]`.
+
+That is precisely the request an adapter which **ignored** the list and rebuilt
+it on the far side would produce. Mutating `remoteMupdfGeometry` to send a fixed
+`[0, 1, 2]` left ten of eleven cases green, and the eleventh was the one added to
+find this.
+
+NNN-1's shape, in a new file within a day of the ruling being written down. No
+individual case looked wrong — a case naming all the pages of a three-page
+fixture is an ordinary case. **The set** held one argument constant, and the
+constant was the argument the code under test claims to forward. Fixed in
+`804d884` by asking out of order and short (`[2, 0]`) after a rotate, so the two
+entries differ; against a flat document both answers are `[0, 0]` and it would
+separate nothing.
+
+### QQQQQ-2 — the quarter-turn refinement had never been handed a value that was not one
+
+The channel's result schema refines each rotation to `0 | 90 | 180 | 270`. That
+line is the boundary saying *a host that stopped snapping cannot reach a
+viewport* — and every geometry answer in the file comes from `readPageGeometry`,
+which snaps. A guard whose only input is a correct one is a guard nobody has
+seen work.
+
+Fixed in `25a0cd1` with a stub answering a raw **45** — the value ADR-0009 §3
+names as real, and the one MuPDF renders as 90, so a caller receiving it draws
+half a quarter turn wrong and nothing looks broken. Case and control share one
+harness and the page decides: page 0 answers 45, page 1 answers 90. Loosening
+the refinement to `value >= 0` reddens it and nothing else.
+
+**Both findings are the same question asked twice** — *what input has this never
+seen?* — and both were invisible from inside the file, because what was missing
+was a fixture rather than an assertion.
+
+### QQQQQ-3 — six positional dependencies, and the test stubs make a swap invisible
+
+`createEngineHandlers` now takes six positional parameters, two of them bare
+functions. In production the types separate them: `HostContainmentProbe` takes
+`ContainmentProbePaths` and `PageGeometryReader` takes a session and a page list,
+so neither is assignable to the other in either direction — **checked, not
+assumed.**
+
+The test harnesses are the gap. Their stubs are `() => { throw new Error(…) }`,
+which is assignable to every one of these positions, so a swapped pair in a test
+file compiles and passes. Nothing in this range has one; the shape is what is
+recorded.
+
+**Not fixed, and the remedy is named rather than deferred vaguely:** an options
+object, where each dependency arrives under its own key and the wrong order stops
+being expressible. That is the same ruling 4c reached for `createRoster`'s
+`cases` — make the wrong choice visible rather than explained — and it is
+deferred for the same reason: it is a signature change across five call sites of
+tooling, and it does not happen inside a feature range. **It becomes a defect the
+first time a stub lands in the wrong position**, which is the trigger, and the
+detection until then is that the production call site is type-checked.
+
+### 1. Root cause or workaround?
+
+Two fixes, both missing coverage rather than wrong code, and both closed by
+adding the input the guard had never seen. No loosened check, no override, no
+widened type. `ADR-0032` is the range's one design change and it removes an
+option rather than adding an exception: the delta the law described is
+superseded, with the reason recorded as *the knowledge it needs does not survive
+its second command*.
+
+### 2. Verified against the easy shape only?
+
+**No, and this range is unusual in that.** `pageGeometry.test.ts` was written
+around the two fixtures where a wrong implementation differs — a page that
+**inherits** its rotation, and a page carrying a raw **45** — because on a flat
+`pdf-lib` document `getInheritable` and `get` agree on every page and
+`snapRotation` is the identity. Both mutations were run and both went red; on the
+easy fixture neither would have.
+
+What remains untested is a **nested** page tree, which is this project's standing
+hard shape for page-tree work and is not exercised by any fixture here.
+`getInheritable` is MuPDF's own walk, so the risk is lower than for code that
+walks the tree itself — that is a reason to rank it, not to call it covered.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+No. Nothing moved from asserted to derived or back; the four modified proof files
+gained a parameter to an existing call, and one gained cases.
+
+### 3. Would CI have caught it?
+
+**No, for both, and the reason is the same in each: a missing fixture is
+invisible to a runner.** Every case in this range runs under `npm test` on both
+matrix legs and both were green throughout. There is nothing to close — a check
+that could see "this argument is a constant across the file" is the `createRoster`
+signature ruling, one layer up, and 4c already records why that class is not
+scanned for.
+
+The other direction — a defect **this machine** cannot see — has one candidate
+and it is not new: the geometry round trip runs through a function call rather
+than a pipe, deliberately, because framing and correlation are proven in their
+own files. That limitation is the file's own and predates this range.
+
+### 4. Non-vacuous proofs
+
+Four mutations, all run:
+
+- `getInheritable` → `get`: three of five `pageGeometry` cases red.
+- `snapRotation` removed: the same three red (they overlap by design — a fixture
+  that separates one separates the other).
+- the adapter sending a fixed `[0, 1, 2]`: QQQQQ-1's case red, alone.
+- the refinement loosened to `value >= 0`: QQQQQ-2's case red, alone.
+
+The two `alone` results are what say those cases are pointed at their own
+mechanism rather than at the file's general health.
+
+### 4a. Instrument resolution tests
+
+`readPageGeometry` is the range's one new instrument, and its resolution test is
+the pair above: two readings that differ by the smallest amount that changes a
+decision — an inherited 90 against a reported 0, and a raw 45 against a snapped
+90 — both required to come out different.
+
+### 4b. Searches with positive controls
+
+None added. `grep -rl "viewModel\|ViewModel" packages apps` returning nothing is
+the search this range's design rests on, and it was run in the previous range and
+recorded there.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`ALL_PAGES` and `ALL` are hand-written literals in the two test files, not
+`Array.from({length: countPages()})`. That is the right direction here and it is
+the same argument the roster's `cases` makes: a list derived from the document
+agrees with a document that lost a page.
+
+`ENGINE_GEOMETRY_MAX_PAGES` and `MAX_VIEW_MODEL_PAGES` are two constants for one
+concept, and that is deliberate rather than an oversight — they bound two
+different boundaries, and the renderer's is the one L11 governs. Both carry the
+trigger their `MAX_RANGE_BYTES` sibling carries.
+
+### 5. Executed, or asserted?
+
+**Executed:** `pageGeometry.test.ts` (7 cases) · `remoteEngine.test.ts` (12) ·
+the four mutations above · `npx tsc --build` · the full suite at the previous
+commit (822 cases) · `check:docs`.
+
+**Asserted:** that no test file in this range has a swapped stub (QQQQQ-3). The
+positions were read rather than exercised; five call sites, and a swap would have
+to produce a passing suite to hide, which none of them does today.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before it, in its own commit, and the ordering was recovered rather than
+planned.** ADR-0032 and §2's amendment are `6ce572e`; the kernel half is
+`746ab4a`. The work was done in the other order — the code existed in a working
+tree while the amendment was being written — and the commits are what B4
+governs. Stated because *the commits were right* and *the process was followed*
+are two claims and only the first is true.
+
+### 7. Do the documents still match the code?
+
+Yes, and one apparent mismatch is not one. `docs/FEATURES.md`'s rotate row still
+says the live view does not show a rotation, which is **true at this commit**:
+the kernel half exists and no renderer reads it. The row moves with the commit
+that makes it false, which is the next one.
+
+`ADR-0031:87`'s false claim — *"The view model already carries bounded structured
+data"* — is now correctable rather than merely wrong, and the correction is owed
+by the commit that finishes the view model, for the reason the previous entry
+gave: a note saying *it did not exist* is worth less than one saying *it did not
+exist and here is where it started*.
+
+**The cross-document sweep (NNN-4) fires and was run.** This range states a
+cross-document relationship — §2 now names `document.viewModel` — so
+`sweep:prose -- "view model"` was run across every document. **Its output is
+quoted rather than summarised, because the set it returned is not the set I
+would have listed:** `BUILD-PROMPT.md:261`, `ARCHITECTURE.md` at 268, 294, 302,
+**345**, 384 and 1455, `ADR-0031:87`, `ADR-0032` at 1, 38, 131, 139,
+`DECISIONS/README.md:92`, `FEATURES.md:279`, and five lines of this journal.
+
+Two of those were not in my head. `ARCHITECTURE.md:345` is a **table column
+header** — *"Reader for view model"* — in the writer-of-record matrix, which is
+consistent with the amendment and would have been missed by anyone listing
+paragraphs. `BUILD-PROMPT.md:261` is the founding record and is never edited.
+`ADR-0031:87` is the false claim named above. Nothing in the set contradicts the
+amendment.
+
+---
+
 ## 2026-08-30 — Stage audit: `78b28be..bf1c9e7` — three controls dispatch, and deleting what they do with the answer reddens nothing
 
 Range: **5 commits, 23 files.**
