@@ -1,7 +1,16 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react';
 
+import { rotatePageCommand, saveCommand, undoCommand } from './commands/documentCommands.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
@@ -13,6 +22,7 @@ import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import { renderPage } from './renderPage.js';
 import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
 import type { SettingsStore } from './settingsStore.js';
+import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 
@@ -63,13 +73,32 @@ export function App({ client, settings }: AppProps): ReactElement {
   const dialogs = useMemo(() => new DialogRegistry([ABOUT_DIALOG]), []);
   const { open: openDialog, show, close } = useDialogHost(dialogs);
 
+  // WHAT A COMMAND LEFT BEHIND, applied to the open document.
+  //
+  // A command rewrites the canonical image, so both halves move: the version
+  // says the view is stale and the byte length is what the replacement transport
+  // is built around. Merging rather than replacing, because `docId` is not the
+  // command's to change — a rotate that returned a document identity would be a
+  // different operation.
+  //
+  // Guarded on `previous`, and not because it might be undefined in practice: a
+  // command can only run with a focused document. It is the type saying that a
+  // result arriving after a close belongs to nothing, which is the same
+  // late-answer hazard `DocumentRangeTransport` drops bytes for.
+  const applied = useCallback((next: { readonly version: DocVersion; readonly byteLength: number }) => {
+    setOpen((previous) => (previous === undefined ? undefined : { ...previous, ...next }));
+  }, []);
+
   const registry = useMemo(
     () =>
       new CommandRegistry([
         openDocumentCommand({ client, onOpened: setOpen }),
         showAboutCommand({ client, show }),
+        rotatePageCommand({ client, onApplied: applied }),
+        undoCommand({ client, onApplied: applied }),
+        saveCommand({ client }),
       ]),
-    [client, show],
+    [applied, client, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -95,6 +124,10 @@ export function App({ client, settings }: AppProps): ReactElement {
       ) : (
         <PageCanvas client={client} document={open} onVersionMoved={setOpen} />
       )}
+      {/* A projection, like the start screen, and it renders nothing when its
+          model is empty — which is every moment no document is focused, because
+          each command placed on it declares `when`. */}
+      <QuickToolbar registry={registry} context={context} />
       {/* The ONE mount point. `DialogHost` renders nothing when none is open —
           not a hidden dialog — so this is not a control that renders and does
           nothing; it is the seam every dialog arrives through. */}
@@ -157,7 +190,16 @@ function useShortcuts(registry: CommandRegistry, context: CommandContext): void 
  * render — which is the shape where a preference appears to work intermittently.
  */
 function useTheme(settings: SettingsStore): void {
-  useEffect(() => {
+  // A LAYOUT effect, and the difference is a frame the user can see.
+  //
+  // Stored settings arrive one IPC round trip after the first paint — nothing
+  // waits for them, because a renderer whose first paint depends on main shows a
+  // blank window when main is absent. So the theme arrives late by construction,
+  // and `useEffect` would apply it AFTER the browser paints, making the
+  // correction a visible flash rather than an invisible one. `useLayoutEffect`
+  // runs before paint, so the frame that would have shown the wrong theme is
+  // never presented.
+  useLayoutEffect(() => {
     const apply = (): void => {
       applyTheme(document.documentElement, settings.get(THEME_SETTING.id) as Theme);
     };

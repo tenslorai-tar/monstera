@@ -403,16 +403,25 @@ export interface DocumentContext {
    * which is serial, so nothing can change it between the work finishing and
    * this being read.
    *
-   * ## What needs it, and why the renderer cannot do without it
+   * ## What needs it, and the state that is NOT yet true
    *
    * `document.open` already answers with a byte length, because the renderer
    * builds a `PDFDataRangeTransport` around one and PDF.js needs the total up
-   * front. A command **rewrites the document**, so a renderer that rebound its
-   * transport on the new version alone would bind it to the previous image's
-   * length: short by however much the rewrite added, or long by however much it
-   * removed, and a range past the end is a `RangeError` the handler reports as
-   * `internal`. Adding a scalar here is the same trade `document.open` already
-   * made and is nothing like putting the document on the wire.
+   * front. ADR-0031 argues staleness from *"answering a stale offset out of the
+   * new bytes"*, so a renderer rebuilding a view after a command needs the new
+   * total the same way.
+   *
+   * **There are no new bytes today, and this value is therefore constant**
+   * (finding OOOOO-1, measured 2026-08-30). A record's `bytes` is `readonly` and
+   * a command never replaces it: the mutation lands in the engine session, and
+   * main's canonical image stays what was opened. So this reads correctly and
+   * reads the same number before and after — which is the honest description of
+   * a field whose purpose arrives with the refresh that does not exist yet.
+   *
+   * It is here rather than deferred because the alternative is a renderer that
+   * rebinds on a version alone, which is wrong the moment the refresh lands and
+   * wrong in a way nothing observes: a range past the end is a `RangeError` the
+   * handler reports as `internal`, and one short of it is a truncated parse.
    */
   readonly byteLength: number;
 

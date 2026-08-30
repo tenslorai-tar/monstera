@@ -91,12 +91,21 @@ export const channels = {
    *
    * This said *"the version and nothing else"* until 2026-08-30, and the first
    * real caller found the sentence too wide. The version tells the renderer its
-   * view is stale; **rebuilding that view needs the new byte length too**,
-   * because the renderer drives PDF.js through a `PDFDataRangeTransport` bound
-   * to a total size, and a command rewrites the document. Rebinding on the
-   * version alone binds to the previous image's length — a range past the end is
-   * a `RangeError` the handler reports as `internal`, and a range short of it is
-   * a parse of a truncated document.
+   * view is stale; **rebuilding that view needs the byte length too**, because
+   * the renderer drives PDF.js through a `PDFDataRangeTransport` bound to a
+   * total size. Rebinding on the version alone binds to whatever length the
+   * caller last knew — a range past the end is a `RangeError` the handler
+   * reports as `internal`, and one short of it is a parse of a truncated
+   * document.
+   *
+   * **The length does not move yet, and saying so is not a footnote** (finding
+   * OOOOO-1). A command's effect lands in the engine session; main's canonical
+   * image is `readonly` and stays what was opened, so this answers the same
+   * number every time and `document.readRange` serves the pre-command document.
+   * ADR-0031's staleness argument — *"answering a stale offset out of the new
+   * bytes"* — describes a state this build does not reach. The field is here so
+   * that the renderer is not written to rebind on a version alone, which would
+   * be wrong the day the refresh lands and wrong invisibly.
    *
    * `document.open` already answers with a byte length for exactly this reason,
    * so **not** answering with one here was the inconsistency rather than the

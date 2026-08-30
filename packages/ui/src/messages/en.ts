@@ -35,6 +35,10 @@ export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
+export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
+export const UNDO_TITLE = messageKey('command.undo.title');
+export const SAVE_TITLE = messageKey('command.save.title');
+export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
 
 /**
  * The catalogue itself.
@@ -53,4 +57,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ABOUT_COMMAND_TITLE]: 'About',
   [ABOUT_VERSION_LABEL]: 'Version',
   [ABOUT_CHANNEL_LABEL]: 'Install channel',
+  // "Rotate page" and not "Rotate": the command rotates the page on screen, and
+  // a name that promised the document would be a name the behaviour contradicts
+  // the moment there is a second page.
+  [ROTATE_PAGE_TITLE]: 'Rotate page',
+  [UNDO_TITLE]: 'Undo',
+  [SAVE_TITLE]: 'Save',
+  [DOCUMENT_TOOLS_LABEL]: 'Document tools',
 };

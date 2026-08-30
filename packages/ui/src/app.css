@@ -58,6 +58,30 @@ body {
 }
 
 /*
+ * §10.3's floating quick toolbar: a vertical pill on the canvas edge.
+ *
+ * `position: fixed` and not `absolute`, because the document surface scrolls
+ * once there is more than one page and a toolbar that scrolled away with it
+ * would be a control that exists and cannot be reached.
+ *
+ * Centred on the viewport's block axis by translation rather than by a computed
+ * offset, so it stays centred as the window resizes with nothing listening.
+ */
+.m-quick-toolbar {
+  position: fixed;
+  inset-inline-start: var(--space-16);
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-10);
+  background: var(--surface);
+}
+
+/*
  * The About dialog's body: a definition list, laid out as label/value pairs.
  * `grid` rather than the browser's default `dd` indent, because that indent is a
  * user-agent value this repository did not choose and it differs between them.

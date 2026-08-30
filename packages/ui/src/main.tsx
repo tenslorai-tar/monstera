@@ -60,21 +60,22 @@ activateCatalogue('en', EN);
 const client = createRendererClient();
 const settings = new SettingsStore(new SettingsRegistry([THEME_SETTING]));
 
-// HYDRATED BEFORE THE FIRST RENDER, and subscribed before the hydrate.
+// NOTHING HERE WAITS FOR MAIN, and that is the point of the shape.
 //
-// The order is the whole of it. Subscribing first means a change arriving
-// during startup is not lost; awaiting the hydrate before rendering means the
-// application paints once, in the theme the user chose, rather than painting in
-// the default and correcting itself — which is a visible flash on every launch
-// for anyone who set anything.
+// Subscribing first means a change arriving during startup is not lost.
+// `persistSettings` ignores the `'*'` a hydrate emits, so subscribing before
+// hydrating does not write the file back over itself — which matters because
+// `hydrate` drops ids this build's registry does not know, so a write triggered
+// by a hydrate would delete a newer build's settings from disk on startup.
 //
-// `persistSettings` ignores the `'*'` a hydrate emits, so subscribing first
-// does not write the file back over itself. That is stated there, because the
-// consequence of getting it wrong is not a flash: `hydrate` drops ids this
-// build's registry does not know, so a write triggered by a hydrate would
-// delete a newer build's settings from disk on startup.
+// The hydrate is FIRED, not awaited. Awaiting it — even with a bound — makes the
+// renderer's first paint depend on an IPC answer, and `proof:rendererpolicy`
+// reddened twice saying so: it loads this bundle with no handlers registered,
+// which is exactly what a missing preload looks like to a user. The theme
+// arrives a round trip later and `useTheme` applies it in a LAYOUT effect, so
+// the correction lands before the next paint.
 persistSettings(client, settings);
-await hydrateSettings(client, settings);
+void hydrateSettings(client, settings);
 
 createRoot(container).render(
   <StrictMode>

@@ -64,6 +64,28 @@ describe('settings sync', () => {
     expect(store.get(THEME_SETTING.id)).toBe('dark');
   });
 
+  it('a LATE answer still lands, because the store notifies', async () => {
+    // Nothing waits for the hydrate — `main.tsx` fires it and renders — so an
+    // answer always arrives after the first paint, and this is the case that
+    // says a late one is still applied rather than dropped. Without it, a
+    // `hydrateSettings` that ignored a slow answer would be indistinguishable
+    // from one that works, on any client that answers immediately.
+    //
+    // A promise resolved by hand is the fixture, because "answers eventually" is
+    // the shape a real IPC round trip has and an immediate mock does not.
+    let answer: ((value: unknown) => void) | undefined;
+    const client = createClient(channels, () => new Promise((resolve) => (answer = resolve)));
+    const store = freshStore();
+
+    const hydrating = hydrateSettings(client, store);
+    expect(store.get(THEME_SETTING.id)).toBe('system');
+
+    answer?.(ok({ stored: { [THEME_SETTING.id]: 'dark' } }));
+    await hydrating;
+
+    expect(store.get(THEME_SETTING.id)).toBe('dark');
+  });
+
   it('CONTROL: with nothing stored, the registry fallback is what is read', async () => {
     // Without this the case above passes for a `hydrate` that ignores its
     // argument and for a store that already held 'dark' — the fixture the defect

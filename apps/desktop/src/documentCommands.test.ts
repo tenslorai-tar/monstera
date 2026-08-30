@@ -48,6 +48,7 @@ let directory: string;
 let file: string;
 let service: DocumentService;
 let docId: DocId;
+let openedBytes: number;
 let session: MupdfSession;
 
 /** The rotation MuPDF currently reports for a page, or `null` if it has none. */
@@ -64,6 +65,10 @@ async function openDocument(): Promise<void> {
   const outcome = await service.open(registry.mint(file));
   if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
   docId = outcome.docId;
+  // KEPT, so a command's answer can be compared against the document it
+  // replaced. Without this the only available assertion is "greater than zero",
+  // which a length captured before the command satisfies too.
+  openedBytes = outcome.byteLength;
   session = await mupdfWriter.open(await pdfBytes());
 }
 
@@ -150,13 +155,33 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     const applied = await commands.execute(docId, rotateOnce);
     expect(applied.version).toBe(2);
 
-    // THE BYTE LENGTH IS THE POST-COMMAND ONE, and asserting it is not zero is
-    // what says so. A rewrite that produced nothing, and a read taken before the
-    // bus ran, both leave a number — this separates them from a length the
-    // engine actually produced. It is deliberately not pinned to a figure: what
-    // MuPDF emits for a rotated page is MuPDF's business and would make this
-    // case fail on an engine upgrade that worked perfectly.
+    // THE BYTE LENGTH, and two findings meet at this assertion.
+    //
+    // NNNNN-1: it said `toBeGreaterThan(0)`, which a length captured at lane
+    // entry satisfies just as well — the pre-command document also has bytes.
+    // So the one property `DocumentContext.byteLength` has an argument written
+    // about, *read after the bus and not before*, was the one property nothing
+    // here separated. `Versioned`'s hazard with the sign flipped, in a case
+    // written an hour after the mechanism it guards.
+    //
+    // The assertion was going to be `not.toBe(openedBytes)`: only the correct
+    // path produces a post-command length. MEASURED before it was written,
+    // because *they differ* is an assumption about MuPDF rather than a rule —
+    // and they do not differ. THEY ARE EQUAL, and that is finding OOOOO-1.
+    //
+    // A `DocumentRecord`'s `bytes` is `readonly` and a command never replaces
+    // it: the mutation lands in the ENGINE SESSION, and main's canonical image
+    // stays the bytes that were opened. So `context.byteLength` is correct and
+    // **constant**, `document.readRange` serves the pre-command document, and
+    // the renderer's view cannot show a rotation whatever it rebinds to.
+    //
+    // That is a gap between the code and ADR-0031, which argues staleness from
+    // *"answering a stale offset out of the new bytes"* — there are no new
+    // bytes. This assertion is the evidence, and it is deliberately written as
+    // the equality rather than deleted: an equality that passes is what says the
+    // mechanism above has nothing to act on yet.
     expect(applied.byteLength).toBeGreaterThan(0);
+    expect(applied.byteLength).toBe(openedBytes);
 
     await expect(ownRotation(0)).resolves.toBe(90);
   });

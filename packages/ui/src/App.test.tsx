@@ -69,6 +69,64 @@ function recordingClient(answer: unknown): {
   return { client, calls };
 }
 
+/** One recorded call, with what the renderer sent. */
+interface Sent {
+  readonly id: string;
+  readonly params: unknown;
+}
+
+/**
+ * A client that answers each channel differently, and records the PARAMS.
+ *
+ * The document commands need this and `recordingClient` cannot give it: one
+ * answer for every channel is enough to assert *which* command was dispatched,
+ * and the wired-tools rule wants *which command with what* — a rotate that sent
+ * `quarterTurns: 0` dispatches `document.execute` exactly as correctly as one
+ * that rotates.
+ *
+ * Answers travel through the real schemas: `createClient` parses what comes
+ * back, so an answer these cases invent that the contract would refuse fails
+ * here rather than teaching a component a shape nothing ships.
+ */
+function answeringClient(answers: Readonly<Record<string, unknown>>): {
+  readonly client: ContractClient;
+  readonly sent: Sent[];
+} {
+  const sent: Sent[] = [];
+  const client = createClient(channels, (id, params) => {
+    sent.push({ id, params });
+    const answer = answers[id];
+    if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+    return Promise.resolve(ok(answer));
+  });
+  return { client, sent };
+}
+
+/** The answers a case needs to reach a document with the toolbar showing. */
+const OPEN_DOCUMENT_ANSWERS = {
+  'document.open': {
+    kind: 'opened' as const,
+    docId: DOC,
+    version: asDocVersion(1),
+    byteLength: 1024,
+  },
+  // A parse never completes under happy-dom — no canvas, no worker — so the
+  // range answer only has to be well formed. What these cases are about is the
+  // dispatch, and the pixels have their own proof in real Chromium.
+  'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
+};
+
+/** Opens a document and settles the effects, leaving the toolbar rendered. */
+async function withDocumentOpen(): Promise<void> {
+  await act(async () => {
+    screen.getByRole('button', { name: 'Open a document' }).click();
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 describe('App', () => {
   it('renders the document surface as a landmark', () => {
     // RESTORED, finding KKKKK-1. This assertion existed, was deleted when `App`
@@ -296,6 +354,149 @@ describe('App', () => {
     });
 
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  describe('the document commands, and the toolbar that projects them', () => {
+    it('the toolbar is ABSENT until a document is open', async () => {
+      // §10.4's rule one layer up from a dead button: an empty container that
+      // looks like a surface under construction. Every command placed here
+      // declares `when`, so the model is empty and `QuickToolbar` renders null —
+      // and this is what says the `when` is doing the work rather than the
+      // component checking application state, which would be the surface
+      // deciding its own contents.
+      const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
+      render(<App client={client} settings={freshSettings()} />);
+
+      expect(screen.queryByRole('toolbar')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Rotate page' })).toBeNull();
+
+      await withDocumentOpen();
+
+      expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
+    });
+
+    it('the ROTATE control dispatches document.execute with a quarter turn on page 1', async () => {
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Rotate page' }).click();
+        await Promise.resolve();
+      });
+
+      // THE PARAMS, not just the channel. A rotate that sent `quarterTurns: 0`
+      // or an empty page list dispatches `document.execute` exactly as
+      // correctly as one that rotates, so asserting the id alone would pass for
+      // a control that does nothing to the document.
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+    });
+
+    /*
+     * WHAT IS NOT ASSERTED HERE, and where it is instead.
+     *
+     * That the view is rebuilt against the new byte length is the half a
+     * dispatch assertion cannot see, and happy-dom cannot see it either: it
+     * implements no canvas and no worker, so PDF.js never starts and the
+     * transport is never driven — a case reading the range requests found
+     * **zero** of them, and its own vacuity guard is what said so rather than
+     * letting it pass on an empty lookup.
+     *
+     * So the claim is split across the levels that can hold it:
+     *
+     *   - `commands/documentCommands.test.ts` — the command hands `onApplied`
+     *     both scalars, and does not call it for an outcome that changed
+     *     nothing;
+     *   - `documentTransport.test.ts` — a transport is bound to one version and
+     *     refuses bytes for another;
+     *   - `proof:canvaspixels` — a real Chromium, where a page actually draws.
+     *
+     * Splitting it is not the same as covering it, and the FEATURES row says
+     * which link has no test of its own: that `App` feeds the command's answer
+     * back into the open document. That is three lines of `setOpen`, and the
+     * first thing an end-to-end rotate in real Chromium would exercise.
+     */
+
+    it('the UNDO control dispatches document.undo, and its chord dispatches the same', async () => {
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.undo': { kind: 'undone' as const, version: asDocVersion(2), byteLength: 900 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Undo' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }));
+        await Promise.resolve();
+      });
+
+      // TWICE, from two routes, and the count is the assertion. §7 makes the
+      // shortcut map a projection of the same registry, so a chord that reached
+      // a different command — or no command — is what this separates. One call
+      // would mean one of the two routes is dead.
+      expect(sent.filter((call) => call.id === 'document.undo')).toHaveLength(2);
+    });
+
+    it('an exhausted undo changes nothing, so the view is not rebuilt', async () => {
+      // ASSERT THE CALL THAT WAS NOT MADE. `nothing-to-undo` is a success, and a
+      // renderer that treated it as a move would reopen the document — a visible
+      // reparse for a key press that did nothing. The tidy end state is the same
+      // either way, so the range requests are what separate them.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.undo': { kind: 'nothing-to-undo' as const },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      const before = sent.filter((call) => call.id === 'document.readRange').length;
+      await act(async () => {
+        screen.getByRole('button', { name: 'Undo' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
+    });
+
+    it('the SAVE control dispatches document.save, and does NOT rebuild the view', async () => {
+      // A save changes the file, not the document. The version bumps — §4 bumps
+      // it for every applied mutation — and the canonical image is the same
+      // bytes the renderer is already showing, so reopening would reparse a
+      // document that has not changed.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.save': { kind: 'saved' as const, version: asDocVersion(2) },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      const before = sent.filter((call) => call.id === 'document.readRange').length;
+      await act(async () => {
+        screen.getByRole('button', { name: 'Save' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.save')).toHaveLength(1);
+      expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
+    });
   });
 
   it('the start screen names no command itself — it renders what the registry holds', () => {
