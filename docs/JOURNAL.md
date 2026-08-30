@@ -644,6 +644,204 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `2b9a3c4..c63e422` — a proof's CI step owed two registrations, and both checks were sitting here
+
+Range: **9 commits, 23 files.**
+
+### SSSSS-1 — two registration rules on one workflow line, discovered one red board at a time
+
+`proof:viewportrotation` was added with the step `run: npm run proof:x`. Guards
+went red: `proofCoverage.mjs` matches on the **script path**, because that is
+what a workflow line names, so the proof ran and the coverage scan could not see
+it. Spelling it by path produced the second failure —
+`annotateCoverage.proof.mjs` requires every workflow proof step to be **wrapped**
+by `annotate.mjs`, because an unwrapped failure is public as *"Process completed
+with exit code 1"* and nothing else.
+
+Both scans were right and both run here in under a second. What happened is that
+I read one failure, fixed that one, and pushed.
+
+**The transferable half is not "run the checks".** It is that an entry in a
+scanned list is an interface with several readers, and each reader is a rule
+somebody wrote after a specific failure. Composing the entry from intent
+satisfies whichever reader you are thinking about; the neighbouring entries
+already satisfy all of them. *Wrapper, then script path* is what every other
+proof step in that file already looked like, and copying one verbatim would have
+paid both rules without my knowing either existed.
+
+### SSSSS-2 — `check:docs`'s row-length rule fails open on the compliant path
+
+Trimming a `FEATURES` row to get under its target, I also moved a full stop
+inside the row's **bolded title** — and the check went green. The rule pairs
+before and after by that title, so a retitled row is absent from the previous
+blob, reads as **new**, and new rows are deliberately not judged for growth.
+
+I hit it while doing exactly what the rule asks for, which is when an author
+touches a title.
+
+**The reviewing seat's ruling, recorded because my own framing was wrong on one
+half.** A *new* row over the floor going unjudged is the ratchet working as
+designed — `ROW_WORD_FLOOR` tolerates four legacy rows past 1750 words, so
+judging new rows absolutely would be a different rule that immediately
+contradicts that tolerance. My view-model row at 284 words was caught by hand,
+which is what should happen. **The retitle is the defect**: the rule's own name
+says it judges rows this commit edited, and a retitled row is an edited row that
+is not judged. The fix is the **pairing**, not the policy — a title in `after`
+absent from `before` and a title in `before` absent from `after`, in one commit,
+is a rename.
+
+**And one argument I used is retired.** I wrote that
+`documentRuleScope.proof.mjs` proves the rule roster rather than any rule's
+behaviour, *"so there is nowhere to prove the widening"*. That is a fact about
+where the existing proof looks, not about whether the behaviour can be proven —
+a retitled over-floor row must be reported, which is a fixture and three cases.
+*There is nowhere to put the test* is never a reason to leave a hole open.
+
+### SSSSS-3 — a union of literals closes the codes and not the fields beside them
+
+`commandProblem.ts`'s header claims a `z.discriminatedUnion` makes
+`{code: 'document-busy', incident: '…'}` unrepresentable. It does not: zod
+**strips** an unknown key rather than refusing it, so that shape parsed cleanly.
+The union closed the set of codes and left the set of fields open.
+
+Found by writing the assertion, in a comment written the same hour — which is the
+only thing that catches a claim recorded more strongly than its evidence
+supported, because re-reading it does not. `.strict()` on every member, in the
+commit after this one.
+
+### 1. Root cause or workaround?
+
+Nine commits, and the two that matter are root-cause repairs of instruments
+rather than of features.
+
+`affectedProofs`' build edge is the larger: the advisor returned an empty list
+for every renderer source, and the repair was not a new list but **one owner** —
+`refuseStaleBuild`'s pair lists already were the edges, so the freshness guard
+takes the artefact side and the advisor the source side, and neither can drift
+from the other because there is no other.
+
+`rotationFor`'s version comparison is the other: the channel argued that the
+version is how a late answer is recognised and nothing read it, so a model
+describing version N+1 could be drawn over bytes bound to N.
+
+No loosened check in the range. Two **status** raises — rows moving to `done` —
+and each quotes the command whose output justifies it rather than an argument.
+
+### 2. Verified against the easy shape only?
+
+The dialogs are the range's soft spot and it is stated in their rows: both are
+proven against happy-dom, where the body is a `lazy()` chunk and reading its text
+without waiting asserts on the Suspense fallback — which is what the first
+attempt did. What is **not** proven is either dialog rendered in real Chromium,
+where the focus trap, the backdrop and the Escape handler live.
+
+`proof:rendererpolicy` and `proof:canvaspixels` both exercise the shell, and
+neither opens a dialog.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, once, and it is a **widening with a condition**. The two renderer proofs
+stopped holding their own pair lists and now read them from `buildFreshness.mjs`.
+The lists are unchanged and the `expected` count anchors stayed at the call
+sites — deriving those from the lists they guard would agree with a list that
+lost an entry (GGGGG-1). What moved is that a third consumer now reads the same
+edges, so a pair added for one proof is visible to the advisor for free.
+
+### 3. Would CI have caught it?
+
+**SSSSS-1: CI is the only thing that did**, twice, and both checks were runnable
+here. That is the finding rather than a gap to close.
+
+**SSSSS-2: no, and nothing should.** A guard whose key an author controls fails
+open silently; the compliant path is the one that trips it.
+
+**SSSSS-3: no.** A schema that accepts more than it claims passes every test
+written against the shapes it should accept. Only an assertion about a shape it
+should **refuse** separates them.
+
+### 4. Non-vacuous proofs
+
+Mutations run in this range, each reddening its own case alone: `onApplied`
+replaced with a no-op on rotate; the close-on-cancel removed from `PageCanvas`;
+the version comparison removed from `rotationFor`; the geometry adapter sending a
+fixed page list; the quarter-turn refinement loosened to `value >= 0`;
+`reportProblem` removed from rotate; the save command returning early on any
+non-saved answer.
+
+**One mutation misfired and the misfire is worth more than the result.** Checking
+that the view-model handler's `document-poisoned` mapping was covered, I removed
+the line from the wrong handler — `saveHandler` — and ran only
+`documentCommands.test.ts`: 19 of 19 green, which reads exactly like a vacuous
+case. The same mutation against the whole package reddens
+`compositionHost.test.ts` immediately. **A mutation confined to the file you are
+editing tests the file, not the mechanism.**
+
+### 4a. Instrument resolution tests
+
+`shownPage.ts` is a two-field constant with nothing to resolution-test; what
+stands in for it is the **correspondence** case, which asserts that the page the
+renderer asks the model about is the page the command rotates. Asserting `[0]`
+alone would pin the constant, and the constant is exactly what was wrong.
+
+### 4b. Searches with positive controls
+
+`affectedProofs` gained `CONTROL_BUILD_EDGE`, its third — after the import edge
+and the by-path data edge — because a build edge fails separately from both. Its
+own separating case is the one asserting that a source only **one** proof builds
+from names only that proof: an edge map matching every query would satisfy the
+positive case perfectly.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+The build-edge map derives nothing and is a hand-written pair list, which is the
+right direction: the danger is a pair going **missing**, and a map derived from
+the proofs would agree with any proof that stopped declaring one.
+
+The command-problem dialog's code roster runs the other way and derives from
+`channels`, because there the danger is the set getting **bigger** — a channel
+gaining a code nobody adds to the dialog is a refusal the user never sees. Two
+rosters in one range, opposite directions, each argued.
+
+### 5. Executed, or asserted?
+
+**Executed:** the full suite (844) · `lint` · `tsc --build` · `check:docs` ·
+`check:secondwiring` · `check:bordertokens` · `check:jobplacement` ·
+`proof:contract` (38) · `proof:rendererpolicy` (19) · `proof:canvaspixels` (6) ·
+`proof:affectedproofs` (25) · `proof:buildfreshness` (9) ·
+`annotateCoverage.proof.mjs` (21) · `proofCoverage.mjs` (90) · seven mutations ·
+`grep -c classifyContainment apps/desktop/src/composition.ts` → 4.
+
+**Asserted:** that the two dialogs render correctly in Chromium. Neither renderer
+proof opens one.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Neither. `§7`'s two example command ids were corrected to the shipped grammar and
+**no amendment-log row was opened**, with the reason written into the body: the
+grammar has been ADR-0029's since the registry was designed, so nothing was
+decided — two examples predating it were reconciled. If the reviewing seat reads
+that as an amendment, the row is one commit.
+
+### 7. Do the documents still match the code?
+
+**This is the range where that question was asked of the rows themselves, and
+seven of them were wrong.** Every one was true when written and falsified by a
+commit that never touched it — the UI dispatch test *"impossible until a renderer
+exists"*, *"nothing creates a host in the application"*, *"nothing in main calls
+it yet"*, *"`onEngineHostEnded` has no production caller"*, the border scan
+examining *"zero declarations"*. Two more named triggers that **cannot fire**:
+invariant 25's `utilityProcess`, which ADR-0022 made a symbol shipped code will
+never name, in two separate rows.
+
+A trigger aimed at an impossible event is worse than a stale sentence, because
+the row reads as watched. Both re-pointed at events that can happen.
+
+**The cross-document sweep (NNN-4) fires and was run:** `sweep:prose --
+"utilityprocess"` and `-- "view model"` across every document, and the founding
+record's uses are left alone by design.
+
+---
+
 ## 2026-08-30 — Stage audit: `25a0cd1..2b9a3c4` — the channel says the version is how a late answer is recognised, and nothing reads it
 
 Range: **3 commits, 21 files.**
