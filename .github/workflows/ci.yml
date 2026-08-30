@@ -495,6 +495,17 @@ jobs:
       - name: Prove the renderer's canvas carries a drawn page
         run: node scripts/ci/annotate.mjs scripts/proofs/canvasPixels.proof.mjs
 
+      # THE VIEW MODEL'S LOAD-BEARING ASSUMPTION, and it needs no display.
+      #
+      # A rotation reaches the screen because PDF.js accepts one the parsed bytes
+      # do not carry (finding OOOOO-1, ARCHITECTURE §2). If an upgrade made that
+      # argument additive or ignored, the renderer would draw an unrotated page
+      # while the kernel held the correct document — and every check in this
+      # workflow would stay green, including the pixel proof above, which counts
+      # what was drawn and not which way up it is.
+      - name: Prove PDF.js takes a rotation the document does not carry
+        run: npm run proof:viewportrotation
+
       # WHICH MODE A WORKER THREAD RUNS IN, which is a placement question with a
       # three-strike record: `apps/desktop/src/` is exempted from the
       # Electron-import ban as a proxy for "runs inside Electron", and the engine
