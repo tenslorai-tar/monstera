@@ -427,13 +427,27 @@ describe('the composition root, with an engine host platform', () => {
     if (!first.ok || first.value.kind !== 'opened') throw new Error('the first did not open');
     if (!second.ok || second.value.kind !== 'opened') throw new Error('the second did not open');
 
-    // Let both lane entries settle, by running a command on the second — which
-    // only succeeds if that document got a session of its own.
-    const executed = await handlers['document.execute']({
-      docId: second.value.docId,
-      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
-    });
-    expect(executed.ok).toBe(true);
+    // BOTH LANES ARE WAITED ON, and until 2026-08-30 only one of them was.
+    //
+    // `onDocumentOpened` queues a session creation in each document's own lane
+    // and is deliberately not awaited, so the two entries are independent.
+    // Commanding only the second waits only for the second's lane — and then
+    // counts `engine/open` for BOTH. Whether the first had run by then was the
+    // runner's decision: green on windows-latest and on ubuntu for weeks, red on
+    // ubuntu at `a04b808` reporting one open where two were expected.
+    //
+    // A command is the right waiter because it can only succeed if that document
+    // got a session of its own; what was wrong was waiting for one and asserting
+    // about two. This is the same repair `proof:rendererpolicy` made when it
+    // stopped settling for a fixed duration: wait for the EVENT, and the bound
+    // decides nothing while the mechanism works.
+    for (const opened of [first.value, second.value]) {
+      const executed = await handlers['document.execute']({
+        docId: opened.docId,
+        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+      });
+      expect(executed.ok).toBe(true);
+    }
 
     // ONE process, TWO sessions. Counting the creations rather than asserting
     // "a host exists" is the whole case: a lifecycle that rebuilt per document

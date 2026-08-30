@@ -1113,4 +1113,39 @@ if (runLog.length > 0) {
       `  entry by hand if this run is the occurrence somebody needs later.\n`,
   );
 }
+
+/*
+ * THE VERDICT IS THE LAST LINE, so the common wrong action stops producing a
+ * wrong answer.
+ *
+ * The file name is the authority — a run seals itself `-ok` or `-failed` — and
+ * `| tail` discards the exit code, so a piped run has been read as green three
+ * times in one session by an agent that had written the rule down twice. That is
+ * this repository's standing evidence that a rule you must recall at the moment
+ * a command is composed is not a mechanism.
+ *
+ * Forbidding the pipe would be another rule. Printing the seal state LAST makes
+ * `| tail` show the truth instead, which is B5's shape applied to a habit rather
+ * than to a type: the mistake is made harmless rather than illegal. `head` still
+ * hides it, and nothing here pretends otherwise — what is closed is the form
+ * people actually reach for, which is the one that keeps the end of the output.
+ *
+ * The counts come from the same arrays the verdict does, so a line that said
+ * `ok` while something failed would need the verdict itself to be wrong.
+ */
+/** @type {{ count: number, what: string }[]} */
+const tallies = [
+  { count: failed.length, what: 'failed' },
+  { count: timedOut.length, what: 'timed out' },
+  { count: didNotStart.length, what: 'did not start' },
+  { count: notNode.length, what: 'not node' },
+].filter((tally) => tally.count > 0);
+const reasons = tallies.map((tally) => `${String(tally.count)} ${tally.what}`).join(', ');
+process.stdout.write(
+  clean
+    ? `SEALED: ok (${String(passedCount)} passed)\n`
+    : `SEALED: failed (${treeMoved === null ? '' : 'the tree moved under this run; '}${
+        reasons === '' ? 'see above' : reasons
+      })\n`,
+);
 process.exit(clean ? 0 : 1);

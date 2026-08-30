@@ -86,7 +86,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 54 });
+const roster = createRoster(failures, { cases: 56 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -1648,6 +1648,41 @@ try {
       `the previous guard skipped the block silently on a non-zero git exit, which prints ` +
         `nothing — indistinguishable from the report not existing, and from a clean tree. ` +
         `"Could not look" is not "looked and found nothing".\n${bare.output.slice(-700)}`,
+    );
+  }
+  {
+    // THE VERDICT IS THE LAST LINE, in both directions.
+    //
+    // The file name is the authority and `| tail` discards the exit code, so a
+    // piped run was read as green three times in one session by somebody who had
+    // written the rule down twice. Printing the seal state last makes the common
+    // wrong action produce the right answer — B5 applied to a habit — and that is
+    // only true if it is genuinely last, which nothing but a case can say.
+    //
+    // TAKEN FROM THE TAIL, not searched for anywhere in the output: a `SEALED:`
+    // line in the middle satisfies a `.includes` and satisfies nothing a reader
+    // piping through `tail` needs.
+    const lastLine = (/** @type {string} */ output) =>
+      output.trimEnd().split(/\r?\n/).at(-1) ?? '';
+
+    const passing = runFixture({ 'a.mjs': EXIT_ZERO }, { 'proof:a': 'node scripts/a.mjs' });
+    check(
+      'the SEAL STATE is the last line, so a piped run reads the truth',
+      /^SEALED: ok \(\d+ passed\)$/u.test(lastLine(passing.output)),
+      `the last line was "${lastLine(passing.output)}". Anything after it is what a reader ` +
+        `piping through \`tail\` sees instead of the verdict.\n${passing.output.slice(-700)}`,
+    );
+
+    // THE CONTROL, and its direction is what makes it one. A harness that always
+    // printed `SEALED: ok` satisfies the case above perfectly, and would be
+    // exactly the green-check-that-verifies-nothing this line exists to reject.
+    const failing = runFixture({ 'a.mjs': EXIT_ONE }, { 'proof:a': 'node scripts/a.mjs' });
+    check(
+      'CONTROL: a failing run seals as FAILED on that same last line, with a reason',
+      /^SEALED: failed \(.+\)$/u.test(lastLine(failing.output)),
+      `the last line was "${lastLine(failing.output)}". A seal line that says "ok" whatever ` +
+        `happened is the display-only defect living inside the mechanism that reports ` +
+        `it.\n${failing.output.slice(-700)}`,
     );
   }
 } finally {

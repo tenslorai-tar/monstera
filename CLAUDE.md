@@ -1452,6 +1452,22 @@ about a rule you must recall. The manifest is where a project records that its
 one-word verb is several commands, and reaching past it for the binary is how you
 run a subset while believing you ran the whole. No mechanism closes this today.
 
+**A NEIGHBOURING HABIT IS NOW CLOSED, and the shape of the fix is the part worth
+copying.** `npm run local` seals its own log `-ok` or `-failed`, so the file name
+is the authority and the exit code is not — and `| tail` discards the exit code.
+A piped run was read as green **three times in one session** by a seat that had
+written that rule down twice. The remedy was not a fourth telling: the verdict is
+now the **last line** the harness prints, `SEALED: ok (n passed)` or
+`SEALED: failed (…)`, so the common wrong action produces the right answer
+instead of a wrong one. B5 applied to a habit rather than to a type — make the
+mistake harmless, not illegal. `head` still hides it and nothing pretends
+otherwise; what is closed is the form people actually reach for.
+
+Two cases hold it, and the second is the load-bearing one: a **failing** run must
+seal as failed on that same last line, because a harness that always printed
+`SEALED: ok` satisfies the first case perfectly and is the display-only defect
+living inside the mechanism that reports it.
+
 ---
 
 ## Build order
