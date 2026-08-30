@@ -2,6 +2,7 @@ import { ENGINE_HOST_FRAME_MAX_BYTES, type IncidentSink } from '@monstera/contra
 
 import type { CommandExecution } from '../commandSpecs.js';
 import type { EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { PageGeometryReader } from '../pageGeometry.js';
 import type { TokenBytesSource } from '../token.js';
 import { engineChannels } from './engineChannels.js';
 import {
@@ -66,6 +67,8 @@ export interface HostBodyDependencies {
   readonly files: HostFilesystem;
   /** ADR-0023 §5's startup check. `probeContainment`. */
   readonly probe: HostContainmentProbe;
+  /** How this process reads the view model's geometry. `readPageGeometry`. */
+  readonly geometry: PageGeometryReader;
   /** Where session ids come from. `cryptoBytes`. */
   readonly tokens: TokenBytesSource;
   /**
@@ -134,6 +137,7 @@ export function startEngineHost(
       dependencies.writer,
       dependencies.files,
       dependencies.probe,
+      dependencies.geometry,
     ),
     transport: {
       write: stream.write,

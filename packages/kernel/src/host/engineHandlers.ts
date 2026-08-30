@@ -2,6 +2,7 @@ import type { Handlers } from '@monstera/contract';
 
 import type { CommandExecution } from '../commandSpecs.js';
 import type { EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { PageGeometryReader } from '../pageGeometry.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { EngineChannels } from './engineChannels.js';
 
@@ -85,6 +86,10 @@ export type HostContainmentProbe = (paths: ContainmentProbePaths) => Promise<Con
  *   document.
  * @param probe how this process attempts the two paths §5's check names.
  *   `probeContainment` in the host.
+ * @param geometry how this process reads the view model's geometry half.
+ *   `readPageGeometry` in the host, and injectable for the same reason
+ *   `execution` is: a handler proof must be able to drive this channel without
+ *   a parsed document.
  */
 export function createEngineHandlers(
   sessions: HostSessions,
@@ -92,6 +97,7 @@ export function createEngineHandlers(
   writer: EngineWriter<MupdfSession>,
   files: HostFilesystem,
   probe: HostContainmentProbe,
+  geometry: PageGeometryReader,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -191,6 +197,16 @@ export function createEngineHandlers(
       sessions.forget(session);
       await writer.close(held.session);
       return { ok: true, value: {} };
+    },
+
+    'engine/page-geometry': async ({ session, pages }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the reason `engine/apply` has none: a read of a page
+      // tree the adapter already parsed either works or is a defect — including
+      // an index outside the document, which is a caller that has lost track of
+      // the page count rather than a state to report.
+      return { ok: true, value: await geometry(held.session, pages) };
     },
 
     'engine/apply': async ({ session, command }) => {

@@ -30,6 +30,10 @@ export type {
 // LAST remaining edge after the declaration split, and it was a plain value
 // export rather than a spelling problem (ADR-0026).
 export type { PriorPageRotation, PriorRotation } from './rotatePages.js';
+// The TYPE only, for the same reason and by the same spelling: `readPageGeometry`
+// reaches `mupdfWriter.ts`, so it is on `@monstera/kernel/engine`. The shape is
+// what main, the host and the contract all name, and it is erased.
+export type { PageGeometry, PageGeometryReader } from './pageGeometry.js';
 export {
   type CaptureResult,
   type Checkpoint,
@@ -113,6 +117,7 @@ export {
   UnknownRemoteSession,
   createRemoteSessions,
   remoteMupdfExecution,
+  remoteMupdfGeometry,
 } from './host/remoteEngine.js';
 export {
   type CanonicalPath,

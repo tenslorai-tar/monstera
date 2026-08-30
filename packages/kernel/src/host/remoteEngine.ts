@@ -3,6 +3,7 @@ import type { ClientApi, CommandOfKind } from '@monstera/contract';
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
+import type { PageGeometryReader } from '../pageGeometry.js';
 import type { EngineChannels } from './engineChannels.js';
 
 /**
@@ -139,6 +140,53 @@ export function createRemoteSessions(): RemoteSessions {
 }
 
 /**
+ * Unwraps a `Result`, turning a declared failure into a named throw.
+ *
+ * At module scope because a **second** caller arrived — the geometry reader
+ * below — and a private copy in each would be two opinions about which code the
+ * supervisor may act on. `no-such-session` is the one the supervisor rebuilds
+ * for (Decision 9), so the mapping from a code to a class is exactly the kind of
+ * rule B3a says lives once with callers.
+ *
+ * @param channel the channel name, carried into the throw so a failure names
+ *   what was asked rather than only what went wrong.
+ */
+function answered<T>(
+  channel: string,
+  result: { ok: true; value: T } | { ok: false; error: { code: string } },
+): T {
+  if (result.ok) return result.value;
+  if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
+  throw new EngineCallFailed(channel, result.error.code);
+}
+
+/**
+ * Reading a session's page geometry from the process that holds it.
+ *
+ * A sibling of {@link remoteMupdfExecution} rather than a member of it, and the
+ * split is ADR-0030 Decision 1's: a registered writer carries `serialise` plus
+ * the command members **because those are what `CommandBus` calls**. Nothing in
+ * the bus reads geometry — it is a query (§2, *"reads are queries"*) — so
+ * putting it on the writer would widen the one type whose membership rule is
+ * *the bus calls this*.
+ *
+ * @param client the engine host's channels, through the contract's own
+ *   validating client — so a malformed answer is rejected at the boundary
+ *   wrapper rather than by a second parse here (B3a).
+ * @param sessions main's token registry.
+ */
+export function remoteMupdfGeometry(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): PageGeometryReader {
+  return async (session, pages) =>
+    answered(
+      'engine/page-geometry',
+      await client['engine/page-geometry']({ session: sessions.handleFor(session), pages }),
+    );
+}
+
+/**
  * @param client the engine host's channels, through the contract's own
  *   validating client — so a malformed answer is rejected at the boundary
  *   wrapper rather than by a second parse here (B3a).
@@ -148,13 +196,6 @@ export function remoteMupdfExecution(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
 ): CommandExecution<'mupdf'> {
-  /** Unwraps a `Result`, turning a declared failure into a named throw. */
-  const answered = <T>(channel: string, result: { ok: true; value: T } | { ok: false; error: { code: string } }): T => {
-    if (result.ok) return result.value;
-    if (result.error.code === 'no-such-session') throw new EngineSessionGone(channel);
-    throw new EngineCallFailed(channel, result.error.code);
-  };
-
   return {
     apply: async (session, command) => {
       answered(

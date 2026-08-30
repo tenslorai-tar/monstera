@@ -66,6 +66,22 @@ import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
  * an unbounded id is a peer deciding how many bytes of our frame it spends. */
 export const ENGINE_SESSION_ID_MAX_CHARS = 64;
 
+/**
+ * How many pages one geometry read may name.
+ *
+ * The same argument `MAX_RANGE_BYTES` makes: any constant satisfies L11, so the
+ * only real constraint is the lower one — it must sit above what a working
+ * renderer actually asks for. A viewer asks about the pages it is drawing, and
+ * a window of 512 is far above any plausible one; the value exists so that
+ * *the whole document* is not a request a peer can make.
+ *
+ * **The trigger, so this is a number with an expiry rather than a guess:** the
+ * first surface that legitimately needs more than this in one read — a thumbnail
+ * strip over a long document is the obvious candidate — is the evidence the
+ * bound is wrong, and the fix is a measurement of what that surface draws.
+ */
+export const ENGINE_GEOMETRY_MAX_PAGES = 512;
+
 const sessionSchema = z.string().min(1).max(ENGINE_SESSION_ID_MAX_CHARS);
 
 /**
@@ -250,6 +266,78 @@ export const engineChannels = {
     'Releases the session’s native resources.',
     z.object({ session: sessionSchema }).strict(),
     z.object({}).strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * The view model's geometry half (`docs/ARCHITECTURE.md` §2), read from the
+   * process that holds the session.
+   *
+   * ## Why it is a channel rather than something main works out
+   *
+   * Main holds bytes and never parses (invariant 20), and the rotation the
+   * renderer needs is the one the **session** is at — which, after a command,
+   * is not the one main's canonical image carries (finding OOOOO-1). So the
+   * question can only be answered here.
+   *
+   * ## The REQUEST names the pages, which is what keeps L11 satisfied
+   *
+   * One rotation per page scales with the document, so a channel that answered
+   * the whole vector would put a document-sized payload on the command path the
+   * moment anything re-read it. The caller names the pages it is about to draw,
+   * exactly as `document.readRange` names the bytes it is about to parse, and
+   * the bound is the request's own length.
+   *
+   * The rotations carry no page identity: they are positionally aligned with the
+   * request, so an answer that lost an entry is a different length rather than a
+   * plausible one. The page **count** is a scalar and always crosses.
+   */
+  'engine/page-geometry': channel(
+    'Reads the named pages’ effective rotations from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based indices, as `commands.ts` declares them. */
+        // `.readonly()`, so the inferred wire type IS `readonly number[]` — the
+        // same reason the inverse schema carries one, and what lets the adapter
+        // pass a caller's array through rather than copying it to satisfy a
+        // mutable parameter.
+        pages: z
+          .array(z.number().int().nonnegative())
+          .max(ENGINE_GEOMETRY_MAX_PAGES)
+          .readonly(),
+      })
+      .strict(),
+    z
+      .object({
+        pageCount: z.number().int().nonnegative(),
+        // A QUARTER TURN, snapped the way MuPDF snaps it, checked here so a
+        // host that stopped snapping is refused at the boundary rather than
+        // reaching a viewport.
+        //
+        // `refine` rather than a union of literals, and the difference is which
+        // side pays. A union would infer `(0|90|180|270)[]`, and `snapRotation`
+        // returns `number` — it is a port of C arithmetic whose range the
+        // compiler cannot see — so the handler would need a cast, which is the
+        // point at which the type stops carrying the property it claims. The
+        // refinement checks the same set and leaves the static type honest.
+        //
+        // `.readonly()` for the reason the inverse schema carries one: it makes
+        // the inferred wire type `readonly number[]`, which IS
+        // `PageGeometry['rotations']`, so the handler type-checks rather than
+        // being asserted into place.
+        rotations: z
+          .array(
+            z
+              .number()
+              .int()
+              .refine((value) => value >= 0 && value < 360 && value % 90 === 0, {
+                message: 'a rotation must be a quarter turn: 0, 90, 180 or 270',
+              }),
+          )
+          .readonly(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 

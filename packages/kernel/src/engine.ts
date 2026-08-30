@@ -6,6 +6,7 @@ export {
   snapRotation,
 } from './rotatePages.js';
 export { commandSpecs, declaredSpecs, localMupdfExecution } from './commandSpecs.js';
+export { readPageGeometry } from './pageGeometry.js';
 export { localMupdfWriter } from './localEngine.js';
 
 /**

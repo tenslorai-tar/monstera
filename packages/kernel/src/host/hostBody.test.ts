@@ -117,6 +117,9 @@ function start(stream: HostByteStream) {
           positive: { kind: 'read', bytes: 64 },
           negative: { kind: 'refused', code: 'EACCES' },
         }),
+      geometry: () => {
+        throw new Error('no case here reads a page tree');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

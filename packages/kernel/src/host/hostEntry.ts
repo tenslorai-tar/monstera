@@ -6,6 +6,7 @@ import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
 import { mupdfWriter } from '../mupdfWriter.js';
+import { readPageGeometry } from '../pageGeometry.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
@@ -118,6 +119,7 @@ startEngineHost(
       },
     },
     probe: probeContainment,
+    geometry: readPageGeometry,
     tokens: cryptoBytes,
     // Where a handler's thrown diagnostic goes. Never the pipe: main gets
     // `internal` and an id, and the text stays on this side — which is the

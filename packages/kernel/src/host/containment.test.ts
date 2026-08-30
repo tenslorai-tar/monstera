@@ -327,6 +327,9 @@ describe('the engine host answers a containment probe', () => {
         throw new Error('a containment probe must not write the output directory');
       },
     },
+    geometry: () => {
+      throw new Error('a containment probe must not read a page tree');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {
@@ -342,6 +345,7 @@ describe('the engine host answers a containment probe', () => {
           asked.push(paths);
           return Promise.resolve(answer);
         },
+        forbidden.geometry,
       ),
       () => undefined,
     );

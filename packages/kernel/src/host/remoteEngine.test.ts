@@ -6,12 +6,14 @@ import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter, withDocument } from '../mupdfWriter.js';
+import { readPageGeometry } from '../pageGeometry.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
   createRemoteSessions,
   EngineSessionGone,
   remoteMupdfExecution,
+  remoteMupdfGeometry,
   UnknownRemoteSession,
 } from './remoteEngine.js';
 
@@ -48,6 +50,9 @@ beforeAll(async () => {
  */
 const AREA = { snapshotDirectory: 'in', outputDirectory: 'out' };
 
+/** Every page of the three-page fixture, in order. */
+const ALL_PAGES = [0, 1, 2];
+
 const rotateFirst: CommandOfKind<'rotatePages'> = {
   kind: 'rotatePages',
   pages: [0],
@@ -72,6 +77,7 @@ async function joined(): Promise<{
   readonly session: MupdfSession;
   readonly token: MupdfSession;
   readonly remote: ReturnType<typeof remoteMupdfExecution>;
+  readonly geometry: ReturnType<typeof remoteMupdfGeometry>;
   readonly sessions: ReturnType<typeof createRemoteSessions>;
   readonly requests: () => number;
   readonly incidents: readonly Incident[];
@@ -121,6 +127,11 @@ async function joined(): Promise<{
       () => {
         throw new Error('the execution half must not probe containment');
       },
+      // THE REAL READER, unlike the four stubs above, because the geometry
+      // cases below are about what the HOST's page tree says after a command
+      // crossed — which a stub cannot answer without becoming the thing under
+      // test.
+      readPageGeometry,
     ),
     (incident) => incidents.push(incident),
   );
@@ -136,6 +147,7 @@ async function joined(): Promise<{
     session,
     token: sessions.adopt('h1', AREA),
     remote: remoteMupdfExecution(client, sessions),
+    geometry: remoteMupdfGeometry(client, sessions),
     sessions,
     requests: () => requests,
     incidents,
@@ -153,6 +165,61 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
       // The claim, and it is about the host's copy of `declaredSpecs` rather
       // than about the wire: nothing main-side touched this document.
       expect(await rotationOf(session)).toBe(90);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the GEOMETRY read crosses and reports the page tree the host holds', async () => {
+    const { session, token, geometry } = await joined();
+    try {
+      expect(await geometry(token, ALL_PAGES)).toStrictEqual({
+        pageCount: 3,
+        rotations: [0, 0, 0],
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('THE CLAIM: a command that crossed moves the geometry the next read reports', async () => {
+    const { session, token, remote, geometry } = await joined();
+    try {
+      // The before reading is what makes the after one mean something: without
+      // it, `[90, 0, 0]` is satisfied by a fixture that already carried a
+      // rotation, and this file's document is built by `pdf-lib` with no
+      // `/Rotate` at all — which is exactly the shape that would make it so.
+      expect(await geometry(token, ALL_PAGES)).toStrictEqual({
+        pageCount: 3,
+        rotations: [0, 0, 0],
+      });
+
+      await remote.apply(token, rotateFirst);
+
+      // FINDING OOOOO-1 ANSWERED. Main's canonical image is unchanged by that
+      // apply — a `DocumentRecord`'s bytes are `readonly` — so this is the only
+      // route by which the rotation can reach anything main hands the renderer.
+      // A view model that read main's bytes would report `[0, 0, 0]` here and be
+      // wrong in the one direction nothing else observes.
+      expect(await geometry(token, ALL_PAGES)).toStrictEqual({
+        pageCount: 3,
+        rotations: [90, 0, 0],
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a session the host has forgotten is a declared miss, not an empty geometry', async () => {
+    const { session, sessions, geometry } = await joined();
+    try {
+      // A zero-page answer and a missing session are the same news to anything
+      // that only checks `rotations.length`, and the reassuring one is the empty
+      // reading — a document with no pages needs no rotations. The declared code
+      // is what separates them, and it is the one the supervisor rebuilds for.
+      await expect(geometry(sessions.adopt('gone', AREA), ALL_PAGES)).rejects.toBeInstanceOf(
+        EngineSessionGone,
+      );
     } finally {
       await mupdfWriter.close(session);
     }
@@ -284,6 +351,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
           writeOutput: () => {
             throw new Error('unused');
           },
+        },
+        () => {
+          throw new Error('unused');
         },
         () => {
           throw new Error('unused');

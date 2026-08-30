@@ -201,6 +201,9 @@ function joined(
       () => {
         throw new Error('the lifecycle half must not probe containment');
       },
+      () => {
+        throw new Error('the lifecycle half must not read a page tree');
+      },
     ),
     (incident) => incidents.push(incident),
   );
@@ -379,6 +382,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         () => {
           throw new Error('the byte-size case must not probe containment');
+        },
+        () => {
+          throw new Error('the byte-size case must not read a page tree');
         },
       ),
       () => undefined,
