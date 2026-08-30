@@ -659,10 +659,26 @@ toolbar, context menus and start-screen shortcuts are all **derived** from
 placements. **A hand-maintained layout file for any of them is the second wiring
 place this registry exists to forbid.**
 
-Chrome visibility is itself commanded: `view.toggleQuickToolbar`,
-`view.togglePanel` and the layout-mode switch are registry commands, which is
+Chrome visibility is itself commanded: `view.toggle-quick-toolbar`,
+`view.toggle-panel` and the layout-mode switch are registry commands, which is
 what guarantees a hidden surface can always be restored from the palette or a
 shortcut.
+
+**Those two ids were written `view.toggleQuickToolbar` and `view.togglePanel`
+until 2026-08-30, and the spelling is not cosmetic.** A command id is
+`<domain>.<name>` — the same grammar as a `MessageKey`, lower-case and
+dot-separated, hyphens inside a name — which is what every shipped id uses and
+what `check:secondwiring` matches on to find a surface holding its own list of
+commands. A camelCase id is invisible to that scan, so the law's own examples
+described a shape the second-wiring check cannot see. Corrected in the body
+rather than noted below it, because a reader copies an example.
+
+`BUILD-PROMPT.md` Part C7 and M8 still spell them the old way and are not
+edited — the founding record never is. **No amendment-log row is opened**,
+because no decision changed: the grammar has been
+[ADR-0029](DECISIONS/0029-how-the-registries-are-built.md)'s since the registry
+was designed, and these were two examples written before it that nothing had
+reconciled.
 
 ---
 
@@ -1364,7 +1380,7 @@ them.
 - **Floating quick toolbar:** a vertical pill on the canvas edge with the
   always-needed tools (select, hand, text selection, zoom in/out, crop,
   snapshot, bookmark, comment); repositionable and hideable. Hiding and
-  restoring it is the registry command `view.toggleQuickToolbar` — in the
+  restoring it is the registry command `view.toggle-quick-toolbar` — in the
   palette, on a shortcut, and as a status-bar toggle — so it can never be lost.
 - **Canvas** (the star, quiet chrome) → right contextual panel → **status bar**.
   The status bar always carries page navigation: first / previous / an editable
