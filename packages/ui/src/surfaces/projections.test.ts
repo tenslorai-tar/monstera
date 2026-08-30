@@ -223,6 +223,67 @@ describe('shortcutMapOf', () => {
   });
 });
 
+describe('ONE registration, and every surface follows it', () => {
+  /**
+   * §7's whole claim, asserted as a change rather than as a state.
+   *
+   * Each projection has its own cases above, and every one of them reads a
+   * registry somebody wrote for that projection. That proves each surface can
+   * project; it does not prove the surfaces share a source, because a build in
+   * which the toolbar read a hand-maintained layout would satisfy all of them —
+   * the toolbar test would simply be reading the second wiring place.
+   *
+   * What separates the two is **moving one registration and watching more than
+   * one surface move together**. So this changes a single command's `shortcut`
+   * and its `placements` at once, and asserts the chord map, the toolbar and the
+   * palette all describe the new registration and none the old.
+   */
+  const before = new CommandRegistry([
+    command('a.mover', [{ surface: 'quick-toolbar', order: 10 }], { shortcut: 'Ctrl+M' }),
+    command('a.fixed', [{ surface: 'quick-toolbar', order: 20 }], { shortcut: 'Ctrl+F' }),
+  ]);
+  const after = new CommandRegistry([
+    command('a.mover', [{ surface: 'start-screen', order: 1 }], { shortcut: 'Ctrl+Shift+M' }),
+    command('a.fixed', [{ surface: 'quick-toolbar', order: 20 }], { shortcut: 'Ctrl+F' }),
+  ]);
+
+  it('the CHORD moves with the registration, and the old one stops resolving', () => {
+    expect(shortcutMapOf(before).get('ctrl+m')?.id).toBe('a.mover');
+    expect(shortcutMapOf(after).get('ctrl+m')).toBeUndefined();
+    expect(shortcutMapOf(after).get('ctrl+shift+m')?.id).toBe('a.mover');
+  });
+
+  it('...and the TOOLBAR loses it in the same edit, while its neighbour is untouched', () => {
+    // The neighbour is what makes this a move rather than a registry that
+    // emptied: a projection reading the wrong registry, or one that returned
+    // nothing, would satisfy "a.mover is gone" perfectly.
+    expect(ids(quickToolbarModel(before, context))).toStrictEqual(['a.mover', 'a.fixed']);
+    expect(ids(quickToolbarModel(after, context))).toStrictEqual(['a.fixed']);
+  });
+
+  it('...and the START SCREEN gains it, so the placement went somewhere', () => {
+    // Without this the pair above is satisfied by deleting the placement. The
+    // claim is that ONE declaration feeds every surface, so the command has to
+    // arrive where it was re-declared.
+    expect(ids(startScreenModel(before, context))).toStrictEqual([]);
+    expect(ids(startScreenModel(after, context))).toStrictEqual(['a.mover']);
+  });
+
+  it('...and the PALETTE carries both throughout, because it is placement-blind', () => {
+    // The palette lists every available command rather than a placed set, so it
+    // is the surface that must NOT move — a projection that changed here would
+    // mean placement had leaked into a model that does not read it.
+    // `paletteModel` answers commands rather than placed entries, which is the
+    // shape difference `ids` above cannot read — and is itself the point: a
+    // palette entry has no placement to carry.
+    const listed = (registry: CommandRegistry): string[] =>
+      paletteModel(registry, context).map((entry) => entry.id);
+
+    expect(listed(before)).toStrictEqual(['a.fixed', 'a.mover']);
+    expect(listed(after)).toStrictEqual(['a.fixed', 'a.mover']);
+  });
+});
+
 describe('normaliseChord', () => {
   it('fixes modifier order, case and spacing so one chord has one spelling', () => {
     expect(normaliseChord('Shift + Ctrl + P')).toBe('ctrl+shift+p');
