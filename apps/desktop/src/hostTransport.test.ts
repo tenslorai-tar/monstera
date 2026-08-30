@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -117,6 +119,41 @@ describe('createHostTransport', () => {
     expect(out.endings).toEqual([
       { by: 'us', detail: 'frame: length exceeded the maximum' },
     ]);
+  });
+
+  it('announces the ending OUTSIDE the async context that caused it', () => {
+    // THE DEFECT THIS EXISTS FOR, measured against a real contained host on
+    // 2026-08-31. The ending inherits whatever context announced it, and the
+    // reader worker is constructed inside `create`, which runs inside the first
+    // document's lane — so every host death arrived carrying that lane, and
+    // `onEngineHostEnded`'s rebuild for that same document threw `Lane reentry`
+    // before it was even queued. The shell built a new process and never
+    // restored the session.
+    //
+    // `DocumentService`'s lane guard is an `AsyncLocalStorage`, so this stands
+    // in for it exactly: what the sink must not see is the caller's store.
+    const lane = new AsyncLocalStorage<string>();
+    const reader = channel();
+    const queue = writer(reader.calls);
+
+    let insideSink: string | undefined = 'the sink never ran';
+    let insideCaller: string | undefined;
+    const transport = createHostTransport(reader, queue, {
+      receive: () => undefined,
+      ended: () => {
+        insideSink = lane.getStore();
+      },
+    });
+
+    lane.run('a-document-lane', () => {
+      insideCaller = lane.getStore();
+      transport.terminate(violation);
+    });
+
+    // THE CONTROL, and without it this case passes against a build where the
+    // store was never set — which is the same observation as the fix working.
+    expect(insideCaller).toBe('a-document-lane');
+    expect(insideSink).toBeUndefined();
   });
 
   it('drops writes and chunks after terminate', () => {

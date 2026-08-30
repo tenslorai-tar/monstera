@@ -1,6 +1,46 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import type { HostRuntimeTransport, HostTermination } from '@monstera/kernel';
 
 import type { HostWriteQueue } from './hostWriteQueue.js';
+
+/**
+ * The async context this module was loaded in, and the one an ending is
+ * announced from.
+ *
+ * ## The defect, measured against a real host on 2026-08-31
+ *
+ * `sinks.ended` is where the shell learns its host is gone, and its contract
+ * says a caller may rebuild inside it. Rebuilding means entering each surviving
+ * document's lane — and `DocumentService.run` refuses a lane it is already
+ * inside, through an `AsyncLocalStorage` the call inherits.
+ *
+ * The ending inherits whatever context announced it, and the reader worker is
+ * constructed inside `create`, which runs inside **the first document's lane**
+ * (the host is built lazily at the first open, ADR-0023 Decision 9c). So every
+ * host death arrived carrying that document's lane, and the recovery entry for
+ * exactly that document threw `Lane reentry` before it was queued.
+ *
+ * The shell rebuilt the process and never restored the session:
+ * `scripts/research/hostRecovery.mjs` killed a contained host, watched a new one
+ * appear in 4086ms, and the next command answered `MissingSessionError`. Every
+ * case that had exercised this path injected a `reopen` that entered no lane,
+ * which is why nothing saw it.
+ *
+ * ## Why the snapshot is taken here, at module scope
+ *
+ * `AsyncLocalStorage.snapshot()` captures the context it is called in, so this
+ * is a **restore to module-load time** rather than a clear. That is right for
+ * the same reason it is safe: this module is on `entry.ts`'s static import
+ * chain, so it loads while the shell is being built and no document exists yet,
+ * let alone a lane.
+ *
+ * The alternative — clearing the store inside `DocumentService` — was rejected:
+ * the lane guard is correct, and an ending is not caused by whoever happened to
+ * build the connection, so the context it inherits is the wrong one to reason
+ * from at any layer below this.
+ */
+const ANNOUNCE_FROM_MODULE_LOAD = AsyncLocalStorage.snapshot();
 
 /**
  * The engine host's transport, over a reader thread (ADR-0023 §4 and its
@@ -148,7 +188,13 @@ export function createHostTransport(
     // — a shape that invites someone to make the channel do work there.
     if (readerAlive) channel.stop();
     writer.close();
-    sinks.ended(end);
+    // DETACHED, and this is the one line that makes recovery possible. See
+    // ANNOUNCE_FROM_MODULE_LOAD: the ending otherwise carries the async context
+    // of whoever built the connection, which is a document's lane, and the
+    // rebuild this sink exists to allow is refused as reentry.
+    ANNOUNCE_FROM_MODULE_LOAD(() => {
+      sinks.ended(end);
+    });
     return true;
   };
 

@@ -861,6 +861,28 @@ jobs:
       - name: A contained host CONNECTS and answers, and reports its fixed cost
         run: node scripts/ci/annotate.mjs --always scripts/perf/roleMupdfHost.mjs --no-document
 
+      # AND A KILLED HOST RECOVERS, which retention makes possible and does not
+      # make true. Every case that exercised `onEngineHostEnded` injected the
+      # rebuild, so what they proved was the ordering — and the first run against
+      # a real process found the shell building a new host and never restoring
+      # the session, because the ending inherited the async context of the lane
+      # the host was lazily built inside and the reopen was refused as reentry.
+      #
+      # `--require-containment` for the same reason `lowboxSpike` has it: this
+      # job asserts that it CAN look, so could-not-look is a failure here rather
+      # than the UNVERIFIABLE a developer machine without a runtime prints.
+      #
+      # THIS JOB ONLY, and that is a decision rather than an omission. The
+      # `containment-2022` job exists because invariant 25's DIFFERS rows are
+      # build-dependent; nothing measured says recovery is, so a second image
+      # would buy a duplicate rather than a differential — and the day something
+      # does say so, the pin belongs beside that job's `runs-on:`.
+      #
+      # Runs after the two steps above for the reason the second does: they
+      # leave a granted machine rather than racing one.
+      - name: A killed engine host recovers, against a running process
+        run: node scripts/ci/annotate.mjs scripts/research/hostRecovery.mjs --require-containment
+
       # THE SAME PROOF THE UBUNTU JOB RUNS, HERE FOR THE HALF IT CANNOT (YYYY-2).
       #
       # `peakWorkingSetOf` is `Get-Process` and throws on every other platform,
