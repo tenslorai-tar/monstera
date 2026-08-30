@@ -44,12 +44,19 @@ export const COMMAND_PROBLEM_DIALOG_ID = 'dialog.command-problem';
 export const COMMAND_PROBLEM_DIALOG = declareDialog({
   id: COMMAND_PROBLEM_DIALOG_ID,
   title: PROBLEM_TITLE,
+  // `.strict()` ON EVERY MEMBER, and the case that asked for it is the reason
+  // this comment exists. Without it zod STRIPS an unknown key rather than
+  // refusing it, so `{code: 'document-busy', incident: '…'}` parsed cleanly and
+  // the paragraph above — *an id exists only for the one code the boundary mints
+  // it for* — was a claim the schema did not make. A union of literals looks
+  // exhaustive and is not: what it closes is the set of codes, not the set of
+  // fields beside them.
   props: z.discriminatedUnion('code', [
-    z.object({ code: z.literal('document-not-open') }),
-    z.object({ code: z.literal('document-busy') }),
-    z.object({ code: z.literal('document-poisoned') }),
-    z.object({ code: z.literal('checkpoint-restore-not-built') }),
-    z.object({ code: z.literal('internal'), incident: z.string().min(1) }),
+    z.object({ code: z.literal('document-not-open') }).strict(),
+    z.object({ code: z.literal('document-busy') }).strict(),
+    z.object({ code: z.literal('document-poisoned') }).strict(),
+    z.object({ code: z.literal('checkpoint-restore-not-built') }).strict(),
+    z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),
   ]),
   component: lazy(() => import('./CommandProblemBody.js')),
 });

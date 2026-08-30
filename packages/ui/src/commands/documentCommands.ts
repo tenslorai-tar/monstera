@@ -1,7 +1,9 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocVersion } from '@monstera/shared';
 
-import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import type { z } from 'zod';
+
+import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
@@ -89,12 +91,25 @@ interface DocumentCommandDeps {
  * of a diagnostic that exists on this side. Rendering it is what makes minting
  * it worth anything.
  *
+ * ## The parameter is the DIALOG's own props type, and that is not decoration
+ *
+ * `show` takes `unknown` and the registry validates at the open call, so a code
+ * the dialog cannot render is refused there — by throwing `DialogPropsRejected`,
+ * inside a `run` nothing awaits. A refusal would become an unhandled rejection,
+ * which is worse than the silence this function exists to end.
+ *
+ * Typing the parameter as `z.infer` of the dialog's schema moves that to compile
+ * time: a channel gaining a code nobody added to the dialog stops building here,
+ * at the call site, rather than throwing on the day a user meets it. The runtime
+ * validation stays — it guards every other caller of `show` — and this path can
+ * no longer reach it (B5).
+ *
  * @param failure exactly what the client answered — narrowed by the boundary, so
  *   an `incident` exists precisely when the code is `internal`.
  */
 function reportProblem(
   deps: Pick<DocumentCommandDeps, 'show'>,
-  failure: { readonly code: string } | { readonly code: 'internal'; readonly incident: string },
+  failure: z.infer<typeof COMMAND_PROBLEM_DIALOG.props>,
 ): void {
   deps.show(COMMAND_PROBLEM_DIALOG_ID, failure);
 }
