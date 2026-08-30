@@ -49,7 +49,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { refuseStaleBuild as refuseStaleBuildIn } from '../lib/buildFreshness.mjs';
+import {
+  RENDERER_POLICY_DECLARATION,
+  RENDERER_POLICY_RUNTIME,
+  refuseStaleBuild as refuseStaleBuildIn,
+} from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
@@ -366,7 +370,7 @@ try {
   // The string half reads exactly one artefact, and this call runs on every
   // machine — including the ones that install no runtime — so it must not
   // demand anything the runtime branch produces.
-  refuseStaleBuild([['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js']], 1);
+  refuseStaleBuild(RENDERER_POLICY_DECLARATION, 1);
 
   const { policy: declaredPolicy, background: declaredBackground } = await declared();
 
@@ -470,28 +474,13 @@ try {
   } else {
     // Everything the harness actually executes. `preload.cjs` is the pair that
     // motivated this: it is the only artefact `typecheck` does not produce.
-    refuseStaleBuild(
-      [
-        ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
-        ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
-        ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js'],
-        ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js'],
-        // THE FIFTH, and finding GGGGG-1 (2026-08-29). Two cases here read the
-        // Vite bundle — that the React shell mounted, and that its stylesheet
-        // applied — and this list did not follow them. Editing `App.tsx`,
-        // running `typecheck` rather than `build`, and running this proof
-        // reported both about whatever was built last time.
-        //
-        // Against `index.html` rather than the chunk: the chunk's filename
-        // carries a content hash and so is not a fixed path, while the HTML
-        // that names the hash is rewritten by the same build. Against the
-        // SOURCE TREE rather than one file, because the bundle's inputs are
-        // every module reachable from `main.tsx`, and naming one of them would
-        // be a guard that passes whenever the edit landed in a sibling.
-        ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
-      ],
-      5,
-    );
+    // THE LIST MOVED TO `buildFreshness.mjs` and the COUNT stayed here
+    // (PPPPP-2). `affectedProofs.mjs` needs the same edges to answer *which
+    // proofs does this change reach* — a build is a dependency and not an
+    // import — and a copy over there would be a second opinion about what this
+    // proof reads. The literal is still the anchor: derived from the list it
+    // guards, it would agree with a list that lost an entry (GGGGG-1).
+    refuseStaleBuild(RENDERER_POLICY_RUNTIME, 5);
 
     const seen = readback(binary);
 

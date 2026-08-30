@@ -21,7 +21,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { CONTROL_EDGE, affectedProofs, affectedProofsReport, importGraph } from '../lib/affectedProofs.mjs';
+import {
+  CONTROL_BUILD_EDGE,
+  CONTROL_EDGE,
+  affectedProofs,
+  affectedProofsReport,
+  importGraph,
+} from '../lib/affectedProofs.mjs';
+import { builtSourcesFor } from '../lib/buildFreshness.mjs';
 import { filesInCommit, repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { proofScripts } from '../lib/proofCoverage.mjs';
@@ -31,7 +38,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 21 });
+const roster = createRoster(failures, { cases: 25 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -104,7 +111,22 @@ function check(name, condition, detail) {
   // A source module under a package no `scripts/` module imports, and whose
   // basename appears in no script as a literal, is what an unreached file
   // actually looks like here.
-  const UNREACHED = 'packages/ui/src/primitives/iconSize.ts';
+  //
+  // **AND IT MOVED A SECOND TIME, for the third kind of edge (PPPPP-2).** It was
+  // `packages/ui/src/primitives/iconSize.ts`, which stopped being unreached the
+  // day build edges landed: `proof:canvaspixels` and `proof:rendererpolicy` read
+  // a Vite bundle whose inputs are every module under `packages/ui/src`, so that
+  // file is genuinely a dependency of both and the case was again asserting a
+  // blindness rather than an empty answer.
+  //
+  // Twice now, the same way: **a fixture chosen as "nothing reads this" is only
+  // as true as the edges the instrument knows about.** Each time the instrument
+  // learnt a new kind of edge the fixture became a false negative, and each time
+  // it did so silently, because the case kept passing. The tracked-file control
+  // below is what stops the replacement being wrong in the other direction; what
+  // stops it being wrong in this one is re-asking the question whenever an edge
+  // kind is added, which is written here rather than remembered.
+  const UNREACHED = 'packages/shared/src/geometry.ts';
   check(
     'CONTROL: the unreached fixture is a tracked file, so its emptiness means something',
     filesInCommit({ cwd: ROOT }).includes(UNREACHED),
@@ -275,6 +297,64 @@ function check(name, condition, detail) {
     'a query over the real graph terminates, so no cycle traps the walk',
     answered.examined > 10,
     'gitScope is imported by nearly everything; if a cycle hung the walk this case never returns',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE BUILD EDGE (finding PPPPP-2). The other thing the import walk cannot see:
+// a proof that spawns Electron and reads `apps/desktop/dist/` depends on a
+// source tree through a BUILD, which is not an import specifier.
+// ---------------------------------------------------------------------------
+{
+  // Measured before the fix: this returned an empty list, with the import
+  // control passing and `examined` correct. The instrument could see; its root
+  // was the wrong kind of edge, and the answer it produced was the reassuring
+  // one.
+  const renderer = affectedProofs(['packages/ui/src/App.tsx'], { root: ROOT });
+  check(
+    'a renderer source names the proofs that read the BUNDLE built from it',
+    ['proof:rendererpolicy', 'proof:canvaspixels'].every((name) =>
+      renderer.proofs.some((proof) => proof.name === name),
+    ),
+    `["packages/ui/src/App.tsx"] named ${renderer.proofs.map((proof) => proof.name).join(', ') || '(none)'}. ` +
+      `Both of those proofs read pixels and policy out of a Vite bundle whose inputs are every ` +
+      `module reachable from main.tsx, and neither imports this file.`,
+  );
+
+  // A FILE ONE PROOF READS AND THE OTHER DOES NOT, which is what separates
+  // "the map is consulted" from "the map answers everything". A build edge
+  // matching every query would satisfy the case above perfectly.
+  const policy = affectedProofs(['apps/desktop/src/windowPolicy.ts'], { root: ROOT });
+  check(
+    'CONTROL: a source only ONE proof builds from names only that proof',
+    policy.proofs.some((proof) => proof.name === 'proof:rendererpolicy') &&
+      !policy.proofs.some((proof) => proof.name === 'proof:canvaspixels'),
+    `["apps/desktop/src/windowPolicy.ts"] named ${policy.proofs.map((proof) => proof.name).join(', ') || '(none)'}. ` +
+      `proof:rendererpolicy exists to compare that file against §9.27; proof:canvaspixels does ` +
+      `not read it, and an edge that matched both would be an instrument answering every query ` +
+      `the same way.`,
+  );
+
+  // THE BOUNDARY, because the edges name directories. A prefix test without one
+  // makes a sibling directory a match, and the failure direction is a proof
+  // named for a change it cannot see — which is noise that gets ignored.
+  const sibling = affectedProofs(['packages/ui/srcExtra/thing.ts'], { root: ROOT });
+  check(
+    'a directory edge matches on a path boundary, not on a bare prefix',
+    !sibling.proofs.some((proof) => proof.name === 'proof:canvaspixels'),
+    `["packages/ui/srcExtra/thing.ts"] named proof:canvaspixels, so "packages/ui/src" matched a ` +
+      `path that merely starts with it.`,
+  );
+
+  // THE MAP'S OWN CONTROL, asserted from outside it. `affectedProofs` refuses
+  // to answer when the build-edge map has lost its anchor, for the reason the
+  // import graph refuses: a map that came back empty answers every query with
+  // "nothing affected".
+  check(
+    'the build-edge map carries its control, so its silence is worth something',
+    builtSourcesFor(CONTROL_BUILD_EDGE.from).includes(CONTROL_BUILD_EDGE.to),
+    `${CONTROL_BUILD_EDGE.from} does not declare ${CONTROL_BUILD_EDGE.to} as a built source. ` +
+      `Every build-edge query would then report the reassuring answer.`,
   );
 }
 

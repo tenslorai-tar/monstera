@@ -22,6 +22,98 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
+ * The pairs `rendererPolicy.proof.mjs` reads before believing its own output.
+ *
+ * Split in two because the proof has two call sites and they run in different
+ * worlds: the declaration pair is read on every machine, the runtime pairs only
+ * where Electron is provisioned. Calling both early would refuse on a machine
+ * that never runs the runtime cases at all.
+ *
+ * @type {[string, string][]}
+ */
+export const RENDERER_POLICY_DECLARATION = [
+  ['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js'],
+];
+
+/** @type {[string, string][]} */
+export const RENDERER_POLICY_RUNTIME = [
+  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
+  ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
+  ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js'],
+  ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js'],
+  // THE FIFTH, and finding GGGGG-1 (2026-08-29). Two cases there read the Vite
+  // bundle — that the React shell mounted, and that its stylesheet applied —
+  // and this list did not follow them. Editing `App.tsx`, running `typecheck`
+  // rather than `build`, and running that proof reported both about whatever
+  // was built last time.
+  //
+  // Against `index.html` rather than the chunk: the chunk's filename carries a
+  // content hash and so is not a fixed path, while the HTML that names the hash
+  // is rewritten by the same build. Against the SOURCE TREE rather than one
+  // file, because the bundle's inputs are every module reachable from
+  // `main.tsx`, and naming one of them would be a guard that passes whenever
+  // the edit landed in a sibling.
+  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
+];
+
+/** @type {[string, string][]} */
+export const CANVAS_PIXELS_RUNTIME = [
+  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
+  ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
+  ['apps/desktop/src/composition.ts', 'apps/desktop/dist/composition.js'],
+  ['apps/desktop/src/canvasHarness.ts', 'apps/desktop/dist/canvasHarness.js'],
+  ['apps/desktop/src/canvasHarnessMain.ts', 'apps/desktop/dist/canvasHarnessMain.js'],
+  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
+];
+
+/**
+ * Which sources a proof reads **through a build** rather than through an import.
+ *
+ * ## Why this map exists, and it is not a convenience (finding PPPPP-2)
+ *
+ * `affectedProofs.mjs` answers *which proofs does this change reach* by walking
+ * `import` specifiers. Asked about `packages/ui/src/App.tsx`, about
+ * `renderPage.ts`, about `main.tsx` and about `apps/desktop/src/windowPolicy.ts`
+ * — the file `proof:rendererpolicy` exists to check — it returned an **empty
+ * list for every one**, with its positive control passing and `examined: 90`
+ * correct. The instrument could see; it was looking at the wrong kind of edge.
+ *
+ * A proof that spawns Electron and reads `apps/desktop/dist/` depends on a
+ * source tree through the **build**, and a build is not an import. That is X-1's
+ * axis again — pattern, root, state — where the root is a *kind of dependency*
+ * rather than a directory, and the answer it produced was the reassuring one:
+ * an empty list reads as *nothing to run*.
+ *
+ * ## Why it lives HERE and not in the instrument that consumes it
+ *
+ * The edges were already written down, twice, as {@link refuseStaleBuild}'s pair
+ * lists — which is the same fact, since a proof declares a pair exactly when its
+ * output depends on that source. A third copy inside `affectedProofs.mjs` would
+ * be a second opinion about what a proof reads, agreeing with these until the day
+ * somebody added a pair to one and not the other (B3a).
+ *
+ * So the pairs are declared once, above; the freshness guard takes the artefact
+ * side and the advisor takes the source side. Neither can drift from the other,
+ * because there is no other.
+ *
+ * @type {Record<string, readonly [string, string][]>}
+ */
+export const ARTEFACT_EDGES = {
+  'proof:rendererpolicy': [...RENDERER_POLICY_DECLARATION, ...RENDERER_POLICY_RUNTIME],
+  'proof:canvaspixels': CANVAS_PIXELS_RUNTIME,
+};
+
+/**
+ * The source paths a proof reads through a build, or an empty list.
+ *
+ * @param {string} proof a `proof:*` script name
+ * @returns {readonly string[]} repo-relative, forward slashes
+ */
+export function builtSourcesFor(proof) {
+  return (ARTEFACT_EDGES[proof] ?? []).map(([source]) => source);
+}
+
+/**
  * The newest mtime at `path`, walking it if it is a directory.
  *
  * `dist` and `node_modules` are skipped: the first is the artefact side of the

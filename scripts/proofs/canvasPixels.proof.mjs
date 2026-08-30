@@ -50,7 +50,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { CANVAS_PIXELS_RUNTIME, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { buildLargeFixture } from '../perf/largeFixture.mjs';
@@ -355,18 +355,10 @@ try {
     // Everything the harness executes, and the renderer bundle is the point of
     // the list: these cases read pixels the Vite build produced, so a `typecheck`
     // that did not rebuild it would have them passing about the previous shell.
-    refuseStaleBuild(
-      REPO_ROOT,
-      [
-        ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
-        ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
-        ['apps/desktop/src/composition.ts', 'apps/desktop/dist/composition.js'],
-        ['apps/desktop/src/canvasHarness.ts', 'apps/desktop/dist/canvasHarness.js'],
-        ['apps/desktop/src/canvasHarnessMain.ts', 'apps/desktop/dist/canvasHarnessMain.js'],
-        ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
-      ],
-      6,
-    );
+    // THE LIST MOVED to `buildFreshness.mjs` and the COUNT stayed here
+    // (PPPPP-2): `affectedProofs.mjs` reads the same edges, because a build is
+    // a dependency it could not see and a copy there would be a second opinion.
+    refuseStaleBuild(REPO_ROOT, CANVAS_PIXELS_RUNTIME, 6);
 
     const seen = readback(ELECTRON_BINARY, name, fixture);
     const floor = Math.floor(seen.pixels * PAINTED_FLOOR_FRACTION);

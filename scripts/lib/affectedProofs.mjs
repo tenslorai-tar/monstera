@@ -43,6 +43,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
+import { builtSourcesFor } from './buildFreshness.mjs';
 import { filesInCommit, repoRoot } from './gitScope.mjs';
 import { proofScripts } from './proofCoverage.mjs';
 import { SCANNING_PROOFS, rosterMiscount } from './scanningProofs.mjs';
@@ -80,6 +81,35 @@ export const CONTROL_EDGE = {
 export const CONTROL_DATA_EDGE = {
   from: 'scripts/hooks/prePush.mjs',
   to: 'docs/security/engine-advisories.json',
+};
+
+/**
+ * A BUILD edge that must exist, and it is a third control because it fails
+ * third-ly (finding PPPPP-2).
+ *
+ * The graph walked imports; {@link CONTROL_DATA_EDGE} added files a script opens
+ * by path. Neither reaches a proof that spawns Electron and reads
+ * `apps/desktop/dist/` — the dependency there runs through a **build**, which is
+ * not an import and is not a file the script names.
+ *
+ * Measured 2026-08-30, before the fix, every one of them a proof that plainly
+ * reads the thing:
+ *
+ *     ["packages/ui/src/App.tsx"]            -> 0 of 90 proofs
+ *     ["packages/ui/src/renderPage.ts"]      -> 0 of 90
+ *     ["packages/ui/src/main.tsx"]           -> 0 of 90
+ *     ["apps/desktop/src/windowPolicy.ts"]   -> 0 of 90
+ *
+ * The last is the sharpest: `proof:rendererpolicy` exists to compare that file's
+ * policy against §9.27.
+ *
+ * Anchored on the renderer source tree rather than on a single file, because
+ * that is how the edge is declared — the bundle's inputs are every module
+ * reachable from `main.tsx`.
+ */
+export const CONTROL_BUILD_EDGE = {
+  from: 'proof:canvaspixels',
+  to: 'packages/ui/src',
 };
 
 /**
@@ -292,12 +322,45 @@ export function affectedProofs(changed, options = {}) {
     return answer;
   };
 
+  // THE BUILD EDGE'S CONTROL, checked before any query is answered, for the
+  // reason the import graph's is: this is a search whose reassuring answer is
+  // "no proofs affected", and a map that lost its entries produces exactly that.
+  const built = builtSourcesFor(CONTROL_BUILD_EDGE.from);
+  if (!built.includes(CONTROL_BUILD_EDGE.to)) {
+    throw new Error(
+      `The build-edge map does not carry ${CONTROL_BUILD_EDGE.from} -> ${CONTROL_BUILD_EDGE.to}, ` +
+        `so it cannot tell "nothing was affected" from "this stopped being able to read the ` +
+        `map". Every query against it would report the reassuring answer.`,
+    );
+  }
+
+  /**
+   * Whether a changed path is one this proof reads through a build.
+   *
+   * Prefix match on a path boundary, because the edges name **directories** as
+   * well as files — `packages/ui/src` stands for every module the bundle
+   * reaches. `startsWith` alone would make `packages/ui/srcExtra` a match.
+   *
+   * @param {{ name: string }} proof
+   * @returns {boolean}
+   */
+  const readsBuilt = (proof) =>
+    builtSourcesFor(proof.name).some((source) =>
+      [...targets].some((path) => path === source || path.startsWith(`${source}/`)),
+    );
+
   return {
     // ANY of the chained scripts reaching a changed file names the whole entry,
     // because `npm run proof:guards` runs all four and there is no way to run
     // one. Asking only about the head is what made this instrument miss the
     // change it was built for.
-    proofs: proofs.filter((proof) => proof.paths.some((path) => reachesChanged(path, new Set()))),
+    //
+    // TWO KINDS OF EDGE, and the second is not a widening of the first: a proof
+    // reaches a source by importing it, or by reading an artefact a build made
+    // from it (PPPPP-2). The import walk cannot see the second at all.
+    proofs: proofs.filter(
+      (proof) => proof.paths.some((path) => reachesChanged(path, new Set())) || readsBuilt(proof),
+    ),
     examined: proofs.length,
     changed: [...targets],
   };
