@@ -14,6 +14,7 @@ import { rotatePageCommand, saveCommand, undoCommand } from './commands/document
 import { openDocumentCommand } from './commands/openDocument.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
+import { COMMAND_PROBLEM_DIALOG } from './dialogs/commandProblem.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { type DocumentView, openDocumentView } from './documentView.js';
 import { CLOSE_LABEL } from './messages/en.js';
@@ -72,7 +73,10 @@ export function App({ client, settings }: AppProps): ReactElement {
   // ONE registry instance, and the dialog host's state feeds the command that
   // opens it. `useDialogHost` owns `show`, so the command captures it the same
   // way it captures the client — composition, not a global.
-  const dialogs = useMemo(() => new DialogRegistry([ABOUT_DIALOG, SAVE_PROBLEM_DIALOG]), []);
+  const dialogs = useMemo(
+    () => new DialogRegistry([ABOUT_DIALOG, SAVE_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG]),
+    [],
+  );
   const { open: openDialog, show, close } = useDialogHost(dialogs);
 
   // WHAT A COMMAND LEFT BEHIND, applied to the open document.
@@ -96,8 +100,8 @@ export function App({ client, settings }: AppProps): ReactElement {
       new CommandRegistry([
         openDocumentCommand({ client, onOpened: setOpen }),
         showAboutCommand({ client, show }),
-        rotatePageCommand({ client, onApplied: applied }),
-        undoCommand({ client, onApplied: applied }),
+        rotatePageCommand({ client, onApplied: applied, show }),
+        undoCommand({ client, onApplied: applied, show }),
         saveCommand({ client, show }),
       ]),
     [applied, client, show],

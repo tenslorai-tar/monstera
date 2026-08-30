@@ -120,3 +120,38 @@ body {
 .m-save-problem .m-save-problem-intact {
   color: var(--text);
 }
+
+/*
+ * The command-problem dialog: one sentence, and for `internal` a labelled
+ * reference beneath it. The reference is `--muted` and the sentence is not,
+ * because the sentence is what the user acts on and the id is what they quote.
+ */
+.m-command-problem {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.m-command-problem p {
+  margin: 0;
+}
+
+.m-command-problem-reference {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-4) var(--space-16);
+  margin: 0;
+  color: var(--muted);
+}
+
+.m-command-problem-reference dd {
+  margin: 0;
+}
+
+/*
+ * NO MONOSPACE ON THE REFERENCE, and the reason is §10 rather than taste. An
+ * opaque id is read character by character when somebody quotes it, so a mono
+ * face genuinely helps — and there is no family token to reach for.
+ * `var(--font-mono, monospace)` would invent a token name nobody declared, which
+ * reads to the next author as though one exists. Adding a real family token is a
+ * §10.2 role decision and not this dialog's to take.
+ */

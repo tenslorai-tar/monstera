@@ -1,6 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocVersion } from '@monstera/shared';
 
+import { COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
@@ -65,6 +66,37 @@ interface DocumentCommandDeps {
    * that is already correct, and the reopen is visible.
    */
   readonly onApplied: (applied: Applied) => void;
+  /** Opens a registered dialog. See {@link reportProblem}. */
+  readonly show: (id: string, props: unknown) => void;
+}
+
+/**
+ * Tells the user a command was refused, and hands the code to the one place
+ * that knows what it means.
+ *
+ * ## This is ADR-0009 §9's other half
+ *
+ * §9's design is that a failure crossing to the renderer carries a **code** and
+ * never a diagnostic. That is only half a mechanism: a code nothing renders is a
+ * refusal the user meets as a control that did nothing, and until 2026-08-30
+ * every one of these was swallowed by a bare `if (!answer.ok) return`.
+ *
+ * The mapping from a code to a sentence is the dialog's, in one place, for the
+ * reason the message catalogue exists at all — three commands each writing their
+ * own wording is three catalogues (B3).
+ *
+ * `internal` is passed through **with its incident id**, which is the only part
+ * of a diagnostic that exists on this side. Rendering it is what makes minting
+ * it worth anything.
+ *
+ * @param failure exactly what the client answered — narrowed by the boundary, so
+ *   an `incident` exists precisely when the code is `internal`.
+ */
+function reportProblem(
+  deps: Pick<DocumentCommandDeps, 'show'>,
+  failure: { readonly code: string } | { readonly code: 'internal'; readonly incident: string },
+): void {
+  deps.show(COMMAND_PROBLEM_DIALOG_ID, failure);
 }
 
 /**
@@ -122,8 +154,12 @@ export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
       // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING. `document-busy`,
       // `document-not-open` and `document-poisoned` all leave the document
       // exactly as it was, so telling the caller the view moved would make it
-      // rebuild for nothing — and a rebuild is a visible reparse.
-      if (!answer.ok) return;
+      // rebuild for nothing — and a rebuild is a visible reparse. It is still
+      // REPORTED: a refusal nobody renders is a control that did nothing.
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
       deps.onApplied(answer.value);
     },
   };
@@ -151,7 +187,14 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       const answer = await deps.client['document.undo']({ docId: context.docId });
-      if (!answer.ok) return;
+      if (!answer.ok) {
+        // `checkpoint-restore-not-built` reaches a user here and nowhere else.
+        // It is a fact about this build rather than about their document, and
+        // §4's answer to it is the checkpoint restore invariant 18 clause (ii)
+        // defers — so until that lands, saying so is the whole of the response.
+        reportProblem(deps, answer.error);
+        return;
+      }
       if (answer.value.kind !== 'undone') return;
       deps.onApplied({
         version: answer.value.version,
@@ -184,14 +227,19 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
  * there — invariant 18's *"never by a dialog whose only option discards their
  * edits"* read as an obligation to say so rather than only as a prohibition.
  *
- * ## A declared FAILURE opens nothing, and that is not the same decision
+ * ## A declared FAILURE gets a DIFFERENT dialog, and that is the whole point
  *
  * `document-not-open`, `document-busy` and `document-poisoned` are refusals of a
  * different kind: the first two are transient states a retry resolves, and the
- * third is an inconsistency a user cannot act on. Reporting them through the
- * same dialog would put *your changes are still here* in front of somebody whose
- * document the supervisor has given up on, which is true and useless. They stay
- * unreported here and are owed their own answer.
+ * third is one the supervisor has decided. Sending them through the save-problem
+ * dialog would put *the file was not written* in front of somebody whose
+ * document was never attempted — so they go to {@link COMMAND_PROBLEM_DIALOG_ID}
+ * with every other command's refusals, where `document-poisoned` gets the
+ * sentence invariant 18 clause (i) actually owes.
+ *
+ * Two dialogs rather than one with a mode: the save-problem dialog's subject is a
+ * write that was attempted and did not land, and its first sentence exists to say
+ * the work survived it. That is not the same news.
  */
 export function saveCommand(deps: {
   readonly client: ContractClient;
@@ -206,7 +254,10 @@ export function saveCommand(deps: {
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
       const answer = await deps.client['document.save']({ docId: context.docId });
-      if (!answer.ok) return;
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
       if (answer.value.kind === 'saved') return;
       // FLATTENED HERE, where both fields exist, rather than in the dialog. The
       // channel answers two shapes describing one thing; the dialog's schema

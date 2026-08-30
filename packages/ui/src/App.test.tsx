@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -592,6 +592,45 @@ describe('App', () => {
       // AND THE REASON, because five refusals share one dialog and the whole
       // value of `reason` crossing the boundary is that the user is told which.
       expect(await screen.findByText(/no longer there/u)).toBeDefined();
+    });
+
+    it('a POISONED document is told about, and the sentence is invariant 18 clause (i)', async () => {
+      // Clause (i) — retain the log, leave the file untouched, refuse rather
+      // than close, **tell the user** — binds today, and the last of those four
+      // had no mechanism: the code reached the renderer and met a bare
+      // `if (!ok) return`. A user whose document the supervisor has given up on
+      // saw a control that did nothing.
+      //
+      // The sentence matters more than the dialog. Refusing is what STRANDS the
+      // work rather than destroying it, so a message that only reported a
+      // failure would invite the one action that loses it.
+      const client = createClient(channels, (id) => {
+        if (id === 'document.execute') {
+          return Promise.resolve(err({ code: 'document-poisoned' as const }));
+        }
+        // Read through a string-keyed view rather than `as keyof typeof`. The
+        // cast would tell the compiler every id is present, which makes the
+        // guard below "always false" — and deleting the guard because a cast
+        // said so is how a fixture starts answering `undefined` to a channel
+        // nobody added an answer for.
+        const answers: Readonly<Record<string, unknown>> = OPEN_DOCUMENT_ANSWERS;
+        const answer = answers[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Rotate page' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(await screen.findByRole('dialog', { name: 'That could not be done' })).toBeDefined();
+      expect(await screen.findByText(/still open and unsaved/u)).toBeDefined();
     });
   });
 

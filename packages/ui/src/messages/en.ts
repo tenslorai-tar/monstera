@@ -46,6 +46,13 @@ export const SAVE_REFUSED_REPLACED = messageKey('dialog.save-problem.replaced');
 export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target-absent');
 export const SAVE_REFUSED_UNVERIFIABLE = messageKey('dialog.save-problem.unverifiable');
 export const SAVE_WRITE_FAILED = messageKey('dialog.save-problem.write-failed');
+export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
+export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
+export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
+export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
+export const PROBLEM_NO_CHECKPOINT = messageKey('dialog.command-problem.no-checkpoint');
+export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
+export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
 
 /**
  * The catalogue itself.
@@ -87,4 +94,21 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SAVE_REFUSED_TARGET_ABSENT]: 'The file this document came from is no longer there. Use Save As to write somewhere else.',
   [SAVE_REFUSED_UNVERIFIABLE]: 'Monstera could not confirm the file on disk is still the same one, so it did not overwrite it.',
   [SAVE_WRITE_FAILED]: 'The file could not be written. Check that it is not open in another application, and that there is room on the disk.',
+  // "Could not be done" and never "error". Every code below leaves the document
+  // exactly as it was, so the title describes the operation and not the state.
+  [PROBLEM_TITLE]: 'That could not be done',
+  [PROBLEM_NOT_OPEN]: 'That document is no longer open.',
+  [PROBLEM_BUSY]: 'The document is busy with something else. Try again in a moment.',
+  // INVARIANT 18 CLAUSE (i)'s "tell the user", and the sentence carries its two
+  // halves in the order that matters: the work is here, and here is what to do.
+  // A poisoned document is refused precisely so the edits are STRANDED rather
+  // than destroyed, and a message that only said "failed" would invite the user
+  // to close the window — which is the one action that loses them.
+  [PROBLEM_POISONED]:
+    'Monstera can no longer work on this document. Your changes are still open and unsaved — save them somewhere else, or close and reopen the file to start again.',
+  [PROBLEM_NO_CHECKPOINT]: 'This step cannot be undone in this version.',
+  [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
+  // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
+  // §9 is why it is the only thing about the diagnostic that crosses.
+  [PROBLEM_REFERENCE_LABEL]: 'Reference',
 };

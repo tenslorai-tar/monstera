@@ -60,21 +60,39 @@ function clientFailing(code: string): ContractClient {
   return createClient(channels, () => Promise.resolve(err({ code })));
 }
 
-/** Records what `onApplied` was called with, and how often. */
-function recorder(): { readonly applied: Applied[]; readonly onApplied: (a: Applied) => void } {
+/**
+ * Records what `onApplied` was called with, and what dialogs were opened.
+ *
+ * Both in one recorder because both are **calls a command makes or does not
+ * make**, and every case here is about one of the two. A case that asserted only
+ * the applied list would be satisfied by a command that reports nothing, which
+ * is what all three of these did until 2026-08-30.
+ */
+function recorder(): {
+  readonly applied: Applied[];
+  readonly onApplied: (a: Applied) => void;
+  readonly shown: { id: string; props: unknown }[];
+  readonly show: (id: string, props: unknown) => void;
+} {
   const applied: Applied[] = [];
-  return { applied, onApplied: (a) => applied.push(a) };
+  const shown: { id: string; props: unknown }[] = [];
+  return {
+    applied,
+    onApplied: (a) => applied.push(a),
+    shown,
+    show: (id, props) => shown.push({ id, props }),
+  };
 }
 
 describe('rotate page', () => {
   it('hands back BOTH scalars, exactly as the channel answered them', async () => {
-    const { applied, onApplied } = recorder();
+    const { applied, onApplied, show } = recorder();
     const client = clientAnswering('document.execute', {
       version: asDocVersion(2),
       byteLength: 2048,
     });
 
-    await rotatePageCommand({ client, onApplied }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
 
     // The byte length is the half that is easy to drop, and dropping it is not
     // visible in any state: the version alone rebinds the renderer's transport
@@ -88,11 +106,47 @@ describe('rotate page', () => {
     // it moved would make the renderer reopen for nothing — a visible reparse
     // for an operation that did not happen. Asserting the absent call is the
     // only thing that separates this from a command that always reports.
-    const { applied, onApplied } = recorder();
+    const { applied, onApplied, show } = recorder();
 
-    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied }).run(CONTEXT);
+    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, show }).run(
+      CONTEXT,
+    );
 
     expect(applied).toStrictEqual([]);
+  });
+
+  it('...and it is REPORTED, because a refusal nobody renders is a dead control', async () => {
+    // ADR-0009 §9 hands the renderer a code and never a diagnostic. That is half
+    // a mechanism: until 2026-08-30 every code here met a bare `if (!ok) return`,
+    // so a busy document and a working one produced the same nothing on screen.
+    //
+    // The code is asserted, not the dialog id alone: three commands share one
+    // dialog, and which sentence the user reads is decided entirely by the code
+    // that is passed through.
+    const { shown, onApplied, show } = recorder();
+
+    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, show }).run(
+      CONTEXT,
+    );
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.command-problem', props: { code: 'document-busy' } },
+    ]);
+  });
+
+  it('CONTROL: a command that SUCCEEDED reports nothing', async () => {
+    // Without this, the case above is satisfied by a command that opens the
+    // dialog every time — which would put "that could not be done" in front of
+    // a user whose rotation worked, and no other case here would notice.
+    const { shown, onApplied, show } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+    });
+
+    await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([]);
   });
 
   it('is unavailable with no document focused', () => {
@@ -100,8 +154,8 @@ describe('rotate page', () => {
     // before any projection — so a surface never has to ask, which is the
     // difference between a control that is absent and one that is present and
     // does nothing.
-    const { onApplied } = recorder();
-    const command = rotatePageCommand({ client: clientFailing('document-busy'), onApplied });
+    const { onApplied, show } = recorder();
+    const command = rotatePageCommand({ client: clientFailing('document-busy'), onApplied, show });
 
     expect(command.when?.(NO_DOCUMENT)).toBe(false);
     expect(command.when?.(CONTEXT)).toBe(true);
@@ -110,14 +164,14 @@ describe('rotate page', () => {
 
 describe('undo', () => {
   it('hands back both scalars when something moved', async () => {
-    const { applied, onApplied } = recorder();
+    const { applied, onApplied, show } = recorder();
     const client = clientAnswering('document.undo', {
       kind: 'undone',
       version: asDocVersion(2),
       byteLength: 900,
     });
 
-    await undoCommand({ client, onApplied }).run(CONTEXT);
+    await undoCommand({ client, onApplied, show }).run(CONTEXT);
 
     expect(applied).toStrictEqual([{ version: 2, byteLength: 900 }]);
   });
@@ -126,10 +180,10 @@ describe('undo', () => {
     // `nothing-to-undo` is `ok`, and a command that reported it as a move would
     // reopen the document because a user pressed a key one time too many. The
     // outcome shape is what separates them — the envelope is `ok` either way.
-    const { applied, onApplied } = recorder();
+    const { applied, onApplied, show } = recorder();
     const client = clientAnswering('document.undo', { kind: 'nothing-to-undo' });
 
-    await undoCommand({ client, onApplied }).run(CONTEXT);
+    await undoCommand({ client, onApplied, show }).run(CONTEXT);
 
     expect(applied).toStrictEqual([]);
   });
@@ -138,8 +192,8 @@ describe('undo', () => {
     // §7 makes the shortcut map a projection of the registry, so declaring it
     // here is the whole of registering it. A keymap listing it separately would
     // be the second wiring place.
-    const { onApplied } = recorder();
-    expect(undoCommand({ client: clientFailing('document-busy'), onApplied }).shortcut).toBe(
+    const { onApplied, show } = recorder();
+    expect(undoCommand({ client: clientFailing('document-busy'), onApplied, show }).shortcut).toBe(
       'Ctrl+Z',
     );
   });
@@ -212,12 +266,15 @@ describe('save', () => {
     ]);
   });
 
-  it('a DECLARED FAILURE opens nothing, because it is a different kind of refusal', async () => {
-    // `document-busy` is transient and `document-poisoned` is an inconsistency a
-    // user cannot act on. Putting "your changes are still here" in front of
-    // either is true and useless, and the dialog's whole job is the sentence it
-    // leads with. Asserted as the call that was not made, since the end state —
-    // an unsaved document — is the same as a refusal's.
+  it('a DECLARED FAILURE goes to the OTHER dialog, because it is a different kind of refusal', async () => {
+    // `document-busy` is transient; `document-poisoned` is the supervisor's
+    // decision. Putting "the file was not written — your changes are still
+    // here" in front of either is wrong twice over: nothing was written and
+    // nothing was attempted.
+    //
+    // The assertion is which DIALOG, and that is the case. Both are dialogs and
+    // both leave the document unsaved, so the end state cannot separate them —
+    // only the id can.
     const client = createClient(channels, () =>
       Promise.resolve(err({ code: 'document-busy' as const })),
     );
@@ -225,6 +282,25 @@ describe('save', () => {
 
     await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
 
-    expect(shown).toStrictEqual([]);
+    expect(shown).toStrictEqual([
+      { id: 'dialog.command-problem', props: { code: 'document-busy' } },
+    ]);
+  });
+
+  it('an INTERNAL failure carries its incident id through to the dialog', async () => {
+    // The one part of a diagnostic that exists on this side (ADR-0009 §9), and
+    // the only case where the props are more than a code. A command that passed
+    // the code alone would render a dialog with nothing to quote, and every
+    // other case here would still pass — the sentence is the same.
+    const client = createClient(channels, () =>
+      Promise.resolve(err({ code: 'internal' as const, incident: 'inc-42' })),
+    );
+    const shown: { id: string; props: unknown }[] = [];
+
+    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.command-problem', props: { code: 'internal', incident: 'inc-42' } },
+    ]);
   });
 });
