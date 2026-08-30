@@ -1452,6 +1452,20 @@ about a rule you must recall. The manifest is where a project records that its
 one-word verb is several commands, and reaching past it for the binary is how you
 run a subset while believing you ran the whole. No mechanism closes this today.
 
+**The obvious B5 route is closed, and it is now MEASURED rather than asserted.**
+Making `tsconfig.scripts.json` a reference of the root solution would make
+`tsc -b` check it too — the wrong spelling doing the whole job. A reference must
+be `composite`, and TypeScript 6.0.3 answers that with
+`TS6304: Composite projects may not disable declaration emit` (run 2026-08-30).
+`tsconfig.scripts.json` is `noEmit` because it type-checks `.mjs` through JSDoc
+and compiles nothing.
+
+So the only remaining route is to give it declaration emit — `.d.mts` files for
+3,000 lines of bootstrap scripts, gitignored, rebuilt on every `tsc -b`, that
+nothing ever imports. That is a real trade and it is the owner's to take, not a
+detail to slip in. Stated here so the next reader does not re-derive the same
+dead end, and so *"no mechanism"* stops being a sentence nobody has tested.
+
 **A NEIGHBOURING HABIT IS NOW CLOSED, and the shape of the fix is the part worth
 copying.** `npm run local` seals its own log `-ok` or `-failed`, so the file name
 is the authority and the exit code is not — and `| tail` discards the exit code.
