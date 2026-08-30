@@ -444,6 +444,22 @@ try {
       },
     ],
     [
+      'scripts/research/hostRecoveryHost.mjs',
+      {
+        sites: 1,
+        reason:
+          'ONE helper loads four built modules through file:// URLs — the composition root, ' +
+          'the engine host platform, the settings file and the fixture builder — so the scan ' +
+          'sees a single computed site rather than four. The whole subject is the SHIPPED ' +
+          'recovery path: it kills a real contained host and asks whether the real ' +
+          'createShellDependencies restores the session, and a copy of any of those modules ' +
+          'would answer the question every case that injected a rebuild already answered. ' +
+          'Paths need Windows backslash conversion at run time. It runs UNDER the Electron ' +
+          'binary in Node mode rather than starting it — its driver does that, through ' +
+          'electronBinaryPath() — and it never imports the electron package.',
+      },
+    ],
+    [
       'scripts/lib/tokenContrast.mjs',
       {
         sites: 1,

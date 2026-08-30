@@ -53,6 +53,24 @@ import { digestInputs } from '../lib/verdict.mjs';
 const ROOT = repoRoot();
 const ANCHOR = mechanismName(ANCHOR_SCRIPT, ANCHOR_EVENT);
 
+/**
+ * What replaces a hook's path while the unclaimed-hook control runs.
+ *
+ * A CONSTANT rather than a literal at both write sites, because a third reader
+ * now needs it: the refusal below detects a run that was killed mid-mutation,
+ * and a detector spelling the string a second time is a second opinion about
+ * what this proof leaves behind (B3a).
+ *
+ * **IT MUST BE A STRING NO DOCUMENT CAN CONTAIN, and the first version was
+ * not.** It was `the reporter`, which reads naturally in prose — and
+ * `CLAUDE.md` contains that phrase, so the refusal fired on a clean tree the
+ * first time it ran. The planted-leak test passed anyway, because it reported
+ * `docs/FEATURES.md`, where the plant really was; the false positive was in the
+ * file the case never reached. A marker chosen for how it reads is a marker
+ * whose uniqueness nobody checked.
+ */
+const UNCLAIMED_MARKER = 'MONSTERA_HOOKPROBE_UNCLAIMED_PLACEHOLDER';
+
 /** @type {string[]} */
 const failures = [];
 /** @type {string[]} */
@@ -632,6 +650,40 @@ function writeEntryIn(root, overrides, others = {}) {
   const savedRecord = existsSync(recordPath) ? readFileSync(recordPath, 'utf8') : null;
   const claudePath = join(ROOT, 'CLAUDE.md');
   const savedClaude = readFileSync(claudePath, 'utf8');
+
+  // REFUSE ON A LEAK RATHER THAN MEASURING ONE, and this is the half the
+  // record's repair above already had while the two documents did not — the
+  // kill was anticipated for one artefact and not for its neighbours, which is
+  // fixing the instance and leaving the class.
+  //
+  // MEASURED 2026-08-31: `npm run local` killed this proof at its 180-second
+  // bound, between the mutation below and the restore in the `finally`, and
+  // left `CLAUDE.md` and `docs/FEATURES.md` carrying `the reporter` where the
+  // hook's path belongs. Both read as ordinary prose and `git add -A` would
+  // have staged them into the two governing documents.
+  //
+  // Nothing here rewrites a contributor's file: the leak is loud, it names the
+  // command that repairs it, and the run stops.
+  // BOTH FILES, EVERY RUN, and the loop does not stop at the first clean one —
+  // the first version of this reported `docs/FEATURES.md` on a planted leak
+  // while `CLAUDE.md` was refusing on every clean tree, and nothing showed it
+  // because the case never reached the second file.
+  for (const [label, text] of [
+    ['docs/FEATURES.md', original],
+    ['CLAUDE.md', savedClaude],
+  ]) {
+    if (`${text}`.includes(UNCLAIMED_MARKER)) {
+      throw new Error(
+        `${String(label)} already contains "${UNCLAIMED_MARKER}", which only this proof writes ` +
+          `and only when it is killed between the mutation and its restore. Everything below ` +
+          `would be measured against that leftover.\n\n` +
+          `  Repair it: git checkout -- CLAUDE.md docs/FEATURES.md\n\n` +
+          `  Then raise the bound that killed it. This proof runs check:docs five times, it was ` +
+          `killed at 180 seconds on 2026-08-31, and Windows has no SIGTERM to restore from — so ` +
+          `there is nothing to catch the kill with and this refusal is the whole mechanism.`,
+      );
+    }
+  }
   // A contributor may legitimately have one. Never overwrite it, and never
   // delete one this proof did not create.
   const localSettingsPath = join(ROOT, '.claude', 'settings.local.json');
@@ -678,6 +730,37 @@ function writeEntryIn(root, overrides, others = {}) {
   const complainsAboutAnUnclaimedHook = (output) => /and no document names it/iu.test(output);
   /** @param {string} output */
   const complainsAboutALocalHook = (output) => /settings\.local\.json registers/iu.test(output);
+
+  /**
+   * Puts everything back.
+   *
+   * ## THE KILL CANNOT BE PREVENTED ON THIS PLATFORM, and that was measured
+   * rather than assumed
+   *
+   * `finally` covers a throw and does not cover a kill, and a kill is what
+   * happened: `npm run local` bounds every command and sent SIGTERM here at
+   * 180 seconds, mid-mutation, leaving `CLAUDE.md` and `docs/FEATURES.md`
+   * carrying a placeholder where a hook's path belongs.
+   *
+   * A `process.once('SIGTERM')` handler was written for exactly that and is
+   * **not** here, because it does not run. Windows has no SIGTERM: Node accepts
+   * the registration and `child.kill('SIGTERM')` becomes `TerminateProcess`, so
+   * the handler never fires. Measured — a probe that killed this proof once the
+   * mutation was on disk saw `signal=SIGTERM` and both documents still dirty
+   * afterwards. Shipping it would have been a safeguard that reads as
+   * prevention and prevents nothing, which is this repository's `available:
+   * true` shape.
+   *
+   * So on Windows the mechanism is **detection, at the top of this block**, and
+   * the honest fix for the cause is the bound: this proof runs `check:docs`
+   * five times and needs a budget that fits, rather than needing to do less.
+   */
+  const restore = () => {
+    writeFileSync(featuresPath, original, 'utf8');
+    writeFileSync(claudePath, savedClaude, 'utf8');
+    if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
+    if (!hadLocalSettings) rmSync(localSettingsPath, { force: true });
+  };
 
   try {
     const quiet = runDocs();
@@ -752,8 +835,8 @@ function writeEntryIn(root, overrides, others = {}) {
     // proceed without. That refusal is the positive control, and removing it
     // here would test the blinded path instead of this one.
     const stripped = 'scripts/hooks/reportControlCharacters.mjs';
-    writeFileSync(featuresPath, original.replaceAll(stripped, 'the reporter'), 'utf8');
-    writeFileSync(claudePath, savedClaude.replaceAll(stripped, 'the reporter'), 'utf8');
+    writeFileSync(featuresPath, original.replaceAll(stripped, UNCLAIMED_MARKER), 'utf8');
+    writeFileSync(claudePath, savedClaude.replaceAll(stripped, UNCLAIMED_MARKER), 'utf8');
     const unclaimed = runDocs();
     check(
       'CONTROL: a registered hook that no document names fails check:docs',
@@ -803,10 +886,7 @@ function writeEntryIn(root, overrides, others = {}) {
         `covered.\n${local.output.slice(-800)}`,
     );
   } finally {
-    writeFileSync(featuresPath, original, 'utf8');
-    writeFileSync(claudePath, savedClaude, 'utf8');
-    if (savedRecord !== null) writeFileSync(recordPath, savedRecord, 'utf8');
-    if (!hadLocalSettings) rmSync(localSettingsPath, { force: true });
+    restore();
   }
 }
 
