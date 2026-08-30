@@ -114,6 +114,10 @@ const OPEN_DOCUMENT_ANSWERS = {
   // range answer only has to be well formed. What these cases are about is the
   // dispatch, and the pixels have their own proof in real Chromium.
   'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
+  // TWO PAGES AND ONE OF THEM TURNED. An all-zero model is what a dropped array
+  // and a flat document produce alike, so a fixture of zeros would make "the
+  // renderer used the model" and "the renderer ignored it" the same observation.
+  'document.viewModel': { version: asDocVersion(1), pageCount: 2, rotations: [90] },
 };
 
 /** Opens a document and settles the effects, leaving the toolbar rendered. */
@@ -375,7 +379,7 @@ describe('App', () => {
       expect(screen.getByRole('toolbar', { name: 'Document tools' })).toBeDefined();
     });
 
-    it('the ROTATE control dispatches document.execute with a quarter turn on page 1', async () => {
+    it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
         'document.execute': { version: asDocVersion(2), byteLength: 2048 },
@@ -396,8 +400,18 @@ describe('App', () => {
       expect(executed).toHaveLength(1);
       expect(executed[0]?.params).toStrictEqual({
         docId: DOC,
-        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+        command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
       });
+
+      // AND THE CORRESPONDENCE, which is the half a literal cannot carry. This
+      // command shipped as `pages: [1]` — PDF.js numbers pages from 1 and the
+      // document model indexes from 0 — so it rotated the page after the one on
+      // screen, on a build with no navigation, where nothing could disagree. The
+      // two call sites are now required to name the same index, and asserting
+      // `[0]` above without this would pin the constant and not the property.
+      const asked = sent.filter((call) => call.id === 'document.viewModel');
+      expect(asked).not.toHaveLength(0);
+      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0] });
     });
 
     /*
@@ -419,11 +433,49 @@ describe('App', () => {
      *     refuses bytes for another;
      *   - `proof:canvaspixels` — a real Chromium, where a page actually draws.
      *
-     * Splitting it is not the same as covering it, and the FEATURES row says
-     * which link has no test of its own: that `App` feeds the command's answer
-     * back into the open document. That is three lines of `setOpen`, and the
-     * first thing an end-to-end rotate in real Chromium would exercise.
+     * Splitting it is not the same as covering it, and the link that had no test
+     * of its own — that `App` feeds the command's answer back into the open
+     * document — is finding PPPPP-1 and is covered by the case below. It was
+     * found by deleting `onApplied` from both commands and watching 19 of 19
+     * cases stay green.
      */
+
+    it('a rotate that MOVED the version makes the renderer read the view model again', async () => {
+      // PPPPP-1, and it is the positive direction three neighbouring cases were
+      // missing. They all assert a call that was NOT made — an exhausted undo
+      // does not rebuild, a save does not rebuild — and a component that could
+      // not rebuild at all satisfies every one of them. This asserts the call
+      // that MUST be made.
+      //
+      // The view model is the observable because it is the one thing the
+      // renderer asks for per version that happy-dom does not swallow: the
+      // canvas never draws here and the transport is never driven, so range
+      // requests cannot carry this claim.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      const before = sent.filter((call) => call.id === 'document.viewModel').length;
+      expect(before).toBeGreaterThan(0);
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Rotate page' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // The chain this asserts, end to end inside the renderer: the command's
+      // answer reaches `onApplied`, `onApplied` moves the open document's
+      // version, the moved version re-runs the canvas effect, and the effect
+      // re-reads the geometry the kernel now holds. Break any link and the count
+      // does not move.
+      expect(sent.filter((call) => call.id === 'document.viewModel').length).toBeGreaterThan(before);
+    });
 
     it('the UNDO control dispatches document.undo, and its chord dispatches the same', async () => {
       const { client, sent } = answeringClient({

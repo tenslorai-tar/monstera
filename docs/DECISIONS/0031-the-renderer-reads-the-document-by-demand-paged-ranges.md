@@ -177,3 +177,26 @@ never asks produces the same clean document as one whose stale ask was refused.
 renderer's document-dependent memory becomes PDF.js's own cache rather than a
 full image, which is what makes a real ceiling derivable at all. Not derived
 here; named as newly possible.
+
+---
+
+## Correction, 2026-08-30 — the view model did not exist
+
+Decision 1 opens *"The view model already carries bounded structured data; it
+gains a byte length."* **The first clause was false the day it was written**, and
+the byte length it describes rides on `document.open` and `document.execute`
+rather than on any model: `grep -rl "viewModel\|ViewModel" packages apps`
+returned nothing until 2026-08-30. Nothing in this decision depends on it — the
+transport, the version binding and every measurement stand — but the sentence
+told a reader that half of §2 was built, and that reader was the one deciding
+where a command's effect could go.
+
+It is exactly the shape the audit checklist names as the one no sweep can find:
+the claim was wrong when made rather than made false by a later change, so no
+range ever touched both it and the code that refutes it (finding PPPPP-3).
+
+The view model exists from
+[ADR-0032](0032-the-view-model-is-a-scoped-query.md) — `document.viewModel`,
+scoped to the pages the renderer draws — which is also where the second half of
+§2's *"what crosses"* is argued. This correction is appended rather than edited
+in, because what was believed at the time is the record.

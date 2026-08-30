@@ -193,6 +193,7 @@ describe('browser shim', () => {
       'document.readRange',
       'document.save',
       'document.undo',
+      'document.viewModel',
       'settings.load',
       'settings.save',
     ]);
@@ -356,6 +357,68 @@ describe('browser shim', () => {
       });
 
       expect(answer).toStrictEqual({ ok: false, error: { code: 'document-not-open' } });
+    });
+  });
+
+  describe('document.viewModel', () => {
+    const DOC = asDocId('doc-model');
+
+    /** The pages a caller names. The shim answers its sequence regardless. */
+    const ASKED = [0, 1];
+
+    async function opened(viewModels?: readonly { pageCount: number; rotations: number[] }[]) {
+      const shim = createBrowserShim({
+        opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(3), byteLength: 600 }],
+        ...(viewModels === undefined ? {} : { viewModels }),
+      });
+      await shim.client['document.open']({});
+      return shim;
+    }
+
+    it('answers a flat page when nothing was seeded, stamped with the document version', async () => {
+      const shim = await opened();
+
+      expect(await shim.client['document.viewModel']({ docId: DOC, pages: ASKED })).toStrictEqual({
+        ok: true,
+        value: { version: 3, pageCount: 1, rotations: [0] },
+      });
+    });
+
+    it('WALKS the sequence, and the last entry repeats rather than resetting', async () => {
+      const shim = await opened([
+        { pageCount: 2, rotations: [0, 0] },
+        { pageCount: 2, rotations: [90, 0] },
+      ]);
+
+      const first = await shim.client['document.viewModel']({ docId: DOC, pages: ASKED });
+      const second = await shim.client['document.viewModel']({ docId: DOC, pages: ASKED });
+      const third = await shim.client['document.viewModel']({ docId: DOC, pages: ASKED });
+
+      expect(first).toStrictEqual({
+        ok: true,
+        value: { version: 3, pageCount: 2, rotations: [0, 0] },
+      });
+      expect(second).toStrictEqual({
+        ok: true,
+        value: { version: 3, pageCount: 2, rotations: [90, 0] },
+      });
+      // THE THIRD READ IS THE CASE. A queue that emptied into the default would
+      // answer an upright single page here, so a renderer reading the model a
+      // third time would appear to un-rotate the document — a behaviour no
+      // product code can produce, and one a test would then be written around.
+      expect(third).toStrictEqual(second);
+    });
+
+    it('a document that was never opened is refused, not answered with a flat page', async () => {
+      const shim = createBrowserShim({ viewModels: [{ pageCount: 9, rotations: [90] }] });
+
+      // The reassuring answer here is a model, and a seeded sequence makes that
+      // the tempting one — the shim has an answer in hand. A drawable model for
+      // a document nothing opened is the state the real boundary cannot produce.
+      expect(await shim.client['document.viewModel']({ docId: DOC, pages: ASKED })).toStrictEqual({
+        ok: false,
+        error: { code: 'document-not-open' },
+      });
     });
   });
 });

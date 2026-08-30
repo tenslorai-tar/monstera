@@ -59,6 +59,22 @@ import { docIdSchema, docVersionSchema } from './schemas.js';
  * actually contain — not a larger round number.
  */
 export const MAX_RANGE_BYTES = 16 * 1024 * 1024;
+
+/**
+ * How many pages one view-model read may name.
+ *
+ * L11's mechanism for the geometry channel, and the same argument
+ * {@link MAX_RANGE_BYTES} makes: any constant satisfies the invariant, so the
+ * only real constraint is the lower one — it must sit above what a working
+ * renderer actually asks for, or the bound stops being a guard and becomes a
+ * bug. This build draws one page; a thumbnail strip is the surface that will
+ * ask for many, and 512 is far above any window a screen can hold.
+ *
+ * **The trigger:** the first surface that legitimately needs more than this in
+ * one read is the evidence the bound is wrong, and the fix is a measurement of
+ * what that surface draws — not a larger round number.
+ */
+export const MAX_VIEW_MODEL_PAGES = 512;
 export const channels = {
   'app.info': channel(
     'Version and install channel of the running application.',
@@ -386,6 +402,95 @@ export const channels = {
       }),
     ]),
     ['document-not-open'],
+  ),
+
+  /**
+   * The view model `docs/ARCHITECTURE.md` §2 names beside the bytes.
+   *
+   * ## Why the renderer cannot derive this from what it already reads
+   *
+   * Finding OOOOO-1, measured 2026-08-30: a command's effect lands in the engine
+   * session and main's canonical image is never replaced, so
+   * {@link 'document.readRange'} serves the **pre-command** document for the
+   * whole life of an open file. PDF.js parsing those bytes sees the rotation the
+   * document was opened with, and no amount of rebinding a transport changes it.
+   * §3.2 already says why that is the right way round — *PDF.js is never a
+   * source of truth. It renders* — and this is the channel that makes the
+   * sentence true rather than aspirational.
+   *
+   * ## What it carries, and why not more
+   *
+   * A page count and one absolute rotation per page **named in the request**.
+   * **Not page sizes**: a page's box comes from `/MediaBox`, `/CropBox` and
+   * their intersection rules, which PDF.js already implements in
+   * `page.getViewport` — restating them here would be a second opinion that
+   * agrees most of the time (B3a). Rotation is the one piece of geometry the
+   * parser reads from bytes that have moved on.
+   *
+   * §2's other members — annotations, form fields, outline — are absent for
+   * §10.4's reason rather than because the list is unfinished: a field nothing
+   * reads is the display-only sin one layer down.
+   *
+   * ## The REQUEST names the pages, and that is invariant L11
+   *
+   * One rotation per page scales with the document. A channel that answered the
+   * whole vector would be correct once — at open — and would become the
+   * payload-scales-with-document defect the moment anything re-read it, which is
+   * exactly what a renderer must do after every command. So a caller names the
+   * pages it is about to draw, the same shape `document.readRange` has, and the
+   * bound is {@link MAX_VIEW_MODEL_PAGES}.
+   *
+   * §2 describes a command *"returning a view-model delta"*. This is the same
+   * property reached from the other side: the renderer asks about the window it
+   * displays rather than being sent the difference. `document.execute` answers
+   * with a version and a byte length, which is what tells the renderer the
+   * window it is holding is stale.
+   *
+   * The page **count** is a scalar and always crosses. A viewer that cannot say
+   * how many pages a document has cannot show a scrollbar, and one number is not
+   * a payload.
+   *
+   * ## The version is on the ANSWER, not on the request
+   *
+   * `readRange` takes a version because a byte offset is only meaningful inside
+   * the one that produced it, and answering a stale offset from new bytes builds
+   * a document out of two. A geometry read has no offset to be wrong about: the
+   * caller wants *the model as it is now*, and asking for a named version would
+   * only let it ask for one that no longer exists. What it does need is to
+   * recognise a **late** answer — a command can bump while this is in flight —
+   * so the version the lane read it at travels back with it.
+   */
+  'document.viewModel': channel(
+    'The geometry of the pages a renderer names, as it must draw them.',
+    z.object({
+      docId: docIdSchema,
+      /**
+       * Zero-based page indices, as {@link commandSchema} declares them.
+       *
+       * **Zero-based, and this is the one place both numbering schemes meet.**
+       * PDF.js numbers pages from 1 and the document model indexes from 0, and
+       * a renderer holding both had already sent `pages: [1]` for the first page
+       * in a rotate command — a control that rotated the page after the one on
+       * screen, on a build with no page navigation, where nothing could see it.
+       */
+      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_VIEW_MODEL_PAGES),
+    }),
+    z.object({
+      version: docVersionSchema,
+      pageCount: z.number().int().nonnegative(),
+      /**
+       * Degrees, snapped to a quarter turn, positionally aligned with `pages`.
+       *
+       * Absolute rather than relative, because `page.getViewport({ rotation })`
+       * **replaces** the page's own rotation rather than adding to it —
+       * measured by `proof:viewportrotation` rather than read off the
+       * declaration. A model carrying the turns a command applied would draw
+       * correctly on every document whose pages started at zero, which is every
+       * fixture anyone reaches for first.
+       */
+      rotations: z.array(z.number().int().nonnegative()).readonly(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 
   /**

@@ -135,6 +135,34 @@ export interface BrowserShimOptions {
   readonly documentBytes?: ReadonlyMap<string, Uint8Array>;
 
   /**
+   * What `document.viewModel` answers, in order, across the whole shim.
+   *
+   * ## Scripted, and deliberately NOT simulated
+   *
+   * The obvious shape is to seed one model per document and have the shim apply
+   * a `rotatePages` command to it. That is a second implementation of what
+   * rotation means (B3a): MuPDF's snap, inheritance, and the absolute-versus-
+   * relative question all live in `pageGeometry.ts`, and a shim that got any of
+   * them subtly right would agree with the kernel until the day it did not — in
+   * a component whose whole purpose is that tests trust it.
+   *
+   * A sequence asks the question a renderer test can actually answer: *did the
+   * renderer read the model again after the version moved, and draw what it was
+   * told?* The arithmetic is the kernel's, and it is proven against a real
+   * engine in `pageGeometry.test.ts`.
+   *
+   * The last entry repeats once the sequence is exhausted, so a test supplying
+   * one model gets a stable document and a test supplying two describes a
+   * change. A document with no sequence at all answers a single flat page —
+   * enough for a renderer to draw, and not enough for a test to accidentally
+   * assert about.
+   */
+  readonly viewModels?: readonly {
+    readonly pageCount: number;
+    readonly rotations: readonly number[];
+  }[];
+
+  /**
    * What a previous run stored, as `settings.load` will answer it.
    *
    * A fixture rather than something a test writes first through
@@ -216,6 +244,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
    */
   const byteLengthOf = (docId: string): number =>
     options.documentBytes?.get(docId)?.byteLength ?? 1024;
+
+  /** One upright page: enough to draw, not enough to assert about. */
+  const FLAT = { pageCount: 1, rotations: [0] };
+
+  // Copied for the reason the opens queue is copied: this one is consumed, and
+  // a test holding the array it seeded would watch it empty underneath.
+  const viewModels = [...(options.viewModels ?? [])];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -365,6 +400,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       const copy = new Uint8Array(end - begin);
       copy.set(bytes.subarray(begin, end));
       return Promise.resolve(ok({ kind: 'bytes' as const, bytes: copy }));
+    },
+
+    'document.viewModel': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      // THE LAST ENTRY REPEATS rather than the queue emptying into a default.
+      // A sequence that ran out and started answering a flat page would make a
+      // renderer appear to un-rotate a document on its third read, which is a
+      // shim behaviour no product code could produce and a test would then be
+      // written around.
+      const model = viewModels.length > 1 ? (viewModels.shift() ?? FLAT) : (viewModels[0] ?? FLAT);
+      return Promise.resolve(ok({ version: asDocVersion(current), ...model }));
     },
 
     // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.

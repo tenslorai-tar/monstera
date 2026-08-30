@@ -8,6 +8,7 @@ import {
   type CommandBus,
   type DeclaredCommands,
   type DocumentService,
+  type PageGeometry,
   type SaveDependencies,
   type SaveOutcome,
   type SessionsByWriter,
@@ -265,6 +266,39 @@ export type DocumentFlush = (
 ) => Promise<ByteImage>;
 
 /**
+ * How a document's page geometry is obtained for the view model.
+ *
+ * The same shape as {@link DocumentFlush} and for the same reason: it is
+ * composed where the geometry reader and the session were created together, so
+ * this module names no writer of record. A view-model read has no command to
+ * route from — it is a query (§2, *"reads are queries"*) — so it cannot ask
+ * `CommandBus` the way undo does, and being handed the reader is the honest
+ * answer rather than picking an engine here.
+ */
+export type DocumentGeometry = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  pages: readonly number[],
+) => Promise<PageGeometry>;
+
+/**
+ * The view model a renderer holds for one version of one document.
+ *
+ * ## Why the version is on it, and is not decoration
+ *
+ * A rotation and a byte offset are the same class of thing: both are meaningless
+ * outside the version that produced them. `document.readRange` already refuses a
+ * range for any other version (ADR-0031) because a stale offset answered from
+ * new bytes assembles a document from two of them; a stale rotation drawn over a
+ * current page is the same defect with no exception thrown. The stamp is what
+ * lets the renderer drop a late answer, which is not hypothetical — a command
+ * can bump the version while this read is in flight.
+ */
+export interface DocumentViewModel extends PageGeometry {
+  readonly version: DocVersion;
+}
+
+/**
  * What an applied mutation produced: the two scalars that describe the document
  * it left behind.
  *
@@ -290,17 +324,70 @@ export class DocumentCommands {
   readonly #bus: CommandBus;
   readonly #engine: EngineSessionSource;
   readonly #save: SaveSource;
+  readonly #geometry: DocumentGeometry;
 
   constructor(
     documents: DocumentService,
     bus: CommandBus,
     engine: EngineSessionSource,
     save: SaveSource,
+    geometry: DocumentGeometry,
   ) {
     this.#documents = documents;
     this.#bus = bus;
     this.#engine = engine;
     this.#save = save;
+    this.#geometry = geometry;
+  }
+
+  /**
+   * Reads the view model for a document, inside its lane.
+   *
+   * ## Why this exists, and it is not a convenience
+   *
+   * Finding OOOOO-1: a command's effect lands in the engine session and main's
+   * canonical image is never replaced, so the bytes the renderer reads through
+   * `document.readRange` are the ones the document was opened with. A rotation
+   * therefore cannot reach the screen through bytes at all — it reaches it
+   * through the view model `docs/ARCHITECTURE.md` §2 names beside them, which
+   * had never been built.
+   *
+   * ## Every guard is `execute`'s, in the same order, and that is deliberate
+   *
+   * Poison, then session, then the work. A query is not a mutation and does not
+   * bump — but a document the supervisor has stopped rebuilding for has no
+   * session to read a page tree from, and answering a **read** with a plausible
+   * empty model while refusing every command would be the worse half of that
+   * pair: the renderer would draw a document with no pages and report nothing.
+   *
+   * The lane matters here for the reason it matters for a command. A geometry
+   * read outside it can interleave with an `apply`, and MuPDF's page tree is
+   * mutated in place — so the answer would describe neither the document before
+   * the command nor the one after it.
+   *
+   * @param pages the zero-based indices the caller is about to draw. Named
+   *   rather than *all*, which is invariant L11: one rotation per page scales
+   *   with the document, and a renderer re-reading after every command would
+   *   make that a per-operation payload.
+   * @returns the geometry, stamped with the version the lane read it at. `run`
+   *   stamps after the work, so for a query the stamp is the version the
+   *   reading describes.
+   * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link
+   *   DocumentPoisonedError}, {@link MissingSessionError} — the same set
+   *   `execute` throws, for the same reasons.
+   */
+  async viewModel(docId: DocId, pages: readonly number[]): Promise<DocumentViewModel> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#geometry(docId, sessions, pages);
+    });
+
+    return { version, ...value };
   }
 
   /**

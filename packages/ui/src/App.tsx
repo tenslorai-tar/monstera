@@ -22,6 +22,7 @@ import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import { renderPage } from './renderPage.js';
 import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
 import type { SettingsStore } from './settingsStore.js';
+import { SHOWN_PAGE } from './shownPage.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { StartScreen } from './surfaces/StartScreen.js';
@@ -249,10 +250,45 @@ function PageCanvas({
 
   useEffect(() => {
     let cancelled = false;
+    /**
+     * READ THROUGH A CALL, and the reason is a narrowing that would delete a
+     * guard.
+     *
+     * There are now two suspension points and therefore two reads. After the
+     * first `if (cancelled) return`, TypeScript narrows the variable to `false`
+     * for the rest of the block — and it does **not** widen it again across an
+     * `await`, because it models no concurrent writer. The only assignment it
+     * would learn from is in the cleanup below, which flow analysis never
+     * connects to this body. The second read then lints as always falsy, and
+     * both obvious responses are wrong: deleting the guard removes the check
+     * that matters most, and disabling the rule turns off a check that is right
+     * about every other line in this file.
+     *
+     * A call has no narrowing to inherit. Holding the flag on an object does not
+     * help — property narrowing survives an `await` the same way.
+     */
+    const stopped = (): boolean => cancelled;
     let view: DocumentView | undefined;
 
     const show = async (): Promise<void> => {
       try {
+        // THE MODEL IS READ FIRST, and the order is the finding rather than a
+        // preference. A parser opened against bytes that carry the old rotation
+        // renders correctly only if the rotation it is given comes from the
+        // kernel — so the read that supplies it has to have happened before the
+        // draw, and reading it after would put one frame of the wrong geometry
+        // on screen every time a command lands.
+        //
+        // Read here rather than lifted into `App`: the model belongs to a
+        // (document, version) pair, and this effect's dependencies ARE that
+        // pair. Holding it one level up would make a late answer's arrival a
+        // question about which render it belonged to.
+        const model = await client['document.viewModel']({
+          docId: open.docId,
+          pages: [SHOWN_PAGE.kernel],
+        });
+        if (stopped()) return;
+
         view = await openDocumentView({
           client,
           docId: open.docId,
@@ -260,14 +296,29 @@ function PageCanvas({
           byteLength: open.byteLength,
           onVersionMoved: moved,
         });
-        if (cancelled || canvas.current === null) return;
-        await renderPage(view.document, 1, canvas.current, 1);
+        // CLOSED HERE, not left to the cleanup, because the cleanup has already
+        // run: it read `view` while it was still `undefined` and closed nothing.
+        // The original shape returned without closing on this path, which leaked
+        // a parser, a worker and a transport every time a document closed while
+        // its view was opening — IIIII-1's hazard on the one path that reaches it
+        // by ordinary use rather than by a version bump.
+        if (stopped()) {
+          await view.close();
+          return;
+        }
+        if (canvas.current === null) return;
+        // `undefined` where the read was refused, which hands `renderPage` the
+        // page's own rotation rather than a flat zero. A model that could not be
+        // read is a document this renderer knows less about — not one it knows
+        // is upright — and the two are a quarter turn apart on any document that
+        // arrives already turned.
+        await renderPage(view.document, SHOWN_PAGE.pdfjs, canvas.current, 1, rotationFor(model));
       } catch {
         // A parse that fails is a document this renderer cannot show. It is not
         // a crash and it is not silence: the surface stays empty and says so
         // through `failed`, and the diagnostic belongs to main, which is the
         // only side that may hold one (ADR-0009 §9).
-        if (!cancelled) setFailed(true);
+        if (!stopped()) setFailed(true);
       }
     };
 
@@ -280,4 +331,20 @@ function PageCanvas({
   }, [client, moved, open.byteLength, open.docId, open.version]);
 
   return <canvas className="m-page" data-failed={failed ? 'true' : undefined} ref={canvas} />;
+}
+
+/**
+ * Page 1's rotation out of a view-model answer, or `undefined`.
+ *
+ * Three states collapse to `undefined` and each is *this renderer does not know*
+ * rather than *this page is upright*: the read was refused, the document has no
+ * pages, or the array is shorter than the page count it reported. The last is
+ * the one worth naming — `rotations[0]` on an empty array is `undefined` in
+ * JavaScript and `0` in almost any hand-written guard, and the difference is a
+ * document drawn flat because a message lost an entry.
+ */
+function rotationFor(
+  model: Awaited<ReturnType<ContractClient['document.viewModel']>>,
+): number | undefined {
+  return model.ok ? model.value.rotations[0] : undefined;
 }

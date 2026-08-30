@@ -3,6 +3,7 @@ import type { DocVersion } from '@monstera/shared';
 
 import { ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { SHOWN_PAGE } from '../shownPage.js';
 
 /**
  * The three commands that act on the open document.
@@ -79,12 +80,21 @@ function hasDocument(context: CommandContext): boolean {
 /**
  * Rotates the page on screen a quarter turn clockwise.
  *
- * ## Page 1, and the honest reason
+ * ## The shown page, and the index it is NOT
  *
- * The renderer shows page 1 and has no page navigation, so *the page on screen*
- * is page 1. Rotating "the current page" is what this will mean when there is a
- * current page; today the two are the same value and the command says the true
- * one rather than the aspirational one.
+ * The renderer shows one page and has no page navigation, so *the page on
+ * screen* is that page. Rotating "the current page" is what this will mean when
+ * there is a current page; today the two are the same value and the command
+ * says the true one rather than the aspirational one.
+ *
+ * **It said `pages: [1]` until 2026-08-30, and that is the page after the one on
+ * screen.** The reasoning in this comment was right and the literal was wrong:
+ * PDF.js numbers pages from 1, the document model indexes them from 0, and a
+ * build with no navigation and no view model had nothing that could disagree —
+ * the rotation landed on page 2 of every document and the canvas showed page 1
+ * unchanged. {@link SHOWN_PAGE} now holds both numbers in one place, so a caller
+ * picking one picks the other's sibling rather than checking a literal against a
+ * paragraph in another file.
  *
  * A rotation of every page would be a different command with a different name,
  * and giving this one a `pages` array the surface cannot populate would be a
@@ -106,7 +116,7 @@ export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
       if (context.docId === undefined) return;
       const answer = await deps.client['document.execute']({
         docId: context.docId,
-        command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+        command: { kind: 'rotatePages', pages: [SHOWN_PAGE.kernel], quarterTurns: 1 },
       });
       // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING. `document-busy`,
       // `document-not-open` and `document-poisoned` all leave the document

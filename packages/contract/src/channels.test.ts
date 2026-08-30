@@ -40,6 +40,11 @@ const handlers: ContractHandlers = {
     // Echoes the SIZE it was asked for, so the L11 cases below can assert what
     // crossed rather than that something did.
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
+  // Two pages and one of them turned, so a case can assert what crossed rather
+  // than that something did. An all-zero model is the shape a dropped array and
+  // a flat document produce alike.
+  'document.viewModel': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 2, rotations: [0, 90] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the

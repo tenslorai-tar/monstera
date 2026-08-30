@@ -11,6 +11,7 @@ import {
   DocumentService,
   EngineOpenFailed,
   type HostTermination,
+  type PageGeometryReader,
   type ProbeTarget,
   type RegisteredWriter,
   type SessionAreaSurface,
@@ -19,6 +20,7 @@ import {
   createRemoteSessions,
   engineChannels,
   nodeFileSurface,
+  remoteMupdfGeometry,
   remoteMupdfWriter,
   siblingNames,
 } from '@monstera/kernel';
@@ -269,6 +271,18 @@ export function createShellDependencies(
       }
       return writer.serialise(session);
     },
+  },
+  // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
+  // geometry reader and the session are both in scope here and nowhere else.
+  // `documentCommands.ts` therefore names no writer of record for a read
+  // either — the one routing table stays in `commandDeclarations` (B3a).
+  //
+  // `mupdf` is named because the page tree is its concern by invariant L6, and
+  // it is reached through the object the host built rather than around it.
+  (docId, sessions, pages) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return engineHost.geometry(session, pages);
   });
 
   const openedDocument = engineHost.openedDocument;
@@ -323,7 +337,11 @@ function engineSessionOpener(
   documents: DocumentService,
   sessions: EngineSessions,
   failures: ShellFailureSink,
-): { readonly openedDocument: (docId: DocId) => void; readonly writers: WriterRegistry } {
+): {
+  readonly openedDocument: (docId: DocId) => void;
+  readonly writers: WriterRegistry;
+  readonly geometry: PageGeometryReader;
+} {
   /** The live host, or the attempt to build one. Cleared when it ends. */
   let host: Promise<EngineHostConnection> | null = null;
 
@@ -377,6 +395,33 @@ function engineSessionOpener(
   };
 
   /**
+   * The view model's geometry read, bound to whichever host is live.
+   *
+   * Late-bound through its own holder for the same reason the writer is, and
+   * **separate from it** for ADR-0030 Decision 1's reason: a registered writer
+   * carries what `CommandBus` calls, and nothing in the bus reads geometry. It
+   * is a query (§2), so it reaches `DocumentCommands` directly rather than
+   * through a registration the bus would then have to ignore.
+   *
+   * `null` here is the same DEFECT the writer's `live()` names, arriving from
+   * the same divergence — a session was resolved, so a host issued it — and it
+   * says so rather than answering with an empty geometry, which a renderer
+   * would draw as a document with no pages.
+   */
+  let geometry: PageGeometryReader | null = null;
+
+  const readGeometry: PageGeometryReader = (session, pages) => {
+    if (geometry === null) {
+      throw new Error(
+        'A view-model read reached the engine with no host geometry reader registered. A ' +
+          'session was resolved for this document, so one was issued by a host — the ' +
+          'supervisor and the host connection have diverged.',
+      );
+    }
+    return geometry(session, pages);
+  };
+
+  /**
    * Tokens are minted from handles ONE host issued, and
    * `createRemoteSessions`' own words are that they are *"not transferable
    * between hosts"*. So the registry is rebuilt with the host rather than held
@@ -415,6 +460,10 @@ function engineSessionOpener(
         // terminated — which is a worse shape than the diagnostic `live()`
         // raises, because it names the transport rather than the divergence.
         writer = null;
+        // AND THE GEOMETRY READER, for the same reason and by the same
+        // divergence: one left bound to a dead host answers a view-model read
+        // from a client that has already settled every call.
+        geometry = null;
         void onEngineHostEnded(sessions, termination, {
           documents,
           failures,
@@ -468,11 +517,12 @@ function engineSessionOpener(
     // command to while the host is still unverified — and the verdict's job is
     // to catch a host that WORKS and is not contained, so nothing downstream
     // would notice.
-    writer = remoteMupdfWriter(
-      createClient(engineChannels, live.value.client.invoke),
-      remote,
-      sessionAreas(platform),
-    );
+    // ONE client for both, so a geometry read and a command cannot end up
+    // talking to two different hosts — which is the state a second
+    // `createClient` here would make representable.
+    const client = createClient(engineChannels, live.value.client.invoke);
+    writer = remoteMupdfWriter(client, remote, sessionAreas(platform));
+    geometry = remoteMupdfGeometry(client, remote);
     return live.value;
   };
 
@@ -561,7 +611,7 @@ function engineSessionOpener(
     });
   };
 
-  return { openedDocument, writers };
+  return { openedDocument, writers, geometry: readGeometry };
 }
 
 /**

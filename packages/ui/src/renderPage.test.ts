@@ -21,10 +21,16 @@ function documentWithViewport(
   readonly document: PDFDocumentProxy;
   /** The canvas dimensions at the moment `render` was called. */
   readonly sizeAtRender: { width: number; height: number }[];
+  /** Every options object `getViewport` was handed, in order. */
+  readonly asked: Record<string, unknown>[];
 } {
   const sizeAtRender: { width: number; height: number }[] = [];
+  const asked: Record<string, unknown>[] = [];
   const page = {
-    getViewport: () => ({ width, height }),
+    getViewport: (options: Record<string, unknown>) => {
+      asked.push(options);
+      return { width, height };
+    },
     render: ({ canvas }: { canvas: HTMLCanvasElement }) => {
       sizeAtRender.push({ width: canvas.width, height: canvas.height });
       return { promise: Promise.resolve() };
@@ -33,7 +39,7 @@ function documentWithViewport(
   const document = {
     getPage: () => Promise.resolve(page),
   } as unknown as PDFDocumentProxy;
-  return { document, sizeAtRender };
+  return { document, sizeAtRender, asked };
 }
 
 /**
@@ -86,6 +92,32 @@ describe('renderPage', () => {
     const raster = await renderPage(document, 1, canvas, 1);
 
     expect(raster).toStrictEqual({ width: 300, height: 400 });
+  });
+
+  it('passes the view model rotation to the viewport, so the KERNEL decides which way up', async () => {
+    // The bytes this parser reads are the ones the document was opened with
+    // (OOOOO-1), so the page's own `/Rotate` is stale the moment anything
+    // rotates it. This is the only line by which the kernel's answer reaches
+    // the pixels.
+    const { document, asked } = documentWithViewport(300, 400);
+
+    await renderPage(document, 1, canvasWithContext(), 1, 90);
+
+    expect(asked).toStrictEqual([{ scale: 1, rotation: 90 }]);
+  });
+
+  it('OMITS rotation when the caller has none, rather than sending zero', async () => {
+    // The two are a quarter turn apart on any document that arrives already
+    // turned: PDF.js falls back to the page's own `/Rotate` when the key is
+    // absent, and flattens the page when it is present and zero. A caller with
+    // no model knows LESS about the document, not that it is upright — and the
+    // wrong one of these is invisible on every fixture whose pages start at 0,
+    // which is every fixture anyone reaches for first.
+    const { document, asked } = documentWithViewport(300, 400);
+
+    await renderPage(document, 1, canvasWithContext(), 1);
+
+    expect(asked).toStrictEqual([{ scale: 1 }]);
   });
 
   it('refuses a canvas with no 2d context rather than drawing nowhere', async () => {

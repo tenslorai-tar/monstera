@@ -119,6 +119,7 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
+    'document.viewModel': viewModelHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
     // runs `migrate` and falls back per setting; a schema here would be this
@@ -260,6 +261,36 @@ function refusalReason(
  * `checkpoint-restore-not-built` rather than an `internal` naming a gap the
  * user cannot act on.
  */
+/**
+ * Reads the view model, and refuses in exactly the cases a command refuses.
+ *
+ * ## The same three codes, and the reason is the asymmetry it prevents
+ *
+ * A read that answered while every command was refused would draw a document
+ * nobody can act on — and worse, a *plausible* one: a model is a small array of
+ * small numbers, and there is no reading of it a caller can tell from a current
+ * one. So `document-poisoned` reaches the renderer here for the same reason it
+ * reaches it for a rotate.
+ *
+ * No `checkpoint-restore-not-built`: that is a fact about undo, and a channel
+ * declaring a code its handler cannot produce is a state nothing can reach.
+ */
+function viewModelHandler(commands: DocumentCommands): ContractHandlers['document.viewModel'] {
+  return async ({
+    docId,
+    pages,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.viewModel']>>> => {
+    try {
+      return ok(await commands.viewModel(docId, pages));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
 function undoHandler(commands: DocumentCommands): ContractHandlers['document.undo'] {
   return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.undo']>>> => {
     try {

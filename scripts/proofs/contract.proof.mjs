@@ -84,6 +84,8 @@ export const handlers: ContractHandlers = {
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
+  'document.viewModel': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
@@ -115,7 +117,7 @@ export const handlers: ContractHandlers = {
     // inside a string, which is the whole point and also the whole price.
     source: `
 import type { ContractHandlers } from '@monstera/contract';
-import { ok } from '@monstera/shared';
+import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -123,6 +125,8 @@ export const handlers: ContractHandlers = {
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
+  'document.viewModel': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
@@ -229,7 +233,7 @@ export const handlers: ContractHandlers = {
     // what happened the day it landed.
     source: `
 import type { ContractClient } from '@monstera/contract';
-import { ok } from '@monstera/shared';
+import { ok, asDocVersion } from '@monstera/shared';
 export const shim: ContractClient = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
@@ -237,6 +241,8 @@ export const shim: ContractClient = {
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
+  'document.viewModel': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
 };
