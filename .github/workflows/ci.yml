@@ -503,14 +503,19 @@ jobs:
       # while the kernel held the correct document — and every check in this
       # workflow would stay green, including the pixel proof above, which counts
       # what was drawn and not which way up it is.
-      # BY PATH, not `npm run`. `proofCoverage.mjs` asks whether a workflow
-      # invokes each `proof:*` script and matches on the SCRIPT PATH, because
-      # that is what a workflow line actually names — so a step spelled
-      # `npm run proof:x` is a proof CI runs and the coverage scan cannot see.
-      # It said so on Guards, at both legs, and it was right: the registration
-      # is what it checks, not the execution.
+      # THROUGH `annotate.mjs`, AND BY PATH, and a proof step owes both.
+      #
+      # `proofCoverage.mjs` asks whether a workflow invokes each `proof:*`
+      # script and matches on the SCRIPT PATH, so `run: npm run proof:x` is a
+      # proof CI genuinely runs and the coverage scan genuinely cannot see.
+      # `annotateCoverage.proof.mjs` then asks whether every workflow proof step
+      # is wrapped, because an unwrapped failure is public as `Process completed
+      # with exit code 1` and nothing else — the job log needs a token, and an
+      # annotation does not.
+      #
+      # Both said so on Guards, one after the other, and both were right.
       - name: Prove PDF.js takes a rotation the document does not carry
-        run: node scripts/proofs/viewportRotation.proof.mjs
+        run: node scripts/ci/annotate.mjs scripts/proofs/viewportRotation.proof.mjs
 
       # WHICH MODE A WORKER THREAD RUNS IN, which is a placement question with a
       # three-strike record: `apps/desktop/src/` is exempted from the
