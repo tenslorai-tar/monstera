@@ -1,6 +1,7 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocVersion } from '@monstera/shared';
 
+import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { SHOWN_PAGE } from '../shownPage.js';
@@ -174,11 +175,28 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
  *
  * Both leave the document intact, still dirty, with its command log untouched —
  * *"a failed save never loses work"*. Neither is a failure code and neither is
- * an error here. What is owed is telling the user, which needs a dialog nothing
- * has registered yet; until then a refused save is silent, and the FEATURES row
- * says so rather than this comment implying it is handled.
+ * an error here.
+ *
+ * **They were SILENT until 2026-08-30**, which is worse than an error: the
+ * command received the answer and returned, so a user pressed Save and saw
+ * exactly what a successful save looks like. Both now open
+ * {@link SAVE_PROBLEM_DIALOG}, whose first sentence is that the work is still
+ * there — invariant 18's *"never by a dialog whose only option discards their
+ * edits"* read as an obligation to say so rather than only as a prohibition.
+ *
+ * ## A declared FAILURE opens nothing, and that is not the same decision
+ *
+ * `document-not-open`, `document-busy` and `document-poisoned` are refusals of a
+ * different kind: the first two are transient states a retry resolves, and the
+ * third is an inconsistency a user cannot act on. Reporting them through the
+ * same dialog would put *your changes are still here* in front of somebody whose
+ * document the supervisor has given up on, which is true and useless. They stay
+ * unreported here and are owed their own answer.
  */
-export function saveCommand(deps: { readonly client: ContractClient }): UiCommand {
+export function saveCommand(deps: {
+  readonly client: ContractClient;
+  readonly show: (id: string, props: unknown) => void;
+}): UiCommand {
   return {
     id: 'document.save',
     title: SAVE_TITLE,
@@ -187,7 +205,16 @@ export function saveCommand(deps: { readonly client: ContractClient }): UiComman
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined) return;
-      await deps.client['document.save']({ docId: context.docId });
+      const answer = await deps.client['document.save']({ docId: context.docId });
+      if (!answer.ok) return;
+      if (answer.value.kind === 'saved') return;
+      // FLATTENED HERE, where both fields exist, rather than in the dialog. The
+      // channel answers two shapes describing one thing; the dialog's schema
+      // takes one enum, so its body switches once and a sixth outcome is a
+      // compile error rather than a branch that renders nothing.
+      deps.show(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
+      });
     },
   };
 }

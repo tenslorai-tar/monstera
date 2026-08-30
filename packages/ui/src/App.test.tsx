@@ -548,6 +548,50 @@ describe('App', () => {
 
       expect(sent.filter((call) => call.id === 'document.save')).toHaveLength(1);
       expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
+      // AND NO DIALOG. A save-problem dialog on the successful path is one the
+      // user meets every time they press Ctrl+S.
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('a REFUSED save opens the dialog, and it leads with the work being intact', async () => {
+      // Invariant 18's obligation read forwards: *"never by a dialog whose only
+      // option discards their edits"* is a prohibition, and the thing it implies
+      // is that the user must be TOLD their work survived. Until 2026-08-30 a
+      // refusal was silent, which is indistinguishable from success.
+      //
+      // The assertion is the sentence rather than the dialog's presence: a
+      // dialog headed "The document was not saved" with an empty body is the
+      // shape that renders and says nothing.
+      const { client } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.save': { kind: 'refused' as const, reason: 'target-absent' as const },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Save' }).click();
+        await Promise.resolve();
+      });
+      // Twice: once for the save's answer, once for the lazy body's chunk. The
+      // body is `lazy()` per ADR-0029 Decision 7, so reading its text without
+      // waiting asserts on the Suspense fallback.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // WAITING FOR THE CONTENT, not for the dialog. `findByRole('dialog')`
+      // resolves as soon as the chrome mounts, and at that moment the body is
+      // still the Suspense fallback — so a case that read the text there would
+      // assert on an empty dialog. The About case learned the same thing.
+      expect(await screen.findByRole('dialog', { name: 'The document was not saved' })).toBeDefined();
+      expect(await screen.findByText(/Nothing has been lost/u)).toBeDefined();
+      // AND THE REASON, because five refusals share one dialog and the whole
+      // value of `reason` crossing the boundary is that the user is told which.
+      expect(await screen.findByText(/no longer there/u)).toBeDefined();
     });
   });
 

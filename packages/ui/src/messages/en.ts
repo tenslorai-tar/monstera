@@ -39,6 +39,13 @@ export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
 export const UNDO_TITLE = messageKey('command.undo.title');
 export const SAVE_TITLE = messageKey('command.save.title');
 export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
+export const SAVE_PROBLEM_TITLE = messageKey('dialog.save-problem.title');
+export const SAVE_WORK_INTACT = messageKey('dialog.save-problem.intact');
+export const SAVE_REFUSED_CONTESTED = messageKey('dialog.save-problem.contested');
+export const SAVE_REFUSED_REPLACED = messageKey('dialog.save-problem.replaced');
+export const SAVE_REFUSED_TARGET_ABSENT = messageKey('dialog.save-problem.target-absent');
+export const SAVE_REFUSED_UNVERIFIABLE = messageKey('dialog.save-problem.unverifiable');
+export const SAVE_WRITE_FAILED = messageKey('dialog.save-problem.write-failed');
 
 /**
  * The catalogue itself.
@@ -64,4 +71,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [UNDO_TITLE]: 'Undo',
   [SAVE_TITLE]: 'Save',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
+  // "Not saved" and never "Save failed". Invariant 18's whole subject is that
+  // the work survives a save that did not happen, and a title naming a failure
+  // invites the reading that something was lost.
+  [SAVE_PROBLEM_TITLE]: 'The document was not saved',
+  // THE LOAD-BEARING SENTENCE, and it is the reason this dialog exists rather
+  // than a toast. Invariant 18: *"never by a dialog whose only option discards
+  // their edits"* — a user meeting a refusal needs to know first that their
+  // work is still there, before anything about why.
+  [SAVE_WORK_INTACT]: 'Your changes are still open and unsaved. Nothing has been lost.',
+  // Each reason says what the user can DO. "Contested" and "unverifiable" are
+  // the kernel's words for a verdict; a person needs the next action.
+  [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',
+  [SAVE_REFUSED_REPLACED]: 'The file on disk is not the one this document was opened from. Use Save As to write somewhere else.',
+  [SAVE_REFUSED_TARGET_ABSENT]: 'The file this document came from is no longer there. Use Save As to write somewhere else.',
+  [SAVE_REFUSED_UNVERIFIABLE]: 'Monstera could not confirm the file on disk is still the same one, so it did not overwrite it.',
+  [SAVE_WRITE_FAILED]: 'The file could not be written. Check that it is not open in another application, and that there is room on the disk.',
 };

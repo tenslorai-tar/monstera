@@ -160,26 +160,71 @@ describe('save', () => {
       return Promise.resolve(ok({ kind: 'saved', version: asDocVersion(2) }));
     });
 
-    await saveCommand({ client }).run(CONTEXT);
+    const shown: { id: string; props: unknown }[] = [];
+    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
 
     expect(asked).toBe('document.save');
+    // ASSERT THE CALL THAT WAS NOT MADE. A dialog on the successful path is one
+    // that appears every time the user presses Ctrl+S, and the tidy end state —
+    // a saved document — is identical either way.
+    expect(shown).toStrictEqual([]);
   });
 
-  it('a refused save is an outcome, and does not throw', async () => {
+  it('a refused save TELLS the user, and says which refusal it was', async () => {
     // Invariant 18: a failed save never loses work, and `refused` leaves the
     // document intact, still dirty, with its log untouched. It is not a failure
     // code and must not become an exception here.
     //
-    // What is OWED is telling the user, which needs a dialog nothing has
-    // registered. Today a refused save is silent, and this case pins that as the
-    // current behaviour rather than leaving it to be discovered — the FEATURES
-    // row carries the debt.
+    // IT WAS SILENT UNTIL 2026-08-30, which is worse than an error: the command
+    // received the answer and returned, so pressing Save produced exactly what
+    // success produces. The previous version of this case pinned that silence as
+    // current behaviour; this one pins the answer.
+    //
     // `reason` is required by the schema, which is the boundary insisting a
     // refusal says which of the four it was — the difference between "somebody
     // else has the file" and "the target is gone" is the whole of what a user
-    // can act on.
+    // can act on, so it is asserted rather than the dialog id alone.
     const client = clientAnswering('document.save', { kind: 'refused', reason: 'contested' });
+    const shown: { id: string; props: unknown }[] = [];
 
-    await expect(saveCommand({ client }).run(CONTEXT)).resolves.toBeUndefined();
+    await expect(
+      saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT),
+    ).resolves.toBeUndefined();
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.save-problem', props: { outcome: 'contested' } },
+    ]);
+  });
+
+  it('a write failure reaches the same dialog, flattened into one enum', async () => {
+    // The channel answers two shapes describing one thing — `{kind: 'refused',
+    // reason}` and `{kind: 'write-failed'}` — and the dialog takes one enum, so
+    // its body switches once. Without this case the flattening is exercised on
+    // one side only, and the side with no `reason` field is the one that would
+    // send `undefined`.
+    const client = clientAnswering('document.save', { kind: 'write-failed' });
+    const shown: { id: string; props: unknown }[] = [];
+
+    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.save-problem', props: { outcome: 'write-failed' } },
+    ]);
+  });
+
+  it('a DECLARED FAILURE opens nothing, because it is a different kind of refusal', async () => {
+    // `document-busy` is transient and `document-poisoned` is an inconsistency a
+    // user cannot act on. Putting "your changes are still here" in front of
+    // either is true and useless, and the dialog's whole job is the sentence it
+    // leads with. Asserted as the call that was not made, since the end state —
+    // an unsaved document — is the same as a refusal's.
+    const client = createClient(channels, () =>
+      Promise.resolve(err({ code: 'document-busy' as const })),
+    );
+    const shown: { id: string; props: unknown }[] = [];
+
+    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([]);
   });
 });

@@ -100,3 +100,23 @@ body {
 .m-about dd {
   margin: 0;
 }
+
+/*
+ * The save-problem dialog's body: two paragraphs, and the first one is the
+ * message. Invariant 18's obligation is that the user learns their work
+ * survived, so `--text` for that line and `--muted` for the cause — the reverse
+ * of the reading order a failure dialog usually gets, and deliberate.
+ */
+.m-save-problem {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.m-save-problem p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.m-save-problem .m-save-problem-intact {
+  color: var(--text);
+}
