@@ -644,6 +644,220 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-30 — Stage audit: `25a0cd1..2b9a3c4` — the channel says the version is how a late answer is recognised, and nothing reads it
+
+Range: **3 commits, 21 files.**
+
+### RRRRR-1 — the handler that turns three classes into three codes has no case
+
+`viewModelHandler` maps `DocumentNotOpenError`, `DocumentBusyError` and
+`DocumentPoisonedError` onto declared codes and rethrows everything else. That
+mapping is the reason `commandHandlers.ts` exists as a file — it is ADR-0009 §9's
+answer, and its whole failure mode is a class that stops being matched and
+arrives as `internal` with its diagnostic withheld.
+
+`documentCommands.test.ts` asserts that **`commands.viewModel` throws**
+`DocumentPoisonedError`. Nothing asserts what the **handler** does with it. That
+is this project's *the helper hides the caller* shape: the layer with the
+thorough test is not the layer that decides, and the two landed in one commit,
+which puts the untested one inside a feeling of coverage.
+
+`contractHandlers.test.ts` covers `document.open` only; the other handlers' error
+mapping lives in `documentCommands.test.ts`'s handler `describe`, which is where
+this one is owed. Fixed in the commit after this one.
+
+### RRRRR-2 — a rotation from one version can be drawn over another version's bytes
+
+The channel comment argues its own shape: *"what it does need is to recognise a
+**late** answer — a command can bump while this is in flight — so the version the
+lane read it at travels back with it."*
+
+**Nothing reads it.** `rotationFor` takes `value.rotations[0]` and discards
+`value.version`, and what actually drops a stale read is the effect's `stopped()`
+guard, which is a different mechanism with a different reach.
+
+The gap is narrow and real. `PageCanvas` reads the model, then opens the
+transport at `open.version`. A command landing between those two awaits bumps the
+document, so the model can describe version N+1 while the transport is bound to
+N — and the page is then drawn with a rotation the bytes underneath it do not
+have. That is ADR-0031's own hazard, *a document assembled from two versions*,
+arriving through geometry instead of through offsets, and with no exception
+thrown because nothing compares anything.
+
+**This is a compound claim going stale at the moment it was written**, which is
+the class AAAA-8 names: the sentence about the version is true about the wire and
+false about the consumer, and the true half vouches for the dead one. Fixed in
+the commit after this one by comparing the answer's version against the one the
+view is being opened at, and treating a mismatch as *unknown* rather than as
+zero — for the same reason a refused read is treated that way.
+
+### RRRRR-3 — `check:docs` reads the INDEX, and I ran it before staging
+
+Guards went red at `3f62e1b` on both legs: ADR-0031 gained a dated Correction
+block and its row in `docs/DECISIONS/README.md` still read *"Accepted"*, which
+asserts an uncorrected status for a corrected decision.
+
+**My own `check:docs` had passed five minutes earlier, and it was right to.**
+The checker reads every document from the index — `readStagedBlob`, so it answers
+about the tree the commit will leave rather than the one on disk — and I ran it
+before `git add`. It read the previous blob of ADR-0031, which carries no
+Correction block.
+
+That is `check-against-the-working-tree` with the sign flipped: reading the index
+is correct, and running the check before staging is what made its answer about a
+different tree. **Stage first, then check.**
+
+The pre-commit hook could not have closed it, and that is structural rather than a
+gap: it runs the per-document rules the staged documents select, and this rule is
+**whole-corpus** — it enumerates every ADR to decide whether the index is
+complete — so it belongs to the set only `check:docs` and CI run.
+
+One more mechanism worth carrying, because the first repair tripped it: the rule
+finds an ADR's row by looking for a line containing `(<filename>)`, so a row that
+**links** another ADR is found as that ADR's row too. Citing ADR-0032 by link
+made the index appear to claim a correction ADR-0032 does not carry. Named rather
+than linked.
+
+### 1. Root cause or workaround?
+
+Three fixes in the range, all root-cause, and two of them were defects the
+feature **exposed** rather than introduced.
+
+The rotate command named `pages: [1]` where the model indexes from 0 — a control
+that turned page 2 of every document. The fix is not the corrected literal: it is
+`SHOWN_PAGE`, one object holding both numbering schemes, so a caller picking one
+picks the other's sibling. A literal at its own call site looks right either way,
+which is why this needed B5 rather than care.
+
+The view-lifetime leak — a parser, a worker and a transport left running when the
+cleanup ran before `openDocumentView` resolved — is closed by closing the view on
+that path, not by reordering hopefully.
+
+`stopped()` is the third, and it is the one that could have gone wrong. The
+lint rule was **right** that the second `cancelled` read is always falsy, and both
+obvious responses were wrong: deleting the guard removes the check that matters
+most, and a disable turns off a rule that is correct everywhere else in the file.
+The mechanism is that TypeScript narrows the variable at the first `return` and
+never widens it across an `await`, because it models no concurrent writer. A call
+has no narrowing to inherit. Recorded because *the lint rule was wrong* is the
+tempting reading and it is false.
+
+### 2. Verified against the easy shape only?
+
+Partly, and the residue is named in ADR-0032: the rotate is proven in two halves
+— `pageGeometry.test.ts` against a real engine, `App.test.tsx` for the renderer's
+chain — and not yet in one. The hard shape is a real Chromium driving a real
+engine host, which `proof:canvaspixels` cannot do without a session.
+
+The renderer cases run against happy-dom, where no canvas draws and no worker
+starts. What that costs is stated where it bites: the view-lifetime cases had to
+**mock the seam**, because nothing observable through the contract client
+separates a leaked view from a healthy unmount when the transport is never
+driven.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Yes, and it is a strengthening that removed a fixture's blindness. `App.test.tsx`
+gained `'document.viewModel'` to its shared answers, which every case in the file
+now exercises implicitly. The fixture is deliberately **two pages with one
+turned**: an all-zero model is what a dropped array and a flat document produce
+alike, so a model of zeros would make *the renderer used it* and *the renderer
+ignored it* the same observation.
+
+### 3. Would CI have caught it?
+
+**RRRRR-1: no.** A missing case is invisible to a runner.
+
+**RRRRR-2: no, and this is the one worth dwelling on.** The interleaving needs a
+command to land between two awaits inside one effect. Nothing in either workflow
+drives that, and the symptom — a page drawn a quarter turn from its bytes — has
+no assertion anywhere to fail. It was found by reading a comment against its only
+consumer, which is item 7's *ask it of the changed function's own comment first*
+pointed at a channel rather than at a function.
+
+**RRRRR-3: yes, and CI is the only thing that did.** Guards red on both legs, read
+from the public check-run annotations because the job-log route needs a token this
+seat does not have. That makes **five** defects this run that CI found and a local
+sweep did not, and this one is the first whose local check *was* run and answered
+about a different tree.
+
+The range's other fixes were caught locally, three by mutation and one by lint;
+the board was green at `f67aa0d`, before the renderer commit.
+
+### 4. Non-vacuous proofs
+
+Four mutations, all run, each reddening its own case alone:
+
+- `onApplied` replaced with a no-op on the rotate command → the new
+  read-the-model-again case, and only it. That is PPPPP-1 closed by the case its
+  finding named: the same mutation left 19 of 19 green before.
+- the close-on-cancel removed from `PageCanvas` → the leak case, its control
+  staying green.
+- `PAGE_ROTATE = 0` in `proof:viewportrotation` → recorded in the previous range.
+- the geometry adapter sending a fixed page list → recorded in the previous
+  range.
+
+**The three cases that were already there are the finding behind the first
+mutation and are worth re-reading**: an exhausted undo does not rebuild, a save
+does not rebuild, the toolbar is absent before a document. All three assert a
+call that was **not** made, and a component that could not rebuild at all
+satisfies every one of them.
+
+### 4a. Instrument resolution tests
+
+`shownPage.ts` is the range's one new module and is a two-field constant, so
+there is nothing to resolution-test. What replaces that here is the
+**correspondence** case: the page the renderer asks the model about must be the
+page the command rotates. Asserting `[0]` alone would pin the constant and not
+the property, and the constant is exactly what was wrong.
+
+### 4b. Searches with positive controls
+
+None added.
+
+### 4c. Does this check derive its extent from the set it governs?
+
+`MAX_VIEW_MODEL_PAGES` is a literal with a trigger, beside its `MAX_RANGE_BYTES`
+sibling. The shim's channel-list literal grew by hand, which is the direction that
+fails loudly on growth — and the danger for that list is growth, since a channel
+added without a shim answer is a UI test that cannot run.
+
+### 5. Executed, or asserted?
+
+**Executed:** the full suite (824 cases) · `proof:rendererpolicy` (19) ·
+`proof:canvaspixels` (6, `500990 of 500990 pixels`) · `proof:contract` (38) ·
+`lint` · `tsc --build` · `check:docs` · the four mutations above · the board green
+at `f67aa0d`.
+
+**Asserted:** that RRRRR-2's interleaving is reachable in the product. The
+reasoning is from the code — two awaits with a state update between them — and no
+case produces it today. The fix does not depend on the interleaving being common;
+it depends on the comparison being cheap.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before it. ADR-0032 and §2's amendment are `6ce572e`, in the previous range; this
+range builds on them and adds no new law.
+
+### 7. Do the documents still match the code?
+
+`docs/FEATURES.md`'s rotate and undo rows move to **done** in this range, and the
+view model gets a row of its own carrying the trigger — *the first command whose
+effect cannot be expressed in the view model* — because that expiry fires on an
+event and the advisory register watches symbols.
+
+`ADR-0031` gains a dated correction rather than an edit, which is the right shape
+for a record: *"the view model already carries bounded structured data"* was false
+the day it was written, so no sweep could ever have found it.
+
+**RRRRR-2 is item 7 applied to a channel comment**, and the tell was the one this
+checklist names: a sentence whose clauses are separately checkable, where the
+live clause vouches for the dead one. *The version travels back with the answer*
+is true. *So a caller can recognise a late answer* is a claim about a caller, and
+the caller was in the same commit.
+
+---
+
 ## 2026-08-30 — Stage audit: `bf1c9e7..25a0cd1` — the one argument this channel exists for was held constant by every case in the file
 
 Range: **5 commits, 18 files.**
