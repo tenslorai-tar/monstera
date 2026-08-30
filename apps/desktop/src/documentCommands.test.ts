@@ -29,6 +29,7 @@ import type { DocId } from '@monstera/shared';
 const AMPLE_CEILING = 64 * 1024 * 1024;
 
 import { executeCommandHandler } from './commandHandlers.js';
+import { createContractHandlers } from './contractHandlers.js';
 import {
   DocumentCommands,
   type DocumentGeometry,
@@ -395,6 +396,77 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     expect(result.error.code).toBe('internal');
     if (result.error.code !== 'internal') return;
     expect(seen[0]?.id).toBe(result.error.incident);
+  });
+
+  describe('the VIEW MODEL handler maps the same classes, and nothing had checked (RRRRR-1)', () => {
+    /**
+     * The real boundary again, for the read rather than the command.
+     *
+     * A separate wrapper because `wrapHandler` is bound to one channel: it
+     * validates against that channel's schemas, so asserting the view model's
+     * codes through `document.execute`'s wrapper would prove nothing about the
+     * channel a renderer actually calls.
+     */
+    function wrappedRead(commands: DocumentCommands, sink: (incident: Incident) => void = ignore) {
+      return wrapHandler(
+        channels,
+        'document.viewModel',
+        createContractHandlers({
+          appInfo: { version: '0.0.0', installChannel: 'development' },
+          capabilities: new CapabilityRegistry(),
+          commands,
+          documents: service,
+          openedDocument: () => undefined,
+          pickDocument: () => Promise.resolve(null),
+          settings: { read: () => ({}), write: () => undefined },
+        })['document.viewModel'],
+        new IncidentLog(sink),
+      );
+    }
+
+    it('a POISONED document reaches the renderer as a declared code, not as `internal`', async () => {
+      // The mapping is what `commandHandlers.ts` exists to do, and its failure
+      // mode is a class that stops being matched and arrives as `internal` with
+      // its diagnostic withheld — an unexplained defect for the one refusal a
+      // user can be told about. `documentCommands.test.ts` proved the METHOD
+      // throws; nothing proved the handler answers.
+      const poisoned = new EngineSessions();
+      poisoned.hold(docId, { mupdf: session });
+      poisoned.recordFailure([docId], 'host-death');
+      poisoned.recordFailure([docId], 'host-death');
+      const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry);
+
+      const result = await wrappedRead(commands)({ docId, pages: [0] });
+
+      expect(result).toStrictEqual({ ok: false, error: { code: 'document-poisoned' } });
+    });
+
+    it('CONTROL: the same handler ANSWERS for a document that is fine', async () => {
+      // Without this, the case above is satisfied by a handler that refuses
+      // everything — which would blank the renderer while looking like careful
+      // error mapping.
+      const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry);
+
+      const result = await wrappedRead(commands)({ docId, pages: [0] });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.pageCount).toBe(3);
+      expect(result.value.rotations).toHaveLength(1);
+    });
+
+    it('a defect is `internal` with an id, so the two are not one bucket', async () => {
+      const { sink, seen } = recorder();
+      const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry);
+
+      const result = await wrappedRead(commands, sink)({ docId, pages: [0] });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('internal');
+      if (result.error.code !== 'internal') return;
+      expect(seen[0]?.id).toBe(result.error.incident);
+    });
   });
 
   describe('THE PATH DOES NOT CROSS, and the control proves it was there to cross', () => {

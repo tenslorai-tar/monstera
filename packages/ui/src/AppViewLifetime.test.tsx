@@ -49,6 +49,26 @@ vi.mock('./documentView.js', () => ({
   openDocumentView: () => new Promise((resolve) => pending.push(resolve)),
 }));
 
+/** Every rotation `renderPage` was handed, in order. `undefined` is a value here. */
+const drawn: (number | undefined)[] = [];
+
+// MOCKED FOR THE SAME REASON THE VIEW IS: what a renderer HANDS the rasteriser
+// is a decision, and the state it produces is unobservable here — happy-dom
+// implements no canvas, so the real `renderPage` refuses before it draws and
+// every rotation produces the same nothing.
+vi.mock('./renderPage.js', () => ({
+  renderPage: (
+    _document: unknown,
+    _page: number,
+    _canvas: unknown,
+    _scale: number,
+    rotation?: number,
+  ) => {
+    drawn.push(rotation);
+    return Promise.resolve({ width: 1, height: 1 });
+  },
+}));
+
 function Messages({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
 }
@@ -61,7 +81,7 @@ function freshSettings(): SettingsStore {
   return new SettingsStore(new SettingsRegistry([THEME_SETTING]));
 }
 
-function answeringClient(): ContractClient {
+function answeringClient(model?: Readonly<Record<string, unknown>>): ContractClient {
   const answers: Readonly<Record<string, unknown>> = {
     'document.open': {
       kind: 'opened' as const,
@@ -69,7 +89,11 @@ function answeringClient(): ContractClient {
       version: asDocVersion(1),
       byteLength: 1024,
     },
-    'document.viewModel': { version: asDocVersion(1), pageCount: 1, rotations: [0] },
+    'document.viewModel': model ?? {
+      version: asDocVersion(1),
+      pageCount: 1,
+      rotations: [90],
+    },
     'document.readRange': { kind: 'bytes' as const, bytes: new Uint8Array(8) },
   };
   return createClient(channels, (id) => {
@@ -94,6 +118,7 @@ function viewNamed(name: string): DocumentView {
 beforeEach(() => {
   pending.length = 0;
   closes.length = 0;
+  drawn.length = 0;
 });
 
 afterEach(() => {
@@ -147,5 +172,47 @@ describe('a document view that arrives after its effect was cleaned up', () => {
     });
 
     expect(closes).toStrictEqual([]);
+  });
+});
+
+describe('a view model that describes a different version than the view is opened at', () => {
+  /** Opens a document, settles the model read, and delivers the view. */
+  async function drawWith(model?: Readonly<Record<string, unknown>>): Promise<void> {
+    render(<App client={answeringClient(model)} settings={freshSettings()} />);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Open a document' }).click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      pending[0]?.(viewNamed('view'));
+      await Promise.resolve();
+    });
+  }
+
+  it('is not drawn, because the bytes underneath it belong to the other one', async () => {
+    // RRRRR-2. The model is read, then the transport is opened; a command
+    // landing between those two awaits leaves a rotation describing version 9
+    // about to be painted over bytes bound to version 1. ADR-0031 refuses a
+    // RANGE for the wrong version for the same reason — a document assembled
+    // from two of them — and this is the same hazard arriving through geometry,
+    // where nothing throws because nothing was comparing anything.
+    //
+    // `undefined` and not `0`: PDF.js then falls back to the page's own
+    // `/Rotate`, which is what this renderer actually knows.
+    await drawWith({ version: asDocVersion(9), pageCount: 1, rotations: [90] });
+
+    expect(drawn).toStrictEqual([undefined]);
+  });
+
+  it('CONTROL: the SAME version is drawn, so this is a comparison and not a refusal', async () => {
+    // Without this, the case above passes for a renderer that never applies a
+    // rotation at all — which is the state the whole view model exists to leave,
+    // and which no other case in this file would notice.
+    await drawWith();
+
+    expect(drawn).toStrictEqual([90]);
   });
 });

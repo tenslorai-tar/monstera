@@ -312,7 +312,13 @@ function PageCanvas({
         // read is a document this renderer knows less about — not one it knows
         // is upright — and the two are a quarter turn apart on any document that
         // arrives already turned.
-        await renderPage(view.document, SHOWN_PAGE.pdfjs, canvas.current, 1, rotationFor(model));
+        await renderPage(
+          view.document,
+          SHOWN_PAGE.pdfjs,
+          canvas.current,
+          1,
+          rotationFor(model, open.version),
+        );
       } catch {
         // A parse that fails is a document this renderer cannot show. It is not
         // a crash and it is not silence: the surface stays empty and says so
@@ -334,17 +340,39 @@ function PageCanvas({
 }
 
 /**
- * Page 1's rotation out of a view-model answer, or `undefined`.
+ * The shown page's rotation out of a view-model answer, or `undefined`.
  *
- * Three states collapse to `undefined` and each is *this renderer does not know*
+ * Four states collapse to `undefined` and each is *this renderer does not know*
  * rather than *this page is upright*: the read was refused, the document has no
- * pages, or the array is shorter than the page count it reported. The last is
- * the one worth naming — `rotations[0]` on an empty array is `undefined` in
- * JavaScript and `0` in almost any hand-written guard, and the difference is a
- * document drawn flat because a message lost an entry.
+ * pages, the array is shorter than the page count it reported, or the answer
+ * describes a **different version**. The third is worth naming on its own —
+ * `rotations[0]` on an empty array is `undefined` in JavaScript and `0` in almost
+ * any hand-written guard, and the difference is a document drawn flat because a
+ * message lost an entry.
+ *
+ * ## The version comparison is finding RRRRR-2, and it was argued before it existed
+ *
+ * The channel's own comment says the version travels back *"so a caller can
+ * recognise a **late** answer — a command can bump while this is in flight"*.
+ * Nothing read it. What dropped a stale read was the effect's cancel guard, which
+ * is a different mechanism with a different reach: the model is read, then the
+ * transport is opened, and a command landing between those two awaits leaves a
+ * model describing version N+1 about to be drawn over bytes bound to N.
+ *
+ * That is ADR-0031's own hazard — *a document assembled from two versions* —
+ * arriving through geometry instead of through byte offsets, and with nothing
+ * thrown, because nothing was comparing anything. `readRange` refuses a range for
+ * the wrong version; this refuses a rotation for one, and the refusal is
+ * `undefined` rather than `0` for the same reason every other state here is.
+ *
+ * @param version the version the view is being opened at — not the one the model
+ *   arrived with, which is the value under test.
  */
 function rotationFor(
   model: Awaited<ReturnType<ContractClient['document.viewModel']>>,
+  version: DocVersion,
 ): number | undefined {
-  return model.ok ? model.value.rotations[0] : undefined;
+  if (!model.ok) return undefined;
+  if (model.value.version !== version) return undefined;
+  return model.value.rotations[0];
 }
