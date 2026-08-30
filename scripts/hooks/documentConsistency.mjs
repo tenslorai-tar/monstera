@@ -919,26 +919,193 @@ registerRule({
 const ROW_WORD_FLOOR = 250;
 
 /**
- * Rows keyed by their leading bold title, which is the only part stable across
- * an edit.
+ * How many leading words of a row's first cell make its key.
+ *
+ * Long enough that two rows do not collide by accident — a collision is a hard
+ * failure below, so the cost of too few is a build nobody can green — and short
+ * enough that editing a row's body does not change its identity, which is the
+ * whole reason a key exists here.
+ */
+const KEY_WORDS = 8;
+
+/**
+ * A row's identity: the opening words of its first cell, markup removed.
  *
  * Line NUMBER is not the key and cannot be: inserting a row above shifts every
  * row below it, which would report the whole table as rewritten. That is how
  * RRRR-4's own figure came to be misread — a row measured at 291 before an
  * insert and reported at 291 after it, when it had become 292.
  *
- * @param {string} markdown
- * @returns {Map<string, number>} title → word count
+ * **THE LEADING BOLD TITLE WAS NOT THE KEY EITHER, AND THAT WAS THIS
+ * FUNCTION'S DEFECT UNTIL 2026-08-30.** It matched `^\|\s*\*\*(.+?)\*\*`, so a
+ * row whose first cell does not open in bold appeared in neither map and was
+ * judged by nothing. Measured at the moment it bit: `docs/FEATURES.md`'s design
+ * substrate row grew from 385 words to 493 in one edit and the rule reported a
+ * clean pass. Five rows over the target were invisible, 43 keyed against 204
+ * table lines.
+ *
+ * The failure is 4b's, in a renderer rather than in a search: a row the key
+ * cannot see and a row that did not grow produce the same output, and one of
+ * them is the answer everybody wants. Keying **every** row is what closes it —
+ * the bold title was a convention, and a convention is not a check.
+ *
+ * @param {string} line one table row, pipes included
+ * @returns {string} the key, or the empty string for a line that is not a row
  */
-function featureRowWords(markdown) {
+export function featureRowKey(line) {
+  if (!/^\|/u.test(line) || /^\|\s*[-:]{3,}/u.test(line)) return '';
+  const cell = line.slice(1).split('|')[0] ?? '';
+  const words = cell
+    // Link TEXT, never the target: a row whose ADR moves keeps its identity,
+    // and a path is not what a reader calls the row.
+    .replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1')
+    .replace(/[*_`]/gu, '')
+    .split(/\s+/u)
+    .filter(Boolean);
+  return words.slice(0, KEY_WORDS).join(' ').toLowerCase();
+}
+
+/**
+ * Rows keyed by {@link featureRowKey}, with their word counts.
+ *
+ * A COLLISION THROWS rather than overwriting. Two rows sharing their opening
+ * words would silently become one entry, and the survivor's length would then
+ * stand in for both — the same shape as the blindness above, one row narrower.
+ *
+ * @param {string} markdown
+ * @returns {Map<string, number>} key → word count
+ */
+export function featureRowWords(markdown) {
   /** @type {Map<string, number>} */
   const rows = new Map();
-  for (const line of markdown.split('\n')) {
-    const match = /^\|\s*\*\*(.+?)\*\*/u.exec(line);
-    if (match === null) continue;
-    rows.set((match[1] ?? '').trim(), line.split(/\s+/u).filter(Boolean).length);
+  const lines = markdown.split('\n');
+  let section = '';
+  for (const [index, line] of lines.entries()) {
+    const heading = /^#{2,}\s+(.*\S)/u.exec(line);
+    if (heading !== null) section = (heading[1] ?? '').trim();
+    const opening = featureRowKey(line);
+    if (opening === '') continue;
+    // A HEADER ROW IS NOT A ROW. It is the line a separator follows, and every
+    // table in this document heads its first column the same way — so keying
+    // them would collide on the first two tables and take the whole check down.
+    // Identified structurally rather than by the word "Feature", which is a
+    // convention, and the defect this function had is what a convention
+    // standing in for a check costs.
+    if (/^\|\s*[-:]{3,}/u.test(lines[index + 1] ?? '')) continue;
+    // SCOPED TO ITS SECTION, because two tables legitimately carry a row with
+    // the same name — `Typewriter` appears in the annotation table and again in
+    // the tool table, and neither is wrong. The section heading is the scope
+    // rather than a table ordinal: inserting a table above would renumber every
+    // key below it and report the document as wholly rewritten.
+    const key = `${section} :: ${opening}`;
+    if (rows.has(key)) {
+      throw new Error(
+        `two docs/FEATURES.md rows under "${section}" open with the same ${String(KEY_WORDS)} ` +
+          `words ("${opening}"), so the length ratchet cannot tell them apart and one would ` +
+          `stand in for the other. Give one of them a different opening.`,
+      );
+    }
+    rows.set(key, line.split(/\s+/u).filter(Boolean).length);
   }
   return rows;
+}
+
+/**
+ * Pairs rows whose key changed, so a rewritten opening is judged rather than
+ * skipped.
+ *
+ * A key nobody matched is ambiguous by nature: it is a new row, a deleted row,
+ * or a rename. Ruling 3's rule is that **one** unmatched key on each side is a
+ * rename and must be paired — a retitled row otherwise reads as new, and a new
+ * row is deliberately not judged, so renaming is a way to grow a row past the
+ * target with the check green.
+ *
+ * More than one on each side cannot be paired without guessing, and this
+ * refuses rather than guessing. The alternative — pairing by order, or against
+ * the smallest previous length — would be a check inventing the comparison it
+ * exists to make, which is the reason new rows are not judged in the first
+ * place.
+ *
+ * @param {Map<string, number>} before
+ * @param {Map<string, number>} after
+ * @returns {{ pairs: [string, number][], ambiguous: { before: string[], after: string[] } | null }}
+ */
+export function pairRenamedRows(before, after) {
+  const goneKeys = [...before.keys()].filter((key) => !after.has(key));
+  const newKeys = [...after.keys()].filter((key) => !before.has(key));
+
+  if (goneKeys.length === 0 || newKeys.length === 0) return { pairs: [], ambiguous: null };
+  if (goneKeys.length > 1 && newKeys.length > 1) {
+    return { pairs: [], ambiguous: { before: goneKeys, after: newKeys } };
+  }
+  // One side has exactly one, so the pairing is decidable. Every key on the
+  // other side is measured against the STRICTEST previous length available —
+  // a row split in two, or two rows merged into one, cannot use "it is new" to
+  // escape the ceiling it had.
+  const strictest = Math.min(...goneKeys.map((key) => before.get(key) ?? 0));
+  const pairs = /** @type {[string, number][]} */ (
+    newKeys.map((key) => [key, strictest])
+  );
+  return { pairs, ambiguous: null };
+}
+
+/**
+ * The whole decision, over two blobs, with no git and no filesystem in it.
+ *
+ * Separated from the rule so a proof drives **the judgement** rather than the
+ * helpers underneath it. A well-tested `featureRowWords` beside an untested
+ * decision is the shape where the call site sits inside a feeling of coverage:
+ * the keying is where the last defect was, and the floor comparison is where
+ * the next one will be.
+ *
+ * @param {string} previous the blob at HEAD
+ * @param {string} current the staged blob
+ * @returns {string[]} one message per row that grew past the target
+ */
+export function judgeRowLengths(previous, current) {
+  /** @type {string[]} */
+  const failures = [];
+  const before = featureRowWords(previous);
+  const after = featureRowWords(current);
+
+  // RENAMES FIRST, because a retitled row otherwise reads as new and a new row
+  // is deliberately not judged — which makes rewriting the opening a way past
+  // the target with the check green.
+  const renamed = pairRenamedRows(before, after);
+  if (renamed.ambiguous !== null) {
+    failures.push(
+      `docs/FEATURES.md — ${String(renamed.ambiguous.before.length)} row opening(s) ` +
+        `disappeared and ${String(renamed.ambiguous.after.length)} appeared in one commit, so ` +
+        `this rule cannot tell a rename from a new row and refuses to guess.\n` +
+        `  GONE: ${renamed.ambiguous.before.map((key) => `"${key}"`).join(', ')}\n` +
+        `  NEW:  ${renamed.ambiguous.after.map((key) => `"${key}"`).join(', ')}\n` +
+        `  Commit the renames separately from the additions, or leave each row's first ` +
+        `${String(KEY_WORDS)} words alone while its body changes.`,
+    );
+    return failures;
+  }
+  /** @type {Map<string, number>} */
+  const previousLength = new Map([...before, ...renamed.pairs]);
+
+  for (const [title, words] of after) {
+    const was = previousLength.get(title);
+    // A NEW row is not judged here. It has no previous length, so "grew" has
+    // no meaning for it — and a rule that guessed one would be inventing the
+    // comparison it exists to make.
+    if (was === undefined) continue;
+    if (words <= ROW_WORD_FLOOR || words <= was) continue;
+    failures.push(
+      `docs/FEATURES.md — the row "${title.slice(0, 60)}…" grew from ${String(was)} to ` +
+        `${String(words)} words (+${String(words - was)}), and it is past the ${String(ROW_WORD_FLOOR)}-word ` +
+        `target.\n\n` +
+        `  A row is a live specification, and detail past that belongs in the JOURNAL entry or ` +
+        `ADR that owns it, with a pointer left behind. Move it there rather than deleting it — ` +
+        `nothing here asks you to lose a fact, only to put it where its owner is.\n` +
+        `  This fires only on a row THIS commit edited. Rows you did not touch are not its ` +
+        `business, whatever their length.`,
+    );
+  }
+  return failures;
 }
 
 registerRule({
@@ -966,27 +1133,7 @@ registerRule({
       throw error;
     }
 
-    const before = featureRowWords(previous);
-    const after = featureRowWords(read('docs/FEATURES.md'));
-
-    for (const [title, words] of after) {
-      const was = before.get(title);
-      // A NEW row is not judged here. It has no previous length, so "grew" has
-      // no meaning for it — and a rule that guessed one would be inventing the
-      // comparison it exists to make.
-      if (was === undefined) continue;
-      if (words <= ROW_WORD_FLOOR || words <= was) continue;
-      failures.push(
-        `docs/FEATURES.md — the row "${title.slice(0, 60)}…" grew from ${String(was)} to ` +
-          `${String(words)} words (+${String(words - was)}), and it is past the ${String(ROW_WORD_FLOOR)}-word ` +
-          `target.\n\n` +
-          `  A row is a live specification, and detail past that belongs in the JOURNAL entry or ` +
-          `ADR that owns it, with a pointer left behind. Move it there rather than deleting it — ` +
-          `nothing here asks you to lose a fact, only to put it where its owner is.\n` +
-          `  This fires only on a row THIS commit edited. Rows you did not touch are not its ` +
-          `business, whatever their length.`,
-      );
-    }
+    failures.push(...judgeRowLengths(previous, read('docs/FEATURES.md')));
   },
 });
 

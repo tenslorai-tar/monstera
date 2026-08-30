@@ -288,6 +288,15 @@ jobs:
       - name: Prove every document rule declares a scope, and the scope selects
         run: node scripts/ci/annotate.mjs scripts/proofs/documentRuleScope.proof.mjs
 
+      # And that the row-length ratchet can SEE the rows it governs. It keyed
+      # rows on a leading bold title, so a row that opens in plain text was
+      # compared with nothing and reported nothing — 43 rows keyed against 204
+      # table lines, and a row measured growing from 390 words to 498 with the
+      # check green. The load-bearing case is the unbolded fixture, which asserts
+      # what the broken key printed for that exact input: no match at all.
+      - name: Prove the FEATURES row-length ratchet can see, pair and refuse
+        run: node scripts/ci/annotate.mjs scripts/proofs/rowLengthRatchet.proof.mjs
+
       # The picker's gate is the only evidence `documentPicker.ts` has ever
       # executed, and that evidence is a JSON file in the repository — so every
       # way of getting it wrong produces something that reads like evidence: no

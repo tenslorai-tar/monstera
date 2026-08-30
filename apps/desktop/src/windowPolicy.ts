@@ -47,12 +47,22 @@ export const RENDERER_WEB_PREFERENCES = {
  *
  * ## A raw hex, and it is a violation of §10 rather than an exception to it
  *
- * `CLAUDE.md` says design tokens only, no raw hex anywhere. There is no token
- * to use: the design substrate is an unstarted `docs/FEATURES.md` row, and
- * `apps/desktop` cannot import `packages/ui` in any case — the module graph
- * allows it `shared`, `contract` and `kernel` only. So this is recorded as owed
- * rather than dressed up as outside the rule, and the row that lands tokens is
- * the one that must replace it.
+ * `CLAUDE.md` says design tokens only, no raw hex anywhere. So this is recorded
+ * as owed rather than dressed up as outside the rule.
+ *
+ * The half of that sentence which said *"there is no token to use"* stopped
+ * being true on 2026-08-28 and was corrected on 2026-08-30: `tokens.css`
+ * declares `--canvas`, which is what `app.css` paints the body with, and it is
+ * `#141618` in the default theme against the `#000000` below.
+ *
+ * What has not changed is the reason the debt is still open. `apps/desktop`
+ * cannot import `packages/ui` — the module graph allows it `shared`, `contract`
+ * and `kernel` only — and a CSS custom property is not a value main can read at
+ * runtime in a packaged app. So closing this is a choice between a proven copy
+ * (§9.27's shape, where the renderer's CSP is copied because a renderer cannot
+ * parse markdown), a token source both packages may import, and a window that
+ * names no colour at all. That is a decision, and it is recorded on the design
+ * substrate row rather than taken here.
  *
  * ## It said `#00000000` and that was not what it did
  *

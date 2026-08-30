@@ -123,7 +123,29 @@ export const CONTROL_BUILD_EDGE = {
 const DATA_EXTENSIONS = ['.json', '.toml', '.yml', '.yaml', '.md', '.css'];
 
 /** A static relative import specifier. */
-const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^\n;]*?from\s*['"](\.[^'"]*)['"]/gu;
+/**
+ * A relative import or re-export, bounded by the STATEMENT and not by the line.
+ *
+ * `[^;]*?` rather than `[^\n;]*?`, corrected 2026-08-30. The line-bounded form
+ * could not see an import whose specifier list is wrapped —
+ *
+ *     import {
+ *       featureRowWords,
+ *     } from '../hooks/documentConsistency.mjs';
+ *
+ * — which is how this repository's own formatter writes anything over one line.
+ * Measured at the moment it bit: **32 relative imports in 29 files were
+ * invisible**, 427 against 459, and 22 of the 29 are proofs. So a change to a
+ * module imported that way reported *no proof affected*, which is the answer
+ * every caller of this is hoping for.
+ *
+ * That is the line-is-not-a-unit-of-meaning failure this project has now paid
+ * for six times, arriving in the instrument that decides what a change reaches.
+ * The semicolon is the right boundary because a statement's `from` always
+ * precedes its terminator, and a side-effect import (`import './x.js';`) has no
+ * `from` to run past.
+ */
+const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^;]*?from\s*['"](\.[^'"]*)['"]/gu;
 
 /**
  * Every `scripts/**` module, repo-relative with forward slashes.

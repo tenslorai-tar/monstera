@@ -19,7 +19,7 @@
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 import {
   CONTROL_BUILD_EDGE,
@@ -38,7 +38,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 25 });
+const roster = createRoster(failures, { cases: 26 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -63,6 +63,46 @@ function check(name, condition, detail) {
     graph.size > 50,
     `${String(graph.size)} module(s). A walk that stopped early reports "nothing affected" for ` +
       `everything it never reached.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A WRAPPED IMPORT IS AN IMPORT, and this is the case none of the 25 had.
+// ---------------------------------------------------------------------------
+{
+  // FOUND IN THE REAL TREE RATHER THAN INVENTED, for two reasons. `importGraph`
+  // refuses any tree missing its control edges, so a temporary fixture would be
+  // testing the refusal; and a wrapped import written here would only prove the
+  // pattern against a shape I chose. This asks the repository for one.
+  //
+  // The specifier list this repository's formatter produces for anything over
+  // one line. The pattern was bounded by `[^\n;]`, so an edge written this way
+  // was in no graph at all — 32 of them, in 29 files, 22 of which are proofs.
+  const WRAPPED = /(?:^|\n)\s*import\s*\{[^}]*\n[^}]*\}\s*from\s*['"](\.[^'"]*)['"]/gu;
+  const graph = importGraph(ROOT);
+
+  /** @type {{ from: string, to: string } | null} */
+  let wrapped = null;
+  for (const [file] of graph) {
+    const match = WRAPPED.exec(readFileSync(join(ROOT, file), 'utf8'));
+    WRAPPED.lastIndex = 0;
+    const specifier = match?.[1];
+    if (specifier === undefined) continue;
+    const to = relative(ROOT, resolve(join(ROOT, dirname(file)), specifier)).replaceAll('\\', '/');
+    if (!graph.has(to)) continue;
+    wrapped = { from: file, to };
+    break;
+  }
+
+  check(
+    'an import whose specifier list is WRAPPED is an edge, which the line-bounded pattern missed',
+    wrapped !== null && graph.get(wrapped.from)?.has(wrapped.to) === true,
+    wrapped === null
+      ? 'no module under scripts/ writes a relative import across more than one line, so this ' +
+        'case has nothing to test and its silence means nothing. If that is genuinely true now, ' +
+        'this case must be deleted rather than left passing.'
+      : `${wrapped.from} -> ${wrapped.to} is written across lines and is NOT in the graph. A ` +
+        `miss here produces "no proof affected", which is what everyone asking this wants to hear.`,
   );
 }
 
