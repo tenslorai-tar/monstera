@@ -357,3 +357,140 @@ export function probeCode(thrown: unknown): string {
 function fromThrown(thrown: unknown): ProbeOutcome {
   return outcomeForErrorCode(probeCode(thrown));
 }
+
+/**
+ * The integrity RID of a Low-integrity token.
+ *
+ * Medium — an ordinary desktop process — is `0x2000`. The container hands its
+ * process Low, and invariant 25 asks for *the lowest workable* level, so
+ * anything at or below this passes and Medium does not.
+ */
+export const INTEGRITY_LOW = 0x1000;
+
+/**
+ * The job limit flags invariant 25(b) requires, defined HERE rather than beside
+ * the call that sets them.
+ *
+ * They were only in `win32HostSurface.ts`, where `applyLimits` writes them into
+ * the struct. A check that read them back would have had to name them a second
+ * time, and then the setter and the reader would hold two opinions about what
+ * containment requires — the exact shape B3a is about. The Win32 surface takes
+ * them from here.
+ *
+ * `ACTIVE_PROCESS` is what delivers *no process creation*: WW-1's matrix showed
+ * that property comes from the JOB and not from the container, so a host with
+ * the container applied and no job spawns children freely while answering yes
+ * to every cheap containment question. `PROCESS_MEMORY` is §9.17's term.
+ * `KILL_ON_JOB_CLOSE` makes the job handle the host's leash.
+ */
+export const JOB_LIMIT_ACTIVE_PROCESS = 0x00000008;
+export const JOB_LIMIT_PROCESS_MEMORY = 0x00000100;
+export const JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+/** What main read off the child's token, or why it could not. */
+export type IntegrityReading =
+  | { readonly kind: 'read'; readonly rid: number }
+  | { readonly kind: 'could-not-read'; readonly detail: string };
+
+/** What main read back off the job, or why it could not. */
+export type JobLimitsReading =
+  | {
+      readonly kind: 'read';
+      readonly limitFlags: number;
+      readonly activeProcessLimit: number;
+      readonly processMemoryLimitBytes: number;
+    }
+  | { readonly kind: 'could-not-read'; readonly detail: string };
+
+/** Invariant 25(a) and (b), as read by main against the running host. */
+export type ProcessContainmentVerdict =
+  | { readonly kind: 'contained' }
+  | { readonly kind: 'not-contained'; readonly property: 'integrity' | 'job'; readonly detail: string }
+  | { readonly kind: 'unreadable'; readonly property: 'integrity' | 'job'; readonly detail: string };
+
+/**
+ * Classifies invariant 25(a) and (b) from readings taken against the RUNNING
+ * process.
+ *
+ * ## Why this is not the options passed to the factory
+ *
+ * A flag that did not take effect and one that did are indistinguishable until
+ * it matters. `applyLimits` returning `true` says `SetInformationJobObject`
+ * accepted the struct, which is a statement about the call and not about the
+ * job — the same distinction that made `assignToJob`'s answer untrusted and
+ * `IsProcessInJob` the thing that decides.
+ *
+ * ## Could-not-read is its own verdict, and it is not containment
+ *
+ * `unreadable` rather than folding into `not-contained`: *could not look* is
+ * not *looked and found nothing*, and the two want different responses — one is
+ * a host to refuse, the other is an instrument to fix. It is still a refusal at
+ * the call site, because a host that may not be contained is not one to resume.
+ *
+ * Pure, so every case is decidable with no container, no token and no job.
+ */
+export function classifyProcessContainment(
+  integrity: IntegrityReading,
+  job: JobLimitsReading,
+  expectedProcessMemoryLimitBytes: number,
+): ProcessContainmentVerdict {
+  if (integrity.kind === 'could-not-read') {
+    return { kind: 'unreadable', property: 'integrity', detail: integrity.detail };
+  }
+  if (integrity.rid > INTEGRITY_LOW) {
+    return {
+      kind: 'not-contained',
+      property: 'integrity',
+      detail:
+        `The host runs at integrity 0x${integrity.rid.toString(16)}, above Low ` +
+        `(0x${INTEGRITY_LOW.toString(16)}). Invariant 25 asks for the lowest workable level, and ` +
+        `a host at Medium has whatever the desktop session has.`,
+    };
+  }
+
+  if (job.kind === 'could-not-read') {
+    return { kind: 'unreadable', property: 'job', detail: job.detail };
+  }
+
+  const required = [
+    ['ACTIVE_PROCESS', JOB_LIMIT_ACTIVE_PROCESS],
+    ['PROCESS_MEMORY', JOB_LIMIT_PROCESS_MEMORY],
+    ['KILL_ON_JOB_CLOSE', JOB_LIMIT_KILL_ON_JOB_CLOSE],
+  ] as const;
+  const missing = required.filter(([, bit]) => (job.limitFlags & bit) === 0).map(([name]) => name);
+  if (missing.length > 0) {
+    return {
+      kind: 'not-contained',
+      property: 'job',
+      detail:
+        `The job is missing ${missing.join(', ')} (flags 0x${job.limitFlags.toString(16)}). ` +
+        `A job holding the process without these constrains nothing, and membership in it ` +
+        `answers yes to every cheap containment question.`,
+    };
+  }
+
+  // ONE, not "some limit". A host permitted to create a second process is one
+  // that can do everything the invariant denies it, through a child.
+  if (job.activeProcessLimit !== 1) {
+    return {
+      kind: 'not-contained',
+      property: 'job',
+      detail:
+        `The job permits ${String(job.activeProcessLimit)} active processes, not 1. Anything ` +
+        `above one is a host that can do what invariant 25 denies it through a child.`,
+    };
+  }
+
+  if (job.processMemoryLimitBytes !== expectedProcessMemoryLimitBytes) {
+    return {
+      kind: 'not-contained',
+      property: 'job',
+      detail:
+        `The job's per-process memory limit reads ${String(job.processMemoryLimitBytes)} bytes ` +
+        `and ${String(expectedProcessMemoryLimitBytes)} was asked for. The number that governs ` +
+        `is the one on the job, so a limit that did not take is the ceiling nobody is under.`,
+    };
+  }
+
+  return { kind: 'contained' };
+}

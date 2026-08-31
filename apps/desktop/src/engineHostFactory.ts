@@ -1,3 +1,8 @@
+import {
+  type IntegrityReading,
+  type JobLimitsReading,
+  classifyProcessContainment,
+} from '@monstera/kernel';
 import { type Result, err, ok } from '@monstera/shared';
 
 /**
@@ -133,6 +138,22 @@ export interface HostCreationSurface {
   readonly assignToJob: (job: JobHandle, process: ProcessHandle) => boolean;
   /** `IsProcessInJob`, whose own failure is a distinct answer. */
   readonly readJobMembership: (process: ProcessHandle, job: JobHandle) => JobMembership;
+  /**
+   * Invariant 25(a), read by MAIN against the child's token.
+   *
+   * Not by the host against its own: a process that has lowered itself can no
+   * longer open its own token, so a self-read is a could-not-look dressed as a
+   * reading (finding PP-2).
+   */
+  readonly readIntegrity: (process: ProcessHandle) => IntegrityReading;
+  /**
+   * Invariant 25(b), read back OFF THE JOB rather than taken from what was set.
+   *
+   * `applyLimits` returning `true` says `SetInformationJobObject` accepted the
+   * struct. That is a statement about the call, and the same distinction is why
+   * `assignToJob`'s answer is not trusted and `IsProcessInJob` decides.
+   */
+  readonly readJobLimits: (job: JobHandle) => JobLimitsReading;
   /** `ResumeThread`. Returns the suspend count BEFORE the call, or `null` on failure. */
   readonly resume: (thread: ThreadHandle) => number | null;
   /** `TerminateProcess`. Best effort: there is nothing to do if it fails. */
@@ -193,6 +214,13 @@ export interface HostCreationFailure {
     | 'job-limits'
     | 'job-assign'
     | 'job-membership'
+    // TWO STAGES, NOT ONE. A host whose containment could not be READ and one
+    // measured as absent want different responses — an instrument to fix
+    // against a host to refuse — and collapsing them would make every
+    // instrument failure read as a security finding, which is how a real one
+    // stops being believed.
+    | 'containment-unreadable'
+    | 'containment-absent'
     | 'resume'
     | 'suspend-count';
   readonly detail: string;
@@ -273,6 +301,30 @@ export function createContainedHost(
         : `The process is not in the job (assign reported ${String(assigned)}). Invariant 25(b) ` +
           'is delivered by the job, not by the container, so this host would run with two of ' +
           'three and report as contained.',
+      job,
+    );
+  }
+
+  // INVARIANT 25(a) AND (b), AGAINST THE RUNNING PROCESS, and before it runs.
+  //
+  // Read here rather than after `resume` for the reason the whole suspend
+  // exists: everything below this line is a host that has executed. The token
+  // and the job are both final at this point, so there is nothing to gain by
+  // waiting and a window to lose.
+  //
+  // Both were previously asserted only by `lowboxSpike.mjs`, against cells it
+  // creates itself. A property proven on a prototype and never on the shipped
+  // artefact is the shape this project refuses — and it is the one this whole
+  // file exists to deliver.
+  const contained = classifyProcessContainment(
+    surface.readIntegrity(process),
+    surface.readJobLimits(job),
+    processMemoryLimitBytes,
+  );
+  if (contained.kind !== 'contained') {
+    return abandon(
+      contained.kind === 'unreadable' ? 'containment-unreadable' : 'containment-absent',
+      `${contained.property}: ${contained.detail}`,
       job,
     );
   }

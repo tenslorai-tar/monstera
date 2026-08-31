@@ -96,13 +96,38 @@ export function quitAfterShutdown(
   control: QuitControl,
 ): QuitHandler {
   let started: Promise<void> | null = null;
+  let settled = false;
 
   return {
     onBeforeQuit: (preventDefault: () => void): Promise<void> | null => {
-      // THE SECOND PASS IS OURS AND MUST NOT BE STOPPED. `control.quit()` below
-      // raises `before-quit` again; preventing that one is an application that
-      // cannot be closed, which is a worse defect than the one this fixes.
-      if (started !== null) return null;
+      // THE PASS THAT GOES THROUGH IS THE ONE AFTER THE TEARDOWN SETTLES, and
+      // this used to be "the second pass", which is not the same thing.
+      //
+      // It read `if (started !== null) return null` — let any later quit
+      // through, on the assumption that the only one could be the `control.quit()`
+      // below raising `before-quit` again. That assumption is false, and CI
+      // found it on both platforms while this machine passed: `app.quit()`
+      // closes windows, `main.ts` registers `window-all-closed` to call
+      // `app.quit()`, and that second quit arrives from a DIFFERENT cause while
+      // the teardown is still running. The process then ended mid-teardown —
+      // the engine host left unclosed, which is the whole defect this file
+      // exists for.
+      //
+      // It is not an edge case. A user quitting by closing the window is the
+      // ordinary path, and it produces exactly this sequence.
+      //
+      // So the gate is the teardown's state rather than a call count: every
+      // quit before it settles is prevented, whoever raised it, and the first
+      // one after is let through. `settled` is set in the same `finally` that
+      // calls `control.quit()`, so the quit that call raises always finds it
+      // true and an application that cannot be closed stays impossible.
+      if (settled) return null;
+      if (started !== null) {
+        // PREVENTED, NOT IGNORED. Returning null here without preventing lets
+        // Electron proceed with this quit while the teardown runs on.
+        preventDefault();
+        return null;
+      }
 
       preventDefault();
       started = shutdown()
@@ -110,6 +135,7 @@ export function quitAfterShutdown(
           control.report(error);
         })
         .finally(() => {
+          settled = true;
           control.quit();
         });
       return started;

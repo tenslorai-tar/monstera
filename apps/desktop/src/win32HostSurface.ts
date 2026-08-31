@@ -42,6 +42,13 @@
 
 import { readFileSync, rmSync } from 'node:fs';
 
+import {
+  type IntegrityReading,
+  type JobLimitsReading,
+  JOB_LIMIT_ACTIVE_PROCESS,
+  JOB_LIMIT_KILL_ON_JOB_CLOSE,
+  JOB_LIMIT_PROCESS_MEMORY,
+} from '@monstera/kernel';
 import { type Result, err, ok } from '@monstera/shared';
 import koffi from 'koffi';
 
@@ -218,9 +225,24 @@ const OPEN_ALWAYS = 4;
 const FILE_ATTRIBUTE_NORMAL = 0x00000080;
 
 const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9;
-const JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008;
-const JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100;
-const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+// THE FLAGS COME FROM THE CLASSIFIER, and used to be declared here as three
+// literals of their own. The module that decides whether a job means the host
+// is contained now owns them, so the setter below and the check that reads them
+// back cannot hold two opinions about what invariant 25(b) requires (B3a).
+const JOB_OBJECT_LIMIT_ACTIVE_PROCESS = JOB_LIMIT_ACTIVE_PROCESS;
+const JOB_OBJECT_LIMIT_PROCESS_MEMORY = JOB_LIMIT_PROCESS_MEMORY;
+const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = JOB_LIMIT_KILL_ON_JOB_CLOSE;
+
+/**
+ * `TokenIntegrityLevel`, and `TOKEN_QUERY`.
+ *
+ * The RID is the last four bytes of the SID the class returns — the same read
+ * `lowboxSpike.mjs` makes against its own cells, moved here so the shipped host
+ * is measured rather than a prototype.
+ */
+const TOKEN_INTEGRITY_LEVEL_CLASS = 25;
+const TOKEN_QUERY = 0x0008;
 
 /** `ResumeThread`'s failure value: `(DWORD)-1`, which arrives unsigned. */
 const RESUME_THREAD_FAILED = 0xffffffff;
@@ -307,6 +329,25 @@ interface Bindings {
   ) => unknown;
   readonly assignProcessToJobObject: (job: JobHandle, target: ProcessHandle) => unknown;
   readonly isProcessInJob: (target: ProcessHandle, job: JobHandle, result: unknown[]) => unknown;
+  readonly queryInformationJobObject: (
+    job: JobHandle,
+    informationClass: number,
+    information: Buffer | null,
+    length: number,
+    returned: number[],
+  ) => unknown;
+  readonly openProcessToken: (
+    target: ProcessHandle,
+    access: number,
+    token: unknown[],
+  ) => unknown;
+  readonly getTokenInformation: (
+    token: unknown,
+    informationClass: number,
+    information: Buffer | null,
+    length: number,
+    returned: number[],
+  ) => unknown;
   readonly terminateProcess: (target: ProcessHandle, code: number) => boolean;
   readonly closeHandle: (handle: unknown) => boolean;
   readonly lastError: () => number;
@@ -437,6 +478,15 @@ function bind(): Bindings {
     ),
     assignProcessToJobObject: kernel.func('bool AssignProcessToJobObject(void *job, void *proc)'),
     isProcessInJob: kernel.func('bool IsProcessInJob(void *proc, void *job, _Out_ bool *result)'),
+    queryInformationJobObject: kernel.func(
+      'bool QueryInformationJobObject(void *job, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
+    ),
+    openProcessToken: advapi.func(
+      'bool OpenProcessToken(void *proc, uint32 access, _Out_ void **token)',
+    ),
+    getTokenInformation: advapi.func(
+      'bool GetTokenInformation(void *token, int cls, _Out_ void *info, uint32 len, _Out_ uint32 *ret)',
+    ),
     terminateProcess: kernel.func('bool TerminateProcess(void *proc, uint32 code)'),
     closeHandle: kernel.func('bool CloseHandle(void *handle)'),
     lastError: kernel.func('uint32 GetLastError()'),
@@ -858,6 +908,94 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
 
     assignToJob: (job: JobHandle, target: ProcessHandle): boolean =>
       bindings.assignProcessToJobObject(job, target) === true,
+
+    // INVARIANT 25(a). Read by main against the CHILD's token — a process that
+    // has lowered itself can no longer open its own token, so a self-read is a
+    // could-not-look wearing a reading's clothes (finding PP-2).
+    //
+    // The integrity SID's RID is its last four bytes. Everything here that can
+    // fail answers `could-not-read` with the Win32 error rather than a number,
+    // because a zero RID and a failed read are otherwise the same value, and
+    // one of them would classify as *contained*.
+    readIntegrity: (target: ProcessHandle): IntegrityReading => {
+      const tokenOut: unknown[] = [null];
+      if (bindings.openProcessToken(target, TOKEN_QUERY, tokenOut) !== true) {
+        return {
+          kind: 'could-not-read',
+          detail: `OpenProcessToken failed: ${String(bindings.lastError())}`,
+        };
+      }
+      const token = tokenOut[0];
+      try {
+        const sizeOut = [0];
+        // Sized first: the call is expected to fail here, and its FAILURE is
+        // how the length arrives.
+        bindings.getTokenInformation(token, TOKEN_INTEGRITY_LEVEL_CLASS, null, 0, sizeOut);
+        const needed = sizeOut[0] ?? 0;
+        if (needed <= 0) {
+          return {
+            kind: 'could-not-read',
+            detail: `GetTokenInformation sized 0: ${String(bindings.lastError())}`,
+          };
+        }
+        const buffer = Buffer.alloc(needed);
+        if (
+          bindings.getTokenInformation(
+            token,
+            TOKEN_INTEGRITY_LEVEL_CLASS,
+            buffer,
+            needed,
+            sizeOut,
+          ) !== true
+        ) {
+          return {
+            kind: 'could-not-read',
+            detail: `GetTokenInformation failed: ${String(bindings.lastError())}`,
+          };
+        }
+        return { kind: 'read', rid: buffer.readUInt32LE(buffer.length - 4) };
+      } finally {
+        bindings.closeHandle(token);
+      }
+    },
+
+    // INVARIANT 25(b), read back OFF THE JOB. `applyLimits` returning true says
+    // the call was accepted; this says what the job holds.
+    readJobLimits: (job: JobHandle): JobLimitsReading => {
+      const size = koffi.sizeof('MONSTERA_JOBOBJECT_EXTENDED_LIMIT_INFORMATION');
+      const buffer = Buffer.alloc(size);
+      const returned = [0];
+      if (
+        bindings.queryInformationJobObject(
+          job,
+          JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+          buffer,
+          size,
+          returned,
+        ) !== true
+      ) {
+        return {
+          kind: 'could-not-read',
+          detail: `QueryInformationJobObject failed: ${String(bindings.lastError())}`,
+        };
+      }
+      // DECODED THROUGH THE SAME STRUCT `applyLimits` ENCODES. Reading the
+      // fields at hand-counted offsets would be a second opinion about the
+      // layout, and the two would agree until a field changed width.
+      const decoded = koffi.decode(
+        buffer,
+        'MONSTERA_JOBOBJECT_EXTENDED_LIMIT_INFORMATION',
+      ) as {
+        BasicLimitInformation: { LimitFlags: number; ActiveProcessLimit: number };
+        ProcessMemoryLimit: number;
+      };
+      return {
+        kind: 'read',
+        limitFlags: decoded.BasicLimitInformation.LimitFlags,
+        activeProcessLimit: decoded.BasicLimitInformation.ActiveProcessLimit,
+        processMemoryLimitBytes: decoded.ProcessMemoryLimit,
+      };
+    },
 
     readJobMembership: (target: ProcessHandle, job: JobHandle): JobMembership => {
       const out: boolean[] = [false];

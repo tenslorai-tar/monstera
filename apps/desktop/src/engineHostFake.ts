@@ -1,5 +1,11 @@
 import { ENGINE_HOST_FRAME_MAX_BYTES, FrameDecoder, encodeFrame } from '@monstera/contract';
-import type { HostTermination } from '@monstera/kernel';
+import {
+  type HostTermination,
+  INTEGRITY_LOW,
+  JOB_LIMIT_ACTIVE_PROCESS,
+  JOB_LIMIT_KILL_ON_JOB_CLOSE,
+  JOB_LIMIT_PROCESS_MEMORY,
+} from '@monstera/kernel';
 import type { ReaderMessage } from '@monstera/nodemode';
 import { ok } from '@monstera/shared';
 
@@ -226,6 +232,7 @@ export function hostHarness(
     },
     hostFor: () => {
       calls.push('host.surfaceBuilt');
+      let appliedMemoryLimitBytes = 0;
       return {
         createSuspended: () => {
           calls.push('host.createSuspended');
@@ -235,9 +242,28 @@ export function hostHarness(
           calls.push('host.createJob');
           return failures.host === true ? null : FAKE_JOB;
         },
-        applyLimits: () => true,
+        applyLimits: (_job, processMemoryLimitBytes) => {
+          // REMEMBERED, so `readJobLimits` can answer with what was actually
+          // asked for. A fake that returned a constant would make the
+          // classifier's memory-limit comparison pass for any input, which is
+          // the assertion that agrees with the bug.
+          appliedMemoryLimitBytes = processMemoryLimitBytes;
+          return true;
+        },
         assignToJob: () => true,
         readJobMembership: () => 'in-job' as const,
+        // A CONTAINED HOST BY DEFAULT, because every case in this fake's callers
+        // is about something else and a fake reporting an uncontained host would
+        // fail them all for the wrong reason. The cases that care replace these.
+        readIntegrity: () => ({ kind: 'read', rid: INTEGRITY_LOW }) as const,
+        readJobLimits: () =>
+          ({
+            kind: 'read',
+            limitFlags:
+              JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
+            activeProcessLimit: 1,
+            processMemoryLimitBytes: appliedMemoryLimitBytes,
+          }) as const,
         resume: () => {
           // THE PEER ARRIVES WHEN THE PROCESS IS RESUMED, which is the fake's
           // one piece of modelling and is where reality puts it: a suspended

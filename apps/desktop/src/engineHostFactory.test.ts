@@ -1,3 +1,11 @@
+import {
+  type IntegrityReading,
+  type JobLimitsReading,
+  INTEGRITY_LOW,
+  JOB_LIMIT_ACTIVE_PROCESS,
+  JOB_LIMIT_KILL_ON_JOB_CLOSE,
+  JOB_LIMIT_PROCESS_MEMORY,
+} from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -34,6 +42,7 @@ function surface(
   overrides: Partial<HostCreationSurface> & { readonly membership?: JobMembership } = {},
 ): Recorder {
   const calls: string[] = [];
+  let appliedMemoryLimitBytes = 0;
 
   // RECORDING WRAPS THE OVERRIDE, not the default.
   //
@@ -64,7 +73,10 @@ function surface(
     createJob: record('createJob', (): JobHandle | null => aJob, overrides.createJob),
     applyLimits: record(
       'applyLimits',
-      (_job: JobHandle, _limit: number) => true,
+      (_job: JobHandle, limit: number) => {
+        appliedMemoryLimitBytes = limit;
+        return true;
+      },
       overrides.applyLimits,
       (_job, limit) => `applyLimits:${String(limit)}`,
     ),
@@ -77,6 +89,26 @@ function surface(
       'readJobMembership',
       (_process: ProcessHandle, _job: JobHandle): JobMembership => overrides.membership ?? 'in-job',
       overrides.readJobMembership,
+    ),
+    // CONTAINED BY DEFAULT, and the memory limit is echoed from what
+    // `applyLimits` was asked for rather than being a constant. A constant
+    // would satisfy the classifier's comparison for every input, which is the
+    // assertion that agrees with the bug it exists to catch.
+    readIntegrity: record(
+      'readIntegrity',
+      (_process: ProcessHandle): IntegrityReading => ({ kind: 'read', rid: INTEGRITY_LOW }),
+      overrides.readIntegrity,
+    ),
+    readJobLimits: record(
+      'readJobLimits',
+      (_job: JobHandle): JobLimitsReading => ({
+        kind: 'read',
+        limitFlags:
+          JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
+        activeProcessLimit: 1,
+        processMemoryLimitBytes: appliedMemoryLimitBytes,
+      }),
+      overrides.readJobLimits,
     ),
     resume: record('resume', (_thread: ThreadHandle): number | null => 1, overrides.resume),
     terminate: record('terminate', (_process: ProcessHandle): void => undefined, overrides.terminate),
@@ -102,17 +134,87 @@ describe('the contained host is created in one order', () => {
     const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
 
     expect(result.ok).toBe(true);
-    // The whole requirement, read off the sequence: resume is last, and the
-    // membership READ sits between the assign and it.
+    // The whole requirement, read off the sequence: resume is LAST, and every
+    // read that decides whether this host may run sits between the assign and
+    // it. The two containment reads are here for the same reason the membership
+    // read is — everything after `resume` is a host that has executed, so a
+    // property checked later is one checked too late.
     expect(win32.calls).toStrictEqual([
       'createSuspended',
       'createJob',
       `applyLimits:${String(ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES)}`,
       'assignToJob',
       'readJobMembership',
+      'readIntegrity',
+      'readJobLimits',
       'resume',
       'close:thread',
     ]);
+  });
+
+  it('REFUSES a host running above Low integrity, before it runs', () => {
+    const win32 = surface({
+      readIntegrity: () => ({ kind: 'read', rid: 0x2000 }),
+    });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.stage).toBe('containment-absent');
+    // ASSERTED AS A CALL NOT MADE. A refused host and a host that failed for
+    // some other reason both end with nothing running, so the end state is
+    // satisfied by the defect; what only the correct decision produces is a
+    // `resume` that never happened.
+    expect(win32.calls).not.toContain('resume');
+  });
+
+  it('REFUSES a job that permits more than one process', () => {
+    const win32 = surface({
+      readJobLimits: () => ({
+        kind: 'read',
+        limitFlags:
+          JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
+        activeProcessLimit: 2,
+        processMemoryLimitBytes: ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES,
+      }),
+    });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    expect(!result.ok && result.error.stage).toBe('containment-absent');
+    expect(win32.calls).not.toContain('resume');
+  });
+
+  it('REFUSES a job whose memory limit did not take', () => {
+    // The number that governs is the one ON the job. A limit that was accepted
+    // by the call and is not on the job is the ceiling nobody is under, and it
+    // is indistinguishable from a working one until it matters.
+    const win32 = surface({
+      readJobLimits: () => ({
+        kind: 'read',
+        limitFlags:
+          JOB_LIMIT_ACTIVE_PROCESS | JOB_LIMIT_PROCESS_MEMORY | JOB_LIMIT_KILL_ON_JOB_CLOSE,
+        activeProcessLimit: 1,
+        processMemoryLimitBytes: 0,
+      }),
+    });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    expect(!result.ok && result.error.stage).toBe('containment-absent');
+    expect(win32.calls).not.toContain('resume');
+  });
+
+  it('a containment reading that FAILED is its own stage, not absence', () => {
+    // Could not look is not looked and found nothing. Both refuse the host —
+    // one that may not be contained is not one to resume — but they want
+    // different responses, and collapsing them makes every instrument failure
+    // read as a security finding.
+    const win32 = surface({
+      readIntegrity: () => ({ kind: 'could-not-read', detail: 'OpenProcessToken failed: 5' }),
+    });
+    const result = createContainedHost(win32, ENGINE_HOST_PROCESS_MEMORY_LIMIT_BYTES);
+
+    expect(!result.ok && result.error.stage).toBe('containment-unreadable');
+    expect(!result.ok && result.error.detail).toContain('OpenProcessToken failed: 5');
+    expect(win32.calls).not.toContain('resume');
   });
 
   it('returns the job handle, because closing it is what kills the host', () => {

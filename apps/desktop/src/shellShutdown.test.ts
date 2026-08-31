@@ -117,6 +117,48 @@ describe('quitAfterShutdown', () => {
   });
 
   /**
+   * A QUIT ARRIVING DURING THE TEARDOWN IS PREVENTED, whoever raised it.
+   *
+   * Found by CI on both platforms while this machine passed. `app.quit()`
+   * closes windows; `main.ts` registers `window-all-closed` to call
+   * `app.quit()`; so a second quit arrives from a DIFFERENT cause while the
+   * teardown is still running. The old gate let any later quit through — it
+   * read "the second pass is ours" — and the process ended mid-teardown with
+   * the engine host unclosed.
+   *
+   * A user quitting by closing the window is the ordinary path, not an edge.
+   */
+  it('PREVENTS a quit raised by something else while the teardown runs', async () => {
+    const seen = control();
+    let finish = (): void => undefined;
+    const handler = quitAfterShutdown(() => {
+      seen.calls.push('shutdown');
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    }, seen.control);
+
+    void handler.onBeforeQuit(seen.preventDefault);
+    // `window-all-closed` firing mid-teardown, which is what Electron does the
+    // moment the first quit closes the last window.
+    const during = handler.onBeforeQuit(seen.preventDefault);
+
+    expect(during).toBeNull();
+    // THE ASSERTION IS THE CALL, not the end state. Both quits end with the
+    // process gone either way, so a case looking at the outcome passes with the
+    // defect present. What separates them is whether this one was PREVENTED —
+    // two preventDefaults, and no quit yet.
+    expect(seen.calls.filter((call) => call === 'preventDefault')).toHaveLength(2);
+    expect(seen.calls.filter((call) => call === 'quit')).toHaveLength(0);
+    expect(seen.calls.filter((call) => call === 'shutdown')).toHaveLength(1);
+
+    finish();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(seen.calls.filter((call) => call === 'quit')).toHaveLength(1);
+  });
+
+  /**
    * A TEARDOWN THAT FAILS STILL QUITS, and says why. Trapping the user in an
    * application that will not close is worse than whatever failed, and a quit
    * that swallowed the reason would leave the failure with nowhere to be seen —

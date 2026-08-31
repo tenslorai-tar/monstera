@@ -641,7 +641,20 @@ function engineSessionOpener(
     // directories — so this registers the whole teardown rather than the disk
     // half, which is what a bare `areas.remove` here would have been.
     sessions.holdRelease(docId, async () => {
-      await liveWriter().close(session);
+      try {
+        await liveWriter().close(session);
+      } catch {
+        // THE PAIR GOES EITHER WAY, and this branch is the hole the first
+        // version left. `liveWriter()` throws when the host has died and no new
+        // one is registered, and `close` is what removes the directories — so a
+        // document closed after its host died would have left exactly the pair
+        // this whole change exists to stop leaving.
+        //
+        // `areas.remove` rather than a second call to the same Win32 surface:
+        // it is this document's own remover, already in scope, and it is what
+        // `openEngineSession` uses on every failure path out of itself.
+        await areas.remove();
+      }
     });
 
     return { mupdf: session };
