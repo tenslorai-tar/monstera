@@ -40,11 +40,18 @@ import { type ContainerSid, type UserSid, handedDirectoryDacl } from './hostDacl
  * read. Its lifetime is the session's: created before the image is written,
  * removed when the session closes, on every path including a failed open.
  *
- * What this module cannot cover is a main process that dies without unwinding.
- * That is stated rather than absorbed: nothing here sweeps a root left by a
- * previous run, and a sweep is not a line of code but a decision about what a
- * second running instance of the app is allowed to delete. It is owed, and the
- * `docs/FEATURES.md` row carries it.
+ * What used to sit outside this module is a main process that dies without
+ * unwinding, and this paragraph said so — *"nothing here sweeps a root left by
+ * a previous run, and a sweep is not a line of code but a decision about what a
+ * second running instance of the app is allowed to delete."*
+ *
+ * **Both halves stopped being true and this text stayed, which is the shape it
+ * is corrected as an example of.** {@link sweepSessionDirectories} is here now;
+ * and the decision it was waiting on had already been taken by code older than
+ * the sentence, since `startShell` quits without the single-instance lock and
+ * there is therefore never a second instance. A comment whose FIRST paragraph
+ * is the contract and whose later section is the correction leaves the stale
+ * half in the position a reader trusts.
  */
 
 /**

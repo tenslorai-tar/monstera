@@ -2651,6 +2651,31 @@ unwinding.** That is not a line of code someone forgot; it is a decision about
 what a second running instance of this application is allowed to delete, and it
 is owed on a `docs/FEATURES.md` row rather than assumed here.
 
+> **CORRECTION, 2026-08-31.** Both halves of that paragraph have stopped being
+> true, and the second one was never true.
+>
+> `sweepSessionDirectories` sweeps the root now, from
+> `createEngineHostPlatform`, and it can only remove what the layout mints — a
+> prefix over a name `sessionDirectoryName` accepts, and directories rather
+> than files, because `removeTree` is `rmSync(recursive)` and takes a file as
+> readily.
+>
+> **The decision it was waiting on had already been taken, by code older than
+> this paragraph.** `startShell` calls `requestSingleInstanceLock()` and quits
+> without one, so there is never a second running instance and the lock's
+> holder owns every directory under the root. Reading for the deferral's
+> *reason* rather than for its trigger is what found that — a trigger phrased
+> as *"expires the first time X can happen"* cannot notice that X can never
+> happen.
+>
+> What the sweep did need was an **ordering** nothing here named:
+> `entry.ts` constructed the graph as an argument to `startShell`, so the
+> platform was built before the lock and a losing second launch reached this
+> code inside the winner's root. `startShell` takes `() => ShellDependencies`
+> now. With the old order a sweep here would have deleted the open documents of
+> a running instance, which is why the ordering is load-bearing rather than
+> tidy.
+
 ### Decision 13, 2026-08-26 — `open`, `serialise` and `close`, and only ONE direction may carry a path
 
 Decision 10 split execution from lifecycle and built the first half. This is the
