@@ -644,6 +644,195 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-31 — Stage audit: `1a82157..a8e3efa` — the consolidation fired the false positive it was consolidating, within a minute
+
+Range: **7 commits, 24 files.** 1 proof added, 8 modified, 0 removed; 1 source
+file added, 6 changed, 0 removed — from `npm run audit:scope`, which printed
+*"Within one batch. An audit is not yet owed. Fires at 10 commits (3 more) or 25
+files (1 more)."* Taken because the next commit crosses on files.
+
+The range is the previous audit's recording commit, the `mupdf-host` readings
+into ADR-0025, the partial marker and the scan it unblocked, `{ seconds,
+capped }`, two rows recording a settled principle and a sizing, and the build
+freshness consolidation. Findings **XXXXX-1** to **XXXXX-5**.
+
+### The range's headline
+
+**A rule was consolidated into its owner and the owner's defect fired
+immediately, on this tree, in two of the three callers that had just adopted
+it.** `refuseStaleBuild` compared timestamps; `apps/desktop/src/engineHostConnection.ts`
+carried a mtime from a `git stash pop` earlier in the same session, its output
+was current, and two role scripts stopped dead. The documented remedy was
+`npx tsc --build --force` — a rebuild performed to satisfy a check rather than
+to fix anything.
+
+```
+apps/desktop/dist/engineHostConnection.js is OLDER than apps/desktop/src/engineHostConnection.ts
+npx tsc --build --dry  ->  7 projects, every one "is up to date"
+```
+
+Consolidating is what made it fire: three private copies each had their own
+narrow scope, and putting the rule in one place put its defect in front of every
+caller at once. That is the argument for consolidation rather than against it.
+
+### 1. Root cause or workaround
+
+Seven commits, no workaround. Two shapes worth separating:
+
+| the fix | mechanism | verdict |
+|---|---|---|
+| `PARTIAL_MARKER` and the third bucket | one token meant *measured nothing*, and four proofs measure some of their subject; filing those under it is false in the direction that reads as coverage | root cause |
+| `check:unverifiablespelling` | the token is what the reader matches on and nothing made the writer use it, so six callers spelt their own | root cause, and the class fix rather than the instance |
+| `{ seconds, capped }` | one number could not say whether a figure was a cost or a bound somebody stopped the script at | root cause |
+| asking the compiler | `tsc` does not rewrite an output whose content did not change, so a newer source proves nothing | root cause; the mtime comparison stays as the cheap first pass |
+| the three row edits | a principle settled, a size established, an amendment's evidence recorded | not fixes — records |
+
+Nothing was exempted and no check loosened. One check was **widened
+deliberately** and then narrowed on evidence — see XXXXX-2.
+
+### 2. Verified against the easy shape only?
+
+**The easy shape for a scan is the repository it was written in**, and this one
+was run against the tree before its proof existed. That is what found the four
+false positives XXXXX-2 records.
+
+**The hard shape for the third state is a run containing all three states**, and
+`checkLocal.proof.mjs`'s new pair asserts exactly that: one passing script, one
+blind, one partial, in a single fixture run. Without it, *partly measured is its
+own state* is satisfied by a classifier that files everything under it.
+
+**And the hard shape for the freshness hatch is a tree that is NOT a TypeScript
+solution.** A fixture cannot answer the compiler's question, so the compiler is
+injected — otherwise the hatch would be untested rather than tested, with the
+real one answering *no* for a reason unrelated to the case.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is stated because it is a reduction nobody would notice.**
+`refuseStaleBuild` now accepts a `tsc` pair whose source is newer when the
+compiler says the build is current. That is strictly more permissive than the
+comparison it replaces, and the thing it stops catching is a build that is stale
+in a way tsc cannot see — which is nothing tsc's own incremental state gets
+wrong, but is a dependency on that state where there was none.
+
+The compensation is the control: when the compiler says a build IS owed, the
+refusal must say it asked. A guard that quietly stopped consulting anything
+would otherwise pass every stale build.
+
+### 3. Would CI have caught it?
+
+**Read from the board at the full sha, and the run is still in flight for the
+tip at the time of writing** — the previous commit was green and this entry does
+not claim more than that.
+
+The range's new coverage: `proof:unverifiablespelling` and the scan itself are
+registered on Guards, which reads source only; `proof:buildfreshness`,
+`proof:checklocal` and `proof:unverifiable` were already registered and gained
+cases.
+
+**XXXXX-1 could not have been caught by CI**, and that is a property of the
+defect rather than a gap: a runner checks out fresh, so no source ever carries a
+timestamp newer than its build. The false positive only exists on a machine
+where somebody has stashed, checked out or reformatted — which is every
+developer machine and no runner.
+
+### 4. Are the proofs non-vacuous?
+
+Mutations run and recorded: dropping the dynamic-import pattern reddens the new
+`affectedProofs` case by name; neutering the wait in the recovery harness does
+NOT redden its case, which is recorded rather than hidden; the two freshness
+directions each fail against the other's answer; and the bundler control fails
+against a hatch that applied to both producers.
+
+**XXXXX-3. `shell.proof.mjs` was not one of the four.** The ruling grouped it
+with `prePush`, `canvasPixels` and `rendererPolicy` as a partial. Its roster
+takes `RUNTIME_PRESENT ? RUNTIME_CASES.length : 0` — with no runtime it has no
+cases at all and every `check()` sits inside the runtime branch. That run
+measures nothing, so it keeps the blank marker; grouping it with its neighbours
+would have said *some of it ran* about a run in which none did, which is the
+same widening one direction over.
+
+**XXXXX-4. A fifth caller the grep did not find.**
+`win32Handle.proof.mjs` printed `  UNVERIFIABLE  ${name}` **per case** — the
+marker's exact shape — so one case that could not run filed the whole run as
+measuring nothing while thirteen of fourteen had measured plenty. Found by the
+scan on its first run, not by the hand search that preceded it, which is the
+argument for the scan in one line.
+
+### 4a. Has every instrument passed a resolution test?
+
+One instrument arrived: `unverifiableSpelling.mjs`. Its resolution test is the
+TOLERATE case — four shapes that contain the word and are not verdicts, read
+from the four real files the wide rule reported rather than invented.
+
+### 4b. Is the instrument a SEARCH?
+
+**Yes, and its good news is silence**, so it carries its positive control on
+every run rather than only in its proof: `checkLocal.mjs` reads both tokens and
+must be seen, and the CLI exits 1 when it is not. A wrong root, an empty walk
+and a comment-stripper that ate the source all produce the same clean list
+otherwise.
+
+**XXXXX-2. The rule was too wide on its first run, and reading the reports is
+what narrowed it.** Banning the WORD reported four files: a regex in an
+assertion, the word inside fixture source, a per-symbol count in a report, and
+prose. The property is the **token a harness keys on** — two spaces, the word,
+two spaces — not the word a person writes. Fixed before shipping rather than
+after, which is the only difference between this and the classifier findings
+that cost a range each.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+`unverifiableSpelling.proof.mjs` takes a literal `cases: 7`; the freshness proof
+and the recovery driver take `CASES.length` over authored lists. The
+`BUILDS` set in `checkLocal.mjs` is hand-kept **and the direction is argued at
+the set**: a derived set cannot see shrinkage, and this set's danger is growth —
+a second build not listed gets the discovery bound, caps again, and says so
+every run.
+
+### 5. Executed, or asserted?
+
+**Executed:** every proof named above · `npx tsc --build --dry`, quoted · both
+role scripts before and after the hatch · the scan against the real tree · the
+mutations.
+
+**Asserted and NOT established:** that `tsc --build --dry` is a reliable
+authority on every machine. It is the compiler's own answer about its own
+incremental state, which is the best available, and it has been run here once.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+No amendment, and one was deliberately NOT written: §9.17's `mupdf-host`
+sentence already said the ceiling is open, so recording that the placeholder is
+exceeded supersedes no clause. The amendment it belongs to is still owed and
+still blocked on readings across days.
+
+### 7. Do the documents still match the code?
+
+**XXXXX-5. An insertion silently stole a JSDoc, in the file where three lists
+were being added.** `ARTEFACT_EDGES`' `@type` annotation ended up on the first
+new `const` and the map became untyped. `CLAUDE.md` documents this exact hazard —
+*"inserting a function above another silently steals its JSDoc, leaving the lower
+one's parameter implicitly `any`"* — and it happened anyway, to a reader who had
+the sentence available. Caught by `typecheck`, because the scripts half of it
+runs; nothing else would have said a word.
+
+Three documents were edited to record rather than to correct: ADR-0025's note,
+§9.17's pointer, and three FEATURES rows. `CLAUDE.md`'s command list gained the
+new scan and its proof.
+
+### What is owed out of this range
+
+1. **The compiler-based import graph** for `affectedProofs`, whose cost is that
+   the module would need `node_modules` and its proof runs on Guards, which
+   installs nothing. A job move, not a tidy-up.
+2. Everything the two previous audits left owed: a ruling on the granted pair
+   outliving its document, a measurement of the shipped `app.quit()`, what
+   revokes the Electron grant inside `npm run local`, and `createRoster` taking
+   names.
+
+---
+
 ## 2026-08-31 — Stage audit: `0284b47..1a82157` — the ruling's shape was right and the fact under it was not, and checking that is what found the leak
 
 Range: **4 commits, 24 files.** 1 proof added, 5 modified, 0 removed; 1 source
