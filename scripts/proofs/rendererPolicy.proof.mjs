@@ -102,6 +102,7 @@ const RUNTIME_CASES = [
   'the SHIPPED window subscribes to every failure Electron announces',
   "CONTROL: the shell's sink RECEIVES a real crash, not just a listener count",
   'the window PAINTS the background the shell declares',
+  'the window and the mounted surface paint the SAME colour',
   'a preload under these preferences cannot reach Node, which attributes to sandbox alone',
 ];
 
@@ -133,6 +134,26 @@ const roster = createRoster(failures, {
  */
 /** @type {string[]} */
 const recorded = [];
+
+/**
+ * `rgb(r, g, b)` as lower-case `#rrggbb`, or the input when it is not one.
+ *
+ * The two sides of the window/surface comparison are reported in different
+ * notations by different subsystems — `getBackgroundColor()` answers hex,
+ * `getComputedStyle` answers `rgb()` — and a comparison that normalised neither
+ * would report a difference that is only a spelling. Anything unparseable is
+ * returned unchanged so it cannot silently become a match.
+ *
+ * @param {string} value
+ * @returns {string}
+ */
+function rgbToHex(value) {
+  const match = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,[^)]*)?\)$/u.exec(value.trim());
+  if (match === null) return value.toLowerCase();
+  return `#${[1, 2, 3]
+    .map((index) => Number(match[index]).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -286,6 +307,7 @@ function pinnedPolicy(markdown) {
  *   failuresReceived: string[],
  *   crashResolvedBy: 'already' | 'event' | 'bound',
  *   backgroundColor: string,
+ *   defaultBackgroundColor: string,
  *   preloadNodeReach: string,
  *   popupReturnedNull: boolean,
  *   windowCount: number,
@@ -650,6 +672,33 @@ try {
         `otherwise — this constant said "#00000000" for its whole life and the window was opaque ` +
         `black the entire time. A value that has never been true reads exactly like one that is, ` +
         `so it is read back rather than trusted.`,
+    );
+
+    // THE READING THAT DECIDES WHETHER MAIN NEEDS A COLOUR AT ALL. Printed
+    // rather than asserted, because it is not a property of this build: it says
+    // what removing `backgroundColor` would substitute, and the answer — white —
+    // is why the option is refused. An assertion here would pin Electron's
+    // default, which is not ours to fix.
+    process.stdout.write(
+      `\n  a window declaring NO backgroundColor reports: ${seen.defaultBackgroundColor}\n` +
+        `  (the shell declares ${declaredBackground}; removing it substitutes the above)\n\n`,
+    );
+
+    check(
+      'the window and the mounted surface paint the SAME colour',
+      seen.shell.background !== null &&
+        rgbToHex(seen.shell.background) === seen.backgroundColor.toLowerCase(),
+      `the window reports ${seen.backgroundColor} and the surface computes ` +
+        `${String(seen.shell.background)}${
+          seen.shell.background === null ? '' : ` (${rgbToHex(seen.shell.background)})`
+        }.\n` +
+          `      These are two surfaces the user sees as one, and they disagreed for as long as ` +
+        `both existed — the window opaque black, the body --canvas. Any frame where the window ` +
+        `shows before the body paints is a visible seam; a resize is the live one, since the ` +
+        `window is built hidden and shown on ready-to-show, which closes the startup path.\n` +
+        `      READ OFF A RUNNING WINDOW ON BOTH SIDES. Comparing the constant against ` +
+        `tokens.css would compare two things this repository wrote; these are what Chromium ` +
+        `reports and what the stylesheet resolved.`,
     );
 
     check(

@@ -143,6 +143,14 @@ interface Readback {
   /** What Chromium made of the declared `backgroundColor`. */
   readonly backgroundColor: string;
   /**
+   * What Chromium paints for a window that declares none.
+   *
+   * The measurement the *"should main name a colour at all"* question turns on.
+   * Read off a bare `BrowserWindow` in the same run, so it is this Electron on
+   * this platform rather than a documented default.
+   */
+  readonly defaultBackgroundColor: string;
+  /**
    * What a preload under the SAME web preferences got from `require('node:fs')`.
    *
    * The page-side `nodeSurface` reading is the union consequence of three flags.
@@ -638,6 +646,13 @@ export async function reportRendererPolicy(): Promise<void> {
       webContents.listenerCount(event) - bare.webContents.listenerCount(event),
     ]),
   );
+  // WHAT ELECTRON PAINTS WHEN NOBODY SAYS, read off the same bare window rather
+  // than recalled. The question it answers is whether the shell can stop naming
+  // a colour at all: if the default is white, removing `backgroundColor` trades
+  // one flash for a brighter one on a dark theme, and "name none" stops being
+  // free. Read here because this window is already built with no options of
+  // ours, which is exactly the configuration under test.
+  const defaultBackgroundColor = bare.getBackgroundColor();
   bare.destroy();
 
   // ---------------------------------------------------------------------------
@@ -690,6 +705,7 @@ export async function reportRendererPolicy(): Promise<void> {
     failuresReceived: received.map((failure) => failure.event),
     crashResolvedBy,
     backgroundColor,
+    defaultBackgroundColor,
     preloadNodeReach,
     connectBlocked,
     evalBlocked,

@@ -45,40 +45,57 @@ export const RENDERER_WEB_PREFERENCES = {
 /**
  * What the window paints before the renderer's first frame, and during resize.
  *
- * ## A raw hex, and it is a violation of §10 rather than an exception to it
+ * ## It is `--canvas`, and it was `#000000` while the page painted `#141618`
  *
- * `CLAUDE.md` says design tokens only, no raw hex anywhere. So this is recorded
- * as owed rather than dressed up as outside the rule.
+ * The window and the body are two surfaces the user sees as one, and they
+ * disagreed for as long as both existed: `app.css` paints the body
+ * `var(--canvas)`, `tokens.css` gives that `#141618` in the default theme, and
+ * this constant said opaque black. Any frame where the window shows before the
+ * body paints — a resize is the live one, since `show: false` until
+ * `ready-to-show` closes the startup path — is a visible seam.
  *
- * The half of that sentence which said *"there is no token to use"* stopped
- * being true on 2026-08-28 and was corrected on 2026-08-30: `tokens.css`
- * declares `--canvas`, which is what `app.css` paints the body with, and it is
- * `#141618` in the default theme against the `#000000` below.
+ * Both values were already recorded in this comment, two lines apart, and
+ * neither was read against the other. That is the compound-claim shape inside
+ * one paragraph.
  *
- * What has not changed is the reason the debt is still open. `apps/desktop`
- * cannot import `packages/ui` — the module graph allows it `shared`, `contract`
- * and `kernel` only — and a CSS custom property is not a value main can read at
- * runtime in a packaged app. So closing this is a choice between a proven copy
- * (§9.27's shape, where the renderer's CSP is copied because a renderer cannot
- * parse markdown), a token source both packages may import, and a window that
- * names no colour at all. That is a decision, and it is recorded on the design
+ * **`proof:rendererpolicy` now compares them against a RUNNING window** — the
+ * colour Chromium reports for the window against the colour the mounted
+ * surface computes — so this copy cannot drift again in silence.
+ *
+ * ## Naming NO colour was measured and is worse
+ *
+ * The obvious way to make the rule below unnecessary is for main to stop
+ * naming a colour at all, and `createMainWindow` already builds the window
+ * hidden and shows it on `ready-to-show`, which is the pattern that exists so
+ * nobody sees the background. Measured on the same running window: a
+ * `BrowserWindow` declaring none reports **`#FFFFFF`**. So removing the option
+ * substitutes white for the app's own dark ground on every frame that can show
+ * it, and the startup path being closed is not the same as no frame showing it
+ * — a native resize repaints the window before the renderer's next frame, and
+ * that exposure is not measurable from here.
+ *
+ * A brighter flash than the one we have is not an improvement, so the option is
+ * refused with a reading rather than left as an open possibility.
+ *
+ * ## Still a raw hex, and that is a separate defect with a separate fix
+ *
+ * `CLAUDE.md` says design tokens only. `apps/desktop` may import `shared`,
+ * `contract` and `kernel` and not `packages/ui`, and a CSS custom property is
+ * not a value main can read at runtime in a packaged app — so the token's
+ * writer of record has to move somewhere both can reach before this stops
+ * being a hex. That relocates what §10.2 calls the token file, whose role
+ * grammar two checks parse, so it is a B4 and it is recorded on the design
  * substrate row rather than taken here.
  *
  * ## It said `#00000000` and that was not what it did
  *
- * Measured through `window.getBackgroundColor()` on a running window: the
- * declared `#00000000` came back as **`#000000`**. Electron honours the alpha
- * channel only for a `transparent: true` window, and this one is not — so the
- * value in force was opaque black while the source said fully transparent.
- *
- * That is worse than a raw hex. A reader checking what the window paints got an
- * answer that had never been true, and the next person to want transparency
- * would have found it already "set". The constant now states what is actually
- * in force, and `proof:rendererpolicy` reads the value back off the window and
- * fails when the two differ — so an alpha added here in future is caught the
- * moment it is silently dropped rather than believed.
+ * Measured through `window.getBackgroundColor()`: the declared `#00000000` came
+ * back as `#000000`. Electron honours the alpha channel only for a
+ * `transparent: true` window, so the value in force was opaque black while the
+ * source said fully transparent — an answer that had never been true. The
+ * constant states what is in force, and the proof reads it back.
  */
-export const WINDOW_BACKGROUND = '#000000';
+export const WINDOW_BACKGROUND = '#141618';
 
 /**
  * The only permission the app may be granted, per ARCHITECTURE §2.
