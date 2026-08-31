@@ -125,6 +125,29 @@ if (!existsSync(POISONED_DIST)) {
 
 const original = existsSync(POISONED_DIST) ? readFileSync(POISONED_DIST, 'utf8') : null;
 
+// REFUSE ON A LEAK RATHER THAN RESTORING IT, and this is the half the `finally`
+// below cannot have: it captures whatever is on disk, so a previous run's
+// leftover becomes the thing it puts back. The proof then passes — the fixed
+// case never loads dist and the control wants the poison there — while
+// `packages/shared/dist/index.js`, which every dist-reading tool in this
+// repository imports, throws on the first line.
+//
+// MEASURED 2026-08-31: `npm run local` killed this at its 180-second bound
+// between the write and the `finally`, and the marker was still on disk an hour
+// later. A `finally` covers a throw and does not cover a kill, and on Windows
+// there is no SIGTERM to catch — the same sentence `hookProbe.proof.mjs` had
+// already paid for, in the sibling nobody gave the refusal to.
+if (original !== null && original.includes(POISON_MARKER)) {
+  process.stderr.write(
+    `\n${POISONED_DIST} already contains ${POISON_MARKER}, which only this proof writes and only\n` +
+      `while it is running. Restoring it would put the poison back, and every case below would\n` +
+      `pass over a build output that throws on its first line.\n\n` +
+      `  Repair it:  npx tsc --build --force\n\n` +
+      `  Then raise the bound that killed the run that left it. This proof spawns vitest twice.\n`,
+  );
+  process.exit(1);
+}
+
 try {
   if (original === null) {
     failures.push(

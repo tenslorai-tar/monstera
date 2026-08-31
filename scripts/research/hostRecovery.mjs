@@ -51,6 +51,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
@@ -147,22 +148,26 @@ if (!runnable) {
             `by everything downstream as a host that did not reach its pipe.\n  ` +
             `${ungranted.join('\n  ')}\n  Run \`npm run provision:grants\`.`;
 
-  if (REQUIRE_CONTAINMENT) {
-    process.stderr.write(
-      `hostRecovery: --require-containment was passed and this run cannot create a contained ` +
-        `host.\n  ${why}\n\n  A job that passes this flag is asserting that it CAN look. ` +
-        `Reporting unverifiable there would make every later run's silence worthless.\n`,
-    );
-    process.exitCode = 1;
-  } else {
-    process.stdout.write(
-      `UNVERIFIABLE — ${String(CASES.length)} case(s) could not be evaluated here:\n` +
-        `${CASES.map((label) => `  ??  ${label}\n`).join('')}\n` +
-        `  ${why}\n\n` +
-        `  This is COULD NOT LOOK, and it is not the same as looked and found nothing. The ` +
-        `Windows containment jobs pass --require-containment, which turns this into a failure.\n`,
-    );
-  }
+  // THROUGH THE OWNER, and this file is why the rule needed a caller rather
+  // than a paragraph.
+  //
+  // It printed its own `UNVERIFIABLE — N case(s)…`, which reads correctly to a
+  // person and is invisible to `npm run local`: the harness keys on the token
+  // `unverifiable.mjs` exports — a newline, two spaces, the word, two spaces —
+  // and a second spelling of it is a second opinion about what that module says
+  // (B3a). MEASURED 2026-08-31: in one sweep this exited 0 in **1.74s** against
+  // 20.1s for a real run, because the container grant on the Electron tree had
+  // gone, and the run was recorded as **passed** — `bytes: null`, the pass
+  // branch. The proof of the range's headline claim was counted as green while
+  // it measured nothing.
+  exitUnverifiable({
+    required: REQUIRE_CONTAINMENT,
+    subject: 'engine host recovery',
+    why:
+      `${String(CASES.length)} case(s) could not be evaluated:\n` +
+      `${CASES.map((label) => `        ??  ${label}`).join('\n')}\n\n      ${why}`,
+    flag: '--require-containment',
+  });
 } else {
   // THE REPORT COMES BACK IN A FILE AND THE CHILD'S STDIO IS INHERITED.
   // Piping it back was the obvious shape and it hangs: the engine host is

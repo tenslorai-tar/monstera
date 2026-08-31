@@ -38,6 +38,7 @@ import { pathToFileURL } from 'node:url';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
 
 const ROOT = repoRoot();
 const BUILT_SURFACE = join(ROOT, 'apps', 'desktop', 'dist', 'win32DirectorySurface.js');
@@ -77,11 +78,23 @@ if (!runnable) {
         `Decision 12), so there is nothing degraded to run on ${process.platform}.`
       : `Not built: ${missing.join(', ')}. This drives the SHIPPED modules rather than a copy ` +
         `of them, so without the build there is nothing to measure. Run \`npm run build\`.`;
-  process.stdout.write(
-    `UNVERIFIABLE — ${String(CASES.length)} case(s) could not be evaluated here:\n` +
-      `${CASES.map((label) => `  ??  ${label}\n`).join('')}\n  ${why}\n\n` +
-      `  This is COULD NOT LOOK, and it is not the same as looked and found nothing.\n`,
-  );
+  // THROUGH THE OWNER. `unverifiable.mjs` exports the token `npm run local`
+  // keys on, and a spelling of our own is a second opinion about what that
+  // module prints (B3a) — measured on `hostRecovery.mjs`, whose hand-written
+  // version made a could-not-look run count as a pass.
+  //
+  // `required: false` because no job passes a flag for this yet: the sweep is
+  // exercised by `sessionDirectories.test.ts` everywhere, and this proof adds
+  // the shipped listing where a Windows build exists. The flag is still named,
+  // so the strict path is where a reader can see it.
+  exitUnverifiable({
+    required: false,
+    subject: 'the session-root sweep against a real directory',
+    why:
+      `${String(CASES.length)} case(s) could not be evaluated:\n` +
+      `${CASES.map((label) => `        ??  ${label}`).join('\n')}\n\n      ${why}`,
+    flag: '--require-containment',
+  });
 } else {
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-session-sweep-'));
   try {
