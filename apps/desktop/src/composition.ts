@@ -305,6 +305,28 @@ export function createShellDependencies(
     }),
     incidents: reportIncident,
     failures: reportShellFailure,
+
+    /**
+     * DOCUMENTS FIRST, THEN THE HOST, and the order is the whole of it.
+     *
+     * Closing a document releases what it holds — the engine session goes
+     * through `DocumentTeardown`, and with it the granted directory pair that
+     * is a copy of the user's document sitting where a contained process can
+     * read it. Doing that after the host is gone would leave those pairs on
+     * disk for the startup sweep to find, which is a mechanism for a crash
+     * rather than a route an ordinary quit should take.
+     *
+     * **The host is closed EXPLICITLY, because nothing else does.**
+     * `releaseOnClose` deletes a map entry; the connection's lifetime is the
+     * application's, and {@link engineSessionOpener}'s `closeHost` is the only
+     * thing that can reach it.
+     */
+    shutdown: async () => {
+      for (const docId of documents.openDocIds()) {
+        await documents.close(docId);
+      }
+      await engineHost.closeHost();
+    },
   };
 }
 
@@ -341,6 +363,8 @@ function engineSessionOpener(
   readonly openedDocument: (docId: DocId) => void;
   readonly writers: WriterRegistry;
   readonly geometry: PageGeometryReader;
+  /** Ends the shared host on the way out of the application. */
+  readonly closeHost: () => Promise<void>;
 } {
   /** The live host, or the attempt to build one. Cleared when it ends. */
   let host: Promise<EngineHostConnection> | null = null;
@@ -611,7 +635,36 @@ function engineSessionOpener(
     });
   };
 
-  return { openedDocument, writers, geometry: readGeometry };
+  /**
+   * Closes the shared host, if one was ever built.
+   *
+   * **Here because the connection is here.** `host`, `writer` and `geometry`
+   * are this closure's, and the composition root — which is what registers into
+   * `before-quit` — can reach none of them. Returning a fourth member is
+   * registration into the object this already hands back.
+   *
+   * `close()` is the DELIBERATE path: `onEnded` receives `code: 'shutdown'` and
+   * `onEngineHostEnded` returns on it, so this cannot be mistaken for a death
+   * and queues no rebuild. The locals are cleared first for `onEnded`'s own
+   * reason — a writer left bound to a closed client answers every later call
+   * from one that has settled everything.
+   *
+   * A host that never built is not a failure to raise here. `ensure` rejects
+   * when the connection was refused, and that rejection was already reported by
+   * whoever awaited it; re-raising it out of a quit would turn a startup
+   * failure into a shutdown one.
+   */
+  const closeHost = async (): Promise<void> => {
+    const live = host;
+    host = null;
+    writer = null;
+    geometry = null;
+    if (live === null) return;
+    const connection = await live.catch(() => null);
+    connection?.close();
+  };
+
+  return { openedDocument, writers, geometry: readGeometry, closeHost };
 }
 
 /**

@@ -101,7 +101,17 @@ export type ShellFailureEvent =
   | 'child-process-gone'
   | 'engine-host-gone'
   | 'document-unreadable'
-  | 'unresponsive';
+  | 'unresponsive'
+  /**
+   * The shell could not close what it holds on the way out.
+   *
+   * A lifecycle failure like the rest, and the only one that happens when there
+   * is nobody left to tell: the window is gone and the renderer with it, so the
+   * sink is the whole of where this can be seen. The quit proceeds anyway —
+   * trapping the user in an application that will not close is worse than
+   * whatever failed — which is exactly why the reason has to land somewhere.
+   */
+  | 'shutdown-incomplete';
 
 /** One lifecycle failure, flattened for a log. */
 export interface ShellFailure {

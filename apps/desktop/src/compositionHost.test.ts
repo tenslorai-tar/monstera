@@ -479,6 +479,90 @@ describe('the composition root, with an engine host platform', () => {
     expect(opens).toHaveLength(2);
   });
 
+  it('SHUTDOWN closes the open document and then the host', async () => {
+    const spy = platformAnswering((channel) =>
+      channel === 'engine/probe-containment'
+        ? CONTAINED
+        : channel === 'engine/open'
+          ? { ok: true, value: { session: 'ab01' } }
+          : ENGINE(channel, null),
+    );
+    const path = aDocument('quitting.pdf');
+    const { handlers, shutdown } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(path),
+      createEphemeralSettings(),
+      spy.platform,
+    );
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('it did not open');
+    // Commanded, so the session exists rather than merely being queued — the
+    // lane's entry is not awaited by `open`.
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+    expect(executed.ok).toBe(true);
+
+    const before = spy.harness.calls.length;
+    await shutdown();
+    const during = spy.harness.calls.slice(before);
+
+    // THE WHOLE TEARDOWN, IN ORDER, and the order is the assertion. `reader.signal`
+    // is the stop event — the one thing that unwedges a reader thread waiting on
+    // two handles — and it comes FIRST. A quit that killed the host and then
+    // signalled would be the sequence measured aborting at 134, and a quit that
+    // did neither is what the shell did until this landed.
+    expect(during).toEqual([
+      'reader.signal',
+      'writes.abandon',
+      'worker.terminate',
+      'reader.closeEvent',
+      'host.terminate',
+      'host.close:process',
+      'host.close:job',
+      'host.discardDiagnostics',
+      'pipe.close',
+    ]);
+
+    // AND THE DOCUMENT'S GRANTED PAIR IS STILL THERE, which is a finding rather
+    // than an intention. `sessionDirectories.ts` says a pair's "lifetime is the
+    // session's: created before the image is written, removed when the session
+    // closes" — and no session is ever closed: `remoteLifecycle`'s `close`,
+    // which is what calls `areas.remove`, has no caller. `releaseOnClose`
+    // deletes a map entry and nothing else.
+    //
+    // Pinned rather than fixed here: closing the pair means making
+    // `DocumentTeardown` a real teardown, which is a decision about a seam and
+    // not part of a quit. Until then the startup sweep is what removes them,
+    // and this assertion is what stops that becoming invisible.
+    expect(spy.directories.filter((call) => call.startsWith('removeTree:'))).toEqual([]);
+    expect(spy.directories.filter((call) => call.startsWith('create:'))).toHaveLength(2);
+  });
+
+  /**
+   * THE CONTROL FOR THE ONE ABOVE, and it is the case the whole shape turns on:
+   * a shell that tore nothing down also finishes. `shutdown` resolving proves
+   * nothing — what only the implemented path produces is a host terminated by a
+   * quit that nobody asked a document about. Without a host built, there is
+   * nothing to terminate and the calls stay empty.
+   */
+  it('CONTROL: shutdown with no host built terminates nothing', async () => {
+    const spy = platformAnswering((channel) => ENGINE(channel, null));
+    const { shutdown } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(null),
+      createEphemeralSettings(),
+      spy.platform,
+    );
+
+    await shutdown();
+
+    expect(spy.harness.calls.filter((call) => call === 'host.createSuspended')).toHaveLength(0);
+    expect(spy.harness.calls).not.toContain('host.terminate');
+  });
+
   it('does not cache a FAILED attempt, so the next document tries again', async () => {
     // A rejected promise left in the holder would answer every later open with
     // the first attempt's error — a cache that learnt a transient failure

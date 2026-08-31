@@ -1433,6 +1433,30 @@ export class DocumentService {
     return this.#records.has(docId);
   }
 
+  /**
+   * Every document this holds, in insertion order.
+   *
+   * ## Why this is a list and not a count, and why it is safe where
+   * `versionOf` is not
+   *
+   * The note below refuses a `versionOf(docId)` because a value read after an
+   * await and stamped onto a result is a lie the type cannot catch. An id is
+   * not that: a `DocId` is issued once and never reused within a run, so a
+   * stale one names a document that is closed rather than a different one, and
+   * every operation taking one already refuses a document it cannot find.
+   *
+   * **Snapshotted into an array rather than exposing the map**, for
+   * `EngineSessions.documentIds`' reason: the only caller iterates it while
+   * closing, which mutates the index under a live collection.
+   *
+   * The caller is application shutdown — closing what is open before the
+   * process ends. Nothing about that is derivable from `isOpen`, which answers
+   * about a document you already have the id of.
+   */
+  openDocIds(): readonly DocId[] {
+    return [...this.#records.keys()];
+  }
+
   // There is deliberately NO `versionOf(docId)`.
   //
   // It existed, and it was ADR-0009 §7's warned-about main-side field with a

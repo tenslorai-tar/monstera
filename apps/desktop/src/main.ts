@@ -3,6 +3,7 @@ import { app, ipcMain, session } from 'electron';
 
 import { registerContractHandlers } from './registerHandlers.js';
 import { type ShellFailureSink, reportProcessFailures } from './shellFailure.js';
+import { quitAfterShutdown } from './shellShutdown.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 
 /**
@@ -54,6 +55,25 @@ export interface ShellDependencies {
   readonly handlers: ContractHandlers;
   readonly incidents: IncidentSink;
   readonly failures: ShellFailureSink;
+  /**
+   * Closes what the shell holds, before the process ends.
+   *
+   * ## A FOURTH MEMBER, and it is here because the other three cannot do it
+   *
+   * The seam is Electron's `before-quit` and registering into it is not an
+   * amendment — but the handler has to close something, and nothing already
+   * crossing this boundary can. There is no `document.close` channel, so
+   * `handlers` cannot; `incidents` and `failures` are sinks. Both things that
+   * must close — the open documents and the **shared engine host connection**,
+   * which is what holds the reader thread and the pipe — are locals inside
+   * `createShellDependencies`.
+   *
+   * Closing every document is necessary and NOT sufficient, which is worth
+   * stating because it is the obvious reading: `EngineSessions.releaseOnClose`
+   * deletes a map entry and does not touch the connection, whose lifetime is
+   * the application's rather than any document's.
+   */
+  readonly shutdown: () => Promise<void>;
 }
 
 /**
@@ -104,4 +124,44 @@ export function startShell(build: () => ShellDependencies): void {
   app.on('window-all-closed', () => {
     app.quit();
   });
+
+  // NOTHING CLOSED THE ENGINE HOST ON THE WAY OUT, and `before-quit` is the
+  // seam that was already here to close it in. The decision lives in
+  // `shellShutdown.ts` so it can be exercised without a runtime; this binds it.
+  //
+  // `void`ed rather than awaited: an Electron listener is synchronous and the
+  // promise is the handler's honest answer to *did this call begin a teardown*,
+  // which nothing here needs.
+  const quitting = quitAfterShutdown(deps.shutdown, {
+    quit: () => {
+      app.quit();
+    },
+    // THROUGH THE FAILURE SINK, NOT THE INCIDENT ONE. An `Incident` belongs to
+    // a channel and carries a diagnostic that did not cross to the renderer;
+    // this crosses to nobody, because the window is already gone. A lifecycle
+    // failure is what it is, and `shellFailure.ts` is where those are named.
+    report: (error) => {
+      deps.failures({
+        event: 'shutdown-incomplete',
+        detail: `the shell could not close what it holds: ${formatShutdownError(error)}`,
+      });
+    },
+  });
+
+  app.on('before-quit', (event) => {
+    void quitting.onBeforeQuit(() => {
+      event.preventDefault();
+    });
+  });
+}
+
+/**
+ * A teardown failure as one line, without reading `stack`.
+ *
+ * `check:stackowner` refuses any reader of `Error.prototype.stack` that is not
+ * an owner, and this is a diagnostic rather than a report — the message is what
+ * names which close failed.
+ */
+function formatShutdownError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
