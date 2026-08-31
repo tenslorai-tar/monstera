@@ -235,12 +235,40 @@ function quitWhenAsked(): {
     mark('MONSTERA_QUIT_WILL_QUIT');
   });
 
+  // EVERY EVENT THAT COULD END THIS PROCESS, recorded rather than reasoned
+  // about. Two fixes were pushed on hypotheses about what kills the process
+  // between START and DONE and neither was right, so this run answers the
+  // question instead of asking a third one: which events actually arrive, in
+  // what order, and does a timer fire at all after the quit is prevented.
+  //
+  // These are the harness's, not the product's. They cost nothing when the
+  // cases pass and they are the difference between a diagnosis and a guess when
+  // they do not.
+  app.on('browser-window-created', () => {
+    mark('MONSTERA_QUIT_WINDOW_CREATED');
+  });
+  app.on('window-all-closed', () => {
+    mark('MONSTERA_QUIT_ALL_CLOSED');
+  });
+  app.on('before-quit', () => {
+    mark('MONSTERA_QUIT_BEFORE_QUIT');
+  });
+
   return {
     mark,
     shutdown: async () => {
       mark('MONSTERA_QUIT_TEARDOWN_START');
+      // A TICK AT HALF THE DELAY. If this arrives and DONE does not, the timer
+      // loop is running and something ends the process partway; if neither
+      // arrives, timers do not run once a quit has been prevented — which would
+      // be a fact about the product, since its real teardown is asynchronous
+      // too.
       await new Promise((resolve) => {
-        setTimeout(resolve, 250);
+        setTimeout(resolve, 125);
+      });
+      mark('MONSTERA_QUIT_TEARDOWN_TICK');
+      await new Promise((resolve) => {
+        setTimeout(resolve, 125);
       });
       mark('MONSTERA_QUIT_TEARDOWN_DONE');
     },
