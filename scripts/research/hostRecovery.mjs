@@ -51,6 +51,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { inspect } from '../provision/containerGrants.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
 const ROOT = repoRoot();
@@ -95,9 +96,42 @@ function check(name, condition, detail) {
   roster.record(mark, name);
 }
 
+/**
+ * The container grants this needs, checked rather than discovered.
+ *
+ * **THE FAILURE THIS CONVERTS NAMES THE WRONG SUBSYSTEM.** A contained host
+ * whose token cannot read the Electron runtime is created, dies loading its own
+ * ICU data, and never connects — so every caller reports *"the host started and
+ * did not reach its pipe"*, which sends the reader to the pipe. Measured twice:
+ * once on a machine whose grants an `npm ci` had cleared, and once inside a
+ * `npm run local` sweep that left exactly `.tools/electron/<version>` revoked
+ * while the other nine paths stood.
+ *
+ * The host's own diagnostic is where the real answer is, and
+ * `createEngineHostPlatform` passes `diagnosticPath: null` — so in the shipped
+ * app there is no evidence at all. That is raised as owed on the row for the
+ * composition root creating the host, rather than fixed here: a shipped
+ * diagnostic is a file in a directory the host was handed.
+ *
+ * A missing grant is a machine state, not a defect in anything this asserts, so
+ * it is refused by name with the command that repairs it.
+ *
+ * @returns {string[]} the paths the container cannot read
+ */
+function ungrantedPaths() {
+  if (process.platform !== 'win32') return [];
+  return inspect({ root: ROOT })
+    .filter((entry) => entry.present === false)
+    .map((entry) => entry.path);
+}
+
 const missingBuilt = BUILT.filter((relative) => !existsSync(join(ROOT, relative)));
+const ungranted = process.platform === 'win32' ? ungrantedPaths() : [];
 const runnable =
-  process.platform === 'win32' && existsSync(ELECTRON_BINARY) && missingBuilt.length === 0;
+  process.platform === 'win32' &&
+  existsSync(ELECTRON_BINARY) &&
+  missingBuilt.length === 0 &&
+  ungranted.length === 0;
 
 if (!runnable) {
   const why =
@@ -106,7 +140,12 @@ if (!runnable) {
         `degraded to run on ${process.platform}.`
       : !existsSync(ELECTRON_BINARY)
         ? `The pinned Electron binary is absent. Run \`npm run provision:electron\`.`
-        : `Not built: ${missingBuilt.join(', ')}. Run \`npm run build\`.`;
+        : missingBuilt.length > 0
+          ? `Not built: ${missingBuilt.join(', ')}. Run \`npm run build\`.`
+          : `The container cannot read ${String(ungranted.length)} of its granted path(s), so a ` +
+            `contained host would be created and die loading its own runtime data — reported ` +
+            `by everything downstream as a host that did not reach its pipe.\n  ` +
+            `${ungranted.join('\n  ')}\n  Run \`npm run provision:grants\`.`;
 
   if (REQUIRE_CONTAINMENT) {
     process.stderr.write(
