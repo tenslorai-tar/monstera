@@ -86,7 +86,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 58 });
+const roster = createRoster(failures, { cases: 60 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -599,7 +599,13 @@ try {
   // an alphabetical remainder.
   // -------------------------------------------------------------------------
   {
-    /** @param {Record<string, number>} table @param {string[]} names */
+    /**
+     * @param {Record<string, { seconds: number, capped: boolean }>} table the
+     *   seeded durations. The SHAPE is the point: a bare number cannot say
+     *   whether the figure is a cost or a bound somebody stopped the script at,
+     *   and the harness discards a legacy one rather than guessing.
+     * @param {string[]} names
+     */
     const withTable = (table, names) => {
       /** @type {Record<string, string>} */
       const files = {};
@@ -639,7 +645,11 @@ try {
     // Alphabetical order is a-slow, b-mid, c-fast. Cost order is the reverse, so
     // a run that happens to be alphabetical cannot pass this by luck.
     const ordered = withTable(
-      { 'proof:a-slow': 90, 'proof:b-mid': 10, 'proof:c-fast': 1 },
+      {
+        'proof:a-slow': { seconds: 90, capped: false },
+        'proof:b-mid': { seconds: 10, capped: false },
+        'proof:c-fast': { seconds: 1, capped: false },
+      },
       ['a-slow', 'b-mid', 'c-fast'],
     );
     check(
@@ -651,7 +661,7 @@ try {
 
     // `a-unknown` sorts FIRST alphabetically and is absent from the table.
     const unmeasured = withTable(
-      { 'proof:b-known': 5 },
+      { 'proof:b-known': { seconds: 5, capped: false } },
       ['a-unknown', 'b-known'],
     );
     check(
@@ -671,7 +681,14 @@ try {
     // the expected order nor a rotation of it, so neither an unsorted run nor
     // the old two-bucket sort (c-cheap, a-doomed, b-unknown) can pass by luck.
     const bucketed = withTable(
-      { 'proof:a-doomed': 400, 'proof:c-cheap': 1 },
+      {
+        // CAPPED, which is what "already measured at or over the bound"
+        // actually means. As a bare 400 it landed in the late bucket by
+        // arithmetic; the flag says the same thing as a fact rather than as a
+        // coincidence between a cost and a limit.
+        'proof:a-doomed': { seconds: 400, capped: true },
+        'proof:c-cheap': { seconds: 1, capped: false },
+      },
       ['a-doomed', 'b-unknown', 'c-cheap'],
     );
     check(
@@ -773,21 +790,60 @@ try {
       );
     }
 
+    /**
+     * @param {string} root @param {string} name
+     * @returns {{ seconds?: unknown, capped?: unknown } | undefined}
+     */
+    const duration = (root, name) => {
+      try {
+        const table = JSON.parse(
+          readFileSync(join(root, '.cache', 'checkLocal-durations.json'), 'utf8'),
+        );
+        return table[name];
+      } catch {
+        return undefined;
+      }
+    };
+
     check(
       'a run that STOPPED early still records what it measured',
-      (() => {
-        try {
-          const table = JSON.parse(
-            readFileSync(join(partial.root, '.cache', 'checkLocal-durations.json'), 'utf8'),
-          );
-          return typeof table['proof:a-hangs'] === 'number';
-        } catch {
-          return false;
-        }
-      })(),
+      typeof duration(partial.root, 'proof:a-hangs')?.seconds === 'number',
       'the timed-out script has no recorded cost, so the next run sorts it first again and ' +
         'strands the queue in exactly the same place. A partial sweep is the one whose ' +
         'ordering most needs the measurement it just took.',
+    );
+
+    /**
+     * THE HALF THAT MAKES THE FIGURE USABLE FOR ANYTHING BUT SORTING.
+     *
+     * `180.1` recorded for a killed script and `180.1` recorded for one that
+     * finished are the same digits and opposite facts, and every bound derived
+     * from the table inherits whichever it guessed. Measured on this
+     * repository's own table before the flag existed: `proof:hookprobe` at
+     * 282.4 is a completed run under a raised bound, `proof:testresolution` at
+     * 180.1 is the cap, and nothing distinguished them.
+     */
+    check(
+      'and it records that the figure is a CAP rather than a cost',
+      duration(partial.root, 'proof:a-hangs')?.capped === true,
+      `the timed-out script's row is ${JSON.stringify(duration(partial.root, 'proof:a-hangs'))}. ` +
+        `Without the flag, "we stopped it here" and "it took this long" are one number.`,
+    );
+
+    /**
+     * THE CONTROL, and it reads a DIFFERENT fixture on purpose: the run above
+     * stops at its first timeout, so `b-marks` never executes and has no row to
+     * assert on. `ordered` is a run in which every script finished.
+     *
+     * Without this, "records a cap" is satisfied by a harness that marks
+     * everything capped — the opposite error, and one that would hand every
+     * script the discovery bound for ever.
+     */
+    check(
+      'CONTROL: and a script that FINISHED is not marked capped',
+      duration(ordered.root, 'proof:c-fast')?.capped === false &&
+        typeof duration(ordered.root, 'proof:c-fast')?.seconds === 'number',
+      `the completed script's row is ${JSON.stringify(duration(ordered.root, 'proof:c-fast'))}.`,
     );
 
     // A TIMED-OUT run is sealed `-failed`, not left `-running`: the harness got

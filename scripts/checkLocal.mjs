@@ -379,14 +379,91 @@ const DURATIONS = join(ROOT_DIR, '.cache', 'checkLocal-durations.json');
  */
 const RUN_LOG_DIR = join(ROOT_DIR, '.cache', 'checkLocal-runs');
 
-/** @type {Record<string, number>} */
+/**
+ * What one script cost last time, and whether that figure is a COST or a CAP.
+ *
+ * ## The distinction, and why every derivation needs it
+ *
+ * A killed script records the bound it was killed at, so `180.1` means *we
+ * stopped it here* and `55.1` means *it finished*. Stored as one number the two
+ * are indistinguishable, and anything derived from the table inherits a figure
+ * that is not a measurement — which is what made the bound underivable at all.
+ *
+ * Measured 2026-08-31, from this repository's own table: `proof:hookprobe` at
+ * **282.4** (a completed run under a raised bound) against a 180-second
+ * default, so the sweep kills it every time; `proof:testresolution` at
+ * **180.1**, which is the cap and means it has never once finished inside the
+ * default; and `proof:cff` at **400**, which never finishes at all.
+ *
+ * @typedef {{ seconds: number, capped: boolean }} Duration
+ */
+
+/** @type {Record<string, Duration>} */
 let known = {};
 try {
-  known = JSON.parse(readFileSync(DURATIONS, 'utf8'));
+  /** @type {Record<string, unknown>} */
+  const parsed = JSON.parse(readFileSync(DURATIONS, 'utf8'));
+  for (const [name, value] of Object.entries(parsed)) {
+    // A LEGACY BARE NUMBER IS DISCARDED, not adopted. Its capped-ness is
+    // unknown, and the only two ways to guess are wrong in opposite directions:
+    // calling it completed hands a raised bound to a script that never
+    // finished, and calling it capped hands one to every script in the table.
+    // "Nothing measured" is a state this file already has and already treats as
+    // expensive, so one run rebuilds the table honestly.
+    if (typeof value !== 'object' || value === null) continue;
+    const record = /** @type {Record<string, unknown>} */ (value);
+    if (typeof record['seconds'] !== 'number' || typeof record['capped'] !== 'boolean') continue;
+    known[name] = { seconds: record['seconds'], capped: record['capped'] };
+  }
 } catch {
   // No table yet, or an unreadable one. Both mean "nothing measured", which the
   // ordering below treats as expensive rather than cheap.
   known = {};
+}
+
+/**
+ * Scripts that are a BUILD rather than a check, excluded from bound derivation.
+ *
+ * `proof:cff` rebuilds libmupdf from source with two patches reverted, because
+ * its control has to reproduce the out-of-bounds read the pinned build fixes.
+ * It does not complete and no bound accommodates it, so deriving one from its
+ * recorded figure would hand it an ever-raised budget for a run that is never
+ * going to finish.
+ *
+ * **A hand-kept list, and the direction is why that is right here** (audit item
+ * 4c). The failure a derived set could not see is *shrinkage* — an entry
+ * quietly leaving. This set's danger is the opposite: a second build added and
+ * not listed gets the discovery bound, caps again, and is loud about it every
+ * run. A list that fails noisily on growth is the correct shape when growth is
+ * the direction that matters.
+ */
+const BUILDS = new Set(['proof:cff']);
+
+/** How much longer than its last COMPLETED cost a script may take before it is killed. */
+const COMPLETED_MARGIN = 2;
+
+/**
+ * The bound a script gets after a run that was CAPPED.
+ *
+ * Deliberately raised and **fixed**, not multiplied again: the point is to
+ * discover a real cost once, and a bound derived from a cap would grow on every
+ * run that hits it. A script that caps at this too is hung rather than slow, and
+ * pays the same figure next time rather than an escalating one.
+ */
+const DISCOVERY_MS = 3 * 180_000;
+
+/**
+ * How long this script may run, from what it cost last time.
+ *
+ * @param {string} name
+ * @returns {number}
+ */
+function boundFor(name) {
+  if (BUILDS.has(name)) return TIMEOUT_MS;
+  const last = known[name];
+  if (last === undefined) return TIMEOUT_MS;
+  if (last.capped) return Math.max(TIMEOUT_MS, DISCOVERY_MS);
+  return Math.max(TIMEOUT_MS, Math.ceil(last.seconds * COMPLETED_MARGIN) * 1000);
 }
 
 /**
@@ -550,7 +627,12 @@ const BUDGET_SECONDS = TIMEOUT_MS / 1000;
 function costBucket(name) {
   const cost = known[name];
   if (cost === undefined) return 1;
-  return cost >= BUDGET_SECONDS ? 2 : 0;
+  // A CAPPED FIGURE SORTS LATE WHATEVER ITS SIZE. Before the shape carried the
+  // flag this said `cost >= BUDGET_SECONDS`, which is the same answer for a
+  // killed run only because the recorded figure IS the bound — an accident that
+  // stops being true the moment a bound is derived per script.
+  if (cost.capped) return 2;
+  return cost.seconds >= BUDGET_SECONDS ? 2 : 0;
 }
 
 const selected = [...filtered].sort((a, b) => {
@@ -559,7 +641,7 @@ const selected = [...filtered].sort((a, b) => {
   if (left !== right) return left - right;
   // Within the unknown bucket there is nothing to order by, so keep it stable.
   if (left === 1) return a.localeCompare(b);
-  return (known[a] ?? 0) - (known[b] ?? 0);
+  return (known[a]?.seconds ?? 0) - (known[b]?.seconds ?? 0);
 });
 
 process.stdout.write(
@@ -719,7 +801,7 @@ for (const name of selected) {
     run = spawnSync(process.execPath, [step.js, ...step.args], {
       cwd: ROOT_DIR,
       encoding: 'utf8',
-      timeout: TIMEOUT_MS,
+      timeout: boundFor(name),
     });
     if (run.status !== 0 || run.signal !== null) break;
   }
@@ -729,7 +811,13 @@ for (const name of selected) {
   // bound cost at least that much, so the figure still sorts it late next time.
   // Recording only successes would put a repeatedly-timing-out script back at
   // the front of the queue on every run.
-  known[name] = Number(seconds.toFixed(1));
+  //
+  // **AND WHETHER IT WAS CAPPED**, which is the half that makes the figure
+  // usable for anything but sorting. `run.signal` is set exactly when
+  // `spawnSync` killed it at the bound, so this is read from the outcome rather
+  // than inferred from the number — a cost that happens to equal the bound is
+  // not a cap, and comparing them would say it was.
+  known[name] = { seconds: Number(seconds.toFixed(1)), capped: run.signal !== null };
 
   // WHICH SCRIPT MOVED THE TREE, not merely that something did.
   //
@@ -973,7 +1061,15 @@ if (attempted < selected.length) {
     // these last precisely because nothing is known about them, and a blank
     // where a duration should be reads as cheap to anyone skimming.
     process.stdout.write(
-      `      ${name} — ${cost === undefined ? 'never measured' : `last took ${String(cost)}s`}\n`,
+      // THREE STATES, and the third is why the shape changed: "stopped at
+      // 180.1s" and "took 180.1s" are the same digits and opposite facts.
+      `      ${name} — ${
+        cost === undefined
+          ? 'never measured'
+          : cost.capped
+            ? `STOPPED at ${String(cost.seconds)}s, so its real cost is unknown`
+            : `last took ${String(cost.seconds)}s`
+      }\n`,
     );
   }
 }
