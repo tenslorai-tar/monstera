@@ -155,6 +155,7 @@
     "check:pathdispatch": "node scripts/security/pathDispatch.mjs",
     "ocr:doors": "node scripts/security/ocrDoors.mjs",
     "shim:reach": "node scripts/security/shimReach.mjs",
+    "proof:activecontent": "node scripts/security/activeContentProof.mjs",
     "proof:cff": "node scripts/security/cffOobProof.mjs",
     "proof:geometry": "node scripts/proofs/pageGeometry.proof.mjs",
     "proof:purge": "node scripts/proofs/purgeCensus.proof.mjs",

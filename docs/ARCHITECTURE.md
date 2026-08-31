@@ -983,13 +983,39 @@ say**.
     embedded file reaches disk — until the user asks for it, explicitly, for that
     item.
 
-    A PDF is a program as well as a page. MuJS is linked into the shim, so a
-    JavaScript interpreter is present in the process that parses the single most
-    attacker-controlled thing this application touches. Nothing calls it on the
-    open path today, and "nothing calls it today" is the shape of claim this
-    project has twice found resting on a guard that did not exist — once for
-    `pdf_subset_fonts`, once for the EPUB handler that the `"not a PDF"` check
-    was refusing only *after* it had parsed the file.
+    A PDF is a program as well as a page, and the process that parses it is
+    parsing the single most attacker-controlled thing this application touches.
+
+    **Measured 2026-08-31: no JavaScript interpreter is linked into the shipped
+    shim.** This paragraph previously stated the opposite — that MuJS is linked
+    and present in the process — and that was the invariant's stated rationale.
+    MuJS's own registration strings (`Array.prototype.forEach` and its siblings,
+    which exist in `thirdparty/mujs/jsarray.c` and cannot come from MuPDF's C)
+    are absent from `monstera_mupdf.dll`, while MuPDF library strings are
+    present; the same scan finds all three in a harness that calls
+    `pdf_enable_js`. The mechanism is ordinary static linking: `pdf_enable_js`
+    is referenced by exactly one file in all of MuPDF, `source/tools/murun.c`,
+    and the shim references nothing in `pdf-js.c`, so the linker never pulls
+    that object — or MuJS behind it — out of `libmupdf.lib`.
+
+    **That is a property of the call graph, not of the build, and the
+    distinction is the whole of what is owed here.** One call to
+    `pdf_enable_js` anywhere in the shim brings the interpreter back, in a
+    commit whose diff is one line. `FZ_ENABLE_JS=0` would make its absence
+    structural; it is deliberately not set, because stages 3 and 4 anticipate
+    JavaScript-bearing widgets and compiling the interpreter out forecloses
+    that. So the containment rests on nothing calling it — which is the shape of
+    claim this project has twice found resting on a guard that did not exist,
+    once for `pdf_subset_fonts` and once for the EPUB handler the `"not a PDF"`
+    check was refusing only *after* it had parsed the file. `proof:activecontent`
+    is what turns it from a claim into a measurement, and it fails the day the
+    interpreter arrives.
+
+    `/OpenAction` is contained by a different fact, and a stronger one: MuPDF
+    1.28.0 does not implement it. The key appears nowhere in `source/`, and its
+    name table carries `AA` but not `OpenAction`, so there is no dispatch to
+    contain. That is pinned by the same proof, because a version bump can change
+    it.
 
     Pinned now because the open path is small now. Stages 3 and 4 add
     annotations, form actions and JavaScript-bearing widgets, and each arrives

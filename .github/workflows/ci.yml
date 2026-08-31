@@ -1020,6 +1020,16 @@ jobs:
       - name: Prove the CFF over-read is fixed and the check is load-bearing
         run: node scripts/ci/annotate.mjs scripts/security/cffOobProof.mjs
 
+      # Invariant 24: opening a document runs none of its content. Builds a
+      # fixture whose JavaScript ANNOUNCES itself, runs it through the shim's
+      # exact call sequence with an observer installed, and confirms silence —
+      # against a control, in the same run, that fires the same payload with
+      # pdf_enable_js. It also measures that the shipped shim links no
+      # interpreter at all, which is the containment's real mechanism and is a
+      # property of the call graph rather than of the build.
+      - name: Prove no embedded JavaScript, action or file runs on open
+        run: node scripts/ci/annotate.mjs scripts/security/activeContentProof.mjs
+
       # The cheap page-geometry path is the viewer's scroll-layout source (L21).
       # It must agree with fz_bound_page exactly, on documents with inherited
       # /Rotate and with a /CropBox — the two shapes a flat fixture cannot show,
