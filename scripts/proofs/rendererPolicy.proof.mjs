@@ -56,6 +56,7 @@ import {
 } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -476,23 +477,29 @@ try {
   );
 
   // ---------------------------------------------------------------------------
-  // (ii) The runtime. UNVERIFIABLE rather than passed when it cannot run.
+  // (ii) The runtime. PARTLY MEASURED rather than passed when it cannot run.
   // ---------------------------------------------------------------------------
   const binary = ELECTRON_BINARY;
   if (!RUNTIME_PRESENT) {
-    process.stdout.write(
-      `${roster.format('renderer-policy case')}\n` +
-        `UNVERIFIABLE — ${String(RUNTIME_CASES.length)} case(s) could not be evaluated on ` +
-        `this machine:\n` +
-        `${RUNTIME_CASES.map((label) => `  ??  ${label}\n`).join('')}\n` +
-        `  ${existsSync(binary) ? 'The harness' : 'The Electron runtime'} is missing:\n` +
-        `    ${existsSync(binary) ? HARNESS : binary}\n` +
-        `  Run \`npm run provision:electron\` and \`npm run typecheck\`.\n\n` +
-        `  This is COULD NOT LOOK, not looked-and-found-nothing. These are the only evidence ` +
-        `that ARCHITECTURE §2's renderer hardening is ENFORCED rather than merely configured, ` +
-        `so a run without them proves less than it appears to — which is why they are not ` +
-        `reported as passing and not reported as "nothing to check".\n`,
-    );
+    // THROUGH THE OWNER, AND THROUGH THE PARTIAL STATE RATHER THAN THE BLANK
+    // ONE. The string cases above have all run; saying this measured nothing
+    // would be false in the direction that reads as coverage. `unverifiable.mjs`
+    // owns both tokens, and a spelling of our own is a second opinion about what
+    // it prints (B3a) — measured on `hostRecovery.mjs`, whose hand-written
+    // version made a could-not-look count as a pass in `npm run local`.
+    const partial = partialOutcome({
+      required: false,
+      ran: STRING_CASES,
+      missed: RUNTIME_CASES,
+      why:
+        `${existsSync(binary) ? 'The harness' : 'The Electron runtime'} is missing:\n    ` +
+        `${existsSync(binary) ? HARNESS : binary}\n  Run \`npm run provision:electron\` and ` +
+        `\`npm run typecheck\`.\n\n  These are the only evidence that ARCHITECTURE §2's ` +
+        `renderer hardening is ENFORCED rather than merely configured, so a run without them ` +
+        `proves less than it appears to.`,
+      flag: '--require-runtime',
+    });
+    process.stdout.write(`${roster.format('renderer-policy case')}${partial.text}`);
   } else {
     // Everything the harness actually executes. `preload.cjs` is the pair that
     // motivated this: it is the only artefact `typecheck` does not produce.

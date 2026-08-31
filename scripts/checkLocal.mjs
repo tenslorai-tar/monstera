@@ -103,7 +103,7 @@ import { ciVerifiers, verifiersNotRunByCi } from './lib/ciVerifiers.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
 import { SCANNING_PROOFS, rosterMiscount } from './lib/scanningProofs.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
-import { UNVERIFIABLE_MARKER } from './lib/unverifiable.mjs';
+import { PARTIAL_MARKER, UNVERIFIABLE_MARKER } from './lib/unverifiable.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -591,6 +591,17 @@ const notNode = [];
  * @type {string[]}
  */
 const unverifiable = [];
+/**
+ * Scripts that measured PART of their subject.
+ *
+ * Separate from {@link unverifiable} because the two call for different
+ * readings: one says nothing was measured, this says what ran is trustworthy
+ * and names what did not. Collapsing them would make a run where most cases
+ * executed indistinguishable from one where none did.
+ *
+ * @type {string[]}
+ */
+const partlyMeasured = [];
 /** Scripts observed to move the tree, in the order they did it. */
 /** @type {string[]} */
 const treeMovers = [];
@@ -889,6 +900,30 @@ for (const name of selected) {
     );
     continue;
   }
+  // AND PARTLY MEASURED IS A THIRD STATE, not either of the two above. Four
+  // proofs assert one set of cases everywhere and another only where a runtime
+  // is provisioned; filing those under the marker above would say they measured
+  // NOTHING, which is false in the direction that reads as coverage. The tally
+  // is in the line they print, so this bucket carries the name and the reader
+  // gets the ratio from the output.
+  if (`${run.stdout ?? ''}${run.stderr ?? ''}`.includes(PARTIAL_MARKER)) {
+    partlyMeasured.push(name);
+    recordRow({
+      name,
+      exit: 0,
+      partlyMeasured: true,
+      signal: null,
+      seconds: Number(seconds.toFixed(2)),
+      bytes: `${run.stdout ?? ''}${run.stderr ?? ''}`.length,
+      firstProblem: '(partly measured — some cases ran, some could not)',
+    });
+    process.stdout.write(
+      `  PARTLY MEASURED  ${name} (${took})\n` +
+        `      What ran, ran. The cases it could not reach are neither asserted nor denied,\n` +
+        `      and the same condition is red on a job that passes the require flag.\n`,
+    );
+    continue;
+  }
   passedCount += 1;
   // Passes are logged too, and that is the point rather than symmetry: the
   // question WWW-2 turns on is what a script that COMPLETED did immediately
@@ -908,11 +943,13 @@ const attempted =
   didNotStart.length +
   notNode.length +
   unverifiable.length +
+  partlyMeasured.length +
   passedCount;
 process.stdout.write(
   `\n${String(passedCount)} passed, ${String(failed.length)} failed, ` +
     `${String(timedOut.length)} timed out, ${String(didNotStart.length)} never started, ` +
-    `${String(notNode.length)} not run, ${String(unverifiable.length)} unverifiable — ` +
+    `${String(notNode.length)} not run, ${String(unverifiable.length)} unverifiable, ` +
+    `${String(partlyMeasured.length)} partly measured — ` +
     `${String(attempted)} of ${String(selected.length)} attempted.\n`,
 );
 // WRITTEN EVEN ON A PARTIAL RUN, and before the summary. A sweep that stopped
@@ -1032,6 +1069,14 @@ if (unverifiable.length > 0) {
       `Each exited 0 by design — locally there may be nothing provisioned to measure. The\n` +
       `same condition is RED on the job that passes the require flag, so this is a gap in\n` +
       `what YOU have evidence for and not a gap in the board.\n`,
+  );
+}
+if (partlyMeasured.length > 0) {
+  process.stdout.write(
+    `Partly measured: ${partlyMeasured.join(', ')}\n` +
+      `Each printed how many cases ran and named the ones that could not. What ran is\n` +
+      `evidence; the rest is neither asserted nor denied here and is red on the job that\n` +
+      `passes the require flag.\n`,
   );
 }
 // WHICH AFFECTED PROOFS THIS RUN REACHED AND WHICH IT DID NOT, BY NAME

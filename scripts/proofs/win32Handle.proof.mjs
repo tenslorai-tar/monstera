@@ -20,6 +20,7 @@
  */
 
 import { createRoster } from '../lib/passRoster.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
 import { INVALID_HANDLE_SOURCE, isInvalidHandle } from '../lib/win32Handle.mjs';
 
 /** @type {string[]} */
@@ -71,9 +72,22 @@ function check(name, condition, detail) {
  * @param {string} name @param {string} detail
  */
 function unverifiable(name, detail) {
-  process.stdout.write(`  UNVERIFIABLE  ${name}\n      ${detail}\n`);
+  // `??`, NOT the marker's own shape. This line used to read
+  // `  UNVERIFIABLE  ${name}`, which is exactly the token `checkLocal.mjs`
+  // matches on — so a single case that could not run filed the WHOLE run as
+  // *measured nothing*, while thirteen of fourteen had measured plenty. The
+  // run-level verdict is one line at the end, through the module that owns it.
+  process.stdout.write(`  ??  ${name}\n      ${detail}\n`);
+  missed.push(name);
   roster.record(roster.mark(), name, false);
 }
+
+/**
+ * The cases that could not run, named.
+ *
+ * @type {string[]}
+ */
+const missed = [];
 
 /**
  * What koffi.address returns for INVALID_HANDLE_VALUE on win32 x64, measured.
@@ -293,6 +307,20 @@ process.stdout.write(
     ? `\n${String(failures.length)} invalid-handle case(s) FAILED:\n\n  - ${failures.join('\n\n  - ')}\n`
     : roster.format('invalid-handle case'),
 );
+// ONE RUN-LEVEL VERDICT, through the module that owns the token. A case that
+// could not run makes this a PARTIAL: what ran, ran, and saying the run
+// measured nothing would be false in the direction that reads as coverage.
+if (failures.length === 0 && missed.length > 0) {
+  process.stdout.write(
+    partialOutcome({
+      required: false,
+      ran: 14 - missed.length,
+      missed,
+      why: 'The reason for each is printed beside it above.',
+      flag: '--require-build',
+    }).text,
+  );
+}
 // `process.exitCode`, NOT `process.exit()` (finding TTT-4). Measured elsewhere:
 // with `process.exit()` immediately after a write, Node tears the process down
 // with the write still in flight and the pending stdout buffer is re-emitted —

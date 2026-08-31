@@ -48,6 +48,32 @@
 export const UNVERIFIABLE_MARKER = '\n  UNVERIFIABLE  ';
 
 /**
+ * The token for a run where SOME cases ran and some could not.
+ *
+ * ## Why this is a third state and not the first one reused
+ *
+ * {@link UNVERIFIABLE_MARKER}'s meaning is *this run measured nothing*, and the
+ * harness says so in as many words. Four proofs here report something narrower:
+ * `rendererPolicy`, `canvasPixels` and `shell` each assert a set of string cases
+ * on every machine and a set of runtime cases only where Electron is
+ * provisioned; `prePush` evaluates every case but one.
+ *
+ * Filing those under the first marker would put a run where twenty of
+ * twenty-six cases executed under text saying it exited 0 without measuring
+ * anything — **false, and false in the direction that reads as coverage**,
+ * because a run that measured most of its subject becomes indistinguishable
+ * from one that measured none of it. That is the widening this project keeps
+ * paying for, arriving inside the marker written to prevent it.
+ *
+ * ## The COUNTS are what make it a third state
+ *
+ * Without them this is the first state renamed. *Some* and *none* are the whole
+ * distinction, and a reader deciding whether to trust a green sweep needs the
+ * ratio rather than the adjective.
+ */
+export const PARTIAL_MARKER = '\n  PARTLY MEASURED  ';
+
+/**
  * @typedef {object} UnverifiableOutcome
  * @property {number} code the exit code this run should end with
  * @property {'stdout' | 'stderr'} stream where the explanation belongs
@@ -101,4 +127,62 @@ export function exitUnverifiable(options) {
   if (outcome.stream === 'stderr') process.stderr.write(outcome.text);
   else process.stdout.write(outcome.text);
   process.exit(outcome.code);
+}
+
+/**
+ * The decision for a run that measured PART of its subject.
+ *
+ * Pure and returning text rather than exiting, because that is the difference
+ * between this state and the other: a caller here has cases still to run, and a
+ * function that exited would make the third state unusable by the four proofs
+ * it exists for.
+ *
+ * @param {object} options
+ * @param {boolean} options.required whether the caller was told to require a
+ *   real measurement — the flag the provisioning job passes. `true` makes this
+ *   a failure, for {@link unverifiableOutcome}'s reason: a job asserting it CAN
+ *   look must not report a partial.
+ * @param {number} options.ran how many cases were evaluated.
+ * @param {readonly string[]} options.missed the cases that were not, by name.
+ *   NAMES rather than a count, so the reader can see which half is missing —
+ *   *twenty of twenty-six* says nothing about whether the six were the ones
+ *   that mattered.
+ * @param {string} options.why the specific condition that stopped them.
+ * @param {string} options.flag the flag a job passes to require the rest.
+ * @returns {UnverifiableOutcome}
+ */
+export function partialOutcome({ required, ran, missed, why, flag }) {
+  // A PARTIAL WITH NOTHING MISSING IS A DEFECT IN THE CALLER, not a state. It
+  // would print a marker that makes a harness file a complete run as partial —
+  // the same widening one direction over, so it is refused rather than
+  // tolerated.
+  if (missed.length === 0) {
+    throw new Error(
+      'partialOutcome was called with no missed cases. A run that evaluated everything is a ' +
+        'pass, and marking it partly measured would make a complete run read as an incomplete ' +
+        'one — the mistake this third state exists to stop, pointing the other way.',
+    );
+  }
+
+  const tally = `${String(ran)} case(s) ran, ${String(missed.length)} could not`;
+  if (required) {
+    return {
+      code: 1,
+      stream: 'stderr',
+      text:
+        `\n${tally}, and ${flag} says a PARTIAL is a failure here.\n\n` +
+        `${missed.map((label) => `  ??  ${label}\n`).join('')}\n  ${why}\n\n` +
+        `  This flag is passed by a job that provisions what the missing cases need, so a\n` +
+        `  case that could not run on it is something broken rather than something absent.\n`,
+    };
+  }
+  return {
+    code: 0,
+    stream: 'stdout',
+    text:
+      `${PARTIAL_MARKER}${tally}\n` +
+      `${missed.map((label) => `      ??  ${label}\n`).join('')}\n  ${why}\n\n` +
+      `  NOT a clean pass and NOT a blank run. What ran, ran; the cases above are neither\n` +
+      `  asserted nor denied, and a job passing ${flag} treats the same condition as red.\n`,
+  };
 }

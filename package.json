@@ -44,6 +44,8 @@
     "proof:docrulescope": "node scripts/proofs/documentRuleScope.proof.mjs",
     "proof:rowlength": "node scripts/proofs/rowLengthRatchet.proof.mjs",
     "proof:sessionsweep": "node scripts/proofs/sessionSweep.proof.mjs",
+    "check:unverifiablespelling": "node scripts/lib/unverifiableSpelling.mjs",
+    "proof:unverifiablespelling": "node scripts/proofs/unverifiableSpelling.proof.mjs",
     "proof:budgets": "node scripts/proofs/memoryBudgets.proof.mjs",
     "proof:peakrss": "node scripts/proofs/peakRss.proof.mjs",
     "proof:nativeaddon": "node scripts/proofs/nativeAddon.proof.mjs",

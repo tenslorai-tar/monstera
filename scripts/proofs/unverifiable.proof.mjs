@@ -16,11 +16,16 @@
  */
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { UNVERIFIABLE_MARKER, unverifiableOutcome } from '../lib/unverifiable.mjs';
+import {
+  PARTIAL_MARKER,
+  UNVERIFIABLE_MARKER,
+  partialOutcome,
+  unverifiableOutcome,
+} from '../lib/unverifiable.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 13 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -111,6 +116,96 @@ check(
   `${JSON.stringify(UNVERIFIABLE_MARKER)} matches ordinary harness output, so every passing ` +
     `script would be classified as unverifiable — the opposite error, and one that makes the ` +
     `state useless rather than absent.`,
+);
+
+// ---------------------------------------------------------------------------
+// THE THIRD STATE. Four proofs assert one set of cases everywhere and another
+// only where a runtime is provisioned, and filing those under the marker above
+// would say they measured NOTHING — false in the direction that reads as
+// coverage.
+// ---------------------------------------------------------------------------
+
+const partial = partialOutcome({
+  required: false,
+  ran: 20,
+  missed: ['a preload cannot reach Node', 'the window paints what the shell declares'],
+  why: 'The Electron runtime is missing.',
+  flag: '--require-runtime',
+});
+
+check(
+  'a partial carries its own marker AND the tally, which is what makes it a third state',
+  partial.text.includes(PARTIAL_MARKER) &&
+    partial.text.includes('20 case(s) ran, 2 could not'),
+  `the permissive partial text is ${JSON.stringify(partial.text)}. Without the counts this is ` +
+    `the blank state renamed: *some* and *none* are the whole distinction, and a reader ` +
+    `deciding whether to trust a green sweep needs the ratio rather than the adjective.`,
+);
+
+check(
+  'and it NAMES the cases it could not reach',
+  partial.text.includes('a preload cannot reach Node'),
+  `the text carries a count and not the names. Twenty of twenty-six says nothing about ` +
+    `whether the six were the ones that mattered.`,
+);
+
+/**
+ * THE CASE THE WHOLE SPLIT TURNS ON. `checkLocal.mjs` tests the blank marker
+ * FIRST and the partial second, so a partial text that also carried the blank
+ * one would be filed as *measured nothing* — the exact widening this state was
+ * added to remove, arriving through the tokens rather than through the wording.
+ */
+check(
+  'CONTROL: the two markers are DISJOINT, so a harness cannot file one as the other',
+  !partial.text.includes(UNVERIFIABLE_MARKER) &&
+    !unverifiableOutcome({
+      required: false,
+      subject: 'a subject',
+      why: 'a reason',
+      flag: '--require-it',
+    }).text.includes(PARTIAL_MARKER),
+  `one marker's text contains the other's token. A harness matching in either order then ` +
+    `reports one state for both, which is the collapse the third state exists to prevent.`,
+);
+
+check(
+  'a partial where the require flag is passed is a FAILURE, and drops the partial marker',
+  partialOutcome({
+    required: true,
+    ran: 20,
+    missed: ['a case'],
+    why: 'a reason',
+    flag: '--require-runtime',
+  }).code === 1 &&
+    !partialOutcome({
+      required: true,
+      ran: 20,
+      missed: ['a case'],
+      why: 'a reason',
+      flag: '--require-runtime',
+    }).text.includes(PARTIAL_MARKER),
+  `the strict partial either exits 0 or still carries the marker. A job that asserts it CAN ` +
+    `look must not report a partial as a tolerated state, and a harness reading the marker ` +
+    `would downgrade the failure.`,
+);
+
+/**
+ * A COMPLETE RUN MARKED PARTIAL IS THE SAME WIDENING POINTING THE OTHER WAY,
+ * and it is refused rather than tolerated: it would make a sweep file a run that
+ * measured everything as one that did not.
+ */
+check(
+  'CONTROL: a partial with NOTHING missing is refused',
+  (() => {
+    try {
+      partialOutcome({ required: false, ran: 3, missed: [], why: 'a reason', flag: '--f' });
+      return false;
+    } catch {
+      return true;
+    }
+  })(),
+  `partialOutcome accepted an empty missed list, so a run that evaluated everything can print ` +
+    `a marker saying it did not.`,
 );
 
 if (failures.length > 0) {

@@ -228,6 +228,17 @@ jobs:
       - name: Prove the withdrawn-phrase check catches what it claims
         run: node scripts/ci/annotate.mjs scripts/lib/withdrawnPhrases.proof.mjs
 
+      # THE CLASS THAT MADE A COULD-NOT-LOOK COUNT AS A PASS. `unverifiable.mjs`
+      # exports the tokens `npm run local` keys on and six files spelt their own,
+      # one of which was measured being recorded green in 1.74s against 20.1s for
+      # a real run. The scan reads source only, so it belongs here rather than on
+      # a job that builds.
+      - name: Prove the could-not-look spelling scan sees, refuses and tolerates
+        run: node scripts/ci/annotate.mjs scripts/proofs/unverifiableSpelling.proof.mjs
+
+      - name: No script spells a could-not-look verdict of its own
+        run: node scripts/ci/annotate.mjs scripts/lib/unverifiableSpelling.mjs
+
       # The standing rule against writing files through escape-resolving shell
       # paths was broken six times while claiming to be the only defence. It is
       # now a PreToolUse hook. This checks both halves: that the guard blocks

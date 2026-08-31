@@ -79,14 +79,14 @@ import { createRoster } from '../lib/passRoster.mjs';
 import { retention, runLogState } from '../lib/runLog.mjs';
 import { classifySpawn } from '../lib/spawnOutcome.mjs';
 import { SCANNING_PROOFS } from '../lib/scanningProofs.mjs';
-import { UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
+import { PARTIAL_MARKER, UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
 
 const HARNESS = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'checkLocal.mjs');
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 56 });
+const roster = createRoster(failures, { cases: 58 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -516,6 +516,45 @@ try {
     `without this, "not counted as a pass" is satisfied by a classifier that calls EVERYTHING ` +
       `unverifiable — the opposite error, and one that makes the state useless rather than ` +
       `absent. Output:\n${cannotLook.output}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // 5a. PARTLY MEASURED is a THIRD state, not either of the two above.
+  //
+  // Four proofs assert one set of cases everywhere and another only where a
+  // runtime is provisioned. Filing those under the marker above would report a
+  // run in which twenty of twenty-six cases executed as one that measured
+  // NOTHING — false, and false in the direction that reads as coverage.
+  //
+  // The fixture's marker comes from the owner for the reason the one above
+  // does, and the two cases here are a PAIR: one run, one script of each kind,
+  // so a classifier that collapsed them would fail whichever it collapsed into.
+  // -------------------------------------------------------------------------
+  const partialBody = `process.stdout.write(${JSON.stringify(
+    `${PARTIAL_MARKER}4 case(s) ran, 2 could not\n      ??  a runtime case\n`,
+  )});\n`;
+  const partly = runFixture(
+    { 'a-partial.mjs': partialBody, 'b-blind.mjs': blindBody, 'c-seeing.mjs': EXIT_ZERO },
+    {
+      'proof:a-partial': 'node scripts/a-partial.mjs',
+      'proof:b-blind': 'node scripts/b-blind.mjs',
+      'proof:c-seeing': 'node scripts/c-seeing.mjs',
+    },
+  );
+  check(
+    'a probe that measured PART of its subject is reported partly measured',
+    /PARTLY MEASURED\s+proof:a-partial/u.test(partly.output) &&
+      /1 partly measured/u.test(partly.output),
+    `a run where most cases executed must not be filed as one that measured nothing, and must ` +
+      `not be filed as a pass either. Output:\n${partly.output}`,
+  );
+  check(
+    'CONTROL: the three states are separated in ONE run, not merely renamed',
+    /1 passed,/u.test(partly.output) &&
+      /1 unverifiable/u.test(partly.output) &&
+      /1 partly measured/u.test(partly.output),
+    `without all three in one run, "partly measured is its own state" is satisfied by a ` +
+      `classifier that files everything under it — the opposite error. Output:\n${partly.output}`,
   );
 
   // -------------------------------------------------------------------------

@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { exitUnverifiable } from '../lib/unverifiable.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -153,15 +154,27 @@ function readback(binary) {
 
 try {
   if (!RUNTIME_PRESENT) {
-    process.stdout.write(
-      `UNVERIFIABLE — ${String(RUNTIME_CASES.length)} case(s) could not be evaluated here:\n` +
-        `${RUNTIME_CASES.map((label) => `  ??  ${label}\n`).join('')}\n` +
-        `  ${existsSync(ELECTRON_BINARY) ? 'The harness' : 'The Electron runtime'} is missing.\n` +
-        `  Run \`npm run provision:electron\` and \`npm run build\`.\n\n` +
-        `  This is COULD NOT LOOK. These cases are the only evidence that the composition root ` +
-        `has ever been executed, so a run without them proves that it compiles and nothing ` +
-        `more.\n`,
-    );
+    // THE BLANK MARKER, NOT THE PARTIAL ONE, and the difference is a fact about
+    // this file rather than a judgement: `createRoster` above takes
+    // `RUNTIME_PRESENT ? RUNTIME_CASES.length : 0`, so with no runtime there are
+    // no cases at all and every `check()` sits inside the branch below. This run
+    // measures NOTHING, which is exactly what `UNVERIFIABLE_MARKER` says.
+    //
+    // Its neighbours `rendererPolicy` and `canvasPixels` assert string cases
+    // first and are partial; grouping this one with them would have said *some
+    // of it ran* about a run in which none did.
+    exitUnverifiable({
+      required: false,
+      subject: 'the composition root running',
+      why:
+        `${String(RUNTIME_CASES.length)} case(s) could not be evaluated:\n` +
+        `${RUNTIME_CASES.map((label) => `        ??  ${label}`).join('\n')}\n\n      ` +
+        `${existsSync(ELECTRON_BINARY) ? 'The harness' : 'The Electron runtime'} is missing. ` +
+        `Run \`npm run provision:electron\` and \`npm run build\`. These cases are the only ` +
+        `evidence that the composition root has ever been executed, so a run without them ` +
+        `proves that it compiles and nothing more.`,
+      flag: '--require-runtime',
+    });
   } else {
     const seen = readback(ELECTRON_BINARY);
 

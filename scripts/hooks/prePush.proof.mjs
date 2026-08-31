@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
 import { anyGlobResolves, decide, pushedRanges, watchedPathspecs } from './prePush.mjs';
 
 const ROOT = repoRoot();
@@ -358,12 +359,21 @@ try {
 // "looked and found nothing" must not share an output, so the reduced coverage
 // is named where a reader of a green run will see it.
 if (HOOKS_PATH === null) {
+  // THE PARTIAL STATE, through the module that owns both tokens (B3a). Sixteen
+  // of seventeen cases ran, so the blank marker — whose text says the run
+  // measured nothing — would be false here, and false in the direction that
+  // reads as coverage.
   process.stdout.write(
-    `UNVERIFIABLE — 1 case could not be evaluated here:\n` +
-      `  ??  and core.hooksPath points at the directory holding it\n` +
-      `      Nothing has set core.hooksPath on this checkout, which \`npm run prepare\` does. On a\n` +
-      `      runner that installs nothing this is the expected state and not a finding; on a\n` +
-      `      developer machine it means the hooks are not in force.\n\n`,
+    partialOutcome({
+      required: false,
+      ran: 16,
+      missed: ['and core.hooksPath points at the directory holding it'],
+      why:
+        'Nothing has set core.hooksPath on this checkout, which `npm run prepare` does. On a ' +
+        'runner that installs nothing this is the expected state and not a finding; on a ' +
+        'developer machine it means the hooks are not in force.',
+      flag: '--require-hooks',
+    }).text,
   );
 }
 

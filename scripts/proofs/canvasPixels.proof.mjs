@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { CANVAS_PIXELS_RUNTIME, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+import { partialOutcome } from '../lib/unverifiable.mjs';
 import { buildLargeFixture } from '../perf/largeFixture.mjs';
 import { electronBinaryPath } from '../provision/electron.mjs';
 
@@ -335,22 +336,24 @@ try {
   );
 
   // ---------------------------------------------------------------------------
-  // The runtime. UNVERIFIABLE rather than passed when it cannot run.
+  // The runtime. PARTLY MEASURED rather than passed when it cannot run.
   // ---------------------------------------------------------------------------
   if (!RUNTIME_PRESENT) {
-    process.stdout.write(
-      `${roster.format('canvas-pixel case')}\n` +
-        `UNVERIFIABLE — ${String(RUNTIME_CASES.length)} case(s) could not be evaluated on ` +
-        `this machine:\n` +
-        `${RUNTIME_CASES.map((label) => `  ??  ${label}\n`).join('')}\n` +
-        `  ${existsSync(ELECTRON_BINARY) ? 'The harness' : 'The Electron runtime'} is missing:\n` +
-        `    ${existsSync(ELECTRON_BINARY) ? HARNESS : ELECTRON_BINARY}\n` +
-        `  Run \`npm run provision:electron\` and \`npm run build\`.\n\n` +
-        `  This is COULD NOT LOOK, not looked-and-found-nothing. These are the only evidence ` +
+    // The string cases above have run, so the BLANK marker would be false here.
+    // Through `unverifiable.mjs`, which owns both tokens (B3a).
+    const partial = partialOutcome({
+      required: false,
+      ran: STRING_CASES,
+      missed: RUNTIME_CASES,
+      why:
+        `${existsSync(ELECTRON_BINARY) ? 'The harness' : 'The Electron runtime'} is missing:\n` +
+        `    ${existsSync(ELECTRON_BINARY) ? HARNESS : ELECTRON_BINARY}\n  Run ` +
+        `\`npm run provision:electron\` and \`npm run build\`.\n\n  These are the only evidence ` +
         `that the render clause's UI half does anything at all — every other test of it stays ` +
-        `green for a canvas that draws nothing — so a run without them proves less than it ` +
-        `appears to.\n`,
-    );
+        `green for a canvas that draws nothing.`,
+      flag: '--require-runtime',
+    });
+    process.stdout.write(`${roster.format('canvas-pixel case')}${partial.text}`);
   } else {
     // Everything the harness executes, and the renderer bundle is the point of
     // the list: these cases read pixels the Vite build produced, so a `typecheck`
