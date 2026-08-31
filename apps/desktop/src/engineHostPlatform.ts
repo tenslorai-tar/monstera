@@ -1,10 +1,16 @@
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import type { EngineHostPlatform } from './composition.js';
 import { createReaderHostSurface } from './readerHostSurface.js';
-import { sweepSessionDirectories } from './sessionDirectories.js';
+import {
+  type SessionDirectoryName,
+  hostDiagnosticPath,
+  sessionDirectoryName,
+  sweepSessionDirectories,
+} from './sessionDirectories.js';
 import { createWin32DirectorySurface } from './win32DirectorySurface.js';
 import {
   createWin32HostSurface,
@@ -69,6 +75,21 @@ function hostEntryPath(): string {
  *   file may not import Electron any more than the root may.
  * @returns the platform, or `null` where it cannot exist.
  */
+/**
+ * A fresh name for one host's diagnostic file.
+ *
+ * Through `sessionDirectoryName` rather than trusted: the value is concatenated
+ * into a path, and the allowlist that exists because the host normally supplies
+ * such a name is the right one whoever supplies it. A refusal here is this
+ * function being wrong about hex, so it throws rather than degrading — a host
+ * created with no diagnostic path is exactly the state this is closing.
+ */
+function diagnosticName(): SessionDirectoryName {
+  const minted = sessionDirectoryName(randomBytes(16).toString('hex'));
+  if (!minted.ok) throw new Error(`the host diagnostic name was refused: ${minted.error}`);
+  return minted.value;
+}
+
 export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatform | null {
   // NOT A CAPABILITY CHECK WEARING A PLATFORM CHECK'S CLOTHES. The engine host
   // is a Win32 AppContainer process by ADR-0022, so on any other platform there
@@ -137,7 +158,23 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
           // chose is one nobody checks.
           workingDirectory: dirname(binary),
           containerName: CONTAINER,
-          diagnosticPath: null,
+          // WHERE A HOST THAT DIES BEFORE IT CONNECTS SAYS WHY. It was `null`
+          // in the shipped app while `lowboxSpike.mjs` and `roleMupdfHost.mjs`
+          // both passed one, so the two instruments could read a startup
+          // failure and the product could not — and the product is where it
+          // matters, because a user's machine is the one nobody can re-run.
+          //
+          // Measured while building the recovery harness: a container whose
+          // token could not read the Electron runtime died loading its ICU
+          // data, and every caller reported *"the host started and did not
+          // reach its pipe"*, which sends the reader to the pipe.
+          //
+          // A NAME OF ITS OWN rather than one derived from the pipe. Parsing
+          // `pipeName` for its hex tail would be a second opinion about a
+          // format `composition.ts` owns (B3a), and nothing needs the two to
+          // match: the surface holds the path and is the only thing that reads
+          // it back.
+          diagnosticPath: hostDiagnosticPath(sessionRoot, diagnosticName()),
         }),
     },
     user: user.value,

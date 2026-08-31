@@ -144,6 +144,16 @@ export interface DirectoryCreationSurface {
    * with and a listing cannot smuggle in a location.
    */
   readonly list: (path: string) => readonly string[] | null;
+  /**
+   * The FILE names directly under a path, or `null` where it cannot look.
+   *
+   * Separate from {@link list} rather than one call returning both kinds,
+   * because every caller wants exactly one of them and a caller that had to
+   * filter would be re-deriving the distinction the surface already knows.
+   */
+  readonly listFiles: (path: string) => readonly string[] | null;
+  /** Removes one file. `true` when it is gone, including when it was not there. */
+  readonly removeFile: (path: string) => boolean;
   /** `GetLastError`, read only to put a number in a diagnostic. */
   readonly lastError: () => number;
 }
@@ -162,6 +172,34 @@ export interface SessionDirectoryFailure {
  */
 const SNAPSHOT_PREFIX = 'in-';
 const OUTPUT_PREFIX = 'out-';
+
+/**
+ * What a host's inherited stdout and stderr are written to, named here.
+ *
+ * In the session root beside the pair rather than inside it: the file has to
+ * exist before `CreateProcessW`, and a session's directories are created after
+ * the host has connected. The root is granted to nothing, and the host reaches
+ * this file through an **inherited handle** — the access check happened when
+ * main opened it — so writing here is not reach beyond what it was handed
+ * (invariant 25(d)).
+ *
+ * The prefix and suffix live beside the directory prefixes because they are the
+ * same concern: what this application may find in its own session root, and
+ * therefore what {@link sweepSessionDirectories} may remove.
+ */
+const HOST_LOG_PREFIX = 'host-';
+const HOST_LOG_SUFFIX = '.log';
+
+/**
+ * Where one host's diagnostics go.
+ *
+ * @param root The application's session root.
+ * @param name A validated name — the same allowlist a session directory takes,
+ *   because this is concatenated into a path for the same reason.
+ */
+export function hostDiagnosticPath(root: string, name: SessionDirectoryName): string {
+  return `${root}\\${HOST_LOG_PREFIX}${name}${HOST_LOG_SUFFIX}`;
+}
 
 /**
  * Where one session's directories sit, composed rather than supplied.
@@ -334,6 +372,31 @@ export function sweepSessionDirectories(
       continue;
     }
     if (surface.removeTree(`${root}\\${entry}` as DirectoryPath)) removed.push(entry);
+    else failed.push(entry);
+  }
+
+  // THE HOST LOGS, in the same pass and for the same reason. A host's
+  // diagnostics are discarded when its connection is torn down, so a survivor
+  // means the same thing a surviving pair does — main died without unwinding.
+  //
+  // A SECOND UNREADABLE STATE IS NOT COLLAPSED INTO THE FIRST: a root whose
+  // directories listed and whose files did not is still an unknown root, and
+  // reporting it as read would be the reassuring answer this function's whole
+  // shape exists to refuse.
+  const files = surface.listFiles(root);
+  if (files === null) return { removed, failed, skipped, unreadable: true };
+
+  for (const entry of files) {
+    if (!entry.startsWith(HOST_LOG_PREFIX) || !entry.endsWith(HOST_LOG_SUFFIX)) {
+      skipped.push(entry);
+      continue;
+    }
+    const name = entry.slice(HOST_LOG_PREFIX.length, entry.length - HOST_LOG_SUFFIX.length);
+    if (!sessionDirectoryName(name).ok) {
+      skipped.push(entry);
+      continue;
+    }
+    if (surface.removeFile(`${root}\\${entry}`)) removed.push(entry);
     else failed.push(entry);
   }
 

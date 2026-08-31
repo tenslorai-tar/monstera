@@ -193,6 +193,26 @@ export function createWin32DirectorySurface(): DirectoryCreationSurface {
       }
     },
 
+    // The file half of `list`, and `null` for the same reason.
+    listFiles: (path: string): readonly string[] | null => {
+      try {
+        return readdirSync(path, { withFileTypes: true })
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name);
+      } catch {
+        return null;
+      }
+    },
+
+    removeFile: (path: string): boolean => {
+      try {
+        rmSync(path, { force: true });
+        return !existsSync(path);
+      } catch {
+        return false;
+      }
+    },
+
     lastError: (): number => bindings.lastError(),
   };
 }

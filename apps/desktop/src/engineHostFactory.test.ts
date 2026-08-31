@@ -86,6 +86,13 @@ function surface(
       overrides.close,
       (handle) => `close:${handle.__handle}`,
     ),
+    // NOT RECORDED. `createContainedHost` must never touch either: the
+    // diagnostics belong to whoever waits for the peer, and every case in this
+    // file asserts on `calls` as a whole sequence — so a factory that started
+    // reading them would be caught by the assertions already here rather than
+    // by a new one.
+    diagnostics: (): string | null => null,
+    discardDiagnostics: (): void => undefined,
   };
 }
 

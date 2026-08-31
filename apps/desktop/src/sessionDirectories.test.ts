@@ -47,6 +47,14 @@ function recorder(outcomes: ('created' | 'exists' | 'refused')[]): {
         calls.push(`list(${path})`);
         return [];
       },
+      listFiles: (path) => {
+        calls.push(`listFiles(${path})`);
+        return [];
+      },
+      removeFile: (path) => {
+        calls.push(`removeFile(${path})`);
+        return true;
+      },
       lastError: () => 5,
     },
   };
@@ -213,6 +221,8 @@ describe('removeSessionDirectories', () => {
       remove: () => true,
       removeTree: (path: DirectoryPath) => path !== directories.output,
       list: () => [],
+      listFiles: () => [],
+      removeFile: () => true,
       lastError: () => 0,
     };
 
@@ -238,6 +248,8 @@ describe('removeSessionDirectories', () => {
         return false;
       },
       list: () => [],
+      listFiles: () => [],
+      removeFile: () => true,
       lastError: () => 0,
     };
 
@@ -258,8 +270,10 @@ describe('removeSessionDirectories', () => {
 function root(
   entries: readonly string[],
   refuse: readonly string[] = [],
+  files: readonly string[] = [],
 ): { surface: DirectoryCreationSurface; calls: string[] } {
   const calls: string[] = [];
+  const survives = (path: string): boolean => !refuse.some((name) => path.endsWith(`\\${name}`));
   return {
     calls,
     surface: {
@@ -267,11 +281,19 @@ function root(
       remove: () => true,
       removeTree: (path: DirectoryPath) => {
         calls.push(`removeTree(${path})`);
-        return !refuse.some((name) => path.endsWith(`\\${name}`));
+        return survives(path);
       },
       list: (path: string) => {
         calls.push(`list(${path})`);
         return entries;
+      },
+      listFiles: (path: string) => {
+        calls.push(`listFiles(${path})`);
+        return files;
+      },
+      removeFile: (path: string) => {
+        calls.push(`removeFile(${path})`);
+        return survives(path);
       },
       lastError: () => 0,
     },
@@ -292,6 +314,8 @@ describe('sweepSessionDirectories', () => {
       'list(C:\\root)',
       'removeTree(C:\\root\\in-a1b2-c3)',
       'removeTree(C:\\root\\out-a1b2-c3)',
+      // The file half runs in the same pass; this root holds none.
+      'listFiles(C:\\root)',
     ]);
   });
 
@@ -320,7 +344,7 @@ describe('sweepSessionDirectories', () => {
       skipped: entries,
       unreadable: false,
     });
-    expect(calls).toEqual(['list(C:\\root)']);
+    expect(calls).toEqual(['list(C:\\root)', 'listFiles(C:\\root)']);
   });
 
   /**
@@ -335,6 +359,8 @@ describe('sweepSessionDirectories', () => {
       remove: () => true,
       removeTree: () => true,
       list: () => null,
+      listFiles: () => null,
+      removeFile: () => true,
       lastError: () => 5,
     };
 
@@ -366,6 +392,69 @@ describe('sweepSessionDirectories', () => {
       failed: ['out-a1b2-c3'],
       skipped: [],
       unreadable: false,
+    });
+  });
+
+  it('removes a host diagnostic left behind, in the same pass', () => {
+    const { surface, calls } = root([], [], ['host-a1b2c3.log']);
+
+    expect(sweepSessionDirectories(surface, 'C:\\root')).toEqual({
+      removed: ['host-a1b2c3.log'],
+      failed: [],
+      skipped: [],
+      unreadable: false,
+    });
+    expect(calls).toContain('removeFile(C:\\root\\host-a1b2c3.log)');
+  });
+
+  /**
+   * THE FILE HALF'S CONTROL, and it asserts the CALL for the reason the
+   * directory half's does. Every name here carries the prefix or the suffix and
+   * not both, or a body the layout could not mint — so a sweep keyed on either
+   * end alone takes one of them.
+   */
+  it('CONTROL: never removes a file this layout could not have created', () => {
+    const files = [
+      'host-NOTHEX.log',
+      'host-a1b2c3',
+      'a1b2c3.log',
+      'host-.log',
+      'containment-negative',
+    ];
+    const { surface, calls } = root([], [], files);
+
+    expect(sweepSessionDirectories(surface, 'C:\\root')).toEqual({
+      removed: [],
+      failed: [],
+      skipped: files,
+      unreadable: false,
+    });
+    expect(calls.some((call) => call.startsWith('removeFile('))).toBe(false);
+  });
+
+  /**
+   * TWO UNREADABLE STATES, NOT ONE. A root whose directories listed and whose
+   * files did not is still an unknown root, and collapsing that into the
+   * successful path would report *nothing to remove* for exactly the case a
+   * sweep exists to catch. The pair matters: the first half must still be
+   * reported as removed, so this is not satisfied by a sweep that gives up.
+   */
+  it('reports unreadable when only the FILE listing fails', () => {
+    const half: DirectoryCreationSurface = {
+      create: () => 'created',
+      remove: () => true,
+      removeTree: () => true,
+      list: () => ['in-a1b2-c3'],
+      listFiles: () => null,
+      removeFile: () => true,
+      lastError: () => 5,
+    };
+
+    expect(sweepSessionDirectories(half, 'C:\\root')).toEqual({
+      removed: ['in-a1b2-c3'],
+      failed: [],
+      skipped: [],
+      unreadable: true,
     });
   });
 

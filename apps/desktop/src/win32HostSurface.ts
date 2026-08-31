@@ -40,6 +40,8 @@
  * surface.
  */
 
+import { readFileSync, rmSync } from 'node:fs';
+
 import { type Result, err, ok } from '@monstera/shared';
 import koffi from 'koffi';
 
@@ -880,6 +882,37 @@ export function createWin32HostSurface(config: Win32HostSurfaceConfig): HostCrea
 
     close: (handle: ProcessHandle | ThreadHandle | JobHandle): void => {
       bindings.closeHandle(handle);
+    },
+
+    // NOT FFI CALLS, and the boundary is not being crossed loosely — the same
+    // reasoning `win32DirectorySurface.ts` states for `removeTree`. Reading and
+    // deleting a file take no security descriptor, so there is no rule about
+    // what they grant and nothing for a second implementation to disagree with.
+    // The handle the host writes through is Win32's and is opened above; these
+    // two only read what came out.
+    //
+    // The file is opened `FILE_SHARE_READ_WRITE` and main's own copy of the
+    // handle is closed straight after `CreateProcessW`, so this reads while the
+    // host is alive and still holds it.
+    diagnostics: (): string | null => {
+      if (config.diagnosticPath === null) return null;
+      try {
+        const text = readFileSync(config.diagnosticPath, 'utf8').trim();
+        return text.length === 0 ? null : text;
+      } catch {
+        return null;
+      }
+    },
+
+    discardDiagnostics: (): void => {
+      if (config.diagnosticPath === null) return;
+      try {
+        rmSync(config.diagnosticPath, { force: true });
+      } catch {
+        // A file left behind is what the session root's startup sweep is for.
+        // Throwing here would put a cleanup failure into a teardown path that
+        // has a host to kill.
+      }
     },
   };
 }

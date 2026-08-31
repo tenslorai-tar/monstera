@@ -139,6 +139,36 @@ export interface HostCreationSurface {
   readonly terminate: (process: ProcessHandle) => void;
   /** `CloseHandle`. */
   readonly close: (handle: ProcessHandle | ThreadHandle | JobHandle) => void;
+  /**
+   * What the host wrote to its inherited stdout and stderr, or `null`.
+   *
+   * ## Why this exists on the SURFACE and not beside the caller
+   *
+   * A host that dies before it connects reports itself as *"started and did not
+   * reach its pipe"*, which sends the reader to the pipe — and the answer is
+   * usually the host's own first line. Measured twice while building the
+   * recovery harness: a container whose token could not read the Electron
+   * runtime died in `icu_util.cc` with *"Invalid file descriptor to ICU data
+   * received"*, and every caller reported a pipe problem.
+   *
+   * The surface holds the path because it is the only thing that has it, and
+   * because a `string` path on any type the kernel or the renderer can name is
+   * a compile error (invariant 2, L2). The caller receives TEXT.
+   *
+   * `null` covers three states deliberately collapsed: no diagnostic file was
+   * configured, the file could not be read, and the host wrote nothing. None of
+   * them gives the caller anything to say, and separating them would put three
+   * branches at a call site that would print the same sentence for each.
+   */
+  readonly diagnostics: () => string | null;
+  /**
+   * Removes what {@link diagnostics} reads.
+   *
+   * Called when a connection is torn down. Nothing else sweeps the file until
+   * the next launch, and a diagnostic whose whole content has already been
+   * carried into a reported failure is not evidence any more.
+   */
+  readonly discardDiagnostics: () => void;
 }
 
 /** A host that is running, contained, and in its job. */

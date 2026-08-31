@@ -311,7 +311,11 @@ async function main() {
       afterSecondDeath,
     });
 
-    rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    // THE REPORT FIRST, because everything after it is cleanup and cleanup can
+    // fail. It used to come second and the run before it was `rmSync` — which
+    // threw EPERM the day the shell started giving each host a diagnostic file
+    // in the session root, because a LIVE host holds that file through an
+    // inherited handle. The experiment had finished and produced nothing.
     writeFileSync(REPORT_PATH, `${report}\n`, 'utf8');
 
     // KILL WHAT WE OPENED. Any host still running is a process this harness
@@ -326,6 +330,27 @@ async function main() {
       } catch {
         // Already gone, which is the ordinary case for the host we killed.
       }
+    }
+
+    // WAIT FOR THEM TO BE GONE, rather than for a retry to outlast them.
+    // `process.kill` asks; the handles are released when the process actually
+    // exits, and `rmSync`'s retries ride out a handle being closed, not a
+    // process that is still running. Measured: without this the removal below
+    // throws EPERM on the session root, because a live host holds its
+    // diagnostic file there through an inherited handle.
+    await waitForChildren((ids) => ids.length === 0, DEATH_BUDGET_MS);
+
+    // AND THE DIRECTORY LAST. Its failure is reported and not thrown: the
+    // report is already on disk and every case the driver asserts is decided,
+    // so a leaked temp directory must not turn a finished experiment into no
+    // result at all. It is named, because a leak nobody mentions is one nobody
+    // fixes.
+    try {
+      rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch (error) {
+      process.stderr.write(
+        `MONSTERA_HOST_RECOVERY_LEAKED ${scratch} could not be removed: ${formatError(error)}\n`,
+      );
     }
 
     // EXIT EXPLICITLY. The shell holds a reader worker, a stop event and a pipe

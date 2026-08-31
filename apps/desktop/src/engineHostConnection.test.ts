@@ -273,6 +273,63 @@ describe('createEngineHostConnection', () => {
     }
   });
 
+  it("carries the HOST'S OWN words into the refusal when it wrote any", async () => {
+    const h = harness({ connect: true, said: 'icu_util.cc:232 Invalid file descriptor' });
+    const pending = connect(h);
+    h.post({ kind: 'ended', detail: 'the reader stopped' });
+    const connection = await pending;
+
+    // THE HOST'S TEXT, VERBATIM, and not a sentence this file composed. Before
+    // this the shipped app passed `diagnosticPath: null` — so a host that died
+    // loading its own runtime data was reported as one that "started and did
+    // not reach its pipe", which sends the reader to the pipe. Measured twice
+    // while building `hostRecovery.mjs`; the line below is what the host
+    // actually printed on the second of them.
+    expect(!connection.ok && connection.error.detail).toContain(
+      'icu_util.cc:232 Invalid file descriptor',
+    );
+    // AND THE REASON MAIN HAS, kept beside it: the host's output cannot say
+    // whether the reader ended or the bound expired, and only one of those is
+    // worth ten seconds.
+    expect(!connection.ok && connection.error.detail).toContain('the reader ended');
+  });
+
+  /**
+   * THE CONTROL, and without it the case above passes against a connection that
+   * appends a constant. A host that wrote nothing must leave the detail exactly
+   * as the wait produced it — `null` from `diagnostics()` is *no file*, *could
+   * not read it* and *it was empty*, and none of those gives a caller anything
+   * to say.
+   */
+  it('CONTROL: adds nothing when the host wrote nothing', async () => {
+    const h = harness({ connect: true });
+    const pending = connect(h);
+    h.post({ kind: 'ended', detail: 'the reader stopped' });
+    const connection = await pending;
+
+    expect(h.calls).toContain('host.diagnostics');
+    expect(!connection.ok && connection.error.detail).not.toContain('The host said');
+  });
+
+  /**
+   * ASSERTED AS A CALL, not as an absent file. The surface owns the path — a
+   * `string` path on anything the kernel or the renderer can name is a compile
+   * error — so what this layer can be responsible for is *asking*, and a test
+   * that looked for a missing file would be testing `rmSync`.
+   */
+  it('discards the diagnostics when the connection is torn down', async () => {
+    const h = harness({ connect: true });
+    const pending = connect(h);
+    h.post({ kind: 'ended', detail: 'the reader stopped' });
+    await pending;
+
+    expect(h.calls).toContain('host.discardDiagnostics');
+    // AFTER the handles, so the host cannot still be writing to it.
+    expect(h.calls.indexOf('host.discardDiagnostics')).toBeGreaterThan(
+      h.calls.indexOf('host.terminate'),
+    );
+  });
+
   it('fails FAST when the reader dies mid-wait, rather than waiting out the bound', async () => {
     const h = harness({ connect: true });
     const pending = connect(h);

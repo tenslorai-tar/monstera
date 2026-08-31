@@ -84,6 +84,7 @@ const CASES = [
   'a NEW host appeared with nothing asked of the shell',
   'and a command after the first death SUCCEEDS',
   'CONTROL: the second death POISONS rather than rebuilding for ever',
+  'CONTROL: and the harness process itself exited CLEANLY',
 ];
 
 /** @type {string[]} */
@@ -179,6 +180,18 @@ if (!runnable) {
   const reportPath = join(scratch, 'report.json');
   /** @type {any} */
   let seen;
+  /**
+   * How the harness process itself ended.
+   *
+   * Declared here rather than beside the spawn because the case that reads it
+   * runs after the `finally` that removes the scratch. Undefined until the
+   * spawn assigns it: a default of `{ status: 0 }` would be the passing value,
+   * so a path that never reached the assignment would report the answer this
+   * case exists to doubt.
+   *
+   * @type {{ status: number | null, signal: string | null } | undefined}
+   */
+  let exited;
   try {
     const result = spawnSync(ELECTRON_BINARY, [CHILD, reportPath], {
       cwd: ROOT,
@@ -189,6 +202,7 @@ if (!runnable) {
     if (result.error !== undefined) {
       throw new Error(`could not run ${CHILD} under ${ELECTRON_BINARY}`, { cause: result.error });
     }
+    exited = { status: result.status, signal: result.signal };
     if (!existsSync(reportPath)) {
       throw new Error(
         `the harness wrote no report (exit ${String(result.status)}). Its own diagnostics are ` +
@@ -247,6 +261,30 @@ if (!runnable) {
       `Decision 9a stops at one rebuild per document, and without this a shell that never ` +
       `poisoned would pass every case above — as would one that poisoned immediately, against ` +
       `the case above this.`,
+  );
+
+  // THE SUBJECT'S OWN EXIT, and it is the assertion this file did not have.
+  //
+  // Every case above is decided from a report FILE the harness writes before it
+  // finishes, so a subject that dies afterwards produces a complete report and
+  // six green cases. Measured 2026-08-31: it exited **134** — SIGABRT, from
+  // `FATAL ERROR: Error::ThrowAsJavaScriptException napi_throw` at the reader
+  // worker's `GetOverlappedResult` — while reporting everything as fine. The
+  // driver's only statement about the process was that the file existed.
+  //
+  // That is the checklist's *"an artefact whose failure is announced on a
+  // channel nobody subscribes to is unproven, however many checks read it"*,
+  // one layer out: there the channel was Electron's `preload-error`, here it is
+  // an exit code.
+  check(
+    CASES[6] ?? '',
+    exited !== undefined && exited.status === 0 && exited.signal === null,
+    `the harness exited ${String(exited?.status)}${
+      exited?.signal == null ? '' : ` on ${exited.signal}`
+    } after writing a complete report. 134 is SIGABRT and was what a reader ` +
+      `thread waking inside a closing environment produced; the fix was to wait for the hosts ` +
+      `to be GONE before exiting rather than to kill them and go. Read the harness's stderr ` +
+      `above — a FATAL ERROR line names the call that aborted.`,
   );
 
   process.stdout.write(

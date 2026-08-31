@@ -109,6 +109,16 @@ export function hostHarness(
     peer?: FakePeer;
     /** The write surface refuses every issue, as a dead pipe does. */
     write?: boolean;
+    /**
+     * What the host wrote to its inherited stdio before dying, or absent for
+     * nothing.
+     *
+     * A STRING RATHER THAN A BOOLEAN, because the property under test is that
+     * the host's own words reach the caller — and a flag would let a connection
+     * that composed its own sentence pass. The case asserts this exact text
+     * comes back.
+     */
+    said?: string;
   } = {},
 ): HostHarness {
   const decoder = new FrameDecoder(ENGINE_HOST_FRAME_MAX_BYTES);
@@ -247,6 +257,11 @@ export function hostHarness(
         },
         terminate: () => calls.push('host.terminate'),
         close: (handle) => calls.push(`host.close:${handle.__handle}`),
+        diagnostics: () => {
+          calls.push('host.diagnostics');
+          return failures.said ?? null;
+        },
+        discardDiagnostics: () => calls.push('host.discardDiagnostics'),
       };
     },
   };

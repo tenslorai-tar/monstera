@@ -412,6 +412,10 @@ export async function createEngineHostConnection(
       surface.terminate(host.value.process);
       surface.close(host.value.process);
       surface.close(host.value.job);
+      // AFTER THE HANDLES, so the host cannot be writing to it. Anything worth
+      // reading has already been read by the connect branch below, and the
+      // startup sweep is what covers a main that never reaches this line.
+      surface.discardDiagnostics();
     },
   };
 
@@ -421,13 +425,22 @@ export async function createEngineHostConnection(
   // before this point is a defect rather than an optimisation.
   const peer = await connected(channel, state);
   if (!peer.connected) {
+    // THE HOST'S OWN FIRST LINE, where there is one. Every diagnostic this
+    // branch could compose is about main's side of a pipe that nobody arrived
+    // on, and the answer is normally something the child printed before it
+    // died — a runtime it could not read, a module it could not resolve.
+    //
+    // Appended rather than substituted: `peer.detail` separates "the reader
+    // ended" from "the bound expired", which the host's output cannot say.
+    const said = surface.diagnostics();
     // `started` is still false, so this reports itself once — here, as a
     // creation failure with a stage — and not a second time through `onEnded`
     // as a death. That distinction is the whole finding: a host that never
     // connects is not a host that crashed, and `engineSessions` poisons a
     // document at two crashes.
-    transport.terminate({ code: 'shutdown', detail: `the host never connected: ${peer.detail}` });
-    return err({ stage: 'connect', detail: peer.detail });
+    const detail = said === null ? peer.detail : `${peer.detail}. The host said: ${said}`;
+    transport.terminate({ code: 'shutdown', detail: `the host never connected: ${detail}` });
+    return err({ stage: 'connect', detail });
   }
 
   state.started = true;

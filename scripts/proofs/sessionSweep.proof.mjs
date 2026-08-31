@@ -53,7 +53,7 @@ const CASES = [
   'a pair a dead run left behind is gone',
   'a directory this layout could not have created is still there',
   'CONTROL: a FILE carrying a session prefix survives, which rmSync would not have',
-  'the session root own negative probe survives',
+  "a host diagnostic a dead run left behind is gone, and the root's own probe is not",
   'CONTROL: a root that does not exist reports unreadable rather than clean',
 ];
 
@@ -120,8 +120,11 @@ if (!runnable) {
     // answering directories.
     writeFileSync(join(scratch, 'in-deadbeef'), 'a file, not a directory\n');
 
-    // What `createEngineHostPlatform` writes into this root on every launch.
+    // What `createEngineHostPlatform` writes into this root on every launch,
+    // and what a host that outlived its shell leaves beside it.
     writeFileSync(join(scratch, 'containment-negative'), 'the negative probe\n');
+    writeFileSync(join(scratch, 'host-c0ffee.log'), 'icu_util.cc:232 Invalid file descriptor\n');
+    writeFileSync(join(scratch, 'host-NOTHEX.log'), 'a name this layout cannot mint\n');
 
     const swept = sweepSessionDirectories(surface, scratch);
 
@@ -150,9 +153,17 @@ if (!runnable) {
 
     check(
       CASES[3] ?? '',
-      existsSync(join(scratch, 'containment-negative')),
-      `the negative probe was removed. createEngineHostPlatform writes it into this same root ` +
-        `and reads it immediately before every containment verdict.`,
+      !existsSync(join(scratch, 'host-c0ffee.log')) &&
+        existsSync(join(scratch, 'host-NOTHEX.log')) &&
+        existsSync(join(scratch, 'containment-negative')),
+      `host-c0ffee.log ${existsSync(join(scratch, 'host-c0ffee.log')) ? 'SURVIVED' : 'is gone'}, ` +
+        `host-NOTHEX.log ${existsSync(join(scratch, 'host-NOTHEX.log')) ? 'survived' : 'WAS REMOVED'}, ` +
+        `containment-negative ${
+          existsSync(join(scratch, 'containment-negative')) ? 'survived' : 'WAS REMOVED'
+        }.\n      A host's diagnostics are discarded when its connection is torn down, so one ` +
+        `left here means main died without unwinding — the same thing a surviving pair means. ` +
+        `The other two are what the sweep must not touch: a name this layout cannot mint, and ` +
+        `the probe main reads immediately before every containment verdict.`,
     );
 
     // THE CONTROL FOR THE FOUR ABOVE, and it is the one that separates *the

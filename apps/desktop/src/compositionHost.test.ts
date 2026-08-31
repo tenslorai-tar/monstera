@@ -99,6 +99,8 @@ function platformAnswering(peer: FakePeer): PlatformSpy {
     // so a caller that started sweeping through this surface would report an
     // unreadable root rather than a clean one.
     list: () => null,
+    listFiles: () => null,
+    removeFile: () => true,
     lastError: () => 0,
   };
 
