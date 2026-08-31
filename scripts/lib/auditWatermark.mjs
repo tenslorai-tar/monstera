@@ -15,10 +15,23 @@ import { changedPaths, git, repoRoot } from './gitScope.mjs';
 const WATERMARK_PATH = 'docs/audit-watermark.json';
 
 /**
- * What one batch has actually been, measured from this repository's own history
- * rather than picked as a round number.
+ * How large an unaudited range may grow.
  *
- * Batches 4 to 7, by commits and by files touched:
+ * **THIS NUMBER IS SET BY THE PROJECT OWNER. It is not derived, and it must not
+ * be re-derived.** Recorded here so that a later reader who finds the
+ * measurement below does not compute the old figure back.
+ *
+ * The owner's reasoning, 2026-08-31: the cost of auditing more often is not the
+ * audit commit. It is the CYCLE an audit starts — findings, then fixes for the
+ * findings, then tooling written to stop them recurring, then audits covering
+ * that tooling. Counting audit commits as a share of the total measures the
+ * cheapest part of that cycle and misses the rest, so a threshold derived that
+ * way is set too low however carefully the arithmetic is done.
+ *
+ * ## What the number used to be, and why that is kept
+ *
+ * It was `{ commits: 9, files: 24 }`, the MEDIAN of batches 4 to 7 measured from
+ * this repository's own history:
  *
  * | batch | commits | files |
  * |---|---|---|
@@ -27,17 +40,17 @@ const WATERMARK_PATH = 'docs/audit-watermark.json';
  * | 6 | 11 | 26 |
  * | 7 | 31 | 69 |
  *
- * The threshold is the MEDIAN, not the maximum. Batch 7 is the outlier, and it
- * is the outlier this mechanism exists to stop recurring — a single stretch that
- * absorbed a licence rewrite, two ADRs, an invariant and four instrument
- * rebuilds before anything was audited. Setting the bar at 31 would enshrine the
- * one batch that was plainly too large to audit as a unit.
+ * The measurement is sound and is left standing as evidence; what changed is
+ * that it is no longer what decides. Batch 7 remains the outlier that motivated
+ * a gate at all — one stretch that absorbed a licence rewrite, two ADRs, an
+ * invariant and four instrument rebuilds before anything was audited — and 30
+ * still sits below it.
  *
  * Two dimensions because they fail differently: a run of small commits and a
  * single sweeping one are both past the point where the checklist can be applied
  * carefully, and neither number alone catches both.
  */
-export const BATCH = { commits: 9, files: 24 };
+export const BATCH = { commits: 30, files: 60 };
 
 /**
  * ## The watermark never equals HEAD, and that is structural

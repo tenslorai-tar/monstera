@@ -791,9 +791,15 @@ Two mechanisms, because this is otherwise a discipline:
   findings into `docs/JOURNAL.md`, and `check:docs` fails if its sha does not
   appear there — an audit cannot be claimed without a record.
 - `check:docs` also fails once HEAD is more than **one batch** past the
-  watermark. The threshold is the median of batches 4–7 measured from this
-  repository, not a round number, and deliberately not the maximum: the maximum
-  was batch 7, the one stretch plainly too large to audit as a unit.
+  watermark. **The threshold is 30 commits / 60 files and it is set by the
+  project owner, not derived — do not re-derive it.** It was previously the
+  median of batches 4–7 measured from this repository, and the owner's reason for
+  replacing that is in `scripts/lib/auditWatermark.mjs`: the cost of auditing is
+  not the audit commit but the cycle it starts — findings, fixes, tooling to stop
+  recurrence, then audits of that tooling — so a figure derived from audit
+  commits alone measures the cheapest part and lands too low however careful the
+  arithmetic. The measurement is kept beside the constant as evidence of what was
+  tried.
 
 **The watermark never equals HEAD, by construction.** The commit that records an
 audit is written after the range it audits, so it cannot be inside it. A one- or
