@@ -26,7 +26,16 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +79,69 @@ function runPoc(fixture) {
   return { outcome: 'crashed', code, output };
 }
 
+/** The scratch-directory prefix this proof owns, in the system temp directory. */
+const SCRATCH_PREFIX = 'monstera-cff-';
+
+/**
+ * How old an abandoned scratch tree must be before it is removed.
+ *
+ * A complete run costs 864s and 792s (two readings, both 2026-08-31 on the
+ * developer machine, from `npm run proof:cff` with no bound over it), so an
+ * hour is comfortably beyond any live run and a concurrent one is never removed
+ * out from under itself.
+ *
+ * That margin is not free and it is the right trade: the first run of this
+ * swept 9 of the 10 trees present and skipped one left 50 minutes earlier by a
+ * killed sweep. A tree survives until the next run, which costs disk; removing
+ * one while its run is alive would delete a source tree mid-build.
+ */
+const ABANDONED_MS = 60 * 60 * 1000;
+
+/**
+ * Removes scratch trees an interrupted run left behind.
+ *
+ * Case 2 copies the whole built MuPDF source tree, and `rmSync` lives in a
+ * `finally` — which a SIGTERM skips. Measured 2026-08-31: **ten** of these had
+ * accumulated in the temp directory, one per killed run, each a full copy
+ * including build output. `du` over them did not finish inside 300s.
+ *
+ * The bound that killed those runs was itself the defect and is fixed in
+ * `checkLocal.mjs`, so this is not what stops the leak — it is this proof
+ * owning the resource it creates, for the interruptions that remain possible:
+ * a Ctrl-C, a reboot, a genuine hang. Nothing else knows this prefix, so
+ * nothing else could clean it up (B3a).
+ *
+ * @returns {number} how many were removed, for the run's own output.
+ */
+function sweepAbandonedScratch() {
+  const root = tmpdir();
+  let removed = 0;
+  /** @type {string[]} */
+  let entries;
+  try {
+    entries = readdirSync(root);
+  } catch {
+    // An unreadable temp directory is not this proof's business to report: the
+    // run below will fail on its own when it cannot create its scratch.
+    return 0;
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith(SCRATCH_PREFIX)) continue;
+    if (entry === `${SCRATCH_PREFIX}${process.pid}`) continue;
+    const path = join(root, entry);
+    try {
+      if (Date.now() - statSync(path).mtimeMs < ABANDONED_MS) continue;
+      rmSync(path, { recursive: true, force: true });
+      removed += 1;
+    } catch {
+      // Held open by something, or gone since the listing. Either way the next
+      // run tries again, and a tree left behind costs disk rather than
+      // correctness.
+    }
+  }
+  return removed;
+}
+
 /** @param {string} fixtureDir @returns {string} */
 function writeFixture(fixtureDir) {
   mkdirSync(fixtureDir, { recursive: true });
@@ -93,7 +165,12 @@ async function main() {
     return 1;
   }
 
-  const scratch = join(tmpdir(), `monstera-cff-${process.pid}`);
+  const abandoned = sweepAbandonedScratch();
+  if (abandoned > 0) {
+    process.stdout.write(`  swept ${String(abandoned)} scratch tree(s) an interrupted run left\n`);
+  }
+
+  const scratch = join(tmpdir(), `${SCRATCH_PREFIX}${String(process.pid)}`);
   mkdirSync(scratch, { recursive: true });
   /** @type {string[]} */
   const failures = [];

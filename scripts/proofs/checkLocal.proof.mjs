@@ -86,7 +86,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 60 });
+const roster = createRoster(failures, { cases: 62 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -605,14 +605,19 @@ try {
      *   whether the figure is a cost or a bound somebody stopped the script at,
      *   and the harness discards a legacy one rather than guessing.
      * @param {string[]} names
+     * @param {{ bodies?: Record<string, string>, args?: string[] }} [options] a
+     *   body per script where the default `EXIT_ZERO` will not do, and extra
+     *   harness arguments. The bound cases need both: a script that outlives
+     *   the bound, and a `--timeout` small enough to be outlived quickly.
      */
-    const withTable = (table, names) => {
+    const withTable = (table, names, options = {}) => {
+      const bodies = options.bodies ?? {};
       /** @type {Record<string, string>} */
       const files = {};
       /** @type {Record<string, string>} */
       const manifest = {};
       for (const name of names) {
-        files[`${name}.mjs`] = EXIT_ZERO;
+        files[`${name}.mjs`] = bodies[name] ?? EXIT_ZERO;
         manifest[`proof:${name}`] = `node scripts/${name}.mjs`;
       }
       const root = mkdtempSync(join(scratch, 'ordered '));
@@ -632,9 +637,11 @@ try {
         JSON.stringify(table, null, 2),
         'utf8',
       );
-      const run = spawnSync(process.execPath, [HARNESS, '--root', root, '--floor', '1'], {
-        encoding: 'utf8',
-      });
+      const run = spawnSync(
+        process.execPath,
+        [HARNESS, '--root', root, '--floor', '1', ...(options.args ?? [])],
+        { encoding: 'utf8' },
+      );
       const order = `${run.stdout ?? ''}`
         .split('\n')
         .map((line) => /^ {2}ok {2}(proof:[\w-]+)/u.exec(line)?.[1])
@@ -699,6 +706,57 @@ try {
         `knows it cannot finish, so putting the unknown behind it too is what made "never ` +
         `measured" permanent. The unknown belongs after the cheap work and ahead of the ` +
         `portion that was going to strand anyway. Output:\n${bucketed.output}`,
+    );
+
+    // -----------------------------------------------------------------------
+    // THE BOUND IS BY KIND, AND BY KIND MEANT THE SMALLEST ONE. Found by
+    // running the sweep on 2026-08-31: `proof:cff` rebuilds libmupdf twice and
+    // costs 864s on that machine, so every bound it had ever been given was
+    // below its real cost and it was killed on all six full sweeps ever
+    // recorded. The harness classified it as a BUILD, which excluded it from
+    // derivation — and then handed it `TIMEOUT_MS`, the smallest bound in the
+    // file. A sweep that could never seal `ok`.
+    //
+    // Each script sleeps past the same `--timeout`, and each is given the same
+    // tiny COMPLETED figure. So the build finishing proves two things: the
+    // build bound applied, and derivation did not — `COMPLETED_MARGIN` over
+    // 0.1s is 200ms, which would have killed it just as dead as the base bound
+    // did.
+    //
+    // TWO RUNS RATHER THAN TWO SCRIPTS IN ONE, and the first attempt here is
+    // why. This sweep STOPS at its first timeout, so a fixture holding both a
+    // survivor and a casualty cannot separate them under mutation: whichever
+    // dies first strands the other, and reverting the fix reddened the control
+    // as well as the case — one mutation, two reds, no information. Split, the
+    // only difference between the runs is the NAME, which is the whole of what
+    // BUILDS keys on.
+    // -----------------------------------------------------------------------
+    const SLEEPS_PAST_THE_BOUND =
+      'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);\nprocess.exit(0);\n';
+    /** @param {string} name @returns {{ order: string[], output: string }} */
+    const sleepingAs = (name) =>
+      withTable({ [`proof:${name}`]: { seconds: 0.1, capped: false } }, [name], {
+        bodies: { [name]: SLEEPS_PAST_THE_BOUND },
+        args: ['--timeout', '1'],
+      });
+    const asBuild = sleepingAs('cff');
+    check(
+      'a BUILD gets a bound its own recorded figure would never have bought it',
+      asBuild.order.includes('proof:cff'),
+      `proof:cff did not complete. It sleeps 3s under --timeout 1 with a recorded cost of ` +
+        `0.1s, so it finishes only if BUILDS decided its bound. Output:\n${asBuild.output}`,
+    );
+    // THE CONTROL, and it is what separates the claim from "this fixture killed
+    // nothing". Identical body, identical table figure, identical bound; only
+    // the name differs. Asserting the timed-out LINE rather than an absence
+    // from the pass list, because a script that never ran is also absent.
+    const asCheck = sleepingAs('z-check');
+    check(
+      'CONTROL: the same body under a name BUILDS does not know is killed',
+      /Timed out is NOT passed:[^\n]*\bproof:z-check\b/u.test(asCheck.output),
+      `proof:z-check was not reported as timed out. Identical body and identical recorded ` +
+        `cost, so if it survived, the bound is not being enforced at all and the case above ` +
+        `proves nothing about BUILDS. Output:\n${asCheck.output}`,
     );
 
     // The table is written BEFORE the summary, so a run that stopped early still

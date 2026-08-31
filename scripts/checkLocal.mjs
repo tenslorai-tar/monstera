@@ -422,13 +422,37 @@ try {
 }
 
 /**
- * Scripts that are a BUILD rather than a check, excluded from bound derivation.
+ * Scripts that are a BUILD rather than a check, with the bound each one needs.
  *
- * `proof:cff` rebuilds libmupdf from source with two patches reverted, because
- * its control has to reproduce the out-of-bounds read the pinned build fixes.
- * It does not complete and no bound accommodates it, so deriving one from its
- * recorded figure would hand it an ever-raised budget for a run that is never
- * going to finish.
+ * `proof:cff` rebuilds libmupdf from a copy of the source with two bounds
+ * checks reverted, because its control has to reproduce the out-of-bounds read
+ * the pinned build fixes. Two measurements, and they are a factor apart:
+ *
+ *   - **864s** and **792s** on this machine, both 2026-08-31, from
+ *     `npm run proof:cff` with no bound over it. Exit 0 each time, both cases
+ *     passed. Two readings rather than one because the first is the figure the
+ *     bound below is chosen from, and a single point cannot show its spread.
+ *   - **339s** in CI. `.github/workflows/ci.yml` records it as 339s of the shim
+ *     job's 521s, read from the Actions API on 2026-08-23.
+ *
+ * That spread is why a build is excluded from DERIVATION rather than handed a
+ * small bound: a cost which swings by 2.5x with what happens to be built
+ * already is not one to multiply. `COMPLETED_MARGIN` over a warm run kills a
+ * cold one, and that is the direction which matters here.
+ *
+ * The bound is the local figure with room for a library build that is cold
+ * rather than incremental — `ci.yml` measures one at 336s — so ~1200s is the
+ * worst case this has evidence for, and 1800s leaves margin without being no
+ * bound at all.
+ *
+ * **This comment used to say it "does not complete and no bound accommodates
+ * it", and both halves were false on the day they were written.** They were
+ * composed from six local caps — 180s, 400s, 600s, 420s, 400s, 180s, every one
+ * below the real cost — while this repository already held the 339s figure and
+ * the shim job ran the proof unconditionally on every green board. Nothing had
+ * changed to falsify it later: an impossibility asserted from evidence that only
+ * ever showed a bound being reached (audit item 4, AAAA-8's shape). The cost of
+ * believing it was a sweep that could never seal `ok`.
  *
  * **A hand-kept list, and the direction is why that is right here** (audit item
  * 4c). The failure a derived set could not see is *shrinkage* — an entry
@@ -437,7 +461,7 @@ try {
  * run. A list that fails noisily on growth is the correct shape when growth is
  * the direction that matters.
  */
-const BUILDS = new Set(['proof:cff']);
+const BUILDS = new Map([['proof:cff', 1_800_000]]);
 
 /** How much longer than its last COMPLETED cost a script may take before it is killed. */
 const COMPLETED_MARGIN = 2;
@@ -447,8 +471,15 @@ const COMPLETED_MARGIN = 2;
  *
  * Deliberately raised and **fixed**, not multiplied again: the point is to
  * discover a real cost once, and a bound derived from a cap would grow on every
- * run that hits it. A script that caps at this too is hung rather than slow, and
- * pays the same figure next time rather than an escalating one.
+ * run that hits it. A script that caps at this too pays the same figure next
+ * time rather than an escalating one.
+ *
+ * That last sentence used to read "is hung rather than slow", and `proof:cff`
+ * falsified the inference before anything relied on it: measured at 864s on
+ * 2026-08-31, it would cap here and it finishes. So this figure bounds a run,
+ * and it does not diagnose one — a script which reaches it is reported as
+ * capped, which is the state the table already carries, and what separates slow
+ * from hung is a measurement nobody has taken yet rather than this constant.
  */
 const DISCOVERY_MS = 3 * 180_000;
 
@@ -459,7 +490,8 @@ const DISCOVERY_MS = 3 * 180_000;
  * @returns {number}
  */
 function boundFor(name) {
-  if (BUILDS.has(name)) return TIMEOUT_MS;
+  const build = BUILDS.get(name);
+  if (build !== undefined) return Math.max(TIMEOUT_MS, build);
   const last = known[name];
   if (last === undefined) return TIMEOUT_MS;
   if (last.capped) return Math.max(TIMEOUT_MS, DISCOVERY_MS);
