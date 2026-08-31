@@ -896,6 +896,23 @@ killed first it wakes inside a closing environment where koffi's next call
 escalates to `napi_fatal_error`.** The stop event exists precisely to unwedge it
 and nothing signals it on the way out.
 
+**CORRECTION, 2026-08-31, hours after the above was written.** That sentence
+states more than the readings support, and it is AAAA-8's shape — one axis
+named where the evidence varies on three.
+
+The **abort** half is read rather than reasoned: the fatal's own stack names
+`readerWorker.js:160`, which is the koffi `GetOverlappedResult` call. The
+**hang** half's attribution to the reader thread is an inference. The probe and
+the control differ in at least three ways at the moment of exit — the reader is
+still running, the pipe handles are still open, and the host process is still
+alive — and `close()` does all three, so nothing in either reading separates
+them.
+
+Kept because the distinction decides where a fix goes: *signal the stop event on
+the way out* follows from the inferred half and from nothing that was measured.
+What would settle it is a pair of probes that vary one thing each — close the
+transport and leave the host alive, then the reverse.
+
 So the harness's `process.exit(0)` — whose comment already says *"the shell
 holds a reader worker, a stop event and a pipe instance whose lifetimes are the
 application's, so this process does not end on its own"* — is the trap closing:
