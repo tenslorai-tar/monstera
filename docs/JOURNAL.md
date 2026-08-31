@@ -644,6 +644,193 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-31 — Stage audit: `0284b47..1a82157` — the ruling's shape was right and the fact under it was not, and checking that is what found the leak
+
+Range: **4 commits, 24 files.** 1 proof added, 5 modified, 0 removed; 1 source
+file added, 13 changed, 0 removed — from `npm run audit:scope`, which printed
+*"Within one batch. An audit is not yet owed. Fires at 10 commits (6 more) or 25
+files (1 more)."* Taken because the next commit crosses on files and the
+pre-commit gate refused it.
+
+The range is the previous audit's recording commit, the shipped host's
+diagnostic file, two stale claims corrected, and the shutdown path. Findings
+**WWWWW-1** to **WWWWW-4**.
+
+### The range's headline
+
+**A ruling can be right about the shape and wrong about the fact it rests on,
+and the way to find out is to go looking before building.** The ruling said the
+`before-quit` handler *"that closes every open document is registration into
+[the seam]"* and that *"neither a new `ShellDependencies` member nor a change to
+`DocumentTeardown` is warranted"*. The shape is right and the second half could
+not hold: there is no `document.close` channel, so `handlers` closes nothing;
+`incidents` and `failures` are sinks; and both things that must close are
+**locals inside `createShellDependencies`**.
+
+Going to check that is what turned up WWWWW-2, which is the larger finding and
+which nothing in the queue was pointed at.
+
+### 1. Root cause or workaround
+
+Four commits. Two are corrections to records, one is a feature, one is an audit.
+
+| the fix | mechanism | verdict |
+|---|---|---|
+| `diagnosticPath` in the shipped platform | both instruments passed a path and the product passed `null`, so a startup failure was legible to the spikes and not to the product | root cause |
+| `hostRecoveryHost.mjs`'s teardown order | it removed the session root **before** killing the hosts, and a live host holds its diagnostic file there through an inherited handle | root cause, and it was latent until the file existed |
+| `quitAfterShutdown` + `closeHost` | nothing ended the engine host at quit; `releaseOnClose` deletes a map entry and the connection's lifetime is the application's | root cause |
+| the two stale claims | a comment and an ADR both said *nothing sweeps a root* after the sweep landed | root cause; corrected by document class, not uniformly |
+
+No check was loosened and no type widened. One type was **narrowed** —
+`ShellFailureEvent` gained `shutdown-incomplete` rather than a failure being
+reported through a sink that did not fit it.
+
+### 2. Verified against the easy shape only?
+
+**The easy shape for a quit is that the process ends, and it is shared by the
+correct path and the absent one.** Electron quits when a `before-quit` handler
+returns without preventing, so *"it exited"* is what a handler doing nothing also
+produces. Every case in `shellShutdown.test.ts` asserts the **sequence**
+instead, and the load-bearing one holds the teardown open and requires the quit
+not to have happened yet.
+
+**The hard shape for the composition case is the ORDER of nine calls**, asserted
+whole rather than by membership: `reader.signal` first, because that stop event
+is what unwedges a reader thread waiting on two handles, and killing the host
+before signalling is the order measured aborting at 134.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**One, and it is a widening rather than a move.** `hostRecovery.mjs` gained a
+seventh case — the harness's own exit status — which the previous audit recorded
+as owed. It runs wherever that proof runs, so no coverage became conditional.
+
+Nothing moved from a witness to a derivation, and no assertion was replaced by a
+weaker one.
+
+### 3. Would CI have caught it?
+
+**Read from the board at the full sha:**
+
+```
+GREEN at 1a821572322f1295724947cf91971bb6d4a9989f: CI=success, Guards=success
+```
+
+The range's new cases are `vitest` cases in `apps/desktop`, which the CI test
+job runs unconditionally on both matrix legs, and `proof:sessionsweep` on the
+shim job. So the coverage runs everywhere it can.
+
+**WWWWW-2 could not have been caught by CI and could not have been caught by any
+check**, which is the honest answer rather than a gap to close: nothing was
+broken, no test failed, and no document contradicted another. A function with
+one caller whose caller has none is a fact you find by following it.
+
+### 4. Are the proofs non-vacuous?
+
+One mutation per new claim, each reddening a named case: replacing `closeHost()`
+with a resolved promise reddens the composition sequence; the four
+`shellShutdown` cases each fail against a different wrong handler — one that
+quits without preventing, one that quits without waiting, one that prevents the
+second quit as well, one that swallows a rejection.
+
+**WWWWW-1. The `preventDefault` nearly became a timing assumption.** The first
+shape put it on the injected control and had `main.ts` store the current event in
+a mutable, which works *only* while the call stays synchronous before the first
+`await`. That is correct today and nothing would have found it the day it stopped
+being. It is a parameter of the handler now, because the thing belongs to the
+event rather than to the application.
+
+### 4a. Has every instrument passed a resolution test?
+
+One instrument arrived — `shellShutdown.ts` — and its resolution test is the
+held-teardown case: the quit must not have happened while the teardown is in
+flight, and must have happened once it settles. That separates *waited* from
+*started*, which is the only distinction the file exists for.
+
+### 4b. Is the instrument a SEARCH?
+
+**Yes, and it found something.** `npm run sweep:prose -- "a decision about what a
+second running instance"` reported one match and named
+`0023-how-the-contained-engine-host-is-built.md:2649`, which is NNN-4's
+compensation doing exactly its job: a range that states a cross-document
+relationship sweeps every other statement of it.
+
+Worth recording that the compensation fired on a claim I had already corrected
+in one place and would not have thought to look for in another.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+No new roster in this range. `DocumentService.openDocIds()` is a list rather than
+a count, deliberately: a caller closing what it enumerates needs the ids, and a
+count would be a number nobody could act on.
+
+### 5. Executed, or asserted?
+
+**Executed:** the board at the full sha · 557 unit cases · `proof:sessionsweep`
+and `proof:hostrecovery` by hand · every mutation above · `sweep:prose`.
+
+**Asserted and NOT established, carried forward unchanged:** whether Electron's
+own `app.quit()` took the hang or the abort. A fix existing does not retire that
+— the three readings behind it are Node-mode processes through the same
+composition root, not the shipped window, and the fix was chosen from the shape
+of the failure rather than from a reading of the shipped path.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+The seam was already there and the ruling said so. What the ruling did not have
+is that the seam had nothing to call, so `ShellDependencies` gained a fourth
+member and `engineSessionOpener` a fourth return value. Both are additions to
+objects that already exist, with the reason written where a reader meets them —
+registration rather than amendment, but not free, and stated rather than
+absorbed.
+
+### 7. Do the documents still match the code?
+
+**WWWWW-2. A granted directory pair OUTLIVES its document, and the module that
+says otherwise is the one that creates it.** `sessionDirectories.ts`: *"Its
+lifetime is the session's: created before the image is written, removed when the
+session closes, on every path including a failed open."* The failed-open path
+does remove it. No session is ever closed: `areas.remove` has exactly one caller,
+`remoteLifecycle`'s `close`, which has none — so `releaseOnClose` deletes a map
+entry and a copy of the user's document stays in a directory the AppContainer may
+read until the next launch's sweep.
+
+Pinned rather than fixed, by an assertion that the current behaviour is two
+`create`s and no `removeTree`. The sweep that landed the day before is what
+bounds it, and the assertion is what stops the sweep quietly compensating for an
+ordinary path.
+
+**WWWWW-3. A new artefact made an old ordering visible.** The harness removed its
+scratch directory before killing its hosts, which was harmless while nothing in
+that directory was held open — and threw `EPERM` the day the shell started giving
+each host a diagnostic file there. The experiment finished and produced nothing.
+Reordered to report, kill, wait for them to be gone, then remove.
+
+**And the wait does NOT separate**, which is stated because the mutation was run:
+with it neutered the child still exits 0, because `rmSync` between the kill and
+the exit is slow enough on its own. So the clean exit is attributable to *the
+hosts being dead before `process.exit`* and not to the wait specifically. The
+wait stays because it is the version that says so; the delay is the version that
+happens to work.
+
+**WWWWW-4. Two documents said *nothing sweeps* after the sweep landed, and they
+are corrected differently.** The comment is code and its body is edited true; the
+ADR is a record and takes a dated correction below it. Both halves of the claim
+were stale — the sweep exists, and the decision it was said to be waiting on had
+been taken by code older than the sentence.
+
+### What is owed out of this range
+
+1. **A ruling on WWWWW-2**: making `DocumentTeardown` a real teardown, which is a
+   seam decision and not part of a quit.
+2. **A measurement of the shipped `app.quit()`**, still the only way to retire
+   the carried non-claim.
+3. Everything the previous audit left owed, unchanged: the partial-unverifiable
+   marker, the scan it unblocks, what revokes the Electron grant, and the two
+   bounds.
+
+---
+
 ## 2026-08-31 — Stage audit: `52ec5c6..0284b47` — a could-not-look spelt by hand is invisible to the harness that keys on it
 
 Range: **5 commits, 18 files.** 1 proof added, 4 modified, 0 removed; no source
