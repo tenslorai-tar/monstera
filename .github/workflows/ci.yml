@@ -586,6 +586,29 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # §10.4'S MANDATED GATE: "axe-core running on every Playwright-rendered
+      # screen from Stage 0, with zero serious violations". BUILD-PROMPT.md:768
+      # names the same vehicle against the browser shim.
+      #
+      # The browser is provisioned as a STEP, not as an install side effect.
+      # Every install here runs `npm ci --ignore-scripts`, so Playwright's
+      # postinstall never fires and no browser arrives during dependency
+      # resolution — the hazard the Electron pin closed, closed again by a
+      # mechanism already in place. What pins the browser build is the
+      # `@playwright/test` version in the lockfile.
+      #
+      # UNCONDITIONAL ON BOTH MATRIX LEGS, deliberately. An `if:` selecting one
+      # platform fails in the reassuring direction — the day the expression
+      # stops matching, the gate runs nowhere and the job is green. A second
+      # browser download is the cheaper price, and it is the same argument
+      # `containment-2022` records for being a separate job rather than a
+      # conditional leg.
+      - name: Provision the pinned browser for the accessibility gate
+        run: node scripts/provision/playwright.mjs
+
+      - name: Accessibility gate — axe on the rendered screen
+        run: npm run test:a11y
+
       # `npm test` used to resolve every @monstera/* specifier through the
       # package's dist build, so the suite could read the last build while a
       # mutation sat in the source it covered — 27/27 green over a deleted line.

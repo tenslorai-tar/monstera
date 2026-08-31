@@ -21,6 +21,8 @@
   "scripts": {
     "prepare": "node scripts/bootstrapHooks.mjs",
     "typecheck": "tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty",
+    "provision:playwright": "node scripts/provision/playwright.mjs",
+    "test:a11y": "playwright test --config scripts/test/playwright.config.mjs",
     "build:preload": "node scripts/build/preload.mjs",
     "build:renderer": "vite build --config scripts/build/renderer.vite.config.mjs",
     "build": "npm run typecheck && npm run build:preload && npm run build:renderer",
@@ -168,8 +170,10 @@
     "proof:hostcontainment": "node scripts/research/lowboxSpike.mjs"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@cantoo/pdf-lib": "^2.8.3",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.20.1",

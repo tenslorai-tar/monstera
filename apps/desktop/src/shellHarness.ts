@@ -127,6 +127,26 @@ function report(readback: Readback): void {
 }
 
 app.on('browser-window-created', (_event, window) => {
+  // THE READBACK AND THE QUIT PROBE ARE TWO RUNS, and this line is what keeps
+  // them two.
+  //
+  // `report()` ends with `app.exit(0)` — an immediate termination that emits no
+  // `before-quit` and no `will-quit`. Under `--quit-when-ready` that landed in
+  // the middle of the teardown being measured, killing the process between the
+  // 125ms tick and the 250ms finish, cleanly and at exit 0. CI failed on both
+  // platforms for four commits and this machine passed every time, because
+  // whether the readback finishes before or during the teardown is a race.
+  //
+  // Two guesses were pushed before the harness was made to record what actually
+  // arrived; the marker sequence named it in one read —
+  // `WINDOW_CREATED REQUESTED BEFORE_QUIT TEARDOWN_START [TICK]`, with no second
+  // `before-quit` and no `will-quit`, which is the signature of `app.exit` and
+  // of nothing else.
+  //
+  // A quit run has no readback to do: `readback()` has its own launch, and the
+  // cases that read it are not the cases that read markers.
+  if (quitProbe !== null) return;
+
   const { webContents } = window;
   webContents.once('did-finish-load', () => {
     void (async () => {
