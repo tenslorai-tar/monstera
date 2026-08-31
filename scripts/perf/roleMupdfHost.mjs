@@ -39,9 +39,33 @@
  * of every page.
  *
  * Invariant 21 puts numbers on the gap: a full page walk costs **370 MB** where
- * page geometry read from the dictionary costs **10 MB**. So the host cell is
- * expected to report a smaller figure than the model, and that difference is an
- * artefact of the channel set rather than evidence about either process.
+ * page geometry read from the dictionary costs **10 MB**.
+ *
+ * **THAT PARAGRAPH USED TO END BY PREDICTING A SMALLER FIGURE FROM THE HOST,
+ * AND THE PREDICTION IS FALSIFIED. Measured 2026-08-31, three runs, peak
+ * working set read from outside each process:**
+ *
+ * | shape | the model | the real host |
+ * |---|---|---|
+ * | image-heavy, 209,105,721 bytes | 316.6 MB | **1336.0 MB** |
+ * | object-dense, 26,315,984 bytes | 150.6 MB | **284.1 MB** |
+ * | `perf-baseline.pdf`, the fixed cost | 57.2 MB | 87.7 MB |
+ *
+ * Above each cell's own baseline that is **1.30× against 6.26×** and **3.73×
+ * against 7.83×**, so the real host breaches §9.17's 6× on **both** shapes
+ * where the model clears it on both. The absolute term is untouched — 1.34 GB
+ * and 284 MB against 3 GB — and so is the 128 MB baseline, at 87.7 MB.
+ *
+ * The prediction was reasoned from the one axis the paragraph above names, and
+ * the workloads differ on a second: the host's ends in **serialise**, which
+ * produces a full byte image (209,104,828 bytes for the image fixture) that the
+ * model never asks for. That is a candidate and it is not the answer — it
+ * accounts for 209 MB of a 1248 MB document cost, and what the rest is has not
+ * been established.
+ *
+ * So the difference is not "an artefact of the channel set" in the direction
+ * that sentence assumed. It is a reading the `mupdf-host` amendment §9.17's log
+ * already says is owed, and it is one day of it.
  *
  * **Adding walk and render channels to close it would be building architecture
  * to serve an instrument**, and the viewer that needs them is Stage 1. Recorded
@@ -71,6 +95,13 @@
  * number means — while the number itself is unamended. The reading comes first
  * and the amendment decides the number; a gate that quietly started measuring
  * something else in between would make both harder to reason about.
+ *
+ * **THE READING IS NOW TAKEN AND IT SETTLES THE ORDER RATHER THAN THE
+ * QUESTION.** Switching the gate's subject to `--host` today makes it **red on
+ * both shapes** — 6.26× and 7.83× against a declared 6× — where the model
+ * clears both. So the swap is not a wiring job that was merely being deferred
+ * for tidiness; it is blocked on the amendment, exactly as this paragraph said,
+ * and now with the figure that shows what the amendment has to decide.
  *
  * ## The instrument, in the host cell
  *
