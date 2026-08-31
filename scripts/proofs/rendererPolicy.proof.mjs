@@ -175,7 +175,8 @@ function check(label, condition, detail) {
  *
  * The wrapper exists only so the two call sites below keep reading as they did.
  *
- * @param {[string, string][]} pairs `[source, artefact]`, repo-relative.
+ * @param {import('../lib/buildFreshness.mjs').BuildEdge[]} pairs
+ *   `[source, artefact, producer]`, repo-relative.
  * @param {number} expected How many pairs this call site declares.
  */
 function refuseStaleBuild(pairs, expected) {

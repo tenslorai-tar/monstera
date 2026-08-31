@@ -50,6 +50,9 @@ const CASES = [
   'CONTROL: and a directory holding one ordinary file is dated, not refused',
   'a missing artefact is reported as missing rather than as fresh',
   'a pair count that disagrees with the call site is refused',
+  'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
+  'CONTROL: and REFUSED when the compiler says a build is owed',
+  'CONTROL: a BUNDLER pair with the same shape is refused without asking anybody',
 ];
 
 const roster = createRoster(failures, { cases: CASES.length });
@@ -69,13 +72,13 @@ function check(label, condition, detail) {
  * Whether `refuseStaleBuild` refused, and what it said.
  *
  * @param {string} root
- * @param {[string, string][]} pairs
+ * @param {import('../lib/buildFreshness.mjs').BuildEdge[]} pairs
  * @param {number} expected
  * @returns {{ refused: boolean, message: string }}
  */
-function refusal(root, pairs, expected) {
+function refusal(root, pairs, expected, options = {}) {
   try {
-    refuseStaleBuild(root, pairs, expected);
+    refuseStaleBuild(root, pairs, expected, options);
     return { refused: false, message: '' };
   } catch (error) {
     return { refused: true, message: error instanceof Error ? error.message : String(error) };
@@ -122,7 +125,7 @@ try {
     const root = tree();
     writeAt(join(root, 'src', 'a.ts'), 'source\n', NEW);
     writeAt(join(root, 'dist', 'a.js'), 'built\n', OLD);
-    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js']], 1);
+    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js', 'bundler']], 1);
     check(
       'a source NEWER than its artefact is refused',
       refused && message.includes('OLDER than'),
@@ -136,7 +139,7 @@ try {
     const root = tree();
     writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
     writeAt(join(root, 'dist', 'a.js'), 'built\n', NEW);
-    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js']], 1);
+    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js', 'bundler']], 1);
     check(
       'CONTROL: and the same pair with the artefact newer is accepted',
       !refused,
@@ -153,7 +156,7 @@ try {
     const root = tree();
     writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
     writeAt(join(root, 'dist', 'a.js'), 'built\n', OLD);
-    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js']], 1);
+    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js', 'bundler']], 1);
     check(
       'EQUAL timestamps pass, because a tick is not evidence of staleness',
       !refused,
@@ -176,7 +179,7 @@ try {
     writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
     writeAt(join(root, 'src', 'nested', 'b.ts'), 'sibling\n', NEW);
     writeAt(join(root, 'dist', 'bundle.js'), 'built\n', OLD + 1);
-    const { refused } = refusal(root, [['src', 'dist/bundle.js']], 1);
+    const { refused } = refusal(root, [['src', 'dist/bundle.js', 'bundler']], 1);
     check(
       'a directory source is dated by the newest file BENEATH it',
       refused,
@@ -192,7 +195,7 @@ try {
     writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
     writeAt(join(root, 'src', 'a.test.ts'), 'a test\n', NEW);
     writeAt(join(root, 'dist', 'bundle.js'), 'built\n', OLD + 1);
-    const { refused, message } = refusal(root, [['src', 'dist/bundle.js']], 1);
+    const { refused, message } = refusal(root, [['src', 'dist/bundle.js', 'bundler']], 1);
     check(
       'a test file is not an input, so touching one does not refuse',
       !refused,
@@ -255,7 +258,7 @@ try {
   {
     const root = tree();
     writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
-    const { refused, message } = refusal(root, [['src/a.ts', 'dist/never-built.js']], 1);
+    const { refused, message } = refusal(root, [['src/a.ts', 'dist/never-built.js', 'bundler']], 1);
     check(
       'a missing artefact is reported as missing rather than as fresh',
       refused && message.includes('does not exist'),
@@ -269,7 +272,7 @@ try {
     const root = tree();
     writeAt(join(root, 'src', 'a.ts'), 'source\n', OLD);
     writeAt(join(root, 'dist', 'a.js'), 'built\n', NEW);
-    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js']], 2);
+    const { refused, message } = refusal(root, [['src/a.ts', 'dist/a.js', 'bundler']], 2);
     check(
       'a pair count that disagrees with the call site is refused',
       refused && message.includes('declares'),
@@ -277,6 +280,60 @@ try {
         `      The literal is the anchor, and the danger runs toward the list being SHORT — ` +
         `GGGGG-1 was two cases that began reading the Vite bundle with no row following them. ` +
         `A count derived from the list agrees with any list, including the one missing an entry.`,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ESCAPE HATCH, BOTH DIRECTIONS AND THE KIND THAT DOES NOT GET ONE.
+  //
+  // `tsc --build` does not rewrite an output whose content did not change, so a
+  // source that is merely NEWER proves nothing: a checkout, a `git stash pop`
+  // and a formatter rewriting a file identically all move the timestamp. The
+  // documented answer used to be `--force`, which is a rebuild performed to
+  // satisfy a check rather than to fix anything — and it fired for real on
+  // 2026-08-31, blocking two role scripts on a tree tsc called up to date.
+  //
+  // The compiler is injected because a fixture tree is not a TypeScript
+  // solution: the real one answers *no* there for a reason that has nothing to
+  // do with the case, which would leave the hatch untested rather than tested.
+  // -------------------------------------------------------------------------
+  {
+    const root = tree();
+    writeAt(join(root, 'src', 'a.ts'), 'source\n', NEW);
+    writeAt(join(root, 'dist', 'a.js'), 'built\n', OLD);
+
+    const current = refusal(root, [['src/a.ts', 'dist/a.js', 'tsc']], 1, {
+      compilerSaysCurrent: () => true,
+    });
+    check(
+      'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
+      !current.refused,
+      `refused with: ${current.message}\n      The timestamps say stale and the authority on ` +
+        `whether tsc's own output is current is tsc. Refusing here is the false positive that ` +
+        `made \`--force\` a documented step.`,
+    );
+
+    const owed = refusal(root, [['src/a.ts', 'dist/a.js', 'tsc']], 1, {
+      compilerSaysCurrent: () => false,
+    });
+    check(
+      'CONTROL: and REFUSED when the compiler says a build is owed',
+      owed.refused && owed.message.includes('tsc was asked directly'),
+      `accepted, or refused without saying it asked: ${owed.refused ? owed.message : '(accepted)'}\n` +
+        `      Without this, "asks the compiler" is satisfied by a guard that stopped checking ` +
+        `— every stale tsc build would pass, which is the whole thing this module exists for.`,
+    );
+
+    const bundled = refusal(root, [['src/a.ts', 'dist/a.js', 'bundler']], 1, {
+      compilerSaysCurrent: () => true,
+    });
+    check(
+      'CONTROL: a BUNDLER pair with the same shape is refused without asking anybody',
+      bundled.refused && !bundled.message.includes('tsc was asked'),
+      `${bundled.refused ? bundled.message : '(accepted)'}\n      esbuild and Vite rewrite ` +
+        `their outputs on every build, so for a bundled artefact the timestamps are the whole ` +
+        `truth and tsc's answer is about a different build. A hatch that applied to both would ` +
+        `let a stale preload through on a tree whose TypeScript happened to be current.`,
     );
   }
 

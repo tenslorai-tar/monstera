@@ -151,11 +151,12 @@
  *        node scripts/perf/roleMupdfHost.mjs --no-document
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { ROLE_MUPDF_HOST, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { requireCurrentShim } from '../lib/shimBinary.mjs';
 // STATIC AND NAMED, so the call site below reads `electronBinaryPath()`.
@@ -201,35 +202,6 @@ function requireDocument() {
     process.exit(2);
   }
   return documentPath;
-}
-
-/**
- * Refuses a missing or stale build, and says which.
- *
- * The same rule `roleMainService.mjs` applies and for the same reason: the host
- * cell measures **compiled** code, and an old build answers every question
- * confidently about the previous one. Ties pass, because a build finishing
- * inside one filesystem tick is not evidence of anything.
- *
- * @param {string} relativeSource @param {string} relativeBuilt
- */
-function requireFreshBuild(relativeSource, relativeBuilt) {
-  const built = join(ROOT, relativeBuilt);
-  if (!existsSync(built)) {
-    process.stderr.write(
-      `roleMupdfHost --host: ${relativeBuilt} does not exist. This cell drives the REAL host, ` +
-        `so the tree has to be compiled — run \`npm run typecheck\`.\n`,
-    );
-    process.exit(1);
-  }
-  if (statSync(join(ROOT, relativeSource)).mtimeMs > statSync(built).mtimeMs) {
-    process.stderr.write(
-      `roleMupdfHost --host: ${relativeBuilt} is older than ${relativeSource}, so this cell ` +
-        `would measure the previous host and report it as current. Run \`npm run typecheck\`; ` +
-        `if it reports nothing to do, force it with \`npx tsc --build --force\`.\n`,
-    );
-    process.exit(1);
-  }
 }
 
 /**
@@ -394,14 +366,10 @@ async function measureHost() {
     process.exit(2);
   }
 
-  requireFreshBuild(
-    'packages/kernel/src/host/hostEntry.ts',
-    'packages/kernel/dist/host/hostEntry.js',
-  );
-  requireFreshBuild(
-    'apps/desktop/src/engineHostConnection.ts',
-    'apps/desktop/dist/engineHostConnection.js',
-  );
+  // THROUGH THE OWNER (B3a). This was one of three private copies of the same
+  // rule, none of which carried the exclusions `buildFreshness.mjs` had already
+  // measured into it — a directory walk, tests skipped, an empty walk refused.
+  refuseStaleBuild(ROOT, ROLE_MUPDF_HOST, 2);
 
   // NOT ANNOTATED, deliberately. A dynamic import of a computed path is `any`,
   // which is what lets these modules be reached by property name; annotating the

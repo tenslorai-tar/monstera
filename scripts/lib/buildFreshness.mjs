@@ -18,8 +18,22 @@
  * in {@link newestMtime} rather than in prose someone re-derives.
  */
 
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+
+/**
+ * One source-to-artefact edge, and WHO produces the artefact.
+ *
+ * The producer is declared rather than inferred from the path, because the two
+ * kinds answer a staleness question differently and the difference is not
+ * visible in a filename. `tsc` does not rewrite an output whose content did not
+ * change, so a newer source proves nothing on its own and the compiler has to
+ * be asked; esbuild and Vite rewrite theirs on every build, so for a bundled
+ * artefact the timestamps are the whole truth.
+ *
+ * @typedef {[source: string, artefact: string, producer: 'tsc' | 'bundler']} BuildEdge
+ */
 
 /**
  * The pairs `rendererPolicy.proof.mjs` reads before believing its own output.
@@ -29,18 +43,18 @@ import { join } from 'node:path';
  * where Electron is provisioned. Calling both early would refuse on a machine
  * that never runs the runtime cases at all.
  *
- * @type {[string, string][]}
+ * @type {BuildEdge[]}
  */
 export const RENDERER_POLICY_DECLARATION = [
-  ['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js'],
+  ['apps/desktop/src/windowPolicy.ts', 'apps/desktop/dist/windowPolicy.js', 'tsc'],
 ];
 
-/** @type {[string, string][]} */
+/** @type {BuildEdge[]} */
 export const RENDERER_POLICY_RUNTIME = [
-  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
-  ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
-  ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js'],
-  ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js'],
+  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs', 'bundler'],
+  ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js', 'tsc'],
+  ['apps/desktop/src/rendererHarness.ts', 'apps/desktop/dist/rendererHarness.js', 'tsc'],
+  ['apps/desktop/src/rendererHarnessMain.ts', 'apps/desktop/dist/rendererHarnessMain.js', 'tsc'],
   // THE FIFTH, and finding GGGGG-1 (2026-08-29). Two cases there read the Vite
   // bundle — that the React shell mounted, and that its stylesheet applied —
   // and this list did not follow them. Editing `App.tsx`, running `typecheck`
@@ -53,17 +67,17 @@ export const RENDERER_POLICY_RUNTIME = [
   // file, because the bundle's inputs are every module reachable from
   // `main.tsx`, and naming one of them would be a guard that passes whenever
   // the edit landed in a sibling.
-  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
+  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
 ];
 
-/** @type {[string, string][]} */
+/** @type {BuildEdge[]} */
 export const CANVAS_PIXELS_RUNTIME = [
-  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs'],
-  ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js'],
-  ['apps/desktop/src/composition.ts', 'apps/desktop/dist/composition.js'],
-  ['apps/desktop/src/canvasHarness.ts', 'apps/desktop/dist/canvasHarness.js'],
-  ['apps/desktop/src/canvasHarnessMain.ts', 'apps/desktop/dist/canvasHarnessMain.js'],
-  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html'],
+  ['apps/desktop/src/preload.ts', 'apps/desktop/dist/preload.cjs', 'bundler'],
+  ['apps/desktop/src/window.ts', 'apps/desktop/dist/window.js', 'tsc'],
+  ['apps/desktop/src/composition.ts', 'apps/desktop/dist/composition.js', 'tsc'],
+  ['apps/desktop/src/canvasHarness.ts', 'apps/desktop/dist/canvasHarness.js', 'tsc'],
+  ['apps/desktop/src/canvasHarnessMain.ts', 'apps/desktop/dist/canvasHarnessMain.js', 'tsc'],
+  ['packages/ui/src', 'apps/desktop/dist/renderer/index.html', 'bundler'],
 ];
 
 /**
@@ -96,7 +110,7 @@ export const CANVAS_PIXELS_RUNTIME = [
  * side and the advisor takes the source side. Neither can drift from the other,
  * because there is no other.
  *
- * @type {Record<string, readonly [string, string][]>}
+ * @type {Record<string, readonly BuildEdge[]>}
  */
 export const ARTEFACT_EDGES = {
   'proof:rendererpolicy': [...RENDERER_POLICY_DECLARATION, ...RENDERER_POLICY_RUNTIME],
@@ -112,6 +126,45 @@ export const ARTEFACT_EDGES = {
 export function builtSourcesFor(proof) {
   return (ARTEFACT_EDGES[proof] ?? []).map(([source]) => source);
 }
+
+/**
+ * The kernel modules `roleMainService.mjs` measures.
+ *
+ * Not in {@link ARTEFACT_EDGES}: that map answers *which proof reads which
+ * build* for `affectedProofs.mjs`, and these three lists belong to scripts that
+ * are not proofs. Same rule, different question.
+ *
+ * @type {BuildEdge[]}
+ */
+export const ROLE_MAIN_SERVICE = [
+  ['packages/kernel/src/documentService.ts', 'packages/kernel/dist/documentService.js', 'tsc'],
+  // The supervisor too: it holds the only mint of the capability this role
+  // uses, and a stale build answers confidently about a previous one.
+  ['apps/desktop/src/engineSessions.ts', 'apps/desktop/dist/engineSessions.js', 'tsc'],
+];
+
+/**
+ * The modules `roleMupdfHost.mjs`'s `--host` cell drives.
+ *
+ * @type {BuildEdge[]}
+ */
+export const ROLE_MUPDF_HOST = [
+  ['packages/kernel/src/host/hostEntry.ts', 'packages/kernel/dist/host/hostEntry.js', 'tsc'],
+  [
+    'apps/desktop/src/engineHostConnection.ts',
+    'apps/desktop/dist/engineHostConnection.js',
+    'tsc',
+  ],
+];
+
+/**
+ * The shared contrast formula `tokenContrast.mjs` evaluates the token file with.
+ *
+ * @type {BuildEdge[]}
+ */
+export const TOKEN_CONTRAST = [
+  ['packages/shared/src/colour.ts', 'packages/shared/dist/colour.js', 'tsc'],
+];
 
 /**
  * The newest mtime at `path`, walking it if it is a directory.
@@ -222,12 +275,18 @@ export function newestMtime(path) {
  * list, including the one that is missing an entry.
  *
  * @param {string} repoRoot absolute path to the repository root
- * @param {ReadonlyArray<readonly [string, string]>} pairs `[source, artefact]`,
+ * @param {readonly BuildEdge[]} pairs `[source, artefact, producer]`,
  *   both repo-relative. A directory source is walked; a file source is read.
  * @param {number} expected how many pairs this call site declares.
+ * @param {{ compilerSaysCurrent?: (repoRoot: string) => boolean }} [options]
+ *   `compilerSaysCurrent` is injected so the escape hatch can be exercised in
+ *   both directions. A fixture tree is not a TypeScript solution, so the real
+ *   one answers *no* there for a reason that has nothing to do with the case —
+ *   which would leave the hatch untested rather than tested.
  * @returns {void}
  */
-export function refuseStaleBuild(repoRoot, pairs, expected) {
+export function refuseStaleBuild(repoRoot, pairs, expected, options = {}) {
+  const askCompiler = options.compilerSaysCurrent ?? typescriptSaysCurrent;
   if (pairs.length !== expected) {
     throw new Error(
       `refuseStaleBuild received ${String(pairs.length)} pair(s) where the call site declares ` +
@@ -235,7 +294,7 @@ export function refuseStaleBuild(repoRoot, pairs, expected) {
         `removing one, say why in the commit.`,
     );
   }
-  for (const [source, artefact] of pairs) {
+  for (const [source, artefact, producer] of pairs) {
     const sourcePath = join(repoRoot, source);
     const artefactPath = join(repoRoot, artefact);
     if (!existsSync(artefactPath)) {
@@ -246,20 +305,87 @@ export function refuseStaleBuild(repoRoot, pairs, expected) {
     }
     const sourceAt = newestMtime(sourcePath);
     const artefactAt = statSync(artefactPath).mtimeMs;
-    if (sourceAt > artefactAt) {
-      throw new Error(
-        `${artefact} is OLDER than ${source}, so this proof would run against a stale build ` +
-          `and every case would pass about the previous version of the shell.\n  ` +
-          `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
-          `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
-          `Run \`npm run build\`. \`npm run typecheck\` produces neither the preload bundle nor ` +
-          `the renderer bundle, which are two of the pairs this check exists for.\n` +
-          `And if \`build\` reports nothing to do for a \`tsc\` pair, the source's timestamp ` +
-          `moved without its CONTENT changing — a \`git stash pop\` does exactly that — so the ` +
-          `incremental build correctly considers the output current while this check does not: ` +
-          `\`npx tsc --build --force\`. The bundled pairs have no such state; esbuild and ` +
-          `Vite rebuild them every time.`,
-      );
-    }
+    if (sourceAt <= artefactAt) continue;
+
+    // THE MTIME SAID STALE. ASK WHETHER IT IS.
+    //
+    // A newer source is not evidence that the output is old. A checkout, a
+    // `git stash pop` and a formatter rewriting a file identically all move a
+    // timestamp without changing content, and `tsc --build` correctly leaves
+    // the output alone — after which this comparison reddens on a tree that is
+    // current, and the documented answer was `--force`, which is a rebuild
+    // somebody performs to satisfy a check rather than to fix anything.
+    //
+    // **The authority on whether tsc's output is current is tsc** (B3a). It is
+    // asked once per process and only when the cheap comparison has already
+    // said no, so the ordinary path costs nothing.
+    //
+    // Only for `tsc` pairs, and the producer is DECLARED rather than inferred
+    // from the extension: esbuild and Vite rewrite their outputs on every run,
+    // so for a bundled pair the timestamps are the whole truth and tsc's answer
+    // is about a different build.
+    if (producer === 'tsc' && askCompiler(repoRoot)) continue;
+
+    throw new Error(
+      `${artefact} is OLDER than ${source}, so this proof would run against a stale build ` +
+        `and every case would pass about the previous version of the shell.\n  ` +
+        `${source}: ${new Date(sourceAt).toISOString()}\n  ` +
+        `${artefact}: ${new Date(artefactAt).toISOString()}\n` +
+        `Run \`npm run build\` — \`npm run typecheck\` produces neither the preload bundle nor ` +
+        `the renderer bundle, and those are ${producer === 'tsc' ? 'not' : ''} what this pair ` +
+        `is.\n` +
+        `${
+          producer === 'tsc'
+            ? 'tsc was asked directly and says a build IS owed, so this is real staleness ' +
+              'rather than a timestamp that moved on its own.'
+            : 'A bundled artefact is rewritten on every build, so its timestamp is the whole ' +
+              'truth and there is nothing else to consult.'
+        }`,
+    );
   }
 }
+
+/**
+ * Whether `tsc --build` would rebuild anything, memoised per process.
+ *
+ * `--dry` reports one line per project and never writes. Current means **every**
+ * project says so: a single line that does not is a project that would be
+ * built, and treating a partially-stale solution as fresh is the reassuring
+ * answer this whole module exists to refuse.
+ *
+ * A failure to run it is NOT fresh. `npx` missing, a config error, a non-zero
+ * exit — every one of them means the question was not answered, and the caller
+ * falls back to the timestamp comparison it already made, which is the
+ * conservative direction.
+ *
+ * @param {string} repoRoot
+ * @returns {boolean}
+ */
+function typescriptSaysCurrent(repoRoot) {
+  if (tscCurrent !== null) return tscCurrent;
+  // THE PINNED COMPILER BY PATH, not `npx tsc` through a shell. Two reasons and
+  // both are this repository's own rules: PATH deciding which binary answers a
+  // question is invariant 23's objection to a filename selecting native code,
+  // one domain over; and `shell: true` is what Node deprecates for argument
+  // escaping (DEP0190), printed on every run of three proofs.
+  const compiler = join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc');
+  if (!existsSync(compiler)) {
+    tscCurrent = false;
+    return tscCurrent;
+  }
+  const run = spawnSync(process.execPath, [compiler, '--build', '--dry'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  const lines = `${run.stdout ?? ''}`
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  tscCurrent =
+    run.status === 0 && lines.length > 0 && lines.every((line) => line.includes('is up to date'));
+  return tscCurrent;
+}
+
+/** @type {boolean | null} */
+let tscCurrent = null;

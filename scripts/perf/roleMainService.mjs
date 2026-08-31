@@ -39,11 +39,12 @@
  * Usage: node scripts/perf/roleMainService.mjs <document-path>
  */
 
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ROLE_MAIN_SERVICE, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { reportPeak } from './peakRss.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -66,40 +67,11 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
  *
  * @param {string} relativeSource @param {string} relativeBuilt
  */
-function requireFreshBuild(relativeSource, relativeBuilt) {
-  const built = join(REPO_ROOT, relativeBuilt);
-  if (!existsSync(built)) {
-    process.stderr.write(
-      `roleMainService: ${relativeBuilt} does not exist. This role measures the REAL ` +
-        `DocumentService, so the kernel has to be compiled — run \`npm run typecheck\`. A job ` +
-        `that runs the performance gate must build TypeScript even if nothing else in it does.\n`,
-    );
-    process.exit(1);
-  }
-  const sourceAt = statSync(join(REPO_ROOT, relativeSource)).mtimeMs;
-  if (sourceAt > statSync(built).mtimeMs) {
-    process.stderr.write(
-      `roleMainService: ${relativeBuilt} is older than ${relativeSource}, so this role would ` +
-        `measure the previous retention path and report it as current. Run ` +
-        `\`npm run typecheck\`.\n` +
-        `If that reports nothing to do, the source's timestamp moved without its CONTENT ` +
-        `changing — a touch, or a tool rewriting it identically — and tsc's incremental build ` +
-        `correctly considers the output current while this check does not. Force it with ` +
-        `\`npx tsc --build --force\`. Stated because a guard that can sit red through the ` +
-        `command it names is a guard someone switches off.\n`,
-    );
-    process.exit(1);
-  }
-}
-
-requireFreshBuild(
-  'packages/kernel/src/documentService.ts',
-  'packages/kernel/dist/documentService.js',
-);
-// The supervisor's module too, for the same reason and with the same
-// consequence: it holds the only mint of the capability this role uses, and a
-// stale build would answer confidently about a previous one.
-requireFreshBuild('apps/desktop/src/engineSessions.ts', 'apps/desktop/dist/engineSessions.js');
+// THROUGH THE OWNER (B3a). This file held one of three private copies of the
+// rule, and none of them carried what `buildFreshness.mjs` had measured into it:
+// a directory walk, a test-file exclusion, and a refusal when the walk comes
+// back empty. The pairs moved there too, so the list and the rule live together.
+refuseStaleBuild(REPO_ROOT, ROLE_MAIN_SERVICE, 2);
 
 // THE SPECIFIC MODULES, NOT THE BARREL, and imported DYNAMICALLY.
 //

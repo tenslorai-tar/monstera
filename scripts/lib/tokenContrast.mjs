@@ -41,10 +41,11 @@
  * Usage: node scripts/lib/tokenContrast.mjs
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { TOKEN_CONTRAST, refuseStaleBuild } from './buildFreshness.mjs';
 import { repoRoot } from './gitScope.mjs';
 
 /**
@@ -67,26 +68,13 @@ import { repoRoot } from './gitScope.mjs';
  * `import` is hoisted above every statement in this file, which would make the
  * guard below dead code that reads like a guard.
  */
-const SHARED_SOURCE = 'packages/shared/src/colour.ts';
 const SHARED_BUILT = 'packages/shared/dist/colour.js';
 
-{
-  const root = repoRoot();
-  const built = join(root, SHARED_BUILT);
-  if (!existsSync(built)) {
-    throw new Error(
-      `${SHARED_BUILT} does not exist. The contrast formula lives in packages/shared (B3a), so ` +
-        `this check needs it compiled — run \`npm run typecheck\`.`,
-    );
-  }
-  if (statSync(join(root, SHARED_SOURCE)).mtimeMs > statSync(built).mtimeMs) {
-    throw new Error(
-      `${SHARED_BUILT} is older than ${SHARED_SOURCE}, so this check would evaluate the token ` +
-        `file against the PREVIOUS contrast formula and report it as current. Run ` +
-        `\`npm run typecheck\`; if it reports nothing to do, force it with \`npx tsc --build --force\`.`,
-    );
-  }
-}
+// THROUGH THE OWNER, and this file was one of THREE private copies of the same
+// rule (B3a). `buildFreshness.mjs` holds it, and what the copies did not have is
+// what makes it correct: a directory walk, a test-file exclusion, and a refusal
+// when the walk comes back empty — each measured, each absent here.
+refuseStaleBuild(repoRoot(), TOKEN_CONTRAST, 1);
 
 const colour = await import(pathToFileURL(join(repoRoot(), SHARED_BUILT)).href);
 
