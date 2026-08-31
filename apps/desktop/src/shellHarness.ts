@@ -249,15 +249,6 @@ function quitWhenAsked(): {
 
 const quitProbe = quitWhenAsked();
 
-if (quitProbe !== null) {
-  void app.whenReady().then(() => {
-    // After ready, so the shell has registered `before-quit` before anything
-    // asks it to run. Quitting earlier would measure a race rather than a path.
-    quitProbe.mark('MONSTERA_QUIT_REQUESTED');
-    app.quit();
-  });
-}
-
 startShell(() => {
   const dependencies = createShellDependencies(
     { version: app.getVersion(), installChannel: 'development' },
@@ -286,3 +277,25 @@ startShell(() => {
   // other, and this comment is here so the substitution is not mistaken for one.
   return { ...dependencies, shutdown: quitProbe.shutdown };
 });
+
+// THE QUIT IS REQUESTED AFTER `startShell`, AND THE ORDER IS THE WHOLE FIX.
+//
+// This block sat above `startShell` with a comment claiming it ran "after
+// ready, so the shell has registered `before-quit` before anything asks it to
+// run". `before-quit` is registered synchronously inside `startShell`, so that
+// much was true and it was not the ordering that mattered. The WINDOW is
+// created in the shell's own `whenReady` handler — and `whenReady` callbacks
+// run in registration order, so registering above `startShell` put this one
+// FIRST: the quit was requested before the window existed, and the shell then
+// created a window inside a quit it had just cancelled.
+//
+// CI showed it as non-determinism, which is what named it. The same commit
+// produced DONE on one run and not the next with identical harness code, and a
+// race is the only thing that does that. Registering here makes the sequence
+// the one a user performs: window, then quit.
+if (quitProbe !== null) {
+  void app.whenReady().then(() => {
+    quitProbe.mark('MONSTERA_QUIT_REQUESTED');
+    app.quit();
+  });
+}
