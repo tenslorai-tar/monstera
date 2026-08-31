@@ -71,6 +71,9 @@ const RUNTIME_CASES = [
   "Electron still carries `dialog.showOpenDialog`, read before it is replaced",
   'the picker asks for ONE file and no recent-documents entry',
   'a dismissal and an empty selection are BOTH null, and a real path comes back',
+  'the SHIPPED app.quit() is deferred: the teardown finishes before will-quit',
+  'the process exits 0 with the teardown having run, not merely exits',
+  'CONTROL: the quit really happened rather than the app hanging to the timeout',
 ];
 
 // THE ANCHOR, BECAUSE THE LINE BELOW IS NOT ONE (finding EEEEE-1). `passRoster`
@@ -81,9 +84,9 @@ const RUNTIME_CASES = [
 // Every other proof in this repository declares a literal; this one derived, and
 // the derivation is what removed the anchor. 4c's danger here runs toward
 // shrinkage, and a derived count agrees with any shrink.
-if (RUNTIME_CASES.length !== 6) {
+if (RUNTIME_CASES.length !== 9) {
   throw new Error(
-    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 6. ` +
+    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 9. ` +
       `Raise or lower the literal in the same commit and say why: a case that leaves takes its ` +
       `label and the total with it, and nothing else here would notice.`,
   );
@@ -101,15 +104,21 @@ function check(label, condition, detail) {
 }
 
 /**
- * Runs the harness under a display and returns what the renderer saw.
+ * How to launch the harness on this platform.
  *
  * `xvfb-run -a` on Linux for the reason `proof:rendererpolicy` records: without
  * a display Electron does not error, it HANGS, and a hang reads as a flake.
  *
+ * Extracted rather than repeated when the quit probe below needed it too. How
+ * Electron is started is one question, and two callers answering it separately
+ * is how they come to disagree — the second one would have been written from
+ * the first by eye, and the hang this guards against is silent.
+ *
  * @param {string} binary
- * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown }}
+ * @param {string[]} extraArgs
+ * @returns {[command: string, args: string[]]}
  */
-function readback(binary) {
+function launch(binary, extraArgs) {
   const needsDisplay = process.platform === 'linux' && process.env['DISPLAY'] === undefined;
   const XVFB = ['/usr/bin/xvfb-run', '/bin/xvfb-run', '/usr/local/bin/xvfb-run'];
   let wrapper;
@@ -122,9 +131,52 @@ function readback(binary) {
       );
     }
   }
+  return wrapper === undefined
+    ? [binary, [HARNESS, ...extraArgs]]
+    : [wrapper, ['-a', binary, HARNESS, ...extraArgs]];
+}
 
-  const [command, args] =
-    wrapper === undefined ? [binary, [HARNESS]] : [wrapper, ['-a', binary, HARNESS]];
+/**
+ * Runs the harness to a real quit and returns the lifecycle markers in order.
+ *
+ * ORDER IS THE CLAIM, so the lines are kept as a sequence rather than a set.
+ * `shellShutdown.test.ts` proves the decision against injected surfaces; what
+ * no unit test can reach is whether the SHIPPED Electron honours the
+ * `preventDefault` this shell issues. If it does not, the process carries on
+ * quitting and ends before the harness's 250ms teardown prints its second
+ * line — so a missing DONE is the defect, and its position relative to
+ * `will-quit` is the proof it was deferred rather than merely fast.
+ *
+ * @param {string} binary
+ * @returns {{ status: number | null, markers: string[], output: string }}
+ */
+function quitRun(binary) {
+  const [command, args] = launch(binary, ['--quit-when-ready']);
+  const result = spawnSync(command, args, {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    timeout: 120_000,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error !== undefined) {
+    throw new Error(`Could not run the quit probe via ${command}`, { cause: result.error });
+  }
+  const output = `${result.stdout}${result.stderr}`;
+  const markers = `${result.stdout}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('MONSTERA_QUIT_'));
+  return { status: result.status, markers, output };
+}
+
+/**
+ * Runs the harness and returns what the renderer saw.
+ *
+ * @param {string} binary
+ * @returns {{ appInfo: unknown, execute: unknown, bridgePresent: boolean, picker: unknown }}
+ */
+function readback(binary) {
+  const [command, args] = launch(binary, []);
   const result = spawnSync(command, args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -250,6 +302,41 @@ try {
         `first two are satisfied by a picker that returns null for everything, which is a ` +
         `document nobody can ever open — and it would pass an assertion about cancellation ` +
         `alone with nothing red.`,
+    );
+
+    // ---------------------------------------------------------------------
+    // THE LIFECYCLE, against the shipped runtime. A separate launch because it
+    // ends the process deliberately, and the readback above needs one that
+    // stays up.
+    // ---------------------------------------------------------------------
+    const quit = quitRun(ELECTRON_BINARY);
+    const order = quit.markers.join(' ');
+    const doneAt = quit.markers.indexOf('MONSTERA_QUIT_TEARDOWN_DONE');
+    const willQuitAt = quit.markers.indexOf('MONSTERA_QUIT_WILL_QUIT');
+
+    check(
+      'the SHIPPED app.quit() is deferred: the teardown finishes before will-quit',
+      doneAt !== -1 && willQuitAt !== -1 && doneAt < willQuitAt,
+      `markers were [${order}]. The teardown sleeps 250ms between START and DONE, so an ` +
+        `Electron that ignored preventDefault would end the process with no DONE line at all, ` +
+        `and one that merely raced would put will-quit first. This is the measurement that ` +
+        `was carried as "not established".`,
+    );
+
+    check(
+      'the process exits 0 with the teardown having run, not merely exits',
+      quit.status === 0 && quit.markers.includes('MONSTERA_QUIT_TEARDOWN_START'),
+      `exit ${String(quit.status)}, markers [${order}]. An exit code alone is not the claim: a ` +
+        `handler that does nothing also exits 0, so the START marker is what separates a ` +
+        `teardown that ran from a quit that was never deferred.\n${quit.output.slice(-1200)}`,
+    );
+
+    check(
+      'CONTROL: the quit really happened rather than the app hanging to the timeout',
+      quit.markers.includes('MONSTERA_QUIT_REQUESTED') && willQuitAt !== -1,
+      `markers were [${order}]. Without will-quit the ordering above is satisfied by an app ` +
+        `that never quit and was killed at the 120s bound — which produces no will-quit line ` +
+        `and would otherwise read as a pass.`,
     );
 
     process.stdout.write(

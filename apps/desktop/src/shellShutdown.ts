@@ -12,11 +12,27 @@
  * | exits with the host alive | `process.exit(0)` | **hangs** — the line before it printed and the process was still alive when killed by hand |
  * | closes the host deliberately | `close()` | **exit 0**, no fatal |
  *
- * **Whether Electron's own `app.quit()` takes either of the first two paths is
- * NOT established** — those three are Node-mode processes built through the
- * same composition root, not the shipped window — and that is stated rather
- * than implied by the table. What they do establish is that the third column
- * has a value that works and that the shell was reaching neither.
+ * Those three are Node-mode processes built through the same composition root,
+ * not the shipped window. What they establish is that the third column has a
+ * value that works and that the shell was reaching neither.
+ *
+ * ## And the shipped `app.quit()` is now measured too
+ *
+ * This paragraph carried *whether Electron's own `app.quit()` takes either of
+ * the first two paths is NOT established* for a range. It is established, on
+ * 2026-08-31, by `proof:shell`'s three lifecycle cases: the harness quits for
+ * real, its teardown sleeps 250ms between two markers, and a third marker
+ * records `will-quit`.
+ *
+ * | run | markers, in order | exit |
+ * |---|---|---|
+ * | as shipped | REQUESTED, TEARDOWN_START, TEARDOWN_DONE, WILL_QUIT | 0 |
+ * | with `preventDefault` removed | REQUESTED, TEARDOWN_START, WILL_QUIT | 0 |
+ *
+ * So the shipped Electron honours the `preventDefault` below, and the second
+ * row is why the exit code is not the assertion: **both exit 0**. A handler
+ * that defers nothing still ends the process cleanly, having abandoned the
+ * teardown halfway. The missing DONE is the whole signal.
  *
  * ## Why this file names no Electron
  *

@@ -180,8 +180,56 @@ app.on('browser-window-created', (_event, window) => {
 // A LAMBDA, for `entry.ts`'s reason and with a second one here: this harness
 // runs alongside a developer's own application, and the losing instance of a
 // single-instance app must reach `app.quit()` having built nothing.
-startShell(() =>
-  createShellDependencies(
+/**
+ * Drives a REAL quit, so the shutdown path is measured rather than simulated.
+ *
+ * `shellShutdown.test.ts` covers the decision against injected surfaces, and
+ * cannot reach the two things that actually matter here: whether the shipped
+ * Electron honours the `preventDefault` this shell issues, and whether the
+ * process ends at 0 once the teardown settles. Both were carried as *not
+ * established*, and a seam whose every test injects its surfaces is a seam
+ * nobody has run.
+ *
+ * The markers are printed rather than counted because ORDER is the whole claim.
+ * `MONSTERA_QUIT_WILL_QUIT` must arrive AFTER `MONSTERA_QUIT_TEARDOWN_DONE`: if
+ * `preventDefault` were ignored, Electron would carry straight on and the pair
+ * would invert — or the process would end mid-teardown and the DONE line would
+ * never appear at all. An exit code of 0 alone proves nothing, because a
+ * handler that does nothing also exits 0.
+ *
+ * The delay is real rather than a resolved promise. A microtask would settle
+ * inside the same turn that raised the event, so the ordering would hold even
+ * if nothing had deferred anything.
+ */
+function quitWhenAsked(): (() => Promise<void>) | null {
+  if (!process.argv.includes('--quit-when-ready')) return null;
+
+  app.on('will-quit', () => {
+    process.stdout.write('MONSTERA_QUIT_WILL_QUIT\n');
+  });
+
+  return async () => {
+    process.stdout.write('MONSTERA_QUIT_TEARDOWN_START\n');
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250);
+    });
+    process.stdout.write('MONSTERA_QUIT_TEARDOWN_DONE\n');
+  };
+}
+
+const quitProbe = quitWhenAsked();
+
+if (quitProbe !== null) {
+  void app.whenReady().then(() => {
+    // After ready, so the shell has registered `before-quit` before anything
+    // asks it to run. Quitting earlier would measure a race rather than a path.
+    process.stdout.write('MONSTERA_QUIT_REQUESTED\n');
+    app.quit();
+  });
+}
+
+startShell(() => {
+  const dependencies = createShellDependencies(
     { version: app.getVersion(), installChannel: 'development' },
     () => {
       throw new Error('the shell harness has no picker: it does not exercise opening');
@@ -192,5 +240,19 @@ startShell(() =>
     // every launch, and a throw here would make the harness fail at startup for
     // a reason unrelated to what it measures.
     createEphemeralSettings(),
-  ),
-);
+  );
+
+  if (quitProbe === null) return dependencies;
+
+  // THE SHUTDOWN IS REPLACED, and only under the flag. What is under test here
+  // is the LIFECYCLE — that `before-quit` defers a real Electron quit until the
+  // teardown settles, and that the process then ends at 0. The real teardown
+  // closes open documents and the engine host, and this harness opens neither,
+  // so it would complete inside one turn and the deferral it exists to
+  // demonstrate would be invisible.
+  //
+  // What the real one does is proven where it can be: `compositionHost.test.ts`
+  // asserts the whole close sequence in order. Neither half is evidence for the
+  // other, and this comment is here so the substitution is not mistaken for one.
+  return { ...dependencies, shutdown: quitProbe };
+});
