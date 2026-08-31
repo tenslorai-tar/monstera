@@ -644,6 +644,293 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-31 — Stage audit: `3da634a..52ec5c6` — the harness proved a killed host recovers, and the process it proved it in aborts
+
+Range: **9 commits, 20 files.** 1 proof added, 5 modified, 0 removed; 2 source
+files added, 5 changed, 0 removed — from `npm run audit:scope`, which printed
+*"Within one batch. An audit is not yet owed. Fires at 10 commits (1 more) or 25
+files (5 more)"*. Taken now rather than being stopped by it on the next commit.
+
+The range is the previous audit's recording commit, the row-length ratchet fix,
+the eleven-row trimming pass, the killed-host recovery harness and the transport
+fix it found, the harness's grant precondition, the hook probe's leak refusal,
+the wired-tools sentence, the window colour, and four owed clauses moved.
+Findings **UUUUU-1** to **UUUUU-4**.
+
+### The range's headline
+
+**A harness can prove its claim and leave its own subject dying, and the
+assertion that would have caught it is the one nobody writes: the exit status.**
+`scripts/research/hostRecovery.mjs` is this range's largest piece of work. It
+kills a real contained engine host, watches a new one appear, and asserts that a
+command afterwards succeeds — six cases, green here and green on CI. Run the
+child it drives directly and it exits **134**, SIGABRT, printing
+`FATAL ERROR: Error::ThrowAsJavaScriptException napi_throw` from
+`readerWorker.js:160`.
+
+The driver cannot see that. It reads its verdict out of a report **file** the
+child writes before it dies, and the only thing it asks about the process is
+`existsSync(reportPath)`. Six passing cases are decided from an artefact whose
+author aborted.
+
+### 1. Root cause or workaround
+
+Nine commits. Every fix in the range states a mechanism, and one of them is a
+detector standing where a fix is still owed — declared as such rather than
+counted as closed.
+
+| the fix | mechanism | verdict |
+|---|---|---|
+| `ANNOUNCE_FROM_MODULE_LOAD` in `hostTransport.ts` | an ending inherits the async context of whoever announced it, and the reader is built inside the first document's lane, so every host death arrived carrying that lane and the rebuild was refused as reentry | root cause |
+| `featureRowKey` in `documentConsistency.mjs` | the ratchet keyed rows on a leading **bold** title, which is a convention rather than a property, so a row that does not open in bold was in neither map | root cause |
+| `RELATIVE_IMPORT` in `affectedProofs.mjs` | the pattern was bounded by the line and this repository's formatter wraps specifier lists, so 32 edges in 29 files were in no graph | root cause |
+| `WINDOW_BACKGROUND` = `#141618` | the window and the body are two surfaces the user sees as one and they disagreed; both values were already in the same comment | root cause |
+| the grant precondition in `hostRecovery.mjs` | a contained host whose token cannot read the Electron runtime dies loading ICU and never connects, which every caller reported as a pipe problem | root cause |
+| the unclaimed-marker refusal in `hookProbe.proof.mjs` | a kill between the mutation and the restore leaves a placeholder in two governing documents, and Windows has no SIGTERM to restore from | **a detector, not the fix.** The cause is a proof that runs `check:docs` five times inside a 180-second bound. The budget is still owed and is on the queue |
+
+Nothing was exempted, no check loosened, no type widened, no override added.
+
+### 2. Verified against the easy shape only?
+
+**The recovery harness is this project's answer to that question and it stopped
+one step short.** Every earlier case for `onEngineHostEnded` injected a `reopen`
+that entered no lane; the hard shape is a real process, and building it is what
+found the defect. What it did not do is ask the hard question about *itself* —
+the easy shape for a harness is *did my subject answer*, and the hard one is
+*did my subject survive*.
+
+**The ambient-environment axis, checked and clean.** The driver spawns the child
+with `{ ...process.env, ELECTRON_RUN_AS_NODE: '1' }`, so it inherits everything
+`npm run` exports. Nothing in the child or in the composition root reads
+`npm_execpath` or any other runner variable; the one variable it depends on it
+sets itself, and it refuses to run if `process.versions.electron` is absent.
+
+**The ratchet's fixtures were the easy shape and the mutation said so.** Four
+growth fixtures had openings shorter than the 8-word key, so their keys were
+made partly of their bodies and every growth case was silently exercising the
+rename path. Recorded in `b4540c2`; the fixtures now use openings of at least
+eight words.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is a strengthening that is conditional in a new way.** Host
+recovery moved from an injected `reopen` in a millisecond unit test to a real
+contained process. Where it can run, it proves far more. Where it cannot — any
+non-Windows runner, an unbuilt tree, a revoked container grant — it prints
+`UNVERIFIABLE` and names the six cases it did not evaluate.
+
+`--require-containment` on the shim job converts that to a failure, so the claim
+has one place it must be true. The unit test it replaced ran everywhere. The
+older assertion was not deleted: `hostTransport.test.ts` keeps the lane case,
+with a control asserting the caller's store really was set — without which it
+passes against a build where the store was never set at all.
+
+### 3. Would CI have caught it?
+
+**Read from run CI #538 (33361152541) and Guards #545 (33361152568) at
+`52ec5c6f7f43d022a0c973d6f0e9520428ac7ee6`, through the jobs API, on
+2026-08-31:**
+
+```
+CI #538      Build the native MuPDF shim
+  [success] 7s   A killed engine host recovers, against a running process
+Guards #545  Secret scan and file policy (windows-latest)
+  [success] 1s   Prove the FEATURES row-length ratchet can see, pair and refuse
+  [success] 2s   Prove the affected-proof list sees, refuses and stays quiet
+Guards #545  Secret scan and file policy (ubuntu-latest)
+  [success] 0s   Prove the FEATURES row-length ratchet can see, pair and refuse
+```
+
+So the range's new coverage runs, on both Guards legs and on the one CI job that
+can create a contained host.
+
+**One step line was NOT read and is not claimed.** `Prove the renderer receives
+and obeys the declared CSP` carries the window/surface comparison; the API
+budget in `githubFetch.mjs` refused the third jobs request — *"42 of 60 requests
+remain, and 45 are reserved for reading the board"* — which is the budget
+working. The step is unconditional in `ci.yml` and its job succeeded, so it ran;
+that inference is from the workflow file and the job result, not from the step
+line, and the distinction is the one AAAA-29 was about.
+
+**The defect this audit found, CI could not have caught, and that is not a gap
+in the workflow.** The step is green *because the harness is blind*, not because
+the workflow is misconfigured. No placement or registration change reaches it.
+The missing thing is an assertion, and it is owed below.
+
+### 4. Are the proofs non-vacuous?
+
+Four mutations were run in the range and are recorded in their commits: the
+bold-only key reddens three ratchet cases, removing rename pairing reddens
+exactly the two rename cases, restoring `#000000` reddens the window/surface
+comparison, and deleting the lane control leaves the transport case passing
+against a build where the store was never set.
+
+**UUUUU-1. `hostRecovery.mjs` has an outcome no assertion reads.** Measured
+2026-08-31: `hostRecoveryHost.mjs` run directly under
+`.tools/electron/43.4.1/electron.exe` writes a complete report, passes all six
+cases, and exits **134**. The driver's only statement about the process is
+`existsSync(reportPath)` — `hostRecovery.mjs:187` — and `result.status` is read
+solely to compose the message for a *missing* report.
+
+This is the checklist's own *"an artefact whose failure is announced on a
+channel nobody subscribes to is unproven, however many checks read it"*, one
+layer out from where that sentence was written: there the channel was Electron's
+`preload-error`, here it is a process exit code.
+
+It is also **mutate the branches no fixture reached** arriving as an outcome
+rather than as a branch. Nothing in the file is wrong. The gap is a question the
+file never asks, and the reason it never asks it is that the report arrives by
+another route — which is the design decision that made the harness work at all.
+
+### 4a. Has every instrument passed a resolution test?
+
+Two instruments arrived: `hostRecovery.mjs` and `hostRecoveryHost.mjs`.
+
+**Both separate, and the separation is the sixth case.** *The first death
+rebuilds* and *the second death poisons* are opposite verdicts from the same
+apparatus, so a shell that never poisoned and a shell that poisoned immediately
+each fail one of the two. The child-enumeration inside the harness was
+resolution-tested when it was written — it reported `found 2 (13856, 14640)`
+with exactly one host running, because asking Windows for this process's
+children from inside a child returns the enumerator too.
+
+**A control ran today that had not run before, and it is what makes UUUUU-2
+readable rather than a guess.** `roleMupdfHost.mjs --no-document` connects a
+contained host, closes it deliberately, and exits **0** with no fatal error. So
+the abort is not what an engine host costs; it belongs to a specific way out.
+
+### 4b. Is the instrument a SEARCH?
+
+Two searches in the range, both with controls that must find something known
+present, on every run:
+
+- `affectedProofs.proof.mjs`'s new case asks the **real tree** for a module
+  writing a wrapped relative import, and its failure text says that finding none
+  means the case has nothing to test and must be deleted rather than left
+  passing. A fixture tree was refused deliberately — `importGraph` rejects one
+  missing its control edges, so the case would have been testing the refusal.
+- `featureRowWords` throws on a key collision rather than overwriting, which is
+  the same blindness one row narrower, and scopes keys by section because
+  `Typewriter` is a legitimate row in two tables.
+
+**The prose sweep was used rather than a grep**, per the standing rule:
+`npm run sweep:prose -- "deliberate shutdown"` reported *"0 match(es) in 46
+document(s); control found"*. No document claims the shell shuts its engine host
+down, which matters for item 7 below — the documents do not overstate, they are
+silent.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+Checked at all four roster sites in the range, and all four are anchors:
+
+| site | extent | direction |
+|---|---|---|
+| `hostRecovery.mjs:90` | `CASES.length`, where `CASES` is an authored list of the six case names | anchor — a deleted `check()` leaves the list claiming six |
+| `rendererPolicy.proof.mjs:123` | `RUNTIME_CASES.length`, likewise an authored list | anchor |
+| `affectedProofs.proof.mjs:41` | literal `26` | anchor |
+| `rowLengthRatchet.proof.mjs:48` | literal `10` | anchor |
+
+`hostRecovery.mjs`'s comment states the reason at the site, which is what makes
+it reviewable: *"a count computed from the checks themselves would agree with
+any deletion"*. That is the shape the checklist asks for and the signature is
+still the thing that would make it unnecessary — `cases` takes a number, and at
+a call site `CASES.length` and `9` are the same kind of thing.
+
+### 5. Executed, or asserted?
+
+**Executed today:** the board at the full sha (`GREEN … Guards=success,
+CI=success`) · three step lines from the two runs · `hostRecovery.mjs` twice,
+20.1s wall, six cases · `hostRecoveryHost.mjs` directly, exit 134 · a probe with
+the same bootstrap and no kill, which hung · `roleMupdfHost.mjs --no-document`,
+exit 0 · `sweep:prose` · the status count from `docs/FEATURES.md`.
+
+**Asserted and NOT established:** that Electron's own `app.quit()` produces the
+same hang or the same abort. Both readings under UUUUU-2 come from Node-mode
+processes built through the same composition root; neither is the shipped
+window. What would settle it is a harness that opens a document in a real
+Electron main and quits — which is a new instrument, not a reading.
+
+Also asserted: the 7s CI figure against 20.1s here is **unattributed**. Both
+runs did the real work — every precondition branch is fail-closed under
+`--require-containment` — and no reason for the difference was established.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Nothing was retrofitted. Two amendments were *identified and not taken*, which
+is the correct half of B4:
+
+- the token source for `WINDOW_BACKGROUND`. `tokens.css` is what §10.2 calls the
+  token file and its `@role` grammar is parsed in both directions by
+  `check:tokens` and again by `check:bordertokens`; moving the writer of record
+  into a package `apps/desktop` may import relocates all of that. Recorded on
+  the design-substrate row with the reason.
+- **UUUUU-2's fix, and this one is new.** Whether closing every open document at
+  quit is a *registration* into the `DocumentTeardown` seam that already
+  releases engine sessions, or whether the shell needs a shutdown member it does
+  not have, is a seam question. It is recorded here and not taken.
+
+### 7. Do the documents still match the code?
+
+The range's own document edits are the eleven trimmed rows and four moved
+clauses, and they were checked against the tree when they were written.
+
+**UUUUU-2. The shell has no shutdown path for the engine host transport, and
+both ways out of a process holding one are broken.**
+
+`dispose()` in `engineReaderChannel.ts` signals the reader's stop event and, for
+a reader that has not ended, terminates the worker. It is reachable only through
+a document close. `main.ts` ends the application with `app.quit()` on
+`window-all-closed`, and nothing closes documents first.
+
+Three readings, 2026-08-31, all on `.tools/electron/43.4.1`:
+
+| the process | what it does at the end | result |
+|---|---|---|
+| `hostRecoveryHost.mjs` | kills every surviving host, then `process.exit(0)` | **aborts**, exit 134, `napi_throw` fatal from the reader's `GetOverlappedResult` |
+| a probe with the same bootstrap | exits with the host alive and nothing killed | **hangs** — it printed its line before `process.exit(0)`, and the process was still alive when killed by hand |
+| `roleMupdfHost.mjs --no-document` | closes the host deliberately | **exit 0**, no fatal |
+
+The mechanism is one sentence: **a reader thread blocked in
+`WaitForMultipleObjects` is not unwedged by process exit, and if its peer is
+killed first it wakes inside a closing environment where koffi's next call
+escalates to `napi_fatal_error`.** The stop event exists precisely to unwedge it
+and nothing signals it on the way out.
+
+So the harness's `process.exit(0)` — whose comment already says *"the shell
+holds a reader worker, a stop event and a pipe instance whose lifetimes are the
+application's, so this process does not end on its own"* — is the trap closing:
+killing the host to be able to exit is what causes the abort, and not killing it
+is what causes the hang. There was no third way available to it.
+
+**UUUUU-3. Containment's job object does kill on close, measured incidentally.**
+Killing the probe's shell killed its engine host within three seconds. So the
+surviving-grandchild problem the harness works around is about **inherited stdio
+handles**, not about orphaned hosts, and invariant 25's kill-on-close holds on
+this machine.
+
+**UUUUU-4. Two instrument-blindness findings in one range, and they are the same
+shape.** The hook probe's first leak marker was a phrase that reads naturally in
+prose, so the guard fired on a clean tree while its planted-leak test passed by
+reporting the other file (fixed in `45f9737`). UUUUU-1 is the same sentence with
+a different noun: in both, the instrument's own failure mode was outside what
+the instrument looks at. Recorded together because a second occurrence inside
+one range is what says the class is live rather than closed.
+
+### What is owed out of this range
+
+1. **A ruling on UUUUU-2**, before its fix. Registration into `DocumentTeardown`
+   or a shutdown member on `ShellDependencies` — the first is a wiring change,
+   the second is B4.
+2. **`hostRecovery.mjs` must assert the child's exit status.** It cannot land
+   before 1: the assertion turns the CI step red the day it is written, because
+   the subject really does abort. The assertion is the control for UUUUU-2's fix
+   and belongs in the same commit as it.
+3. **Whether the shipped `app.quit()` hangs or aborts** — a measurement, not an
+   argument, and the instrument for it does not exist yet.
+4. The `proof:hookprobe` budget, still a detector standing where a fix is owed.
+
+---
+
 ## 2026-08-30 — Stage audit: `c63e422..3da634a` — the branch had a fixture, and what the fixture asserted was the state an absent decision also produces
 
 Range: **9 commits, 10 files.** 1 proof added, 1 modified, 0 removed; no source
