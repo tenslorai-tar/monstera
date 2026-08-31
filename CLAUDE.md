@@ -374,6 +374,32 @@ UI test runs against the browser shim, whose kernel is stubbed — alone it woul
 prove only that a button dispatches into the void, which is the display-only sin
 wearing a green check.
 
+**AND THE PAIR HAS A BLIND SPOT: WHERE THE TWO HALVES SPEAK DIFFERENT
+COORDINATE SYSTEMS, IT PROVES NOTHING UNTIL SOMETHING NAMES BOTH NUMBERS IN ONE
+PLACE.** Measured 2026-08-30. A rotate command reached the engine and rotated
+**page 2** while the renderer displayed **page 1**, and both halves were green:
+the kernel proof asserted that the command rotates the page it was given, and
+the UI test asserted that the control dispatches `rotatePages` with the pages it
+was configured with. Neither test could see the other's number, because neither
+holds it — PDF.js pages are 1-based and the kernel's are 0-based, and the
+translation lived in a literal at the call site with nothing to compare it to.
+
+The pair's own logic is what leaves the gap: it is two tests on opposite sides
+of a boundary, and a boundary is exactly where a unit changes. So each half can
+be correct in its own frame for ever.
+
+**The remedy is a third thing that states the correspondence once, and both
+halves take it from there** — `SHOWN_PAGE = { pdfjs: 1, kernel: 0 }` is the
+whole fix, and it works because a wrong pair is now a visible edit to one object
+rather than two literals that never meet. This is B5 over another test: the
+illegal state is *two frames disagreeing*, and a constant naming both makes it
+unrepresentable rather than caught.
+
+**Page indices here; a coordinate space, a version, a unit or an encoding next
+time.** Whenever a feature's two halves live either side of a boundary, ask what
+changes across it and where that change is written down. If the answer is *a
+literal at the call site*, the pair is green and the feature is wrong.
+
 ---
 
 ## Standing rules from the project owner
