@@ -428,10 +428,12 @@ try {
  * checks reverted, because its control has to reproduce the out-of-bounds read
  * the pinned build fixes. Two measurements, and they are a factor apart:
  *
- *   - **864s** and **792s** on this machine, both 2026-08-31, from
- *     `npm run proof:cff` with no bound over it. Exit 0 each time, both cases
- *     passed. Two readings rather than one because the first is the figure the
- *     bound below is chosen from, and a single point cannot show its spread.
+ *   - **864s**, **792s** and **905s** on this machine, all 2026-08-31, exit 0
+ *     with both cases passing each time. The first two are `npm run proof:cff`
+ *     with no bound over it; the third is from a full `npm run local`, which is
+ *     where it actually runs and is the slowest of the three. Three readings
+ *     rather than one because a single point cannot show a spread, and this one
+ *     is 113s wide.
  *   - **339s** in CI. `.github/workflows/ci.yml` records it as 339s of the shim
  *     job's 521s, read from the Actions API on 2026-08-23.
  *
@@ -440,10 +442,10 @@ try {
  * already is not one to multiply. `COMPLETED_MARGIN` over a warm run kills a
  * cold one, and that is the direction which matters here.
  *
- * The bound is the local figure with room for a library build that is cold
- * rather than incremental — `ci.yml` measures one at 336s — so ~1200s is the
- * worst case this has evidence for, and 1800s leaves margin without being no
- * bound at all.
+ * The bound is the slowest local figure with room for a library build that is
+ * cold rather than incremental — `ci.yml` measures one at 336s — so ~1240s is
+ * the worst case this has evidence for, and 1800s leaves margin without being
+ * no bound at all.
  *
  * **This comment used to say it "does not complete and no bound accommodates
  * it", and both halves were false on the day they were written.** They were

@@ -85,10 +85,10 @@ const SCRATCH_PREFIX = 'monstera-cff-';
 /**
  * How old an abandoned scratch tree must be before it is removed.
  *
- * A complete run costs 864s and 792s (two readings, both 2026-08-31 on the
- * developer machine, from `npm run proof:cff` with no bound over it), so an
- * hour is comfortably beyond any live run and a concurrent one is never removed
- * out from under itself.
+ * A complete run costs 864s, 792s and 905s (three readings, all 2026-08-31 on
+ * the developer machine; the last from a full `npm run local`), so an hour is
+ * comfortably beyond any live run and a concurrent one is never removed out
+ * from under itself.
  *
  * That margin is not free and it is the right trade: the first run of this
  * swept 9 of the 10 trees present and skipped one left 50 minutes earlier by a
