@@ -47,7 +47,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -151,7 +152,23 @@ function launch(binary, extraArgs) {
  * @returns {{ status: number | null, markers: string[], output: string }}
  */
 function quitRun(binary) {
-  const [command, args] = launch(binary, ['--quit-when-ready']);
+  // A FILE, NOT STDOUT, and CI is why. The markers used to be written to the
+  // harness's stdout and the last two vanished on both platforms: the process
+  // exited 0, so the quit sequence completed and DONE and `will-quit` were
+  // written — but `process.stdout` to a pipe is asynchronous and nothing
+  // flushes it when Electron ends the process.
+  //
+  // The instrument was sharing its subject's failure. What is measured here is
+  // a process shutting down, so a channel that shutdown tears down loses the
+  // reading exactly when it becomes interesting, and the loss reads as *it
+  // never happened*.
+  const markerFile = join(
+    mkdtempSync(join(tmpdir(), 'monstera-quit-')),
+    'markers.txt',
+  );
+  writeFileSync(markerFile, '');
+
+  const [command, args] = launch(binary, ['--quit-when-ready', markerFile]);
   const result = spawnSync(command, args, {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -161,11 +178,13 @@ function quitRun(binary) {
   if (result.error !== undefined) {
     throw new Error(`Could not run the quit probe via ${command}`, { cause: result.error });
   }
-  const output = `${result.stdout}${result.stderr}`;
-  const markers = `${result.stdout}`
+  const markers = readFileSync(markerFile, 'utf8')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.startsWith('MONSTERA_QUIT_'));
+  // The harness's own words still come from stdio, because a harness that died
+  // before writing a marker has nothing in the file and everything in stderr.
+  const output = `${result.stdout}${result.stderr}`;
   return { status: result.status, markers, output };
 }
 

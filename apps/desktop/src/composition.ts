@@ -640,7 +640,7 @@ function engineSessionOpener(
     // `close` does both halves — `engine/close` on the host, then the granted
     // directories — so this registers the whole teardown rather than the disk
     // half, which is what a bare `areas.remove` here would have been.
-    sessions.holdRelease(docId, async () => {
+    await sessions.holdRelease(docId, async () => {
       try {
         await liveWriter().close(session);
       } catch {

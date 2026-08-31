@@ -675,28 +675,47 @@ export class EngineSessions implements EngineSessionSource {
    * it is connecting the one that was already written to the seam already
    * documented as its home.
    *
-   * ## Idempotent, and it refuses a second registration
+   * ## A SECOND registration REPLACES, and releases what it replaces
    *
-   * One document has one session-opening, so a second call means two things
-   * believe they own this document's teardown — which is the B3 defect arriving
-   * at run time. Throwing is right where returning quietly would leave the
-   * SECOND release the one that never runs.
+   * This threw, on the reasoning that one document has one session-opening so a
+   * second owner means one of them never runs. That reasoning was wrong, and CI
+   * found it: **`reopen` is `create`**. A host death rebuilds every affected
+   * document's session by re-entering the same path, so a document legitimately
+   * acquires a new session — and with it a new granted pair — while its old
+   * registration is still held. The throw turned ordinary recovery into
+   * `MissingSessionError` on the next command.
+   *
+   * Replacing alone would be the other half of the same bug: the previous pair
+   * is a real directory holding a readable copy of the user's document, and
+   * dropping the reference orphans it until the next launch's sweep. So the
+   * previous release RUNS, and this is awaited so a caller that rebuilds twice
+   * cannot interleave two releases for one document.
+   *
+   * A rebuild is the only way here, which is why nothing distinguishes it from
+   * a first registration: the entry either holds a release or it does not.
    */
-  holdRelease(docId: DocId, release: () => Promise<void>): void {
+  async holdRelease(docId: DocId, release: () => Promise<void>): Promise<void> {
     const entry = this.#entries.get(docId);
     // NOT AN ERROR. The document closed while its session was opening, which is
     // ordinary, and `releaseOnClose` has already run for it. The caller's own
     // failure path removes the pair in that case — `openEngineSession` removes
     // it on every path out of itself — so there is nothing to hold.
     if (entry === undefined) return;
-    if (entry.release !== null) {
-      throw new Error(
-        `Supervisor defect: a second teardown was registered for document ` +
-          `${docId.slice(0, 8)}…. One document has one session-opening, so two owners of its ` +
-          `teardown means one of them will never run.`,
-      );
-    }
+
+    const previous = entry.release;
+    // SET BEFORE THE AWAIT. An entry holding the OLD release across the
+    // release's own await is one a close arriving meanwhile would run twice.
     entry.release = release;
+    if (previous === null) return;
+
+    // Swallowed for `releaseOnClose`'s reason: this runs during a recovery the
+    // user did not ask for and cannot act on, and the sweep at next launch is
+    // the backstop for a pair that outlives it.
+    try {
+      await previous();
+    } catch {
+      /* the old host is usually gone, which is why there is a new session */
+    }
   }
 
   /**

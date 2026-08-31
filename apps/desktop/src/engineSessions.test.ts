@@ -245,7 +245,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     engine.hold(first, someSessions('a'));
 
     const ran: string[] = [];
-    engine.holdRelease(first, async () => {
+    await engine.holdRelease(first, async () => {
       ran.push('released');
       return Promise.resolve();
     });
@@ -265,7 +265,7 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
   it('a release that REJECTS still closes the document', async () => {
     const engine = new EngineSessions();
     engine.begin(first);
-    engine.holdRelease(first, () => Promise.reject(new Error('the host is gone')));
+    await engine.holdRelease(first, () => Promise.reject(new Error('the host is gone')));
 
     // A close is not an operation the user can retry, and by the time this runs
     // the document is going. Propagating would fail a close that has succeeded
@@ -275,19 +275,55 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.held).toBe(0);
   });
 
-  it('a SECOND release for one document is a defect, not the last one winning', () => {
+  it('a REBUILT session replaces the release AND releases the pair it replaced', async () => {
     const engine = new EngineSessions();
     engine.begin(first);
-    engine.holdRelease(first, () => Promise.resolve());
 
-    // Two owners of one document's teardown means one of them never runs, and
-    // which one is an accident of ordering. B3 arriving at run time.
-    expect(() => {
-      engine.holdRelease(first, () => Promise.resolve());
-    }).toThrow(/second teardown/u);
+    const ran: string[] = [];
+    await engine.holdRelease(first, () => {
+      ran.push('first');
+      return Promise.resolve();
+    });
+
+    // `reopen` is `create`: a host death rebuilds this document's session by
+    // re-entering the same path, so a second registration is ORDINARY. This
+    // threw once, and CI caught it — recovery answered MissingSessionError on
+    // the next command.
+    await engine.holdRelease(first, () => {
+      ran.push('second');
+      return Promise.resolve();
+    });
+
+    // THE OLD PAIR IS RELEASED HERE, not orphaned. It is a real directory
+    // holding a readable copy of the user's document, so replacing the
+    // reference without running it leaves exactly the leak this file closed.
+    expect(ran).toEqual(['first']);
+
+    await engine.releaseOnClose(first);
+    expect(ran).toEqual(['first', 'second']);
   });
 
-  it('a release offered for a document that already closed is dropped, not thrown', () => {
+  it('CONTROL: a rebuild whose old release REJECTS still installs the new one', async () => {
+    const engine = new EngineSessions();
+    engine.begin(first);
+    await engine.holdRelease(first, () => Promise.reject(new Error('the old host is gone')));
+
+    const ran: string[] = [];
+    // The old host being gone is WHY there is a new session, so this is the
+    // ordinary case rather than the exceptional one. A throw here would fail
+    // the rebuild that recovery exists to perform.
+    await expect(
+      engine.holdRelease(first, () => {
+        ran.push('second');
+        return Promise.resolve();
+      }),
+    ).resolves.toBeUndefined();
+
+    await engine.releaseOnClose(first);
+    expect(ran).toEqual(['second']);
+  });
+
+  it('a release offered for a document that already closed is dropped, not thrown', async () => {
     const engine = new EngineSessions();
     engine.begin(first);
 
@@ -295,11 +331,18 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     // `openEngineSession` removes the pair on every failure path out of itself,
     // so there is nothing left to release. Throwing here would turn a race the
     // design allows into a reported defect.
-    return engine.releaseOnClose(first).then(() => {
-      expect(() => {
-        engine.holdRelease(first, () => Promise.resolve());
-      }).not.toThrow();
-    });
+    await engine.releaseOnClose(first);
+    const ran: string[] = [];
+    await expect(
+      engine.holdRelease(first, () => {
+        ran.push('released');
+        return Promise.resolve();
+      }),
+    ).resolves.toBeUndefined();
+    // AND IT IS NOT HELD EITHER, which is the half an absence of a throw does
+    // not say. A release kept against a closed document is one that never runs.
+    expect(ran).toEqual([]);
+    expect(engine.held).toBe(0);
   });
 
   it('a document closed between the call and the death is skipped, not resurrected', async () => {

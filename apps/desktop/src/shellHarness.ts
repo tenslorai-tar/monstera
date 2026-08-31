@@ -1,3 +1,5 @@
+import { appendFileSync } from 'node:fs';
+
 import { app, dialog } from 'electron';
 
 import { createShellDependencies } from './composition.js';
@@ -201,19 +203,47 @@ app.on('browser-window-created', (_event, window) => {
  * inside the same turn that raised the event, so the ordering would hold even
  * if nothing had deferred anything.
  */
-function quitWhenAsked(): (() => Promise<void>) | null {
-  if (!process.argv.includes('--quit-when-ready')) return null;
+function quitWhenAsked(): {
+  readonly shutdown: () => Promise<void>;
+  readonly mark: (marker: string) => void;
+} | null {
+  const at = process.argv.indexOf('--quit-when-ready');
+  if (at === -1) return null;
+  const markerFile = process.argv[at + 1];
+  if (markerFile === undefined) {
+    throw new Error('--quit-when-ready needs a path to write its markers to');
+  }
+
+  // A FILE, WRITTEN SYNCHRONOUSLY, and `process.stdout` is what this replaced.
+  //
+  // CI failed on both platforms with the markers stopping at TEARDOWN_START —
+  // no DONE, no will-quit — while the process exited 0. An exit code of 0 means
+  // the quit sequence completed, so those two lines were WRITTEN and lost:
+  // `process.stdout` to a pipe is asynchronous, and nothing flushes it when
+  // Electron ends the process.
+  //
+  // That is an instrument sharing its subject's failure. What is being measured
+  // is the process shutting down, and the channel being measured on is one the
+  // shutdown tears down — so the reading disappears exactly when it becomes
+  // interesting, and reads as *it never happened*. `appendFileSync` returns
+  // when the bytes are with the OS.
+  const mark = (marker: string): void => {
+    appendFileSync(markerFile, `${marker}\n`);
+  };
 
   app.on('will-quit', () => {
-    process.stdout.write('MONSTERA_QUIT_WILL_QUIT\n');
+    mark('MONSTERA_QUIT_WILL_QUIT');
   });
 
-  return async () => {
-    process.stdout.write('MONSTERA_QUIT_TEARDOWN_START\n');
-    await new Promise((resolve) => {
-      setTimeout(resolve, 250);
-    });
-    process.stdout.write('MONSTERA_QUIT_TEARDOWN_DONE\n');
+  return {
+    mark,
+    shutdown: async () => {
+      mark('MONSTERA_QUIT_TEARDOWN_START');
+      await new Promise((resolve) => {
+        setTimeout(resolve, 250);
+      });
+      mark('MONSTERA_QUIT_TEARDOWN_DONE');
+    },
   };
 }
 
@@ -223,7 +253,7 @@ if (quitProbe !== null) {
   void app.whenReady().then(() => {
     // After ready, so the shell has registered `before-quit` before anything
     // asks it to run. Quitting earlier would measure a race rather than a path.
-    process.stdout.write('MONSTERA_QUIT_REQUESTED\n');
+    quitProbe.mark('MONSTERA_QUIT_REQUESTED');
     app.quit();
   });
 }
@@ -254,5 +284,5 @@ startShell(() => {
   // What the real one does is proven where it can be: `compositionHost.test.ts`
   // asserts the whole close sequence in order. Neither half is evidence for the
   // other, and this comment is here so the substitution is not mistaken for one.
-  return { ...dependencies, shutdown: quitProbe };
+  return { ...dependencies, shutdown: quitProbe.shutdown };
 });
