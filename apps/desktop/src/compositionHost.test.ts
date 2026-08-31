@@ -94,6 +94,11 @@ function platformAnswering(peer: FakePeer): PlatformSpy {
       rmSync(path, { recursive: true, force: true });
       return true;
     },
+    // Never reached here: the sweep runs in `createEngineHostPlatform`, which
+    // this harness stands in for rather than calls. `null` — could not look —
+    // so a caller that started sweeping through this surface would report an
+    // unreadable root rather than a clean one.
+    list: () => null,
     lastError: () => 0,
   };
 

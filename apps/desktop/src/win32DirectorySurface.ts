@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 
 import koffi from 'koffi';
 
@@ -169,6 +169,27 @@ export function createWin32DirectorySurface(): DirectoryCreationSurface {
         // may hold the user's document is still on disk, which is the whole
         // reason this returns a value — see `removeSessionDirectories`.
         return false;
+      }
+    },
+
+    // NOT AN FFI CALL, for `removeTree`'s reason exactly: enumerating is not a
+    // securable-object creation, so there is no descriptor and nothing for a
+    // second implementation to disagree with.
+    //
+    // `withFileTypes` so a FILE carrying a session prefix can never be
+    // returned, and the caller never has to ask what kind of thing a name is —
+    // the negative probe lives in this same root.
+    list: (path: string): readonly string[] | null => {
+      try {
+        return readdirSync(path, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name);
+      } catch {
+        // `null` RATHER THAN `[]`. A root that cannot be read is an unknown
+        // root, and the empty array is what a clean one answers — reporting
+        // the second for the first would turn *could not look* into *nothing
+        // to remove* in the one place a sweep matters.
+        return null;
       }
     },
 

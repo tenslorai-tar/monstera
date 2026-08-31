@@ -132,6 +132,18 @@ export interface DirectoryCreationSurface {
   readonly remove: (path: DirectoryPath) => boolean;
   /** Removes a directory and everything under it. */
   readonly removeTree: (path: DirectoryPath) => boolean;
+  /**
+   * The DIRECTORY names directly under a path, or `null` where it cannot look.
+   *
+   * `null` and the empty array are separated because they call for opposite
+   * things: an empty root is a clean start, and a root that could not be read
+   * is an unknown one — and a sweep that treated the second as the first would
+   * report *nothing to remove* for the case it exists to catch.
+   *
+   * Names, not paths, so the caller composes with the same prefixes it creates
+   * with and a listing cannot smuggle in a location.
+   */
+  readonly list: (path: string) => readonly string[] | null;
   /** `GetLastError`, read only to put a number in a diagnostic. */
   readonly lastError: () => number;
 }
@@ -251,4 +263,79 @@ export function removeSessionDirectories(
   const snapshot = surface.removeTree(directories.snapshot);
   const output = surface.removeTree(directories.output);
   return { snapshot, output };
+}
+
+/** What one sweep of the session root removed, and what it could not. */
+export interface SessionSweep {
+  /** Directory names removed. Empty when the root was clean. */
+  readonly removed: readonly string[];
+  /** Directory names that matched and survived `removeTree`. */
+  readonly failed: readonly string[];
+  /** Names left alone because this module could not have created them. */
+  readonly skipped: readonly string[];
+  /** `true` when the root could not be listed, which is not the same as clean. */
+  readonly unreadable: boolean;
+}
+
+/**
+ * Removes session directory pairs left behind by a previous run.
+ *
+ * ## What this is for
+ *
+ * A pair is removed on close and on every failure path out of an open, so the
+ * only way one survives is a main process that died without unwinding — a
+ * crash, a kill, a power loss. Nothing else ever swept them, so a machine
+ * accumulated one granted pair per abnormal exit, each carrying a DACL naming
+ * the AppContainer, for ever.
+ *
+ * ## Why this is safe HERE and was not safe where it would naturally have gone
+ *
+ * Deleting at startup is only sound while there is exactly one instance, and
+ * `startShell` establishes that: it takes `requestSingleInstanceLock()` and
+ * quits without one, so the holder owns every directory under the root. The
+ * ordering is load-bearing rather than incidental — the platform used to be
+ * built in `entry.ts` **before** `startShell` ran, so a second launch reached
+ * this code inside the first instance's root before discovering it had to
+ * quit. That is why `startShell` takes a factory: nothing that touches the
+ * session root may be constructed before the lock.
+ *
+ * ## It can only delete what this module can create
+ *
+ * A name is swept only if it carries one of the two prefixes **and** the
+ * remainder is a name {@link sessionDirectoryName} would mint. So a directory
+ * this layout could not have produced is reported as skipped rather than
+ * removed, and the negative-probe file in the same root is not a directory at
+ * all. That is a shape restriction rather than a check someone has to
+ * remember: widening what the sweep deletes means widening what a session may
+ * be called.
+ *
+ * @param surface The platform calls, injected.
+ * @param root The application's session root.
+ */
+export function sweepSessionDirectories(
+  surface: DirectoryCreationSurface,
+  root: string,
+): SessionSweep {
+  const entries = surface.list(root);
+  if (entries === null) return { removed: [], failed: [], skipped: [], unreadable: true };
+
+  const removed: string[] = [];
+  const failed: string[] = [];
+  const skipped: string[] = [];
+
+  for (const entry of entries) {
+    const prefix = entry.startsWith(SNAPSHOT_PREFIX)
+      ? SNAPSHOT_PREFIX
+      : entry.startsWith(OUTPUT_PREFIX)
+        ? OUTPUT_PREFIX
+        : null;
+    if (prefix === null || !sessionDirectoryName(entry.slice(prefix.length)).ok) {
+      skipped.push(entry);
+      continue;
+    }
+    if (surface.removeTree(`${root}\\${entry}` as DirectoryPath)) removed.push(entry);
+    else failed.push(entry);
+  }
+
+  return { removed, failed, skipped, unreadable: false };
 }

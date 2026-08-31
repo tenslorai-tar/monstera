@@ -444,6 +444,20 @@ try {
       },
     ],
     [
+      'scripts/proofs/sessionSweep.proof.mjs',
+      {
+        sites: 2,
+        reason:
+          'TWO built modules loaded through file:// URLs — the Win32 directory surface and the ' +
+          'session-directory layout — because the whole subject is the SHIPPED listing. Every ' +
+          'case in `sessionDirectories.test.ts` supplies the listing itself, so the filter that ' +
+          'keeps `rmSync(recursive)` off a file named like a session directory is stubbed in all ' +
+          'of them; a copy of either module here would answer the question those cases already ' +
+          'answer. Paths need Windows backslash conversion at run time. Plain Node, and it ' +
+          'never imports the electron package.',
+      },
+    ],
+    [
       'scripts/research/hostRecoveryHost.mjs',
       {
         sites: 1,

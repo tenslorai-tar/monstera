@@ -176,7 +176,11 @@ app.on('browser-window-created', (_event, window) => {
 // run, which is a different subject with a different cost — and the cases here
 // never open a document, so nothing would ask it for a session. The absent
 // fourth argument is the same `null` every unit test passes.
-startShell(
+//
+// A LAMBDA, for `entry.ts`'s reason and with a second one here: this harness
+// runs alongside a developer's own application, and the losing instance of a
+// single-instance app must reach `app.quit()` having built nothing.
+startShell(() =>
   createShellDependencies(
     { version: app.getVersion(), installChannel: 'development' },
     () => {

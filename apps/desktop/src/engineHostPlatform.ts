@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 
 import type { EngineHostPlatform } from './composition.js';
 import { createReaderHostSurface } from './readerHostSurface.js';
+import { sweepSessionDirectories } from './sessionDirectories.js';
 import { createWin32DirectorySurface } from './win32DirectorySurface.js';
 import {
   createWin32HostSurface,
@@ -85,6 +86,28 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
   const binary = electronBinaryOfThisProcess();
   mkdirSync(sessionRoot, { recursive: true });
 
+  const directories = createWin32DirectorySurface();
+
+  // THE PAIRS A DEAD RUN LEFT BEHIND, removed here because this is the moment
+  // the root is established and there is exactly one instance to establish it.
+  //
+  // A pair is removed on close and on every failure path out of an open, so a
+  // survivor means main died without unwinding. Nothing swept them, so one
+  // granted pair accumulated per abnormal exit — each carrying a DACL naming
+  // the AppContainer, each possibly holding a copy of a document.
+  //
+  // SAFE HERE ONLY BECAUSE OF THE ORDERING `startShell` NOW ENFORCES. This runs
+  // inside the factory `startShell` calls after `requestSingleInstanceLock()`,
+  // so the process running it owns every directory under the root. Called from
+  // where this used to be constructed — as an argument, before the lock — a
+  // second launch would have deleted the open documents of the first.
+  //
+  // The outcome is not reported anywhere yet: there is no incident sink at this
+  // point in the graph, since this platform is one of the things the sink's
+  // owner is built from. What a failed sweep costs is a directory that stays,
+  // which is the state before this existed.
+  sweepSessionDirectories(directories, sessionRoot);
+
   // THE NEGATIVE TARGET, written here rather than chosen from what happens to
   // exist. It sits directly in the session root, whose children are granted one
   // at a time and which is itself granted to nothing — so a host that reads it
@@ -120,7 +143,7 @@ export function createEngineHostPlatform(sessionRoot: string): EngineHostPlatfor
     user: user.value,
     container: container.value,
     sessionRoot,
-    directories: createWin32DirectorySurface(),
+    directories,
     probe: {
       // The host's own entry script: it is executing this file, so a refusal
       // here is premise P1 being false rather than a bug — which is exactly the

@@ -36,8 +36,18 @@ import { startShell } from './main.js';
  * this yet, and it is **baked rather than detected** (E4): it decides which
  * update provider is active, and a value that could differ between two launches
  * of one package is exactly what an update decision must not be.
+ *
+ * ## Why the graph is a lambda and not an argument
+ *
+ * `startShell` takes the single-instance lock and quits without one, and
+ * everything below reads that lock as *this process owns the session root*.
+ * Passing the graph as an argument evaluated every constructor first — so a
+ * losing second launch created the session root and wrote its negative probe
+ * into the winner's directory before finding out it had to quit. The lambda is
+ * what makes "after the lock" a property of the code rather than of the reading
+ * order.
  */
-startShell(
+startShell(() =>
   createShellDependencies(
     {
       version: app.getVersion(),

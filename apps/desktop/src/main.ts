@@ -43,6 +43,11 @@ import { createMainWindow, senderCheckFor } from './window.js';
  * in one process. Two shells over one document is the cross-instance race the
  * architecture makes unrepresentable *within* a process and cannot make
  * unrepresentable across two.
+ *
+ * **And the lock is what everything below it may assume**, which is why the
+ * graph arrives as a factory rather than as a value. A losing launch must reach
+ * `app.quit()` having touched nothing this application owns on disk, and a
+ * constructor evaluated as an argument runs first.
  */
 /** Everything the shell needs, built by the composition root. */
 export interface ShellDependencies {
@@ -51,11 +56,33 @@ export interface ShellDependencies {
   readonly failures: ShellFailureSink;
 }
 
-export function startShell(deps: ShellDependencies): void {
+/**
+ * @param build The graph, DEFERRED — see the single-instance section above.
+ */
+export function startShell(build: () => ShellDependencies): void {
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return;
   }
+
+  // BUILT AFTER THE LOCK, and the parameter is a factory for that one reason.
+  //
+  // This used to take the graph itself, so `entry.ts` constructed it as an
+  // argument and every constructor ran before the line above. Two of them touch
+  // the filesystem this application owns: `createEngineHostPlatform` creates the
+  // session root and writes the negative probe into it, and it now also SWEEPS
+  // that root of pairs a dead run left behind.
+  //
+  // A second launch therefore reached the first instance's session root and
+  // wrote to it before discovering it had to quit. That was harmless while the
+  // only write was a probe with identical content — and it is the ordering, not
+  // the harmlessness, that decided whether a sweep could ever live there. With
+  // the sweep, the old order would have had a second launch delete the pairs of
+  // a running instance's open documents.
+  //
+  // B5 over a comment: the graph cannot be constructed before the lock because
+  // there is nothing to construct it from until this line.
+  const deps = build();
 
   // Subscribed before the window, because a child process can die during
   // startup and `whenReady` is not early enough to hear it.

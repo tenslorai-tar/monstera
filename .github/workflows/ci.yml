@@ -883,6 +883,16 @@ jobs:
       - name: A killed engine host recovers, against a running process
         run: node scripts/ci/annotate.mjs scripts/research/hostRecovery.mjs --require-containment
 
+      # THE SWEEP, AGAINST A REAL LISTING. `sessionDirectories.test.ts` covers
+      # every decision the sweep makes and supplies the listing to do it, so the
+      # shipped `list` — the filter that keeps `rmSync(recursive)` off a FILE
+      # named like a session directory — is stubbed in all of them.
+      #
+      # Here rather than on Guards because it drives the BUILT modules: this
+      # job has them, and Guards installs without building.
+      - name: The session-root sweep, against a real directory
+        run: node scripts/ci/annotate.mjs scripts/proofs/sessionSweep.proof.mjs
+
       # THE SAME PROOF THE UBUNTU JOB RUNS, HERE FOR THE HALF IT CANNOT (YYYY-2).
       #
       # `peakWorkingSetOf` is `Get-Process` and throws on every other platform,

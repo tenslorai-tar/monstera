@@ -8,6 +8,7 @@ import {
   removeSessionDirectories,
   sessionDirectoryName,
   sessionDirectoryPaths,
+  sweepSessionDirectories,
 } from './sessionDirectories.js';
 
 const user: UserSid = { __sid: 'user', value: 'S-1-5-21-USER' };
@@ -41,6 +42,10 @@ function recorder(outcomes: ('created' | 'exists' | 'refused')[]): {
       removeTree: (path) => {
         calls.push(`removeTree(${path})`);
         return true;
+      },
+      list: (path) => {
+        calls.push(`list(${path})`);
+        return [];
       },
       lastError: () => 5,
     },
@@ -207,6 +212,7 @@ describe('removeSessionDirectories', () => {
       create: () => 'created',
       remove: () => true,
       removeTree: (path: DirectoryPath) => path !== directories.output,
+      list: () => [],
       lastError: () => 0,
     };
 
@@ -231,6 +237,7 @@ describe('removeSessionDirectories', () => {
         calls.push(path);
         return false;
       },
+      list: () => [],
       lastError: () => 0,
     };
 
@@ -239,5 +246,146 @@ describe('removeSessionDirectories', () => {
       output: false,
     });
     expect(calls).toEqual([directories.snapshot, directories.output]);
+  });
+});
+
+/**
+ * A surface whose root contains `entries`, recording every call.
+ *
+ * `removed` names the entries `removeTree` refuses, so a failure is expressed
+ * as data rather than by a second surface per case.
+ */
+function root(
+  entries: readonly string[],
+  refuse: readonly string[] = [],
+): { surface: DirectoryCreationSurface; calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    surface: {
+      create: () => 'created',
+      remove: () => true,
+      removeTree: (path: DirectoryPath) => {
+        calls.push(`removeTree(${path})`);
+        return !refuse.some((name) => path.endsWith(`\\${name}`));
+      },
+      list: (path: string) => {
+        calls.push(`list(${path})`);
+        return entries;
+      },
+      lastError: () => 0,
+    },
+  };
+}
+
+describe('sweepSessionDirectories', () => {
+  it('removes both halves of a pair a dead run left behind', () => {
+    const { surface, calls } = root(['in-a1b2-c3', 'out-a1b2-c3']);
+
+    expect(sweepSessionDirectories(surface, 'C:\\root')).toEqual({
+      removed: ['in-a1b2-c3', 'out-a1b2-c3'],
+      failed: [],
+      skipped: [],
+      unreadable: false,
+    });
+    expect(calls).toEqual([
+      'list(C:\\root)',
+      'removeTree(C:\\root\\in-a1b2-c3)',
+      'removeTree(C:\\root\\out-a1b2-c3)',
+    ]);
+  });
+
+  /**
+   * THE CONTROL, and it asserts the CALL rather than the outcome.
+   *
+   * A sweep that deleted whatever it was handed would produce the same
+   * `removed` list for the case above and differ only here — and it would
+   * differ only in what it *did*, because a caller ignoring the return value
+   * sees nothing either way. So the assertion is that `removeTree` was never
+   * reached for any of these, not that they are absent from a list.
+   *
+   * Every entry below is one this module could not have created: a valid
+   * prefix over a name `sessionDirectoryName` refuses (upper case, a path
+   * separator, a traversal), a bare prefix with nothing after it, and a
+   * directory with no prefix at all. The last is what separates *matches the
+   * layout* from *is in the root*.
+   */
+  it('CONTROL: never removes a directory this layout could not have created', () => {
+    const entries = ['in-NOTHEX', 'in-a1b2\\c3', 'in-..', 'in-', 'out-', 'engine-cache', 'in'];
+    const { surface, calls } = root(entries);
+
+    expect(sweepSessionDirectories(surface, 'C:\\root')).toEqual({
+      removed: [],
+      failed: [],
+      skipped: entries,
+      unreadable: false,
+    });
+    expect(calls).toEqual(['list(C:\\root)']);
+  });
+
+  /**
+   * A ROOT THAT COULD NOT BE READ IS NOT A CLEAN ONE, and the pair of cases is
+   * what makes that mean anything: both report `removed: []`, and only
+   * `unreadable` tells them apart. A surface answering `[]` for an error would
+   * satisfy the first of these and fail this one.
+   */
+  it('separates a root it could not list from an empty one', () => {
+    const unreadable: DirectoryCreationSurface = {
+      create: () => 'created',
+      remove: () => true,
+      removeTree: () => true,
+      list: () => null,
+      lastError: () => 5,
+    };
+
+    expect(sweepSessionDirectories(unreadable, 'C:\\root')).toEqual({
+      removed: [],
+      failed: [],
+      skipped: [],
+      unreadable: true,
+    });
+    expect(sweepSessionDirectories(root([]).surface, 'C:\\root')).toEqual({
+      removed: [],
+      failed: [],
+      skipped: [],
+      unreadable: false,
+    });
+  });
+
+  /**
+   * A DIRECTORY THAT SURVIVED IS REPORTED AS SURVIVING. Without this the sweep
+   * could report every match as removed and nothing downstream could tell a
+   * root it cleared from one it did not — the same `false` `removeSessionDirectories`
+   * exists to carry, one caller along.
+   */
+  it('reports a matching directory removeTree could not take', () => {
+    const { surface } = root(['in-a1b2-c3', 'out-a1b2-c3'], ['out-a1b2-c3']);
+
+    expect(sweepSessionDirectories(surface, 'C:\\root')).toEqual({
+      removed: ['in-a1b2-c3'],
+      failed: ['out-a1b2-c3'],
+      skipped: [],
+      unreadable: false,
+    });
+  });
+
+  /**
+   * THE NEGATIVE PROBE SHARES THIS ROOT, and it is a FILE. `list` answers
+   * directories only, so it never reaches the sweep — this case pins that the
+   * sweep is not relying on the name to protect it, since `containment-negative`
+   * carries no session prefix either and would be skipped for a second reason.
+   * Both reasons are load-bearing: the day a probe is renamed `in-<hex>` the
+   * type filter is the one still standing.
+   */
+  it('leaves the session root own files alone', () => {
+    const { surface, calls } = root(['containment-negative', 'in-a1b2-c3']);
+
+    expect(sweepSessionDirectories(surface, 'C:\\root')).toEqual({
+      removed: ['in-a1b2-c3'],
+      failed: [],
+      skipped: ['containment-negative'],
+      unreadable: false,
+    });
+    expect(calls).not.toContain('removeTree(C:\\root\\containment-negative)');
   });
 });
