@@ -805,3 +805,71 @@ nothing ever pointed it at this repository.
 
 **Neither of the two things owed above is affected**, and this correction does
 not licence writing the amendment. It removes a bound that was never evidence.
+
+## Note, 2026-08-31 — the `6x` ceiling is now known to be EXCEEDED by the real host
+
+The 2026-08-27 note above measured `mupdf-host`'s **baseline** and found
+`base 128 MB` too generous. This measures the other term. The multiple has never
+been read against the process it governs, because `budgetGate.mjs` runs
+`roleMupdfHost.mjs` with no `--host` — it asserts against the **model**, the
+engine in the gate's own process, while the real contained host is measured by
+`--no-document` and only reported.
+
+**Read 2026-08-31, peak working set taken from OUTSIDE each process, both
+content shapes:**
+
+| shape | bytes | the model | the real host |
+|---|---|---|---|
+| image-heavy | 209,105,721 | 316.6 MB | **1336.0 MB** |
+| object-dense | 26,315,984 | 150.6 MB | **284.1 MB** |
+| `perf-baseline.pdf`, the fixed cost | 62,874 | 57.2 MB | **87.7 MB** |
+
+Above each cell's own baseline that is **1.30× and 3.73×** for the model against
+**6.26× and 7.83×** for the host, so the real host exceeds §9.17's declared `6x`
+on **both** shapes where the model clears it on both. The absolute term is
+untouched — 1.34 GB and 284 MB against `3 GB` — and so is `base 128 MB`, at
+87.7 MB.
+
+**87.7 MB is the figure that makes the others worth reading.** It reproduces the
+2026-08-28 reading of 87.7 MB exactly, from the same cell, which is the cheapest
+instrument check available and the only reason to trust two numbers nobody has
+seen before.
+
+### What this does NOT license
+
+**Raising `6x`.** §9.17 says the `mupdf-host` budget is *a containment limit: a
+breach means kill-and-restart, never a raised number*, so *"the host reads
+6.26×"* is not an argument for a bigger ceiling and this note is not making one.
+
+**Wiring the gate at `6x` either**, and the reason is not that it would go red.
+§9.17 says the ceiling is *not yet derived, because the thing it must catch has
+not been named; that is open rather than settled* — and asserting an openly
+underived number in CI turns a placeholder into a gate, after which the first
+thing anybody does is raise it to go green, which the sentence above forbids by
+name.
+
+### What it changes
+
+The open item's **priority**, from *someday* to *the placeholder is known
+wrong in the direction that matters*. What is missing is still exactly what
+§9.17 names: nobody has said what the ceiling must catch. That is a decision,
+and it now has a measurement behind it rather than a number to pick.
+
+**One day of readings, on one machine.** The amendment named in §9.17's
+2026-08-28 log entry is blocked on *host readings across days through the real
+host*, and this is the first of them.
+
+### A prediction falsified on the way
+
+`roleMupdfHost.mjs`'s header argued that the host cell must report a **smaller**
+figure than the model, because the host's channel set has no page-walk and no
+render channel and invariant 21 prices a full page walk at 370 MB. It reports
+4.2× the model's peak on image-heavy. Corrected in place, because a comment is
+code rather than a record.
+
+The paragraph reasoned from the one axis it named and the workloads differ on a
+second: the host's ends in **serialise**, which produces a full byte image
+(209,104,828 bytes for that fixture) the model never asks for. That is a
+**candidate and not the answer** — it accounts for 209 MB of a 1248 MB document
+cost, and what the rest is has not been established. It must not become the
+explanation without a third reading.

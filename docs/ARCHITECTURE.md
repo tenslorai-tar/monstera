@@ -851,7 +851,14 @@ say**.
     baseline therefore carries its derivation — what was run, when, and what it
     read — in the ADR rather than in an argument alone. `mupdf-host`'s ceiling is
     **not yet derived**, because the thing it must catch has not been named; that
-    is open rather than settled.
+    is open rather than settled. **As of 2026-08-31 the placeholder is known to
+    be exceeded by the real host on both content shapes**, where the model
+    `perf:gate` asserts against clears it — the readings are in
+    [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)'s
+    note of that date, which is where the sentence above puts a derivation. That
+    is not an argument for a larger number, because the clause above forbids
+    one; and it is why the gate is **not** pointed at the real host, since
+    asserting an openly underived ceiling in CI turns a placeholder into a gate.
 
     > **Memory budgets:** `main = 1.5x, 1.5 GB, base 80 MB` ·
     > `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`
