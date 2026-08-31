@@ -148,6 +148,40 @@ const DATA_EXTENSIONS = ['.json', '.toml', '.yml', '.yaml', '.md', '.css'];
 const RELATIVE_IMPORT = /(?:^|\n)\s*(?:import|export)[^;]*?from\s*['"](\.[^'"]*)['"]/gu;
 
 /**
+ * A DYNAMIC import whose specifier is a literal relative path.
+ *
+ * ## Measured, 2026-08-31: the static pattern misses five real edges
+ *
+ * `import(…)` is an expression, so it appears anywhere and the statement-bounded
+ * pattern above cannot see it. Three of the five cross inside `scripts/`:
+ * `preCommit.mjs` loads `../lib/stackOwnership.mjs`, and `ocrDoors.mjs` loads
+ * `../provision/mupdf.mjs` and `../lib/gitScope.mjs`. So a change to
+ * `stackOwnership.mjs` reported that no proof read it, which is the reassuring
+ * answer in the dangerous direction.
+ *
+ * **`import(` PRECEDED BY A NON-IDENTIFIER CHARACTER**, so a JSDoc
+ * `import('./x.mjs').Type` is still matched (it is preceded by `{`) while the
+ * word `reimport(` is not. A type-only edge is a real dependency for this
+ * question anyway: changing that module changes what the annotation means.
+ *
+ * ## What this still cannot see, and why it is the safe half
+ *
+ * A computed specifier — `import(pathToFileURL(join(root, relative)).href)` —
+ * is invisible to any text pattern, which is what `ACCOUNTED_COMPUTED` in
+ * `electronImports.proof.mjs` exists to make somebody read. And a `from '…'`
+ * inside a comment or a fixture string produces a FALSE edge, which
+ * over-reports affected proofs — the direction that costs a run rather than a
+ * defect.
+ *
+ * The full fix is the compiler-based graph `nodeModulesPlacement.mjs` already
+ * builds, whose own header says a text scan is not a substitute. Its cost is
+ * that this module would then need `node_modules`, and `proof:affectedproofs`
+ * runs on Guards, which installs nothing — a job move, and a decision rather
+ * than a tidy-up.
+ */
+const DYNAMIC_RELATIVE_IMPORT = /(?:^|[^\w$])import\s*\(\s*['"](\.[^'"]*)['"]/gu;
+
+/**
  * Every `scripts/**` module, repo-relative with forward slashes.
  *
  * @param {string} root
@@ -223,14 +257,19 @@ export function importGraph(root = repoRoot()) {
     /** @type {Set<string>} */
     const imports = new Set();
     const text = readFileSync(join(root, file), 'utf8');
-    for (const match of text.matchAll(RELATIVE_IMPORT)) {
-      const specifier = match[1];
-      if (specifier === undefined) continue;
-      const resolved = relative(root, resolve(join(root, dirname(file)), specifier)).replaceAll('\\', '/');
-      // Only edges to modules that exist. An unresolvable specifier is a
-      // typo or a package import, and inventing a node for it would put
-      // unreachable names in the graph.
-      if (known.has(resolved)) imports.add(resolved);
+    for (const pattern of [RELATIVE_IMPORT, DYNAMIC_RELATIVE_IMPORT]) {
+      for (const match of text.matchAll(pattern)) {
+        const specifier = match[1];
+        if (specifier === undefined) continue;
+        const resolved = relative(root, resolve(join(root, dirname(file)), specifier)).replaceAll(
+          '\\',
+          '/',
+        );
+        // Only edges to modules that exist. An unresolvable specifier is a
+        // typo or a package import, and inventing a node for it would put
+        // unreachable names in the graph.
+        if (known.has(resolved)) imports.add(resolved);
+      }
     }
 
     graph.set(file, imports);

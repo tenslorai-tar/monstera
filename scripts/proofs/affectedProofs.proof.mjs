@@ -38,7 +38,7 @@ const ROOT = repoRoot();
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 26 });
+const roster = createRoster(failures, { cases: 27 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -103,6 +103,49 @@ function check(name, condition, detail) {
         'this case must be deleted rather than left passing.'
       : `${wrapped.from} -> ${wrapped.to} is written across lines and is NOT in the graph. A ` +
         `miss here produces "no proof affected", which is what everyone asking this wants to hear.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A DYNAMIC IMPORT WITH A LITERAL SPECIFIER IS AN IMPORT TOO.
+//
+// `import(…)` is an expression, so it appears where no statement-bounded pattern
+// reaches. Measured 2026-08-31: three such edges exist inside `scripts/` and the
+// graph carried none of them, so a change to `stackOwnership.mjs` reported that
+// no proof read it — the reassuring answer, in the dangerous direction.
+//
+// FOUND IN THE REAL TREE for the reason the case above is: a fixture would test
+// the shape I chose, and `importGraph` refuses a tree missing its control edges.
+// ---------------------------------------------------------------------------
+{
+  // Deliberately NOT the pattern under test: this one requires `await`, so it
+  // matches a strict subset. A copy of the shipped regex here would agree with
+  // it by construction and could not separate a working graph from a blind one.
+  const AWAITED = /await\s+import\s*\(\s*['"](\.[^'"]*)['"]/gu;
+  const graph = importGraph(ROOT);
+
+  /** @type {{ from: string, to: string } | null} */
+  let dynamic = null;
+  for (const [file] of graph) {
+    const match = AWAITED.exec(readFileSync(join(ROOT, file), 'utf8'));
+    AWAITED.lastIndex = 0;
+    const specifier = match?.[1];
+    if (specifier === undefined) continue;
+    const to = relative(ROOT, resolve(join(ROOT, dirname(file)), specifier)).replaceAll('\\', '/');
+    if (!graph.has(to)) continue;
+    dynamic = { from: file, to };
+    break;
+  }
+
+  check(
+    'a DYNAMIC import with a literal specifier is an edge, which the static pattern missed',
+    dynamic !== null && graph.get(dynamic.from)?.has(dynamic.to) === true,
+    dynamic === null
+      ? 'no module under scripts/ awaits an import of a literal relative path, so this case has ' +
+        'nothing to test and its silence means nothing. If that is genuinely true now, delete ' +
+        'this case rather than leave it passing.'
+      : `${dynamic.from} -> ${dynamic.to} is loaded dynamically and is NOT in the graph. A miss ` +
+        `here reports "no proof affected" for a file a proof really reads.`,
   );
 }
 
