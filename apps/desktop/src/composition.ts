@@ -13,7 +13,7 @@ import {
   type HostTermination,
   type PageGeometryReader,
   type ProbeTarget,
-  type RegisteredWriter,
+  type RemoteMupdfWriter,
   type SessionAreaSurface,
   type WriterRegistry,
   classifyContainment,
@@ -388,9 +388,18 @@ function engineSessionOpener(
    * layer up, and it is reported the same way rather than being papered over
    * with a refusal that would read as an outcome.
    */
-  let writer: RegisteredWriter<'mupdf'> | null = null;
+  // THE CLOSE IS PART OF THE TYPE HERE and not on `RegisteredWriter`. The
+  // registry's type is a statement about ROUTING — which writer runs a command —
+  // and ending a session is not a routing question. This root needs both, so
+  // the intersection is stated at the one place that holds both jobs.
+  let writer: RemoteMupdfWriter | null = null;
 
-  const live = (): RegisteredWriter<'mupdf'> => {
+  // NAMED FOR WHAT IT RETURNS, because `live` alone is shadowed twice in this
+  // function — by the host connection in `connect` and again in `create` — and
+  // the second shadow is where a caller wanting the writer would silently get a
+  // connection instead. It does not compile, which is the good version of this
+  // problem; the name is what stops the reader having to discover that.
+  const liveWriter = (): RemoteMupdfWriter => {
     if (writer === null) {
       throw new Error(
         'A mupdf command reached the bus with no engine host writer registered. A session was ' +
@@ -408,13 +417,13 @@ function engineSessionOpener(
   // the reason `localMupdfExecution` is written out too).
   const writers: WriterRegistry = {
     mupdf: {
-      capture: (session, command) => live().capture(session, command),
-      apply: (session, command) => live().apply(session, command),
+      capture: (session, command) => liveWriter().capture(session, command),
+      apply: (session, command) => liveWriter().apply(session, command),
       // THREE ARGUMENTS, because a recorded inverse does not carry its own
       // kind the way a command does — the asymmetry is `CommandExecution`'s and
       // is the same one the pipe has.
-      invert: (session, kind, inverse) => live().invert(session, kind, inverse),
-      serialise: (session) => live().serialise(session),
+      invert: (session, kind, inverse) => liveWriter().invert(session, kind, inverse),
+      serialise: (session) => liveWriter().serialise(session),
     },
   };
 
@@ -622,6 +631,19 @@ function engineSessionOpener(
     };
 
     const { session } = await openEngineSession(documents, docId, areas, open);
+
+    // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
+    // `live()` rather than the captured `writer`: a host rebuilt between the
+    // open and the close leaves the old writer talking to a process that is
+    // gone, and the registry's token is what carries the area across.
+    //
+    // `close` does both halves — `engine/close` on the host, then the granted
+    // directories — so this registers the whole teardown rather than the disk
+    // half, which is what a bare `areas.remove` here would have been.
+    sessions.holdRelease(docId, async () => {
+      await liveWriter().close(session);
+    });
+
     return { mupdf: session };
   };
 

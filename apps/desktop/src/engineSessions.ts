@@ -494,6 +494,16 @@ interface DocumentEntry {
   sessions: DocumentSessions;
   /** Reset to zero by any call the host answers (Decision 9a). */
   consecutiveFailures: number;
+  /**
+   * How to end what this document holds outside the index, or `null` if it
+   * holds nothing yet.
+   *
+   * Held on the entry rather than in a second map for the reason the failure
+   * count is: the release's lifetime IS this entry's, and two maps keyed by
+   * `DocId` would be two owners that drift at the one moment that matters —
+   * a document closing while a host dies (B3).
+   */
+  release: (() => Promise<void>) | null;
 }
 
 /**
@@ -565,7 +575,7 @@ export class EngineSessions implements EngineSessionSource {
    */
   begin(docId: DocId): void {
     if (this.#entries.has(docId)) return;
-    this.#entries.set(docId, { sessions: {}, consecutiveFailures: 0 });
+    this.#entries.set(docId, { sessions: {}, consecutiveFailures: 0, release: null });
   }
 
   /**
@@ -587,7 +597,7 @@ export class EngineSessions implements EngineSessionSource {
       );
     }
     if (entry === undefined) {
-      this.#entries.set(docId, { sessions, consecutiveFailures: 0 });
+      this.#entries.set(docId, { sessions, consecutiveFailures: 0, release: null });
       return;
     }
     entry.sessions = sessions;
@@ -623,10 +633,71 @@ export class EngineSessions implements EngineSessionSource {
    * awaits the document's lane first, so this runs after that document's
    * in-flight work and after any later message has already missed the index.
    */
-  readonly releaseOnClose: DocumentTeardown = (docId) => {
+  readonly releaseOnClose: DocumentTeardown = async (docId) => {
+    const entry = this.#entries.get(docId);
+    // THE ENTRY GOES FIRST, and the order is the point. Releasing is an await,
+    // and an entry still present across it is one a queued command could find
+    // and use — a session being ended underneath it. Deleting first makes that
+    // window unrepresentable rather than unlikely, and it matches what
+    // `DocumentService.close` already does with the record.
     this.#entries.delete(docId);
-    return Promise.resolve();
+    if (entry?.release == null) return;
+
+    // FAILURE IS SWALLOWED HERE, DELIBERATELY, and this is the one place in
+    // this class where that is right. The document is closing; the user's next
+    // action does not depend on the host having answered; and a throw would
+    // propagate out of `DocumentService.close` and fail an operation that has
+    // already succeeded from every point of view but this one. What the failure
+    // costs is a pair left on disk until the next launch's sweep, which is the
+    // state this whole method exists to make rare rather than impossible.
+    try {
+      await entry.release();
+    } catch {
+      /* the sweep at next launch is the backstop, and it is a real one */
+    }
   };
+
+  /**
+   * Records how to end what a document holds outside the index.
+   *
+   * ## Why this exists at all
+   *
+   * `DocumentTeardown` is documented as releasing *"whatever a document holds
+   * outside this index — the engine session, above all"*, and until this it
+   * released nothing: {@link EngineSessions.releaseOnClose} deleted a map entry.
+   * The granted directory pair therefore OUTLIVED the document that created it,
+   * leaving a readable copy of the user's document where the contained host
+   * could reach it until the next launch swept the session root.
+   *
+   * The pair was never unowned. `remoteMupdfLifecycle.close` ends the session on
+   * the host and removes the pair, and it had **no caller**: `remoteMupdfWriter`
+   * destructured `serialise` and dropped it. So the fix is not a new mechanism,
+   * it is connecting the one that was already written to the seam already
+   * documented as its home.
+   *
+   * ## Idempotent, and it refuses a second registration
+   *
+   * One document has one session-opening, so a second call means two things
+   * believe they own this document's teardown — which is the B3 defect arriving
+   * at run time. Throwing is right where returning quietly would leave the
+   * SECOND release the one that never runs.
+   */
+  holdRelease(docId: DocId, release: () => Promise<void>): void {
+    const entry = this.#entries.get(docId);
+    // NOT AN ERROR. The document closed while its session was opening, which is
+    // ordinary, and `releaseOnClose` has already run for it. The caller's own
+    // failure path removes the pair in that case — `openEngineSession` removes
+    // it on every path out of itself — so there is nothing to hold.
+    if (entry === undefined) return;
+    if (entry.release !== null) {
+      throw new Error(
+        `Supervisor defect: a second teardown was registered for document ` +
+          `${docId.slice(0, 8)}…. One document has one session-opening, so two owners of its ` +
+          `teardown means one of them will never run.`,
+      );
+    }
+    entry.release = release;
+  }
 
   /**
    * A host death: increments every document that had a call rejected by it, and

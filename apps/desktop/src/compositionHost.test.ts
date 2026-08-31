@@ -169,8 +169,21 @@ const ENGINE: FakePeer = (channel) => {
           value: { kind: 'rotatePages', prior: [{ page: 1, prior: { present: false } }] },
         },
       };
+    // `engine/close` IS ANSWERED because the product now calls it: closing a
+    // document ends its session on the host and removes the granted pair. Left
+    // out, this peer returns `null` from its default, which the fake treats as
+    // *send no reply at all* — and the teardown then waits for a frame that
+    // never comes, so the first run after the leak was closed timed out rather
+    // than failing.
+    //
+    // Worth stating rather than only fixing: nothing in the boundary client
+    // bounds a call, so a host that accepts a frame and never answers hangs
+    // whoever awaited it. Invariant 25 says the host is hostile, so that is a
+    // real property, and it belongs to every channel rather than to this one.
+    // Recorded here because this is where it was first met.
     case 'engine/apply':
     case 'engine/invert':
+    case 'engine/close':
       return { ok: true, value: {} };
     default:
       return null;
@@ -505,6 +518,13 @@ describe('the composition root, with an engine host platform', () => {
     });
     expect(executed.ok).toBe(true);
 
+    // THE CONTROL FOR THE PAIR ASSERTION BELOW, and it has to be taken here
+    // rather than after. An open document's pair must still exist: without
+    // this line, "removed by the time the shell has quit" is satisfied by a
+    // pair that was removed at open, or by one the shutdown removes for its own
+    // reasons, and neither would be the close doing it.
+    expect(spy.directories.filter((call) => call.startsWith('removeTree:'))).toEqual([]);
+
     const before = spy.harness.calls.length;
     await shutdown();
     const during = spy.harness.calls.slice(before);
@@ -515,6 +535,14 @@ describe('the composition root, with an engine host platform', () => {
     // signalled would be the sequence measured aborting at 134, and a quit that
     // did neither is what the shell did until this landed.
     expect(during).toEqual([
+      // THE DOCUMENT'S SESSION GOES FIRST, and this line is the leak's closure
+      // arriving in the order assertion. `shutdown` closes open documents
+      // before the host, each close now ends its session on the host and
+      // removes its granted pair, and only then is the host itself torn down.
+      // Ending a session on a host that is already gone would be the same
+      // no-op every time, which is how this would silently stop meaning
+      // anything if the two halves were ever reordered.
+      'peer.request:engine/close',
       'reader.signal',
       'writes.abandon',
       'worker.terminate',
@@ -526,19 +554,23 @@ describe('the composition root, with an engine host platform', () => {
       'pipe.close',
     ]);
 
-    // AND THE DOCUMENT'S GRANTED PAIR IS STILL THERE, which is a finding rather
-    // than an intention. `sessionDirectories.ts` says a pair's "lifetime is the
-    // session's: created before the image is written, removed when the session
-    // closes" — and no session is ever closed: `remoteLifecycle`'s `close`,
-    // which is what calls `areas.remove`, has no caller. `releaseOnClose`
-    // deletes a map entry and nothing else.
+    // AND THE DOCUMENT'S GRANTED PAIR IS GONE WITH IT.
     //
-    // Pinned rather than fixed here: closing the pair means making
-    // `DocumentTeardown` a real teardown, which is a decision about a seam and
-    // not part of a quit. Until then the startup sweep is what removes them,
-    // and this assertion is what stops that becoming invisible.
-    expect(spy.directories.filter((call) => call.startsWith('removeTree:'))).toEqual([]);
+    // This assertion used to read `toEqual([])`, pinning a leak: `sessionDirectories.ts`
+    // says a pair's "lifetime is the session's: created before the image is
+    // written, removed when the session closes", and no session was ever
+    // closed — `remoteLifecycle`'s `close` is what calls `areas.remove`, and
+    // `remoteMupdfWriter` dropped it on the floor, so it had no caller
+    // anywhere. `releaseOnClose` deleted a map entry and nothing else, and a
+    // readable copy of the user's document stayed where the contained host
+    // could reach it until the next launch swept the session root.
+    //
+    // BOTH DIRECTORIES, and the count is the assertion rather than "at least
+    // one": the pair is a pair, and removing the snapshot while leaving the
+    // output directory is the half-fix that would still leave a granted path
+    // behind.
     expect(spy.directories.filter((call) => call.startsWith('create:'))).toHaveLength(2);
+    expect(spy.directories.filter((call) => call.startsWith('removeTree:'))).toHaveLength(2);
   });
 
   /**

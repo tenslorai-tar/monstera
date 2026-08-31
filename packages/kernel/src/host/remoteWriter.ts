@@ -4,7 +4,11 @@ import type { RegisteredWriter } from '../commandSpecs.js';
 import type { EngineChannels } from './engineChannels.js';
 import { remoteMupdfExecution } from './remoteEngine.js';
 import type { RemoteSessions } from './remoteEngine.js';
-import { type SessionAreaSurface, remoteMupdfLifecycle } from './remoteLifecycle.js';
+import {
+  type RemoteMupdfLifecycle,
+  type SessionAreaSurface,
+  remoteMupdfLifecycle,
+} from './remoteLifecycle.js';
 
 /**
  * The MuPDF writer assembled for a process that does NOT hold the session —
@@ -46,11 +50,32 @@ import { type SessionAreaSurface, remoteMupdfLifecycle } from './remoteLifecycle
  *   adopts into, or every call is `UnknownRemoteSession`
  * @param areas how a session's granted directories are reached and removed
  */
+/**
+ * What this root gets back: a writer the bus can route to, plus the one
+ * function that ends a session.
+ *
+ * Named rather than written inline at each site, because the intersection is
+ * the statement — routing and lifetime are two different jobs and this is the
+ * one object that holds both.
+ */
+export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> & Pick<RemoteMupdfLifecycle, 'close'>;
+
 export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
   sessions: RemoteSessions,
   areas: SessionAreaSurface,
-): RegisteredWriter<'mupdf'> {
-  const { serialise } = remoteMupdfLifecycle(client, sessions, areas);
-  return { serialise, ...remoteMupdfExecution(client, sessions) };
+): RemoteMupdfWriter {
+  // `close` USED TO BE DROPPED HERE, and that was the whole of the leak. This
+  // line destructured `serialise` alone, so the one function that ends a
+  // session on the host and removes its granted directory pair had no caller
+  // anywhere — and a pair therefore outlived the document that created it,
+  // leaving a readable copy of the user's document where the contained host
+  // could reach it until the next launch's sweep.
+  //
+  // Widening the return rather than putting `close` on `RegisteredWriter`: the
+  // registry's type is a statement about ROUTING — which writer runs a command —
+  // and a session's lifetime is not a routing question. The composition root
+  // takes it from here and registers it as the document's teardown.
+  const { serialise, close } = remoteMupdfLifecycle(client, sessions, areas);
+  return { serialise, close, ...remoteMupdfExecution(client, sessions) };
 }

@@ -109,6 +109,7 @@ export {
 } from './host/remoteLifecycle.js';
 export type { SessionsByWriter } from './engineSeam.js';
 export { remoteMupdfWriter } from './host/remoteWriter.js';
+export type { RemoteMupdfWriter } from './host/remoteWriter.js';
 export {
   EngineCallFailed,
   EngineSessionGone,

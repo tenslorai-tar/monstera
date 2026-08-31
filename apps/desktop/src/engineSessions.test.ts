@@ -239,6 +239,69 @@ describe('the supervisor holds one entry per document, and poisons at two', () =
     expect(engine.sessions(second)).toStrictEqual(someSessions('b'));
   });
 
+  it('closing a document RUNS its release, which is what the pair leak was', async () => {
+    const engine = new EngineSessions();
+    engine.begin(first);
+    engine.hold(first, someSessions('a'));
+
+    const ran: string[] = [];
+    engine.holdRelease(first, async () => {
+      ran.push('released');
+      return Promise.resolve();
+    });
+
+    // THE CONTROL, and it is the whole of what was wrong before: holding a
+    // release must not run it. `releaseOnClose` used to delete a map entry and
+    // nothing else, and an assertion that only looked after the close would be
+    // satisfied by a release that fired at registration — which is a different
+    // defect wearing this one's passing test.
+    expect(ran).toEqual([]);
+
+    await engine.releaseOnClose(first);
+    expect(ran).toEqual(['released']);
+    expect(engine.held).toBe(0);
+  });
+
+  it('a release that REJECTS still closes the document', async () => {
+    const engine = new EngineSessions();
+    engine.begin(first);
+    engine.holdRelease(first, () => Promise.reject(new Error('the host is gone')));
+
+    // A close is not an operation the user can retry, and by the time this runs
+    // the document is going. Propagating would fail a close that has succeeded
+    // in every sense but this one; the cost is a pair left for the next
+    // launch's sweep, which is a backstop that exists.
+    await expect(engine.releaseOnClose(first)).resolves.toBeUndefined();
+    expect(engine.held).toBe(0);
+  });
+
+  it('a SECOND release for one document is a defect, not the last one winning', () => {
+    const engine = new EngineSessions();
+    engine.begin(first);
+    engine.holdRelease(first, () => Promise.resolve());
+
+    // Two owners of one document's teardown means one of them never runs, and
+    // which one is an accident of ordering. B3 arriving at run time.
+    expect(() => {
+      engine.holdRelease(first, () => Promise.resolve());
+    }).toThrow(/second teardown/u);
+  });
+
+  it('a release offered for a document that already closed is dropped, not thrown', () => {
+    const engine = new EngineSessions();
+    engine.begin(first);
+
+    // The document closed while its session was still opening — ordinary, and
+    // `openEngineSession` removes the pair on every failure path out of itself,
+    // so there is nothing left to release. Throwing here would turn a race the
+    // design allows into a reported defect.
+    return engine.releaseOnClose(first).then(() => {
+      expect(() => {
+        engine.holdRelease(first, () => Promise.resolve());
+      }).not.toThrow();
+    });
+  });
+
   it('a document closed between the call and the death is skipped, not resurrected', async () => {
     const engine = new EngineSessions();
     engine.hold(first, someSessions('a'));
