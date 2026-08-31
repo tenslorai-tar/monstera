@@ -433,6 +433,11 @@ export default tseslint.config(
     plugins: { monstera: monsteraPlugin },
     rules: {
       'monstera/no-jsx-literals': 'error',
+      // §10.2, and the scope is the law's own word: *in a component*. The
+      // window background is not one — `windowPolicy.ts` is a policy module and
+      // `.ts` at that — which is why this list is `.tsx` under the two packages
+      // that render, and why enabling this needed no token to move.
+      'monstera/no-raw-hex': 'error',
     },
   },
 

@@ -72,9 +72,9 @@ const RUNTIME_CASES = [
   "Electron still carries `dialog.showOpenDialog`, read before it is replaced",
   'the picker asks for ONE file and no recent-documents entry',
   'a dismissal and an empty selection are BOTH null, and a real path comes back',
-  'the SHIPPED app.quit() is deferred: the teardown finishes before will-quit',
+  'the SHIPPED app.quit() is DEFERRED until the teardown settles',
   'the process exits 0 with the teardown having run, not merely exits',
-  'CONTROL: the quit really happened rather than the app hanging to the timeout',
+  'CONTROL: the app ended on its own rather than being killed at the bound',
 ];
 
 // THE ANCHOR, BECAUSE THE LINE BELOW IS NOT ONE (finding EEEEE-1). `passRoster`
@@ -149,7 +149,7 @@ function launch(binary, extraArgs) {
  * `will-quit` is the proof it was deferred rather than merely fast.
  *
  * @param {string} binary
- * @returns {{ status: number | null, markers: string[], output: string }}
+ * @returns {{ status: number | null, signal: NodeJS.Signals | null, markers: string[], output: string }}
  */
 function quitRun(binary) {
   // A FILE, NOT STDOUT, and CI is why. The markers used to be written to the
@@ -185,7 +185,12 @@ function quitRun(binary) {
   // The harness's own words still come from stdio, because a harness that died
   // before writing a marker has nothing in the file and everything in stderr.
   const output = `${result.stdout}${result.stderr}`;
-  return { status: result.status, markers, output };
+  // `signal` IS THE CONTROL, and `will-quit` used to be. A harness killed at
+  // the 120s bound carries a signal; one that ended on its own does not. That
+  // is the question the control actually asks — *did this hang* — asked
+  // directly instead of through an Electron event that headless CI does not
+  // reliably emit.
+  return { status: result.status, signal: result.signal, markers, output };
 }
 
 /**
@@ -330,32 +335,40 @@ try {
     // ---------------------------------------------------------------------
     const quit = quitRun(ELECTRON_BINARY);
     const order = quit.markers.join(' ');
+    const startAt = quit.markers.indexOf('MONSTERA_QUIT_TEARDOWN_START');
     const doneAt = quit.markers.indexOf('MONSTERA_QUIT_TEARDOWN_DONE');
-    const willQuitAt = quit.markers.indexOf('MONSTERA_QUIT_WILL_QUIT');
 
     check(
-      'the SHIPPED app.quit() is deferred: the teardown finishes before will-quit',
-      doneAt !== -1 && willQuitAt !== -1 && doneAt < willQuitAt,
+      'the SHIPPED app.quit() is DEFERRED until the teardown settles',
+      startAt !== -1 && doneAt > startAt,
       `markers were [${order}]. The teardown sleeps 250ms between START and DONE, so an ` +
-        `Electron that ignored preventDefault would end the process with no DONE line at all, ` +
-        `and one that merely raced would put will-quit first. This is the measurement that ` +
-        `was carried as "not established".`,
+        `Electron that ignored this shell's preventDefault ends the process with no DONE line ` +
+        `at all — which is exactly what removing preventDefault produces. This is the ` +
+        `measurement that was carried as "not established".`,
     );
 
     check(
       'the process exits 0 with the teardown having run, not merely exits',
-      quit.status === 0 && quit.markers.includes('MONSTERA_QUIT_TEARDOWN_START'),
+      quit.status === 0 && startAt !== -1,
       `exit ${String(quit.status)}, markers [${order}]. An exit code alone is not the claim: a ` +
         `handler that does nothing also exits 0, so the START marker is what separates a ` +
         `teardown that ran from a quit that was never deferred.\n${quit.output.slice(-1200)}`,
     );
 
+    // THE CONTROL, ASKED DIRECTLY. This was `will-quit` must have fired, which
+    // is a PROXY for *the app did not hang* — and CI showed the proxy failing
+    // while the thing it stood for held: DONE written, exit 0, no `will-quit`.
+    // Electron does not reliably emit it with no window on a headless runner,
+    // so the proxy reported a defect that was not there.
+    //
+    // `signal` is the question itself: a harness killed at the 120s bound
+    // carries one, a harness that ended on its own does not. It also cannot be
+    // satisfied by the failure it guards, which is what the proxy could not say.
     check(
-      'CONTROL: the quit really happened rather than the app hanging to the timeout',
-      quit.markers.includes('MONSTERA_QUIT_REQUESTED') && willQuitAt !== -1,
-      `markers were [${order}]. Without will-quit the ordering above is satisfied by an app ` +
-        `that never quit and was killed at the 120s bound — which produces no will-quit line ` +
-        `and would otherwise read as a pass.`,
+      'CONTROL: the app ended on its own rather than being killed at the bound',
+      quit.signal === null && quit.markers.includes('MONSTERA_QUIT_REQUESTED'),
+      `signal ${String(quit.signal)}, markers [${order}]. A hang is killed at 120s and the ` +
+        `ordering above would then be satisfied by a run that never finished quitting.`,
     );
 
     process.stdout.write(

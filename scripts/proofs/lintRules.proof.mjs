@@ -58,6 +58,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { PLANTED_OFFENDER } from '../lib/noJsxLiterals.mjs';
+import { PLANTED_HEX_OFFENDER } from '../lib/noRawHex.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const ROOT = repoRoot();
@@ -336,6 +337,60 @@ async function main() {
       testFindings.length === 0,
       `the rule fired inside a test file. The exclusion is declared in eslint.config.js; if it ` +
         `has stopped applying, every component test goes red for writing literal fixture text.`,
+    );
+
+    // -------------------------------------------------------------------
+    // §10.2's hex ban, and it needs the planted offender MORE than the rule
+    // above does: there is currently no raw hex in any component, so a matcher
+    // that matched nothing would report exactly what this clean tree reports.
+    // The repository's two hex values are in `windowPolicy.ts` and
+    // `canvasHarness.ts`, neither of which is a component.
+    // -------------------------------------------------------------------
+    const HEX = 'monstera/no-raw-hex';
+    const hexOffender = join(literalDirectory, 'swatch.tsx');
+    writeFileSync(hexOffender, `${PLANTED_HEX_OFFENDER}\n`, 'utf8');
+    const hexFindings = (await eslint.lintFiles([hexOffender]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === HEX);
+
+    check(
+      'a raw hex colour in a component is reported, at error severity',
+      hexFindings.some((message) => message.severity === 2),
+      `findings on the planted swatch: ${
+        hexFindings.map((m) => `${m.ruleId}(${m.severity})`).join(', ') || 'none'
+      }\n      No component in this repository carries a raw hex today, so a rule that matched ` +
+        `nothing would report the same zero the clean tree does.`,
+    );
+
+    // THE NEAR-MISSES, and the first is the one the rule was held back over:
+    // a computed colour. §10.2 exempts a genuinely dynamic value, and the
+    // exemption is delivered by shape — a computed colour is not a literal, so
+    // there is no node to visit and no allowlist to keep.
+    const hexInnocent = join(literalDirectory, 'computed.tsx');
+    writeFileSync(
+      hexInnocent,
+      'declare function onColor(a: string, b: string, c: number): string;\n' +
+        'export function Probe({ brand }: { brand: string }): unknown {\n' +
+        '  const ink = onColor(brand, brand, 4.5);\n' +
+        '  return (\n' +
+        '    <div style={{ color: ink }} id="#not-a-colour" data-k="#12345">\n' +
+        '      {ink}\n' +
+        '    </div>\n' +
+        '  );\n' +
+        '}\n',
+      'utf8',
+    );
+    const hexFalsePositives = (await eslint.lintFiles([hexInnocent]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === HEX);
+
+    check(
+      'a computed colour and a non-colour # string are NOT reported',
+      hexFalsePositives.length === 0,
+      `findings on the innocent file: ${hexFalsePositives
+        .map((m) => `${m.ruleId}: ${m.message}`)
+        .join(' | ')}\n      A rule that fires on onColor() output bans the one producer §10.2 ` +
+        `names, and one that fires on "#12345" fires on anchors and ids.`,
     );
   } finally {
     rmSync(literalDirectory, { recursive: true, force: true });

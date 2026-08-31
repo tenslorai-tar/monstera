@@ -238,10 +238,24 @@ is wrong** — fix the boundary, not the test.
   CropBox origin.
 - **State is per document** — one store instance per `DocId`, dropped on close.
   This makes the cross-tab corruption race unrepresentable *by shape*.
-- **Design tokens only.** No raw hex, no magic pixel values, no emoji as icons,
-  anywhere. Contrast-bearing colors are **computed at the point of use** via
-  `onColor(brand, background, minRatio)`; **storing a derived color is a
-  defect**.
+- **Design tokens only, IN COMPONENTS.** `docs/ARCHITECTURE.md` §10.2:
+  *"Components consume tokens only; a raw hex value or magic pixel number in a
+  component is a lint error unless the value is genuinely dynamic."*
+  `BUILD-PROMPT.md` rule 16 and Part M2 say the same, and both say *in a
+  component*. No emoji as icons. Contrast-bearing colors are **computed at the
+  point of use** via `onColor(brand, background, minRatio)`; **storing a derived
+  color is a defect**.
+
+  This line read *"no raw hex … anywhere"* until 2026-08-31, which is wider than
+  the law and wider than the founding record. The extra word had a cost rather
+  than being harmless: `windowPolicy.ts`'s `WINDOW_BACKGROUND` is not a
+  component, the window background was never banned, and the hex lint rule sat
+  unwritten behind a token move that nothing required. `monstera/no-raw-hex` is
+  scoped to component files and enabled.
+
+  **The general lesson is this file's own header**: where the digest and the
+  architecture document disagree, the architecture document is right and the
+  digest is stale. A digest that quietly widens a rule reads as the rule.
 
 - **A filename never selects native code.** The shim names the entry point it
   wants; it never hands a path to a format dispatcher. MuPDF's

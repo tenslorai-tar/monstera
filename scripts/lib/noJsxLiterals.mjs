@@ -50,6 +50,8 @@
  * scope decision in this project lives, rather than being reimplemented here.
  */
 
+import { noRawHex } from './noRawHex.mjs';
+
 /** A run of characters that no catalogue would ever hold. */
 const NOT_A_SENTENCE = /^[\s\d\p{P}\p{S}]*$/u;
 
@@ -103,7 +105,7 @@ export const noJsxLiterals = {
  * no diagnostic.
  */
 export const monsteraPlugin = {
-  rules: { 'no-jsx-literals': noJsxLiterals },
+  rules: { 'no-jsx-literals': noJsxLiterals, 'no-raw-hex': noRawHex },
 };
 
 /**
