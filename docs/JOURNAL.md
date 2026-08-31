@@ -644,6 +644,219 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-08-31 — Stage audit: `52ec5c6..0284b47` — a could-not-look spelt by hand is invisible to the harness that keys on it
+
+Range: **5 commits, 18 files.** 1 proof added, 4 modified, 0 removed; no source
+file added or removed, 8 changed — from `npm run audit:scope`, which printed
+*"Within one batch. An audit is not yet owed. Fires at 10 commits (5 more) or 25
+files (7 more)"*. Taken because the next commit crosses on files and the
+pre-commit gate refused it — which is the gate working, not a surprise.
+
+The range is the previous audit's recording commit, the session-root sweep with
+the ordering fix it needed, the unverifiable-marker consolidation, a correction
+to yesterday's mechanism sentence, and the real host's memory figure. Findings
+**VVVVV-1** to **VVVVV-5**.
+
+### The range's headline
+
+**A rule with an exported token still had six callers spelling their own, and
+one of them was counted as a pass.** `scripts/lib/unverifiable.mjs` exports
+`UNVERIFIABLE_MARKER` — a newline, two spaces, the word, two spaces — precisely
+so a harness can tell *could not look* from *passed*, and its header says a
+second spelling would be a second opinion about what it prints.
+`hostRecovery.mjs` wrote `UNVERIFIABLE — 6 case(s) could not be evaluated here`,
+which reads correctly to a person and matches nothing.
+
+Its row in this morning's sweep log reads
+`{ "name": "proof:hostrecovery", "exit": 0, "seconds": 1.74, "bytes": null,
+"firstProblem": null }`. `bytes: null` is `checkLocal.mjs`'s **pass** branch —
+it records a length only when it matched the marker — and 1.74s against 20.1s
+for a real run says what happened.
+
+### 1. Root cause or workaround
+
+Five commits. Every fix names a mechanism; two of them are ordering repairs
+rather than new checks, which is the shape to prefer.
+
+| the fix | mechanism | verdict |
+|---|---|---|
+| `startShell(() => ShellDependencies)` | the graph was an argument, so every constructor ran before `requestSingleInstanceLock()` and a losing launch wrote into the winner's session root | root cause |
+| `sweepSessionDirectories` | a pair goes on close and on every failed open, so a survivor means main died without unwinding, and nothing swept | root cause |
+| `exitUnverifiable` in two callers | the marker is a token one module owns and two files spelt their own | root cause |
+| the poison refusal in `testResolution.proof.mjs` | its `finally` captures whatever is on disk, so a killed run's leftover becomes the thing it restores | root cause, and it is the **detector** half — the bound that kills it is still owed |
+| the `mupdf-host` figure | measured rather than wired; the swap would redden the gate | not a fix — a reading that redirects the work |
+
+Nothing was exempted, no check loosened, no type widened.
+
+### 2. Verified against the easy shape only?
+
+**The sweep's hard shape is a FILE named like a directory**, and it is the case
+no unit test can reach: every case in `sessionDirectories.test.ts` supplies the
+listing, so the filter that keeps `rmSync(recursive)` off `in-deadbeef` is
+stubbed in all of them. `proof:sessionsweep` drives the shipped listing against
+a real root for exactly that.
+
+**The `--host` measurement's hard shape is the object-dense fixture**, and it is
+the one that reads worst: 7.83× against 6.26× for image-heavy. Measuring only
+the image-heavy shape would have reported a 4% overshoot rather than a 30% one.
+
+**And the easy shape bit once, in this range's own author.** A new proof owes
+`electronImports.proof.mjs`'s `ACCOUNTED_COMPUTED` a line, because loading built
+modules through `pathToFileURL` is a computed specifier. Two registrations were
+paid — by path in `proofCoverage.mjs`, wrapped by `annotate.mjs` — and the third
+was not. `npm run local` reddened on it (VVVVV-5).
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is the headline.** Two proofs moved from a hand-written
+could-not-look to `exitUnverifiable`. That is a **strengthening of what the
+harness sees** and it changes nothing about what either proof asserts: on a
+machine that can look, both run exactly as before. What moves is the sweep's
+classification of a machine that cannot — from `ok` to `UNVERIFIABLE`, which is
+a bucket `checkLocal.mjs` already had and was never reaching for these two.
+
+### 3. Would CI have caught it?
+
+**Read from CI #543 (33371581079) at
+`0284b47bad56b19f5959dc15822ee276d1dd5379`, through the jobs API:**
+
+```
+CI #543      Build the native MuPDF shim
+  [success] 1s   The session-root sweep, against a real directory
+```
+
+and the board at that sha: `GREEN at 0284b47… Guards=success, CI=success`.
+
+**VVVVV-1 could NOT have been caught by CI, and that is the finding rather than
+a gap in the workflow.** The marker exists for `npm run local`; CI reads exit
+codes and `--require-containment` turns the same condition red there. So the
+blind spot is precisely the developer's sweep — the run that decides whether to
+push — and it was blind in the reassuring direction.
+
+### 4. Are the proofs non-vacuous?
+
+Six mutations, each reddening a named case:
+
+- the sweep's name validation dropped → the layout control reddens;
+- an unreadable root reported as clean → the separation case reddens;
+- `list` answering files as well → `proof:sessionsweep`'s real-root control
+  reddens **by name**, reporting that `in-deadbeef` was removed;
+- the `null` branch returning `[]` → the absent-root control reddens;
+- the file half's name validation dropped → the host-log case reddens;
+- the poison refusal, both ways: exit 0 on a clean tree, exit 1 with the repair
+  named on a planted one.
+
+**VVVVV-2. `testResolution.proof.mjs` restored a leftover and passed over it.**
+It writes a throwing line into `packages/shared/dist/index.js` and puts the file
+back in a `finally`. The sweep killed it at its 180-second bound between the
+two, and the poison was still on disk an hour later — at which point running it
+again read the poison as `original`, wrote the poison, and restored the poison,
+with both its cases green: the fixed case never loads dist, and the control
+wants the poison there.
+
+That is `hookProbe.proof.mjs`'s class, in the sibling nobody gave the refusal
+to. It refuses now.
+
+### 4a. Has every instrument passed a resolution test?
+
+No instrument arrived. One moved: `sweepSessionDirectories` gained a file half,
+and its resolution test is the pair of controls above — a file the layout could
+mint is removed, one it could not is not, and the assertion is on the **call**
+rather than on the end state, because a caller ignoring the return value cannot
+tell a skip from a delete.
+
+**And one measurement was reproduced rather than taken fresh**, which is the
+cheapest instrument check there is: the real host's fixed cost read **87.7 MB**,
+against 87.7 MB recorded on 2026-08-28 by the same cell.
+
+### 4b. Is the instrument a SEARCH?
+
+The sweep is one, and its silence is the reassuring answer — *nothing to
+remove*. Both halves refuse to report a clean root when they could not read one:
+`list` and `listFiles` answer `null` rather than `[]` on failure, and a case
+holds each apart from an empty root. The second is deliberately **not** collapsed
+into the first — a root whose directories listed and whose files did not is
+still unknown.
+
+**The count of second opinions was derived rather than eyeballed**, which is
+what makes VVVVV-1 a number instead of an impression:
+
+```
+grep -rn "\`UNVERIFIABLE\b" --include=*.mjs scripts | grep -v unverifiable.mjs
+```
+
+names six files emitting a verdict the marker cannot see.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+`sessionSweep.proof.mjs` takes `cases: CASES.length` over an authored list of
+five names, and `hostRecovery.mjs` the same over six — anchors, since a deleted
+`check()` leaves the list claiming one more. No roster in this range takes a
+count from what it iterates.
+
+### 5. Executed, or asserted?
+
+**Executed:** the board at two shas · one step line from CI #543 · six mutations
+· the poison refusal in both directions · `provision:grants --check` · three
+`--host` measurements and the gate's model figures · `npm run local` end to end.
+
+**Asserted and NOT established:** which command inside `npm run local`
+re-extracts the Electron tree (VVVVV-3). And whether the four *partial*
+could-not-look printers should route through the marker at all (VVVVV-1's tail),
+which is a design question rather than a spelling.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Nothing was retrofitted. The sweep registered into a place that already existed
+— `createEngineHostPlatform`, where the root is established — and the ordering
+change is a parameter type, not a seam. The reviewing seat ruled `startShell`
+was not a B4 before it was built, and `grep -rn "startShell" docs/DECISIONS
+docs/ARCHITECTURE.md` returning nothing is what that rested on.
+
+### 7. Do the documents still match the code?
+
+**VVVVV-3. `npm run local` disarms a proof it later runs, and the disarmed
+result is indistinguishable from a pass.** `.tools/electron/43.4.1` was NOT
+granted mid-sweep — `provision:grants --check` says so — and every directory in
+that tree carries an **08:43** mtime with 1980 file timestamps inside, two
+minutes into a run that started at 08:41. That is what an extraction leaves, and
+a fresh extraction carries no container grant. **Which command re-extracted it
+is not established**: no step in the first forty-five took more than 0.62s, so
+nothing downloaded. `hostRecovery.mjs`'s own header had already recorded this
+condition happening once; what was new is the consequence.
+
+**VVVVV-4. A prediction in `roleMupdfHost.mjs` is falsified in the direction
+that matters.** Its header argued the host cell must report a **smaller** figure
+than the model, because the host's channel set has no page walk and no render
+and invariant 21 prices a page walk at 370 MB. Measured: 1336.0 MB against
+316.6 MB on image-heavy, which is 6.26× against 1.30× above each cell's own
+baseline. The paragraph reasoned from the one axis it named; the workloads
+differ on a second — the host's ends in `serialise` — and that accounts for
+209 MB of a 1248 MB document cost and not the rest. Corrected in place, because
+it is code rather than a record.
+
+**VVVVV-5. A new proof owes THREE registrations and I paid two.** By path in
+`proofCoverage.mjs`, wrapped by `annotate.mjs`, **and** listed in
+`electronImports.proof.mjs`'s `ACCOUNTED_COMPUTED` when it loads a built module
+through a computed specifier. Only the last was missed, and only `npm run local`
+saw it — which is this range's second instance of the sweep being the thing that
+catches what the author was not thinking about.
+
+### What is owed out of this range
+
+1. **A design question, before the other four printers move.** Routing a
+   *partial* could-not-look through the marker files the whole run under a
+   bucket whose text reads *"It exited 0 without measuring anything"*, which
+   would be false. `prePush`, `canvasPixels`, `rendererPolicy` and `shell` are
+   unchanged pending that.
+2. **A scan for the class**, so a seventh caller cannot spell its own. Not
+   written, because it must first be decided what the four above do.
+3. **What revokes the Electron grant inside `npm run local`** (VVVVV-3).
+4. The `proof:hookprobe` and `proof:testresolution` bounds, still the cause
+   under two detectors.
+
+---
+
 ## 2026-08-31 — Stage audit: `3da634a..52ec5c6` — the harness proved a killed host recovers, and the process it proved it in aborts
 
 Range: **9 commits, 20 files.** 1 proof added, 5 modified, 0 removed; 2 source
