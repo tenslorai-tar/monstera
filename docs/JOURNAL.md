@@ -7,12 +7,35 @@ the fact is not a baseline, it is a rationalisation.
 
 | Stage | Baseline estimate | Actual | Verdict |
 |---|---|---|---|
-| 0 — walking skeleton | 15 working days | in progress (started 2026-08-16) | — |
-| 1 — viewer core | 10 working days | — | — |
+| 0 — walking skeleton | 15 working days | **17 days worked** (2026-08-16 → 2026-09-01) | **1.13× — continue** |
+| 1 — viewer core | 10 working days | in progress (started 2026-09-02) | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
 user*. A project with no defined abort condition dies slowly.
+
+**Stage 0's actual, and what it was counted from.** The interval runs from the
+first commit of the founding record on **2026-08-16** to `6a3e0cc`, the commit
+that flipped the exit clauses against a run, on **2026-09-01**. That is **17
+calendar days**, of which 12 are weekdays — and the figure recorded is 17, not
+12, because `git log --format=%ad --date=short | sort -u` returns **every one of
+those 17 dates**. Both weekends carried commits. Counting weekdays would state a
+smaller number by assuming a schedule this build did not keep, which is the
+direction that flatters the estimate.
+
+**The unit is therefore not quite the baseline's.** Part G's *"working days"* is
+a human week; an agent building continuously has no weekends to skip. The
+comparison is still worth making — 17 against 15 is **1.13×**, nowhere near the
+3× that arms a decision — and it is stated in the honest direction: had the
+weekend days been discounted, Stage 0 would have read 12 days and come in
+*under* estimate, which would have been an artefact of the unit rather than a
+fact about the work.
+
+**Verdict: continue.** No scope was cut and nothing is deferred that the exit
+test named. What Stage 0 does *not* ship is recorded rather than absorbed: the
+`mupdf-host` baseline's number waits on a discriminator (`docs/FEATURES.md`), and
+invariant 18(ii)'s restore mechanism stays deferred with a live exposure on the
+host-death path (`docs/ARCHITECTURE.md`, amended 2026-09-01).
 
 ---
 
@@ -21,6 +44,34 @@ user*. A project with no defined abort condition dies slowly.
 Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
+
+### STAGE 0 IS CLOSED (2026-09-01) AND STAGE 1 IS OPEN
+
+The exit test is met, each clause flipped against a run rather than against a
+row, and both of `BUILD-PROMPT.md`'s additional conditions read done. The actual
+and the verdict are in the table above.
+
+**Stage 1 begins with E2, then D1** — `BUILD-PROMPT.md` fixes that order and the
+reason: *"Begins with the E2 text substrate (search is its first consumer). Then
+D1 complete."* Search is the first thing that would otherwise grow its own text
+extraction beside the substrate, which is the second wiring place the substrate
+exists to prevent.
+
+**What Stage 1 inherits, named so it is not rediscovered.** Each has a row in
+`docs/FEATURES.md`; none of them blocks starting:
+
+- the **renderer's two memory terms**, whose trigger is E1 tier-1's bitmap
+  cache — inside D1, so this fires during Stage 1 rather than after it;
+- **`mupdf-host`'s `base 128 MB`**, deferred on the discriminator for a bimodal
+  CI sample, with both named candidates falsified;
+- **invariant 18(ii)'s restore mechanism**, deferred with an exposure that is
+  live today on the host-death path;
+- the **end-to-end rotate** and §2's other view-model members, each placed at
+  the stage of the feature that reads it.
+
+**Stage 1 ends with the trajectory gate**, which is the same shape as the row
+above: actual against 10 working days, in writing, and one of *continue*, *cut
+scope*, or *halt and reassess*.
 
 > ### CLOSED 2026-08-18T06:45Z — the guard fired
 >
