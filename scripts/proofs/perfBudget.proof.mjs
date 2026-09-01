@@ -25,6 +25,7 @@ import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import { NO_MULTIPLE, SOURCE_FILE, memoryBudgets } from '../lib/memoryBudgets.mjs';
+import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { documentCostBytes, runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
 import { formatBytes } from '../perf/peakRss.mjs';
@@ -35,13 +36,43 @@ const MB = 1024 ** 2;
 
 /** @type {string[]} */
 const failures = [];
-/** @type {string[]} */
-const passed = [];
 
-/** @param {string} label @param {boolean} condition @param {string} detail */
-function check(label, condition, detail) {
-  if (condition) passed.push(label);
-  else failures.push(`${label}\n      ${detail}`);
+/**
+ * How many cases this proof has, on every runner that can run it.
+ *
+ * **A LITERAL, and this file had no anchor of any kind until 2026-09-01.** It
+ * printed `${passed.length}` — a total derived from the cases that ran, which
+ * agrees with any collection, including one that has quietly shrunk. That is
+ * item 4c's danger running the wrong way, and it is not hypothetical here: it is
+ * exactly how YYYYY-1 hid. ADR-0033 withdrew a budget's multiple, a `continue`
+ * at the top of a five-case loop took three cases nobody meant to remove, and
+ * the number simply came out smaller.
+ *
+ * The audit entry that recorded YYYYY-1 said *"nothing can"* catch a proof whose
+ * coverage shrinks. `passRoster` can, it is in this repository, and 46 of 71
+ * proofs already carry it. That claim is corrected in `docs/JOURNAL.md`.
+ *
+ * ## Why a fixed number survives a platform that measures fewer roles
+ *
+ * `mupdf-host-real` needs a Win32 AppContainer, so it is measured on the shim
+ * job and nowhere else — and its five-way differential block is what would
+ * otherwise make this count vary by runner, which is the reason a count was
+ * never put here. `roster.record(mark, label, false)` books a case that could
+ * not run as **skipped**, and skipped counts toward the total, so the number is
+ * the same everywhere and a case that stops being *generated* is still loud.
+ */
+const DECLARED_CASES = 33;
+
+const roster = createRoster(failures, { cases: DECLARED_CASES });
+
+/**
+ * @param {string} label @param {boolean} condition @param {string} detail
+ * @param {boolean} [ran] false books it as skipped — see {@link DECLARED_CASES}
+ */
+function check(label, condition, detail, ran = true) {
+  const mark = roster.mark();
+  if (!condition && ran) failures.push(`${label}\n      ${detail}`);
+  roster.record(mark, label, ran);
 }
 
 /**
@@ -323,6 +354,29 @@ const thrown = guarded(() => {
   // The gate follows the line. For each asserted role, a limit derived from
   // what that role actually used must flip the verdict in both directions.
   // -------------------------------------------------------------------------
+  // THE CASES A ROLE THAT COULD NOT RUN WOULD HAVE HAD, booked as skipped so
+  // the declared total is the same on every runner. Without this the count
+  // varies by platform, which is why this file had no count at all — and having
+  // no count is what let YYYYY-1's three cases leave in silence.
+  //
+  // The names are spelt here rather than derived from the loop below, which is
+  // the point: a block that stops generating cases cannot also stop expecting
+  // them. Three and not five, because a budget with no multiple has no ratio
+  // pair — the same rule the loop applies, stated once on each side.
+  for (const entry of baseline.unasserted) {
+    // A PROVISIONAL BUDGET NEVER HAD DIFFERENTIAL CASES, so it owes no skips.
+    // The predicate is the same one the renderer's own case below matches on,
+    // rather than a second opinion about which budgets are provisional (B3a).
+    if (/provisional/iu.test(entry.reason)) continue;
+    for (const shape of [
+      'a baseline below its fixed cost',
+      'a baseline just above it',
+      'an absolute below its peak',
+    ]) {
+      check(`${entry.role}: ${shape} — NOT MEASURED on this runner`, true, '', false);
+    }
+  }
+
   for (const measured of baseline.results) {
     // A BUDGET WITH NO MULTIPLE HAS NO RATIO VERDICT TO FLIP, so the two
     // multiplier cases cannot be written for it: there is no term to declare
@@ -537,5 +591,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-for (const label of passed) process.stdout.write(`  ok  ${label}\n`);
-process.stdout.write(`\n${passed.length} performance-budget gate cases passed.\n`);
+process.stdout.write(roster.format('performance-budget gate case'));

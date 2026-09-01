@@ -512,6 +512,17 @@ jobs:
       - name: Every proof script is invoked by some job
         run: node scripts/ci/annotate.mjs scripts/lib/proofCoverage.mjs
 
+      # THE SIBLING QUESTION, one level in. `proofCoverage.mjs` asks whether CI
+      # runs each proof; this asks whether each proof would notice its own cases
+      # disappearing. Finding YYYYY-1 is the reason it exists: a proof went from
+      # 29 cases to 26 and reported success on both matrix legs, because the
+      # total was derived from the cases that ran.
+      - name: Prove the anchor scan sees, refuses and tells a paid debt from an unpaid one
+        run: node scripts/ci/annotate.mjs scripts/proofs/proofAnchors.proof.mjs
+
+      - name: Every proof declares how many cases it has, or is named as owing one
+        run: node scripts/ci/annotate.mjs scripts/checks/proofAnchors.mjs
+
       # The local sweep resolves what an npm script RUNS instead of refusing
       # anything that is not a bare `node` invocation — which is how typecheck,
       # lint and build sat in its roster running nothing. The failure to fear is

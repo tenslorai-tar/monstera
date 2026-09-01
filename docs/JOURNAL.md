@@ -737,6 +737,36 @@ For the rest, yes: every proof in the range is an unconditional step, and
 `proof:hostcontainment` and `proof:hostrecovery` carry `--require-containment` on
 the Windows jobs.
 
+> **Correction, 2026-09-01 — *"nothing can"* is wrong, and the thing that can was
+> in this repository and in my own hands in the same range.**
+>
+> `scripts/lib/passRoster.mjs` takes a **required** case count — *"an optional
+> count is one every future caller omits"* — and `format()` throws
+> `N case(s) STOPPED RUNNING` when the recorded total disagrees with it. It even
+> handles the platform case that made a count look impossible here:
+> `record(mark, label, ran)` books a case that could not run as **skipped**, and
+> skipped counts toward the total, so the number is the same on every runner.
+>
+> **48 of 71 proofs carry it. `perfBudget.proof.mjs` did not**, and printed
+> `${passed.length}` — a total derived from the cases that ran. Meanwhile
+> `shell.proof.mjs` carries a literal anchor whose comment cites 4c by name, and
+> I raised it 13 → 14 in this same range. So the instance was fixed in the file
+> that had no hole, and left open in the file where the shrink happened.
+>
+> Fixed: `proof:perfbudget` declares 33 and books the real host's three cases as
+> skipped where no contained host starts; reproducing YYYYY-1's `continue` now
+> fails with *"3 case(s) STOPPED RUNNING"* instead of printing a smaller number.
+> `check:proofanchors` reports any proof with no anchor, against a hand-kept
+> allowlist of the **23** that still owe one — hand-kept because here the failure
+> to fear makes the set *bigger*, which is the direction a list catches.
+>
+> **The claim was not carelessness and that is why it is worth recording.** It
+> was written while fixing the instance, about the instance, and it generalised
+> one file's absence of a mechanism into the repository's. *Nothing can* is a
+> claim about the whole tree and was checked against one file — which is
+> `a-clause-checked-for-one-clause` at the scale of a codebase, and the cheapest
+> question would have been `grep -l createRoster scripts/proofs/*`.
+
 **And the other way round — a defect this machine cannot see.** Invariant 25(c)'s
 new loopback probe runs wherever the startup check runs, which locally is a
 composition test with a fake host and on the shim job is a **real contained
