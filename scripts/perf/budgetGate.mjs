@@ -73,11 +73,19 @@ const ROOT = repoRoot();
  *
  * @param {string} script
  * @param {string} tinyDocument
- * @param {{ env?: NodeJS.ProcessEnv, timeoutMs?: number, runtime?: string }} [options]
+ * `args` are the role's own switches and reach the measured run AFTER the
+ * document, because a cell selected by a flag must take its baseline in the
+ * same mode it is measured in — a baseline read from the model and a peak read
+ * from the real host would fold the whole difference between two processes into
+ * the figure the multiple is taken above.
+ *
+ * @param {string} script
+ * @param {string} tinyDocument
+ * @param {{ env?: NodeJS.ProcessEnv, timeoutMs?: number, runtime?: string, args?: string[] }} [options]
  * @returns {number}
  */
 export function baselineFor(script, tinyDocument, options = {}) {
-  return measurePeak(script, [tinyDocument], options).peakRssBytes;
+  return measurePeak(script, [tinyDocument, ...(options.args ?? [])], options).peakRssBytes;
 }
 
 /**
@@ -167,12 +175,34 @@ export function runBudgetGate(options = {}) {
    * the second is evidence about the retention implementation, and a divergence
    * between them is the finding (LL-4).
    *
-   * @type {Array<{ role: string, budget?: string, script: string }>}
+   * `mupdf-host` is now measured twice for the same reason, and the second cell
+   * is the one that answers §9.17. `roleMupdfHost.mjs` alone is a **model** of
+   * the workload inside this process; `--host` drives the shipped
+   * `createEngineHostConnection` and reads the peak working set of the real
+   * AppContainer process from outside it. The row's own sentence — *"this must
+   * be re-measured when the utility process lands"* — was owed against that
+   * cell and not against the model.
+   *
+   * **It could not be wired until ADR-0033 was accepted, and now it can.** The
+   * reading taken 2026-08-31 is 6.26× and 7.83× above the host's own baseline
+   * against a declared 6×, where the model clears both — so pointing the gate
+   * here would have reddened it on an underived ceiling, which §9.17 forbids
+   * turning into a gate. ADR-0033 withdrew that multiple. What remains is the
+   * absolute and the baseline, and the same reading clears both: 1.34 GB
+   * against 3 GB, 87.7 MB against 128 MB.
+   *
+   * @type {Array<{ role: string, budget?: string, script: string, args?: string[] }>}
    */
   const roles = [
     { role: 'main', script: join(HERE, 'roleMain.mjs') },
     { role: 'main-service', budget: 'main', script: join(HERE, 'roleMainService.mjs') },
     { role: 'mupdf-host', script: join(HERE, 'roleMupdfHost.mjs') },
+    {
+      role: 'mupdf-host-real',
+      budget: 'mupdf-host',
+      script: join(HERE, 'roleMupdfHost.mjs'),
+      args: ['--host'],
+    },
   ];
 
   // A document small enough that its own cost is noise, used to establish each
@@ -182,10 +212,38 @@ export function runBudgetGate(options = {}) {
 
   /** @type {RoleResult[]} */
   const results = [];
-  for (const { role, budget: budgetName, script } of roles) {
+  /** @type {Array<{ role: string, reason: string }>} */
+  const unasserted = [];
+  for (const { role, budget: budgetName, script, args = [] } of roles) {
     const budget = assertableBudget(budgets, budgetName ?? role);
-    const baselineBytes = baselineFor(script, tiny.path);
-    const measurement = measurePeak(script, [fixture.path]);
+
+    // A CELL THAT CANNOT RUN HERE IS RECORDED, NEVER OMITTED. `--host` needs a
+    // Win32 AppContainer and exits 2 with its reason on every other platform,
+    // which `measurePeak` raises. Letting it fall out of `results` would shrink
+    // this gate's coverage on exactly the runners where it shrank silently —
+    // the shape YYYYY-1 found one file away, where a skip took three cases
+    // nobody removed. `unasserted` already exists for a role the gate does not
+    // judge, and `proof:perfbudget` requires every declared role to appear in
+    // one list or the other.
+    let baselineBytes;
+    let measurement;
+    try {
+      baselineBytes = baselineFor(script, tiny.path, { args });
+      measurement = measurePeak(script, [fixture.path, ...args]);
+    } catch (error) {
+      // THE WHOLE MESSAGE, not its first line. `measurePeak`'s first line is
+      // the exit code and the runtime; what says *why* is the measured script's
+      // own output below it, and taking `[0]` printed "Measured run failed
+      // (exit 1)" for a host that had told us exactly what went wrong. The one
+      // line a reader does not need is the only one that survived.
+      unasserted.push({
+        role,
+        reason: `could not be measured on this runner — ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
+      continue;
+    }
     const documentCost = documentCostBytes(role, measurement.peakRssBytes, baselineBytes);
     const ratio = documentCost / documentBytes;
     results.push({
@@ -223,8 +281,6 @@ export function runBudgetGate(options = {}) {
     });
   }
 
-  /** @type {Array<{ role: string, reason: string }>} */
-  const unasserted = [];
   for (const budget of budgets.values()) {
     if (budget.kind !== 'provisional') continue;
     try {
@@ -285,7 +341,12 @@ if (process.argv[1]?.endsWith('budgetGate.mjs')) {
         );
       }
       for (const entry of unasserted) {
-        process.stdout.write(`  --   ${entry.role.padEnd(11)} not asserted, by declaration\n`);
+        // THE REASON IS PRINTED, and it was not. Every entry here read *"not
+        // asserted, by declaration"* — true of a provisional budget and false
+        // of a cell that could not be measured, which is the state that arrived
+        // the day the real-host cell landed. Two different absences under one
+        // sentence is the shape that makes an unrun check read as a chosen one.
+        process.stdout.write(`  --   ${entry.role.padEnd(11)} not asserted — ${entry.reason}\n`);
       }
       process.stdout.write('\n');
     }

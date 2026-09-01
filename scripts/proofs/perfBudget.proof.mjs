@@ -269,11 +269,13 @@ const thrown = guarded(() => {
 
   check(
     'every asserted role was actually measured, INCLUDING main through the real service',
-    baseline.results.length === 3 &&
+    baseline.results.length >= 3 &&
       baseline.results.some((result) => result.role === 'main-service') &&
       baseline.results.every((result) => result.peakBytes > 0),
     `measured: ${baseline.results.map((r) => r.role).join(', ')}\n      ` +
-      `The count is pinned so a role that stopped being measured is loud rather than absent. ` +
+      `The floor is pinned so a role that stopped being measured is loud rather than absent. ` +
+      `It is a floor rather than an equality because \`mupdf-host-real\` runs only where a Win32 ` +
+      `AppContainer can start — the case below is what stops that becoming a hole. ` +
       `\`main-service\` is named as well as counted because it is the only role that exercises ` +
       `the retention IMPLEMENTATION — \`main\` is a model of what main should cost, and a second ` +
       `live reference inside DocumentService is invisible to it (finding LL-4). Verified by ` +
@@ -281,6 +283,33 @@ const thrown = guarded(() => {
       `shapes while the model role was unmoved and passed. The figures are in the commit that ` +
       `added this role, not here — this file states no limits of its own, and its own guard ` +
       `rejects a literal shaped like one.`,
+  );
+
+  /**
+   * THE REAL-HOST CELL IS IN ONE LIST OR THE OTHER, NEVER IN NEITHER.
+   *
+   * `mupdf-host-real` drives the shipped `createEngineHostConnection` and needs
+   * a Win32 AppContainer, so it is measured on some runners and not on others.
+   * That is exactly the state in which a role quietly disappears: it falls out
+   * of `results`, every case above still passes, and the gate reports success
+   * for a subject it did not look at.
+   *
+   * The case is written as *appears somewhere* rather than *appears in
+   * `results`*, because pinning the platform would make it a case about this
+   * machine. What it forbids is the third state — measured nowhere and reported
+   * nowhere — which is the only one that lies.
+   */
+  check(
+    'the REAL engine host is either measured or reported unmeasurable, never absent',
+    baseline.results.some((result) => result.role === 'mupdf-host-real') !==
+      baseline.unasserted.some((entry) => entry.role === 'mupdf-host-real'),
+    `measured: ${baseline.results.map((r) => r.role).join(', ')}\n      ` +
+      `unasserted: ${JSON.stringify(baseline.unasserted)}\n      ` +
+      `This cell is the one §9.17's "re-measure when the utility process lands" was owed ` +
+      `against, and it runs only where a contained host can start. A role that is in neither ` +
+      `list has been dropped rather than deferred, and the gate then prints a pass for a ` +
+      `process it never observed. Both lists at once would be as wrong and is why this is an ` +
+      `exclusive-or rather than a pair of ORs.`,
   );
 
   check(
