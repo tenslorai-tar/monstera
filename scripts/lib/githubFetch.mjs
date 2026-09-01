@@ -110,8 +110,75 @@ export async function githubFetch(url, options) {
   }
 
   const response = await fetch(url, {
-    headers: { accept: 'application/vnd.github+json', ...options.headers },
+    headers: {
+      accept: 'application/vnd.github+json',
+      ...authorisation(),
+      ...options.headers,
+    },
   });
   recordQuota(response.headers);
   return response;
+}
+
+/**
+ * `Authorization`, when there is a token, and nothing when there is not.
+ *
+ * ## Both states are supported, and the failures must not look alike
+ *
+ * Unauthenticated is **60 requests an hour, shared by every process on this
+ * machine**, and one board read polls up to 40 times. With a token it is 5,000,
+ * and job logs answer 200 where they answered 403. So the token changes what is
+ * readable and not merely how much.
+ *
+ * A contributor without one is not broken: the header is simply absent and every
+ * unauthenticated route still works. **Absent and rejected are the two states
+ * that must never share an output** — this token expires on a date, and an
+ * expiry that reads as a network error is an afternoon spent on the wrong
+ * problem. {@link describeAuthorisation} is what separates them at the call
+ * site.
+ *
+ * @returns {Record<string, string>}
+ */
+function authorisation() {
+  const token = process.env['GITHUB_TOKEN'];
+  return token === undefined || token === '' ? {} : { authorization: `Bearer ${token}` };
+}
+
+/** Whether this process is sending a token. Read by callers that report a 401. */
+export function hasToken() {
+  const token = process.env['GITHUB_TOKEN'];
+  return token !== undefined && token !== '';
+}
+
+/**
+ * What a 401 or 403 means, given whether a token was sent.
+ *
+ * The three states produce one HTTP status between them and want three
+ * different actions, which is why this is a function and not a sentence at one
+ * call site: **no token** is a limit to work within, **a rejected token** is a
+ * credential to replace, and **a spent quota** is a wait.
+ *
+ * @param {number} status
+ * @param {number | null} remaining requests left, or null if unknown
+ * @returns {string}
+ */
+export function describeAuthorisation(status, remaining) {
+  if (status === 401) {
+    return hasToken()
+      ? 'GITHUB_TOKEN was REJECTED (401). It is expired or revoked — this is a credential to ' +
+          'replace, not a network problem and not a quota. Unset it to fall back to the ' +
+          'unauthenticated 60/hour.'
+      : 'HTTP 401 with no GITHUB_TOKEN set, which should not happen on a public route.';
+  }
+  if (remaining === 0) {
+    return hasToken()
+      ? 'The authenticated quota (5,000/hour) is spent. Wait for the reset.'
+      : 'The unauthenticated quota (60/hour, shared by every process on this machine) is spent. ' +
+          'Set GITHUB_TOKEN for 5,000/hour, or ask for the read.';
+  }
+  return hasToken()
+    ? `HTTP ${String(status)} with a token that is not expired. This route may need a scope the ` +
+        `token does not carry.`
+    : `HTTP ${String(status)} unauthenticated. Job logs are one of the routes that need a token; ` +
+        `check-run annotations are not.`;
 }

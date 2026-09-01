@@ -55,12 +55,31 @@
 import { execFileSync } from 'node:child_process';
 
 import { boardTarget, boardVerdict, parseRuns, pollDelaySeconds } from '../lib/boardStatus.mjs';
-import { githubFetch } from '../lib/githubFetch.mjs';
+import { describeAuthorisation, githubFetch } from '../lib/githubFetch.mjs';
 import { formatError } from '../lib/reportError.mjs';
 
 const REPO = 'tenslorai-tar/monstera';
-const POLL_SECONDS = 30;
-const MAX_POLLS = 40;
+
+/**
+ * How long to wait between polls, and how many to take.
+ *
+ * **Measured against what is being waited for, not chosen for responsiveness.**
+ * A run on this repository takes four to twelve minutes. At thirty seconds that
+ * is eight to twenty-four requests asking a question whose answer cannot have
+ * changed, and forty of them is what exhausted an hour's unauthenticated
+ * quota — 60 requests, shared by every process on this machine — in a single
+ * session.
+ *
+ * Ninety seconds keeps the same twenty-minute ceiling with **fourteen** polls
+ * instead of forty. The cost is up to a minute of extra latency on a verdict
+ * nobody is watching in real time; what it buys is four board reads per hour
+ * where there used to be one and a half.
+ *
+ * `pollDelaySeconds` still overrides this from the payload when GitHub says
+ * how long to wait, so this is the fallback rather than the pacing.
+ */
+const POLL_SECONDS = 90;
+const MAX_POLLS = 14;
 
 /** @param {number} attempt */
 function runsUrl(attempt) {
@@ -122,9 +141,18 @@ async function main() {
       const response = await githubFetch(runsUrl(attempt), { purpose: 'critical' });
       if (!response.ok) {
         // A refusal is not a board state. Printed as itself so an expired token
-        // or a rate limit cannot spend forty polls looking like a slow run.
-        refusals.push(`HTTP ${String(response.status)}`);
-        trace(`  poll ${String(attempt)}: HTTP ${String(response.status)}\n`);
+        // or a rate limit cannot spend every poll looking like a slow run — and
+        // now with WHICH of the three it is: no token, a rejected one, or a
+        // spent quota. They share an HTTP status and want three different
+        // actions, and this token expires on a date, so an expiry that reads as
+        // a network error is an afternoon on the wrong problem.
+        const remaining = Number(response.headers.get('x-ratelimit-remaining'));
+        const why = describeAuthorisation(
+          response.status,
+          Number.isNaN(remaining) ? null : remaining,
+        );
+        refusals.push(`HTTP ${String(response.status)} — ${why}`);
+        trace(`  poll ${String(attempt)}: HTTP ${String(response.status)} — ${why}\n`);
         if (once) return 2;
         await sleep(POLL_SECONDS * 1000);
         continue;

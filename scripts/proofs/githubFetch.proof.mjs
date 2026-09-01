@@ -11,11 +11,17 @@
  */
 
 import { createRoster } from '../lib/passRoster.mjs';
-import { githubFetch, quotaSeen, RESERVE, resetQuota } from '../lib/githubFetch.mjs';
+import {
+  describeAuthorisation,
+  githubFetch,
+  quotaSeen,
+  RESERVE,
+  resetQuota,
+} from '../lib/githubFetch.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 12 });
 
 /** @param {string} name @param {boolean} condition @param {string} detail */
 function check(name, condition, detail) {
@@ -147,6 +153,69 @@ try {
     })(),
     'a module that never updates its reading satisfies the case above by doing nothing at all.',
   );
+
+  // -------------------------------------------------------------------------
+  // THE TOKEN. Both states are supported and their FAILURES must not look
+  // alike: the token expires on a date, and an expiry that reads as a network
+  // error is an afternoon spent on the wrong problem.
+  // -------------------------------------------------------------------------
+  const before = process.env['GITHUB_TOKEN'];
+  try {
+    /** @param {string | undefined} token @returns {Promise<Headers>} */
+    const sentWith = async (token) => {
+      if (token === undefined) delete process.env['GITHUB_TOKEN'];
+      else process.env['GITHUB_TOKEN'] = token;
+      /** @type {Headers} */
+      let sent = new Headers();
+      globalThis.fetch = (/** @type {unknown} */ _url, /** @type {RequestInit=} */ init) => {
+        sent = new Headers(init?.headers);
+        return Promise.resolve(new Response('{}', { status: 200 }));
+      };
+      await githubFetch('https://api.github.com/tokencheck', { purpose: 'critical' });
+      return sent;
+    };
+
+    check(
+      'a token is sent as a Bearer credential when one is set',
+      (await sentWith('pat-example')).get('authorization') === 'Bearer pat-example',
+      'without the header the reader is on the unauthenticated 60/hour and job logs answer 403.',
+    );
+
+    check(
+      'CONTROL: and NO authorization header is sent when there is none',
+      !(await sentWith(undefined)).has('authorization'),
+      'a contributor without a token must not be broken, and `Bearer undefined` is a rejected ' +
+        'request rather than an unauthenticated one — which is the failure that would look ' +
+        'like the API being down.',
+    );
+
+    // THE THREE STATES, and each must produce a DIFFERENT sentence. One status
+    // covers all three and they want three different actions: work within a
+    // limit, replace a credential, or wait.
+    process.env['GITHUB_TOKEN'] = 'pat-example';
+    const rejected = describeAuthorisation(401, 4999);
+    const spentWithToken = describeAuthorisation(403, 0);
+    delete process.env['GITHUB_TOKEN'];
+    const spentWithout = describeAuthorisation(403, 0);
+
+    check(
+      'a REJECTED token, a spent authenticated quota and a spent anonymous one read differently',
+      new Set([rejected, spentWithToken, spentWithout]).size === 3,
+      `got:\n        ${[rejected, spentWithToken, spentWithout].join('\n        ')}\n      ` +
+        `Three states, one HTTP status between them. Folded together, an expired credential ` +
+        `reads as a rate limit and somebody waits an hour for a reset that changes nothing.`,
+    );
+
+    check(
+      'and the rejected one says the credential is the problem, in those words',
+      /expired or revoked/u.test(rejected) && /REJECTED/u.test(rejected),
+      `got: ${rejected}. "Try again later" for a dead token is the wrong next action, and it ` +
+        `is the action every other 4xx here deserves.`,
+    );
+  } finally {
+    if (before === undefined) delete process.env['GITHUB_TOKEN'];
+    else process.env['GITHUB_TOKEN'] = before;
+  }
 } finally {
   globalThis.fetch = realFetch;
   resetQuota();
