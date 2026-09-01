@@ -814,6 +814,34 @@ Executed: `proof:perfbudget` before and after the fix (26 → 29), `proof:contra
 Asserted and **not** executed: that the loopback probe refuses on a real contained
 host. Its evidence is the spike's, not the shipped check's.
 
+> **Correction, 2026-09-01 — it has now been executed, and the entry above was
+> written before the board was read rather than because the board said nothing.**
+> CI run 570 and Guards 577 are `success` at `0ec9db7`, and the shim job's
+> host-recovery step prints:
+>
+> ```
+> ok  the first command reached the host
+> 7 host-recovery cases passed.
+> ```
+>
+> That step builds the composition root with a **real** platform, so a command
+> reaching the host means the startup check returned `contained` — which now
+> includes the loopback probe answering `refused` from a LowBox process, against
+> a listener main had connected to itself moments earlier. The same job's
+> `lowboxSpike.mjs` reports `ok DIFFERS (c) network` beside it, which is the
+> research reading the shipped one no longer depends on.
+>
+> Recorded rather than edited into item 5, because *what was believed at the
+> time* is the record and the gap between writing and reading is the thing worth
+> seeing. The **ZZ-1 note in item 3 stands unchanged**: this branch still runs
+> only where a contained host starts, and this correction is a reading from one
+> board rather than a property of every runner.
+>
+> The reason it could be read at all is that the seat's GitHub token now carries
+> Actions scope, so `actions/jobs/<id>/logs` returns 200 where four consecutive
+> board reads had 403. The lines above are quoted from that log rather than
+> inferred from a green tick.
+
 ### 6. Architecture before the feature
 
 Yes, and separately. ADR-0023 Decision 15 landed in `bc70fc2` and the feature in
