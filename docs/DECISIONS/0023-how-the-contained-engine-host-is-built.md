@@ -2968,3 +2968,137 @@ deferral protects is one no instrument observes.
 > The withdrawn sentence's *"main pays nothing until a document is opened"* is
 > also narrower than it reads: it is true of startup and false of the
 > application's ordinary working state.
+
+## Decision 15 — the startup check carries invariant 25(c), and its control is a listener main connected to first (decided 2026-09-01)
+
+Invariant 25 names four properties. Three of them are asserted against the
+shipped host: (a) integrity and (b) the job object are read by main between the
+membership read and `resume`, and (d) filesystem reach is §5's startup check.
+**(c) *no network* is asserted against `lowboxSpike.mjs` and against nothing
+that ships**, and it has stood that way through three ranges.
+
+### The recorded blocker was true of a design nobody proposed
+
+Both FEATURES rows carry the same sentence: (c) *"needs a channel serving an
+instrument, which ADR-0023 rejects by name"*. Checked against this document
+before acting on it, and it does not hold.
+
+- Nothing in *Rejected alternatives* rejects such a channel. The sentence is a
+  compressed reading of §6's *instrument that gates nothing* — a warning about
+  measuring what no decision turns on, which is the opposite of this: (c) is a
+  property the law names, and the check it would join already **fails closed**.
+- The channel is not hypothetical and would not be new. `engine/probe-containment`
+  exists, runs `probeContainment` **in the host**, and is answered before the
+  first document byte. (c) joins a check that ships; it does not ask for one.
+
+So the blocker was a deferral that snapshotted what was hard when (d) had no
+mechanism either, and its trigger could not notice the obstacle dissolving —
+the channel arrived, and the sentence describing its absence stayed. **Triage a
+deferral's reason against the tree, not only its trigger.**
+
+### The decision
+
+**§5's startup check attempts a loopback connection, and any bytes reaching the
+host are `network-reachable`.** One request, three probes, one verdict.
+
+The ordering argument §5 already makes is what admits the third probe unchanged:
+the host is hostile by invariant 25's premise, and a report from it is evidence
+only because ADR-0023 §1's third window is still shut — nothing it has processed
+came from a document. A probe added *at that point* inherits the argument. One
+added later would not, and this is the reason (c) may not be deferred to a
+diagnostic channel opened after documents are flowing.
+
+### The control is a listener main connected to FIRST, and a closed port is refused as its substitute
+
+*"The connection failed"* is worth nothing when it would have failed anyway.
+This repository has paid for that three times — a `.invalid` hostname, a remote
+URL on a runner with no network, and the general form the third produced: **the
+input must be one an absent guard would let through.**
+
+Two candidates, and the cheap one is wrong:
+
+| candidate | what it cannot separate |
+|---|---|
+| connect to a **closed** loopback port and read the error code | a closed port refuses everybody. Contained and uncontained both fail, and only the *code* differs — `ETIMEDOUT` against `ECONNREFUSED`. That is refusal and impossibility sharing an observation, wearing a thinner disguise, and it rests on a code comparison read on one machine |
+| connect to a port **main is listening on and has just connected to itself** | nothing, which is the point |
+
+So main binds `127.0.0.1` on an ephemeral port, connects to it **itself**, reads
+the greeting the listener writes, and carries the byte count into the request as
+`LoopbackTarget.mainReadBytes`. A caller that did not take that reading cannot
+fill the field honestly, and a zero makes the whole run `unreadable` rather than
+*contained* — `NegativeTarget.readableBytes`' shape exactly, and deliberately so:
+one discipline, spelt once, not a second opinion about what makes a negative
+probe admissible (B3a).
+
+**The asymmetry against (d) is real and is stated rather than smoothed.** (d)'s
+pair is two probes the *host* runs, each other's control. (c) has no positive —
+the host must reach no network at all — so its control is a reading **main**
+took. The two halves therefore live in different processes, which is why the
+evidence field is on main's side of the request type and cannot be otherwise.
+
+### The listener's cost, named rather than left implicit
+
+A listening socket is a surface, and this one is opened by the process that owns
+the document. Bounded on every axis available:
+
+- bound to `127.0.0.1` explicitly, never `0.0.0.0`;
+- an ephemeral port, so nothing can be waiting for a known one;
+- open across one probe and closed in a `finally`, not for the host's lifetime;
+- it speaks no protocol. It writes a fixed greeting, accepts nothing, and
+  destroys the socket. A stray connection from elsewhere on the machine gets the
+  greeting and nothing else, and cannot be distinguished by the listener from
+  the host — which is why the *verdict* is not built from the listener's view of
+  who connected, but from what the **host reports it read**.
+
+That last clause is the one worth keeping: a design that counted connections on
+main's side would let any other process on the machine manufacture a
+`network-reachable` verdict against an innocent host.
+
+### What changes, and what does not
+
+- `ContainmentProbePaths` gains `loopbackPort: number`. The measuring half still
+  receives no evidence it is judged against — `mainReadBytes` stays on
+  `ContainmentProbeRequest`, which is main's.
+- `ContainmentReport` gains `loopback: ProbeOutcome`. **No new outcome
+  vocabulary**: a connect that yields bytes is `read`, one refused is `refused`,
+  and the union already spells both. A second vocabulary for the same three
+  answers would be exactly the second opinion B3a names.
+- `ContainmentVerdict` gains `network-reachable`. It joins `containment-absent`
+  as a loud case: the host looks healthy and is not contained.
+- The `engine/probe-containment` schema gains one number in each direction.
+- §5's diagnostic table gains a row.
+- **`unreadable` stays terminal and stays the answer when main could not
+  establish the premise.** *Could not look* and *looked and found containment*
+  do not share an output, here as everywhere.
+
+Order within `classifyContainment` is unchanged in kind and extended in the same
+spirit: each negative side's own request validity is settled before its outcome,
+because a refusal against something nothing could reach is not a refusal.
+
+### Rejected, with mechanisms
+
+**A separate `engine/probe-network` channel.** Rejected: two channels asking one
+question at one moment, whose answers a caller could combine in the wrong order
+or forget to combine at all. The property is *containment*, the check is one
+check, and the verdict is one value.
+
+**Asserting (c) from main by reading the container's capability list.** Rejected
+on the rule that produced this whole branch — *only kernel-enforced mechanisms
+contain native code*, and its corollary that configuration is not evidence. A
+capability list is what was asked for, not what is enforced; the compiler-
+mitigations check reads the PE image and not the build flags for the same reason.
+
+**Leaving (c) to `lowboxSpike.mjs`.** Rejected: §6 already says which assertions
+become proofs and where, and (c) is on that list. A property asserted only in
+`scripts/research/` gates nothing by that directory's own charter, so the row
+would stay owed while reading as covered.
+
+**A remote endpoint under our control.** Rejected: it reintroduces the runner's
+network as a confounder, adds a dependency on something outside this repository,
+and would make a green board conditional on a host we do not run.
+
+### What this does not decide
+
+Nothing about (b)'s under-determined LowBox spawn axis, which is recorded at §5
+and unchanged. Nothing about what the host may do with a network it is one day
+granted — there is no such grant and this decision does not open one.
