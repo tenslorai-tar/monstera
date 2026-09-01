@@ -7,29 +7,49 @@ the fact is not a baseline, it is a rationalisation.
 
 | Stage | Baseline estimate | Actual | Verdict |
 |---|---|---|---|
-| 0 — walking skeleton | 15 working days | **17 days worked** (2026-08-16 → 2026-09-01) | **1.13× — continue** |
-| 1 — viewer core | 10 working days | in progress (started 2026-09-02) | — |
+| 0 — walking skeleton | 15 working days | **18 days worked** (2026-08-16 → 2026-09-02) | **1.20× — continue** |
+| 1 — viewer core | 10 working days | in progress (started 2026-09-02, Stage 0's last day) | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
 user*. A project with no defined abort condition dies slowly.
 
 **Stage 0's actual, and what it was counted from.** The interval runs from the
-first commit of the founding record on **2026-08-16** to `6a3e0cc`, the commit
-that flipped the exit clauses against a run, on **2026-09-01**. That is **17
-calendar days**, of which 12 are weekdays — and the figure recorded is 17, not
-12, because `git log --format=%ad --date=short | sort -u` returns **every one of
-those 17 dates**. Both weekends carried commits. Counting weekdays would state a
-smaller number by assuming a schedule this build did not keep, which is the
-direction that flatters the estimate.
+first commit of the founding record on **2026-08-16** to the commit that closed
+the stage, on **2026-09-02**. That is **18 calendar days**, of which 13 are
+weekdays — and the figure recorded is 18, not 13, because
+`git log --format=%ad --date=short | sort -u` returns **every one of those 18
+dates**. Both weekends carried commits. Counting weekdays would state a smaller
+number by assuming a schedule this build did not keep, which is the direction
+that flatters the estimate.
+
+**The start excludes 2026-08-15**, which carries commits and is not Stage 0:
+`BUILD-PROMPT.md`'s ordered start puts the hooks, the bootstrap and the
+`.gitignore` before *"Only then begin Stage 0"*, and that is the day they landed.
+
+**Corrected 2026-09-02, from 17 days and 1.13×.** The first count ended at
+`6a3e0cc`, the commit that flipped the exit clauses against a run — which is
+where the *test* was met and not where the stage ended. Six commits followed it
+and every one was Stage 0 work: the audit the gate forced, four row triages, the
+two rules that closed 287 and 331, three audit findings, and this table itself.
+Two of them are dated 2026-09-02. **A stage ends when its last commit lands, not
+when its acceptance test first passes**, and taking the earlier date understated
+the actual — again in the flattering direction, which is the second time this row
+has had to be pushed the other way.
 
 **The unit is therefore not quite the baseline's.** Part G's *"working days"* is
 a human week; an agent building continuously has no weekends to skip. The
-comparison is still worth making — 17 against 15 is **1.13×**, nowhere near the
+comparison is still worth making — 18 against 15 is **1.20×**, nowhere near the
 3× that arms a decision — and it is stated in the honest direction: had the
-weekend days been discounted, Stage 0 would have read 12 days and come in
+weekend days been discounted, Stage 0 would have read 13 days and come in
 *under* estimate, which would have been an artefact of the unit rather than a
 fact about the work.
+
+**Stage 0's last day is Stage 1's first, and the table says so rather than
+leaving it to be noticed.** The stage boundary is a commit, not a midnight: the
+closing commit and the first Stage 1 commit are the same date. A reader summing
+the two actuals will double-count one day, which is the honest cost of measuring
+in whole days and is smaller than the cost of a boundary nobody can locate.
 
 **Verdict: continue.** No scope was cut and nothing is deferred that the exit
 test named. What Stage 0 does *not* ship is recorded rather than absorbed: the
@@ -45,11 +65,13 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
-### STAGE 0 IS CLOSED (2026-09-01) AND STAGE 1 IS OPEN
+### STAGE 0 IS CLOSED (2026-09-02) AND STAGE 1 IS OPEN
 
-The exit test is met, each clause flipped against a run rather than against a
-row, and both of `BUILD-PROMPT.md`'s additional conditions read done. The actual
-and the verdict are in the table above.
+The exit **test** was met on 2026-09-01, each clause flipped against a run rather
+than against a row, and both of `BUILD-PROMPT.md`'s additional conditions read
+done. The **stage** closed the following day, when its last commit landed. The
+actual and the verdict are in the table above; the distinction between those two
+dates is what the first count got wrong.
 
 **Stage 1 begins with E2, then D1** — `BUILD-PROMPT.md` fixes that order and the
 reason: *"Begins with the E2 text substrate (search is its first consumer). Then
