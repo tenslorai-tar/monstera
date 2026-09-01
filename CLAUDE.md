@@ -1335,6 +1335,29 @@ inside a feature range. Nothing is at risk while it waits: the detection is
 working — all three instances were caught by their own author asking the
 question, which is precisely what the signature would stop requiring.
 
+**THE STATED REASON HAS DISSOLVED AND THE COST HAS NOT, recorded 2026-09-01 so
+the deferral is not re-argued from a premise that stopped holding.** *"It does not
+happen inside a feature range"* was the reason, and 2026-09-01 was a tooling
+range — the moment the deferral described. It still was not taken: 37 call sites
+each owing its full case-name list is a large mechanical change whose every site
+is a chance to write the wrong list, and a wrong list is loud but noisy.
+
+So the deferral now rests on **cost alone**, which is a weaker and more honest
+footing than the one it was written on. Two consequences worth having:
+
+- A future reader must not re-derive *"wait for a tooling range"* — that
+  condition has been met and did not decide it.
+- The **class it guards has since been partly closed from the other side.**
+  `check:proofanchors` reports any proof that declares no case count at all, and
+  a roster's count is the thing this signature would improve rather than
+  introduce. The remaining gap is narrower than it was: not *does a proof notice
+  a case leaving*, but *can a reader tell a derived count from an independent one
+  at the call site*.
+
+That is the fourth deferral in one day whose reason had stopped holding, and the
+only one where checking it did **not** produce the work. Triage is not a routine
+for finding that everything is ready.
+
 **5. Executed, or asserted?**
 Separate the two explicitly. Anything in the "asserted" column is not a finding,
 whatever confidence it was written with. (Content composition was moved to a
