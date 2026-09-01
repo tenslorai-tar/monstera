@@ -932,11 +932,51 @@ and the structure disappears.
    the image rather than of this code — and it is readable from the job log's
    `Runner Image` line, which is now fetchable. It is a candidate and not the
    answer.
-2. **The same instrument on the build machine.** The floor rule says *either
-   machine*, and this cannot be taken on the current one: a contained host does
-   not start there (`Invalid file descriptor to ICU data`), which is why
-   `proof:hostrecovery` reports could-not-look locally.
+2. **The same instrument on the build machine.** ~~This cannot be taken on the
+   current one: a contained host does not start there (`Invalid file descriptor
+   to ICU data`).~~ **Withdrawn within the hour — see the correction below. It
+   was taken.**
 3. **A second sweep for `R`**, which rests on one five-sweep minimum.
+
+### Correction, 2026-09-01 — the build machine CAN take it, and item 2 is paid
+
+The claim above was a **symptom recorded as a cause**, and it was written into
+three documents before anything checked it. A contained host would not start
+here and reported *"Invalid file descriptor to ICU data"*; I read that as a
+property of the machine.
+
+It was a missing container grant. `.tools/electron/43.4.1` had been re-extracted
+and carried no ACE for `ALL APPLICATION PACKAGES`, which is finding VVVVV-3's own
+condition still present — and ADR-0023 §4 predicts exactly this shape: the access
+check is conjunctive, so **the host dies before its first line rather than
+reporting why.** The ICU line is what that death looks like from outside.
+
+`npm run provision:grants` fixed it, and the same cell then ran.
+
+**The readings, this machine, `--no-document`, five runs:**
+
+| | MB |
+|---|---|
+| readings | 87.80 · 87.93 · 87.76 · 87.88 · 87.96 |
+| min / max | **87.76 / 87.96** |
+| band | **0.21** |
+
+**And they land in the GAP between CI's two clusters** — above the lower group's
+87.37 and below the upper group's 88.15. That is a third data point on the
+bimodality and it argues against *machine* as the discriminator, since a second
+machine produces neither cluster. It does not name what the discriminator is.
+
+The band is also an order tighter than CI's, which is what a machine that is not
+a fresh pool image should look like and is worth nothing on its own.
+
+**What this changes:** item 2 is paid. Items 1 and 3 — the discriminator, and a
+second sweep for `R` — are untouched, and the number still waits on the first.
+
+**What it costs to have got wrong:** the claim travelled into this ADR, a
+`docs/FEATURES.md` row and the handoff in one afternoon, and nothing about it
+would have expired. The check that names it — `containerGrants.mjs --check` —
+printed `NOT granted` the whole time and exited **0**, which is why it was never
+consulted as an explanation. It exits non-zero now.
 
 Until the discriminator is named, a number derived from these readings is a
 number derived from readings whose conditions are in dispute — which is this

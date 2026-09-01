@@ -280,10 +280,44 @@ if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
   }
 
   if (process.argv.includes('--check')) {
-    for (const state of inspect()) {
+    const states = inspect();
+    for (const state of states) {
       const mark = state.present === null ? ' -- ' : state.present ? ' ok ' : ' !! ';
       const said = state.present === null ? state.note : state.present ? 'granted' : 'NOT granted';
       process.stdout.write(` ${mark} ${said.padEnd(15)} ${state.path}\n`);
+    }
+
+    // A LOST GRANT EXITS NON-ZERO, and until 2026-09-01 this printed `NOT
+    // granted` and exited 0 — so the one state worth acting on was
+    // indistinguishable, to anything reading the exit code, from a clean tree.
+    //
+    // That is finding VVVVV-3's consequence rather than its cause: a sweep
+    // re-extracted `.tools/electron` mid-run, which leaves a tree with no
+    // container grant, and the check that would have said so answered success.
+    // **Which command re-extracts it is still not established** and this does
+    // not establish it — what it does is stop the disarmed state reading as a
+    // pass, which is the half that can be fixed without reproducing the sweep.
+    //
+    // `--check` failing on drift is this repository's own idiom, not a new one:
+    // `generateNotice.mjs --check` already does it.
+    //
+    // NOT PROVISIONED stays exit 0, deliberately. A path that does not exist
+    // cannot be granted and is *"not applicable"* rather than a failure — the
+    // distinction `inspect` already draws with `present: null`, and collapsing
+    // it here would make this red on every machine that has not provisioned
+    // Electron, which is every machine that has never run a contained host.
+    const lost = states.filter((state) => state.present === false);
+    if (lost.length > 0) {
+      process.stderr.write(
+        `\n${String(lost.length)} path(s) exist and are NOT granted to ALL APPLICATION ` +
+          `PACKAGES:\n\n  - ${lost.map((state) => state.path).join('\n  - ')}\n\n` +
+          `  A contained host cannot execute an image whose DACL does not name it, and it dies\n` +
+          `  before its first line rather than reporting why. A tree that WAS granted and now\n` +
+          `  is not has been rewritten — an extraction leaves no grant — so the question is\n` +
+          `  what rewrote it, not whether to re-grant.\n\n` +
+          `  Run \`npm run provision:grants\`.\n\n`,
+      );
+      process.exit(1);
     }
     process.exit(0);
   }
