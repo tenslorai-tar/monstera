@@ -83,6 +83,9 @@ function handlers() {
         throw new Error('registration cases must not reach the settings surface');
       },
     },
+    revealLog: () => {
+      throw new Error('registration cases must not reach the log');
+    },
   });
 }
 

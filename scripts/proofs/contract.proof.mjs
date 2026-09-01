@@ -88,6 +88,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
+  'log.reveal': () => Promise.resolve(ok({ revealed: true })),
 };
 `,
   },
@@ -129,6 +130,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
+  'log.reveal': () => Promise.resolve(ok({ revealed: true })),
 };
 `,
   },
@@ -245,6 +247,7 @@ export const shim: ContractClient = {
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 1, rotations: [0] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
+  'log.reveal': () => Promise.resolve(ok({ revealed: true })),
 };
 `,
   },

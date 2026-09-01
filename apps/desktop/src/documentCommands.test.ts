@@ -419,6 +419,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           openedDocument: () => undefined,
           pickDocument: () => Promise.resolve(null),
           settings: { read: () => ({}), write: () => undefined },
+          revealLog: () => Promise.resolve(false),
         })['document.viewModel'],
         new IncidentLog(sink),
       );

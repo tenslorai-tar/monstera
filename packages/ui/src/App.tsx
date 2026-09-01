@@ -12,6 +12,7 @@ import {
 
 import { rotatePageCommand, saveCommand, undoCommand } from './commands/documentCommands.js';
 import { openDocumentCommand } from './commands/openDocument.js';
+import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG } from './dialogs/commandProblem.js';
@@ -100,6 +101,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       new CommandRegistry([
         openDocumentCommand({ client, onOpened: setOpen }),
         showAboutCommand({ client, show }),
+        revealLogCommand({ client }),
         rotatePageCommand({ client, onApplied: applied, show }),
         undoCommand({ client, onApplied: applied, show }),
         saveCommand({ client, show }),

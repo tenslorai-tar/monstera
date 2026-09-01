@@ -560,6 +560,35 @@ export const channels = {
     z.object({ values: z.record(z.string(), z.unknown()) }),
     z.object({ stored: z.literal(true) }),
   ),
+
+  /**
+   * Shows the log directory in the OS file manager.
+   *
+   * ## NOTHING CROSSES, in either direction, and that is the design
+   *
+   * The obvious spelling is `log.path` returning a string for the renderer to
+   * open. It is a compile error here and would be one anywhere: a filesystem
+   * path in a renderer-facing type is what invariant 2 forbids, and the reason
+   * is not that this particular path is sensitive — `userData` contains the
+   * user's name on Windows — but that a renderer holding one has a capability
+   * the architecture says it does not have.
+   *
+   * So the channel is an **intent** with an empty payload. Main knows where it
+   * put the log; the renderer knows only that a place exists to be shown.
+   *
+   * ## `revealed: false` is a state, not an error
+   *
+   * A log directory that does not exist yet is the ordinary case on a first
+   * launch that has had nothing to report, and it is not a failure — there is
+   * simply nothing to show. Answering with a declared `false` rather than a
+   * failure code keeps *nothing has gone wrong yet* out of the incident log,
+   * which would otherwise be the one entry a quiet run produces.
+   */
+  'log.reveal': channel(
+    'Shows the diagnostics log in the OS file manager. No path crosses.',
+    z.object({}),
+    z.object({ revealed: z.boolean() }),
+  ),
 } as const;
 
 export type Channels = typeof channels;

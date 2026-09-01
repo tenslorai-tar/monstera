@@ -42,6 +42,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   // decided by this call being made, and the outcomes it must NOT be made for
   // produce exactly the same handler result as the one it must.
   const sessioned: DocId[] = [];
+  const revealed: boolean[] = [];
   const settings = createEphemeralSettings();
   const handlers = createContractHandlers({
     appInfo,
@@ -55,8 +56,14 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     // is a claim about a surface having accepted the values, and a test that
     // could not look at the surface would be asserting the call was made.
     settings,
+    // COUNTED, so a case can assert the handler asked exactly once rather than
+    // that it answered something.
+    revealLog: () => {
+      revealed.push(true);
+      return Promise.resolve(true);
+    },
   });
-  return { capabilities, handlers, opened, sessioned, settings };
+  return { capabilities, handlers, opened, revealed, sessioned, settings };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -259,6 +266,7 @@ describe('document.open', () => {
           openedDocument: () => undefined,
           pickDocument: () => Promise.resolve(null),
           settings: createEphemeralSettings(),
+          revealLog: () => Promise.resolve(false),
         }),
       };
     }
@@ -324,6 +332,49 @@ describe('document.open', () => {
       const result = await handlers['document.readRange'](ASK);
 
       expect(result.ok).toBe(true);
+    });
+  });
+});
+
+describe('log.reveal', () => {
+  /**
+   * The main-side half of the wired-tools pair. The other halves are
+   * `App.test.tsx`, where the control dispatches this channel exactly once, and
+   * `shellLog.test.ts`, where a reveal reaches the platform with the log's own
+   * directory.
+   */
+  it('asks the log to reveal itself, once, and answers what it said', async () => {
+    const { handlers, revealed } = harness({ kind: 'absent' }, () => Promise.resolve(null));
+
+    const result = await handlers['log.reveal']({});
+
+    expect(result).toEqual({ ok: true, value: { revealed: true } });
+    // ONCE. A handler that asked twice answers identically, and a reveal is a
+    // window opening: the second one is visible to the user and to nothing else
+    // here.
+    expect(revealed).toHaveLength(1);
+  });
+
+  /**
+   * The answer is the LOG's, not the handler's. A handler that returned a
+   * constant `true` passes the case above, and would report success for a
+   * launch with no log directory at all.
+   */
+  it('passes a refusal through rather than reporting success', async () => {
+    const handlers = createContractHandlers({
+      appInfo,
+      capabilities: new CapabilityRegistry(),
+      commands: unusedCommands,
+      documents: {} as unknown as DocumentService,
+      openedDocument: () => undefined,
+      pickDocument: () => Promise.resolve(null),
+      settings: createEphemeralSettings(),
+      revealLog: () => Promise.resolve(false),
+    });
+
+    await expect(handlers['log.reveal']({})).resolves.toEqual({
+      ok: true,
+      value: { revealed: false },
     });
   });
 });

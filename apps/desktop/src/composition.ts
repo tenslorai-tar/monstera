@@ -61,6 +61,7 @@ import {
 } from './sessionDirectories.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
+import type { ShellLog } from './shellLog.js';
 import type { ShellDependencies } from './main.js';
 
 /**
@@ -198,6 +199,19 @@ export function createShellDependencies(
    */
   settings: SettingsSurface,
   enginePlatform: EngineHostPlatform | null = null,
+  /**
+   * Where diagnostics go, as a surface rather than a directory — the same trade
+   * `settings` takes one line up, for the same reason.
+   *
+   * DEFAULTED, and this is the one place in this signature where a default is
+   * right. `settings` is required because *this build does not persist* would be
+   * what a caller gets by saying nothing, and that failure is invisible in every
+   * test. Here the default is `stderr`, which is a real destination and the one
+   * every test and every harness already reads. A required parameter would make
+   * `createShellLog` run in unit tests, which would write a rotating log into
+   * somebody's temporary directory on every `document.open` case.
+   */
+  log: ShellLog | null = null,
 ): ShellDependencies {
   const capabilities = new CapabilityRegistry();
 
@@ -219,12 +233,13 @@ export function createShellDependencies(
   // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
   // returns. The order is the dependency: a writer that talks to the engine
   // host cannot exist before something can build one.
-  const engineHost = engineSessionOpener(
-    enginePlatform,
-    documents,
-    engine,
-    reportShellFailure,
-  );
+  // ONE SINK, NOT TWO. This is where a host death is reported, and it is the
+  // single loudest thing this application can say — a resolution taken here and
+  // a different one on the returned `failures` would put half the lifecycle in
+  // the log and half on a handle nobody is reading.
+  const failures = log?.failures ?? reportShellFailure;
+
+  const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures);
 
   // NO LONGER EMPTY. `WriterRegistry` stays partial because the seam declares
   // four writers of record and one has an adapter; a command routed to an
@@ -303,9 +318,15 @@ export function createShellDependencies(
       openedDocument,
       pickDocument,
       settings,
+      // `false` WITHOUT A LOG, which is the channel's declared state for
+      // *there is nothing to show* rather than a stub standing in for one. The
+      // shipped app always has a log; a graph built without one — every unit
+      // test in this repository — genuinely has no directory to reveal, and
+      // saying so is the honest answer rather than a silent success.
+      revealLog: log === null ? (): Promise<boolean> => Promise.resolve(false) : log.reveal,
     }),
-    incidents: reportIncident,
-    failures: reportShellFailure,
+    incidents: log?.incidents ?? reportIncident,
+    failures,
 
     /**
      * DOCUMENTS FIRST, THEN THE HOST, and the order is the whole of it.

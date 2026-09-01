@@ -33,6 +33,7 @@ export const DOCUMENT_SURFACE_LABEL = messageKey('surface.document.label');
 export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
+export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
@@ -69,6 +70,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [THEME_TITLE]: 'Theme',
   [ABOUT_TITLE]: 'About Monstera',
   [ABOUT_COMMAND_TITLE]: 'About',
+  // "Reveal" and not "Open": the command shows the folder in the file manager,
+  // and a name promising to open a log would be a name that fails the moment
+  // there are five rotated files and no one of them is *the* log.
+  [REVEAL_LOG_TITLE]: 'Reveal diagnostics log',
   [ABOUT_VERSION_LABEL]: 'Version',
   [ABOUT_CHANNEL_LABEL]: 'Install channel',
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and

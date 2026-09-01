@@ -647,8 +647,34 @@ describe('App', () => {
     const { client } = recordingClient({ kind: 'cancelled' });
     const { container } = render(<App client={client} settings={freshSettings()} />);
 
-    expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(2);
+    expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();
+  });
+
+  /**
+   * The UI half of the wired-tools pair for `log.reveal`. The other half is
+   * `shellLog.test.ts`, where a reveal reaches the platform with the log's own
+   * directory, and `contractHandlers.test.ts`, where the handler asks once.
+   */
+  it('the REVEAL LOG control dispatches log.reveal, and nothing else', async () => {
+    const { client, calls } = recordingClient({ kind: 'cancelled' });
+    render(<App client={client} settings={freshSettings()} />);
+
+    // `act` with a promise it can settle: the click dispatches an async `run`,
+    // and without something for React to flush the assertion below reads the
+    // call list before the command has reached the client.
+    await act(() => {
+      screen.getByRole('button', { name: 'Reveal diagnostics log' }).click();
+      return Promise.resolve();
+    });
+
+    // THE WHOLE CALL LIST, not `toContain`. A control that also opened a
+    // document, or dispatched twice, satisfies a containment assertion
+    // perfectly — and dispatching twice is what a reveal wired into a render
+    // rather than a click would do.
+    expect(calls.filter((call) => call === 'log.reveal')).toEqual(['log.reveal']);
+    expect(calls).not.toContain('document.open');
   });
 });

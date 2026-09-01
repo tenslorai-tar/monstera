@@ -1,11 +1,12 @@
 import { join } from 'node:path';
 
-import { app } from 'electron';
+import { app, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
 import { createSettingsFile } from './settingsFile.js';
+import { createShellLog } from './shellLog.js';
 import { startShell } from './main.js';
 
 /**
@@ -69,5 +70,23 @@ startShell(() =>
     // `sessionData` rather than `temp`: a directory the OS may empty underneath
     // a live host is not one to hand a granted DACL to.
     createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions')),
+    // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
+    // packaged run: a Store application has no terminal attached, so until this
+    // existed every failure this repository takes care to describe went to a
+    // handle that discards it.
+    //
+    // `userData` for the reason settings use it, one step stronger: a log the
+    // OS may empty is a log that is missing exactly when somebody goes looking
+    // for it after a crash.
+    //
+    // `openPath` and not `showItemInFolder`: the directory is what is wanted,
+    // there being up to five rotated files and no single one of them *the* log.
+    // Its answer is an error STRING — empty on success — which is the shape
+    // `RevealDirectory`'s boolean is derived from here, at the only boundary
+    // entitled to know what Electron's convention is.
+    createShellLog(app.getPath('userData'), async (directory) => {
+      const problem = await shell.openPath(directory);
+      return problem === '';
+    }),
   ),
 );

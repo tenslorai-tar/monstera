@@ -109,6 +109,14 @@ export function createContractHandlers(deps: {
   readonly openedDocument: OpenedDocument;
   readonly pickDocument: PickDocument;
   readonly settings: SettingsSurface;
+  /**
+   * Shows the diagnostics log.
+   *
+   * Takes no argument and answers a boolean, so nothing about *where* the log
+   * is reaches this file — which is what keeps the handler unable to leak a
+   * path even by accident (B5 over a rule at the call site).
+   */
+  readonly revealLog: () => Promise<boolean>;
 }): ContractHandlers {
   return {
     // `Promise.resolve`, not `async`: nothing here awaits, and the contract's
@@ -135,6 +143,7 @@ export function createContractHandlers(deps: {
       // proving persistence and asserting a write.
       return Promise.resolve(ok({ stored: true } as const));
     },
+    'log.reveal': async () => ok({ revealed: await deps.revealLog() }),
   };
 }
 

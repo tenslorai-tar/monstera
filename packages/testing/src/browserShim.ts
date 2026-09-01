@@ -92,6 +92,14 @@ export interface BrowserShim {
   versionOf: (docId: DocId) => DocVersion | undefined;
   /** Diagnostics withheld from the client, in order. */
   readonly incidents: readonly Incident[];
+  /**
+   * How many times the renderer asked for the log to be revealed.
+   *
+   * A COUNT, not a boolean. *It was asked for* and *it was asked for once* are
+   * different claims, and a command wired to fire on every render satisfies the
+   * boolean perfectly.
+   */
+  revealedLog: () => number;
 }
 
 export interface BrowserShimOptions {
@@ -231,6 +239,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // holding the object it seeded would otherwise see it change underneath as
   // the renderer saves.
   let stored: Record<string, unknown> = { ...(options.settings ?? {}) };
+  let revealedLog = 0;
 
   /**
    * What a command reports the document's new size as.
@@ -433,6 +442,16 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       stored = { ...values };
       return Promise.resolve(ok({ stored: true as const }));
     },
+    // RECORDED, NOT PERFORMED, and `revealed` is the shim's answer rather than a
+    // guess about the machine: a browser has no file manager and there is no log
+    // directory in a shim, so `true` here would be the one thing this surface
+    // must never do — agree with a call it did not make. The count is what a UI
+    // test asserts against; whether an OS opened a window is main's business and
+    // `proof:shell`'s.
+    'log.reveal': () => {
+      revealedLog += 1;
+      return Promise.resolve(ok({ revealed: false }));
+    },
   };
 
   const wrapped = wrapHandlers(channels, handlers, (incident) => {
@@ -461,5 +480,6 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return found === undefined ? undefined : asDocVersion(found);
     },
     incidents,
+    revealedLog: () => revealedLog,
   };
 }

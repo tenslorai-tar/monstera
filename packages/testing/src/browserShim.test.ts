@@ -194,6 +194,7 @@ describe('browser shim', () => {
       'document.save',
       'document.undo',
       'document.viewModel',
+      'log.reveal',
       'settings.load',
       'settings.save',
     ]);

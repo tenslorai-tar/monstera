@@ -52,6 +52,7 @@ const handlers: ContractHandlers = {
   // the schema quietly rewrite this" a real question rather than a rhetorical
   // one.
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
+  'log.reveal': () => Promise.resolve(ok({ revealed: true })),
 };
 
 describe('the shipping contract, exercised through its own map', () => {
