@@ -50,6 +50,7 @@
  * scope decision in this project lives, rather than being reimplemented here.
  */
 
+import { noInstallRootWrites } from './noInstallRootWrites.mjs';
 import { noRawHex } from './noRawHex.mjs';
 
 /** A run of characters that no catalogue would ever hold. */
@@ -105,7 +106,11 @@ export const noJsxLiterals = {
  * no diagnostic.
  */
 export const monsteraPlugin = {
-  rules: { 'no-jsx-literals': noJsxLiterals, 'no-raw-hex': noRawHex },
+  rules: {
+    'no-jsx-literals': noJsxLiterals,
+    'no-raw-hex': noRawHex,
+    'no-install-root-writes': noInstallRootWrites,
+  },
 };
 
 /**

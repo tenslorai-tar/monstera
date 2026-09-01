@@ -442,6 +442,31 @@ export default tseslint.config(
   },
 
   {
+    // A SEPARATE BLOCK BECAUSE THE SCOPE IS DIFFERENT, not because the rule is.
+    // The two rules above are about components and are `.tsx` under the packages
+    // that render; this one is about where shipped code resolves a path, which
+    // is a `.ts` question and belongs to the shell and the kernel.
+    //
+    // `apps/*/src` and `packages/*/src` — the same two roots the advisory
+    // register calls shipped, so a module moving between them stays covered.
+    // Tests are excluded on the same reasoning the literal rule records: a
+    // fixture naming a banned symbol is what proves the rule sees, and it must
+    // not be the thing the rule reports.
+    files: ['apps/*/src/**/*.ts', 'packages/*/src/**/*.ts'],
+    ignores: ['**/*.test.ts', '**/*.spec.ts', '**/*.pw.ts'],
+    plugins: { monstera: monsteraPlugin },
+    rules: {
+      // ADR-0018 + ADR-0023 premise P1: an MSIX app cannot write to its install
+      // directory, so a path resolved from it works everywhere except a real
+      // install. Replaces an advisory-register verdict that was written and
+      // withdrawn the same day — the register needs a witness for a watched
+      // symbol, `getAppPath` is named nowhere here, and its only witness needs
+      // provisioning.
+      'monstera/no-install-root-writes': 'error',
+    },
+  },
+
+  {
     // The bootstrap layer: plain .mjs, type-checked through JSDoc rather than
     // compiled, because it runs before dependencies exist (ARCHITECTURE §1.1).
     //

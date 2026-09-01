@@ -57,6 +57,10 @@ import { ESLint } from 'eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 import { repoRoot } from '../lib/gitScope.mjs';
+import {
+  PATH_OWNER,
+  PLANTED_INSTALL_ROOT_OFFENDER,
+} from '../lib/noInstallRootWrites.mjs';
 import { PLANTED_OFFENDER } from '../lib/noJsxLiterals.mjs';
 import { PLANTED_HEX_OFFENDER } from '../lib/noRawHex.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -392,6 +396,57 @@ async function main() {
         .join(' | ')}\n      A rule that fires on onColor() output bans the one producer §10.2 ` +
         `names, and one that fires on "#12345" fires on anchors and ids.`,
     );
+
+    // -------------------------------------------------------------------
+    // ADR-0018's install-root rule, and it needs the planted offender MORE
+    // than either above: `getAppPath` is named in NO shipped file, so a rule
+    // that matched nothing would report exactly the silence this clean tree
+    // reports. It replaces an advisory-register verdict withdrawn for want of
+    // a witness — and a planted file is the witness a static rule can have and
+    // a symbol scan could not.
+    // -------------------------------------------------------------------
+    const INSTALL = 'monstera/no-install-root-writes';
+    // UNDER `apps/desktop/src`, because the config scopes this rule by path and
+    // a fixture written anywhere else would test the rule and not its
+    // registration.
+    const shippedDirectory = join(ROOT, 'apps', 'desktop', 'src', 'install-probe-temp');
+    mkdirSync(shippedDirectory, { recursive: true });
+    try {
+      const offender = join(shippedDirectory, 'where.ts');
+      writeFileSync(offender, `${PLANTED_INSTALL_ROOT_OFFENDER}\n`, 'utf8');
+      const found = (await eslint.lintFiles([offender]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === INSTALL);
+
+      check(
+        'the install root and a stray app.getPath are BOTH reported, at error severity',
+        found.filter((message) => message.severity === 2).length === 2,
+        `findings on the planted module: ${
+          found.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
+        }\n      TWO, not one: the rule has two branches with opposite scopes — an outright ban ` +
+          `on the install root and a confinement of \`app.getPath\` to entry.ts — and a fixture ` +
+          `exercising one leaves the other unproven.`,
+      );
+
+      // THE CONFINEMENT'S OTHER HALF. Without this the rule passes as an
+      // outright ban on `getPath`, which would forbid the one call the
+      // architecture requires and be found only by whoever next edits
+      // `entry.ts`.
+      const owner = join(ROOT, PATH_OWNER);
+      const ownerFindings = (await eslint.lintFiles([owner]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === INSTALL);
+
+      check(
+        'CONTROL: entry.ts asks Electron where it may write and is NOT reported',
+        ownerFindings.length === 0,
+        `findings on ${PATH_OWNER}: ${ownerFindings.map((m) => m.message).join(' | ')}\n      ` +
+          `That file is the one the architecture requires to make this call, so a rule reporting ` +
+          `it is a ban wearing a confinement's name — and it would pass every case above.`,
+      );
+    } finally {
+      rmSync(shippedDirectory, { recursive: true, force: true });
+    }
   } finally {
     rmSync(literalDirectory, { recursive: true, force: true });
   }
