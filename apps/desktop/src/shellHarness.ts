@@ -295,9 +295,46 @@ function quitWhenAsked(): {
   };
 }
 
+/**
+ * Records whether the dependency FACTORY ran, for the single-instance ordering.
+ *
+ * `startShell` takes `() => ShellDependencies` so that a launch which loses the
+ * lock reaches `app.quit()` having constructed nothing — two of those
+ * constructors write to the session root this application owns, and one of them
+ * now sweeps it. The type makes the ordering unrepresentable at both call sites
+ * and **nothing proved it ran that way**, because `main.ts` imports Electron and
+ * no unit test can load it.
+ *
+ * So it is proved where it can be driven: two real processes, one lock. The
+ * marker is written as the factory's first statement, so what it records is the
+ * call — not a state a losing launch would also arrive at by some other route.
+ *
+ * Same file-not-stdout mechanism as the quit probe, and for a sharper reason
+ * here: a losing launch's whole job is to end immediately, so anything buffered
+ * behind its exit is lost exactly when it matters.
+ */
+function instanceMarker(): ((marker: string) => void) | null {
+  const at = process.argv.indexOf('--instance-marker');
+  if (at === -1) return null;
+  const markerFile = process.argv[at + 1];
+  if (markerFile === undefined) {
+    throw new Error('--instance-marker needs a path to write its markers to');
+  }
+  return (marker: string): void => {
+    appendFileSync(markerFile, `${marker}\n`);
+  };
+}
+
 const quitProbe = quitWhenAsked();
+const markInstance = instanceMarker();
+
+// BEFORE `startShell`, so the file distinguishes a losing launch from a process
+// that never started. Without it, "no FACTORY_RAN" is also what a harness that
+// crashed on load produces, and the case would pass for the wrong reason.
+markInstance?.('MONSTERA_SHELL_STARTED');
 
 startShell(() => {
+  markInstance?.('MONSTERA_FACTORY_RAN');
   const dependencies = createShellDependencies(
     { version: app.getVersion(), installChannel: 'development' },
     () => {

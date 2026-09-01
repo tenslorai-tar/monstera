@@ -46,7 +46,7 @@
  * Usage: node scripts/proofs/shell.proof.mjs
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -75,6 +75,10 @@ const RUNTIME_CASES = [
   'the SHIPPED app.quit() is DEFERRED until the teardown settles',
   'the process exits 0 with the teardown having run, not merely exits',
   'CONTROL: the app ended on its own rather than being killed at the bound',
+  'CONTROL: a launch that WINS the single-instance lock builds the graph',
+  'a launch that LOSES the lock never calls the dependency factory',
+  'the losing launch started at all, so the absence above is a decision',
+  'the losing launch ended itself rather than being killed at the bound',
 ];
 
 // THE ANCHOR, BECAUSE THE LINE BELOW IS NOT ONE (finding EEEEE-1). `passRoster`
@@ -85,9 +89,9 @@ const RUNTIME_CASES = [
 // Every other proof in this repository declares a literal; this one derived, and
 // the derivation is what removed the anchor. 4c's danger here runs toward
 // shrinkage, and a derived count agrees with any shrink.
-if (RUNTIME_CASES.length !== 9) {
+if (RUNTIME_CASES.length !== 13) {
   throw new Error(
-    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 9. ` +
+    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 13. ` +
       `Raise or lower the literal in the same commit and say why: a case that leaves takes its ` +
       `label and the total with it, and nothing else here would notice.`,
   );
@@ -135,6 +139,105 @@ function launch(binary, extraArgs) {
   return wrapper === undefined
     ? [binary, [HARNESS, ...extraArgs]]
     : [wrapper, ['-a', binary, HARNESS, ...extraArgs]];
+}
+
+/**
+ * The single-instance ordering, driven as two real processes over one lock.
+ *
+ * ## Why this is not a unit test, stated rather than implied
+ *
+ * The property is *`startShell` does not call `build()` when the lock is lost*.
+ * `startShell` lives in `main.ts`, which imports Electron, so nothing under
+ * vitest can load it — and the ordering is exactly the kind of claim a type
+ * makes and no compiler checks, since both call sites would still compile if the
+ * factory were invoked one line earlier.
+ *
+ * ## Both processes share a PRIVATE userData, and that is load-bearing twice
+ *
+ * `requestSingleInstanceLock` is keyed on the userData directory. A temporary
+ * one makes the two runs contend with each other and with nothing else: without
+ * it a developer's own Monstera would decide the result, and this proof would
+ * pass or fail on what happened to be open.
+ *
+ * ## The winner is waited FOR, never slept after
+ *
+ * The loser may only start once the lock is genuinely held, and the marker file
+ * is the event that says so. A sleep would encode a guess about how long
+ * Electron takes to reach the factory, and would silently become a race on a
+ * slower runner.
+ *
+ * @param {string} binary
+ * @returns {Promise<{ winner: string[], loser: string[], status: number | null,
+ *   signal: NodeJS.Signals | null }>}
+ */
+async function singleInstanceRun(binary) {
+  const scratch = mkdtempSync(join(tmpdir(), 'monstera-instance-'));
+  const userData = join(scratch, 'userData');
+  const winnerFile = join(scratch, 'winner.txt');
+  const loserFile = join(scratch, 'loser.txt');
+  writeFileSync(winnerFile, '');
+  writeFileSync(loserFile, '');
+
+  const [command, args] = launch(binary, [
+    `--user-data-dir=${userData}`,
+    '--instance-marker',
+    winnerFile,
+  ]);
+  const winner = spawn(command, args, { cwd: REPO_ROOT, stdio: 'ignore' });
+
+  try {
+    // WAIT FOR THE EVENT. `FACTORY_RAN` in the winner's file means the lock was
+    // taken and the graph built, which is the precondition the loser needs.
+    const until = Date.now() + 120_000;
+    for (;;) {
+      const seen = readFileSync(winnerFile, 'utf8');
+      if (seen.includes('MONSTERA_FACTORY_RAN')) break;
+      if (winner.exitCode !== null) {
+        throw new Error(
+          `The winning launch exited ${String(winner.exitCode)} before building the graph, so ` +
+            `there was never a lock for the second launch to lose.`,
+        );
+      }
+      if (Date.now() > until) {
+        throw new Error('The winning launch never reached the dependency factory.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    const [loserCommand, loserArgs] = launch(binary, [
+      `--user-data-dir=${userData}`,
+      '--instance-marker',
+      loserFile,
+    ]);
+    const result = spawnSync(loserCommand, loserArgs, {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      // A BOUND THAT DECIDES NOTHING WHILE THE MECHANISM WORKS. A losing launch
+      // quits in the same turn it starts; only a broken one reaches this, and
+      // the signal it produces is asserted rather than tolerated.
+      timeout: 120_000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+
+    /** @param {string} path @returns {string[]} */
+    const lines = (path) =>
+      readFileSync(path, 'utf8')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('MONSTERA_'));
+
+    return {
+      winner: lines(winnerFile),
+      loser: lines(loserFile),
+      status: result.status,
+      signal: result.signal,
+    };
+  } finally {
+    // KILL WHAT YOU OPEN. The winner has no reason to stop on its own — it is
+    // holding a lock and a window — so a run that threw above would otherwise
+    // leave an Electron process behind holding this userData.
+    winner.kill();
+  }
 }
 
 /**
@@ -369,6 +472,48 @@ try {
       quit.signal === null && quit.markers.includes('MONSTERA_QUIT_REQUESTED'),
       `signal ${String(quit.signal)}, markers [${order}]. A hang is killed at 120s and the ` +
         `ordering above would then be satisfied by a run that never finished quitting.`,
+    );
+
+    const instance = await singleInstanceRun(ELECTRON_BINARY);
+    const winnerSaw = `[${instance.winner.join(', ')}]`;
+    const loserSaw = `[${instance.loser.join(', ')}]`;
+
+    // THE CONTROL FIRST, AND IT IS THE ONE THAT MAKES THE ABSENCE BELOW MEAN
+    // ANYTHING. "The factory did not run" is also what a marker nobody writes
+    // produces, and what a harness that crashed on load produces. This asserts
+    // the same flag, on the same binary, writes the same line when the lock IS
+    // won — so the negative case's input is one the absent guard would let
+    // through.
+    check(
+      'CONTROL: a launch that WINS the single-instance lock builds the graph',
+      instance.winner.includes('MONSTERA_FACTORY_RAN'),
+      `the winning launch wrote ${winnerSaw}. Without this line the case below is satisfied ` +
+        `by a marker that never works, on either launch.`,
+    );
+
+    check(
+      'a launch that LOSES the lock never calls the dependency factory',
+      !instance.loser.includes('MONSTERA_FACTORY_RAN'),
+      `the losing launch wrote ${loserSaw}. \`startShell\` takes a factory precisely so a ` +
+        `launch that must quit constructs nothing: \`createEngineHostPlatform\` creates the ` +
+        `session root and now SWEEPS it, so a second launch running it would delete the pairs ` +
+        `of the running instance's open documents.`,
+    );
+
+    check(
+      'the losing launch started at all, so the absence above is a decision',
+      instance.loser.includes('MONSTERA_SHELL_STARTED'),
+      `the losing launch wrote ${loserSaw}. A harness that failed to load writes nothing and ` +
+        `satisfies the case above perfectly, which is the reading this line rules out.`,
+    );
+
+    check(
+      'the losing launch ended itself rather than being killed at the bound',
+      instance.signal === null && instance.status === 0,
+      `exit ${String(instance.status)}, signal ${String(instance.signal)}. A launch that took ` +
+        `the lock branch quits in the turn it starts; one that fell through builds a graph and ` +
+        `opens a window, and is killed at the bound — which would otherwise satisfy the ` +
+        `absence above by never getting far enough to write the marker.`,
     );
 
     process.stdout.write(
