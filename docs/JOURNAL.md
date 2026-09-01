@@ -644,6 +644,281 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-01 — Stage audit: `64caaaa..996b973` — an amendment stated a relationship and did not sweep it
+
+Range: **30 commits, 55 files.** 3 proofs added, 15 modified, 0 removed; 7 source
+files added, 19 changed, 0 removed — from `npm run audit:scope`. Taken because
+the pre-commit gate refused the thirty-first commit: *"64caaaa..HEAD plus this
+commit: 31 commits (one batch is 30)."*
+
+The range is the previous audit's recording commit, `mupdf-host`'s three
+differentials, the rotating log, the checkpoint budget, four row triages,
+ADR-0031's byte channel reaching the budget gate, the board reader taking a
+token, invariant 22's capability and the §2 amendment it forced, invariant 26's
+install-root rule, the base-128 readings, Stage 0's exit clauses flipped against
+a run, `check:proofanchors`, the bimodality falsification, and six commits of
+exit triage. Findings **ZZZZZ-1** to **ZZZZZ-4**.
+
+### The range's headline
+
+**`8d8b85e` amended §2 to say that nothing replays the command log, and left
+standing a clause in invariant 18 that deferred its whole restore mechanism on
+the premise that no caller could lose one.** The two sentences are in the same
+document, four hundred lines apart, and the amendment made the second false the
+moment it landed.
+
+Invariant 18(ii) read:
+
+> *"**Until it does, the loss path has no caller**: nothing in the shipped
+> application can drop a document's record … That is why this clause is
+> deferrable at all."*
+
+It names `document.close`, which is genuinely undeclared. It is not the only
+route: `onEngineHostEnded` rebuilds a dead host's sessions in every surviving
+document's lane, that rebuild is Decision 9c of ADR-0023, and with no replay it
+loses every command since the last save. **Proving that an effect cannot travel
+by one route is not proving it cannot travel.**
+
+**Item 7 already carries the compensation and it did not fire.** NNN-4's rule is
+that *a range which STATES a cross-document relationship must sweep every other
+statement of that relationship* — and `8d8b85e` is exactly such a range: it
+stated, in an amendment-log row, that the missing replay costs ADR-0023 Decision
+9c its unsaved commands. That sentence names the consequence and the sweep was
+still not run. Found by the reviewing seat reading row 345, not by any check, and
+no check could have helped: both directions parse and every citation resolves.
+
+What transfers is narrower than *do the sweep*: the compensation fires on a
+**range that states the relationship**, and the range that states it is the one
+whose author is most certain the relationship is now written down. Naming the
+consequence in the amendment is what made the sweep feel done.
+
+Corrected in `5e6f70f` (the law, alone, per B4), `80afa3d` (the row and
+ADR-0023's appended correction).
+
+### 1. Root cause or workaround
+
+Thirty commits, no workaround. Three entries that could read as exemptions and
+are not:
+
+| the change | mechanism | verdict |
+|---|---|---|
+| `perfBudget`'s role count `=== 3` became `>= 3` | `mupdf-host-real` needs a Win32 AppContainer, so the count varies by runner | **loosening, compensated** — see item 2a |
+| `containerGrants --check` exits 1 only where a path **exists** and is ungranted | a path that does not exist cannot be granted; `inspect` already draws that with `present: null` | root cause — the exit code was reporting the wrong question |
+| `check:proofanchors` ships with a 23-entry allowlist | a hand-kept list of today's debt, with a `stale` state so a paid entry must leave | debt, declared — and see ZZZZZ-3 |
+
+### 2. Verified against the easy shape only?
+
+`recycle` was built and its precondition **asserted rather than assumed**, which
+is what found the §2 defect. `proof:hostrecovery` kills a real contained host
+rather than a fake reporting one. `perfBudget`'s new skip-booking is the
+bare-environment axis answered directly: a runner that measures fewer roles
+books the cases it could not run, so the declared total is the same everywhere.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is stated here because nothing downstream would say so.**
+`proof:perfbudget` asserted `baseline.results.length === 3`; it now asserts
+`>= 3`. An equality catches a role that stopped being measured; a floor does
+not. What replaces it is the exclusive-or — the real host is in `results` or in
+`unasserted`, never in neither — which is strictly stronger for that role and
+strictly weaker for a fourth role nobody has named yet. Net: the class *a role
+silently disappears* is still covered for every role that exists today, by two
+cases instead of one, and the general count no longer bites.
+
+### 3. Would CI have caught it?
+
+**Answered from the graph, not from what the range was about.**
+`scripts/lib/affectedProofs.mjs` over this range's 55 changed files names **39**
+proofs, `proof:containergrants` among them. Every one resolves to an
+unconditional step on `guards.yml` or `ci.yml`, and the board was **green on
+both workflows at `c4c6861`** — quoted from the reader: *"GREEN at
+c4c68614b17af7d9f2c0c1dea48cde3cd68fab7b: Guards=success, CI=success"*.
+
+**The six commits after `c4c6861` have not been on a board.** They are
+documents-only and reach `proof:docrulescope`, `proof:rowlength` and
+`check:docs`, all of which ran locally, all of which are unconditional Guards
+steps. Stated rather than implied: this half of the range is locally verified
+and not yet CI-verified.
+
+Neither ZZZZZ-1 nor ZZZZZ-2 is a defect CI can see. ZZZZZ-1 is a bound on a
+developer-run instrument; ZZZZZ-2 is a missing case, and a missing case is the
+one class no green board reports.
+
+### 4. Non-vacuous proofs
+
+Fifteen modified proofs, each diff read for loosening. One loosening (2a, above),
+compensated. Everything else is an addition: `historyDropped` threaded through
+stubs, `log.reveal` added to client fakes, three roster counts raised in the
+commits that added their cases (`githubFetch` 8 → 12, `shell` 13 → 14,
+`perfBudget` 26 → 29 → 33).
+
+Two stubs were changed from answering to **throwing**, which is the direction
+worth noting: `enforceRetention` in the save path and `revealLog` in the
+registration cases. A quiet stub that answers zero is how *a save that trimmed
+history* would arrive unnoticed.
+
+`shell.proof.mjs` gained the case this checklist most often asks for — a
+**precondition asserted before the property**: `winnerAlive` reads whether the
+lock-holding launch was still running when the second one finished, because a
+winner that exited early hands the lock over and the case then reports a broken
+guard where nothing was measured.
+
+### 4a. Instrument resolution tests
+
+`monstera/no-install-root-writes` is the range's one new measuring instrument in
+the ordinary sense, and its resolution test is the pair a lint rule needs: a
+planted offender carrying **both** branches, and a control asserting `entry.ts`
+is *not* reported. Without the second, a rule that reported every `app.getPath`
+would look identical to one that confines it, and the confinement would be a ban.
+
+`board.mjs` is the range's other instrument and its resolution is not the
+problem — it separates *pending*, *refused* and *absent* correctly, and did so
+at the moment it timed out. Its **bound** is ZZZZZ-1.
+
+### 4b. Searches and their positive controls
+
+`check:proofanchors` is the range's one new search, and it cannot report the
+reassuring answer by being blind: `hasAnchor` broken always-false makes `missing`
+48 entries, always-true makes `stale` 23, and an empty walk throws by name. That
+is a two-directional classifier rather than a planted control, and it holds — but
+see ZZZZZ-3 and ZZZZZ-4 for the two questions it does not ask.
+
+The bimodality work is the range's other search, and its control was the
+*falsification* rather than a plant: two candidates named in advance, both
+looked for in the logs and both found present in **both** clusters. Reading the
+cache step's `conclusion` instead of the log's `Cache restored from key` is the
+one place it asked the wrong question, and that is repaired in `c4c6861` rather
+than merely noted.
+
+### 4c. Does the check derive its extent from the set it governs?
+
+`DECLARED_CASES = 33` in `perfBudget.proof.mjs` is a literal, deliberately: the
+failure feared is a case **leaving**, and a number computed from the cases that
+ran agrees with any shrink. That is the direct fix for YYYYY-1. The skipped
+bookings are spelt out beside the loop rather than derived from it, *so that a
+block which stops generating cases cannot also stop expecting them*.
+
+`UNANCHORED` is a hand-kept list for the same reason, and ZZZZZ-3 is the one
+shrink direction it still agrees with.
+
+### 5. Executed, or asserted?
+
+**Executed:** the runner image and cache lines, read from 13 shim-job logs
+spanning both clusters; the container grant repair, after which a contained host
+started here for the first time; `check:docs` 11/11; 919 tests; the board at
+`c4c6861`; `check:proofanchors` against the real directory.
+
+**Asserted:** that the six documents-only commits after `c4c6861` are green.
+Local checks passed; no board has seen them.
+
+### 6. Architecture before the feature?
+
+**Yes, twice, and both in their own commits.** `8d8b85e` amended §2 before
+`7e1e563` built invariant 22's capability; `5e6f70f` amended invariant 18(ii)
+before `80afa3d` edited the row that watches it. The second exists because the
+first did not sweep — see the headline.
+
+### 7. Do the documents still match the code?
+
+The headline is one instance. Six more were found and corrected in the range's
+last six commits, all of the same family — a `done` marker over an `Owed`
+sentence, or a deferral whose stated reason had expired:
+
+| row | what was stale |
+|---|---|
+| 285 | `checkWriteTarget`'s wiring, discharged by `documentCommands.test.ts`'s real-surface case |
+| 288 | the message catalogue, and `DialogHost` called wrong to mount for want of one |
+| 291 | the reason, not the clause — *a dialog this application does not have yet* expired with the dialog registry |
+| 303 | the recovery against a really-killed host, discharged by `proof:hostrecovery` |
+| 305 | `OPEN` in the status cell for a number that gates nothing |
+| 331 | §7's camel-cased example ids, corrected in the law on 2026-08-30 |
+
+**291 is the one worth carrying**, because the citation that reached me for it
+was sound-looking and about a different subject: `saveProblem.ts` reports a
+failed **document** save, and 291's clause is a failed **settings** save, which
+`settingsSync.ts` still drops with `void`. A citation that resolves can still be
+about something else, and a row's own subject is what decides.
+
+### The findings
+
+**ZZZZZ-1. The board reader was re-paced, bought no headroom, and its comment
+names a cost that is not the one that materialised.**
+
+`scripts/ci/board.mjs` went from 40 polls × 30s to 14 × 90s. The comment says:
+
+> *Ninety seconds keeps the same twenty-minute ceiling with fourteen polls
+> instead of forty. The cost is up to a minute of extra latency on a verdict
+> nobody is watching in real time.*
+
+Both sentences are true and together they are the defect. **The ceiling was the
+problem**, and keeping it was written down as a virtue. Measured the same day: a
+push queued behind another run exceeded 21 minutes and the reader printed *"NO
+VERDICT … gave up after 14 polls. That is a timeout, not a verdict"*, exit 2.
+The instrument behaved correctly; the bound did not.
+
+The general form: **an optimisation that trades request count for the same wall
+clock has bought no headroom**, and it reads as an improvement because the number
+that shrank is the one somebody was complaining about. The quota was the stated
+motivation and the token had already removed it — 5,000 requests an hour rather
+than 60 — so the change was solving a problem that had been fixed by other means
+that same commit.
+
+Not fixed in the audit commit, which is documents-only. Fix: raise `MAX_POLLS`
+against what is actually being waited for, which is a run **plus whatever it
+queues behind**, and say in the comment what the measured failure was.
+
+**ZZZZZ-2. `containerGrants --check` gained a decision and no case, and
+`affectedProofs` named the proof.**
+
+`cc51679` changed `--check` to exit 1 when a path exists and is ungranted, and
+to stay 0 when the path is absent. That is two decisions — the second is what
+keeps every unprovisioned machine green — and
+`scripts/proofs/containerGrants.proof.mjs` has **no diff in this range**. Its
+roster still declares 9 cases and none of them runs `--check`.
+
+The checklist's own rule applies exactly: *when the property under test is a
+decision, the end state is the wrong observable — assert the call that was or was
+not made.* Here that is the exit code for each of the three `present` states.
+
+**The tooling said so.** `affectedProofs` over this range's changed files names
+`proof:containergrants` in its 39. Nothing consulted it at the moment the fix
+landed, which is the same shape as a printed compensation nobody reads — except
+that this one has to be asked rather than printing itself.
+
+**ZZZZZ-3. The anchor allowlist can report an entry that gained an anchor and
+cannot report one whose file is gone.**
+
+`classifyProofs` builds `known` from `UNANCHORED` and walks the proofs on disk.
+An entry naming a file that no longer exists matches nothing, so it is neither
+`missing` nor `stale` — it simply persists, and the list's own comment is what
+condemns it: *"a list that keeps entries after they are paid stops being a debt
+and becomes furniture."* One axis further along, an entry kept after its file is
+**deleted** is the same furniture, and the `--` line still counts it.
+
+Latent rather than live: all 23 entries name files that exist, checked. The fix
+is one set difference and belongs beside `stale`.
+
+**ZZZZZ-4. The anchor check's ROOT is `scripts/proofs/`, and the class it guards
+lives in 32 `.test.ts` files as well.**
+
+This is the *root* axis — X-1 — recurring in a new instrument, written by the
+seat that had X-1's own table on the page. `check:proofanchors` exists because a
+count derived from the cases that ran agrees with a collection that has shrunk.
+Vitest prints exactly such a count: `919 passed`, computed from what ran, with
+nothing declaring what should have. `grep -rln "createRoster\|\.length !== [0-9]"
+--include=*.test.ts` returns **nothing** across 32 files, and this project's
+strongest controls are in them.
+
+**Named rather than fixed, and the reason is that the remedy is genuinely
+different**: a `.mjs` proof takes a roster because it counts its own cases; a
+vitest file's cases are `it()` blocks that no roster sees. The honest anchor
+there is a pinned total for the suite, which is a different mechanism and a
+different noise profile, and choosing it inside an audit commit would be the
+retrofit this checklist exists to prevent. It becomes a defect the first time a
+`.test.ts` loses a case in silence.
+
+---
+
 ## 2026-09-01 — Stage audit: `a8e3efa..64caaaa` — a withdrawn term took three cases nobody removed
 
 Range: **22 commits, 51 files.** 0 proofs added, 12 modified, 0 removed; 6 source
