@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   CapabilityRegistry,
+  type CommandWriter,
   DocumentNotOpenError,
   DocumentService,
   EngineOpenFailed,
@@ -992,5 +993,138 @@ describe('onDocumentOpened', () => {
     // 2 - 0 = 2 and 2 - 2 = 0 both pass for the wrong reason.
     expect(poisoned).toBe(1);
     expect(service.size - poisoned).toBe(engine.sessioned);
+  });
+});
+
+/**
+ * Invariant 22's capability: a handle is a cache, droppable and rebuildable
+ * between commands. ARCHITECTURE §2 leaves *which moments* open and requires
+ * only that the operation exist — so these cases are about the operation, and
+ * nothing here schedules it.
+ */
+describe('recycling drops the handle and builds it again, keeping the record', () => {
+  /**
+   * The log's writer capability, cast — the same escape and the same reason
+   * `documentService.test.ts` records for it: the token is never read, its
+   * whole job being unobtainable outside `commandBus.ts` at compile time, and
+   * reaching the log through a real `CommandBus` would need a real MuPDF
+   * session to exercise a refusal that never touches the engine.
+   */
+  const COMMAND_WRITER_FOR_TEST = 'command-writer' as CommandWriter;
+  let registry: CapabilityRegistry;
+
+  /**
+   * A service with a recycle surface that records what it was asked to do.
+   *
+   * The surface counts **releases and rebuilds separately**, because the order
+   * is the operation: rebuilding first and releasing after would hold two
+   * sessions at once, which is more memory than before recycling and the
+   * opposite of what a caller asked for.
+   */
+  async function serviceWithRecycling(): Promise<{
+    readonly service: DocumentService;
+    readonly docId: DocId;
+    readonly order: string[];
+  }> {
+    registry = new CapabilityRegistry();
+    const order: string[] = [];
+    const engine = new EngineSessions();
+    const service = new DocumentService(registry, {
+      documentBytesCeiling: AMPLE_CEILING,
+      recycleHandle: async (id) => {
+        await engine.recycle(id, (forId) => {
+          order.push(`rebuild:${forId.slice(0, 4)}`);
+          return Promise.resolve({});
+        });
+      },
+    });
+    engine.hold(asDocId('unused'), {});
+    const outcome = await service.open(registry.mint(file));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    engine.hold(outcome.docId, {});
+    // The release is what a real graph registers after the session opens.
+    await engine.holdRelease(outcome.docId, () => {
+      order.push(`release:${outcome.docId.slice(0, 4)}`);
+      return Promise.resolve();
+    });
+    return { service, docId: outcome.docId, order };
+  }
+
+  it('releases BEFORE it rebuilds, so the interval is one where the memory is back', async () => {
+    const { service, docId, order } = await serviceWithRecycling();
+
+    await expect(service.recycle(docId)).resolves.toStrictEqual({ kind: 'recycled' });
+
+    // THE ORDER IS THE CLAIM, not that both happened. A run that rebuilt first
+    // holds two sessions and satisfies every "did it recycle" assertion.
+    expect(order).toStrictEqual([`release:${docId.slice(0, 4)}`, `rebuild:${docId.slice(0, 4)}`]);
+  });
+
+  it('KEEPS the record, which is the whole difference from closing', async () => {
+    const { service, docId } = await serviceWithRecycling();
+    const before = service.size;
+
+    await service.recycle(docId);
+
+    // A close would have removed it. `size` is the open-document count, so this
+    // separates recycling from the teardown it is otherwise shaped like.
+    expect(service.size).toBe(before);
+    expect(service.size).toBe(1);
+  });
+
+  /**
+   * INVARIANT 22'S PRECONDITION, ASSERTED RATHER THAN ASSUMED, and asserting it
+   * is what found the gap: the invariant permits dropping a handle *because* no
+   * mutation exists only on it, and §2 says *"reopening replays the log"*.
+   *
+   * Nothing replays the log. `openEngineSession` writes the canonical image and
+   * opens a session on it, and `document.viewModel` reads geometry from the
+   * SESSION — so a document with applied commands would come back visibly older
+   * than its log says it is.
+   *
+   * The refusal is what keeps the capability honest until replay lands, and this
+   * case goes red on that day, which is where somebody will be reading.
+   */
+  it('REFUSES a document whose log holds commands, because nothing replays it', async () => {
+    const { service, docId, order } = await serviceWithRecycling();
+
+    await service.run(docId, (context) => {
+      context.commandLog(COMMAND_WRITER_FOR_TEST).record({
+        kind: 'invertible',
+        command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+        inverse: [{ page: 0, prior: { present: false } }],
+      });
+      return Promise.resolve(undefined);
+    });
+
+    const outcome = await service.recycle(docId);
+
+    expect(outcome.kind).toBe('refused');
+    expect(outcome.kind === 'refused' && outcome.detail).toMatch(/replays the command log/u);
+    // AND IT DID NOT TOUCH THE HANDLE. A refusal reported after releasing would
+    // leave the document worse off than not asking, and the outcome alone
+    // cannot say which happened.
+    expect(order).toStrictEqual([]);
+  });
+
+  it('says so when there is no recycle surface, rather than reporting success', async () => {
+    const plain = new CapabilityRegistry();
+    const service = new DocumentService(plain, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await service.open(plain.mint(file));
+    if (outcome.kind !== 'opened') throw new Error('fixture did not open');
+
+    const recycled = await service.recycle(outcome.docId);
+
+    // `unavailable`, not `recycled`. A no-op default would make *the handle was
+    // dropped* and *nothing happened* one observation, which is the failure the
+    // whole capability exists to make measurable.
+    expect(recycled.kind).toBe('unavailable');
+  });
+
+  it('refuses a document that is not open, rather than resurrecting one', async () => {
+    const { service, docId } = await serviceWithRecycling();
+    await service.close(docId);
+
+    await expect(service.recycle(docId)).rejects.toThrow(DocumentNotOpenError);
   });
 });

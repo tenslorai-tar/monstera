@@ -694,6 +694,61 @@ export class EngineSessions implements EngineSessionSource {
    * A rebuild is the only way here, which is why nothing distinguishes it from
    * a first registration: the entry either holds a release or it does not.
    */
+  /**
+   * Drops one document's sessions and opens them again — invariant 22's
+   * *"dropped and rebuilt at any point between commands"*, from the side that
+   * owns the sessions.
+   *
+   * ## Why this is not `releaseOnClose` followed by `reopen`
+   *
+   * It nearly is, and the difference is the entry. `releaseOnClose` **deletes**
+   * it, because a closing document must stop being findable before anything is
+   * awaited. A recycled document is still open, so its entry stays — deleting
+   * it would make the failure count and the poisoned state vanish along with
+   * the session, and a document that had failed once would come back looking
+   * fresh.
+   *
+   * ## The release runs BEFORE the reopen, and that ordering is the operation
+   *
+   * The whole point is the interval in which the memory is back. Reopening
+   * first and releasing after would hold two sessions at once — briefly more
+   * than before recycling, which is the opposite of what a caller asked for.
+   *
+   * A failure to release is swallowed for `releaseOnClose`'s reason and the
+   * reopen still happens: the document must end this call with a session, and
+   * a pair left on disk is what the startup sweep is for. A failure to
+   * **reopen** is not swallowed — that leaves the document sessionless, which
+   * the caller has to know about.
+   *
+   * @param docId the open document
+   * @param reopen builds its sessions again, inside its lane
+   */
+  async recycle(docId: DocId, reopen: (docId: DocId) => Promise<DocumentSessions>): Promise<void> {
+    const entry = this.#entries.get(docId);
+    if (entry === undefined) return;
+
+    const release = entry.release;
+    // CLEARED BEFORE THE AWAIT, like `holdRelease` does and for the same
+    // reason: an entry still holding the old release across it is one a close
+    // arriving meanwhile would run twice.
+    entry.release = null;
+    // `{}` and not a deleted entry: the same state a just-opened document is in
+    // before `create` runs, so the interval is one this class already has a
+    // meaning for. A command arriving inside it finds no writer session, which
+    // is `MissingSessionError` — and cannot happen, because the caller holds
+    // the document's lane for the whole of this.
+    entry.sessions = {};
+    if (release !== null) {
+      try {
+        await release();
+      } catch {
+        /* the sweep at next launch is the backstop, and it is a real one */
+      }
+    }
+
+    entry.sessions = await reopen(docId);
+  }
+
   async holdRelease(docId: DocId, release: () => Promise<void>): Promise<void> {
     const entry = this.#entries.get(docId);
     // NOT AN ERROR. The document closed while its session was opening, which is

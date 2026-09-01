@@ -225,9 +225,30 @@ export function createShellDependencies(
   // remember to call. Finding FFFF-1.
   const engine = new EngineSessions();
 
+  // DECLARED HERE AND ASSIGNED BELOW, because the two halves are circular by
+  // nature: recycling needs the session factory, and the factory needs the
+  // service it opens documents from. A `let` closed over is the smaller of the
+  // two evils — the alternative is a service that learns how to build a session,
+  // which is the boundary invariant 20 exists to keep.
+  let rebuildSessions: ReturnType<typeof engineSessionOpener> | null = null;
+
   const documents = new DocumentService(capabilities, {
     documentBytesCeiling: MAIN_DOCUMENT_BYTES_CEILING,
     teardown: engine.releaseOnClose,
+    // INVARIANT 22'S CAPABILITY, wired so it exists rather than so it is
+    // called. §2 leaves the moment open and requires only that the operation be
+    // offered and not wired solely to a pressure trigger; nothing in this graph
+    // calls it, and that is the decision rather than an omission.
+    recycleHandle: async (docId) => {
+      if (rebuildSessions === null) {
+        throw new Error(
+          'recycle ran before the session factory existed. The service is built first so the ' +
+            'factory can open documents from it, so this is a construction-order defect rather ' +
+            'than a state a user can reach.',
+        );
+      }
+      await engine.recycle(docId, rebuildSessions.rebuildSessions);
+    },
   });
 
   // BUILT BEFORE THE BUS, because the bus routes `mupdf` to a writer this
@@ -240,6 +261,12 @@ export function createShellDependencies(
   const failures = log?.failures ?? reportShellFailure;
 
   const engineHost = engineSessionOpener(enginePlatform, documents, engine, failures);
+  // THE BACK-REFERENCE CLOSED, one line after the only thing that could close
+  // it. `recycleHandle` above was written against this because `create` opens
+  // documents from `documents`, so the service exists first and the factory can
+  // only travel back. One factory, so recycling holds no second opinion about
+  // how a session is built (B3a).
+  rebuildSessions = engineHost;
 
   // NO LONGER EMPTY. `WriterRegistry` stays partial because the seam declares
   // four writers of record and one has an adapter; a command routed to an
@@ -387,6 +414,15 @@ function engineSessionOpener(
   readonly geometry: PageGeometryReader;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
+  /**
+   * Builds one document's sessions — the same call `openedDocument` and the
+   * death path make, returned so recycling uses it rather than a second one.
+   *
+   * Handed back rather than passed in, because `create` opens documents from
+   * the `DocumentService` this function receives: the service exists first, so
+   * the factory can only travel this way.
+   */
+  readonly rebuildSessions: (docId: DocId) => Promise<DocumentSessions>;
 } {
   /** The live host, or the attempt to build one. Cleared when it ends. */
   let host: Promise<EngineHostConnection> | null = null;
@@ -721,7 +757,7 @@ function engineSessionOpener(
     connection?.close();
   };
 
-  return { openedDocument, writers, geometry: readGeometry, closeHost };
+  return { openedDocument, writers, geometry: readGeometry, closeHost, rebuildSessions: create };
 }
 
 /**

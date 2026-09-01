@@ -702,6 +702,24 @@ export type WriteTargetVerdict =
  */
 export type DocumentTeardown = (docId: DocId) => Promise<void>;
 
+/**
+ * What {@link DocumentService.recycle} did, as a value rather than a throw.
+ *
+ * Three states and none of them is an error: recycling is an operation a caller
+ * offers a moment to, and *"not now"* is an ordinary answer. A throw would make
+ * the caller — whose whole job is picking harmless moments — handle exceptions
+ * for the harmless case.
+ *
+ * `unavailable` and `refused` are separate for the reason every *could not look*
+ * in this repository is separate from *looked and found nothing*: one is a graph
+ * with no session supervisor in it, the other is a document that would lose work.
+ * A caller that retried the second and not the first needs to tell them apart.
+ */
+export type RecycleOutcome =
+  | { readonly kind: 'recycled' }
+  | { readonly kind: 'refused'; readonly detail: string }
+  | { readonly kind: 'unavailable'; readonly detail: string };
+
 const noTeardown: DocumentTeardown = () => Promise.resolve();
 
 /**
@@ -864,6 +882,21 @@ export interface DocumentServiceOptions {
    */
   readonly documentBytesCeiling: number;
   readonly teardown?: DocumentTeardown;
+  /**
+   * Drops what a document holds outside this index and builds it again, with
+   * the record kept (invariant 22, ARCHITECTURE §2).
+   *
+   * Same shape as {@link teardown} and a different obligation: teardown ends a
+   * document, this one ends only its **cache**. Supplied by the session
+   * supervisor, because releasing and re-creating an engine session needs a host
+   * and this package may not name one.
+   *
+   * Absent means recycling is unavailable and {@link DocumentService.recycle}
+   * says so — not that it silently succeeds. A no-op default would make *the
+   * handle was dropped* and *nothing happened* the same observation, which is
+   * the whole failure this capability is supposed to make measurable.
+   */
+  readonly recycleHandle?: DocumentTeardown;
   readonly randomBytesSource?: TokenBytesSource;
   readonly readIdentity?: IdentityReader;
   readonly readBytes?: BytesReader;
@@ -875,6 +908,7 @@ export class DocumentService {
   readonly #capabilities: CapabilityRegistry;
   readonly #randomBytes: TokenBytesSource;
   readonly #teardown: DocumentTeardown;
+  readonly #recycleHandle: DocumentTeardown | null;
   readonly #readIdentity: IdentityReader;
   readonly #readBytes: BytesReader;
   readonly #writeBytes: BytesWriter;
@@ -934,6 +968,7 @@ export class DocumentService {
     this.#capabilities = capabilities;
     this.#documentBytesCeiling = options.documentBytesCeiling;
     this.#teardown = options.teardown ?? noTeardown;
+    this.#recycleHandle = options.recycleHandle ?? null;
     this.#randomBytes = options.randomBytesSource ?? cryptoBytes;
     this.#readIdentity = options.readIdentity ?? readFileIdentity;
     this.#readBytes = options.readBytes ?? readFileBytes;
@@ -1187,6 +1222,86 @@ export class DocumentService {
       log: new CommandLog(),
     });
     return { kind: 'opened', docId, version, byteLength: bytes.byteLength };
+  }
+
+  /**
+   * Drops this document's engine handle and builds it again, keeping the record
+   * (invariant 22, ARCHITECTURE §2).
+   *
+   * ## The operation, not the moment
+   *
+   * §2 leaves *"which moments those are"* open and requires only that **the
+   * capability exists and is not wired solely to a pressure trigger**. So this
+   * takes no schedule and has no caller inside this package: it is offered.
+   *
+   * A ceiling-keyed caller was considered and refused. The checkpoint budget
+   * bounds what **main** holds — canonical bytes plus checkpoints — and a
+   * handle's memory is in the host under the job's own limit, so recycling
+   * relieves neither of that budget's terms. Wiring it there would also be the
+   * one wiring §2 names and rejects.
+   *
+   * ## It RUNS IN THE LANE, which is what makes it safe rather than lucky
+   *
+   * §7's per-document lane already serialises everything that touches a
+   * document. Dropping a handle outside it would race a command mid-flight —
+   * the session being ended underneath work that already resolved its
+   * reference. Inside, the drop sits between commands by construction, which is
+   * exactly the *"at any point between commands"* invariant 22 asks for.
+   *
+   * ## THE REFUSAL IS THE INTERESTING PART, and it is invariant 22's own
+   * precondition asserted rather than assumed
+   *
+   * Invariant 22 is conditional: a handle may be dropped **because** *"no
+   * mutation may exist only on the handle"* — the log holds the intent and
+   * §2 says *"reopening replays the log"*.
+   *
+   * **Measured 2026-09-01: nothing replays the log.** `openEngineSession`
+   * writes the canonical image and opens a session on it; there is no replay
+   * anywhere in this repository, and `document.viewModel` reads page geometry
+   * from the **session**. So a document with applied commands that have not been
+   * saved would come back visibly older than the log says it is, and the service
+   * and its session would disagree about the version.
+   *
+   * So this refuses a document whose log holds entries, and names the missing
+   * replay in the refusal. That is fail-closed on a precondition the invariant
+   * states and the tree does not yet meet — not a limitation of recycling. The
+   * refusal disappears the day replay lands, and the case that pins it goes red
+   * then, which is where somebody will be reading.
+   *
+   * @throws DocumentNotOpenError when the document is closed or was never open.
+   */
+  async recycle(docId: DocId): Promise<RecycleOutcome> {
+    if (this.#recycleHandle === null) {
+      return {
+        kind: 'unavailable',
+        detail:
+          'No recycle surface was supplied to this service, so there is no handle to drop. ' +
+          'Recycling releases and rebuilds an engine session, which needs a host this package ' +
+          'may not name; the session supervisor supplies it.',
+      };
+    }
+
+    // THE LANE, and `run` is get-or-miss on the record — so a document closed
+    // between the caller's decision and this call is refused rather than
+    // resurrected, which is the same property close and reopen already have.
+    return this.run(docId, async (context) => {
+      if (context.log.entries.length > 0 || context.log.redoDepth > 0) {
+        return {
+          kind: 'refused',
+          detail:
+            `This document holds ${String(context.log.entries.length)} applied and ` +
+            `${String(context.log.redoDepth)} redoable command(s), and nothing replays the ` +
+            `command log onto a rebuilt session. Invariant 22 permits dropping a handle ` +
+            `because no mutation exists only on it; that is true of the LOG and not yet of ` +
+            `the rebuild, so recycling here would return a session older than the document.`,
+        } as const;
+      }
+
+      // `#recycleHandle` is re-read rather than captured above so the narrowing
+      // is the compiler's rather than a comment's.
+      await (this.#recycleHandle ?? noTeardown)(docId);
+      return { kind: 'recycled' } as const;
+    }).then((versioned) => versioned.value);
   }
 
   /**
