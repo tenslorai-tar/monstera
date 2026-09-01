@@ -927,11 +927,8 @@ and the structure disappears.
 
 ### What is owed before the §9.17 amendment goes to the owner
 
-1. **The discriminator**, named. The runner *image version* is the leading
-   candidate — the pool spans two images and the gap would then be a property of
-   the image rather than of this code — and it is readable from the job log's
-   `Runner Image` line, which is now fetchable. It is a candidate and not the
-   answer.
+1. **The discriminator**, named. ~~The runner *image version* is the leading
+   candidate.~~ **Falsified the same day — see below.**
 2. **The same instrument on the build machine.** ~~This cannot be taken on the
    current one: a contained host does not start there (`Invalid file descriptor
    to ICU data`).~~ **Withdrawn within the hour — see the correction below. It
@@ -977,6 +974,37 @@ second sweep for `R` — are untouched, and the number still waits on the first.
 would have expired. The check that names it — `containerGrants.mjs --check` —
 printed `NOT granted` the whole time and exited **0**, which is why it was never
 consulted as an explanation. It exits non-zero now.
+
+### Correction, 2026-09-01 — both candidates for the discriminator are falsified
+
+Read from the shim job's own logs across the last 13 CI runs, which span both
+clusters. Now readable, because the seat's token carries Actions scope.
+
+| | high (90.00, 90.03) | low (87.19 – 87.37) |
+|---|---|---|
+| runner image | `windows-2025-vs2026` | `windows-2025-vs2026` |
+| image version | `20260819.586` | `20260819.586` |
+| MuPDF cache | `Cache restored from key` | `Cache restored from key` |
+
+**The runner image is identical**, so the pool-spans-two-images explanation is
+gone. It was named above as *a candidate and not the answer*, and this is what
+that phrasing is for.
+
+**The cache is genuinely restored in both**, which also repairs how that was
+checked the first time: the earlier sweep read the cache step's *conclusion*, and
+a `success` there means the action completed rather than that anything was
+restored. Reading the log's `Cache restored from key` line is the question that
+was actually meant — same answer, now for the right reason.
+
+**One observation, offered as an observation.** The high readings connect
+**faster** — 190.7 ms and 214.8 ms against 222–296 ms for every low one — so
+whatever separates them makes the host both quicker to answer and larger in
+memory. A less contended machine fits that and so do other things; it is a
+correlation on thirteen points and is written here so the next reader has it,
+not as the answer.
+
+**Both eliminations are progress and neither is a discriminator.** The number
+still waits.
 
 Until the discriminator is named, a number derived from these readings is a
 number derived from readings whose conditions are in dispute — which is this
