@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,6 +18,9 @@ import {
   outcomeForErrorCode,
   probeCode,
   probeContainment,
+  PROBE_TIMED_OUT,
+  outcomeForConnectErrorCode,
+  probeLoopback,
   probePath,
 } from './containment.js';
 import { engineChannels } from './engineChannels.js';
@@ -41,13 +45,24 @@ function request(overrides: Partial<ContainmentProbeRequest> = {}): ContainmentP
   return {
     positive: { path: 'C:\\install\\koffi.node', origin: 'install-root' },
     negative: { path: 'C:\\elsewhere\\secret.txt', origin: 'app-created', readableBytes: 4096 },
+    loopback: { port: 51_515, mainReadBytes: 23 },
     ...overrides,
   };
 }
 
-const report = (positive: ProbeOutcome, negative: ProbeOutcome): ContainmentReport => ({
+/**
+ * The loopback outcome defaults to `refused` — the contained answer — so every
+ * case written before (c) existed keeps asking exactly what it asked, and the
+ * cases below that vary it are the only ones making a claim about it.
+ */
+const report = (
+  positive: ProbeOutcome,
+  negative: ProbeOutcome,
+  loopback: ProbeOutcome = REFUSED,
+): ContainmentReport => ({
   positive,
   negative,
+  loopback,
 });
 
 describe('classifyContainment', () => {
@@ -110,6 +125,55 @@ describe('classifyContainment', () => {
     expect(verdict.kind).toBe('grant-did-not-take');
   });
 
+  /**
+   * (c), ADR-0023 Decision 15. Every case here carries a positive that READ and
+   * a filesystem negative that was REFUSED — an otherwise clean `contained` —
+   * so the loopback side is the only thing separating the verdicts, and a
+   * classifier that never looked at it answers `contained` for all of them.
+   */
+  it('reports network-reachable when the host read bytes off the loopback listener', () => {
+    const verdict = classifyContainment(request(), report(READ, REFUSED, { kind: 'read', bytes: 23 }));
+    expect(verdict.kind).toBe('network-reachable');
+    expect(verdict.kind === 'network-reachable' && verdict.detail).toMatch(/send a document/u);
+  });
+
+  /**
+   * The control that makes the refusal mean anything. Same fixture as the
+   * `contained` case in every other respect: only main's own reading is
+   * missing, and a classifier that trusted the host's refusal answers
+   * `contained` here.
+   */
+  it('refuses to conclude when main never read from the loopback port', () => {
+    const verdict = classifyContainment(
+      request({ loopback: { port: 51_515, mainReadBytes: 0 } }),
+      report(READ, REFUSED),
+    );
+    expect(verdict.kind).toBe('unreadable');
+    expect(verdict.kind === 'unreadable' && verdict.detail).toMatch(/answers nobody/u);
+  });
+
+  /**
+   * `ECONNREFUSED` after main read from the port is two readings of different
+   * worlds — the listener main used is gone — and folding it into the host's
+   * refusal would report containment for a probe that measured a dead endpoint.
+   */
+  it('refuses to conclude when nothing was listening for the host but something was for main', () => {
+    const verdict = classifyContainment(
+      request(),
+      report(READ, REFUSED, { kind: 'absent', code: 'ECONNREFUSED' }),
+    );
+    expect(verdict.kind).toBe('unreadable');
+    expect(verdict.kind === 'unreadable' && verdict.detail).toMatch(/different worlds/u);
+  });
+
+  it('refuses to conclude when our own bound fired instead of the stack answering', () => {
+    const verdict = classifyContainment(
+      request(),
+      report(READ, REFUSED, { kind: 'error', code: PROBE_TIMED_OUT }),
+    );
+    expect(verdict.kind).toBe('unreadable');
+  });
+
   it('refuses to conclude when the positive path was absent', () => {
     const verdict = classifyContainment(
       request(),
@@ -124,7 +188,7 @@ describe('classifyContainment', () => {
    * drifts towards, so it is checked as an exhaustive property rather than only
    * as a happy path.
    */
-  it('produces contained for exactly one combination out of every pair of outcomes', () => {
+  it('produces contained for exactly one combination out of every triple of outcomes', () => {
     const outcomes: ProbeOutcome[] = [
       READ,
       REFUSED,
@@ -132,13 +196,55 @@ describe('classifyContainment', () => {
       { kind: 'error', code: 'EMFILE' },
     ];
     const contained = outcomes.flatMap((positive) =>
-      outcomes
-        .filter(
-          (negative) => classifyContainment(request(), report(positive, negative)).kind === 'contained',
-        )
-        .map((negative) => `${positive.kind}/${negative.kind}`),
+      outcomes.flatMap((negative) =>
+        outcomes
+          .filter(
+            (loopback) =>
+              classifyContainment(request(), report(positive, negative, loopback)).kind ===
+              'contained',
+          )
+          .map((loopback) => `${positive.kind}/${negative.kind}/${loopback.kind}`),
+      ),
     );
-    expect(contained).toEqual(['read/refused']);
+    expect(contained).toEqual(['read/refused/refused']);
+    // The count is stated so a shrinking outcome set cannot make the assertion
+    // above pass by never reaching the other 63.
+    expect(outcomes.length ** 3).toBe(64);
+  });
+});
+
+describe('outcomeForConnectErrorCode', () => {
+  it.each([
+    ['ETIMEDOUT', 'refused'],
+    ['EACCES', 'refused'],
+    ['EPERM', 'refused'],
+    ['ECONNREFUSED', 'absent'],
+    ['ENETUNREACH', 'error'],
+    ['EHOSTUNREACH', 'error'],
+  ])('maps %s to %s', (code, kind) => {
+    expect(outcomeForConnectErrorCode(code).kind).toBe(kind);
+  });
+
+  /**
+   * The two rules are separate authorities, not a copy, and this is what says
+   * so: a filesystem code means nothing to a connect and vice versa. If one
+   * were quietly delegating to the other, these would agree.
+   */
+  it('disagrees with the filesystem rule on the codes that belong to one domain each', () => {
+    expect(outcomeForConnectErrorCode('ECONNREFUSED').kind).toBe('absent');
+    expect(outcomeForErrorCode('ECONNREFUSED').kind).toBe('error');
+    expect(outcomeForErrorCode('ENOENT').kind).toBe('absent');
+    expect(outcomeForConnectErrorCode('ENOENT').kind).toBe('error');
+  });
+
+  /**
+   * The direction that matters. An unrecognised code must never become the
+   * answer a containment probe hopes for.
+   */
+  it('never folds an unrecognised code into refused', () => {
+    for (const code of ['EMFILE', 'EPIPE', 'UNKNOWN', 'ENOTSOCK', PROBE_TIMED_OUT]) {
+      expect(outcomeForConnectErrorCode(code).kind).not.toBe('refused');
+    }
   });
 });
 
@@ -204,13 +310,87 @@ describe('probePath against a real filesystem', () => {
     expect(outcome.kind).toBe('absent');
   });
 
-  it('runs both probes and reports both, without deciding anything', async () => {
-    const observed = await probeContainment({
-      positive: present,
-      negative: join(directory, 'nope.bin'),
+  it('runs all three probes and reports all three, without deciding anything', async () => {
+    const listener = createServer((socket) => {
+      socket.end('hello');
     });
-    expect(observed.positive.kind).toBe('read');
-    expect(observed.negative.kind).toBe('absent');
+    await new Promise<void>((resolve) => {
+      listener.listen(0, '127.0.0.1', resolve);
+    });
+    const address = listener.address();
+    const port = address !== null && typeof address !== 'string' ? address.port : 0;
+
+    try {
+      const observed = await probeContainment({
+        positive: present,
+        negative: join(directory, 'nope.bin'),
+        loopbackPort: port,
+      });
+      expect(observed.positive.kind).toBe('read');
+      expect(observed.negative.kind).toBe('absent');
+      expect(observed.loopback).toEqual({ kind: 'read', bytes: 5 });
+    } finally {
+      listener.close();
+    }
+  });
+
+  /**
+   * `probeLoopback`'s resolution test (audit item 4a), against the two states
+   * that decide a verdict: an endpoint that answers, and one that does not.
+   *
+   * **Reaching a real listener is the load-bearing half.** A probe that could
+   * never report `read` would answer `refused` on an uncontained host and hand
+   * back `contained` — the reassuring verdict, from an instrument that cannot
+   * see. The closed-port half then separates that from the absent case.
+   */
+  it('reports a listening loopback port as read and a closed one as absent', async () => {
+    const listener = createServer((socket) => {
+      socket.end('hello');
+    });
+    await new Promise<void>((resolve) => {
+      listener.listen(0, '127.0.0.1', resolve);
+    });
+    const address = listener.address();
+    const port = address !== null && typeof address !== 'string' ? address.port : 0;
+
+    const open = await probeLoopback(port);
+    // Closed by taking the SAME port down, so the two readings differ in one
+    // thing. A different port number would vary two.
+    await new Promise<void>((resolve) => {
+      listener.close(() => {
+        resolve();
+      });
+    });
+    const closed = await probeLoopback(port);
+
+    expect(open).toEqual({ kind: 'read', bytes: 5 });
+    expect(closed.kind).toBe('absent');
+    expect(closed.kind === 'absent' && closed.code).toBe('ECONNREFUSED');
+  });
+
+  /**
+   * A socket that connects and is closed with nothing on it has not shown that
+   * bytes can cross, so it must not read as `read`. This is the branch a probe
+   * keyed on the `connect` event would get wrong, and it would get it wrong in
+   * the direction that reports a contained host as reachable.
+   */
+  it('does not call an empty connection a read', async () => {
+    const listener = createServer((socket) => {
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => {
+      listener.listen(0, '127.0.0.1', resolve);
+    });
+    const address = listener.address();
+    const port = address !== null && typeof address !== 'string' ? address.port : 0;
+
+    try {
+      const outcome = await probeLoopback(port);
+      expect(outcome.kind).not.toBe('read');
+      expect(outcome.kind).toBe('error');
+    } finally {
+      listener.close();
+    }
   });
 });
 
@@ -244,7 +424,9 @@ describe('a probe code the host composes is one the channel accepts', () => {
 
   it.each(ADVERSARIAL)('accepts a report built from $label', ({ thrown }) => {
     const outcome = outcomeForErrorCode(probeCode(thrown));
-    expect(RESULT.safeParse({ positive: outcome, negative: outcome }).success).toBe(true);
+    expect(
+      RESULT.safeParse({ positive: outcome, negative: outcome, loopback: outcome }).success,
+    ).toBe(true);
   });
 
   /**
@@ -352,14 +534,47 @@ describe('the engine host answers a containment probe', () => {
     return { asked, call: wrapped['engine/probe-containment'] };
   }
 
-  it('probes the two paths it was sent, and no others', async () => {
+  it('probes the two paths and the one port it was sent, and no others', async () => {
     const { asked, call } = probeHandler(report(READ, REFUSED));
 
-    await call({ positive: 'C:\\install\\koffi.node', negative: 'C:\\elsewhere\\secret.txt' });
+    await call({
+      positive: 'C:\\install\\koffi.node',
+      negative: 'C:\\elsewhere\\secret.txt',
+      loopbackPort: 51_515,
+    });
 
     expect(asked).toEqual([
-      { positive: 'C:\\install\\koffi.node', negative: 'C:\\elsewhere\\secret.txt' },
+      {
+        positive: 'C:\\install\\koffi.node',
+        negative: 'C:\\elsewhere\\secret.txt',
+        loopbackPort: 51_515,
+      },
     ]);
+  });
+
+  /**
+   * `mainReadBytes` is main's evidence, and the type keeps it out of the
+   * request the host receives. This asserts the wire agrees: a schema that
+   * tolerated the extra key would let a future caller hand the measuring half
+   * the very thing its report is judged against.
+   */
+  it('refuses a request carrying the evidence main judges the report against', () => {
+    const PAYLOAD = engineChannels['engine/probe-containment'].params;
+    expect(
+      PAYLOAD.safeParse({
+        positive: 'C:\\install\\koffi.node',
+        negative: 'C:\\elsewhere\\secret.txt',
+        loopbackPort: 51_515,
+      }).success,
+    ).toBe(true);
+    expect(
+      PAYLOAD.safeParse({
+        positive: 'C:\\install\\koffi.node',
+        negative: 'C:\\elsewhere\\secret.txt',
+        loopbackPort: 51_515,
+        mainReadBytes: 23,
+      }).success,
+    ).toBe(false);
   });
 
   it('reports what the probe observed, unchanged and unjudged', async () => {
@@ -372,7 +587,11 @@ describe('the engine host answers a containment probe', () => {
     const { call } = probeHandler(observed);
 
     await expect(
-      call({ positive: 'C:\\install\\koffi.node', negative: 'C:\\elsewhere\\secret.txt' }),
+      call({
+        positive: 'C:\\install\\koffi.node',
+        negative: 'C:\\elsewhere\\secret.txt',
+        loopbackPort: 51_515,
+      }),
     ).resolves.toEqual({ ok: true, value: observed });
   });
 });

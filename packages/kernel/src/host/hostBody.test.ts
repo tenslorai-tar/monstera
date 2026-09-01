@@ -116,6 +116,7 @@ function start(stream: HostByteStream) {
         Promise.resolve({
           positive: { kind: 'read', bytes: 64 },
           negative: { kind: 'refused', code: 'EACCES' },
+          loopback: { kind: 'refused', code: 'ETIMEDOUT' },
         }),
       geometry: () => {
         throw new Error('no case here reads a page tree');
@@ -158,6 +159,7 @@ describe('the engine host body', () => {
       request('c1', 'engine/probe-containment', {
         positive: 'C:\\install\\koffi.node',
         negative: 'C:\\elsewhere\\secret.txt',
+        loopbackPort: 51_515,
       }),
     );
     await stream.whenSent(1);
@@ -172,6 +174,7 @@ describe('the engine host body', () => {
         value: {
           positive: { kind: 'read', bytes: 64 },
           negative: { kind: 'refused', code: 'EACCES' },
+          loopback: { kind: 'refused', code: 'ETIMEDOUT' },
         },
       },
     });

@@ -136,6 +136,10 @@ const CONTAINED = {
     // UPPER CASE, because `PROBE_CODE_PATTERN` is an allowlist — the host is
     // hostile by invariant 25 and this string is one it supplies.
     negative: { kind: 'refused', code: 'EACCES' },
+    // Invariant 25(c). `ETIMEDOUT` is what the container produced in
+    // `lowboxSpike.mjs`'s contained cell, so the fixture is the observed answer
+    // rather than a plausible one.
+    loopback: { kind: 'refused', code: 'ETIMEDOUT' },
   },
 };
 
@@ -361,6 +365,7 @@ describe('the composition root, with an engine host platform', () => {
             value: {
               positive: { kind: 'read', bytes: 12 },
               negative: { kind: 'read', bytes: 44 },
+              loopback: { kind: 'refused', code: 'ETIMEDOUT' },
             },
           }
         : channel === 'engine/open'
@@ -400,6 +405,60 @@ describe('the composition root, with an engine host platform', () => {
     // verdict branch produces is a host created, probed, and then terminated.
     // The happy path's control below asserts the other side, because an
     // assertion that a terminate happened is worthless if one always does.
+    expect(spy.harness.calls).toContain('host.terminate');
+  });
+
+  /**
+   * Invariant 25(c), ADR-0023 Decision 15, and the one difference from the
+   * `contained` case above is one probe outcome — the loopback one.
+   *
+   * **The `contained` cases in this file are what prove main took its own
+   * reading**, and that is worth saying because nothing here asserts
+   * `mainReadBytes` directly. `loopbackControl` binds a real listener and
+   * connects to it; if either half failed it would carry zero, and
+   * `classifyContainment` answers `unreadable` for a zero — so every green
+   * `contained` in this file is a run in which main's control genuinely
+   * succeeded. A broken listener cannot produce the reassuring verdict here.
+   */
+  it('CONTROL: a host that reached the loopback listener is CLOSED, and no session is made', async () => {
+    const spy = platformAnswering((channel) =>
+      channel === 'engine/probe-containment'
+        ? {
+            ok: true,
+            value: {
+              positive: { kind: 'read', bytes: 12 },
+              negative: { kind: 'refused', code: 'EACCES' },
+              loopback: { kind: 'read', bytes: 23 },
+            },
+          }
+        : channel === 'engine/open'
+          ? SESSION
+          : null,
+    );
+    const { handlers } = createShellDependencies(
+      appInfo,
+      () => Promise.resolve(aDocument('networked.pdf')),
+      createEphemeralSettings(),
+      spy.platform,
+    );
+
+    const opened = await handlers['document.open']({});
+    if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
+
+    const executed = await handlers['document.execute']({
+      docId: opened.value.docId,
+      command: { kind: 'rotatePages', pages: [1], quarterTurns: 1 },
+    });
+
+    expect(executed.ok).toBe(false);
+    if (executed.ok) throw new Error('the command should not have succeeded');
+    expect(executed.error.code).toBe('document-poisoned');
+
+    // THE DECISION, not the tidy state both arrive at: created, probed, never
+    // opened, then terminated.
+    expect(spy.harness.calls).toContain('host.createSuspended');
+    expect(spy.harness.calls).toContain('peer.request:engine/probe-containment');
+    expect(spy.harness.calls).not.toContain('peer.request:engine/open');
     expect(spy.harness.calls).toContain('host.terminate');
   });
 

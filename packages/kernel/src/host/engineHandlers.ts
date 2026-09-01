@@ -144,9 +144,9 @@ export function createEngineHandlers(
     // `internal`, whose diagnostic is withheld, and main's verdict for "the
     // call broke" and "the probe measured nothing" would become one output.
     // That is the exact collapse `unreadable` exists to prevent.
-    'engine/probe-containment': async ({ positive, negative }) => ({
+    'engine/probe-containment': async ({ positive, negative, loopbackPort }) => ({
       ok: true,
-      value: await probe({ positive, negative }),
+      value: await probe({ positive, negative, loopbackPort }),
     }),
 
     'engine/open': async ({ snapshotDirectory, snapshotName, outputDirectory }) => {

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { readFile, rm } from 'node:fs/promises';
+import { type Server, connect, createServer } from 'node:net';
 import { join } from 'node:path';
 
 import { ENGINE_HOST_MAX_IN_FLIGHT, type IncidentSink, createClient } from '@monstera/contract';
@@ -743,6 +744,77 @@ function sessionAreas(platform: EngineHostPlatform): SessionAreaSurface {
 }
 
 /**
+ * What main's loopback listener says to whoever connects.
+ *
+ * Fixed, short, and carrying nothing. The probe's question is whether bytes can
+ * cross at all, so the content is irrelevant and anything derived from the
+ * application's state would be a small leak to a socket that, by this check's
+ * own premise, might be read by something other than the host.
+ */
+const LOOPBACK_GREETING = 'monstera-loopback-probe';
+
+/**
+ * A listener on `127.0.0.1`, and main's own reading against it.
+ *
+ * ADR-0023 Decision 15. The reading is the control: without it a refused
+ * connection cannot be told apart from an endpoint that answers nobody, which
+ * is the shape this repository has paid for three times.
+ *
+ * ## The surface, bounded on every axis available
+ *
+ * Bound to `127.0.0.1` explicitly and never `0.0.0.0`; an ephemeral port, so
+ * nothing can be waiting on a known one; closed in a `finally` after one probe
+ * rather than held for the host's lifetime; and it speaks no protocol — it
+ * writes {@link LOOPBACK_GREETING}, reads nothing, and destroys the socket.
+ *
+ * **The verdict is not built from what this listener saw.** It cannot tell the
+ * host from anything else on the machine that found the port, so a design
+ * counting connections here would let any local process manufacture
+ * `network-reachable` against an innocent host. What the host reports reading is
+ * the measurement; this side only establishes that reading was possible.
+ */
+async function loopbackControl(): Promise<{
+  readonly server: Server;
+  readonly port: number;
+  readonly mainReadBytes: number;
+}> {
+  const server = createServer((socket) => {
+    socket.end(LOOPBACK_GREETING);
+  });
+
+  const port = await new Promise<number>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (address === null || typeof address === 'string') {
+        reject(new Error('the loopback listener bound to no numeric port'));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
+
+  const mainReadBytes = await new Promise<number>((resolve) => {
+    let read = 0;
+    const socket = connect({ port, host: '127.0.0.1' });
+    socket.on('data', (chunk: Buffer) => {
+      read += chunk.byteLength;
+    });
+    // ZERO IS THE HONEST ANSWER on either ending, and the classifier acts on
+    // it: a control main could not take is an absent premise, not an error to
+    // swallow, and it produces `unreadable` rather than a verdict.
+    socket.on('error', () => {
+      resolve(read);
+    });
+    socket.on('close', () => {
+      resolve(read);
+    });
+  });
+
+  return { server, port, mainReadBytes };
+}
+
+/**
  * ADR-0023 §5's check, asked of one live host.
  *
  * ## Main reads the negative path FIRST, and that is the whole rigour
@@ -774,24 +846,34 @@ async function containmentOf(
     readableBytes = 0;
   }
 
-  const report = await client['engine/probe-containment']({
-    positive: platform.probe.positive.path,
-    negative: platform.probe.negative.path,
-  });
-  if (!report.ok) {
-    return {
-      kind: 'unreadable',
-      detail: `the host could not be asked: engine/probe-containment answered ${report.error.code}`,
-    };
-  }
+  const loopback = await loopbackControl();
+  try {
+    const report = await client['engine/probe-containment']({
+      positive: platform.probe.positive.path,
+      negative: platform.probe.negative.path,
+      loopbackPort: loopback.port,
+    });
+    if (!report.ok) {
+      return {
+        kind: 'unreadable',
+        detail:
+          `the host could not be asked: engine/probe-containment answered ${report.error.code}`,
+      };
+    }
 
-  return classifyContainment(
-    {
-      positive: platform.probe.positive,
-      negative: { ...platform.probe.negative, readableBytes },
-    },
-    report.value,
-  );
+    return classifyContainment(
+      {
+        positive: platform.probe.positive,
+        negative: { ...platform.probe.negative, readableBytes },
+        loopback: { port: loopback.port, mainReadBytes: loopback.mainReadBytes },
+      },
+      report.value,
+    );
+  } finally {
+    // The listener outliving the probe is the only way this check adds a
+    // standing surface, so it closes on every path out including a thrown one.
+    loopback.server.close();
+  }
 }
 
 /**

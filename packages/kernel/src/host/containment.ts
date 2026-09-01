@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises';
+import { connect } from 'node:net';
 
 /**
  * Does the container actually contain? Measured from inside the host, decided
@@ -21,14 +22,16 @@ import { open } from 'node:fs/promises';
  * ## What a `contained` verdict does NOT cover, because the name invites the
  * opposite reading
  *
- * **This measures invariant 25(d) — filesystem reach — and nothing else.** It
+ * **This measures invariant 25(d) — filesystem reach — and (c) — no network —
+ * and nothing else** (ADR-0023 Decision 15). It
  * says nothing about (b), *no process creation*, and cannot: WW-1's variant
  * matrix measured that (b) is delivered by the **job object**, not by the
  * AppContainer, so a host with the container applied and the job assignment
  * failed refuses every probe here exactly as a fully contained one does, while
  * being free to spawn children.
  *
- * A `contained` verdict is therefore evidence about reach, not a statement that
+ * A `contained` verdict is therefore evidence about reach and about network,
+ * not a statement that
  * invariant 25 holds. (b) is established at creation by the factory and is
  * ADR-0023 §8's requirement: a failed assignment terminates the suspended
  * process rather than resuming it, and membership is verified with
@@ -103,10 +106,46 @@ export interface NegativeTarget extends ProbeTarget {
   readonly readableBytes: number;
 }
 
+/**
+ * The loopback endpoint the host must NOT reach — invariant 25(c), ADR-0023
+ * Decision 15.
+ *
+ * ## Why a listener rather than a closed port
+ *
+ * A closed port refuses everybody. Contained and uncontained both fail on it
+ * and only the *code* differs, which is refusal and impossibility sharing an
+ * observation — the mistake this module's header records three times. So main
+ * listens, and the evidence that the endpoint answers is a reading main took
+ * against it.
+ *
+ * ## The asymmetry against the filesystem pair, which is real
+ *
+ * {@link ProbeTarget} comes as a pair the *host* runs, each half the other's
+ * control. (c) has no positive half: the host must reach no network at all. Its
+ * control is therefore a reading **main** took, and it lives here — on main's
+ * side of the request — because the measuring half must not receive what its
+ * report will be judged against.
+ */
+export interface LoopbackTarget {
+  /** The ephemeral port main bound on `127.0.0.1` for this probe. */
+  readonly port: number;
+  /**
+   * Bytes main read from its own listener **immediately before** the request
+   * was sent, by connecting to this exact port itself.
+   *
+   * A caller that did not take that reading cannot fill this honestly, and a
+   * zero makes the run {@link ContainmentVerdict} `unreadable`. Identical in
+   * shape and in purpose to {@link NegativeTarget.readableBytes}, deliberately:
+   * one discipline about what makes a negative probe admissible, not two.
+   */
+  readonly mainReadBytes: number;
+}
+
 export interface ContainmentProbeRequest {
   /** A path the host must reach — the runtime, the FFI or the engine shim. */
   readonly positive: ProbeTarget;
   readonly negative: NegativeTarget;
+  readonly loopback: LoopbackTarget;
 }
 
 /** What one attempt observed. Never a judgement about containment. */
@@ -119,6 +158,14 @@ export type ProbeOutcome =
 export interface ContainmentReport {
   readonly positive: ProbeOutcome;
   readonly negative: ProbeOutcome;
+  /**
+   * What connecting to {@link LoopbackTarget.port} did.
+   *
+   * **No new vocabulary**: bytes arrived is `read`, the stack said no is
+   * `refused`, and the union already spells both. A second set of names for the
+   * same three answers is the second opinion B3a is about.
+   */
+  readonly loopback: ProbeOutcome;
 }
 
 /**
@@ -135,6 +182,12 @@ export type ContainmentVerdict =
    * host looks healthy and is not contained.
    */
   | { readonly kind: 'containment-absent'; readonly detail: string }
+  /**
+   * The host reached the loopback listener. Invariant 25(c) does not hold, and
+   * this is as loud as `containment-absent`: a host with a network is a host
+   * that can send a document somewhere.
+   */
+  | { readonly kind: 'network-reachable'; readonly detail: string }
   /**
    * Premise P1 is false on this installation — the install root does not grant
    * application packages what the host needs, and the app cannot grant it,
@@ -170,6 +223,14 @@ export interface ContainmentProbePaths {
   readonly positive: string;
   /** A path the host must not. */
   readonly negative: string;
+  /**
+   * The `127.0.0.1` port the host must not reach.
+   *
+   * A bare number and not {@link LoopbackTarget}: `mainReadBytes` is main's
+   * evidence, and handing it to the process whose report it judges is the shape
+   * this interface exists to forbid.
+   */
+  readonly loopbackPort: number;
 }
 
 /**
@@ -197,7 +258,98 @@ export async function probePath(path: string): Promise<ProbeOutcome> {
   }
 }
 
-/** Runs both probes. The pair is each other's control — see the module note. */
+/**
+ * How long the loopback probe waits for the stack to answer.
+ *
+ * Generous on purpose. A Windows connect blocked by the filtering platform
+ * reports its own `ETIMEDOUT`, and the point of a wide bound is that the *OS*
+ * answer arrives first — a bound tight enough to fire before it would replace an
+ * observation with a decision of ours.
+ */
+export const LOOPBACK_PROBE_MS = 10_000;
+
+/**
+ * What our own bound firing is called.
+ *
+ * `error`, never `refused`. A timeout we imposed is *we stopped waiting*, which
+ * is a could-not-look; spelling it as a refusal would manufacture the reassuring
+ * answer out of our own impatience. It reaches {@link classifyContainment} as
+ * `unreadable`, which is the honest verdict for a run that measured nothing.
+ */
+export const PROBE_TIMED_OUT = 'PROBE_TIMED_OUT';
+
+/**
+ * What a socket error code means to this probe.
+ *
+ * Separate from {@link outcomeForErrorCode} rather than folded into it, and the
+ * split is B3a rather than a copy: `ENOENT` is a filesystem answer and means
+ * nothing to a connect, while `ECONNREFUSED` is the reverse. Two authorities,
+ * two rules, each with one caller.
+ *
+ * `ECONNREFUSED` is the network's `absent`. Main connected to this port moments
+ * earlier, so nothing-listening is not a state the endpoint can honestly be in;
+ * the two readings are of different worlds and neither says anything about
+ * containment.
+ *
+ * Everything unrecognised is `error`, for the reason its filesystem sibling
+ * gives: a fold would be a guess in the reassuring direction, because `refused`
+ * is the answer a containment probe hopes for.
+ */
+export function outcomeForConnectErrorCode(code: string): ProbeOutcome {
+  if (code === 'ETIMEDOUT' || code === 'EACCES' || code === 'EPERM') {
+    return { kind: 'refused', code };
+  }
+  if (code === 'ECONNREFUSED') return { kind: 'absent', code };
+  return { kind: 'error', code };
+}
+
+/**
+ * Attempts one TCP connection to `127.0.0.1:port` and reports what happened.
+ *
+ * Bytes are what counts as reaching it, not the `connect` event: the question
+ * invariant 25(c) asks is whether this process can exchange anything with
+ * something outside itself, and a socket that connects and receives nothing has
+ * not shown that.
+ */
+export function probeLoopback(port: number): Promise<ProbeOutcome> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const socket = connect({ port, host: '127.0.0.1' });
+
+    const done = (outcome: ProbeOutcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(outcome);
+    };
+
+    const timer = setTimeout(() => {
+      done({ kind: 'error', code: PROBE_TIMED_OUT });
+    }, LOOPBACK_PROBE_MS);
+    // The bound must not itself hold the host open for ten seconds when the
+    // answer came in one millisecond.
+    timer.unref();
+
+    socket.on('data', (chunk: Buffer) => {
+      done({ kind: 'read', bytes: chunk.byteLength });
+    });
+    socket.on('error', (thrown: unknown) => {
+      done(outcomeForConnectErrorCode(probeCode(thrown)));
+    });
+    // A clean close carrying nothing is not a read, and it is not a refusal
+    // either. Naming it keeps it out of both.
+    socket.on('close', () => {
+      done({ kind: 'error', code: 'PROBE_CLOSED_EMPTY' });
+    });
+  });
+}
+
+/**
+ * Runs all three probes. The filesystem pair is each other's control; the
+ * loopback probe's control is a reading main took and is not here — see
+ * {@link LoopbackTarget}.
+ */
 export async function probeContainment(
   paths: ContainmentProbePaths,
 ): Promise<ContainmentReport> {
@@ -207,7 +359,8 @@ export async function probeContainment(
   // reason about when a verdict disagrees with expectation.
   const positive = await probePath(paths.positive);
   const negative = await probePath(paths.negative);
-  return { positive, negative };
+  const loopback = await probeLoopback(paths.loopbackPort);
+  return { positive, negative, loopback };
 }
 
 /**
@@ -254,6 +407,48 @@ export function classifyContainment(
         kind: 'unreadable',
         detail: `The negative probe failed with ${report.negative.code}, which is neither a ` +
           'refusal nor a read.',
+      };
+    case 'refused':
+      break;
+  }
+
+  // (c), in the same order and for the same reason: this negative's own request
+  // validity before its outcome, since a connection that failed against an
+  // endpoint main never reached is not a refusal.
+  if (request.loopback.mainReadBytes <= 0) {
+    return {
+      kind: 'unreadable',
+      detail:
+        `The loopback probe named port ${String(request.loopback.port)}, which main did not ` +
+        'read from before handing it over. A connection refused to an endpoint that answers ' +
+        'nobody is not evidence of containment.',
+    };
+  }
+
+  switch (report.loopback.kind) {
+    case 'read':
+      return {
+        kind: 'network-reachable',
+        detail:
+          `The host read ${String(report.loopback.bytes)} bytes from 127.0.0.1:` +
+          `${String(request.loopback.port)}. Invariant 25 gives it no network, and a host that ` +
+          'can reach a socket can send a document through one.',
+      };
+    case 'absent':
+      return {
+        kind: 'unreadable',
+        detail:
+          `The loopback probe found nothing listening on port ${String(request.loopback.port)} ` +
+          `(${report.loopback.code}) although main read ${String(request.loopback.mainReadBytes)} ` +
+          'bytes from it. The two readings are of different worlds, so neither says anything ' +
+          'about containment.',
+      };
+    case 'error':
+      return {
+        kind: 'unreadable',
+        detail:
+          `The loopback probe failed with ${report.loopback.code}, which is neither a refusal ` +
+          'nor a read.',
       };
     case 'refused':
       break;

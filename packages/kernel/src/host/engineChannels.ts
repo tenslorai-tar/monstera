@@ -228,9 +228,24 @@ export const engineChannels = {
    * one output, which is the distinction this whole mechanism turns on.
    */
   'engine/probe-containment': channel(
-    'Attempts two paths and reports what happened, judging nothing.',
-    z.object({ positive: pathSchema, negative: pathSchema }).strict(),
-    z.object({ positive: probeOutcomeSchema, negative: probeOutcomeSchema }).strict(),
+    'Attempts two paths and one loopback port, reporting what happened and judging nothing.',
+    z
+      .object({
+        positive: pathSchema,
+        negative: pathSchema,
+        // A port and nothing else. `mainReadBytes` — the evidence the verdict
+        // is reached against — stays in main and never crosses (ADR-0023
+        // Decision 15).
+        loopbackPort: z.number().int().min(1).max(65_535),
+      })
+      .strict(),
+    z
+      .object({
+        positive: probeOutcomeSchema,
+        negative: probeOutcomeSchema,
+        loopback: probeOutcomeSchema,
+      })
+      .strict(),
   ),
 
   'engine/open': channel(
