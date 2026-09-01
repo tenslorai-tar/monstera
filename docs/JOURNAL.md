@@ -644,6 +644,210 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-01 — Stage audit: `a8e3efa..64caaaa` — a withdrawn term took three cases nobody removed
+
+Range: **22 commits, 51 files.** 0 proofs added, 12 modified, 0 removed; 6 source
+files added, 19 changed, 0 removed — from `npm run audit:scope`, which printed
+*"Within one batch. An audit is not yet owed. Fires at 31 commits (9 more) or 61
+files (10 more)."* Taken because the next commit crosses on files, and the
+pre-commit gate refused it rather than letting the crossing land invisibly.
+
+The range is the previous audit's recording commit, the import-graph widening,
+two `checkLocal` bound corrections, the owner's 30/60 gate, invariant 24's proof,
+five commits chasing a red board across two platforms, the a11y gate, two row
+triages, the failed budget gate's ADR, ADR-0033's acceptance, and invariant
+25(c). Findings **YYYYY-1** to **YYYYY-4**.
+
+### The range's headline
+
+**ADR-0033 withdrew `mupdf-host`'s memory multiple, and the proof that guards
+the memory gate silently lost every differential it had for that budget.** Not
+the two multiplier cases, which genuinely cannot be written without a multiple —
+the baseline pair and the absolute ceiling as well, because the skip was written
+as a `continue` at the top of a five-case loop.
+
+The commit that made it left a comment saying otherwise:
+
+> *A budget with no multiple has no ratio verdict to flip … ADR-0033 withdrew
+> `mupdf-host`'s; the absolute and baseline cases below still cover it.*
+
+They are below the `continue`. So the process that parses hostile documents, the
+one with the 3 GB ceiling, had **no** differential coverage in `proof:perfbudget`
+— and the sentence that would have caught it was the sentence claiming the
+coverage survived.
+
+This is item 7's compound-claim shape at close range, and item 4's *the direction
+of a change to a proof is what needs reading*. One clause was true — there really
+is no ratio verdict to flip — and it vouched for the false clause beside it.
+Nothing about reading it feels wrong, because the part you check is the part that
+is still true. And no check could see it: the proof passed, at 26 cases, before
+and after.
+
+**Fixed in the following commit**, and the fix is a narrowing rather than a
+removal: `hasMultiple` guards the two multiplier blocks alone, the declaration
+line is built through one helper that consults the parser's own `NO_MULTIPLE`,
+and the control that read `withinMultiplier === true` becomes
+`multiplierLimit === null` for a budget without one — because `withinMultiplier`
+is unconditionally `true` there and asserting it is asserting a constant, which is
+exactly what the original comment was right to refuse. 26 cases became **29**,
+the three new ones all named `mupdf-host:`.
+
+### 1. Root cause or workaround
+
+Twenty-two commits. No workaround, and two entries are worth separating because
+they look like exemptions and are not:
+
+| the change | mechanism | verdict |
+|---|---|---|
+| `BUILDS` gaining a measured bound for `proof:cff` | the derivation had never seen a completed run, so it handed a build-dependent step the file's smallest bound | root cause; the figure carries its three readings |
+| the escape guard's `printf` widening | — | not in this range |
+| skipping the multiplier cases for a budget with none | correct as far as it went, and it took three more with it | **half a fix — YYYYY-1** |
+| `NO_MULTIPLE` in `generousEntriesExcept` | the proof was about to hold a second opinion on which budgets lost their multiple | root cause, and B3a applied before it bit |
+| the audit gate moving to 30/60 | the owner's number, recorded as not-derived so nobody re-derives it downward | a decision, not a fix |
+
+### 2. Verified against the easy shape only?
+
+**YYYYY-2.** `proof:shell`'s new single-instance cases were written and first run
+on **one machine**, and the lock they contend for is keyed on a directory. The
+hard shape here is not a bigger document — it is *two processes on a runner with
+no display*, which is what CI has. The cases carry their own answer to that
+(`xvfb-run` through the shared `launch`, and a bounded `spawnSync` whose signal is
+asserted), but until the board reads them they are one machine's result. Recorded
+rather than closed.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, twice, in opposite directions, and YYYYY-1 is the reduction.** The other
+is a strengthening with a provisioning condition on it: invariant 25(c) moved
+from `lowboxSpike.mjs` — which asserts nothing by its directory's charter — to
+the shipped startup check, so what used to be measured on every Windows run of
+the spike is now a verdict taken wherever a contained host starts. That is more
+coverage where it can run and none where it cannot, which is the trade item 2a
+exists to make somebody state.
+
+### 3. Would CI have caught it?
+
+**For YYYYY-1, no, and the reason is the useful part: nothing can.** A proof
+whose coverage shrinks still passes. `proof:perfbudget` ran green on both matrix
+legs at 26 cases, and would have gone on doing so. The only instrument that sees
+this class is the modified-proofs column and a person reading the diff, which is
+what happened.
+
+For the rest, yes: every proof in the range is an unconditional step, and
+`proof:hostcontainment` and `proof:hostrecovery` carry `--require-containment` on
+the Windows jobs.
+
+**And the other way round — a defect this machine cannot see.** Invariant 25(c)'s
+new loopback probe runs wherever the startup check runs, which locally is a
+composition test with a fake host and on the shim job is a **real contained
+process**. So the branch that matters executes only there. That is ZZ-1's shape
+exactly and it is stated rather than assumed: the reading that says a LowBox
+refuses loopback is `lowboxSpike.mjs`'s, taken on three Windows builds, and the
+shipped assertion has not yet been read on any of them.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated three:
+
+- `classifyContainment`'s loopback switch pointed at the filesystem probe: **four**
+  cases red, including the exhaustive one, which now runs 64 triples and permits
+  exactly one `contained`.
+- `mainReadBytes <= 0` loosened to `< 0`: the control alone, which is right — it
+  is the only case whose subject is the control.
+- `startShell` building above the lock: the single-instance negative case alone,
+  naming both markers it found.
+
+**YYYYY-3 — a fixture set held one argument constant, and it was mine.** Every
+case in `containment.test.ts` written before this range passes a `report()` whose
+loopback outcome defaults to `refused`. That default is correct and deliberate, so
+the older cases keep asking what they asked; it is recorded because the same
+shape with a *wrong* default would be invisible, and the file now has three cases
+that vary it and one that varies the request side.
+
+### 4a. Resolution tests on the six new instruments
+
+| instrument | resolution |
+|---|---|
+| `renderedScreen.pw.ts` | two states axe must tell apart on one page: a planted `image-alt` violation, and the page without it |
+| `noRawHex.mjs` | an offending literal against a **computed** colour four lines away, which §10.2 exempts by shape |
+| `activeContentProof.mjs` | two shim modes differing in exactly one call (`pdf_enable_js`), with the event callback installed in both |
+| `makeActiveContentFixture.mjs` | not a measuring instrument; its output is the input to the above |
+| `playwright.mjs`, `playwright.config.mjs` | provisioning and configuration; neither reports a figure |
+
+### 4b. Positive controls on the search-shaped ones
+
+Two of the six answer a question whose reassuring result is silence, and both
+carry a control that must find something known-present **on every run**:
+
+- `renderedScreen.pw.ts` plants the violation on the page under test, not a
+  different one, and asserts it first. Verified passing 2026-09-01.
+- `noRawHex.mjs`'s `PLANTED_HEX_OFFENDER` is linted through the **real** ESLint
+  config from a path inside `packages/ui/src/`, so the rule's scope is exercised
+  rather than assumed. This is the one worth naming: there is no raw hex in any
+  component today, so a rule matching nothing reports exactly what the clean
+  tree reports.
+
+`activeContentProof.mjs` is not a search — every case names a specific
+observation — but two of its controls are the same shape, asserting the
+interpreter's strings are absent while the library's are present.
+
+### 4c. Does a check derive its extent from the set it governs?
+
+Two roster counts changed in this range and **both stayed literals**:
+`checkLocal.proof.mjs` 60 → 62 and `affectedProofs.proof.mjs` 26 → 27. That is
+the right direction here, because the failure to fear is a case leaving.
+
+`proof:perfbudget` has no roster and counts what it pushed, which is why
+YYYYY-1's three lost cases produced a smaller number and no complaint — a
+derived count agrees with any shrink. Not fixed by adding a roster: the case
+count there is genuinely a function of how many roles the gate measured, and a
+literal would break on any machine that measures a different set. What closes it
+is that the three cases are now **named** `mupdf-host:` in the output, so their
+absence is visible in a line rather than in an integer.
+
+### 5. Executed or asserted
+
+Executed: `proof:perfbudget` before and after the fix (26 → 29), `proof:contract`
+(38), `proof:shell` (13, and against the mutated ordering), `test:a11y` (2),
+`check:tokencontrast`, the vitest suite (899), `typecheck`, `lint`.
+
+Asserted and **not** executed: that the loopback probe refuses on a real contained
+host. Its evidence is the spike's, not the shipped check's.
+
+### 6. Architecture before the feature
+
+Yes, and separately. ADR-0023 Decision 15 landed in `bc70fc2` and the feature in
+`0ec9db7`. ADR-0033's acceptance is `a717d15`, after `47ce554` which gave the
+failed budget gate the ADR it was owed.
+
+### 7. Do the documents still match the code?
+
+**YYYYY-4 — two rows carried a blocker that had dissolved, and one of them was
+written to be a blocker rather than found to be one.** Both invariant-25 rows said
+(c) *"needs a channel serving an instrument, which ADR-0023 rejects by name"*.
+Opened to act on it: nothing in that ADR's rejected alternatives rejects such a
+channel, and `engine/probe-containment` — which runs in the host and is answered
+before the first document byte — already existed. The sentence was a compressed
+reading of §6's *instrument that gates nothing*, which is the opposite case.
+
+The transferable form is not the instance. **A deferral snapshots what was hard
+once, and its trigger cannot notice the obstacle dissolving.** (c) was deferred
+when (d) had no mechanism either; (d) got one, the channel arrived, and the
+sentence describing its absence stayed. Triage the *reason* against the tree, not
+only the trigger — which is what item 7 asks and what no range-scoped sweep
+reaches, since no commit changed both the sentence and the thing that refutes it.
+
+Three more corrected in the same pass, all in the same direction — a body that
+had stopped being true while nothing edited it:
+
+- the design-substrate row's *"Still owed: axe on a rendered screen"*, shipped in
+  this range and verified running;
+- the contrast row's *"the derivation owed"*, where `useOnColor` exists, is wired
+  into `Button`, and has the re-solve case that is the storing-a-derived-colour
+  defect as a test — one token pair remains, deferred behind a surface nothing
+  renders on;
+- the composition-root row's sizing note, which called (c) *a decision, not work*.
+
 ## 2026-08-31 — Stage audit: `1a82157..a8e3efa` — the consolidation fired the false positive it was consolidating, within a minute
 
 Range: **7 commits, 24 files.** 1 proof added, 8 modified, 0 removed; 1 source
