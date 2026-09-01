@@ -295,14 +295,24 @@ const thrown = guarded(() => {
   // what that role actually used must flip the verdict in both directions.
   // -------------------------------------------------------------------------
   for (const measured of baseline.results) {
-    // A BUDGET WITH NO MULTIPLE HAS NO RATIO VERDICT TO FLIP, so the two cases
-    // below cannot be written for it — there is no term to declare just above
-    // and just below what the role used. Skipped rather than adapted, because
-    // an adapted case asserting `withinMultiplier === true` for a budget that
-    // has no multiple would assert the constant this parser now returns and
-    // read as coverage. ADR-0033 withdrew `mupdf-host`'s; the absolute and
-    // baseline cases below still cover it.
-    if (NO_MULTIPLE.has(measured.budget)) continue;
+    // A BUDGET WITH NO MULTIPLE HAS NO RATIO VERDICT TO FLIP, so the two
+    // multiplier cases cannot be written for it: there is no term to declare
+    // just above and just below what the role used, and an adapted case
+    // asserting `withinMultiplier === true` would assert the constant the gate
+    // returns for a null multiplier and read as coverage.
+    //
+    // **THAT SKIP WAS A `continue` AND IT TOOK ALL FIVE CASES, 2026-09-01.**
+    // Its own comment said *"the absolute and baseline cases below still cover
+    // it"* — and they are below the `continue`, in the same loop body. So
+    // ADR-0033 withdrawing `mupdf-host`'s multiple silently removed every
+    // differential this proof had for the process that parses hostile
+    // documents, and the sentence that would have caught it was the one
+    // asserting the coverage survived.
+    //
+    // Item 7's shape at close range: one clause true — there really is no
+    // ratio verdict — vouching for a false one beside it. A wholly wrong
+    // sentence gets caught by its next reader; a half-true one does not.
+    const hasMultiple = !NO_MULTIPLE.has(measured.budget);
 
     // BUDGET NAMES, not role labels — `main` is measured twice and a
     // declaration line naming it twice is not a line the parser accepts. This
@@ -314,7 +324,37 @@ const thrown = guarded(() => {
     const tooTight = (measured.ratio - 0.05).toFixed(2);
     const justEnough = (measured.ratio + 0.05).toFixed(2);
 
-    {
+    /**
+     * One declaration line for the budget under test, with or without its
+     * multiple according to the parser.
+     *
+     * The multiple is generous wherever it appears, because these cases are
+     * about the OTHER two terms and a tight ratio would fail them for the
+     * wrong reason.
+     *
+     * @param {string} absolute @param {string} base @returns {string}
+     */
+    const entry = (absolute, base) =>
+      hasMultiple
+        ? `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, ${absolute}, base ${base}`
+        : `${measured.budget} = ${absolute}, base ${base}`;
+
+    /**
+     * What replaces `withinMultiplier === true` where there is no multiple.
+     *
+     * The control's job in the cases below is *the ratio is not what failed*.
+     * For a budget with a multiple, `withinMultiplier === true` says so. For
+     * one without, that field is `true` unconditionally and asserting it is
+     * asserting a constant — so the honest equivalent is that the parser gave
+     * this budget no limit to exceed, which `multiplierLimit === null` states
+     * and a parser that quietly restored a multiple would fail.
+     *
+     * @param {{ withinMultiplier: boolean, multiplierLimit: number | null } | undefined} role
+     */
+    const ratioIsNotWhatFailed = (role) =>
+      hasMultiple ? role?.withinMultiplier === true : role?.multiplierLimit === null;
+
+    if (hasMultiple) {
       const gate = runBudgetGate({
         budgetsText: withEntries([`${measured.budget} = ${tooTight}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
       });
@@ -327,7 +367,7 @@ const thrown = guarded(() => {
       );
     }
 
-    {
+    if (hasMultiple) {
       const gate = runBudgetGate({
         budgetsText: withEntries([`${measured.budget} = ${justEnough}x, 64 GB, base 32 GB`, ...others, 'renderer = provisional']),
       });
@@ -355,14 +395,14 @@ const thrown = guarded(() => {
         documentPath: baseline.fixture.path,
         documentBytes: baseline.fixture.bytes,
         budgetsText: withEntries([
-          `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(belowBaselineMB)} MB`,
+          entry('64 GB', `${String(belowBaselineMB)} MB`),
           ...generousOthers,
         ]),
       });
       const tightRole = tight.results.find((result) => result.role === measured.role);
       check(
         `${measured.role}: a baseline budget below its measured fixed cost turns the gate red`,
-        tightRole?.withinBaseline === false && tightRole.withinMultiplier === true,
+        tightRole?.withinBaseline === false && ratioIsNotWhatFailed(tightRole),
         `declared base ${String(belowBaselineMB)} MB against a measured ` +
           `${formatBytes(measured.baselineBytes)}; withinBaseline=${String(tightRole?.withinBaseline)}. ` +
           `Without this the baseline is measured, subtracted and asserted by nothing — a number in a ` +
@@ -373,7 +413,7 @@ const thrown = guarded(() => {
         documentPath: baseline.fixture.path,
         documentBytes: baseline.fixture.bytes,
         budgetsText: withEntries([
-          `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, 64 GB, base ${String(aboveBaselineMB)} MB`,
+          entry('64 GB', `${String(aboveBaselineMB)} MB`),
           ...generousOthers,
         ]),
       });
@@ -391,8 +431,10 @@ const thrown = guarded(() => {
       const belowPeakMB = Math.max(1, Math.floor(measured.peakBytes / MB) - 8);
       const gate = runBudgetGate({
         budgetsText: withEntries([
-          `${measured.budget} = ${String(Math.ceil(measured.ratio) + 10)}x, ${String(belowPeakMB)} MB, ` +
-            `base ${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
+          entry(
+            `${String(belowPeakMB)} MB`,
+            `${String(Math.max(1, Math.floor(measured.baselineBytes / MB) - 4))} MB`,
+          ),
           ...others,
           'renderer = provisional',
         ]),
@@ -400,7 +442,7 @@ const thrown = guarded(() => {
       const role = gate.results.find((result) => result.role === measured.role);
       check(
         `${measured.role}: an absolute ceiling below its peak turns the gate red, with the multiplier generous`,
-        role?.withinAbsolute === false && role.withinMultiplier === true,
+        role?.withinAbsolute === false && ratioIsNotWhatFailed(role),
         `declared ${String(belowPeakMB)} MB against a measured ${formatBytes(measured.peakBytes)}; ` +
           `withinAbsolute=${String(role?.withinAbsolute)} withinMultiplier=${String(role?.withinMultiplier)}. ` +
           `The absolute term must be consulted independently of the ratio.`,
