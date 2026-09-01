@@ -226,6 +226,30 @@ export function inspect({ root = repoRoot() } = {}) {
 }
 
 /**
+ * Which inspected paths are a FAILURE, as opposed to merely unprovisioned.
+ *
+ * **Exported because it is a decision, and a decision inline in a CLI branch is
+ * one nothing can case.** Finding ZZZZZ-2: `--check`'s exit code changed on
+ * 2026-09-01 and this file's proof was not touched, so the rule below — which
+ * of three `present` states is a failure — had no case at all. The end state is
+ * the wrong observable here: an exit 0 is what a correct decision produces and
+ * also what an absent one produces, since a machine with nothing provisioned is
+ * green either way.
+ *
+ * `present === false` means the path **exists** and its DACL does not name
+ * `ALL APPLICATION PACKAGES` — a tree that was granted and has been rewritten.
+ * `present === null` covers *not provisioned* and *ACL unreadable*: neither is a
+ * lost grant, and collapsing them would make this red on every machine that has
+ * never run a contained host.
+ *
+ * @param {ReadonlyArray<{ path: string, present: boolean | null }>} states
+ * @returns {ReadonlyArray<{ path: string, present: boolean | null }>}
+ */
+export function lostGrants(states) {
+  return states.filter((state) => state.present === false);
+}
+
+/**
  * Grants or revokes, then READS BACK and decides from the ACL.
  *
  * @param {{ root?: string, revoke?: boolean }} [options]
@@ -306,7 +330,12 @@ if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
     // distinction `inspect` already draws with `present: null`, and collapsing
     // it here would make this red on every machine that has not provisioned
     // Electron, which is every machine that has never run a contained host.
-    const lost = states.filter((state) => state.present === false);
+    //
+    // The rule itself is {@link lostGrants}, exported so the proof can case all
+    // three `present` states. What remains uncased is the wiring below — that
+    // this branch acts on it — because reaching it needs a real revoked grant
+    // on a real path, which this file's proof refuses to leave behind.
+    const lost = lostGrants(states);
     if (lost.length > 0) {
       process.stderr.write(
         `\n${String(lost.length)} path(s) exist and are NOT granted to ALL APPLICATION ` +

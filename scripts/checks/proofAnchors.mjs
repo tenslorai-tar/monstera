@@ -25,7 +25,7 @@ try {
     .filter((name) => name.endsWith('.proof.mjs'))
     .map((name) => ({ name, source: readFileSync(join(DIRECTORY, name), 'utf8') }));
 
-  const { missing, stale, anchored } = classifyProofs(proofs);
+  const { missing, stale, gone, anchored } = classifyProofs(proofs);
 
   process.stdout.write(
     `\n  ok  ${String(anchored)} of ${String(proofs.length)} proof(s) declare a case count\n`,
@@ -37,6 +37,17 @@ try {
         `list:\n\n  - ${stale.join('\n  - ')}\n\n  A list that keeps entries after they are paid ` +
         `stops being a debt and becomes furniture: the next reader cannot tell a stale entry\n  ` +
         `from a real one, and the count stops meaning anything.\n`,
+    );
+    process.exitCode = 1;
+  }
+
+  if (gone.length > 0) {
+    process.stderr.write(
+      `\n${String(gone.length)} allowlist entry(ies) name a proof that no longer exists:\n\n` +
+        `  - ${gone.join('\n  - ')}\n\n  The walk above only sees the proofs that are there, so ` +
+        `an entry for a deleted one is\n  reported by nothing and keeps being counted. That is ` +
+        `the same furniture a paid entry\n  becomes, in the direction a scan over the present ` +
+        `set cannot look.\n`,
     );
     process.exitCode = 1;
   }
@@ -53,7 +64,7 @@ try {
     process.exitCode = 1;
   }
 
-  if (missing.length === 0 && stale.length === 0) {
+  if (missing.length === 0 && stale.length === 0 && gone.length === 0) {
     process.stdout.write(
       `  --  ${String(UNANCHORED.length)} proof(s) owe one and are named in the allowlist\n\n`,
     );

@@ -32,13 +32,14 @@ import { formatError } from '../lib/reportError.mjs';
 import {
   ALL_APPLICATION_PACKAGES,
   grantSet,
+  lostGrants,
   namesApplicationPackages,
   readAcl,
 } from '../provision/containerGrants.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 9 });
+const roster = createRoster(failures, { cases: 12 });
 
 /** The program a contained host runs, which the grant set must cover. */
 const HOST_ENTRY = join(repoRoot(), 'packages', 'kernel', 'dist', 'host', 'hostEntry.js');
@@ -157,6 +158,43 @@ try {
       rmSync(directory, { recursive: true, force: true });
     }
   }
+
+  // -------------------------------------------------------------------------
+  // WHICH STATE IS A FAILURE — the decision `--check`'s exit code rests on.
+  //
+  // Finding ZZZZZ-2: that exit code changed on 2026-09-01 and this file was not
+  // touched, so the rule had no case. These run on every platform, because the
+  // rule is about `inspect`'s output and not about a DACL.
+  //
+  // The middle case is the load-bearing one and it is the one a careless
+  // version breaks: `present === null` is *not provisioned* or *ACL
+  // unreadable*, and treating either as a failure turns this red on every
+  // machine that has never run a contained host, which is most of them.
+  // -------------------------------------------------------------------------
+  const nowhere = [{ path: 'a', present: null }, { path: 'b', present: null }];
+  const rewritten = [{ path: 'a', present: true }, { path: 'b', present: false }];
+  const clean = [{ path: 'a', present: true }, { path: 'b', present: true }];
+
+  check(
+    'a path that EXISTS and is not granted is a failure, and is named',
+    lostGrants(rewritten).length === 1 && lostGrants(rewritten)[0]?.path === 'b',
+    `lostGrants reported ${JSON.stringify(lostGrants(rewritten))}. A tree that was granted and ` +
+      `now is not has been rewritten, and a contained host dies before its first line rather ` +
+      `than saying so — which is exactly the diagnosis this state cost once.`,
+  );
+  check(
+    'CONTROL: nothing provisioned is NOT a failure',
+    lostGrants(nowhere).length === 0,
+    `lostGrants reported ${JSON.stringify(lostGrants(nowhere))} for two absent paths. A path ` +
+      `that does not exist cannot be granted; reporting it would make this red on every ` +
+      `machine that has never run a contained host, and a check people expect to be red is ` +
+      `one they stop reading.`,
+  );
+  check(
+    'CONTROL: everything granted is NOT a failure',
+    lostGrants(clean).length === 0,
+    `lostGrants reported ${JSON.stringify(lostGrants(clean))} for a fully granted tree.`,
+  );
 
   check(
     'a grant TAKES, unelevated, and the ACL says so rather than the exit code',

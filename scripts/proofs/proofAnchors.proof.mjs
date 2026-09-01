@@ -20,7 +20,7 @@ import { formatError } from '../lib/reportError.mjs';
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 8 });
+const roster = createRoster(failures, { cases: 9 });
 
 /** @param {string} label @param {boolean} condition @param {string} detail */
 function check(label, condition, detail) {
@@ -120,6 +120,25 @@ try {
     ghosts.length === 0,
     `named but absent: ${ghosts.join(', ')}. An entry for a deleted proof is a debt nobody can ` +
       `pay, and it inflates the count this check prints.`,
+  );
+
+  // AND THE INSTRUMENT REPORTS IT, which is a different claim from the one
+  // above and is finding ZZZZZ-3. The case above asserts the FACT — this tree's
+  // allowlist is clean — and it held while `classifyProofs` could not see the
+  // state at all: an entry naming a deleted file matched nothing in a walk over
+  // the proofs that exist, so it was neither `missing` nor `stale`.
+  //
+  // A proof that checks the fact directly lets the instrument stay blind to it
+  // forever, because the fact keeps being true. Asserting the report is what
+  // separates them.
+  const ghost = classifyProofs([{ name: 'stillHere.proof.mjs', source: 'const x = 1;' }]);
+  check(
+    'an allowlist entry whose FILE is gone is reported',
+    ghost.gone.length === UNANCHORED.length && ghost.gone.includes(UNANCHORED[0] ?? ''),
+    `gone: ${ghost.gone.join(', ') || 'none'} against an allowlist of ` +
+      `${String(UNANCHORED.length)}. Every entry is absent from this one-proof input, so all of ` +
+      `them must be reported — a count short of that is a filter that only looks at what it ` +
+      `was handed, which is the blindness itself.`,
   );
 
   void readFileSync;

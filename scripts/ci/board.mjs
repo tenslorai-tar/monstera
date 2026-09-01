@@ -64,22 +64,36 @@ const REPO = 'tenslorai-tar/monstera';
  * How long to wait between polls, and how many to take.
  *
  * **Measured against what is being waited for, not chosen for responsiveness.**
- * A run on this repository takes four to twelve minutes. At thirty seconds that
- * is eight to twenty-four requests asking a question whose answer cannot have
- * changed, and forty of them is what exhausted an hour's unauthenticated
- * quota — 60 requests, shared by every process on this machine — in a single
- * session.
+ * A run on this repository takes four to twelve minutes, so at thirty seconds
+ * that is eight to twenty-four requests asking a question whose answer cannot
+ * have changed. Ninety is the interval, and `pollDelaySeconds` still overrides
+ * it from the payload when GitHub says how long to wait.
  *
- * Ninety seconds keeps the same twenty-minute ceiling with **fourteen** polls
- * instead of forty. The cost is up to a minute of extra latency on a verdict
- * nobody is watching in real time; what it buys is four board reads per hour
- * where there used to be one and a half.
+ * ## THE CEILING IS A SEPARATE NUMBER AND THE FIRST ATTEMPT GOT IT WRONG
  *
- * `pollDelaySeconds` still overrides this from the payload when GitHub says
- * how long to wait, so this is the fallback rather than the pacing.
+ * This read 40 polls × 30s, and was changed to 14 × 90s to spend fewer requests.
+ * Its comment recorded the cost as *"up to a minute of extra latency on a
+ * verdict nobody is watching in real time"*. That was true and it was not the
+ * cost. **Both spellings bound the wait at about twenty-one minutes**, and on
+ * the same day a push queued behind another run exceeded it: the reader printed
+ * *"NO VERDICT … gave up after 14 polls. That is a timeout, not a verdict"* and
+ * exited 2, correctly, on a commit that went green.
+ *
+ * The instrument was right and the bound was not — and the change read as an
+ * improvement because the number that shrank was the one being complained
+ * about. **An optimisation that trades request count for the same wall clock
+ * has bought no headroom** (finding ZZZZZ-1). The quota that motivated it had
+ * already been removed by other means in the same commit: `githubFetch` now
+ * sends a token, so the limit is 5,000 an hour rather than 60.
+ *
+ * So the ceiling is derived from what is actually waited for, which is a run
+ * **plus whatever it queues behind**: twelve minutes at the long end, doubled
+ * for one predecessor, is twenty-four — and 27 × 90s is **forty minutes**, which
+ * leaves room for a second. At 5,000 requests an hour that costs nothing worth
+ * counting, and a timeout stays a timeout rather than becoming a longer silence.
  */
 const POLL_SECONDS = 90;
-const MAX_POLLS = 14;
+const MAX_POLLS = 27;
 
 /** @param {number} attempt */
 function runsUrl(attempt) {

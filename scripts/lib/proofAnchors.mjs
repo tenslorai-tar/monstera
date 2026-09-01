@@ -97,8 +97,15 @@ export function hasAnchor(source) {
  * shrinks, and the next reader has no way to tell a stale entry from a real
  * one — so a stale entry is reported, and removing it is the only way past.
  *
+ * **And the fourth is the same argument in the direction the walk cannot see**
+ * (finding ZZZZZ-3, 2026-09-01). An entry naming a file that no longer exists
+ * matches nothing in the loop, because the loop walks the proofs that are
+ * there — so it was neither `missing` nor `stale`, and persisted while the
+ * printed total went on counting it. Latent when found: all 23 named files
+ * existed. The shrink direction always needs the other set (item 4c).
+ *
  * @param {ReadonlyArray<{ name: string, source: string }>} proofs
- * @returns {{ missing: string[], stale: string[], anchored: number }}
+ * @returns {{ missing: string[], stale: string[], gone: string[], anchored: number }}
  */
 export function classifyProofs(proofs) {
   if (proofs.length === 0) {
@@ -112,6 +119,7 @@ export function classifyProofs(proofs) {
   }
 
   const known = new Set(UNANCHORED);
+  const present = new Set(proofs.map((proof) => proof.name));
   const missing = [];
   const stale = [];
   let anchored = 0;
@@ -123,5 +131,15 @@ export function classifyProofs(proofs) {
     if (has && known.has(proof.name)) stale.push(proof.name);
   }
 
-  return { missing: missing.sort(), stale: stale.sort(), anchored };
+  // AN ENTRY WHOSE FILE IS GONE MATCHES NOTHING ABOVE, so without this it is
+  // neither `missing` nor `stale` — it simply persists, and the printed total
+  // keeps counting it. Finding ZZZZZ-3, and it is this list's own stated
+  // failure one axis along: an entry kept after it is paid stops being a debt
+  // and becomes furniture, and so does one kept after its subject is deleted.
+  //
+  // The loop above cannot see it, because it walks the proofs that EXIST. The
+  // shrink direction always needs the other set (item 4c).
+  const gone = [...known].filter((name) => !present.has(name));
+
+  return { missing: missing.sort(), stale: stale.sort(), gone: gone.sort(), anchored };
 }
