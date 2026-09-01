@@ -265,8 +265,28 @@ is wrong** — fix the boundary, not the test.
 
 - **Opening a document runs none of its content.** No embedded JavaScript, no
   automatic action, no external fetch, no embedded file to disk — until the user
-  asks, for that item. MuJS is in the shim; the interpreter is present whether or
-  not anything calls it (invariant 24).
+  asks, for that item (invariant 24).
+
+  This line read *"MuJS is in the shim; the interpreter is present whether or not
+  anything calls it"* until 2026-09-01, and it was the invariant's stated
+  rationale. **It is false and `docs/ARCHITECTURE.md` had already said so** —
+  measured 2026-08-31, no JavaScript interpreter is linked into the shipped shim:
+  MuJS's own registration strings are absent from `monstera_mupdf.dll` while
+  MuPDF's are present, and the same scan finds all three in a harness that calls
+  `pdf_enable_js`.
+
+  **The digest was the last document still carrying the withdrawn reason**, which
+  is this file's own header arriving as a fact rather than a warning: where the
+  two disagree the architecture document is right and this one is stale.
+
+  What the containment actually rests on is **the call graph**, and that is
+  weaker in a way worth knowing: one call to `pdf_enable_js` brings the
+  interpreter back in a one-line diff. `FZ_ENABLE_JS=0` would make its absence
+  structural and is deliberately not set, because stages 3 and 4 anticipate
+  JavaScript-bearing widgets. So the absence is **asserted** —
+  `proof:activecontent` scans the shipped binary and carries both controls, one
+  proving the scan finds MuPDF's strings and one proving it finds the
+  interpreter in a binary that links it.
 - **An engine host contains a compromise, not only a crash.** Lowest workable
   integrity level, job object limits, no network, no filesystem beyond what it
   was handed (invariant 25). **All four now have a mechanism, and two of them
