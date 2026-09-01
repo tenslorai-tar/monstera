@@ -4,6 +4,7 @@ import type { DocVersion } from '@monstera/shared';
 import type { z } from 'zod';
 
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
@@ -176,6 +177,18 @@ export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
         return;
       }
       deps.onApplied(answer.value);
+
+      // INVARIANT 18, AFTER `onApplied` AND NOT INSTEAD OF IT. The command
+      // succeeded and the view must move whether or not history was shed —
+      // reporting the trim first and returning would leave the renderer showing
+      // the pre-rotation page while telling the user about undo.
+      //
+      // Guarded on a positive count rather than opened unconditionally: the
+      // dialog's schema refuses zero, so an unguarded call would be a validation
+      // failure on every ordinary command rather than a modal nobody wanted.
+      if (answer.value.historyDropped > 0) {
+        deps.show(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+      }
     },
   };
 }

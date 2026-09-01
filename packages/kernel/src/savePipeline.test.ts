@@ -63,6 +63,12 @@ function held(version: number): Held {
       // about what reaches the file, and the canonical image's length is the
       // renderer's question rather than this one's.
       byteLength: 0,
+      // A save does not grow the log, so this stub is never reached. It throws
+      // rather than answering zero: a save that trimmed history would be a
+      // finding, and a quiet stub is how it would arrive unnoticed.
+      enforceRetention: (): never => {
+        throw new Error('saving does not enforce retention');
+      },
       bumpVersion: (_writer: CommandWriter): DocVersion => at,
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,

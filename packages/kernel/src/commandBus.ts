@@ -1,6 +1,6 @@
 import type { CommandKind, CommandOfKind } from '@monstera/contract';
 
-import type { Checkpoint, LogEntry, LogEntryFor } from './commandLog.js';
+import type { Checkpoint, LogEntry, LogEntryFor, LogTrim } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
 // (ADR-0023 Decision 10). Importing the spec table here would reach
@@ -144,7 +144,30 @@ export interface Executed {
   readonly entry: LogEntry;
   /** The version this command produced (ADR-0009 §5). */
   readonly version: DocumentContext['version'];
+  /**
+   * What recording this entry cost the undo history, if anything (§4).
+   *
+   * **Required, never optional.** Invariant 18 obliges whoever receives this to
+   * tell the user when history was shortened, and an optional field is one a
+   * caller can satisfy by not looking. `{ droppedEntries: 0 }` is the ordinary
+   * answer and it still has to be read.
+   */
+  readonly trimmed: LogTrim;
 }
+
+/**
+ * What undo and redo report for {@link Executed.trimmed}.
+ *
+ * Neither grows the log: `record` is the only thing that adds an entry, and
+ * undo *"never pops"* — it steps the cursor, so `retainedBytes` is identical
+ * either side of it. There is therefore nothing to shed, and this is a fact
+ * about those two operations rather than a placeholder.
+ *
+ * Named rather than written inline at both sites, so the claim is stated once
+ * and a future operation that *does* grow the log cannot borrow it by copying a
+ * literal that looked harmless.
+ */
+const NO_TRIM: LogTrim = { droppedEntries: 0, droppedBytes: 0 };
 
 /** What one undo or redo did. */
 export type Undone = Executed;
@@ -233,7 +256,21 @@ export class CommandBus {
     // covered. Revisit when a second command has an `apply` that can fail on
     // its own.
     context.commandLog(COMMAND_WRITER).record(entry);
-    return { entry, version: context.bumpVersion(COMMAND_WRITER) };
+
+    // ENFORCED HERE, because this is the only moment the log grows. §4's budget
+    // was consulted at `open` and nowhere else, so checkpoints accumulated for
+    // the whole life of a session and the only thing ever refused was the next
+    // document — the accounting was right and nothing acted on it.
+    //
+    // AFTER `record`, deliberately: the entry that pushed the log over is the
+    // one the ceiling has to be measured against, and trimming first would
+    // leave the log over budget by exactly the checkpoint just taken. That is
+    // the off-by-one that makes a cap a suggestion.
+    //
+    // The bus decides WHEN and never how much — the target is the service's,
+    // computed from §9.17's ceiling.
+    const trimmed = context.enforceRetention(COMMAND_WRITER);
+    return { entry, trimmed, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -302,7 +339,7 @@ export class CommandBus {
     await writer.invert(session, entry.command.kind, entry.inverse);
 
     log.undo();
-    return { entry, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
   }
 
   /**
@@ -364,6 +401,6 @@ export class CommandBus {
     await writer.apply(session, entry.command);
 
     log.redo();
-    return { entry, version: context.bumpVersion(COMMAND_WRITER) };
+    return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
   }
 }

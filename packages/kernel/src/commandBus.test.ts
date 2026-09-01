@@ -9,7 +9,7 @@ import {
   CommandBus,
   UnregisteredWriterError,
 } from './commandBus.js';
-import { CommandLog, type LogEntry } from './commandLog.js';
+import { CommandLog, type LogEntry, type LogTrim } from './commandLog.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
@@ -43,11 +43,17 @@ beforeAll(async () => {
  */
 function contextStub(): DocumentContext & {
   readonly bumps: () => number;
+  /** How many times the bus asked for retention to be enforced. */
+  readonly trims: () => number;
+  /** Lowers the stand-in for the service's document-bytes ceiling. */
+  readonly ceiling: (bytes: number) => void;
   /** The same log, reachable without minting a capability inside a test. */
   readonly mutableLog: CommandLog;
 } {
   let version = asDocVersion(1);
   let bumps = 0;
+  let trims = 0;
+  let ceiling = Number.MAX_SAFE_INTEGER;
   const log = new CommandLog();
   return {
     mutableLog: log,
@@ -69,6 +75,18 @@ function contextStub(): DocumentContext & {
     commandLog(_writer: CommandWriter): CommandLog {
       return log;
     },
+    // THE CEILING IS THE SERVICE'S, so this stub carries the one number the bus
+    // is entitled to know nothing about. `ceiling` is settable per case: the
+    // default is generous, so every pre-existing case in this file keeps asking
+    // what it asked, and the retention cases lower it.
+    enforceRetention(_writer: CommandWriter): LogTrim {
+      trims += 1;
+      return log.trimTo(ceiling);
+    },
+    ceiling: (bytes: number): void => {
+      ceiling = bytes;
+    },
+    trims: () => trims,
     log,
     markSaved(): DocVersion {
       return version;
@@ -231,6 +249,205 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+
+  /**
+   * §4's retention cap, enforced during a session rather than at `open`.
+   *
+   * The ceiling was consulted once, when a document arrived, and never again —
+   * so checkpoints accumulated for the whole life of a session and the only
+   * thing ever refused was the *next* open. These cases run against **real**
+   * checkpoints from the malformed-`/Rotate` branch, because the whole subject
+   * is byte counts and a fabricated checkpoint would be a number this file
+   * chose.
+   */
+  describe('retention', () => {
+    /**
+     * A bus whose capture always declines, so every command records a terminal
+     * entry with a **real** checkpoint from the shipped `serialise`.
+     *
+     * The malformed-`/Rotate` fixture cannot supply more than one: the first
+     * rotation replaces the malformed value with a numeric one, so the second
+     * command captures cleanly and records an invertible entry with no
+     * checkpoint at all. A ceiling set from the first checkpoint is then never
+     * crossed, and every case here passes by measuring nothing — which is how
+     * they first ran.
+     */
+    const alwaysCheckpointing = (): CommandBus =>
+      new CommandBus({
+        mupdf: {
+          ...localMupdfWriter,
+          capture: () =>
+            Promise.resolve({ captured: false as const, reason: 'retention cases checkpoint' }),
+        },
+      });
+
+    it('CONTROL: an ample ceiling keeps every checkpoint, and the trim reports nothing', async () => {
+      const bus = alwaysCheckpointing();
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        const first = await bus.execute(session, context, rotateFirst);
+        const second = await bus.execute(session, context, rotateFirst);
+
+        // Without this the shedding case below is satisfied by a bus that
+        // discards every checkpoint it takes, which passes a "the log shrank"
+        // assertion perfectly and is the opposite of the feature.
+        expect(first.trimmed).toEqual({ droppedEntries: 0, droppedBytes: 0 });
+        expect(second.trimmed).toEqual({ droppedEntries: 0, droppedBytes: 0 });
+        expect(context.mutableLog.entries).toHaveLength(2);
+        expect(context.mutableLog.canUndo).toBe(true);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('sheds the oldest checkpoint when the next command crosses the ceiling', async () => {
+      const bus = alwaysCheckpointing();
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        const first = await bus.execute(session, context, rotateFirst);
+        if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
+
+        // THE CEILING IS SET FROM WHAT WAS MEASURED, not chosen: one checkpoint
+        // fits and two do not. A literal here would be a number that stops
+        // separating anything the day the fixture changes size.
+        context.ceiling(first.entry.checkpoint.byteLength);
+
+        const second = await bus.execute(session, context, rotateFirst);
+
+        expect(second.trimmed.droppedEntries).toBe(1);
+        expect(second.trimmed.droppedBytes).toBe(first.entry.checkpoint.byteLength);
+        // AND THE LOG IS ACTUALLY UNDER IT. Reporting a drop and retaining the
+        // bytes is the failure a report-only assertion cannot see.
+        expect(context.mutableLog.retainedBytes()).toBeLessThanOrEqual(
+          first.entry.checkpoint.byteLength,
+        );
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('shortens UNDO by exactly what it dropped, rather than leaving a history nothing can walk', async () => {
+      const bus = alwaysCheckpointing();
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        const first = await bus.execute(session, context, rotateFirst);
+        if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
+        await bus.execute(session, context, rotateFirst);
+        expect(context.mutableLog.entries).toHaveLength(2);
+
+        context.ceiling(first.entry.checkpoint.byteLength);
+        await bus.execute(session, context, rotateFirst);
+
+        // TWO went, not one: a terminal entry is terminal for not being
+        // invertible, so undo cannot step over the second checkpoint either
+        // once the first is gone — and an entry undo cannot reach is a
+        // `canUndo` that lies rather than a history worth keeping.
+        expect(context.mutableLog.entries.length).toBeLessThan(3);
+        expect(context.mutableLog.entries.length).toBe(
+          context.mutableLog.retainedBytes() > 0 ? 1 : 0,
+        );
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('is asked on EVERY command, so the cap cannot be crossed between checks', async () => {
+      const bus = new CommandBus({ mupdf: localMupdfWriter });
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        await bus.execute(session, context, rotateFirst);
+        await bus.execute(session, context, rotateFirst);
+        await bus.execute(session, context, rotateFirst);
+
+        // ASSERT THE CALL, not the state. Three commands under an ample ceiling
+        // leave a log that looks identical whether retention was enforced three
+        // times or never — which is `§4`'s *"every N commands"* having no N,
+        // stated as a test: N is 1, and nothing else can say so.
+        expect(context.trims()).toBe(3);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    /**
+     * A redo tail that holds no checkpoint reclaims nothing, so shedding it is
+     * pure loss — and a shedding loop keyed on bytes alone empties it anyway,
+     * because popping an invertible entry never moves the figure the loop tests.
+     * That is what the first draft of `trimTo` did.
+     *
+     * This is the reachable half of the tail rule. The other half — a tail
+     * holding a checkpoint being shed before applied history — cannot be
+     * produced by any code in this repository: a checkpoint reaches the tail
+     * only by undoing a terminal entry, and `undo` throws
+     * `CheckpointRestoreNotBuiltError` for exactly that (invariant 18 clause
+     * (ii)). The branch is kept unbuilt-but-correct rather than deleted, for
+     * JJJ-1's reason.
+     */
+    it('leaves a checkpoint-free REDO tail alone while shedding applied history', async () => {
+      const bus = new CommandBus({ mupdf: localMupdfWriter });
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        // The malformed `/Rotate` makes the FIRST command terminal and repairs
+        // itself, so the second is invertible — which is the only shape that
+        // can put an entry in the redo tail today.
+        const first = await bus.execute(session, context, rotateFirst);
+        if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
+        const second = await bus.execute(session, context, rotateFirst);
+        expect(second.entry.kind).toBe('invertible');
+
+        await bus.undo({ mupdf: session }, context);
+        expect(context.mutableLog.canRedo).toBe(true);
+
+        context.mutableLog.trimTo(0);
+
+        // The checkpoint went, because it was the only thing holding bytes.
+        expect(context.mutableLog.retainedBytes()).toBe(0);
+        // AND THE TAIL SURVIVED. A loop that popped it would satisfy every
+        // byte-count assertion above while destroying redo for nothing.
+        expect(context.mutableLog.canRedo).toBe(true);
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('CONTROL: undoing a terminal entry is what makes the tail rule unreachable today', async () => {
+      const bus = alwaysCheckpointing();
+      const session = await malformedSession();
+      const context = contextStub();
+      try {
+        await bus.execute(session, context, rotateFirst);
+
+        // Stated as a case rather than as a comment, because it is the reason
+        // the sibling above covers only half the rule — and the day clause (ii)
+        // lands this case goes red, which is where somebody will be reading.
+        await expect(bus.undo({ mupdf: session }, context)).rejects.toThrow(
+          /checkpoint restore/iu,
+        );
+      } finally {
+        await mupdfWriter.close(session);
+      }
+    });
+
+    it('stops rather than deleting undo when nothing document-scaled is left to shed', () => {
+      // An invertible-only log holds no checkpoints, so a ceiling of zero
+      // cannot be met by shedding. Deleting the history anyway would be a
+      // guard answering a question nobody asked with the user's work.
+      const log = new CommandLog();
+      log.record({
+        kind: 'invertible',
+        command: rotateFirst,
+        inverse: [{ page: 0, prior: { present: false } }],
+      });
+
+      expect(log.trimTo(0)).toEqual({ droppedEntries: 0, droppedBytes: 0 });
+      expect(log.canUndo).toBe(true);
+    });
   });
 
   it('and the checkpoint holds the document as it was BEFORE apply', async () => {

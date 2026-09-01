@@ -16,6 +16,7 @@ import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG } from './dialogs/commandProblem.js';
+import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { type DocumentView, openDocumentView } from './documentView.js';
 import { CLOSE_LABEL } from './messages/en.js';
@@ -75,7 +76,13 @@ export function App({ client, settings }: AppProps): ReactElement {
   // opens it. `useDialogHost` owns `show`, so the command captures it the same
   // way it captures the client — composition, not a global.
   const dialogs = useMemo(
-    () => new DialogRegistry([ABOUT_DIALOG, SAVE_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG]),
+    () =>
+      new DialogRegistry([
+        ABOUT_DIALOG,
+        SAVE_PROBLEM_DIALOG,
+        COMMAND_PROBLEM_DIALOG,
+        HISTORY_TRIMMED_DIALOG,
+      ]),
     [],
   );
   const { open: openDialog, show, close } = useDialogHost(dialogs);

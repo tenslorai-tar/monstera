@@ -11,7 +11,7 @@ import {
 } from '@monstera/shared';
 
 import type { CapabilityRegistry } from './capabilityRegistry.js';
-import { CommandLog, type ReadonlyCommandLog } from './commandLog.js';
+import { CommandLog, type LogTrim, type ReadonlyCommandLog } from './commandLog.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
 import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 
@@ -381,6 +381,32 @@ export interface DocumentContext {
    * not.
    */
   commandLog(writer: CommandWriter): CommandLog;
+
+  /**
+   * Sheds retained checkpoints until this document is back inside the service's
+   * ceiling, and reports what the user lost (§4, invariant 18).
+   *
+   * ## Why it is here rather than at `open`, which is where it used to be
+   *
+   * The ceiling was consulted once, when a document arrived, and never again —
+   * so checkpoints accumulated without limit for the whole life of a session
+   * and the only thing ever refused was the *next* open. §4's budget was
+   * measured and unenforced, which is the shape a green figure hides best: the
+   * accounting was right and nothing acted on it.
+   *
+   * ## Behind the same capability as `commandLog`, and for the same reason
+   *
+   * It moves the cursor and discards entries, which is exactly what §4 gives
+   * one writer. A lane entry that could trim would be a second component
+   * deciding how much history the user keeps.
+   *
+   * ## No number crosses this seam
+   *
+   * The target is computed here from `documentBytesCeiling`, which §9.17 is the
+   * writer of record for. The bus decides *when* to enforce — after an entry is
+   * recorded, which is the only moment the log grows — and never *how much*.
+   */
+  enforceRetention(writer: CommandWriter): LogTrim;
 
   /**
    * A read-only view of the log, for work that needs to ask rather than change.
@@ -1293,6 +1319,19 @@ export class DocumentService {
           // checking it here would be the runtime guard B5 says to prefer a
           // type over.
           commandLog: () => record.log,
+          // The ceiling is THIS service's and the log is the record's, so the
+          // arithmetic that joins them belongs here and in one place: the
+          // target is whatever the ceiling has left once every other document's
+          // image and log are accounted for. A target computed in the bus would
+          // be a second opinion about a budget §9.17 owns (B3a).
+          enforceRetention: () =>
+            record.log.trimTo(
+              Math.max(
+                0,
+                this.#documentBytesCeiling -
+                  (this.residentDocumentBytes() - record.log.retainedBytes()),
+              ),
+            ),
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather
           // than the one it had when this entry started. A command rewrites the

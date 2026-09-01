@@ -258,7 +258,38 @@ describe('browser shim', () => {
       // binds to the previous image's size. This shim was given no bytes, so it
       // answers its non-zero stand-in — zero is what an absent document reports,
       // and a length nothing can act on reads exactly like one nobody sent.
-      expect(executed).toStrictEqual({ ok: true, value: { version: 4, byteLength: 1024 } });
+      // `historyDropped: 0` because no test asked for a trim. The shim keeps no
+      // checkpoints and has no ceiling, so a number it invented here would be
+      // §4's budget modelled by a double — which is what `options.trims` exists
+      // to avoid.
+      expect(executed).toStrictEqual({
+        ok: true,
+        value: { version: 4, byteLength: 1024, historyDropped: 0 },
+      });
+    });
+
+    it('reports the trim a test asked for, and only for that document', async () => {
+      const trimmed = asDocId('doc-trim');
+      const untouched = asDocId('doc-keep');
+      const shim = createBrowserShim({ trims: new Map([['doc-trim', 2]]) });
+      shim.open('doc-trim');
+      shim.open('doc-keep');
+
+      const first = await shim.client['document.execute']({
+        docId: trimmed,
+        command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+      });
+      const second = await shim.client['document.execute']({
+        docId: untouched,
+        command: { kind: 'rotatePages', pages: [0], quarterTurns: 1 },
+      });
+
+      // PER DOCUMENT, which is the property a single-document case cannot
+      // separate: a shim answering the same trim for every id would satisfy the
+      // first assertion and put a dialog in front of a user working on the
+      // other document.
+      expect(first.ok && first.value.historyDropped).toBe(2);
+      expect(second.ok && second.value.historyDropped).toBe(0);
     });
 
     it('carries no path in either direction', async () => {

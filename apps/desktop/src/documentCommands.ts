@@ -317,6 +317,8 @@ export interface DocumentViewModel extends PageGeometry {
 export interface Applied {
   readonly version: DocVersion;
   readonly byteLength: number;
+  /** Undo steps this command cost to the checkpoint budget (§4, invariant 18). */
+  readonly historyDropped: number;
 }
 
 export class DocumentCommands {
@@ -435,15 +437,19 @@ export class DocumentCommands {
       const session = sessions?.[spec.writer];
       if (session === undefined) throw new MissingSessionError(docId, spec.writer);
 
-      await this.#bus.execute<K>(session, context, command);
+      const { trimmed } = await this.#bus.execute<K>(session, context, command);
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
       // length the renderer needs is the new one. Reading it outside the lane
       // would be a second command's length attributed to this one.
-      return context.byteLength;
+      //
+      // The trim travels with the length for the same reason: it is what THIS
+      // command cost, and a second command's trim attributed to this one would
+      // tell the user their history shrank at the wrong moment.
+      return { byteLength: context.byteLength, historyDropped: trimmed.droppedEntries };
     });
 
-    return { version, byteLength };
+    return { version, ...byteLength };
   }
 
   /**
@@ -504,7 +510,11 @@ export class DocumentCommands {
     // The byte length rides with it and never alone, for the same reason: it is
     // half of *what to rebuild the view against*, and a length with no version
     // is a number nothing can act on.
-    return stepped.yes ? { version, byteLength } : undefined;
+    // `historyDropped: 0` and not a carried value: undo does not grow the log,
+    // so nothing is ever shed for it — `CommandBus` names that fact `NO_TRIM`
+    // and this is the same statement at the boundary. A field omitted here
+    // would make the renderer's obligation optional on one path.
+    return stepped.yes ? { version, byteLength, historyDropped: 0 } : undefined;
   }
 
   /**

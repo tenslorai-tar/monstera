@@ -236,7 +236,24 @@ export const channels = {
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
     z.object({ docId: docIdSchema, command: commandSchema }),
-    z.object({ version: docVersionSchema, byteLength: z.number().int().nonnegative() }),
+    z.object({
+      version: docVersionSchema,
+      byteLength: z.number().int().nonnegative(),
+      /**
+       * Undo steps the command cost, because the checkpoint budget was reached
+       * (§4, invariant 18).
+       *
+       * **Required, and `0` rather than an absent field.** A silently shortened
+       * history is work quietly becoming unrecoverable, which is the thing
+       * invariant 18 exists to forbid — and an optional field is one a renderer
+       * satisfies by not reading it. Making the ordinary answer a number the
+       * caller must still handle is B5 over a rule nobody would enforce.
+       *
+       * A COUNT and not the bytes: what the user lost is undo steps, and a
+       * figure in megabytes answers a question they did not ask.
+       */
+      historyDropped: z.number().int().nonnegative(),
+    }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
 

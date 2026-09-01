@@ -90,6 +90,7 @@ describe('rotate page', () => {
     const client = clientAnswering('document.execute', {
       version: asDocVersion(2),
       byteLength: 2048,
+      historyDropped: 0,
     });
 
     await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
@@ -98,7 +99,31 @@ describe('rotate page', () => {
     // visible in any state: the version alone rebinds the renderer's transport
     // to the previous image's length, which is a RangeError past the end of the
     // new document or a parse of a truncated one.
-    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048 }]);
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 0 }]);
+  });
+
+  /**
+   * Invariant 18's obligation, as a pair. This half asserts the command TELLS
+   * the user; the kernel half (`commandBus.test.ts`) asserts the trim really
+   * happened and by how much.
+   */
+  it('tells the user when the command cost undo steps, and says how many', async () => {
+    const { applied, shown, onApplied, show } = recorder();
+    const client = clientAnswering('document.execute', {
+      version: asDocVersion(2),
+      byteLength: 2048,
+      historyDropped: 3,
+    });
+
+    await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
+
+    expect(shown).toStrictEqual([
+      { id: 'dialog.history-trimmed', props: { dropped: 3 } },
+    ]);
+    // AND THE VIEW STILL MOVED. The command succeeded; a version reported to
+    // nobody would leave the renderer showing the page as it was while a dialog
+    // explains what the rotation cost.
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 2048, historyDropped: 3 }]);
   });
 
   it('a declared failure changes nothing, so the view is not rebuilt', async () => {
@@ -142,6 +167,7 @@ describe('rotate page', () => {
     const client = clientAnswering('document.execute', {
       version: asDocVersion(2),
       byteLength: 2048,
+      historyDropped: 0,
     });
 
     await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
@@ -173,6 +199,10 @@ describe('undo', () => {
 
     await undoCommand({ client, onApplied, show }).run(CONTEXT);
 
+    // NO `historyDropped`, and that is the channel rather than an omission:
+    // `document.undo` does not carry one, because undo cannot grow the log and
+    // therefore never sheds. A field here would be this command inventing a
+    // number the kernel did not report.
     expect(applied).toStrictEqual([{ version: 2, byteLength: 900 }]);
   });
 

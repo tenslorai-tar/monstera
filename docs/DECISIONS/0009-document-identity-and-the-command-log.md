@@ -1290,3 +1290,78 @@ one at this stage — but the save pipeline, when it exists, will want to
 distinguish *"someone else wrote to your file"* from *"we cannot tell"*, and that
 needs evidence this check does not have. Named so it is a decision then rather
 than an omission now.
+
+## Addition, 2026-09-01 — §4's checkpoint budget is enforced during a session, and what that cost
+
+The principle was settled on 2026-08-31 and only a size was open. The size turned
+out not to be a new number, and the rest of this section is what building it
+found.
+
+### N is 1, and it is not a schedule
+
+§4 says checkpoints occur *"every N commands"* and no N was ever chosen.
+Enforcement runs after **every** `record`, because that is the only moment the log
+grows: a period would be a second number to justify, and any period above one is
+an interval in which the ceiling is exceeded by design.
+
+Asserted as a **call** rather than as a state. Three commands under an ample
+ceiling leave a log that is byte-for-byte identical whether retention ran three
+times or not at all, so the state cannot separate them.
+
+### The size is §9.17's ceiling, not a figure of its own
+
+`DocumentService` computes the target as whatever `documentBytesCeiling` has left
+once every other document's image and log are accounted for. The bus decides
+*when* and never *how much*, so no second policy for one concern appears — the
+same rule that keeps `budget.ts` deriving both of its constants from one line.
+
+### Dropping a checkpoint takes the entries before it
+
+A terminal entry is terminal for not being invertible, so undo cannot step over
+one without its checkpoint. Leaving the earlier entries in place would leave
+`canUndo` true for a history nothing can walk, which is worse than a short one.
+
+### The redo tail goes first, and that half is UNREACHABLE today
+
+A redo entry is work the user has stepped back from; an applied entry is the path
+back to where they are. So the tail is shed first.
+
+**No code in this repository can produce the state that ordering handles.** A
+checkpoint reaches the tail only by undoing a terminal entry, and `CommandBus.undo`
+throws `CheckpointRestoreNotBuiltError` for exactly that — invariant 18 clause
+(ii) is deferred. The branch is kept rather than deleted, for JJJ-1's reason: the
+fact it encodes is true, and deleting it would produce the wrong order the day
+clause (ii) lands, in a file nobody would be reading. A case pins **why** it is
+unreachable, so clause (ii) arrives on a red assertion.
+
+**What is reachable is the guard beside it, and the first draft got it wrong.**
+An invertible entry retains no document-scaled bytes, so a loop keyed on
+`retainedBytes() > target` alone empties a checkpoint-free tail entirely,
+destroys redo, and is still over the target. Pure loss for no gain. The tail is
+now shed only while it holds a checkpoint.
+
+### The user is told through a NEW dialog, and `dialog.command-problem` was wrong
+
+The 2026-08-31 note named `dialog.command-problem` as the surface, having checked
+that the id exists. Checked again against what it *is*: it is titled *"That could
+not be done"* and its props are a discriminated union of **failure codes**. This
+fires on a command that succeeded, so reusing it would report a failure at the
+moment the operation worked — worse than the silence it replaces — and would
+have added a non-failure member to a union whose readability is that every member
+is one.
+
+`dialog.history-trimmed` is its own declaration. Its schema requires a
+**positive** count, so a modal telling the user that nothing happened is
+unrepresentable rather than forbidden by a rule at the call site — the same trade
+`dialog.save-problem` makes by refusing `saved`.
+
+**A toast would be the better carrier and does not exist** (D12, unstarted).
+Between a modal and nothing, invariant 18 chooses the modal. If it turns out to
+fire often, the answer is the toast and not a suppression rule.
+
+### Rejected: carrying the trim as an optional field
+
+`historyDropped` is required on `document.execute`'s result and `0` is the
+ordinary answer. An optional field is one a renderer satisfies by not reading it,
+and the obligation it carries — *the user must be told* — is exactly the kind
+that gets skipped by a caller writing `if (trimmed)`.

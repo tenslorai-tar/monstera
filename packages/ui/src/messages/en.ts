@@ -34,6 +34,9 @@ export const THEME_TITLE = messageKey('setting.appearance-theme.title');
 export const ABOUT_TITLE = messageKey('dialog.about.title');
 export const ABOUT_COMMAND_TITLE = messageKey('command.show-about.title');
 export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
+export const HISTORY_TRIMMED_TITLE = messageKey('dialog.history-trimmed.title');
+export const HISTORY_TRIMMED_APPLIED = messageKey('dialog.history-trimmed.applied');
+export const HISTORY_TRIMMED_LOST = messageKey('dialog.history-trimmed.lost');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
@@ -92,6 +95,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // their edits"* — a user meeting a refusal needs to know first that their
   // work is still there, before anything about why.
   [SAVE_WORK_INTACT]: 'Your changes are still open and unsaved. Nothing has been lost.',
+  // "Undo history" and not "history": the document's own history is what a
+  // reader will assume, and this dialog is about neither the file nor its
+  // contents.
+  [HISTORY_TRIMMED_TITLE]: 'Older undo steps were released',
+  // THE SUCCESS FIRST. This dialog follows an operation that worked, so a body
+  // opening with the loss would read as a failure report.
+  [HISTORY_TRIMMED_APPLIED]: 'Your change was applied and your document is intact.',
+  // The count is interpolated rather than described: whether to save now turns
+  // on how much went, and "some older steps" cannot say.
+  [HISTORY_TRIMMED_LOST]:
+    'To stay within the memory this application is allowed, {dropped} older step(s) can no ' +
+    'longer be undone. Everything more recent still can.',
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',

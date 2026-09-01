@@ -79,7 +79,8 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-  'document.execute': () => Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096 })),
+  'document.execute': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
   'document.readRange': ({ begin, end }) =>
@@ -785,7 +786,11 @@ export const invert: Invert<'mupdf', 'rotatePages'> = (
     // so two cases would have had one indistinguishable reason between them.
     // This asks a stronger question anyway — whether `log` is genuinely
     // narrower than the guarded accessor, or merely a second name for it.
-    because: /missing the following properties from type 'CommandLog': #private, record, undo, redo/u,
+    // `trimTo` joins the mutating half here, and it belongs there: it discards
+    // entries and moves the cursor, which is exactly what the readable view is
+    // separated from.
+    because:
+      /missing the following properties from type 'CommandLog': #private, trimTo, record, undo, redo/u,
     notBecause: null,
     source: `
 import type { CommandLog, DocumentContext } from '@monstera/kernel';

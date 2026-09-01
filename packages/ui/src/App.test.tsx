@@ -382,7 +382,7 @@ describe('App', () => {
     it('the ROTATE control names the SAME page the renderer asked the model about', async () => {
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();
@@ -453,7 +453,7 @@ describe('App', () => {
       // requests cannot carry this claim.
       const { client, sent } = answeringClient({
         ...OPEN_DOCUMENT_ANSWERS,
-        'document.execute': { version: asDocVersion(2), byteLength: 2048 },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
       });
       render(<App client={client} settings={freshSettings()} />);
       await withDocumentOpen();

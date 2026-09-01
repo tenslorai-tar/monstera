@@ -131,6 +131,21 @@ export type LogEntry = { readonly [K in CommandKind]: LogEntryFor<K> }[CommandKi
  * an entry recorded without an applied command makes undo reverse a change the
  * document never received.
  */
+/**
+ * What a retention trim discarded.
+ *
+ * Always returned, never `undefined` for *nothing happened*. Invariant 18
+ * obliges the caller to tell the user when history was shortened, and an
+ * obligation that arrives as an absent value is one that gets skipped by a
+ * caller writing `if (trim)`.
+ */
+export interface LogTrim {
+  /** Entries the user can no longer reach, applied and redo tail together. */
+  readonly droppedEntries: number;
+  /** Document-scaled bytes reclaimed. Zero when only invertible entries went. */
+  readonly droppedBytes: number;
+}
+
 export interface ReadonlyCommandLog {
   readonly entries: readonly LogEntry[];
   readonly redoDepth: number;
@@ -189,6 +204,99 @@ export class CommandLog implements ReadonlyCommandLog {
       if (entry.kind === 'terminal') total += entry.checkpoint.byteLength;
     }
     return total;
+  }
+
+  /**
+   * Sheds retained bytes until the log holds no more than `target`, and reports
+   * what that cost.
+   *
+   * ## Dropping a checkpoint ENDS UNDO PAST IT, and that is the whole design
+   *
+   * A terminal entry is terminal for not being invertible, so undo cannot step
+   * over one without the checkpoint it carries. Discarding that checkpoint
+   * therefore makes every entry at or before it unreachable — not merely
+   * unhelpful — which is why they go with it rather than being left in place
+   * as a history nothing can walk. Keeping them would report a `canUndo` that
+   * lies, which is worse than a shorter history.
+   *
+   * §4 says memory is *"one document plus a few checkpoints"*. This is *a few*
+   * being enforced, and the number is not written here: the caller computes the
+   * target from `DocumentService`'s ceiling, which §9.17 is the writer of record
+   * for. A constant in this file would be a second policy for one concern.
+   *
+   * ## The REDO tail goes first, and that ordering is the only choice made here
+   *
+   * Both ends are the user's work and neither loss is free. A redo entry is work
+   * they have already stepped back from; an undo entry is the path back to where
+   * they are. So the tail is shed newest-first before any applied history is
+   * touched — strictly less bad, and the alternative is not neutral: a
+   * front-first walk destroys the history the user is standing on while holding
+   * speculative entries behind them.
+   *
+   * **That ordering is UNREACHABLE through the bus today, and the branch is kept
+   * anyway.** A redo tail can only hold a checkpoint if undo stepped over a
+   * terminal entry, and `CommandBus.undo` throws
+   * `CheckpointRestoreNotBuiltError` for exactly that — invariant 18 clause (ii)
+   * is deferred. So no case here can produce the state this half handles.
+   * Deleting it would be correct for today's tree and would produce the wrong
+   * order the day clause (ii) lands, silently, in a file nobody would be
+   * reading. What *is* reachable and is covered is the guard above it: a
+   * checkpoint-free tail must survive untouched.
+   *
+   * ## Invariant 18: this must never be silent
+   *
+   * A silently shortened history is work quietly becoming unrecoverable. The
+   * return value is not a diagnostic — it is what the caller is obliged to tell
+   * the user with, which is why a trim that dropped nothing is `0` rather than
+   * `null`: an obligation that arrives as an absent value is one a caller
+   * forgets to check.
+   *
+   * @param target the most this log may retain, in document-scaled bytes
+   */
+  trimTo(target: number): LogTrim {
+    let droppedEntries = 0;
+    let droppedBytes = 0;
+
+    const shed = (entries: readonly LogEntry[]): void => {
+      droppedEntries += entries.length;
+      for (const entry of entries) {
+        if (entry.kind === 'terminal') droppedBytes += entry.checkpoint.byteLength;
+      }
+    };
+
+    // THE REDO TAIL, newest first, and ONLY while there is a checkpoint in it.
+    //
+    // The guard is not an optimisation. An invertible entry retains no
+    // document-scaled bytes, so popping one reclaims nothing — and a loop
+    // keyed on `retainedBytes() > target` alone would empty a checkpoint-free
+    // tail entirely, discard the user's redo history, and still be over the
+    // target. Pure loss for no gain, which is the worst thing a shedding rule
+    // can do. Popping invertible entries that sit *in front of* a checkpoint is
+    // different: they are in the tail being discarded anyway.
+    const tailHoldsCheckpoint = (): boolean =>
+      this.#entries.slice(this.#applied).some((entry) => entry.kind === 'terminal');
+    while (this.retainedBytes() > target && tailHoldsCheckpoint()) {
+      const removed = this.#entries.pop();
+      if (removed === undefined) break;
+      shed([removed]);
+    }
+
+    // Then the applied history, oldest first, in terminal-bounded chunks: the
+    // entries before a checkpoint cannot be reached once it is gone.
+    while (this.retainedBytes() > target) {
+      const oldest = this.#entries.findIndex((entry) => entry.kind === 'terminal');
+      // NOT AN ERROR AND NOT A LOOP. Nothing document-scaled is left, so the
+      // target cannot be met by shedding — the remaining entries are invertible
+      // and hold no checkpoint. The caller's ceiling is then exceeded by the
+      // canonical images alone, which is a different problem with a different
+      // answer (refusing the next open) and not one to solve by deleting undo.
+      if (oldest === -1) break;
+      const removed = this.#entries.splice(0, oldest + 1);
+      shed(removed);
+      this.#applied = Math.max(0, this.#applied - removed.length);
+    }
+
+    return { droppedEntries, droppedBytes };
   }
 
   get canUndo(): boolean {

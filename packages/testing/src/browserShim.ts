@@ -114,6 +114,14 @@ export interface BrowserShimOptions {
    */
   readonly busy?: ReadonlySet<string>;
   /**
+   * Undo steps each document's next command reports as dropped, by id.
+   *
+   * §4's checkpoint budget, as a value a test supplies rather than behaviour
+   * the shim invents: there are no checkpoints here and no ceiling, so any
+   * number this side computed would be arithmetic nothing ships.
+   */
+  readonly trims?: ReadonlyMap<string, number>;
+  /**
    * Documents whose save answers something other than `saved`, by id.
    *
    * Same reasoning as {@link BrowserShimOptions.busy} and the same shape: the
@@ -313,7 +321,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // correctly. `documentBytes` is what a range is served from, so a test
       // that supplies real bytes gets a length consistent with them; one that
       // does not gets a number that moves.
-      return Promise.resolve(ok({ version: asDocVersion(next), byteLength: byteLengthOf(docId) }));
+      // A SET A TEST CONTROLS, not a condition the shim models. The shim keeps
+      // no checkpoints and has no ceiling, so simulating a trim would be
+      // inventing §4's budget here — and a shim that answered a plausible
+      // number would let a renderer test pass against arithmetic nothing ships.
+      // Zero is the honest default and `trims` is how a case asks for the other
+      // branch.
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(next),
+          byteLength: byteLengthOf(docId),
+          historyDropped: options.trims?.get(docId) ?? 0,
+        }),
+      );
     },
 
     'document.undo': ({ docId }) => {
