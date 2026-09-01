@@ -71,6 +71,38 @@ const CONTINUATION = /^\s*>\s*(.*)$/u;
  */
 const ASSERTABLE =
   /^([a-z][a-z0-9-]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)x\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)\s*,\s*base\s+([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)$/u;
+
+/**
+ * `name = 3 GB, base 128 MB` — an absolute and a baseline, and NO multiple.
+ *
+ * A PARSED STATE, on the same principle as `provisional` below rather than as
+ * an optional group inside the pattern above. An optional `(…x, )?` would match
+ * a line that had lost its multiple by accident exactly as it matches one that
+ * lost it by decision, which is the defect `REQUIRED_BUDGETS` is written
+ * against one paragraph down: a line that quietly stops budgeting still parses
+ * cleanly.
+ *
+ * `mupdf-host` is declared this way by
+ * [ADR-0033](../../docs/DECISIONS/0033-a-ratio-budget-governs-a-process-that-holds-bytes.md).
+ * A ratio against file size states something about a process that HOLDS bytes;
+ * the host parses, its cost tracks content shape, and its two breaches
+ * disagreed about which document was expensive — 6.26x cost 1.34 GB against
+ * 7.83x costing 284 MB.
+ */
+const CONTAINED =
+  /^([a-z][a-z0-9-]*)\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)\s*,\s*base\s+([0-9]+(?:\.[0-9]+)?)\s*(GB|MB)$/u;
+
+/**
+ * Budgets whose multiple was WITHDRAWN, and which may not carry one again.
+ *
+ * Tolerating its absence is not enough. Without this set the withdrawal would
+ * be a fact about today's text rather than a decision with a mechanism: the
+ * next reader restores `6x`, the line parses as `ASSERTABLE`, and the gate
+ * asserts a term ADR-0033 removed with reasons — silently, because a budget
+ * with more terms looks like a stricter one.
+ */
+export const NO_MULTIPLE = new Set(['mupdf-host']);
+
 /** `name = provisional` */
 const PROVISIONAL = /^([a-z][a-z0-9-]*)\s*=\s*provisional$/u;
 
@@ -78,7 +110,7 @@ const PROVISIONAL = /^([a-z][a-z0-9-]*)\s*=\s*provisional$/u;
  * @typedef {{
  *   name: string,
  *   kind: 'assertable',
- *   multiplier: number,
+ *   multiplier: number | null,
  *   absoluteBytes: number,
  *   absoluteText: string,
  *   baselineBytes: number,
@@ -103,7 +135,7 @@ function fail(what) {
       `build passes.\n` +
       `Expected exactly one line of the form:\n` +
       `  > **Memory budgets:** \`main = 1.5x, 1.5 GB, base 80 MB\` · ` +
-      `\`mupdf-host = 6x, 3 GB, base 128 MB\` · \`renderer = provisional\``,
+      `\`mupdf-host = 3 GB, base 128 MB\` · \`renderer = provisional\``,
   );
 }
 
@@ -164,19 +196,62 @@ export function memoryBudgets(options = {}) {
 
   for (const entry of entries) {
     const assertable = ASSERTABLE.exec(entry);
+    const contained = CONTAINED.exec(entry);
     const provisional = PROVISIONAL.exec(entry);
 
-    if (assertable === null && provisional === null) {
+    if (assertable === null && contained === null && provisional === null) {
       fail(
-        `cannot parse budget entry \`${entry}\`. Each entry is either ` +
-          `\`name = <multiplier>x, <absolute> GB|MB\` or \`name = provisional\``,
+        `cannot parse budget entry \`${entry}\`. Each entry is ` +
+          `\`name = <multiplier>x, <absolute> GB|MB, base <baseline> GB|MB\`, ` +
+          `\`name = <absolute> GB|MB, base <baseline> GB|MB\` for a budget whose multiple was ` +
+          `withdrawn, or \`name = provisional\``,
       );
     }
 
-    const name = `${(assertable ?? provisional)?.[1] ?? ''}`;
+    const name = `${(assertable ?? contained ?? provisional)?.[1] ?? ''}`;
     if (budgets.has(name)) fail(`\`${name}\` is declared twice`);
 
-    if (assertable !== null) {
+    // REFUSED, not tolerated. A withdrawn term that may quietly come back is a
+    // fact about today's text; this makes it a decision with a mechanism.
+    if (assertable !== null && NO_MULTIPLE.has(name)) {
+      fail(
+        `\`${entry}\` carries a multiple, and \`${name}\`'s was withdrawn by ADR-0033 with ` +
+          `reasons. A ratio against file size states something about a process that HOLDS ` +
+          `bytes; this one parses, and its two breaches disagreed about which document was ` +
+          `expensive — 6.26x cost 1.34 GB where 7.83x cost 284 MB. Restoring the term needs a ` +
+          `new ADR, not an edit to this line`,
+      );
+    }
+
+    if (contained !== null) {
+      const magnitude = Number(contained[2]);
+      const unit = `${contained[3]}`;
+      const baseMagnitude = Number(contained[4]);
+      const baseUnit = `${contained[5]}`;
+      if (!Number.isFinite(magnitude) || magnitude <= 0) fail(`\`${entry}\` has a non-positive absolute limit`);
+      if (!Number.isFinite(baseMagnitude) || baseMagnitude <= 0) fail(`\`${entry}\` has a non-positive baseline limit`);
+
+      const absoluteBytes = toBytes(`${contained[2]}`, unit);
+      const baselineBytes = toBytes(`${contained[4]}`, baseUnit);
+      if (baselineBytes >= absoluteBytes) {
+        fail(
+          `\`${entry}\` declares a baseline at or above its absolute cap, which leaves no room ` +
+            `for a document and means one of the two is not what its author intended`,
+        );
+      }
+
+      budgets.set(name, {
+        name,
+        kind: 'assertable',
+        // NULL RATHER THAN A SENTINEL, so a consumer that forgets this state
+        // fails to compile instead of asserting against `Infinity` or `0`.
+        multiplier: null,
+        absoluteBytes,
+        absoluteText: `${contained[2]} ${unit}`,
+        baselineBytes,
+        baselineText: `${contained[4]} ${baseUnit}`,
+      });
+    } else if (assertable !== null) {
       const multiplier = Number(assertable[2]);
       const magnitude = Number(assertable[3]);
       const unit = `${assertable[4]}`;

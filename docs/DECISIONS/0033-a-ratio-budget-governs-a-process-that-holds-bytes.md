@@ -1,10 +1,9 @@
 # ADR-0033 — A ratio budget governs a process that holds bytes, not one that parses them
 
 **Date:** 2026-09-01
-**Status:** proposed. **Restates `mupdf-host`'s budget in `docs/ARCHITECTURE.md`
-§9.17**, keeping the absolute and the baseline and withdrawing the multiple. The
-amendment is a separate commit (B4), and this ADR is the reasons the amendment
-would carry.
+**Status:** accepted 2026-09-01. **Restates `mupdf-host`'s budget in
+`docs/ARCHITECTURE.md` §9.17**, keeping the absolute and the baseline and
+withdrawing the multiple.
 **Answers the gate that failed**, per `BUILD-PROMPT.md:680-682`: *"A failed gate
 blocks Stage 1. The response is an ADR that either amends the architecture or
 restates the budget with reasons — never 'note it and proceed.' A gate whose
@@ -117,14 +116,33 @@ its own merits, because 7.83x is not a ceiling either: it is the largest of two
 documents, and the next document has never been measured. Fitting a bound to the
 sample is how a placeholder acquires a second decimal place and no more meaning.
 
-## What this does not settle
+## What this does not settle, and what it gives up
 
-The **renderer** stays `provisional`, unchanged and out of scope.
+**What is given up: amplification detection.** The multiple was the only term
+keyed to **input size**, and therefore the only one that could catch a small
+hostile document producing a large parse. After this restatement a **1 MB file
+that parses to 2.9 GB clears every term** — under the absolute, and its baseline
+untouched.
+
+That is consistent with §9.17 calling this *"a containment limit"* rather than a
+detector, and the 3 GB ceiling still protects the machine: the job object kills
+the process at it either way. But it is stated here rather than left to be
+discovered, because invariant 25's premise is that this host is **hostile
+territory**, and a term that used to bound the ratio of output to attacker-chosen
+input is exactly the kind of thing whose removal should be a decision rather
+than an omission.
 
 Whether the host needs a *different* second term — one keyed on something a
 parser's cost actually tracks, object count perhaps — is open and is not
 proposed here. Naming a term nobody has measured would repeat the mistake this
 ADR exists to correct.
+
+**Those two paragraphs are one gap seen twice.** A term keyed on object count is
+the candidate that would restore amplification detection, because object count
+is attacker-chosen in the way file size is and, unlike file size, is something a
+parser's cost plausibly tracks. Neither is proposed until measured.
+
+The **renderer** stays `provisional`, unchanged and out of scope.
 
 ## Reproducing
 

@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { repoRoot } from '../lib/gitScope.mjs';
-import { SOURCE_FILE, memoryBudgets } from '../lib/memoryBudgets.mjs';
+import { NO_MULTIPLE, SOURCE_FILE, memoryBudgets } from '../lib/memoryBudgets.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { documentCostBytes, runAllShapes, runBudgetGate } from '../perf/budgetGate.mjs';
 import { formatBytes } from '../perf/peakRss.mjs';
@@ -84,8 +84,13 @@ function generousEntriesExcept(results, underTest) {
     if (result.budget === underTest) continue;
     worst.set(result.budget, Math.max(worst.get(result.budget) ?? 0, result.ratio));
   }
-  return [...worst].map(
-    ([budget, ratio]) => `${budget} = ${String(Math.ceil(ratio) + 10)}x, 64 GB, base 32 GB`,
+  return [...worst].map(([budget, ratio]) =>
+    // THE SET COMES FROM THE PARSER, not from a copy here. Which budgets lost
+    // their multiple is one question, and a second opinion about it in a proof
+    // would keep agreeing with the parser until the day it did not (B3a).
+    NO_MULTIPLE.has(budget)
+      ? `${budget} = 64 GB, base 32 GB`
+      : `${budget} = ${String(Math.ceil(ratio) + 10)}x, 64 GB, base 32 GB`,
   );
 }
 
@@ -290,6 +295,15 @@ const thrown = guarded(() => {
   // what that role actually used must flip the verdict in both directions.
   // -------------------------------------------------------------------------
   for (const measured of baseline.results) {
+    // A BUDGET WITH NO MULTIPLE HAS NO RATIO VERDICT TO FLIP, so the two cases
+    // below cannot be written for it — there is no term to declare just above
+    // and just below what the role used. Skipped rather than adapted, because
+    // an adapted case asserting `withinMultiplier === true` for a budget that
+    // has no multiple would assert the constant this parser now returns and
+    // read as coverage. ADR-0033 withdrew `mupdf-host`'s; the absolute and
+    // baseline cases below still cover it.
+    if (NO_MULTIPLE.has(measured.budget)) continue;
+
     // BUDGET NAMES, not role labels — `main` is measured twice and a
     // declaration line naming it twice is not a line the parser accepts. This
     // built one for `main-service` when the two were assumed identical, and the

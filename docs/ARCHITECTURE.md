@@ -849,19 +849,29 @@ say**.
     — so a native library inside `main`'s fixed cost passed the budget on the CI
     runner and was found only because a control is variance-sensitive. Each
     baseline therefore carries its derivation — what was run, when, and what it
-    read — in the ADR rather than in an argument alone. `mupdf-host`'s ceiling is
-    **not yet derived**, because the thing it must catch has not been named; that
-    is open rather than settled. **As of 2026-08-31 the placeholder is known to
-    be exceeded by the real host on both content shapes**, where the model
-    `perf:gate` asserts against clears it — the readings are in
-    [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md)'s
-    note of that date, which is where the sentence above puts a derivation. That
-    is not an argument for a larger number, because the clause above forbids
-    one; and it is why the gate is **not** pointed at the real host, since
-    asserting an openly underived ceiling in CI turns a placeholder into a gate.
+    read — in the ADR rather than in an argument alone. `mupdf-host` **no longer carries a
+    multiple at all**, and that is a decision rather than an omission
+    ([ADR-0033](DECISIONS/0033-a-ratio-budget-governs-a-process-that-holds-bytes.md),
+    2026-09-01). Its `6x` was exceeded by the real host on both content shapes
+    where the model `perf:gate` asserts against cleared them, and the two
+    breaches **disagreed about which document was expensive**: 6.26x cost
+    1.34 GB and 7.83x cost 284 MB. A ratio against file size states something
+    about a process that HOLDS bytes — which is why `main`'s stands and is
+    argued from *"main holds canonical bytes and never parses"* — and the host
+    parses, where cost tracks content shape. The absolute is enforced by the job
+    object and read back off it (invariant 25(b)); the multiple had no mechanism
+    and could not have one, since a job object has never heard of the file the
+    document came from.
+
+    **What that gives up is stated in the ADR rather than left to be
+    discovered:** the multiple was the only term keyed to input size, so a small
+    hostile document producing a large parse now clears every term. That is
+    consistent with this budget being a containment limit rather than a
+    detector, and it is why a term keyed on something a parser's cost actually
+    tracks is recorded there as open.
 
     > **Memory budgets:** `main = 1.5x, 1.5 GB, base 80 MB` ·
-    > `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`
+    > `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`
     >
     > That line is machine-read, and it is the **only** place this section
     > states these numbers — the prose above names each budget and argues it,
@@ -1529,3 +1539,4 @@ Every entry names the founding clause it supersedes and links its ADR.
 | 2026-08-25 | **Execution mode is a placement axis, and `packages/nodemode` is the Node-mode side** (§1, §9.26). The map classified by what a package is *about*; this is the first module where subject and mode disagree — the engine host's reader is Win32 pipe plumbing for the shell that executes where the shell's API surface does not exist. Measured: a `worker_threads` Worker inside Electron main has `process.versions.electron` set, `process.type` undefined, and `import('electron')` yielding a module with **no `app`**, against main's control in the same run — the fourth failure of the `apps/desktop/src/` proxy and the only one where the import SUCCEEDS. A sixth package, not in `MAY_IMPORT_ELECTRON`, so the specifier is a red build with no rule to remember (B5). Harness and probe files are in scope by the same test. `packages/kernel` was rejected on subject rather than on mode: a Windows-only reader there breaks §1's own reason for the kernel's Electron-free property. The engine host body is unmoved and stays in `packages/kernel`. | §1's one-axis repository map, and invariant 26 answering each occurrence by moving one file rather than stating where Node-mode code goes | [ADR-0024](DECISIONS/0024-execution-mode-is-a-placement-axis.md) |
 | 2026-08-26 | **A baseline budget is derived from what it must catch, and `main`'s becomes `base 80 MB`** (§9.17). A baseline budget sits above the honest measured fixed cost of every role it governs and **below that cost plus the smallest regression it exists to detect**; outside that window it is not a loose limit but one that cannot fail for its stated reason. `96 MB` was argued and never measured — its own commit says *"the budgets are argued rather than fitted"* — and landed within a megabyte of a bare interpreter plus the whole kernel barrel. Measured 2026-08-26: bare Node **55.0 MB**, `+mupdfWriter.js` **+39.2 MB**, the barrel **+48.8 MB**; `main-service` clean **63.4/63.5 MB**, and with the barrel accidentally loaded **98.1/98.6 MB here (gate FAILS) against 92.0 MB on the runner (gate PASSED)** — build-dependent, so the exposure was caught by `proof:perfbudget`'s variance-sensitive control rather than by the budget. Rejected: fitting the limit to today's measurement; deriving it from a bare-interpreter reading taken in the same disturbed environment, which reintroduces exactly the blindness the baseline term exists to remove. | §9.17's `base 96 MB` and its argument-only derivation, which states the lower bound and no upper one | [ADR-0025](DECISIONS/0025-mains-baseline-budget-is-derived-from-what-it-must-catch.md) |
 | 2026-08-26 | **A channel's DEFINITION lives where its schemas may live; the shared thing is the discipline** (§5). `packages/contract` defines every *renderer-facing* channel exactly once; the engine host's channels are declared in `packages/kernel` and still go through `channel()`, `wrapHandler` and `frame.ts`. Forced by a rule the contract package already states about itself — `commands.ts`: inverses "stay kernel-only: they carry structural prior state the renderer must not see" — and the host's `capture` channel answers with exactly that prior state, so its result schema cannot be declared in the package the renderer imports. Rejected: declaring it in `contract` anyway (breaks that rule at the only boundary it was written for); and a `contract`-side factory taking the prior schema as a parameter (splits one channel definition across two packages to preserve a sentence, and is an abstraction with one caller). | Part C5's "defines every channel once (zod schema per params/result)", and §5's unqualified restatement of it — both predate any non-renderer channel | [ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md) |
+| 2026-09-01 | **A ratio budget governs a process that HOLDS bytes, and `mupdf-host`'s multiple is withdrawn** (§9.17). Its `6x` was exceeded by the real host on both content shapes where the model `perf:gate` asserts against cleared them, and the two breaches disagreed about which document was expensive — 6.26x cost 1.34 GB where 7.83x cost 284 MB, ranking the documents in the opposite order from their cost. A ratio against file size states something about a process that holds a copy, which is why `main`'s stands; the host parses, where cost tracks content shape. The absolute is enforced by the job object and read back off it (invariant 25(b)); the multiple had no mechanism and could not have one. `memoryBudgets.mjs` gains a parsed two-term state and **refuses** a `mupdf-host` line that restores the multiple, so the withdrawal is a decision with a mechanism rather than a fact about today's text. Gives up amplification detection — a 1 MB file parsing to 2.9 GB now clears every term — which is stated in the ADR beside the open question of a term keyed on object count. Rejected: raising the number (§9.17 forbids it in terms, and 7.83x is the larger of two documents rather than a ceiling). | §9.17's `mupdf-host = 6x, 3 GB, base 128 MB`, whose multiple this document already recorded as "not yet derived" | [ADR-0033](DECISIONS/0033-a-ratio-budget-governs-a-process-that-holds-bytes.md) |

@@ -121,7 +121,7 @@ export function documentCostBytes(role, peakBytes, baselineBytes) {
  *   baselineBytes: number,
  *   documentBytes: number,
  *   ratio: number,
- *   multiplierLimit: number,
+ *   multiplierLimit: number | null,
  *   absoluteLimit: number,
  *   absoluteText: string,
  *   baselineLimit: number,
@@ -205,7 +205,14 @@ export function runBudgetGate(options = {}) {
       absoluteText: budget.absoluteText,
       baselineLimit: budget.baselineBytes,
       baselineText: budget.baselineText,
-      withinMultiplier: ratio <= budget.multiplier,
+      // TRUE WHEN THERE IS NO TERM, and that is not the same as "passed".
+      // `multiplierLimit` above is `null` in that case, so the report can say
+      // which of the two it is; a verdict that folded them together would read
+      // as a ratio checked and cleared for a budget that has no ratio.
+      // ADR-0033 withdrew `mupdf-host`'s, and what it gives up — amplification
+      // detection, a small hostile document producing a large parse — is
+      // recorded there rather than implied by a `true` here.
+      withinMultiplier: budget.multiplier === null || ratio <= budget.multiplier,
       withinAbsolute: measurement.peakRssBytes <= budget.absoluteBytes,
       // The measured baseline is now part of the verdict rather than merely
       // subtracted and printed. It was the latter for one commit, which is the
@@ -265,7 +272,15 @@ if (process.argv[1]?.endsWith('budgetGate.mjs')) {
         process.stdout.write(
           `  ${verdict} ${result.role.padEnd(11)} peak ${formatBytes(result.peakBytes).padStart(9)} ` +
             `- baseline ${formatBytes(result.baselineBytes).padStart(9)}${result.withinBaseline ? '' : ' OVER'} ` +
-            `= ${result.ratio.toFixed(2)}x  (limits: ${String(result.multiplierLimit)}x, ` +
+            // THE RATIO IS STILL PRINTED WHERE THERE IS NO LIMIT FOR IT, and
+            // the limit says so in words. `nullx` was the first rendering, and
+            // it reads as a limit that exists and is null rather than a term
+            // that was withdrawn — which is the same conflation the verdict
+            // avoids by keeping `multiplierLimit` nullable. A measured ratio
+            // with nothing to check it against is worth showing: it is the
+            // number ADR-0033's successor term would be derived from.
+            `= ${result.ratio.toFixed(2)}x  (limits: ` +
+            `${result.multiplierLimit === null ? 'no multiple' : `${String(result.multiplierLimit)}x`}, ` +
             `${result.absoluteText}, base ${result.baselineText})\n`,
         );
       }

@@ -75,22 +75,22 @@ function withEntries(entries) {
 
   const host = assertableBudget(budgets, 'mupdf-host');
   check(
-    'and mupdf-host does too',
-    host.multiplier === 6 && host.absoluteText === '3 GB' && host.absoluteBytes === 3 * 1024 ** 3,
+    'and mupdf-host does too, carrying NO multiple since ADR-0033',
+    host.multiplier === null && host.absoluteText === '3 GB' && host.absoluteBytes === 3 * 1024 ** 3,
     `got multiplier=${String(host.multiplier)} absolute=${host.absoluteText}`,
   );
 
   // Resolution test. Two budgets that differ only in the digit that matters must
   // come back different, or the parser cannot distinguish the numbers it exists
   // to carry.
-  const nudged = memoryBudgets({ text: withEntries('`main = 1.6x, 1.5 GB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') });
+  const nudged = memoryBudgets({ text: withEntries('`main = 1.6x, 1.5 GB, base 96 MB` ·`mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`') });
   check(
     'changing 1.5x to 1.6x in the line changes the parsed budget',
     assertableBudget(nudged, 'main').multiplier === 1.6,
     'the parser reports the same multiplier for two different declarations, so it is not reading the line',
   );
 
-  const rescaled = memoryBudgets({ text: withEntries('`main = 1.5x, 1500 MB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') });
+  const rescaled = memoryBudgets({ text: withEntries('`main = 1.5x, 1500 MB, base 96 MB` ·`mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`') });
   check(
     'and MB is not silently treated as GB',
     assertableBudget(rescaled, 'main').absoluteBytes === 1500 * 1024 ** 2,
@@ -134,7 +134,7 @@ checkThrows(
 
 checkThrows(
   'a malformed entry refuses',
-  () => memoryBudgets({ text: withEntries('`main = about one and a half times` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = about one and a half times` · `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`') }),
   /cannot parse budget entry/u,
 );
 
@@ -146,13 +146,53 @@ checkThrows(
 
 checkThrows(
   'an unknown budget name refuses',
-  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional` · `gpu = 2x, 1 GB, base 64 MB`') }),
+  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional` · `gpu = 2x, 1 GB, base 64 MB`') }),
   /unknown budget gpu/u,
 );
 
+// ---------------------------------------------------------------------------
+// THE WITHDRAWN MULTIPLE, and refusing its return is the whole mechanism.
+//
+// Tolerating its absence would make ADR-0033's withdrawal a fact about today's
+// text: the next reader restores `6x`, the line parses as an ordinary
+// three-term budget, and the gate asserts a term that was removed with reasons —
+// silently, because a budget with more terms reads as a stricter one.
+//
+// The pair matters. Accepting the two-term form alone is satisfied by a parser
+// that accepts everything; refusing the three-term form alone is satisfied by
+// one that accepts nothing for this name.
+// ---------------------------------------------------------------------------
+checkThrows(
+  'a mupdf-host line that RESTORES its multiple is refused, not quietly asserted',
+  () =>
+    memoryBudgets({
+      text: withEntries(
+        '`main = 1.5x, 1.5 GB, base 96 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`',
+      ),
+    }),
+  /withdrawn by ADR-0033/u,
+);
+
+{
+  // THE OTHER HALF: `main` still carries one, so the refusal above is about the
+  // budget ADR-0033 names and not about multiples in general. Without this the
+  // rule could have been written as "no budget may carry a multiple" and both
+  // cases would still pass.
+  const budgets = memoryBudgets({
+    text: withEntries(
+      '`main = 1.5x, 1.5 GB, base 96 MB` · `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`',
+    ),
+  });
+  check(
+    'CONTROL: main keeps its multiple, so the refusal is per budget and not a ban',
+    assertableBudget(budgets, 'main').multiplier === 1.5,
+    `main parsed as multiplier=${String(assertableBudget(budgets, 'main').multiplier)}`,
+  );
+}
+
 checkThrows(
   'a duplicated budget refuses',
-  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `main = 9x, 9 GB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = 1.5x, 1.5 GB, base 96 MB` · `main = 9x, 9 GB, base 96 MB` ·`mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`') }),
   /declared twice/u,
 );
 
@@ -190,7 +230,7 @@ checkThrows(
   const nudged = memoryBudgets({
     text: withEntries(
       `\`main = 1.5x, 1.5 GB, base ${String(nudgedMb)} MB\` · ` +
-        '`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`',
+        '`mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`',
     ),
   });
   check(
@@ -204,7 +244,7 @@ checkThrows(
   'an entry with no baseline term refuses',
   () =>
     memoryBudgets({
-      text: withEntries('`main = 1.5x, 1.5 GB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+      text: withEntries('`main = 1.5x, 1.5 GB` · `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`'),
     }),
   /cannot parse budget entry/u,
 );
@@ -213,7 +253,7 @@ checkThrows(
   'a baseline at or above the absolute cap refuses',
   () =>
     memoryBudgets({
-      text: withEntries('`main = 1.5x, 1.5 GB, base 2 GB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+      text: withEntries('`main = 1.5x, 1.5 GB, base 2 GB` · `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`'),
     }),
   /baseline at or above its absolute cap/u,
 );
@@ -222,14 +262,14 @@ checkThrows(
   'a zero baseline refuses',
   () =>
     memoryBudgets({
-      text: withEntries('`main = 1.5x, 1.5 GB, base 0 MB` · `mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`'),
+      text: withEntries('`main = 1.5x, 1.5 GB, base 0 MB` · `mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`'),
     }),
   /non-positive baseline/u,
 );
 
 checkThrows(
   'a zero multiplier refuses',
-  () => memoryBudgets({ text: withEntries('`main = 0x, 1.5 GB, base 96 MB` ·`mupdf-host = 6x, 3 GB, base 128 MB` · `renderer = provisional`') }),
+  () => memoryBudgets({ text: withEntries('`main = 0x, 1.5 GB, base 96 MB` ·`mupdf-host = 3 GB, base 128 MB` · `renderer = provisional`') }),
   /non-positive multiplier/u,
 );
 
