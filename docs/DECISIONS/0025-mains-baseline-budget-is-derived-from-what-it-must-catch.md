@@ -873,3 +873,71 @@ second: the host's ends in **serialise**, which produces a full byte image
 **candidate and not the answer** — it accounts for 209 MB of a 1248 MB document
 cost, and what the rest is has not been established. It must not become the
 explanation without a third reading.
+
+## Addition, 2026-09-01 — the two conditions are met, and the readings are BIMODAL
+
+**Both conditions above have been satisfied since `a269621` (2026-08-28)**, and
+nothing said so. `.github/workflows/ci.yml` runs
+`roleMupdfHost.mjs --no-document` on every push under `annotate.mjs --always`,
+which is (1) across days under the pinned runtime and (2) **through the real
+host** rather than `hostFixedCost.mjs`. So *"until both land, the §9.17 amendment
+waits"* has stopped being the blocker, and this section is what replaces it.
+
+### The readings
+
+Taken 2026-09-01 from the annotations of that step — the machine-readable
+`__MONSTERA_PEAK__` payload rather than the printed MB line, so the figure is the
+instrument's own and not a re-rounding. `windows-latest`, one job, **one reading
+per commit**, five days (2026-08-28 → 09-01), converted with §9.17's own unit
+(`memoryBudgets.mjs`: MB is 1024²).
+
+**n = 114. min 85.44 MB, max 90.03 MB, band 4.59 MB.**
+
+### And they are two populations, not one band
+
+| group | n | range |
+|---|---|---|
+| lower | 95 | 85.44 – 87.37 |
+| upper | 19 | 88.15 – 90.03 |
+
+Nothing lies between 87.37 and 88.15. The upper group drifts **upward** across
+the week (88.15 on 08-28 → 90.03 on 09-01) while the lower group stays flat, so
+the gap is not a slow trend sampled twice.
+
+**What has been ruled out**, because the obvious explanations are the ones worth
+eliminating first: it is not two jobs — one job carries the step and there is one
+reading per commit; not a rerun — every reading is `attempt=1`; not a runner
+reused — all 114 runner names are distinct; and not a cold shim — every *Cache
+the MuPDF build* step reports `success`.
+
+**The discriminator is therefore not established, and that is the finding.**
+
+### Why this stops a number rather than merely qualifying one
+
+`min + R` over a bimodal sample is a summary of two populations. Applied to the
+whole set it gives roughly **(90.0, 95.7)**; applied to the lower group alone it
+gives something else, and nothing yet says which set the budget is supposed to
+govern — the common case, or the case that must not red.
+
+This is finding AAAA-8's shape, in the document that records AAAA-8: *a claim
+that names ONE axis where the evidence varies on two*, and the question that
+costs nothing is **what else is different about the odd point?** A sample of ten
+that happens to include two of the upper group reads the gap as a band of ~3.5 MB
+and the structure disappears.
+
+### What is owed before the §9.17 amendment goes to the owner
+
+1. **The discriminator**, named. The runner *image version* is the leading
+   candidate — the pool spans two images and the gap would then be a property of
+   the image rather than of this code — and it is readable from the job log's
+   `Runner Image` line, which is now fetchable. It is a candidate and not the
+   answer.
+2. **The same instrument on the build machine.** The floor rule says *either
+   machine*, and this cannot be taken on the current one: a contained host does
+   not start there (`Invalid file descriptor to ICU data`), which is why
+   `proof:hostrecovery` reports could-not-look locally.
+3. **A second sweep for `R`**, which rests on one five-sweep minimum.
+
+Until the discriminator is named, a number derived from these readings is a
+number derived from readings whose conditions are in dispute — which is this
+document's own recurring error, stated three sections above.
