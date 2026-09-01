@@ -245,7 +245,7 @@ wired-tools rule.
 | Keyboard shortcut reference (F1) + customizable bindings | 10 | — |
 | Autosave (interval setting; **off by default**) | 10 | — |
 | Crash recovery offer. **Triaged 2026-09-01 → Stage 1, trigger: recent files.** It has nothing to offer until something records what was open, and the list it would offer from is D1's *Recent files* — so the trigger is that row plus a clean-exit marker, which `shellShutdown.ts` is already the one place that could write. Deliberately **not** Stage 0: the exit list at `BUILD-PROMPT.md:657-666` does not name it, and that list is kept finite on purpose. Distinct from invariant 18 clause (ii) — that restores a document's *unsaved* state and is deferred behind checkpoint restore; this reopens files and asks nothing of the log. | 1 | — |
-| Error boundary with reload | 0/1 | — |
+| Error boundary with reload. **Triaged 2026-09-01 → Stage 1, trigger: the PDF.js render path.** Today the renderer draws a start screen and no document content, so the code that can throw mid-render is not written yet; D1's continuous scroll and lazy per-page render are the first that can. **Reload is cheap here and that is architectural rather than luck**: the truth lives in main — canonical bytes plus the command log (§2) — so a renderer that throws loses no work and a reload rebuilds the view from what main still holds. Not Stage 0, for the reason the crash-recovery row above gives: the exit list at `BUILD-PROMPT.md:657-666` does not name it and is kept finite on purpose. | 1 | — |
 | Toasts | 0/1 | — |
 | Window title sync (`file ● — Monstera`) | 1 | — |
 | File associations and drag-drop open | 10 | — |
