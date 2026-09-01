@@ -244,7 +244,7 @@ wired-tools rule.
 | **Crash reporter consent** — Electron `crashReporter` opt-in, off by default, consent prompt on first run. **Moved here 2026-09-01** from the Stage 0 logging row, which was two things: the rotating log is where a failure goes and shipped in Stage 0; this half is a first-run dialog plus a settings entry, and cannot honestly land before there is a settings surface a user can revisit the choice in. The trigger is that surface existing, not a date. | 10 | — |
 | Keyboard shortcut reference (F1) + customizable bindings | 10 | — |
 | Autosave (interval setting; **off by default**) | 10 | — |
-| Crash recovery offer | 0/1 | — |
+| Crash recovery offer. **Triaged 2026-09-01 → Stage 1, trigger: recent files.** It has nothing to offer until something records what was open, and the list it would offer from is D1's *Recent files* — so the trigger is that row plus a clean-exit marker, which `shellShutdown.ts` is already the one place that could write. Deliberately **not** Stage 0: the exit list at `BUILD-PROMPT.md:657-666` does not name it, and that list is kept finite on purpose. Distinct from invariant 18 clause (ii) — that restores a document's *unsaved* state and is deferred behind checkpoint restore; this reopens files and asks nothing of the log. | 1 | — |
 | Error boundary with reload | 0/1 | — |
 | Toasts | 0/1 | — |
 | Window title sync (`file ● — Monstera`) | 1 | — |
