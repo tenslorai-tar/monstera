@@ -236,6 +236,24 @@ is wrong** — fix the boundary, not the test.
   `XObjectPoint`, `RasterPoint`). One `PageTransform` converts. **A bare y-flip
   is banned by lint** — an inline flip silently assumes rotation 0 and a zero
   CropBox origin.
+
+  **That sentence stated a mechanism that did not exist until 2026-09-01**, and
+  it is the second time this file has done so: `monstera/no-raw-hex` was the
+  first, where the digest was *wider* than the law. Here it was simply *ahead* of
+  the code, which is the quieter failure — nothing about reading it looks wrong,
+  and what it costs is that the one thing standing between an inline flip and the
+  tree was somebody recalling this line. `monstera/no-bare-y-flip` is now
+  registered as the seam's fourth rule.
+
+  **The rule reports a HEIGHT minus a Y, which is the banned form's own
+  wording** — `geometry.ts` subtracts from the CropBox top, so the legal
+  spelling is structurally different rather than distinguishable by a comment.
+  `geometry.ts` is exempt, because it also subtracts a y from `viewport.height`
+  to rotate within the viewport's box, where the height genuinely is the bound;
+  a control asserts it is not reported, without which the confinement is a ban.
+  A flip written through a name that says nothing is out of reach and stated as
+  such: separating that needs dataflow, and a name-blind rule would report every
+  subtraction in the application.
 - **State is per document** — one store instance per `DocId`, dropped on close.
   This makes the cross-tab corruption race unrepresentable *by shape*.
 - **Design tokens only, IN COMPONENTS.** `docs/ARCHITECTURE.md` §10.2:

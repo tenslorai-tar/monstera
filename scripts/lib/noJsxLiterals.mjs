@@ -50,6 +50,7 @@
  * scope decision in this project lives, rather than being reimplemented here.
  */
 
+import { noBareYFlip } from './noBareYFlip.mjs';
 import { noInstallRootWrites } from './noInstallRootWrites.mjs';
 import { noRawHex } from './noRawHex.mjs';
 
@@ -110,6 +111,7 @@ export const monsteraPlugin = {
     'no-jsx-literals': noJsxLiterals,
     'no-raw-hex': noRawHex,
     'no-install-root-writes': noInstallRootWrites,
+    'no-bare-y-flip': noBareYFlip,
   },
 };
 

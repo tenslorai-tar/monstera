@@ -58,6 +58,11 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 import { repoRoot } from '../lib/gitScope.mjs';
 import {
+  FLIP_OWNER,
+  PLANTED_Y_FLIP_INNOCENT,
+  PLANTED_Y_FLIP_OFFENDER,
+} from '../lib/noBareYFlip.mjs';
+import {
   PATH_OWNER,
   PLANTED_INSTALL_ROOT_OFFENDER,
 } from '../lib/noInstallRootWrites.mjs';
@@ -77,6 +82,57 @@ function check(label, condition, detail) {
   if (condition) passed.push(label);
   else failures.push(`${label}\n      ${detail}`);
 }
+
+/**
+ * A switch over a three-member union that handles two of them.
+ *
+ * **The `default` clause is the fixture's whole point.** ADR-0029 Decision 4's
+ * mechanism is a `default` assigning to `never` in each of the four
+ * projections, and `projections.ts`' header asks a reader not to delete them.
+ * `considerDefaultExhaustiveForUnions` defaults to false, so this must be
+ * reported *with* the default present — which is what makes the rule stronger
+ * than the thing it replaces rather than a restatement of it.
+ */
+const NON_EXHAUSTIVE_SWITCH = [
+  "type Surface = 'ribbon' | 'quick-toolbar' | 'context-menu';",
+  '',
+  'export function where(surface: Surface): number {',
+  '  switch (surface) {',
+  "    case 'ribbon':",
+  '      return 1;',
+  "    case 'quick-toolbar':",
+  '      return 2;',
+  '    default:',
+  '      return 0;',
+  '  }',
+  '}',
+].join('\n');
+
+/**
+ * The same union with every member handled, which must NOT be reported.
+ *
+ * Without it the rule could fire on every switch and still pass the case above,
+ * and a rule that reports correct code is one somebody disables — which costs
+ * the exhaustiveness of all four projections rather than one case.
+ */
+const EXHAUSTIVE_SWITCH = [
+  "type Surface = 'ribbon' | 'quick-toolbar' | 'context-menu';",
+  '',
+  'export function where(surface: Surface): number {',
+  '  switch (surface) {',
+  "    case 'ribbon':",
+  '      return 1;',
+  "    case 'quick-toolbar':",
+  '      return 2;',
+  "    case 'context-menu':",
+  '      return 3;',
+  '    default: {',
+  '      const unhandled: never = surface;',
+  '      return unhandled;',
+  '    }',
+  '  }',
+  '}',
+].join('\n');
 
 /** @param {unknown} level @returns {string} */
 function severity(level) {
@@ -443,6 +499,113 @@ async function main() {
         `findings on ${PATH_OWNER}: ${ownerFindings.map((m) => m.message).join(' | ')}\n      ` +
           `That file is the one the architecture requires to make this call, so a rule reporting ` +
           `it is a ban wearing a confinement's name — and it would pass every case above.`,
+      );
+
+      // -------------------------------------------------------------------
+      // Invariant L3's y-flip rule. `CLAUDE.md` asserted this rule existed
+      // before it did, so its first proof matters more than most: a digest
+      // naming a mechanism that is not there reads as coverage, and the way
+      // that gets discovered is somebody landing an inline flip.
+      // -------------------------------------------------------------------
+      const FLIP = 'monstera/no-bare-y-flip';
+      const flipOffender = join(shippedDirectory, 'place.ts');
+      writeFileSync(flipOffender, `${PLANTED_Y_FLIP_OFFENDER}\n`, 'utf8');
+      const flipFound = (await eslint.lintFiles([flipOffender]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === FLIP);
+
+      check(
+        'both spellings of a bare y-flip are reported, at error severity',
+        flipFound.filter((message) => message.severity === 2).length === 2,
+        `findings on the planted module: ${
+          flipFound.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
+        }\n      TWO, because the operands take different branches — a bare identifier and a ` +
+          `member property — and a fixture exercising one leaves the other unproven.`,
+      );
+
+      // THE FALSE-POSITIVE HALF, and it is the one that decides whether this
+      // rule survives contact with the codebase. A rule reporting every
+      // subtraction would pass the case above and be disabled by the first
+      // person who writes `b.y - a.y`, which costs the whole class rather than
+      // the case.
+      const flipInnocent = join(shippedDirectory, 'spans.ts');
+      writeFileSync(flipInnocent, `${PLANTED_Y_FLIP_INNOCENT}\n`, 'utf8');
+      const innocentFindings = (await eslint.lintFiles([flipInnocent]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === FLIP);
+
+      check(
+        'CONTROL: a same-space delta, a height from two edges and a width are NOT reported',
+        innocentFindings.length === 0,
+        `findings on the innocent module: ${
+          innocentFindings.map((m) => m.message).join(' | ') || 'none'
+        }\n      All three are ordinary arithmetic. \`crop.y1 - crop.y0\` is how a height is ` +
+          `COMPUTED, which is the opposite of flipping a point, and a rule that cannot tell ` +
+          `them apart reports the correct code.`,
+      );
+
+      // THE CONFINEMENT'S OTHER HALF, the same shape as entry.ts above.
+      // `geometry.ts` writes `viewport.height - point.y` legitimately — to
+      // rotate within the viewport's own box, where the height IS the bound —
+      // so a rule reporting it is a ban on the one module the architecture
+      // requires to do this.
+      const flipOwner = join(ROOT, FLIP_OWNER);
+      const ownerFlips = (await eslint.lintFiles([flipOwner]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === FLIP);
+
+      check(
+        'CONTROL: PageTransform rotates within the viewport box and is NOT reported',
+        ownerFlips.length === 0,
+        `findings on ${FLIP_OWNER}: ${ownerFlips.map((m) => m.message).join(' | ')}\n      ` +
+          `That module holds the only y-flip in the application and rotates within the ` +
+          `viewport's own box as well, where a height is genuinely the bound. Reporting it ` +
+          `would force a disable comment into the one file that is right.`,
+      );
+
+      // -------------------------------------------------------------------
+      // ADR-0029 Decision 4's exhaustiveness. The rule is typescript-eslint's,
+      // so the fixtures live here rather than beside a matcher of ours — there
+      // is no pattern of ours for them to move with.
+      //
+      // Zero violations is what this tree reports today and also what a rule
+      // that never runs reports, and this one is TYPE-AWARE: it needs the
+      // project service to resolve the file, which a planted module under a
+      // temporary directory is exactly the case most likely to break. So the
+      // offender is not a formality here — it is the only thing that says the
+      // rule is live in this scope at all.
+      // -------------------------------------------------------------------
+      const EXHAUSTIVE = '@typescript-eslint/switch-exhaustiveness-check';
+      const gappy = join(shippedDirectory, 'gappy-switch.ts');
+      writeFileSync(gappy, `${NON_EXHAUSTIVE_SWITCH}\n`, 'utf8');
+      const gaps = (await eslint.lintFiles([gappy]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === EXHAUSTIVE);
+
+      check(
+        'a switch missing a union member is reported EVEN WITH a default clause',
+        gaps.filter((message) => message.severity === 2).length === 1,
+        `findings on the planted switch: ${
+          gaps.map((m) => m.message).join(' | ') || 'none'
+        }\n      The default clause is the point. \`projections.ts\` ends every switch in one, ` +
+          `assigning to \`never\`; if a default satisfied the rule, deleting that assignment ` +
+          `would leave nothing enforcing Decision 4 — which is the state this replaces, where ` +
+          `the only thing stopping the deletion was a comment saying not to.`,
+      );
+
+      const complete = join(shippedDirectory, 'complete-switch.ts');
+      writeFileSync(complete, `${EXHAUSTIVE_SWITCH}\n`, 'utf8');
+      const completeFindings = (await eslint.lintFiles([complete]))
+        .flatMap((result) => result.messages)
+        .filter((message) => message.ruleId === EXHAUSTIVE);
+
+      check(
+        'CONTROL: a switch handling every member is NOT reported',
+        completeFindings.length === 0,
+        `findings on the complete switch: ${
+          completeFindings.map((m) => m.message).join(' | ') || 'none'
+        }\n      A rule firing on correct code is one somebody disables, and disabling this one ` +
+          `costs the exhaustiveness of all four projections rather than one case.`,
       );
     } finally {
       rmSync(shippedDirectory, { recursive: true, force: true });

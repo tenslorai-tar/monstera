@@ -467,6 +467,48 @@ export default tseslint.config(
   },
 
   {
+    // A THIRD SCOPE, WIDER THAN EITHER ABOVE, because a coordinate conversion is
+    // arithmetic and arithmetic happens in components as much as in modules.
+    // `.tsx` is included for that reason; the two component rules above are
+    // `.tsx` only and this one is both.
+    //
+    // Tests are excluded on the same reasoning the other two record: the fixture
+    // that names the banned form is what proves the rule sees, and it must not
+    // be the thing the rule reports. The owner — `geometry.ts` — is exempted
+    // INSIDE the rule rather than here, because that exemption is the rule's
+    // meaning (a confinement, not a ban) rather than a fact about the layout.
+    files: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.pw.ts'],
+    plugins: { monstera: monsteraPlugin },
+    rules: {
+      // Invariant L3. `CLAUDE.md` asserted this rule existed before it did; the
+      // digest and this registration land together.
+      'monstera/no-bare-y-flip': 'error',
+
+      // ADR-0029 DECISION 4'S EXHAUSTIVENESS, WHICH WAS A COMMENT UNTIL NOW.
+      // Each projection switches on `placement.surface` and ends in a `default`
+      // assigning to `never`, so a fifth `Placement` variant fails to compile in
+      // every surface that has not handled it. That was measured by hand once,
+      // in the range that built it, and nothing has re-measured it since — and
+      // `projections.ts`'s own header says the cases *"must not be deleted as
+      // dead code"*, which is a rule a reader has to obey rather than a
+      // mechanism.
+      //
+      // This is that mechanism, and it comes from the authority rather than
+      // from a scan of ours (B3a): typescript-eslint owns the question *is this
+      // switch exhaustive*. `considerDefaultExhaustiveForUnions` defaults to
+      // **false** in 8.67.0, so a `default` clause does not satisfy the rule —
+      // which is the property that matters here. Deleting the `never` case
+      // leaves the rule enforcing exhaustiveness anyway, and adding a variant
+      // reports at every switch that has not handled it, `never` case or not.
+      //
+      // Type-aware, so it runs only where `projectService` is on, which is this
+      // block's two `src` roots.
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
+    },
+  },
+
+  {
     // The bootstrap layer: plain .mjs, type-checked through JSDoc rather than
     // compiled, because it runs before dependencies exist (ARCHITECTURE §1.1).
     //
