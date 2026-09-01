@@ -1767,6 +1767,32 @@ is why it is on a row and not in the advisory register.
 > been stated, the trigger that fired on 2026-08-28 would have been visibly
 > partial rather than apparently spent.
 
+> **Correction, 2026-09-01 — *"the loss path has no caller"* was one route
+> stated as all of them, and the other route is decided in THIS document.**
+> The paragraph above congratulates itself on finally writing down the reason
+> that had been carrying the deferral's weight unwritten. The reason it wrote
+> down is true of `document.close` and false of the application: **Decision 9c
+> rebuilds a dead host's sessions**, `onEngineHostEnded` queues that rebuild in
+> each surviving document's lane, and `docs/ARCHITECTURE.md` §2 — corrected the
+> same day as this note — records that **nothing replays the command log onto a
+> rebuilt session**. So a host death loses every command since the last save,
+> by a caller this ADR wrote, while the deferral rested on there being none.
+>
+> **The shape is the one this ADR keeps paying for, one turn further on.** The
+> 2026-08-29 note found a trigger that was *visibly partial rather than
+> apparently spent*; this one finds that its replacement was partial in the same
+> way, and along the same axis — a claim about the whole application, checked
+> against one of its routes. Proving that an effect cannot travel by one route
+> is not proving it cannot travel.
+>
+> **What is unchanged:** no candidate is chosen, and Reason 2 — the leading
+> candidate's premise needs a whole-log replay path — is why. What is withdrawn
+> is the comfort, not the deferral. The exposure is live, bounded to a host
+> death, and has **no refusal available to it**, because `DocumentService.recycle`
+> may refuse a log-carrying document only by virtue of recycling being optional
+> and a dead host must be rebuilt for. `docs/ARCHITECTURE.md`'s amendment log
+> and `docs/FEATURES.md`'s watching row carry the same correction.
+
 ### Correction, 2026-08-25 — candidate 1 is the candidate with the LARGEST KNOWN COST, not the leading one (finding DDDD-19)
 
 The correction above called *letting the log outlive the record* "the only
