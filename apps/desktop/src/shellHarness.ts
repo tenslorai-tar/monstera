@@ -145,7 +145,17 @@ app.on('browser-window-created', (_event, window) => {
   //
   // A quit run has no readback to do: `readback()` has its own launch, and the
   // cases that read it are not the cases that read markers.
-  if (quitProbe !== null) return;
+  //
+  // NEITHER DOES AN INSTANCE RUN, and leaving that out reddened CI. The readback
+  // ends with `app.exit(0)`, so a launch holding the single-instance lock **quit
+  // itself** the moment its window finished loading — before the second launch
+  // reached `requestSingleInstanceLock`. The loser then won the lock, built the
+  // graph correctly, and the case reported the property broken.
+  //
+  // It passed locally because the race went the other way here. The subject is a
+  // lock held across two processes, and a harness that ends itself cannot hold
+  // one; the proof kills this process when it is done with it.
+  if (quitProbe !== null || markInstance !== null) return;
 
   const { webContents } = window;
   webContents.once('did-finish-load', () => {

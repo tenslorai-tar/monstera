@@ -56,7 +56,28 @@ afterEach(() => {
   document.documentElement.removeAttribute('data-theme');
 });
 
-/** A client that records every channel it is asked for, and answers `answer`. */
+/**
+ * A client that records every channel it is asked for, and answers `answer`.
+ *
+ * ## One answer for every channel, and the exceptions are declared
+ *
+ * `createClient` parses what comes back through the real result schema, so an
+ * answer shaped for `document.open` is REFUSED by any channel that declares
+ * something else — as a rejected promise, from inside a floating handler, which
+ * surfaces as an unhandled rejection rather than as a failing case. It passed
+ * here and reddened CI.
+ *
+ * So a channel whose result cannot be `answer` gets its own entry below. The map
+ * is the honest shape: this helper's contract is *"one answer unless the schema
+ * says otherwise"*, and leaving it implicit is what made the next channel a
+ * defect rather than a decision.
+ */
+const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
+  // Takes no parameters and answers a boolean. Nothing else in this file's
+  // fixtures is shaped like it.
+  'log.reveal': { revealed: false },
+};
+
 function recordingClient(answer: unknown): {
   readonly client: ContractClient;
   readonly calls: string[];
@@ -64,7 +85,7 @@ function recordingClient(answer: unknown): {
   const calls: string[] = [];
   const client = createClient(channels, (id) => {
     calls.push(id);
-    return Promise.resolve(ok(answer));
+    return Promise.resolve(ok(OTHER_ANSWERS[id] ?? answer));
   });
   return { client, calls };
 }

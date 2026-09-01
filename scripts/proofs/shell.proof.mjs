@@ -76,6 +76,7 @@ const RUNTIME_CASES = [
   'the process exits 0 with the teardown having run, not merely exits',
   'CONTROL: the app ended on its own rather than being killed at the bound',
   'CONTROL: a launch that WINS the single-instance lock builds the graph',
+  'CONTROL: the lock was still HELD while the second launch ran',
   'a launch that LOSES the lock never calls the dependency factory',
   'the losing launch started at all, so the absence above is a decision',
   'the losing launch ended itself rather than being killed at the bound',
@@ -89,9 +90,9 @@ const RUNTIME_CASES = [
 // Every other proof in this repository declares a literal; this one derived, and
 // the derivation is what removed the anchor. 4c's danger here runs toward
 // shrinkage, and a derived count agrees with any shrink.
-if (RUNTIME_CASES.length !== 13) {
+if (RUNTIME_CASES.length !== 14) {
   throw new Error(
-    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 13. ` +
+    `This proof names ${String(RUNTIME_CASES.length)} runtime cases and the anchor says 14. ` +
       `Raise or lower the literal in the same commit and say why: a case that leaves takes its ` +
       `label and the total with it, and nothing else here would notice.`,
   );
@@ -168,7 +169,7 @@ function launch(binary, extraArgs) {
  *
  * @param {string} binary
  * @returns {Promise<{ winner: string[], loser: string[], status: number | null,
- *   signal: NodeJS.Signals | null }>}
+ *   signal: NodeJS.Signals | null, winnerAlive: boolean }>}
  */
 async function singleInstanceRun(binary) {
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-instance-'));
@@ -231,6 +232,13 @@ async function singleInstanceRun(binary) {
       loser: lines(loserFile),
       status: result.status,
       signal: result.signal,
+      // WAS THE LOCK STILL HELD? Read AFTER the loser exited, because that is
+      // the whole window the claim covers. A winner that ended early hands the
+      // lock over, the loser wins it legitimately and builds — and the case
+      // then reports the property broken when what actually happened is that
+      // nothing was measured. `could not look` and `looked and found the guard
+      // missing` must not share an output.
+      winnerAlive: winner.exitCode === null,
     };
   } finally {
     // KILL WHAT YOU OPEN. The winner has no reason to stop on its own — it is
@@ -489,6 +497,19 @@ try {
       instance.winner.includes('MONSTERA_FACTORY_RAN'),
       `the winning launch wrote ${winnerSaw}. Without this line the case below is satisfied ` +
         `by a marker that never works, on either launch.`,
+    );
+
+    // THE PRECONDITION, ASSERTED BEFORE THE PROPERTY. Everything below is a
+    // statement about a second launch meeting a lock that was held, and a
+    // winner that ended early means there was no lock to meet.
+    check(
+      'CONTROL: the lock was still HELD while the second launch ran',
+      instance.winnerAlive,
+      `the winning launch had already exited when the second one finished. The second then won ` +
+        `the lock legitimately and built the graph, which is correct behaviour reported as a ` +
+        `broken guard — this measured nothing rather than finding something. It is what the ` +
+        `readback's own \`app.exit(0)\` produced before the harness learned to skip it for an ` +
+        `instance run.`,
     );
 
     check(
