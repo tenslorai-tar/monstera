@@ -28,10 +28,16 @@ const WATERMARK_PATH = 'docs/audit-watermark.json';
  * cheapest part of that cycle and misses the rest, so a threshold derived that
  * way is set too low however carefully the arithmetic is done.
  *
+ * **Raised to `{ commits: 50, files: 100 }` by the owner on 2026-09-02, to
+ * increase pace.** Same standing: owner-set, not derived, not to be re-derived.
+ * The 2026-08-31 reasoning above is what still justifies a figure above the
+ * measurement, and this raise extends it rather than replacing it.
+ *
  * ## What the number used to be, and why that is kept
  *
- * It was `{ commits: 9, files: 24 }`, the MEDIAN of batches 4 to 7 measured from
- * this repository's own history:
+ * The owner's first figure was `{ commits: 30, files: 60 }`, on the reasoning
+ * above. Before that it was `{ commits: 9, files: 24 }`, the MEDIAN of batches 4
+ * to 7 measured from this repository's own history:
  *
  * | batch | commits | files |
  * |---|---|---|
@@ -43,14 +49,20 @@ const WATERMARK_PATH = 'docs/audit-watermark.json';
  * The measurement is sound and is left standing as evidence; what changed is
  * that it is no longer what decides. Batch 7 remains the outlier that motivated
  * a gate at all — one stretch that absorbed a licence rewrite, two ADRs, an
- * invariant and four instrument rebuilds before anything was audited — and 30
- * still sits below it.
+ * invariant and four instrument rebuilds before anything was audited — at 31
+ * commits and 69 files.
+ *
+ * **The current figure sits ABOVE that outlier on both dimensions**, which the
+ * 30/60 one did not, and that is the substantive change rather than the digits:
+ * a range the size of the worst one this repository has recorded no longer trips
+ * the gate on its own. What still stops such a range from going unaudited is the
+ * discipline of auditing at a stage boundary, not this constant.
  *
  * Two dimensions because they fail differently: a run of small commits and a
  * single sweeping one are both past the point where the checklist can be applied
  * carefully, and neither number alone catches both.
  */
-export const BATCH = { commits: 30, files: 60 };
+export const BATCH = { commits: 50, files: 100 };
 
 /**
  * ## The watermark never equals HEAD, and that is structural
