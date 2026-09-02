@@ -4,6 +4,7 @@ import { THEME_SETTING } from './appearance.js';
 import {
   DARK_PAGE_SETTING,
   GRID_SETTING,
+  LOUPE_SETTING,
   RULERS_SETTING,
   RULER_UNIT_SETTING,
 } from './viewing.js';
@@ -43,4 +44,5 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   GRID_SETTING,
   RULER_UNIT_SETTING,
   DARK_PAGE_SETTING,
+  LOUPE_SETTING,
 ];

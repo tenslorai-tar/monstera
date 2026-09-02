@@ -1,7 +1,18 @@
-import { DARK_PAGE_TITLE, GRID_TITLE, PALETTE_TITLE, RULERS_TITLE } from '../messages/en.js';
+import {
+  DARK_PAGE_TITLE,
+  GRID_TITLE,
+  LOUPE_TITLE,
+  PALETTE_TITLE,
+  RULERS_TITLE,
+} from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
-import { DARK_PAGE_SETTING, GRID_SETTING, RULERS_SETTING } from '../settings/viewing.js';
+import {
+  DARK_PAGE_SETTING,
+  GRID_SETTING,
+  LOUPE_SETTING,
+  RULERS_SETTING,
+} from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
 
 /**
@@ -106,6 +117,20 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
     when: hasDocument,
     run: (): void => {
       deps.settings.set(GRID_SETTING.id, deps.settings.get(GRID_SETTING.id) !== true);
+    },
+  };
+}
+
+/** The loupe's toggle. See {@link toggleRulersCommand} for why this shape. */
+export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+  return {
+    id: 'view.toggle-loupe',
+    title: LOUPE_TITLE,
+    shortcut: 'Ctrl+Shift+L',
+    placements: [{ surface: 'quick-toolbar', order: 120 }],
+    when: hasDocument,
+    run: (): void => {
+      deps.settings.set(LOUPE_SETTING.id, deps.settings.get(LOUPE_SETTING.id) !== true);
     },
   };
 }

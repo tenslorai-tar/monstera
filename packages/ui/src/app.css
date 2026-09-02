@@ -221,6 +221,41 @@ body {
   filter: invert(1) hue-rotate(180deg);
 }
 
+/*
+ * The loupe, placed at the pointer inside the scroller.
+ *
+ * The wrapper carries the position and the inner element carries the window, so
+ * the transform that moves the magnified bitmap under it is not fighting the
+ * one that follows the pointer.
+ *
+ * `translate(-50%, -50%)` centres the window ON the pointer rather than hanging
+ * it below and to the right, which is where a reader is looking.
+ */
+.m-loupe-at {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.m-loupe {
+  overflow: hidden;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-10);
+  box-shadow: var(--elevation-2);
+  background: var(--page);
+}
+
+.m-loupe-canvas {
+  display: block;
+  /*
+   * ORIGIN AT THE TOP-LEFT, because the offset the component computes is from
+   * there. A centred origin would put the transform's zero in the middle of a
+   * bitmap whose size changes with the zoom.
+   */
+  transform-origin: 0 0;
+}
+
 .m-page-list {
   display: flex;
   flex-direction: column;

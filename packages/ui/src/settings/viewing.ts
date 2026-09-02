@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-import { DARK_PAGE_TITLE, GRID_TITLE, RULERS_TITLE, RULER_UNIT_TITLE } from '../messages/en.js';
+import {
+  DARK_PAGE_TITLE,
+  GRID_TITLE,
+  LOUPE_TITLE,
+  RULERS_TITLE,
+  RULER_UNIT_TITLE,
+} from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -50,6 +56,21 @@ export const RULERS_SETTING: SettingDefinition<z.ZodBoolean> = {
 export const DARK_PAGE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.dark-page',
   title: DARK_PAGE_TITLE,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
+};
+
+/**
+ * Whether the loupe follows the pointer.
+ *
+ * A reading aid like the rulers, and off by default for the same reason: a
+ * magnifier that appeared unasked would follow every pointer movement across a
+ * document somebody was simply reading.
+ */
+export const LOUPE_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.loupe',
+  title: LOUPE_TITLE,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',

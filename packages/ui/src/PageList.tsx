@@ -6,6 +6,7 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
+import { Loupe } from './Loupe.js';
 import { Rulers } from './Rulers.js';
 import { type RulerUnit, gridSpacing } from './rulerGeometry.js';
 import { useVisiblePages } from './useVisiblePages.js';
@@ -109,6 +110,8 @@ export interface PageListProps {
    * would scroll again.
    */
   readonly onWentTo: () => void;
+  /** Whether the loupe follows the pointer. `viewing.loupe`. */
+  readonly loupe: boolean;
   /** Whether the two rulers are drawn. `viewing.rulers`. */
   readonly rulers: boolean;
   /** Whether the grid overlay is drawn. `viewing.grid`. */
@@ -175,6 +178,7 @@ export function PageList({
   onShownZoom,
   goTo,
   onWentTo,
+  loupe,
   rulers,
   showGrid,
   unit,
@@ -334,6 +338,63 @@ export function PageList({
   const grid = showGrid ? gridSpacing(unit, shown) : undefined;
 
   /**
+   * Where the loupe is, and over which page.
+   *
+   * `undefined` when the pointer is not over a page, which is what makes the
+   * loupe disappear over the gutter rather than freezing at the last place it
+   * saw — a magnifier stuck over nothing reads as a broken one.
+   */
+  const [lens, setLens] = useState<
+    { page: number; at: { x: number; y: number }; screen: { x: number; y: number } } | undefined
+  >(undefined);
+
+  /**
+   * Tracks the pointer for the loupe.
+   *
+   * ## Delegated on the LIST, not attached per slot
+   *
+   * One listener for a document of any length, and it goes on finding the page
+   * as slots mount and unmount underneath it. A handler per slot would be a
+   * thousand listeners on a thousand-page document, added and removed as the
+   * reader scrolls.
+   *
+   * The page is read from the slot's own `data-page`, which the visibility hook
+   * already writes — so there is one place that says which element is which
+   * page, and this is a reader of it rather than a second scheme.
+   */
+  const onPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>): void => {
+      if (!loupe) return;
+      const target = event.target instanceof HTMLElement ? event.target.closest('[data-page]') : null;
+      const box = scroller.current;
+      if (!(target instanceof HTMLElement) || box === null) {
+        setLens(undefined);
+        return;
+      }
+      const page = Number(target.dataset['page'] ?? '-1');
+      if (!Number.isInteger(page) || page < 0) {
+        setLens(undefined);
+        return;
+      }
+      const slot = target.getBoundingClientRect();
+      const outer = box.getBoundingClientRect();
+      setLens({
+        page,
+        at: { x: event.clientX - slot.left, y: event.clientY - slot.top },
+        // Positioned against the SCROLLER, because that is what the loupe is
+        // absolutely placed inside — viewport coordinates would put it in the
+        // wrong place the moment the window is not at the origin.
+        screen: { x: event.clientX - outer.left, y: event.clientY - outer.top },
+      });
+    },
+    [loupe],
+  );
+
+  const onPointerLeave = useCallback((): void => {
+    setLens(undefined);
+  }, []);
+
+  /**
    * Takes the reader to a requested page.
    *
    * **`scrollIntoView` on the slot, rather than arithmetic on the offsets.**
@@ -485,7 +546,17 @@ export function PageList({
       ref={scroller}
       onWheel={onWheel}
       onScroll={onScroll}
+      onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
     >
+      {loupe && lens !== undefined ? (
+        <div
+          className="m-loupe-at"
+          style={{ insetInlineStart: `${String(lens.screen.x)}px`, insetBlockStart: `${String(lens.screen.y)}px` }}
+        >
+          <Loupe view={view} page={lens.page} zoom={shown} at={lens.at} />
+        </div>
+      ) : null}
       {rulers && viewport !== undefined ? (
         <Rulers unit={unit} zoom={shown} size={viewport} origin={pageOrigin} />
       ) : null}

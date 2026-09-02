@@ -23,6 +23,7 @@ import {
   commandPaletteCommand,
   toggleDarkPageCommand,
   toggleGridCommand,
+  toggleLoupeCommand,
   toggleRulersCommand,
 } from './commands/viewCommands.js';
 import { CommandPalette } from './CommandPalette.js';
@@ -56,6 +57,7 @@ import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
 import {
   DARK_PAGE_SETTING,
   GRID_SETTING,
+  LOUPE_SETTING,
   RULERS_SETTING,
   RULER_UNIT_SETTING,
   applyDarkPage,
@@ -326,6 +328,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
   const unit = useSetting(settings, RULER_UNIT_SETTING);
+  const loupe = useSetting(settings, LOUPE_SETTING);
 
   /**
    * The updater the zoom commands are given.
@@ -362,6 +365,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
+        toggleLoupeCommand({ settings }),
         commandPaletteCommand({ onOpen: openPalette }),
         pageMoveCommand('next', { navigator }),
         pageMoveCommand('previous', { navigator }),
@@ -431,6 +435,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           onPageCount={setPageCount}
           current={currentPage}
           onJump={navigator.jumpTo}
+          loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
           unit={unit}
@@ -593,6 +598,7 @@ function PageCanvas({
   goTo,
   onWentTo,
   onPageCount,
+  loupe,
   current,
   onJump,
   rulers,
@@ -609,6 +615,7 @@ function PageCanvas({
   readonly goTo: number | undefined;
   readonly onWentTo: () => void;
   readonly onPageCount: (count: number) => void;
+  readonly loupe: boolean;
   /** The page the reader is on, so the thumbnail strip can mark it. */
   readonly current: number;
   /** Takes the reader to a page, recording the jump — click-to-jump's other half. */
@@ -763,6 +770,7 @@ function PageCanvas({
         onShownZoom={onShownZoom}
         goTo={goTo}
         onWentTo={onWentTo}
+        loupe={loupe}
         rulers={rulers}
         showGrid={showGrid}
         unit={unit}
