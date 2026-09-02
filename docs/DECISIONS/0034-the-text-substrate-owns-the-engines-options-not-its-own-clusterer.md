@@ -145,3 +145,76 @@ extraction meets, and this ADR takes a dated correction if it does not hold.
 **`TABLE_HUNT` acquires a trigger rather than a plan.** The first feature whose
 subject is a table owes the reading this ADR did for prose, and the flag is a
 per-call option so that reading changes one call site rather than a default.
+
+---
+
+## Addition, 2026-09-02 — what *"the deep tuning lands with Stage 5"* becomes
+
+Part E2 carries one more obligation than the Decision above answers, and it was
+inherited without being carried forward:
+
+> It is tuned against the fixture corpus with a measurable accuracy score
+> (constants change only with a corpus score in the commit message). … **The
+> deep tuning lands with Stage 5**, but from day one there is exactly one
+> implementation; a second extraction path anywhere is an immediate K.0
+> regression.
+
+Under the superseded mechanism *deep tuning* had an obvious meaning: change the
+clustering constants, show a corpus score. **This ADR removed the constants, so
+the sentence was left pointing at nothing** — and a deferred obligation whose
+subject has dissolved is one that expires unnoticed, which is the shape this
+repository keeps paying for. The three consequences above name a MuPDF upgrade,
+real documents and `TABLE_HUNT`; none of them is Stage 5.
+
+### What the obligation becomes
+
+**Tuning is now a choice among the engine's options, scored the same way.**
+`fz_parse_stext_options` exposes more than the two this ADR measured —
+`dehyphenate`, `preserve-spans`, `paragraph-break`, `accurate-bboxes` and the
+rest — and each is a decision with a corpus score attached, taken in
+`STEXT_OPTIONS` and nowhere else. Part E2's *"constants change only with a corpus
+score in the commit message"* survives verbatim with **options** as its subject.
+
+### The question Stage 5 will actually ask, and the line it must not cross
+
+Text editing will want structure MuPDF's answer does not give — a heading joined
+across a wrap, a hyphen closed, a run merged. The tempting shape is a **post-pass
+over the substrate's output**, and whether that is legitimate tuning or the
+second extraction path K.0 bans is not obvious. It is decided here rather than in
+the commit that wants it:
+
+**A post-pass that reads GEOMETRY to decide grouping is a second extraction
+path.** Deciding which lines belong together from `box` and `origin` is answering
+the question MuPDF already answered, from the same inputs — two opinions about
+what a line is, which is exactly the drift Part E2 describes and this ADR's whole
+argument against a clusterer.
+
+**A post-pass that transforms the text MuPDF already grouped is not.** Unicode
+normalisation for comparison, case folding, joining a hyphen across a break the
+engine's own `dehyphenate` does not close: these consume the grouping rather than
+re-deriving it, and none of them can disagree with MuPDF about structure because
+none of them looks at where anything is.
+
+**So the test is one question — does it read a coordinate?** — and it is
+checkable rather than a judgement, which is the property this ADR chose over an
+algorithm in the first place. `TextLine.box` and `TextLine.origin` exist for
+highlighting and hit-testing, both of which convert through `PageTransform`; a
+module that reads either **to decide what belongs with what** is the violation.
+
+### What to do when the engine's answer is genuinely wrong
+
+In order, and the local re-derivation is last rather than first:
+
+1. **An option**, scored against the corpus. This is the tuning Stage 5 inherits.
+2. **A recorded engine gap** — the same route `docs/ARCHITECTURE.md` §3.2 already
+   requires when MuPDF's API lacks a needed write: name what was checked and what
+   is missing, in an ADR, so the matrix stays truthful.
+3. **A re-derivation, behind one interface, with an ADR** — the shape §3.2
+   reserves for a hand-rolled content-stream parser: *"permitted only after
+   normalization provably fails a corpus case, and then quarantined behind one
+   interface"*. The same bar applies here, and *provably* means a corpus case,
+   not an example.
+
+**This addition settles nothing about whether Stage 5 needs any of that.** It
+settles what the answer would have to look like, so the question arrives with a
+test attached rather than as an argument in the commit that wants the feature.
