@@ -90,14 +90,29 @@ describe('createShellLog', () => {
   it('keeps at most MAX_FILES files however much is written', () => {
     const log = createShellLog(userData, neverRevealed, () => AT);
     const line = fat(2);
-    // Enough to rotate many times over: three writes per rotation, twenty times
-    // the number of files that may survive.
-    for (let index = 0; index < MAX_FILES * 20; index += 1) {
+    // ENOUGH ROTATIONS TO PROVE A CAP, AND NOT MORE — sized from the mechanism
+    // rather than picked. Two writes fill a file, so this is about fifteen
+    // rotations against a cap of five: three times the headroom the property
+    // needs.
+    //
+    // It read `MAX_FILES * 20`, which is ~50 rotations and **51 MB of
+    // synchronous filesystem I/O**. That took 1512 ms here (2026-09-02,
+    // `vitest run --reporter verbose`) — 30% of vitest's 5 s per-case budget on
+    // a fast local disk — and timed out on `windows-latest`, where a scanner
+    // sits between every write and the platter. The bound was not the problem
+    // and raising it would have made the next slow runner the problem instead.
+    for (let index = 0; index < MAX_FILES * 6; index += 1) {
       log.failures({ event: 'unresponsive', detail: line });
     }
 
     const files = readdirSync(logs);
     expect(files.length).toBeLessThanOrEqual(MAX_FILES);
+    // WHAT NEITHER MUTATION ALONE REDDENS, measured 2026-09-02 while checking
+    // that the shorter loop kept its bite: the rename bound and the delete
+    // sweep cover each other, so disabling either leaves this green and
+    // disabling both reddens it. That is not a hole — it is two independent
+    // mechanisms for one cap — but it means this case's sensitivity was
+    // established by mutating the pair, not by mutating a line.
     // AND THE CONTROL: the cases above are satisfied by a logger that rotated
     // once and then stopped writing. Something must still be arriving.
     expect(readFileSync(join(logs, LOG_NAME), 'utf8').length).toBeGreaterThan(0);
