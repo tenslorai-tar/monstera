@@ -60,6 +60,19 @@ export interface CommandContext {
    * converts.
    */
   readonly page: number | undefined;
+  /**
+   * How many pages the document has, or `undefined` with no document.
+   *
+   * **The parser's count, not the view model's** — the same correction the
+   * scroller made: taking it from `document.viewModel` couples a surface to an
+   * engine session, and a document PDF.js reads perfectly would then have no
+   * count wherever no host starts.
+   *
+   * Here because navigation needs an END, and a command that clamped against a
+   * number it fetched itself would be a second answer to a question the shell
+   * already holds.
+   */
+  readonly pageCount: number | undefined;
 }
 
 /**

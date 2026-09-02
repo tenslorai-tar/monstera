@@ -55,6 +55,36 @@ export interface DocumentState {
    * ignores an older one rather than trusting arrival order.
    */
   readonly version: DocVersion;
+  /**
+   * The page the reader is looking at, zero-based.
+   *
+   * **The first view concern to live here**, and this file's own header said
+   * what would justify it: *"inventing zoom, page or selection now would be
+   * state nothing reads"*. Page navigation reads it, so it stops being an
+   * invention.
+   */
+  readonly page: number;
+  /**
+   * Where the reader has JUMPED, in order, with {@link historyAt} pointing at
+   * the current entry.
+   *
+   * ## Jumps, not scrolls, and that distinction is the feature
+   *
+   * Scrolling through a document does not push. If it did, Alt+Left after
+   * reading ten pages would step back one page at a time and the control would
+   * be useless — what a reader wants is *return me to where I jumped from*.
+   * So `viewing` moves {@link page} and leaves this alone; `jumpTo` pushes.
+   *
+   * ## In the DOCUMENT'S store, which is the whole reason this is not App state
+   *
+   * A back-stack that outlived its document would offer to return a reader to
+   * page 40 of a file they closed. Held here, it cannot: §6 drops the store on
+   * close, so the lifetime is the shape rather than a cleanup somebody
+   * remembers.
+   */
+  readonly history: readonly number[];
+  /** The index into {@link history} the reader is currently at. */
+  readonly historyAt: number;
 }
 
 export interface DocumentActions {
@@ -73,7 +103,51 @@ export interface DocumentActions {
    * same observation.
    */
   readonly observed: (version: DocVersion) => boolean;
+
+  /**
+   * Records the page the reader has scrolled to.
+   *
+   * Moves {@link DocumentState.page} and **does not touch the history**. See
+   * {@link DocumentState.history} for why that is the feature rather than an
+   * omission.
+   */
+  readonly viewing: (page: number) => void;
+
+  /**
+   * Records a deliberate jump, pushing it onto the history.
+   *
+   * **Truncates anything ahead**, which is what makes forward mean *the branch
+   * you were on* rather than *some page you once visited*. Jumping to the page
+   * you are already at is ignored: a control pressed twice should not fill the
+   * stack with one page.
+   */
+  readonly jumpTo: (page: number) => void;
+
+  /**
+   * Steps back through the history.
+   *
+   * @returns the page to go to, or `undefined` at the start. **A page and not a
+   * boolean**, because the caller has to scroll somewhere and re-reading the
+   * store for it would be a second read of a value this call already knows.
+   */
+  readonly back: () => number | undefined;
+
+  /** Steps forward. See {@link back}. */
+  readonly forward: () => number | undefined;
 }
+
+/**
+ * How many jumps the history keeps.
+ *
+ * A bound rather than none, because a session is unbounded and an array that
+ * only grows is a leak with a slow fuse. Fifty is far past what a reader
+ * retraces by hand and small enough that the cost never matters.
+ *
+ * **The OLDEST goes**, and the index moves with it — dropping from the front
+ * without adjusting `historyAt` would silently renumber every entry and send
+ * `back` to the wrong page.
+ */
+const HISTORY_LIMIT = 50;
 
 export type DocumentStore = StoreApi<DocumentState & DocumentActions>;
 
@@ -83,14 +157,56 @@ export type DocumentStore = StoreApi<DocumentState & DocumentActions>;
  * `docId` is captured rather than passed per call, which is what stops a write
  * naming a document other than this store's own.
  */
-export function createDocumentStore(docId: DocId, version: DocVersion): DocumentStore {
+export function createDocumentStore(
+  docId: DocId,
+  version: DocVersion,
+  page = 0,
+): DocumentStore {
   return createStore<DocumentState & DocumentActions>()((set, get) => ({
     docId,
     version,
+    page,
+    // SEEDED WITH THE OPENING PAGE, so `back` has somewhere to return to after
+    // the reader's first jump. An empty history would make the first Alt+Left
+    // do nothing, which reads as a broken control rather than as a boundary.
+    history: [page],
+    historyAt: 0,
     observed: (next) => {
       if (next <= get().version) return false;
       set({ version: next });
       return true;
+    },
+    viewing: (next) => {
+      if (next === get().page) return;
+      set({ page: next });
+    },
+    jumpTo: (next) => {
+      const state = get();
+      if (next === state.page) return;
+      const kept = [...state.history.slice(0, state.historyAt + 1), next];
+      const dropped = Math.max(0, kept.length - HISTORY_LIMIT);
+      set({
+        page: next,
+        history: kept.slice(dropped),
+        historyAt: kept.length - 1 - dropped,
+      });
+    },
+    back: () => {
+      const state = get();
+      if (state.historyAt <= 0) return undefined;
+      const at = state.historyAt - 1;
+      const target = state.history[at];
+      if (target === undefined) return undefined;
+      set({ historyAt: at, page: target });
+      return target;
+    },
+    forward: () => {
+      const state = get();
+      const at = state.historyAt + 1;
+      const target = state.history[at];
+      if (target === undefined) return undefined;
+      set({ historyAt: at, page: target });
+      return target;
     },
   }));
 }

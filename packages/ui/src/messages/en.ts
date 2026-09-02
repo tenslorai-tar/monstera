@@ -50,6 +50,12 @@ export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
+export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
+export const PREVIOUS_PAGE_TITLE = messageKey('command.page-previous.title');
+export const FIRST_PAGE_TITLE = messageKey('command.page-first.title');
+export const LAST_PAGE_TITLE = messageKey('command.page-last.title');
+export const GO_BACK_TITLE = messageKey('command.go-back.title');
+export const GO_FORWARD_TITLE = messageKey('command.go-forward.title');
 export const SETTINGS_PROBLEM_TITLE = messageKey('dialog.settings-problem.title');
 export const SETTINGS_APPLIED_NOW = messageKey('dialog.settings-problem.applied');
 export const SETTINGS_NOT_STORED = messageKey('dialog.settings-problem.not-stored');
@@ -112,6 +118,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',
+  [NEXT_PAGE_TITLE]: 'Next page',
+  [PREVIOUS_PAGE_TITLE]: 'Previous page',
+  [FIRST_PAGE_TITLE]: 'First page',
+  [LAST_PAGE_TITLE]: 'Last page',
+  [GO_BACK_TITLE]: 'Back',
+  [GO_FORWARD_TITLE]: 'Forward',
   [SETTINGS_PROBLEM_TITLE]: 'Preference not saved',
   [SETTINGS_APPLIED_NOW]: '{setting} is in effect now.',
   [SETTINGS_NOT_STORED]: 'It could not be stored, so it will not be remembered next time.',

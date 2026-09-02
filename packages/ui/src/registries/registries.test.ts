@@ -21,6 +21,7 @@ const context: CommandContext = {
   hasSelection: false,
   dirty: false,
   page: 0,
+  pageCount: 1,
 };
 
 // The title is a CONSTANT rather than derived from the id, and that is not
@@ -102,6 +103,7 @@ describe('CommandRegistry', () => {
       hasSelection: true,
       dirty: true,
       page: undefined,
+      pageCount: undefined,
     };
     registry.available(other);
 

@@ -20,6 +20,7 @@ const context: CommandContext = {
   hasSelection: false,
   dirty: false,
   page: 0,
+  pageCount: 1,
 };
 
 const ANY_TITLE = messageKey('command.any.label');

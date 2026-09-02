@@ -5,6 +5,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
 } from 'react';
@@ -19,6 +20,8 @@ import {
 } from './commands/documentCommands.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 import { toggleGridCommand, toggleRulersCommand } from './commands/viewCommands.js';
+import { historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
+import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -135,6 +138,82 @@ export function App({ client, settings }: AppProps): ReactElement {
    * observer confirms it on the first frame rather than contradicting it.
    */
   const [currentPage, setCurrentPage] = useState<number>(FIRST_PAGE.kernel);
+  /**
+   * How many pages the open document has, once its parser has answered.
+   *
+   * Held here rather than only inside the scroller because the navigation
+   * commands need an end to clamp against, and they are registered here.
+   */
+  const [pageCount, setPageCount] = useState<number | undefined>(undefined);
+  /**
+   * A page the reader asked to be taken to, cleared once the scroller has.
+   *
+   * ## Why a REQUEST and not just the current page
+   *
+   * The scroller reports which page is visible and the commands say which page
+   * to go to, and collapsing those into one number makes a loop: the observer
+   * sets it, which the scroller reads as an instruction, which moves the
+   * observer. Two names, one flowing each way, is the shape that has no loop.
+   *
+   * Cleared by the scroller rather than by a timer, so a jump to a page that is
+   * already visible is still consumed — otherwise the next unrelated render
+   * would scroll again.
+   */
+  const [goTo, setGoTo] = useState<number | undefined>(undefined);
+
+  /**
+   * The open document's own store, which is where the back-stack lives.
+   *
+   * ## THE FIRST REAL CALLER of `documentStores.ts`, and that is deliberate
+   *
+   * That module has been correct and unused since it landed: its own header
+   * says a page or a selection would be *"state nothing reads — the display-only
+   * sin, in a store"*. Navigation reads it, so it stops being an invention, and
+   * a per-document lifetime is exactly what a back-stack needs: one that
+   * outlived its document would offer to return a reader to page 40 of a file
+   * they closed.
+   *
+   * Keyed on the document rather than kept in a ref, so closing and reopening
+   * the same file starts a fresh history — which is what a reader expects and
+   * what §6 makes automatic.
+   */
+  const [stores] = useState(() => new DocumentStores());
+  const [store, setStore] = useState<DocumentStore | undefined>(undefined);
+
+  /**
+   * The version to open a store AT, without making the store depend on it.
+   *
+   * A store's lifetime is the DOCUMENT's, not the version's — every command
+   * bumps the version, and an effect that depended on it would drop and rebuild
+   * the store on every rotate, taking the back-stack with it. But the
+   * constructor needs a starting version, so it is read from a ref that a
+   * separate effect keeps current.
+   *
+   * **Written in an effect and never during render.** `react-hooks` reports a
+   * ref touched during render and is right to: under a concurrent render the
+   * write can happen for a render that is then thrown away.
+   */
+  const latest = useRef(open);
+  useEffect(() => {
+    latest.current = open;
+  }, [open]);
+
+  const docId = open?.docId;
+  useEffect(() => {
+    const version = latest.current?.version;
+    if (docId === undefined || version === undefined) {
+      setStore(undefined);
+      return;
+    }
+    setStore(stores.open(docId, version));
+    return (): void => {
+      // DROPPED ON CLOSE, which is §6 rather than tidiness: the store is what
+      // makes a back-stack unable to outlive its document, and a registry that
+      // kept it would put that guarantee back in a caller's hands.
+      stores.close(docId);
+      setStore(undefined);
+    };
+  }, [docId, stores]);
 
   /**
    * The magnification the reader asked for, as a MODE.
@@ -162,6 +241,52 @@ export function App({ client, settings }: AppProps): ReactElement {
   // The three reading aids, live. Read here rather than in the scroller because
   // the scroller takes a `SettingsStore` from nobody — it is handed what it
   // needs, which keeps it testable without a store.
+  /**
+   * What the navigation commands act through.
+   *
+   * **The store decides, and this only carries the answer to the scroller.**
+   * `back` returns the page it moved to or `undefined` at the start, so the
+   * decision of whether there is anywhere to go is made once, in the store,
+   * rather than by a caller re-reading the history and reaching its own
+   * conclusion (B3a).
+   *
+   * Stable across renders where the store is, so the registry below is not
+   * rebuilt on every page change.
+   */
+  const navigator = useMemo(
+    () => ({
+      jumpTo: (page: number): void => {
+        store?.getState().jumpTo(page);
+        setGoTo(page);
+      },
+      back: (): void => {
+        const target = store?.getState().back();
+        if (target !== undefined) setGoTo(target);
+      },
+      forward: (): void => {
+        const target = store?.getState().forward();
+        if (target !== undefined) setGoTo(target);
+      },
+    }),
+    [store],
+  );
+
+  // Stable, so the scroller's consume-the-request effect does not re-run on
+  // every parent render and scroll again to a page it has already reached.
+  const wentTo = useCallback(() => {
+    setGoTo(undefined);
+  }, []);
+
+  // THE READER'S OWN SCROLLING, told to the store so the history has a place to
+  // return to. It does NOT push — see `DocumentState.history`.
+  const viewed = useCallback(
+    (page: number): void => {
+      setCurrentPage(page);
+      store?.getState().viewing(page);
+    },
+    [store],
+  );
+
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
   const unit = useSetting(settings, RULER_UNIT_SETTING);
@@ -200,8 +325,14 @@ export function App({ client, settings }: AppProps): ReactElement {
         fitCommand('page', { onZoom: changeZoom }),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
+        pageMoveCommand('next', { navigator }),
+        pageMoveCommand('previous', { navigator }),
+        pageMoveCommand('first', { navigator }),
+        pageMoveCommand('last', { navigator }),
+        historyCommand('back', { navigator }),
+        historyCommand('forward', { navigator }),
       ]),
-    [applied, changeZoom, client, settings, show],
+    [applied, changeZoom, client, navigator, settings, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -218,8 +349,12 @@ export function App({ client, settings }: AppProps): ReactElement {
       // page 0 of a document nobody opened is exactly the plausible-looking
       // action this type exists to make unrepresentable.
       page: open === undefined ? undefined : currentPage,
+      // FROM THE PARSER, threaded up by the scroller, for the reason the
+      // scroller takes it from there: the view model needs an engine session
+      // and this number must exist wherever PDF.js can read the file.
+      pageCount: open === undefined ? undefined : pageCount,
     }),
-    [currentPage, open],
+    [currentPage, open, pageCount],
   );
 
   useShortcuts(registry, context);
@@ -234,10 +369,13 @@ export function App({ client, settings }: AppProps): ReactElement {
           client={client}
           document={open}
           onVersionMoved={setOpen}
-          onCurrentPage={setCurrentPage}
+          onCurrentPage={viewed}
           mode={zoomMode}
           onZoom={changeZoom}
           onShownZoom={setShownZoom}
+          goTo={goTo}
+          onWentTo={wentTo}
+          onPageCount={setPageCount}
           rulers={rulers}
           showGrid={showGrid}
           unit={unit}
@@ -359,6 +497,9 @@ function PageCanvas({
   mode,
   onZoom,
   onShownZoom,
+  goTo,
+  onWentTo,
+  onPageCount,
   rulers,
   showGrid,
   unit,
@@ -370,6 +511,9 @@ function PageCanvas({
   readonly mode: ZoomMode;
   readonly onZoom: (next: (shown: number) => ZoomMode) => void;
   readonly onShownZoom: (shown: number) => void;
+  readonly goTo: number | undefined;
+  readonly onWentTo: () => void;
+  readonly onPageCount: (count: number) => void;
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
@@ -461,6 +605,18 @@ function PageCanvas({
     };
   }, [client, moved, open.byteLength, open.docId, open.version]);
 
+  // THE COUNT GOES UP, because the navigation commands are registered in `App`
+  // and need an end to clamp against. It cannot be read there: the number is
+  // the parser's, and the parser lives here.
+  //
+  // In an effect above the early returns, because a hook cannot be called
+  // conditionally — and reporting during render would be a parent state update
+  // inside a child's render, which React refuses.
+  const pages = ready?.document.numPages;
+  useEffect(() => {
+    if (pages !== undefined) onPageCount(pages);
+  }, [onPageCount, pages]);
+
   if (failed) {
     // A CANVAS, and the element is the contract rather than the appearance.
     // `canvasHarness.ts` reads `data-failed` off `canvas.m-page` to tell a parse
@@ -501,6 +657,8 @@ function PageCanvas({
       mode={mode}
       onZoom={onZoom}
       onShownZoom={onShownZoom}
+      goTo={goTo}
+      onWentTo={onWentTo}
       rulers={rulers}
       showGrid={showGrid}
       unit={unit}

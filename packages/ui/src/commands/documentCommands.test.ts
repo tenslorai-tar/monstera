@@ -35,6 +35,10 @@ const CONTEXT: CommandContext = {
   // the context and sent a literal zero pass every case below, which is the
   // exact defect the rotate shipped with in the other direction.
   page: 3,
+  // AND NOT A COUNT THAT MAKES `page` THE LAST ONE, for the same reason one
+  // step on: a document of exactly four pages would let a command that clamped
+  // to the end look identical to one that used the page it was given.
+  pageCount: 10,
 };
 
 /** The context with no document, for the `when` cases. */
@@ -44,6 +48,7 @@ const NO_DOCUMENT: CommandContext = {
   hasSelection: false,
   dirty: false,
   page: undefined,
+  pageCount: undefined,
 };
 
 /**

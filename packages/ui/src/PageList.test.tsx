@@ -162,6 +162,32 @@ function clientAnswering(): { client: ContractClient; asked: unknown[] } {
 }
 
 /**
+ * Makes every slot record the page it was scrolled to.
+ *
+ * ## PER ELEMENT, not on the prototype, and the receiver comes for free
+ *
+ * happy-dom implements no scrolling, so the method has to be supplied either
+ * way. Patching each slot lets the recorder close over the page it belongs to,
+ * which means **the assertion is which page was scrolled to** rather than that
+ * something was — and scrolling to *an* element proves nothing.
+ *
+ * It also avoids a recorder that reads its own `this`: a function with a `this`
+ * parameter assigned to a DOM method is a scoping hazard the lint rules refuse,
+ * and here there is nothing to gain by arguing with them.
+ */
+function recordScrolls(container: HTMLElement): number[] {
+  const scrolled: number[] = [];
+  for (const slot of container.querySelectorAll('.m-page-slot')) {
+    const page = Number(slot instanceof HTMLElement ? (slot.dataset['page'] ?? '-1') : '-1');
+    const target: { scrollIntoView?: () => void } = slot;
+    target.scrollIntoView = (): void => {
+      scrolled.push(page);
+    };
+  }
+  return scrolled;
+}
+
+/**
  * The CSS width the drawn page is SHOWN at.
  *
  * Throws rather than asserting non-null: a case that finds no canvas has not
@@ -195,6 +221,8 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        goTo={undefined}
+        onWentTo={vi.fn()}
         rulers={false}
         showGrid={false}
         unit="in"
@@ -221,6 +249,8 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        goTo={undefined}
+        onWentTo={vi.fn()}
         rulers={false}
         showGrid={false}
         unit="in"
@@ -252,6 +282,8 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        goTo={undefined}
+        onWentTo={vi.fn()}
         rulers={false}
         showGrid={false}
         unit="in"
@@ -291,6 +323,8 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        goTo={undefined}
+        onWentTo={vi.fn()}
         rulers={false}
         showGrid={false}
         unit="in"
@@ -317,6 +351,53 @@ describe('PageList', () => {
       { docId: DOC, pages: [0] },
       { docId: DOC, pages: [2] },
     ]);
+  });
+
+  it('SCROLLS TO a requested page, and reports the request consumed', async () => {
+    // The UI half of the navigation pair. `navigationCommands.test.ts` proves
+    // which page each command asks for; this proves the ask reaches the slot
+    // for that page.
+    //
+    // MOUNTED WITH NO REQUEST FIRST, which does two things at once: it gives
+    // the recorder real slots to attach to, and it makes the scroll observably
+    // a consequence of the REQUEST rather than of mounting. The control below
+    // is what that buys.
+    const { client } = clientAnswering();
+    const wentTo = vi.fn();
+    const props = {
+      client,
+      view: viewDrawing(),
+      pageCount: 5,
+      docId: DOC,
+      version: VERSION,
+      onCurrentPage: vi.fn(),
+      mode: SCALE_1,
+      onZoom: vi.fn(),
+      onShownZoom: vi.fn(),
+      onWentTo: wentTo,
+      rulers: false,
+      showGrid: false,
+      unit: 'in' as const,
+    };
+    const { container, rerender } = render(<PageList {...props} goTo={undefined} />);
+    await settle();
+
+    const scrolled = recordScrolls(container);
+    expect(scrolled).toStrictEqual([]);
+
+    await act(async () => {
+      rerender(<PageList {...props} goTo={3} />);
+      await Promise.resolve();
+    });
+
+    // PAGE 3, not merely something. A component that scrolled to the first slot
+    // would satisfy "it scrolled" and be wrong about the only thing that
+    // matters.
+    expect(scrolled).toStrictEqual([3]);
+    // CONSUMED, so the next unrelated render does not scroll again. A case that
+    // only checked the scroll would pass for a component that re-fired the
+    // request for ever.
+    expect(wentTo).toHaveBeenCalledTimes(1);
   });
 
   describe('two-tier zoom', () => {
@@ -346,6 +427,8 @@ describe('PageList', () => {
           mode={SCALE_1}
           onZoom={vi.fn()}
           onShownZoom={vi.fn()}
+          goTo={undefined}
+          onWentTo={vi.fn()}
           rulers={false}
           showGrid={false}
           unit="in"
@@ -368,6 +451,8 @@ describe('PageList', () => {
             mode={SCALE_2}
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
+            goTo={undefined}
+            onWentTo={vi.fn()}
             rulers={false}
             showGrid={false}
             unit="in"
@@ -401,6 +486,8 @@ describe('PageList', () => {
             mode={SCALE_1}
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
+            goTo={undefined}
+            onWentTo={vi.fn()}
             rulers={false}
             showGrid={false}
             unit="in"
@@ -421,6 +508,8 @@ describe('PageList', () => {
             mode={SCALE_2}
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
+            goTo={undefined}
+            onWentTo={vi.fn()}
             rulers={false}
             showGrid={false}
             unit="in"
@@ -459,6 +548,8 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        goTo={undefined}
+        onWentTo={vi.fn()}
         rulers={false}
         showGrid={false}
         unit="in"

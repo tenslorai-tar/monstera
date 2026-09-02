@@ -92,6 +92,22 @@ export interface PageListProps {
    * from the last explicit scale, which is not what the reader can see.
    */
   readonly onShownZoom: (shown: number) => void;
+  /**
+   * A page to reveal, or `undefined` for none outstanding.
+   *
+   * **A REQUEST, flowing the opposite way from `onCurrentPage`.** Collapsing
+   * the two into one number makes a loop: the observer would set the value the
+   * scroller reads as an instruction. Two names, one each way, has no loop.
+   */
+  readonly goTo: number | undefined;
+  /**
+   * Says the request has been acted on, so the owner can clear it.
+   *
+   * Cleared by this component rather than by a timer, so a jump to a page that
+   * is already visible is still consumed — otherwise the next unrelated render
+   * would scroll again.
+   */
+  readonly onWentTo: () => void;
   /** Whether the two rulers are drawn. `viewing.rulers`. */
   readonly rulers: boolean;
   /** Whether the grid overlay is drawn. `viewing.grid`. */
@@ -156,6 +172,8 @@ export function PageList({
   mode,
   onZoom,
   onShownZoom,
+  goTo,
+  onWentTo,
   rulers,
   showGrid,
   unit,
@@ -311,6 +329,26 @@ export function PageList({
   }, [measureOrigin]);
 
   const grid = showGrid ? gridSpacing(unit, shown) : undefined;
+
+  /**
+   * Takes the reader to a requested page.
+   *
+   * **`scrollIntoView` on the slot, rather than arithmetic on the offsets.**
+   * Slot heights are estimates until a page has been drawn, so a computed
+   * offset would be wrong by the accumulated error of every unvisited page
+   * above it — and it would go on being wrong as those pages corrected
+   * themselves. The element knows where it is.
+   *
+   * The request is reported as consumed whether or not a slot was found. A slot
+   * always exists — there is one per page from the first frame — so a miss
+   * means the page is outside the document, and leaving the request standing
+   * would retry it on every render for ever.
+   */
+  useEffect(() => {
+    if (goTo === undefined) return;
+    slots.current.get(goTo)?.scrollIntoView({ block: 'start' });
+    onWentTo();
+  }, [goTo, onWentTo]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {

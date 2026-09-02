@@ -102,3 +102,85 @@ describe('DocumentStores', () => {
     expect(stores.get(ONE)).toBeUndefined();
   });
 });
+
+describe('the navigation history', () => {
+  function fresh() {
+    return createDocumentStore(ONE, asDocVersion(1), 0);
+  }
+
+  it('SCROLLING does not push, which is the whole distinction', () => {
+    // THE SEPARATING CASE. A history that recorded scrolling would make
+    // Alt+Left step back one page at a time through everything the reader read,
+    // which is useless exactly where it is wanted. A case that only checked
+    // `page` would pass for that implementation.
+    const store = fresh();
+    store.getState().viewing(1);
+    store.getState().viewing(2);
+    store.getState().viewing(3);
+
+    expect(store.getState().page).toBe(3);
+    expect(store.getState().history).toStrictEqual([0]);
+    expect(store.getState().back()).toBeUndefined();
+  });
+
+  it('a jump pushes, and back returns to where the reader jumped FROM', () => {
+    const store = fresh();
+    store.getState().viewing(4);
+    store.getState().jumpTo(40);
+
+    expect(store.getState().page).toBe(40);
+    // Back goes to the previous ANCHOR, not to page 4 — the reader scrolled
+    // there and scrolling is not a location the history holds.
+    expect(store.getState().back()).toBe(0);
+    expect(store.getState().page).toBe(0);
+    expect(store.getState().forward()).toBe(40);
+  });
+
+  it('a jump TRUNCATES the forward branch', () => {
+    // Without this, forward means "some page you once visited" rather than "the
+    // branch you were on", and a reader who goes back and then somewhere else
+    // can still walk forward into a history that no longer exists.
+    const store = fresh();
+    store.getState().jumpTo(10);
+    store.getState().jumpTo(20);
+    store.getState().back();
+    store.getState().jumpTo(99);
+
+    expect(store.getState().history).toStrictEqual([0, 10, 99]);
+    expect(store.getState().forward()).toBeUndefined();
+  });
+
+  it('ignores a jump to the page already shown', () => {
+    const store = fresh();
+    store.getState().jumpTo(7);
+    store.getState().jumpTo(7);
+
+    expect(store.getState().history).toStrictEqual([0, 7]);
+  });
+
+  it('answers undefined at both ends rather than clamping', () => {
+    // A caller scrolls only when there is somewhere to go, so the boundary has
+    // to be an ABSENT page rather than the current one — returning the page you
+    // are on would make every press at the start scroll to where you already
+    // are, which reads as a control that half-works.
+    const store = fresh();
+    expect(store.getState().back()).toBeUndefined();
+    expect(store.getState().forward()).toBeUndefined();
+  });
+
+  it('drops the OLDEST entry past the limit and moves the index with it', () => {
+    // The index is the part that breaks silently: dropping from the front
+    // without adjusting it renumbers every entry, and `back` then returns a
+    // page the reader never came from.
+    const store = fresh();
+    for (let page = 1; page <= 60; page += 1) store.getState().jumpTo(page);
+
+    const state = store.getState();
+    expect(state.history).toHaveLength(50);
+    expect(state.historyAt).toBe(49);
+    expect(state.history[state.historyAt]).toBe(60);
+    // And the entry before the current one is still the page before it, which
+    // is what a mis-adjusted index would get wrong.
+    expect(store.getState().back()).toBe(59);
+  });
+});
