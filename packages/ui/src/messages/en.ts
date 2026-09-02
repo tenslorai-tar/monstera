@@ -50,6 +50,7 @@ export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
+export const ACCENT_TITLE = messageKey('setting.appearance.accent.title');
 export const PALETTE_LABEL = messageKey('surface.palette.label');
 export const PALETTE_PLACEHOLDER = messageKey('surface.palette.placeholder');
 export const PALETTE_EMPTY = messageKey('surface.palette.empty');
@@ -127,6 +128,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',
+  [ACCENT_TITLE]: 'Accent colour',
   [PALETTE_LABEL]: 'Command palette',
   [PALETTE_PLACEHOLDER]: 'Search commands',
   [PALETTE_EMPTY]: 'No command matches.',

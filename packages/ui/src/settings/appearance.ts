@@ -67,3 +67,57 @@ export function applyTheme(root: HTMLElement, theme: Theme): void {
   }
   root.dataset['theme'] = theme;
 }
+
+/**
+ * The media queries that mean *this person needs high contrast*.
+ *
+ * `forced-colors: active` is Windows High Contrast, which is the one that
+ * matters for a Store app; `prefers-contrast: more` is the cross-platform
+ * expression of the same request. Either is enough.
+ */
+export const HIGH_CONTRAST_QUERIES = [
+  '(forced-colors: active)',
+  '(prefers-contrast: more)',
+] as const;
+
+/**
+ * Whether the platform is asking for high contrast.
+ *
+ * **A query and not a setting, which is what the theme setting's own header
+ * says.** `hc` exists in `tokens.css` and is deliberately not a value of
+ * `appearance.theme`: it is an accessibility mode with its own trigger, and
+ * offering it as a third colour scheme in a dropdown would make an assistive
+ * setting look like a preference. This is that trigger, and it is what turned
+ * a token block nothing could reach into one the platform reaches.
+ *
+ * Answers `false` where `matchMedia` is absent, which is every non-browser
+ * environment — a shell that assumed high contrast because it could not ask
+ * would be the reassuring answer pointing the wrong way.
+ */
+export function highContrastWanted(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return HIGH_CONTRAST_QUERIES.some((query) => window.matchMedia(query).matches);
+}
+
+/**
+ * Applies the theme, with high contrast overriding whatever was chosen.
+ *
+ * ## The OVERRIDE direction, and it is the whole decision
+ *
+ * A reader who has turned high contrast on at the operating system has said
+ * something stronger than a colour preference — they have said the other themes
+ * are hard to read. So `hc` wins over `light` and `dark` rather than being
+ * offered beside them, and a person who wants their theme back turns the
+ * platform setting off, where they turned it on.
+ *
+ * That also means the accent is not applied under it: `tokens.css`' `hc` block
+ * picks colours that clear against a black ground on purpose, and a user accent
+ * layered over them would be the one colour in the theme nobody checked.
+ */
+export function applyAppearance(root: HTMLElement, theme: Theme, highContrast: boolean): void {
+  if (highContrast) {
+    root.dataset['theme'] = 'hc';
+    return;
+  }
+  applyTheme(root, theme);
+}

@@ -44,7 +44,14 @@ import { CLOSE_LABEL } from './messages/en.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
-import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
+import {
+  HIGH_CONTRAST_QUERIES,
+  THEME_SETTING,
+  type Theme,
+  applyAppearance,
+  highContrastWanted,
+} from './settings/appearance.js';
+import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
 import { GRID_SETTING, RULERS_SETTING, RULER_UNIT_SETTING } from './settings/viewing.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
@@ -495,13 +502,42 @@ function useTheme(settings: SettingsStore): void {
   // runs before paint, so the frame that would have shown the wrong theme is
   // never presented.
   useLayoutEffect(() => {
+    const root = document.documentElement;
     const apply = (): void => {
-      applyTheme(document.documentElement, settings.get(THEME_SETTING.id) as Theme);
+      const highContrast = highContrastWanted();
+      applyAppearance(root, settings.get(THEME_SETTING.id) as Theme, highContrast);
+      // THE ACCENT IS NOT APPLIED UNDER HIGH CONTRAST. `tokens.css`' `hc` block
+      // picks colours that clear against a black ground deliberately, and a
+      // user accent layered over them would be the one colour in that theme
+      // nobody has checked. Cleared rather than skipped, so turning the
+      // platform setting on removes an accent that was already applied.
+      const refusal = applyAccent(
+        root,
+        highContrast ? 'theme' : (settings.get(ACCENT_SETTING.id) as string),
+      );
+      // A REFUSED ACCENT IS NOT SILENT, and it is not a dialog either: the
+      // setting is stored and the theme is correct without it, so the user's
+      // next action is unaffected. What a refusal needs is to be findable, and
+      // the log is where a diagnostic goes.
+      if (refusal !== undefined) console.warn(`Accent not applied: ${refusal}`);
     };
     apply();
-    return settings.subscribe((id) => {
-      if (id === THEME_SETTING.id) apply();
+
+    // RE-APPLIED WHEN THE PLATFORM CHANGES ITS MIND, which is the half a
+    // settings subscription cannot see: high contrast is turned on outside this
+    // application, and a shell that only re-read on a settings change would
+    // keep the old theme until the reader happened to change something.
+    const watched = HIGH_CONTRAST_QUERIES.map((query) => window.matchMedia(query));
+    for (const query of watched) query.addEventListener('change', apply);
+
+    const unsubscribe = settings.subscribe((id) => {
+      if (id === THEME_SETTING.id || id === ACCENT_SETTING.id) apply();
     });
+
+    return (): void => {
+      for (const query of watched) query.removeEventListener('change', apply);
+      unsubscribe();
+    };
   }, [settings]);
 }
 

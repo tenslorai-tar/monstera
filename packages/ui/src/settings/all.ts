@@ -1,4 +1,5 @@
 import type { SettingDefinition } from '../registries/settings.js';
+import { ACCENT_SETTING } from './accent.js';
 import { THEME_SETTING } from './appearance.js';
 import { GRID_SETTING, RULERS_SETTING, RULER_UNIT_SETTING } from './viewing.js';
 
@@ -32,6 +33,7 @@ import { GRID_SETTING, RULERS_SETTING, RULER_UNIT_SETTING } from './viewing.js';
  */
 export const ALL_SETTINGS: readonly SettingDefinition[] = [
   THEME_SETTING,
+  ACCENT_SETTING,
   RULERS_SETTING,
   GRID_SETTING,
   RULER_UNIT_SETTING,
