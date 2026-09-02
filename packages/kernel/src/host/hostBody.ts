@@ -8,6 +8,7 @@ import { engineChannels } from './engineChannels.js';
 import {
   type HostContainmentProbe,
   type HostFilesystem,
+  type HostDestinationsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   createEngineHandlers,
@@ -75,6 +76,8 @@ export interface HostBodyDependencies {
   readonly pageText: HostPageTextReader;
   /** How this process reads one page's links. `readPageLinks`. */
   readonly pageLinks: HostPageLinksReader;
+  /** How this process reads the document's outline. `readDestinations`. */
+  readonly destinations: HostDestinationsReader;
   /** Where session ids come from. `cryptoBytes`. */
   readonly tokens: TokenBytesSource;
   /**
@@ -146,6 +149,7 @@ export function startEngineHost(
       dependencies.geometry,
       dependencies.pageText,
       dependencies.pageLinks,
+      dependencies.destinations,
     ),
     transport: {
       write: stream.write,

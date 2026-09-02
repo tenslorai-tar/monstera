@@ -134,6 +134,75 @@ body {
   padding: var(--space-8);
 }
 
+/*
+ * The outline and the links panel.
+ *
+ * One block for both because they are the same shape — a list of rows, some of
+ * which are controls — and a second set of rules differing only in a class name
+ * is the copy the token file exists to prevent.
+ */
+.m-destinations,
+.m-links-panel {
+  max-block-size: 40vh;
+  overflow-y: auto;
+  padding: var(--space-8);
+  background: var(--bg2);
+  border-block-start: 1px solid var(--border); /* decorative: separates a panel from the document area; each row carries its own focus ring */
+}
+
+.m-destinations-list,
+.m-links-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-destination,
+.m-links-item {
+  inline-size: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-8);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: start;
+}
+
+.m-destination:hover,
+.m-destination:focus-visible,
+.m-links-item:hover,
+.m-links-item:focus-visible {
+  background: var(--surface2);
+}
+
+.m-destination-page {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * An entry that goes nowhere, and an external link: shown, not offered.
+ * `--muted` rather than a disabled control, because there is no control — a
+ * button that did nothing would be the display-only defect these rows avoid.
+ */
+.m-destination-unresolved,
+.m-links-external {
+  display: block;
+  padding: var(--space-2) var(--space-4);
+  color: var(--muted);
+}
+
+.m-destinations-empty,
+.m-links-empty {
+  margin: 0;
+  padding: var(--space-4);
+  color: var(--muted);
+}
+
 .m-status-bar {
   display: flex;
   gap: var(--space-16);

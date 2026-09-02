@@ -3,6 +3,7 @@ import type { Handlers } from '@monstera/contract';
 import type { CommandExecution } from '../commandSpecs.js';
 import type { EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
+import type { Destination } from '../destinations.js';
 import type { PageLink } from '../pageLinks.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { EngineChannels } from './engineChannels.js';
@@ -38,6 +39,17 @@ export type HostPageLinksReader = (
   session: MupdfSession,
   page: number,
 ) => Promise<readonly PageLink[]>;
+
+/**
+ * Reads the document's outline.
+ *
+ * Injected for the two readers above's reason. Takes no page: an outline is a
+ * property of the document, and a per-page parameter would be a signature
+ * inviting a caller to ask a question this has no answer to.
+ */
+export type HostDestinationsReader = (
+  session: MupdfSession,
+) => Promise<readonly Destination[]>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -133,6 +145,7 @@ export function createEngineHandlers(
   geometry: PageGeometryReader,
   pageText: HostPageTextReader,
   pageLinks: HostPageLinksReader,
+  destinations: HostDestinationsReader,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -266,6 +279,12 @@ export function createEngineHandlers(
       // the adapter already parsed either works or is a defect, including a
       // page index outside it.
       return { ok: true, value: { links: [...(await pageLinks(held.session, page))] } };
+    },
+
+    'engine/destinations': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: { destinations: [...(await destinations(held.session))] } };
     },
 
     'engine/apply': async ({ session, command }) => {

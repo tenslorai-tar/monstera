@@ -127,6 +127,9 @@ function start(stream: HostByteStream) {
       pageLinks: () => {
         throw new Error('no case here reads page links');
       },
+      destinations: () => {
+        throw new Error('no case here reads the outline');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

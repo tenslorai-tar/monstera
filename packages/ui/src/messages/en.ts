@@ -57,6 +57,10 @@ export const PALETTE_LABEL = messageKey('surface.palette.label');
 export const PALETTE_PLACEHOLDER = messageKey('surface.palette.placeholder');
 export const PALETTE_EMPTY = messageKey('surface.palette.empty');
 export const PALETTE_TITLE = messageKey('command.palette.title');
+export const DESTINATIONS_LABEL = messageKey('surface.destinations.label');
+export const DESTINATIONS_EMPTY = messageKey('surface.destinations.empty');
+export const DESTINATIONS_UNAVAILABLE = messageKey('surface.destinations.unavailable');
+export const DESTINATION_UNRESOLVED = messageKey('surface.destinations.unresolved');
 export const LINKS_LABEL = messageKey('surface.links.label');
 export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
@@ -142,6 +146,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PALETTE_PLACEHOLDER]: 'Search commands',
   [PALETTE_EMPTY]: 'No command matches.',
   [PALETTE_TITLE]: 'Command palette',
+  [DESTINATIONS_LABEL]: 'Outline',
+  [DESTINATIONS_EMPTY]: 'This document has no outline.',
+  [DESTINATIONS_UNAVAILABLE]: 'The outline could not be read.',
+  [DESTINATION_UNRESOLVED]: '{title} (goes nowhere)',
   [LINKS_LABEL]: 'Links on this page',
   [LINKS_EMPTY]: 'This page has no links.',
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',

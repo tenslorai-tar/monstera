@@ -149,6 +149,41 @@ const linkBoundsSchema = z
   .strict();
 
 /**
+ * How many outline entries may cross, and how long a title may be.
+ *
+ * Counts and a length, because those are the two axes a document controls.
+ * A long technical manual carries hundreds of headings; four thousand is past
+ * what a panel could present and short of what a hostile document could try.
+ *
+ * The title length is generous for the same reason every bound here is: the
+ * lower bound is the real constraint, and a heading of 512 characters is one a
+ * panel truncates rather than one it refuses to show.
+ */
+export const ENGINE_DESTINATIONS_MAX = 4096;
+export const ENGINE_DESTINATION_TITLE_MAX = 512;
+
+/**
+ * One outline entry, as it crosses from the host.
+ *
+ * `page` is **nullable rather than optional**, matching the reader: an entry
+ * that resolves to no page is a real state — an external URI, or a destination
+ * the document does not define — and it must reach a panel rather than be
+ * dropped, because a gap in a table of contents is more confusing than an entry
+ * that cannot be followed.
+ *
+ * Nullable and not optional because JSON cannot carry `undefined`: an optional
+ * property would make the wire spelling differ from the reader's, with a
+ * conversion at each end that nobody would remember.
+ */
+const engineDestinationSchema = z
+  .object({
+    title: z.string().max(ENGINE_DESTINATION_TITLE_MAX),
+    page: z.number().int().nonnegative().nullable(),
+    depth: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/**
  * One link, as it crosses from the host.
  *
  * A DISCRIMINATED UNION, so `{kind: 'internal', uri}` is unrepresentable rather
@@ -539,6 +574,30 @@ export const engineChannels = {
          * than this is a page no reader can use a panel for.
          */
         links: z.array(engineLinkSchema).max(ENGINE_PAGE_LINKS_MAX),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * The document's outline, flattened.
+   *
+   * **WHOLE-DOCUMENT, and that does not breach invariant 11.** L11 forbids a
+   * payload that scales with the document *per operation*; an outline scales
+   * with the number of headings an author wrote, which is a property of the
+   * document's structure and not of its size. A thousand-page scan has none. It
+   * is read once when a document opens rather than per page, so there is no
+   * per-operation growth to bound.
+   *
+   * Bounded anyway, by count, because the host is hostile by invariant 25's own
+   * premise and *an author would not do that* is not a guarantee.
+   */
+  'engine/destinations': channel(
+    'Reads the document’s outline from a session this host holds.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        destinations: z.array(engineDestinationSchema).max(ENGINE_DESTINATIONS_MAX),
       })
       .strict(),
     ['no-such-session'],

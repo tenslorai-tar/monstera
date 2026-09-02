@@ -11,6 +11,7 @@ import {
   DocumentNotOpenError,
   DocumentService,
   EngineOpenFailed,
+  type HostDestinationsReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostTermination,
@@ -25,6 +26,7 @@ import {
   nodeFileSurface,
   parsePageText,
   remoteMupdfGeometry,
+  remoteMupdfDestinations,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWriter,
@@ -351,6 +353,13 @@ export function createShellDependencies(
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return engineHost.pageLinks(session, page);
+  },
+  // THE OUTLINE, composed here for the reads above's reason and taking no page,
+  // because an outline is a property of the document rather than of a page.
+  (docId, sessions) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return engineHost.destinations(session);
   });
 
   const openedDocument = engineHost.openedDocument;
@@ -441,6 +450,8 @@ function engineSessionOpener(
   readonly pageText: HostPageTextReader;
   /** One page's links, from whichever host is live. */
   readonly pageLinks: HostPageLinksReader;
+  /** The document's outline, from whichever host is live. */
+  readonly destinations: HostDestinationsReader;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -577,6 +588,20 @@ function engineSessionOpener(
     return pageLinks(session, page);
   };
 
+  /** The outline's half of the same registration. See {@link pageText}. */
+  let destinations: HostDestinationsReader | null = null;
+
+  const readDestinationsThroughHost: HostDestinationsReader = (session) => {
+    if (destinations === null) {
+      throw new Error(
+        'An outline read reached the engine with no host outline reader registered. A session ' +
+          'was resolved for this document, so one was issued by a host — the supervisor and ' +
+          'the host connection have diverged.',
+      );
+    }
+    return destinations(session);
+  };
+
   /**
    * Tokens are minted from handles ONE host issued, and
    * `createRemoteSessions`' own words are that they are *"not transferable
@@ -685,6 +710,7 @@ function engineSessionOpener(
     geometry = remoteMupdfGeometry(client, remote);
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
+    destinations = remoteMupdfDestinations(client, remote);
     return live.value;
   };
 
@@ -835,6 +861,7 @@ function engineSessionOpener(
     geometry: readGeometry,
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
+    destinations: readDestinationsThroughHost,
     closeHost,
     rebuildSessions: create,
   };

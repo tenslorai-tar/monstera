@@ -130,6 +130,7 @@ export function createContractHandlers(deps: {
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
+    'document.destinations': destinationsHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
     // runs `migrate` and falls back per setting; a schema here would be this
@@ -357,6 +358,30 @@ function pageLinksHandler(commands: DocumentCommands): ContractHandlers['documen
     try {
       const { version, links } = await commands.pageLinks(docId, page);
       return ok({ version, links });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The document's outline, flattened.
+ *
+ * The three refusals are the two readers above's, and for the same reason: an
+ * outline read needs an engine session.
+ */
+function destinationsHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.destinations'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.destinations']>>> => {
+    try {
+      const { version, destinations } = await commands.destinations(docId);
+      return ok({ version, destinations });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

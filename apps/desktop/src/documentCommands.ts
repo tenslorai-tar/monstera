@@ -9,6 +9,7 @@ import {
   type DeclaredCommands,
   type DocumentService,
   type PageGeometry,
+  type Destination,
   type PageLink,
   type PageText,
   type SaveDependencies,
@@ -343,6 +344,24 @@ export interface DocumentPageLinks {
   readonly links: readonly PageLink[];
 }
 
+/**
+ * Reads the document's outline.
+ *
+ * Injected for {@link DocumentPageText}'s reason. Takes NO page: an outline is
+ * a property of the document, and a page parameter would be a signature
+ * inviting a question this has no answer to.
+ */
+export type DocumentDestinationsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<readonly Destination[]>;
+
+/** The outline, stamped with the version the lane read it at. */
+export interface DocumentDestinations {
+  readonly version: DocVersion;
+  readonly destinations: readonly Destination[];
+}
+
 /** One page's matches, stamped with the version the lane read them at. */
 export interface PageSearchResult {
   readonly version: DocVersion;
@@ -388,6 +407,7 @@ export class DocumentCommands {
   readonly #geometry: DocumentGeometry;
   readonly #pageText: DocumentPageText;
   readonly #pageLinks: DocumentPageLinksReader;
+  readonly #destinations: DocumentDestinationsReader;
 
   constructor(
     documents: DocumentService,
@@ -397,6 +417,7 @@ export class DocumentCommands {
     geometry: DocumentGeometry,
     pageText: DocumentPageText,
     pageLinks: DocumentPageLinksReader,
+    destinations: DocumentDestinationsReader,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -405,6 +426,7 @@ export class DocumentCommands {
     this.#geometry = geometry;
     this.#pageText = pageText;
     this.#pageLinks = pageLinks;
+    this.#destinations = destinations;
   }
 
   /**
@@ -549,6 +571,29 @@ export class DocumentCommands {
     });
 
     return { version, links: value };
+  }
+
+  /**
+   * The document's outline, flattened.
+   *
+   * In the lane for the two reads above's reason, and stamped with the version
+   * for the same one: a renderer holding an outline can tell whether it
+   * describes the document it is showing.
+   *
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async destinations(docId: DocId): Promise<DocumentDestinations> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#destinations(docId, sessions);
+    });
+
+    return { version, destinations: value };
   }
 
   /**

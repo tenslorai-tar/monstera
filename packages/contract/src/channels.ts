@@ -123,6 +123,20 @@ export const MAX_PAGE_LINKS = 4096;
 export const MAX_LINK_URI_LENGTH = 2048;
 
 /**
+ * How many outline entries may reach the renderer, and how long a title may be.
+ *
+ * The two axes a document controls. A long technical manual carries hundreds of
+ * headings; four thousand is past what a panel could present and short of what
+ * a hostile document could try. A 512-character heading is one a panel
+ * truncates rather than one it refuses.
+ *
+ * **The trigger:** the first document refused by either is the evidence the
+ * bound is wrong, and the fix is a measurement of what that document carries.
+ */
+export const MAX_DESTINATIONS = 4096;
+export const MAX_DESTINATION_TITLE_LENGTH = 512;
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
@@ -652,6 +666,59 @@ export const channels = {
        * and a results surface would silently stop paging.
        */
       truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * The document's named destinations, as its outline states them.
+   *
+   * ## WHOLE-DOCUMENT, and why that is not invariant 11's concern
+   *
+   * L11 forbids a payload that scales with the document **per operation**. An
+   * outline scales with the number of headings an author wrote — a property of
+   * the document's structure rather than of its size, and a thousand-page scan
+   * has none. It is read once when a document opens rather than per page, so
+   * there is no per-operation growth here to bound.
+   *
+   * The contrast with `document.pageLinks` is the point: links exist per page
+   * and would grow with the document, so that channel takes one. Both are
+   * bounded by count regardless, because a bound that only exists where the
+   * invariant demands it is a bound nobody applies to the hostile case.
+   *
+   * ## Flat with a depth, not a tree
+   *
+   * The outline nests and a panel renders rows. Carrying the nesting would put
+   * the same tree walk in every consumer, and the first thing each would do is
+   * flatten it. The order is the document's own, depth-first; nothing sorts,
+   * because an outline's order is authored.
+   */
+  'document.destinations': channel(
+    'The document’s outline, flattened, with each entry’s resolved page.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      destinations: z
+        .array(
+          z.object({
+            title: z.string().max(MAX_DESTINATION_TITLE_LENGTH),
+            /**
+             * Zero-based, or `null` when the entry resolves to no page.
+             *
+             * **`null` is a real state**: an outline may point at an external
+             * URI or at a destination the document does not define, and both
+             * should reach a reader rather than be dropped — a gap in a table
+             * of contents is more confusing than an entry that cannot be
+             * followed. Nullable rather than optional because JSON cannot
+             * carry `undefined`, so one spelling travels end to end.
+             */
+            page: z.number().int().nonnegative().nullable(),
+            /** How deep in the outline it sits. The top level is 0. */
+            depth: z.number().int().nonnegative(),
+          }),
+        )
+        .max(MAX_DESTINATIONS)
+        .readonly(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

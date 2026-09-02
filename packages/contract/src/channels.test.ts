@@ -73,6 +73,20 @@ const handlers: ContractHandlers = {
         ],
       }),
     ),
+  // A NESTED ENTRY AND A PAGELESS ONE, for the links fixture's reason: a flat
+  // list of resolvable entries would let a boundary that dropped the depth or
+  // collapsed `null` pass, and both are states a panel has to render.
+  'document.destinations': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        destinations: [
+          { title: 'Chapter one', page: 0, depth: 0 },
+          { title: 'A section', page: 3, depth: 1 },
+          { title: 'Somewhere unresolvable', page: null, depth: 1 },
+        ],
+      }),
+    ),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the

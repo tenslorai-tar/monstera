@@ -5,7 +5,11 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { EngineChannels } from './engineChannels.js';
-import type { HostPageLinksReader, HostPageTextReader } from './engineHandlers.js';
+import type {
+  HostDestinationsReader,
+  HostPageLinksReader,
+  HostPageTextReader,
+} from './engineHandlers.js';
 
 /**
  * Running commands against a session an engine host holds (ADR-0023 Decision
@@ -235,6 +239,24 @@ export function remoteMupdfPageLinks(
       'engine/page-links',
       await client['engine/page-links']({ session: sessions.handleFor(session), page }),
     ).links;
+}
+
+/**
+ * The document's outline, over the boundary.
+ *
+ * @param client the engine host's channels, through the contract's own
+ *   validating client.
+ * @param sessions main's token registry.
+ */
+export function remoteMupdfDestinations(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostDestinationsReader {
+  return async (session) =>
+    answered(
+      'engine/destinations',
+      await client['engine/destinations']({ session: sessions.handleFor(session) }),
+    ).destinations;
 }
 
 /**

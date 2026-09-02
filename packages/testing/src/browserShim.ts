@@ -123,6 +123,19 @@ export type ShimPageLink =
       readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
     };
 
+/**
+ * One outline entry a test seeds a document with.
+ *
+ * `page` is `null` for an entry that resolves nowhere — an external URI, or a
+ * destination the document does not define. Stated here so a test can build
+ * that state, because it is the one a panel is most likely to get wrong.
+ */
+export interface ShimDestination {
+  readonly title: string;
+  readonly page: number | null;
+  readonly depth: number;
+}
+
 export interface BrowserShimOptions {
   readonly version?: string;
   readonly installChannel?: 'store' | 'web' | 'development';
@@ -226,6 +239,14 @@ export interface BrowserShimOptions {
   readonly pageLinks?: readonly (readonly ShimPageLink[])[];
 
   /**
+   * The document's outline, flattened, as a test wants it.
+   *
+   * A document with no outline is the common case, so the default is none —
+   * which is a real state a panel must render rather than an empty fixture.
+   */
+  readonly destinations?: readonly ShimDestination[];
+
+  /**
    * What a previous run stored, as `settings.load` will answer it.
    *
    * A fixture rather than something a test writes first through
@@ -317,6 +338,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const viewModels = [...(options.viewModels ?? [])];
   const pageLines = options.pageLines ?? [];
   const pageLinks = options.pageLinks ?? [];
+  const destinations = options.destinations ?? [];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -541,6 +563,19 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * to be asked about (invariant 24). A shim that answered only internals
      * would let a panel that ignored the distinction pass every case.
      */
+    /**
+     * The document's outline, from the fixture the shim was built with.
+     *
+     * Seeded rather than canned, for `pageLinks`' reason. A document with no
+     * outline is the common case, so an unseeded shim answers with none.
+     */
+    'document.destinations': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      return Promise.resolve(ok({ version: asDocVersion(current), destinations }));
+    },
+
     'document.pageLinks': ({ docId, page }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

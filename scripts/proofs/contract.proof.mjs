@@ -90,6 +90,8 @@ export const handlers: ContractHandlers = {
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
+  'document.destinations': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -135,6 +137,8 @@ export const handlers: ContractHandlers = {
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
+  'document.destinations': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -255,6 +259,8 @@ export const shim: ContractClient = {
   'document.searchPage': () =>
     Promise.resolve(ok({ version: asDocVersion(1), matches: [], truncated: false })),
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
+  'document.destinations': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),

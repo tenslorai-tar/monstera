@@ -32,6 +32,7 @@ import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
+import { DestinationsPanel } from './DestinationsPanel.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -454,6 +455,15 @@ export function App({ client, settings }: AppProps): ReactElement {
       {/* THE LINKS PANEL, which renders nothing with no document for the find
           bar's reason. It is the third source of a jump, after the keys and the
           thumbnails, and it dispatches the same one. */}
+      {/* THE OUTLINE, keyed on the document rather than the page — it is a
+          property of the document, and re-asking on every scroll would be the
+          same round trip for the same answer. */}
+      <DestinationsPanel
+        client={client}
+        docId={open?.docId}
+        version={open?.version}
+        onJump={navigator.jumpTo}
+      />
       <LinksPanel
         client={client}
         docId={open?.docId}
