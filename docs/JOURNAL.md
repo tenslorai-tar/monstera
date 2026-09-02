@@ -717,6 +717,263 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-03 — Stage audit: `b7d34f2..87540a5` — a fixture's second axis nearly reported a defect that was not there
+
+Range: **18 commits, 95 files.** 12 proofs added, 20 modified, 0 removed; 20
+source files added, 33 changed, 0 removed — from `npm run audit:scope`.
+
+**Taken BELOW the gate, deliberately.** The range stood at 17 commits and 92
+files against a batch of 50/100, so nothing was owed. It is taken here because
+the next three items are vertical slices — a kernel reader, a channel and a
+panel each — and every one of them adds more than the eight files that were
+left. The gate would have fired *mid-feature*, which is the one place an audit
+is worst: half a slice is neither a range that hangs together nor a state
+anybody wants to stop at. Auditing at a clean feature boundary is what the
+stage-boundary discipline is for, and the widened gate does not make an early
+audit wrong — it makes a late one likelier.
+
+The range is D1: the audit-gate raise, E1's headline proven at 2×, the stext
+options consolidated, zoom modes, rulers and grid, page navigation, the
+thumbnail sidebar, the status bar, the command palette, themes and high
+contrast, dark page mode, the loupe, the links panel, and the colour-rounding
+consolidation. Findings **BBBBBB-1** to **BBBBBB-6**.
+
+### The range's headline
+
+**A fixture built with `copyPages` produced a wrong answer that read exactly like
+a defect in the code under test.** Item 2's first hard shape is *flat page tree →
+nested page tree*, so `readPageLinks` was given a nested fixture built by copying
+the flat one into a new document and restructuring its `/Kids`. The internal
+link resolved to page **0** instead of **2** — precisely the symptom a
+tree-walking defect would produce, in precisely the reader most likely to have
+one.
+
+It was not the reader. A probe on the **copied-but-flat** document failed
+identically: `copyPages` does not carry the `/Dest` reference, so the
+destination was already broken before anything was nested. Two axes — copied and
+nested — one attributed conclusion, and the wrong one.
+
+That is AAAA-8's tell arriving in a fixture rather than in a claim: *what else is
+different about the odd point?* The answer took one probe and two minutes. Built
+from the same document with the tree restructured in place — the only difference
+from the flat fixture then being the tree — the reader resolves correctly, and
+the per-page answer survives the nesting too.
+
+**The transferable form: a fixture assembled by a library operation has that
+operation as an axis, and a red result is evidence about the pair.** The
+temptation is strongest exactly where the expected failure is plausible, which is
+where the fixture was built to look.
+
+### 1. Root cause or workaround
+
+Eighteen commits. No workaround. Four entries worth separating:
+
+- **The red board at `9faedf1`** was `check:bordertokens` on both matrix legs —
+  two ruler borders using `--border` with no `/* decorative: */` marker. The
+  borders genuinely are dividers on a `pointer-events: none` strip, so marking
+  them is the correct response rather than a suppression. **The process cause is
+  the finding**: that check is in the local sweep and passed at 10:05, before the
+  CSS existed; items 4 and 5 were pushed having run only targeted checks. The
+  tooling was not blind. See BBBBBB-2.
+- **The zoom mode** replaced a number rather than patching the fit onto one. A
+  fit resolved at command time would drift out of itself on the next resize, and
+  `ZoomMode` makes a stale fit unrepresentable rather than refreshed.
+- **The colour rounding** was lifted to the solver rather than repeated. See
+  BBBBBB-1.
+- **`AppViewLifetime`'s recorder was narrowed** to `canvas.m-page`, which is the
+  shape of a loosened check and is not one: every assertion in that file is about
+  what the *page* drew, and the sidebar's draws are covered by
+  `Thumbnails.test.tsx`. Considered and recorded rather than assumed.
+
+### 2. Verified against the easy shape only?
+
+- **Nested page tree: now covered**, and covering it produced the headline.
+- **Every display: not covered, and stated on the row.** `proof:canvaspixels`
+  exercises one device-pixel ratio, the harness's own. E1's clause says *every
+  zoom on every display* and only the first half is proven.
+- **The accent's rounding**: the failing shape was found by scanning rather than
+  reasoned about — **72** accents in the first slice of a partial scan produce a
+  solved colour that nearest-rounding drops under the floor. The existing Button
+  cases all used an accent whose answer rounds the harmless way.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, once, and it is a narrowing that is stated rather than assumed.**
+`AppViewLifetime.test.tsx`'s recorder now filters to `canvas.m-page`. It used to
+record every `renderPage` call, which was the same thing while the spine was the
+only caller; the thumbnail sidebar made it two, and an unfiltered recorder
+answered *what did this application draw* while every assertion in the file asks
+*what did the page draw*.
+
+Nothing is uncovered by it — `Thumbnails.test.tsx` asserts the sidebar's own
+draws, including that it rasterises one page rather than four. But the file no
+longer sees a second caller appearing, which is a reduction in what it would
+notice, and that is the kind of change the item exists to make somebody say out
+loud.
+
+### 3. Would CI have caught it?
+
+**It did.** `check:bordertokens` reddened both legs at `9faedf1`; the local sweep
+covers it and was not run. The gap is not coverage.
+
+The other way round — **a defect this machine cannot see** — is unchanged for
+this range: nothing added here branches on provisioning.
+
+### 4. Non-vacuous?
+
+Mutated in this range, each reddening: the CSS stretch and the debounce
+(`PageList`), three at the canvas-pixel zoom (never re-rendering, an unregistered
+control, a resized-but-blank canvas), the scroll-to-page receiver, the palette's
+id ordering, the loupe's re-rasterise-on-move, and the colour rounding **twice** —
+nearest-with-verification, which refuses, and nearest-without, which is the
+defect as it actually shipped and lands at 4.4965:1 against a 4.5 floor.
+
+### 4a. Instruments resolution-tested before they measured anything?
+
+**One instrument was added and it is the zoom half of `proof:canvaspixels`.** It
+was resolution-tested before it settled anything: three mutations were run
+against it — a re-render that never happens, an unregistered control, and a
+resized-but-blank canvas — and each is reported differently. The two values it
+must tell apart, 595×842 and 1190×1684, are a factor of two rather than a margin.
+
+The 72-accent scan was a throwaway that produced one number now pinned in a case;
+it is not in the tree and settles nothing on its own.
+
+`rulerGeometry.ts` is product code rather than an instrument, and its own cases
+found three wrong expectations before it measured anything — including that
+inches never reach the minor-dropping branch, which is a branch a case written
+on inches would have asserted about and never entered.
+
+### 4b. Any SEARCH given a positive control?
+
+**Two, and both carry one.** `controlName` in `proof:canvaspixels` reads a
+message key out of the catalogue and **throws** on a miss rather than handing the
+harness an empty name — which would make the harness report a missing control
+for a control that is there. It now serves two keys and a case asserts the two
+names *differ*, because the harness clicks by name and two controls sharing one
+would make the zoom phase click whichever came first.
+
+`recordScrolls` in `PageList.test.tsx` is a search for *which slot was scrolled
+to*, and its control is inside the case: the list is asserted empty **before** the
+request and `[3]` after, so a recorder that saw nothing at all cannot pass.
+
+### 4c. Does any check DERIVE its extent from the set it governs?
+
+**One roster changed and the derivation runs the safe way.**
+`proof:canvaspixels`' `RUNTIME_CASES` gained three entries and `STRING_CASES`
+went 2 → 3; both are literals, and the file already compares the declared list
+against what actually ran, so a case added without a line fails the roster and a
+line without a case fails the comparison. The danger direction — a check
+shrinking silently — is covered by the literal, which does not move on its own.
+
+`ALL_SETTINGS` is new and is the opposite shape: a list the composition points
+derive from, where the failure that matters is a setting *missing*. It is
+anchored by `SettingsStore.get` throwing on an unregistered id, so a component
+reading a setting nobody registered crashes on the first render rather than
+falling back — which is what made three settings turn thirty tests red rather
+than pass quietly.
+
+### 5. Executed, or asserted?
+
+Executed: the 2× canvas reading, ADR-0034's reproduction through the product's
+path, the 72-accent scan, the nested-tree probe, the `onColor` caller survey.
+
+Asserted and marked as such: that no *other* caller turns a solved colour into a
+channel value — established by reading every hit of `onColor` in the tree, which
+is a search and carries a search's limits.
+
+### 6. Architecture before feature?
+
+No amendment was needed. The `viewing` settings category widens a union the
+registry owns, which is registration; `document.pageLinks` is a renderer-facing
+channel and sits in `packages/contract` where §5 puts them.
+
+### 7. Documents still match the code?
+
+`CLAUDE.md`'s copy of the audit batch is **removed** rather than updated, and the
+figure now appears once outside the JOURNAL. `docs/FEATURES.md` rows were edited
+true in the same commits as their features.
+
+---
+
+### BBBBBB-1 — the same rounding defect at the site that governs everything
+
+`solveRounded` was correct and in the wrong place. It lived in
+`settings/accent.ts` and governed one user-chosen colour; `useOnColor`, which
+governs every contrast-bearing colour the application renders, did
+`result.value.map(Math.round)` — nearest, no direction, no clamp, no
+verification.
+
+Rule 0's classic half-fix: one handler closed and its sibling left open, and the
+sibling was the load-bearing one. It is now `onColorRounded` in
+`packages/shared/src/colour.ts` beside `onColor`, because *how a solved colour
+becomes a channel value* is a property of the solver. `toHex` in `accent.ts` was
+a third place doing it and no longer rounds at all.
+
+**The fix was unproven at the shipping site**, which is the part worth keeping:
+mutating the direction back to nearest reddened four cases, all in
+`colour.test.ts` and `accent.test.ts`, none in the hook's own. The call site had
+no coverage of the thing that was wrong with it — proven-in-the-wrong-file
+exactly. A case now sits in `Button.test.tsx` on `#0068d8`, an accent chosen by
+scanning for the failure rather than by guessing.
+
+### BBBBBB-2 — a green targeted run is not a green sweep
+
+`npm run local` sealed `ok` at 10:05 and items 4 and 5 were pushed at 15:00 on
+the strength of `tsc`, `lint`, `vitest`, `proof:canvaspixels` and `test:a11y`.
+`check:bordertokens` is in the sweep, covers CSS, and was never re-run.
+
+The mistake is not choosing the wrong checks. It is that a *subset* selected by
+what I had just changed cannot see a check whose subject is a file type I did not
+think of as changed — a border token in a stylesheet, written while thinking
+about rulers.
+
+### BBBBBB-3 — the sweep runs `build` after the proofs that need it
+
+`checkLocal.mjs` orders by measured duration, and `proof:canvaspixels` is fast
+*when it refuses*, so it sorts early while `build` sorts late. On a tree whose
+sources are newer than the bundle, both pixel proofs fail for staleness before
+the sweep's own build runs.
+
+A false **fail**, which is the safe direction, and it costs a 25-minute run.
+Recorded rather than fixed: reordering a duration-sorted queue by dependency is a
+change to the scheduler that RRR-1 argued its way into, and the practical rule —
+build before the sweep — is one line. **It becomes a defect** the first time this
+produces a *pass* that should have been a fail.
+
+### BBBBBB-4 — `z.number().finite()` was a no-op advertising a real property
+
+Two new schemas were written `z.number().finite()` on the reasoning that a
+non-finite corner reaches the renderer's layout arithmetic. The reasoning is
+right; zod 4.4.3 rejects non-finite numbers by default and deprecates the
+modifier. The comments now name the base schema as what carries it, because a
+reader who removed `.finite()` as noise would have been removing nothing and a
+reader who kept it would have believed the wrong thing about where the guard is.
+
+### BBBBBB-5 — a short FEATURES row cannot be extended without renaming itself
+
+A row's identity is the first eight words of its first cell. *Command palette* is
+two, so filling in a placeholder row changes its key — and `check:docs` refuses
+two renames in one commit because it cannot tell a rename from a new row.
+
+Correct behaviour, and worth writing down: a commit that fills in two placeholder
+rows at once is **always** refused, however small the edit. Two commits, one row
+each.
+
+### BBBBBB-6 — the React compiler found a stale-data defect, not a style one
+
+`LinksPanel` cleared its state synchronously inside the effect, which the
+compiler reports as a cascading render. Carrying the page in the state instead
+fixed the report **and** a defect nothing else would have caught: the panel
+showed the previous page's links while the next answer was in flight, and stale
+links look exactly like current ones.
+
+A lint rule pointing at a real behavioural defect rather than at a preference is
+worth recording, because the reflex with that class of rule is to satisfy it in
+the cheapest way.
+
+---
+
 ## 2026-09-02 — Stage audit: `996b973..b7d34f2` — a feature made a lower layer's availability its precondition
 
 Range: **16 commits, 54 files.** 3 proofs added, 13 modified, 0 removed; 8 source
