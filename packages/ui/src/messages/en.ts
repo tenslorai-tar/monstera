@@ -50,6 +50,8 @@ export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
+export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
+export const THUMBNAIL_PAGE = messageKey('surface.thumbnails.page');
 export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
 export const PREVIOUS_PAGE_TITLE = messageKey('command.page-previous.title');
 export const FIRST_PAGE_TITLE = messageKey('command.page-first.title');
@@ -118,6 +120,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',
+  [THUMBNAILS_LABEL]: 'Page thumbnails',
+  [THUMBNAIL_PAGE]: 'Page {page}',
   [NEXT_PAGE_TITLE]: 'Next page',
   [PREVIOUS_PAGE_TITLE]: 'Previous page',
   [FIRST_PAGE_TITLE]: 'First page',

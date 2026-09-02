@@ -56,15 +56,24 @@ const drawn: (number | undefined)[] = [];
 // is a decision, and the state it produces is unobservable here — happy-dom
 // implements no canvas, so the real `renderPage` refuses before it draws and
 // every rotation produces the same nothing.
+//
+// FILTERED TO THE SPINE, as of 2026-09-02, and the filter is not cosmetic. The
+// thumbnail sidebar is a second caller of the same rasteriser, so an unfiltered
+// recorder answers "what did this application draw" when every assertion here
+// asks "what did the PAGE draw" — and it started reporting two extra entries the
+// moment the sidebar landed. The canvas's own class is the discriminator,
+// because it is the surface rather than a number that could coincide.
 vi.mock('./renderPage.js', () => ({
   renderPage: (
     _document: unknown,
     _page: number,
-    _canvas: unknown,
+    canvas: unknown,
     _scale: number,
     rotation?: number,
   ) => {
-    drawn.push(rotation);
+    const spine =
+      canvas instanceof HTMLElement && canvas.classList.contains('m-page');
+    if (spine) drawn.push(rotation);
     return Promise.resolve({ width: 1, height: 1 });
   },
 }));

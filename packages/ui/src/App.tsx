@@ -22,6 +22,7 @@ import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 import { toggleGridCommand, toggleRulersCommand } from './commands/viewCommands.js';
 import { historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
+import { Thumbnails } from './Thumbnails.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -376,6 +377,8 @@ export function App({ client, settings }: AppProps): ReactElement {
           goTo={goTo}
           onWentTo={wentTo}
           onPageCount={setPageCount}
+          current={currentPage}
+          onJump={navigator.jumpTo}
           rulers={rulers}
           showGrid={showGrid}
           unit={unit}
@@ -500,6 +503,8 @@ function PageCanvas({
   goTo,
   onWentTo,
   onPageCount,
+  current,
+  onJump,
   rulers,
   showGrid,
   unit,
@@ -514,6 +519,10 @@ function PageCanvas({
   readonly goTo: number | undefined;
   readonly onWentTo: () => void;
   readonly onPageCount: (count: number) => void;
+  /** The page the reader is on, so the thumbnail strip can mark it. */
+  readonly current: number;
+  /** Takes the reader to a page, recording the jump — click-to-jump's other half. */
+  readonly onJump: (page: number) => void;
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
@@ -635,9 +644,14 @@ function PageCanvas({
   }
 
   return (
-    <PageList
-      client={client}
-      view={ready}
+    // THE SIDEBAR IS A SIBLING OF THE SPINE, inside this component, because it
+    // needs the same parser: a strip that opened its own would parse the
+    // document twice and hold two copies of every page it drew.
+    <div className="m-document-body">
+      <Thumbnails view={ready} pageCount={ready.document.numPages} current={current} onJump={onJump} />
+      <PageList
+        client={client}
+        view={ready}
       // FROM THE PARSER, NOT FROM THE VIEW MODEL, and this is a correction
       // rather than a preference. The count came from `document.viewModel` for
       // one build, which made the whole surface depend on an **engine session**:
@@ -650,18 +664,19 @@ function PageCanvas({
       // it drew unconditionally and treated the model as advisory — and the
       // scroller reintroduced it by needing a count before it could lay out.
       // PDF.js has the count and needs nobody's permission for it.
-      pageCount={ready.document.numPages}
-      docId={open.docId}
-      version={open.version}
-      onCurrentPage={onCurrentPage}
-      mode={mode}
-      onZoom={onZoom}
-      onShownZoom={onShownZoom}
-      goTo={goTo}
-      onWentTo={onWentTo}
-      rulers={rulers}
-      showGrid={showGrid}
-      unit={unit}
-    />
+        pageCount={ready.document.numPages}
+        docId={open.docId}
+        version={open.version}
+        onCurrentPage={onCurrentPage}
+        mode={mode}
+        onZoom={onZoom}
+        onShownZoom={onShownZoom}
+        goTo={goTo}
+        onWentTo={onWentTo}
+        rulers={rulers}
+        showGrid={showGrid}
+        unit={unit}
+      />
+    </div>
   );
 }

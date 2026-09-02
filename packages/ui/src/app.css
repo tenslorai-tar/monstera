@@ -66,6 +66,56 @@ body {
  * a document with one page and a document with six space themselves the same way
  * and neither slot needs a rule about being first or last.
  */
+/*
+ * The sidebar and the spine, side by side.
+ *
+ * `min-block-size: 0` on the row is what lets both children scroll: a flex item
+ * defaults to `min-height: auto`, which makes it grow to its content instead of
+ * scrolling — and the symptom is the whole page scrolling rather than the
+ * strip, which reads as a layout preference rather than as a bug.
+ */
+.m-document-body {
+  display: flex;
+  block-size: 100%;
+  min-block-size: 0;
+}
+
+.m-thumbnails {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  overflow-y: auto;
+  background: var(--bg2);
+  border-inline-end: 1px solid var(--border); /* decorative: separates the strip from the page area; the strip's own controls carry their focus ring */
+}
+
+.m-thumb {
+  padding: 0;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  /*
+   * NEVER ZERO-SIZED, for the spine's reason: a thumbnail whose canvas has not
+   * been drawn yet has no intrinsic size, and a zero-high element never
+   * intersects — so the observer would drop it and it would never become
+   * visible, which is a deadlock rather than a slow load.
+   */
+  min-inline-size: 96px;
+  min-block-size: 124px;
+}
+
+.m-thumb-current {
+  border-color: var(--accent);
+}
+
+.m-thumb-canvas {
+  display: block;
+  background: var(--page);
+}
+
 .m-page-list {
   display: flex;
   flex-direction: column;

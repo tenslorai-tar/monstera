@@ -8,6 +8,7 @@ import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
 import { Rulers } from './Rulers.js';
 import { type RulerUnit, gridSpacing } from './rulerGeometry.js';
+import { useVisiblePages } from './useVisiblePages.js';
 import { type Box, type ZoomMode, resolveZoom, zoomInFrom, zoomOutFrom } from './zoom.js';
 
 /**
@@ -178,7 +179,10 @@ export function PageList({
   showGrid,
   unit,
 }: PageListProps): ReactElement {
-  const slots = useRef(new Map<number, HTMLElement>());
+  // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
+  // question of a different container, and a second implementation here would
+  // be two opinions about what *near the viewport* means (B3a).
+  const { visible, slotRef, slotFor } = useVisiblePages(MARGIN);
   const scroller = useRef<HTMLDivElement | null>(null);
   /**
    * The scroller's own box, remeasured whenever it changes.
@@ -207,7 +211,6 @@ export function PageList({
     };
   }, []);
 
-  const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([FIRST_PAGE.kernel]));
   const [sizes, setSizes] = useState<ReadonlyMap<number, Measured>>(new Map());
 
   /**
@@ -310,12 +313,12 @@ export function PageList({
 
   const measureOrigin = useCallback((): void => {
     const box = scroller.current;
-    const slot = slots.current.get(FIRST_PAGE.kernel);
+    const slot = slotFor(FIRST_PAGE.kernel);
     if (box === null || slot === undefined) return;
     const outer = box.getBoundingClientRect();
     const inner = slot.getBoundingClientRect();
     setPageOrigin({ x: inner.left - outer.left, y: inner.top - outer.top });
-  }, []);
+  }, [slotFor]);
 
   // Recomputed on scroll, on resize, and whenever the page is redrawn at a new
   // scale — the three things that move the page's corner. A ruler that updated
@@ -346,9 +349,9 @@ export function PageList({
    */
   useEffect(() => {
     if (goTo === undefined) return;
-    slots.current.get(goTo)?.scrollIntoView({ block: 'start' });
+    slotFor(goTo)?.scrollIntoView({ block: 'start' });
     onWentTo();
-  }, [goTo, onWentTo]);
+  }, [goTo, onWentTo, slotFor]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {
@@ -381,59 +384,6 @@ export function PageList({
    * so it would have made that flash unavoidable.
    */
   const [rotations, setRotations] = useState<ReadonlyMap<number, number | undefined>>(new Map());
-
-  /**
-   * Registers a slot with the observer.
-   *
-   * A callback ref rather than an array of refs: React calls it with `null` on
-   * unmount, which is the one moment the observer must stop watching an element
-   * that no longer exists.
-   */
-  const observer = useRef<IntersectionObserver | null>(null);
-
-  const slotRef = useCallback((page: number) => {
-    return (element: HTMLElement | null): void => {
-      const known = slots.current.get(page);
-      if (known !== undefined && observer.current !== null) observer.current.unobserve(known);
-      if (element === null) {
-        slots.current.delete(page);
-        return;
-      }
-      slots.current.set(page, element);
-      element.dataset['page'] = String(page);
-      if (observer.current !== null) observer.current.observe(element);
-    };
-  }, []);
-
-  useEffect(() => {
-    const seen = new IntersectionObserver(
-      (entries) => {
-        setVisible((current) => {
-          const next = new Set(current);
-          for (const entry of entries) {
-            const page = Number(
-              entry.target instanceof HTMLElement ? (entry.target.dataset['page'] ?? '-1') : '-1',
-            );
-            if (!Number.isInteger(page) || page < 0) continue;
-            if (entry.isIntersecting) next.add(page);
-            else next.delete(page);
-          }
-          return next;
-        });
-      },
-      { rootMargin: MARGIN },
-    );
-    observer.current = seen;
-    for (const element of slots.current.values()) seen.observe(element);
-
-    return (): void => {
-      seen.disconnect();
-      observer.current = null;
-    };
-    // Rebuilt when the document changes, because the slots do: an observer
-    // holding elements from a closed document keeps them alive and reports
-    // intersections for pages nothing will draw.
-  }, [docId, version]);
 
   /**
    * The rotations for the pages about to be drawn.
