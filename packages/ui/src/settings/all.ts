@@ -1,7 +1,12 @@
 import type { SettingDefinition } from '../registries/settings.js';
 import { ACCENT_SETTING } from './accent.js';
 import { THEME_SETTING } from './appearance.js';
-import { GRID_SETTING, RULERS_SETTING, RULER_UNIT_SETTING } from './viewing.js';
+import {
+  DARK_PAGE_SETTING,
+  GRID_SETTING,
+  RULERS_SETTING,
+  RULER_UNIT_SETTING,
+} from './viewing.js';
 
 /**
  * Every setting this application has.
@@ -37,4 +42,5 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   RULERS_SETTING,
   GRID_SETTING,
   RULER_UNIT_SETTING,
+  DARK_PAGE_SETTING,
 ];

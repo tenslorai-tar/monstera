@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { GRID_TITLE, RULERS_TITLE, RULER_UNIT_TITLE } from '../messages/en.js';
+import { DARK_PAGE_TITLE, GRID_TITLE, RULERS_TITLE, RULER_UNIT_TITLE } from '../messages/en.js';
 import type { SettingDefinition } from '../registries/settings.js';
 
 /**
@@ -32,6 +32,29 @@ export const RULERS_SETTING: SettingDefinition<z.ZodBoolean> = {
   category: 'viewing',
 };
 
+/**
+ * Whether the page itself is drawn inverted.
+ *
+ * ## NOT A THEME, and keeping the two apart is the whole reason this is here
+ *
+ * A theme repaints the shell. This repaints the **document**, which is content
+ * — a reader in the dark theme still gets a white page, because the page is the
+ * thing they are reading rather than the furniture around it. Folding it into
+ * `appearance.theme` would make *I want dark chrome* and *I want the document
+ * inverted* one choice, and they are routinely different: the common case is
+ * dark chrome with a normal page.
+ *
+ * It is in `viewing` for the same reason the rulers are: it changes what is
+ * drawn over — here, what the page is drawn as.
+ */
+export const DARK_PAGE_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.dark-page',
+  title: DARK_PAGE_TITLE,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
+};
+
 export const GRID_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.grid',
   title: GRID_TITLE,
@@ -58,6 +81,34 @@ export const GRID_SETTING: SettingDefinition<z.ZodBoolean> = {
  * the unit into it now would make this reading aid depend on a Stage 3 concept.
  * When it lands, the unit it shares with this one is the thing to check.
  */
+/**
+ * Puts dark-page mode into force, or takes it out.
+ *
+ * ## An ATTRIBUTE and a CSS filter, not a second rasterisation
+ *
+ * The alternative is inverting pixels after each render, which costs a pass
+ * over every bitmap on every draw and has to be redone at every zoom step. A
+ * filter is composited, costs nothing to change, and survives a zoom without
+ * re-rasterising anything — so turning the mode on is instant at any document
+ * size, which is the property that makes it usable rather than a preference
+ * someone sets once and leaves.
+ *
+ * It is applied on the ROOT rather than passed down, the way the theme is: one
+ * writer of one attribute, and the stylesheet decides which elements it reaches.
+ * A prop threaded to every canvas would be the same decision made in several
+ * places.
+ *
+ * **`invert` alone is not what this does.** A plain negative turns blue links
+ * orange and photographs into something nobody can read; the hue rotation after
+ * it puts hues back where they were, so a dark page keeps its colours
+ * recognisable and only its lightness flips. That pairing lives in `app.css`
+ * beside the rule, because it is one effect rather than two decisions.
+ */
+export function applyDarkPage(root: HTMLElement, on: boolean): void {
+  if (on) root.dataset['darkPage'] = 'true';
+  else root.removeAttribute('data-dark-page');
+}
+
 export const RULER_UNIT_SETTING: SettingDefinition<
   z.ZodEnum<{ in: 'in'; cm: 'cm'; pt: 'pt' }>
 > = {

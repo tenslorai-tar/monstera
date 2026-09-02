@@ -21,6 +21,7 @@ import {
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 import {
   commandPaletteCommand,
+  toggleDarkPageCommand,
   toggleGridCommand,
   toggleRulersCommand,
 } from './commands/viewCommands.js';
@@ -52,7 +53,13 @@ import {
   highContrastWanted,
 } from './settings/appearance.js';
 import { ACCENT_SETTING, applyAccent } from './settings/accent.js';
-import { GRID_SETTING, RULERS_SETTING, RULER_UNIT_SETTING } from './settings/viewing.js';
+import {
+  DARK_PAGE_SETTING,
+  GRID_SETTING,
+  RULERS_SETTING,
+  RULER_UNIT_SETTING,
+  applyDarkPage,
+} from './settings/viewing.js';
 import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
@@ -354,6 +361,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         fitCommand('page', { onZoom: changeZoom }),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
+        toggleDarkPageCommand({ settings }),
         commandPaletteCommand({ onOpen: openPalette }),
         pageMoveCommand('next', { navigator }),
         pageMoveCommand('previous', { navigator }),
@@ -389,6 +397,21 @@ export function App({ client, settings }: AppProps): ReactElement {
 
   useShortcuts(registry, context);
   useTheme(settings);
+
+  // A SEPARATE ATTRIBUTE AND A SEPARATE EFFECT, because it is a separate
+  // concern: the theme paints the shell and this paints the document. Folding
+  // it into `useTheme` would put two unrelated triggers behind one subscription
+  // and make a reader work out which of them a change was about.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const apply = (): void => {
+      applyDarkPage(root, settings.get(DARK_PAGE_SETTING.id) === true);
+    };
+    apply();
+    return settings.subscribe((id) => {
+      if (id === DARK_PAGE_SETTING.id) apply();
+    });
+  }, [settings]);
 
   return (
     <main className="m-document-surface">

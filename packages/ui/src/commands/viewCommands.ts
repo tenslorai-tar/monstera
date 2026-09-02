@@ -1,7 +1,7 @@
-import { GRID_TITLE, PALETTE_TITLE, RULERS_TITLE } from '../messages/en.js';
+import { DARK_PAGE_TITLE, GRID_TITLE, PALETTE_TITLE, RULERS_TITLE } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
-import { GRID_SETTING, RULERS_SETTING } from '../settings/viewing.js';
+import { DARK_PAGE_SETTING, GRID_SETTING, RULERS_SETTING } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
 
 /**
@@ -106,6 +106,25 @@ export function toggleGridCommand(deps: { readonly settings: SettingsStore }): U
     when: hasDocument,
     run: (): void => {
       deps.settings.set(GRID_SETTING.id, deps.settings.get(GRID_SETTING.id) !== true);
+    },
+  };
+}
+
+/**
+ * Dark page mode's toggle.
+ *
+ * Same shape as the two above, and the same `when`: it inverts the page, so
+ * with no page open there is nothing for it to do.
+ */
+export function toggleDarkPageCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+  return {
+    id: 'view.toggle-dark-page',
+    title: DARK_PAGE_TITLE,
+    shortcut: 'Ctrl+Shift+D',
+    placements: [{ surface: 'quick-toolbar', order: 110 }],
+    when: hasDocument,
+    run: (): void => {
+      deps.settings.set(DARK_PAGE_SETTING.id, deps.settings.get(DARK_PAGE_SETTING.id) !== true);
     },
   };
 }

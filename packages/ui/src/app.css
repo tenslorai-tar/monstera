@@ -205,6 +205,22 @@ body {
   background: var(--page);
 }
 
+/*
+ * DARK PAGE MODE — the document, not the shell.
+ *
+ * `invert` alone turns blue links orange and photographs into something nobody
+ * can read. The hue rotation after it puts hues back where they were, so what
+ * flips is lightness and the page keeps its colours recognisable. The two are
+ * one effect rather than two decisions, which is why they are on one line.
+ *
+ * Scoped to the CANVASES, so the rulers, the grid and the strip's own chrome
+ * are untouched — they belong to the shell, and the shell has a theme.
+ */
+[data-dark-page='true'] canvas.m-page,
+[data-dark-page='true'] canvas.m-thumb-canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 .m-page-list {
   display: flex;
   flex-direction: column;

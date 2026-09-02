@@ -45,6 +45,7 @@ export const ZOOM_IN_TITLE = messageKey('command.zoom-in.title');
 export const ZOOM_OUT_TITLE = messageKey('command.zoom-out.title');
 export const FIT_WIDTH_TITLE = messageKey('command.fit-width.title');
 export const FIT_PAGE_TITLE = messageKey('command.fit-page.title');
+export const DARK_PAGE_TITLE = messageKey('setting.viewing.dark-page.title');
 export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
 export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
@@ -123,6 +124,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ZOOM_OUT_TITLE]: 'Zoom out',
   [FIT_WIDTH_TITLE]: 'Fit width',
   [FIT_PAGE_TITLE]: 'Fit page',
+  [DARK_PAGE_TITLE]: 'Dark page',
   [RULERS_TITLE]: 'Show rulers',
   [GRID_TITLE]: 'Show grid',
   [RULER_UNIT_TITLE]: 'Ruler unit',
