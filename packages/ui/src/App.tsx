@@ -14,6 +14,7 @@ import {
   rotatePageCommand,
   saveCommand,
   undoCommand,
+  zoomCommand,
 } from './commands/documentCommands.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
@@ -118,6 +119,16 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const [currentPage, setCurrentPage] = useState<number>(FIRST_PAGE.kernel);
 
+  /**
+   * The magnification, where `1` is 100%.
+   *
+   * Held here for the current page's reason: the commands that change it are
+   * registered here, and the surface that draws at it is a child. It is
+   * deliberately **not** a setting — a zoom that survived a restart would be a
+   * preference, and §10.4's settings registry is where a preference goes.
+   */
+  const [zoom, setZoom] = useState(1);
+
   const registry = useMemo(
     () =>
       new CommandRegistry([
@@ -131,6 +142,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
         findCommand(),
+        zoomCommand('in', { onZoom: setZoom }),
+        zoomCommand('out', { onZoom: setZoom }),
       ]),
     [applied, client, show],
   );
@@ -166,6 +179,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           document={open}
           onVersionMoved={setOpen}
           onCurrentPage={setCurrentPage}
+          zoom={zoom}
         />
       )}
       {/* E2's substrate, reached by a person. It renders nothing with no
@@ -281,11 +295,13 @@ function PageCanvas({
   document: open,
   onVersionMoved,
   onCurrentPage,
+  zoom,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
   readonly onVersionMoved: (next: OpenDocument) => void;
   readonly onCurrentPage: (page: number) => void;
+  readonly zoom: number;
 }): ReactElement {
   const [failed, setFailed] = useState(false);
   /**
@@ -411,6 +427,7 @@ function PageCanvas({
       docId={open.docId}
       version={open.version}
       onCurrentPage={onCurrentPage}
+      zoom={zoom}
     />
   );
 }

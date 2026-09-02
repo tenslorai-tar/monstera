@@ -28,11 +28,34 @@ import type { DocumentView } from './documentView.js';
 const DOC = asDocId('00000000-0000-4000-8000-0000000000ff');
 const VERSION = asDocVersion(1);
 
+/** Every rasterisation, as `[pdfjsPage, scale]`. */
+const rasterised: [number, number][] = [];
+
+/**
+ * MOCKED, because happy-dom implements no 2d context.
+ *
+ * The real `renderPage` refuses before it draws, so a page never reports a size
+ * and every slot stays unstyled — which makes the zoom cases assert about an
+ * empty string. Mocking it also puts the number these cases are about in reach:
+ * **the scale handed to the rasteriser** is E1's whole claim, and it is not
+ * observable from a canvas that cannot be drawn into.
+ *
+ * The size returned is the viewport at that scale, so a page drawn at 2x has
+ * twice the bitmap — which is what makes the CSS ratio meaningful.
+ */
+vi.mock('./renderPage.js', () => ({
+  renderPage: (_document: unknown, pdfjsPage: number, _canvas: unknown, scale: number) => {
+    rasterised.push([pdfjsPage, scale]);
+    return Promise.resolve({ width: 100 * scale, height: 200 * scale });
+  },
+}));
+
 /** Every observer built during a case, with the callback it was given. */
 let observers: { callback: IntersectionObserverCallback; observed: Element[] }[] = [];
 
 beforeEach(() => {
   observers = [];
+  rasterised.length = 0;
   // A browser API happy-dom exposes and never fires. Typed through the global's
   // own declaration rather than `any`, so a signature this stub gets wrong is a
   // compile error here instead of a case that passes against a double the real
@@ -89,19 +112,9 @@ function report(entries: readonly { page: number; visible: boolean }[]): void {
  * here is *which pages this component decided to draw*, which is the decision
  * under test.
  */
-function viewDrawing(asked: (pdfjsPage: number) => void): DocumentView {
+function viewDrawing(): DocumentView {
   return {
-    document: {
-      numPages: 5,
-      getPage: (pageNumber: number) => {
-        asked(pageNumber);
-        return Promise.resolve({
-          getViewport: () => ({ width: 100, height: 200 }),
-          render: () => ({ promise: Promise.resolve() }),
-          pageNumber,
-        });
-      },
-    },
+    document: { numPages: 5 },
     close: () => Promise.resolve(),
   } as unknown as DocumentView;
 }
@@ -117,6 +130,19 @@ function clientAnswering(): { client: ContractClient; asked: unknown[] } {
     );
   });
   return { client, asked };
+}
+
+/**
+ * The CSS width the drawn page is SHOWN at.
+ *
+ * Throws rather than asserting non-null: a case that finds no canvas has not
+ * observed a stretch of zero, it has failed to reach the state it is about, and
+ * `undefined.style` would blame the wrong line.
+ */
+function shownWidth(container: HTMLElement): string {
+  const canvas = container.querySelector<HTMLElement>('canvas.m-page');
+  if (canvas === null) throw new Error('no page was drawn');
+  return canvas.style.width;
 }
 
 async function settle(): Promise<void> {
@@ -137,6 +163,7 @@ describe('PageList', () => {
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
+        zoom={1}
       />,
     );
     await settle();
@@ -148,16 +175,16 @@ describe('PageList', () => {
   });
 
   it('draws only the pages reported visible, not every page', async () => {
-    const drawn = vi.fn();
     const { client } = clientAnswering();
     const { container } = render(
       <PageList
         client={client}
-        view={viewDrawing(drawn)}
+        view={viewDrawing()}
         pageCount={5}
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
+        zoom={1}
       />,
     );
     await settle();
@@ -169,21 +196,21 @@ describe('PageList', () => {
     // PDF.js NUMBERS FROM 1, so the first page is `1`. Asserting the converted
     // number is what catches an off-by-one that a count alone would miss — and
     // this build has shipped that off-by-one once.
-    expect(drawn.mock.calls).toStrictEqual([[1]]);
+    expect(rasterised).toStrictEqual([[1, 1]]);
     expect(container.querySelectorAll('canvas.m-page')).toHaveLength(1);
   });
 
   it('draws a page when it comes into view, and RELEASES it when it leaves', async () => {
-    const drawn = vi.fn();
     const { client } = clientAnswering();
     const { container } = render(
       <PageList
         client={client}
-        view={viewDrawing(drawn)}
+        view={viewDrawing()}
         pageCount={5}
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
+        zoom={1}
       />,
     );
     await settle();
@@ -212,11 +239,12 @@ describe('PageList', () => {
     render(
       <PageList
         client={client}
-        view={viewDrawing(vi.fn())}
+        view={viewDrawing()}
         pageCount={5}
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
+        zoom={1}
       />,
     );
     await settle();
@@ -242,17 +270,124 @@ describe('PageList', () => {
     ]);
   });
 
+  describe('two-tier zoom', () => {
+    /**
+     * The first tier: the bitmap is stretched, the page is NOT redrawn.
+     *
+     * E1 permits a stale bitmap *only transiently* during a gesture, so the two
+     * halves are one property — it must stretch, and it must not rasterise. A
+     * case asserting only the CSS size would pass for a viewer that redrew on
+     * every step, which is the cost the stretch exists to avoid.
+     */
+    it('stretches immediately and does NOT re-rasterise', async () => {
+      const { client } = clientAnswering();
+      // ONE VIEW OBJECT ACROSS BOTH RENDERS. A fresh one each time changes the
+      // prop's identity and re-runs the draw effect, which would make this case
+      // report a re-rasterisation the component did not choose. `App` holds the
+      // view in state, so a stable identity is what it actually passes.
+      const view = viewDrawing();
+      const { container, rerender } = render(
+        <PageList
+          client={client}
+          view={view}
+          pageCount={5}
+          docId={DOC}
+          version={VERSION}
+          onCurrentPage={vi.fn()}
+          zoom={1}
+        />,
+      );
+      await settle();
+      expect(rasterised).toHaveLength(1);
+
+      const before = shownWidth(container);
+
+      await act(async () => {
+        rerender(
+          <PageList
+            client={client}
+            view={view}
+            pageCount={5}
+            docId={DOC}
+            version={VERSION}
+            onCurrentPage={vi.fn()}
+            zoom={2}
+          />,
+        );
+        await Promise.resolve();
+      });
+
+      const after = shownWidth(container);
+      // TWICE THE CSS SIZE, SAME NUMBER OF RASTERISATIONS. The stub renders a
+      // 100x200 viewport at scale 1, so the page shows 100px at zoom 1 and
+      // 200px at zoom 2 — from the bitmap that already existed.
+      expect(before).toBe('100px');
+      expect(after).toBe('200px');
+      expect(rasterised).toHaveLength(1);
+    });
+
+    it('re-rasterises once the zoom has settled, at devicePixelRatio x zoom', async () => {
+      vi.useFakeTimers();
+      try {
+            const { client } = clientAnswering();
+        const view = viewDrawing();
+        const { rerender } = render(
+          <PageList
+            client={client}
+            view={view}
+            pageCount={5}
+            docId={DOC}
+            version={VERSION}
+            onCurrentPage={vi.fn()}
+            zoom={1}
+          />,
+        );
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+
+        rerender(
+          <PageList
+            client={client}
+            view={view}
+            pageCount={5}
+            docId={DOC}
+            version={VERSION}
+            onCurrentPage={vi.fn()}
+            zoom={2}
+          />,
+        );
+
+        // BEFORE THE INTERVAL: still the stretched bitmap.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(140);
+        });
+        expect(rasterised).toHaveLength(1);
+
+        // AFTER IT: drawn again. The two assertions either side of 150 ms are
+        // what make this a debounce rather than "it eventually redraws".
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(20);
+        });
+        expect(rasterised).toHaveLength(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('reports the topmost visible page as the current one', async () => {
     const current = vi.fn();
     const { client } = clientAnswering();
     render(
       <PageList
         client={client}
-        view={viewDrawing(vi.fn())}
+        view={viewDrawing()}
         pageCount={5}
         docId={DOC}
         version={VERSION}
         onCurrentPage={current}
+        zoom={1}
       />,
     );
     await settle();

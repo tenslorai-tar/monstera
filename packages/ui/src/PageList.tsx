@@ -71,15 +71,49 @@ export interface PageListProps {
   readonly version: DocVersion;
   /** Told which page the user is looking at, zero-based. */
   readonly onCurrentPage: (page: number) => void;
+  /** The magnification a reader asked for. `1` is 100%. */
+  readonly zoom: number;
 }
+
+/**
+ * How long a zoom must settle before the pages are drawn again.
+ *
+ * **The row's number, not one invented here**: *"instant CSS stretch + 150 ms
+ * debounced true re-render"*. It is the interval a gesture is allowed to be
+ * cheap for, and E1 permits the stretch only transiently — so the debounce is
+ * what guarantees the *transiently*.
+ */
+const RERENDER_AFTER_MS = 150;
 
 /** How much either side of the viewport counts as *about to be seen*. */
 const MARGIN = '100%';
 
-/** A page's size, once something has drawn it. */
+/**
+ * A page's bitmap, and the scale it was drawn at.
+ *
+ * **The scale is what makes the stretch computable.** A page's CSS size at any
+ * zoom is `bitmap ÷ drawnAt × (devicePixelRatio × zoom)`, so a bitmap drawn at
+ * one zoom can be displayed at another — which is the first tier. Storing only
+ * the pixel size would leave the ratio unrecoverable and the stretch would have
+ * to guess.
+ */
 interface Measured {
   readonly width: number;
   readonly height: number;
+  /** `devicePixelRatio × zoom` at the moment this bitmap was rasterised. */
+  readonly drawnAt: number;
+}
+
+/**
+ * Device pixels per CSS pixel, read at the point of use.
+ *
+ * Not cached: a window moved between a 1× and a 2× display changes it, and a
+ * value captured at mount would render every later page at the old density —
+ * which is E1's *pixel-exact at every zoom on every display* failing on the one
+ * event that makes it interesting.
+ */
+function devicePixels(): number {
+  return typeof window === 'undefined' ? 1 : window.devicePixelRatio;
 }
 
 export function PageList({
@@ -89,8 +123,35 @@ export function PageList({
   docId,
   version,
   onCurrentPage,
+  zoom,
 }: PageListProps): ReactElement {
   const slots = useRef(new Map<number, HTMLElement>());
+  /**
+   * The zoom the pages are actually rasterised at, which lags `zoom`.
+   *
+   * **The two tiers are these two numbers.** `zoom` moves the moment a reader
+   * asks and the browser stretches the bitmap it already has; `renderZoom`
+   * follows once the gesture settles, and the page is redrawn at
+   * `devicePixelRatio × renderZoom` — one device pixel per bitmap pixel, which
+   * is E1's bar.
+   *
+   * Rasterising on every step would redraw every visible page per keystroke of
+   * a zoom gesture, which is the thing the stretch exists to avoid.
+   */
+  const [renderZoom, setRenderZoom] = useState(zoom);
+
+  useEffect(() => {
+    if (renderZoom === zoom) return;
+    const timer = setTimeout(() => {
+      setRenderZoom(zoom);
+    }, RERENDER_AFTER_MS);
+    // CLEARED ON EVERY CHANGE, which is what makes this a debounce rather than
+    // a throttle: a reader stepping the zoom five times gets one re-render, not
+    // five, and the interval restarts from the last step.
+    return (): void => {
+      clearTimeout(timer);
+    };
+  }, [renderZoom, zoom]);
   const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([FIRST_PAGE.kernel]));
   const [sizes, setSizes] = useState<ReadonlyMap<number, Measured>>(new Map());
   /**
@@ -258,6 +319,8 @@ export function PageList({
           draw={visible.has(page) && rotations.has(page)}
           rotation={rotations.get(page)}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page)}
+          zoom={zoom}
+          renderZoom={renderZoom}
           onMeasured={measured}
         />
       ))}
@@ -297,6 +360,8 @@ function PageSlot({
   draw,
   rotation,
   size,
+  zoom,
+  renderZoom,
   onMeasured,
 }: {
   readonly page: number;
@@ -305,9 +370,27 @@ function PageSlot({
   readonly draw: boolean;
   readonly rotation: number | undefined;
   readonly size: Measured | undefined;
+  readonly zoom: number;
+  readonly renderZoom: number;
   readonly onMeasured: (page: number, measured: Measured) => void;
 }): ReactElement {
   const canvas = useRef<HTMLCanvasElement>(null);
+
+  /**
+   * What the page occupies on screen, in CSS pixels, at the CURRENT zoom.
+   *
+   * The bitmap may have been drawn at another one — that is the whole of the
+   * first tier — so the ratio between them is what the browser stretches by.
+   * `undefined` until a page has been drawn once, where the slot's minimum size
+   * stands in.
+   */
+  const shown =
+    size === undefined
+      ? undefined
+      : {
+          width: (size.width / size.drawnAt) * zoom,
+          height: (size.height / size.drawnAt) * zoom,
+        };
 
   useEffect(() => {
     // THE CANVAS EXISTS WITHOUT A VIEW and stays blank, which is what lets the
@@ -319,18 +402,23 @@ function PageSlot({
     const drawPage = async (): Promise<void> => {
       const target = canvas.current;
       if (target === null) return;
+      // EXACTLY `devicePixelRatio × zoom`, which is E1's first rule: one bitmap
+      // pixel per device pixel. Supersampling and letting CSS shrink the result
+      // is what blurs text, and E1 keeps it as an explicit `renderQuality`
+      // setting rather than a default — so nothing here multiplies it.
+      const scale = devicePixels() * renderZoom;
       const drawn = await renderPage(
         view.document,
         pdfjsPageOf(page),
         target,
-        1,
+        scale,
         // `undefined` where the model has not answered yet, which hands PDF.js
         // the page's own `/Rotate`. A flat zero would silently flatten every
         // document that arrives already turned.
         rotation,
       );
       if (cancelled) return;
-      onMeasured(page, { width: drawn.width, height: drawn.height });
+      onMeasured(page, { width: drawn.width, height: drawn.height, drawnAt: scale });
     };
 
     void drawPage().catch(() => {
@@ -351,15 +439,27 @@ function PageSlot({
     return (): void => {
       cancelled = true;
     };
-  }, [draw, onMeasured, page, rotation, view]);
+  }, [draw, onMeasured, page, renderZoom, rotation, view]);
 
   return (
     <div
       className="m-page-slot"
       ref={ref}
-      style={size === undefined ? undefined : { width: size.width, height: size.height }}
+      style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
     >
-      {draw ? <canvas className="m-page" data-page-canvas={String(page)} ref={canvas} /> : null}
+      {draw ? (
+        <canvas
+          className="m-page"
+          data-page-canvas={String(page)}
+          ref={canvas}
+          // THE FIRST TIER. The backing store is whatever the last rasterisation
+          // produced; these are what the browser paints it into. While the two
+          // agree the page is 1:1 device pixels, and while a zoom is settling
+          // they do not — which is the stale bitmap E1 permits transiently, and
+          // `renderZoom` is what makes it transient.
+          style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
+        />
+      ) : null}
     </div>
   );
 }

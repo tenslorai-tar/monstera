@@ -6,7 +6,14 @@ import type { z } from 'zod';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
-import { FIND_TITLE, ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
+import {
+  FIND_TITLE,
+  ROTATE_PAGE_TITLE,
+  SAVE_TITLE,
+  UNDO_TITLE,
+  ZOOM_IN_TITLE,
+  ZOOM_OUT_TITLE,
+} from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 
 /**
@@ -181,6 +188,58 @@ function hasDocument(context: CommandContext): boolean {
  * surface's own contract with the document, and the query selector is the whole
  * of it.
  */
+/**
+ * The magnifications the ± controls step through.
+ *
+ * **A list rather than a multiplier**, and the difference shows up immediately:
+ * repeated multiplication lands on 1.0000000000000002 and a control that reads
+ * *100%* would then be a rounding artefact away from *fit*. A list has exact
+ * members, and a reader stepping out and back arrives at the value they left.
+ *
+ * The steps are the ones every viewer this one replaces offers, and they are
+ * closer together near 100% because that is where a reader adjusts.
+ */
+export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
+
+/** The step above `zoom`, or `zoom` where there is none. */
+export function zoomIn(zoom: number): number {
+  return ZOOM_STEPS.find((step) => step > zoom) ?? zoom;
+}
+
+/** The step below `zoom`, or `zoom` where there is none. */
+export function zoomOut(zoom: number): number {
+  return [...ZOOM_STEPS].reverse().find((step) => step < zoom) ?? zoom;
+}
+
+/**
+ * Zooming in and out, as two registrations rather than one parameterised.
+ *
+ * A command is invoked by a toolbar, a chord and a palette alike, and none of
+ * them can pass a direction — the same reason `findCommand` sends the caret to
+ * a surface rather than taking a query. Two commands is what the registry can
+ * actually project.
+ *
+ * **At the ends they are still registered and still run**, holding the zoom
+ * where it is. `when` decides *existence*, not enablement (ADR-0029), so hiding
+ * the control at 400% would make it vanish from the toolbar and the palette
+ * mid-session — which reads as a bug rather than a limit.
+ */
+export function zoomCommand(
+  direction: 'in' | 'out',
+  deps: { readonly onZoom: (next: (current: number) => number) => void },
+): UiCommand {
+  return {
+    id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
+    title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
+    shortcut: direction === 'in' ? 'Ctrl+=' : 'Ctrl+-',
+    placements: [{ surface: 'quick-toolbar', order: direction === 'in' ? 50 : 60 }],
+    when: hasDocument,
+    run: (): void => {
+      deps.onZoom(direction === 'in' ? zoomIn : zoomOut);
+    },
+  };
+}
+
 export function findCommand(): UiCommand {
   return {
     id: 'document.find',
