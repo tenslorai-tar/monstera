@@ -9,6 +9,7 @@ import {
   type DeclaredCommands,
   type DocumentService,
   type PageGeometry,
+  type PageLink,
   type PageText,
   type SaveDependencies,
   type SaveOutcome,
@@ -320,6 +321,28 @@ export type DocumentPageText = (
   page: number,
 ) => Promise<PageText>;
 
+/**
+ * Reads one page's links.
+ *
+ * Injected for {@link DocumentPageText}'s reason: this module names no engine,
+ * so a handler proof can drive the channel with no parsed document.
+ *
+ * One page, and the signature enforces it — not because links are large, but
+ * because a document-wide read is an answer that scales with the document,
+ * which invariant 11 forbids per operation.
+ */
+export type DocumentPageLinksReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<readonly PageLink[]>;
+
+/** One page's links, stamped with the version the lane read them at. */
+export interface DocumentPageLinks {
+  readonly version: DocVersion;
+  readonly links: readonly PageLink[];
+}
+
 /** One page's matches, stamped with the version the lane read them at. */
 export interface PageSearchResult {
   readonly version: DocVersion;
@@ -364,6 +387,7 @@ export class DocumentCommands {
   readonly #save: SaveSource;
   readonly #geometry: DocumentGeometry;
   readonly #pageText: DocumentPageText;
+  readonly #pageLinks: DocumentPageLinksReader;
 
   constructor(
     documents: DocumentService,
@@ -372,6 +396,7 @@ export class DocumentCommands {
     save: SaveSource,
     geometry: DocumentGeometry,
     pageText: DocumentPageText,
+    pageLinks: DocumentPageLinksReader,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -379,6 +404,7 @@ export class DocumentCommands {
     this.#save = save;
     this.#geometry = geometry;
     this.#pageText = pageText;
+    this.#pageLinks = pageLinks;
   }
 
   /**
@@ -488,6 +514,41 @@ export class DocumentCommands {
     });
 
     return { version, ...value };
+  }
+
+  /**
+   * One page's links.
+   *
+   * ## In the LANE, for `searchPage`'s reason
+   *
+   * A link read walks the document the adapter holds, and that document is
+   * mutated in place — so a read outside the lane can interleave with an
+   * `apply` and describe neither the document before the command nor the one
+   * after it. The version comes back with the answer, which is what lets a
+   * renderer discard links that describe a document it is no longer showing.
+   *
+   * ## Nothing is dropped on the way through
+   *
+   * Unlike the text beside it, a page's links are already small and already
+   * bounded — the whole answer is what the caller asked for, and there is no
+   * intermediate that must not survive the call.
+   *
+   * @param page the zero-based index, as every page index crossing the contract
+   *   is. `pageNumbering.ts` is where that and PDF.js's numbering meet.
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async pageLinks(docId: DocId, page: number): Promise<DocumentPageLinks> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#pageLinks(docId, sessions, page);
+    });
+
+    return { version, links: value };
   }
 
   /**

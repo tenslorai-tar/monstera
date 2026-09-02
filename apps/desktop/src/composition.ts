@@ -11,6 +11,7 @@ import {
   DocumentNotOpenError,
   DocumentService,
   EngineOpenFailed,
+  type HostPageLinksReader,
   type HostPageTextReader,
   type HostTermination,
   type PageGeometryReader,
@@ -24,6 +25,7 @@ import {
   nodeFileSurface,
   parsePageText,
   remoteMupdfGeometry,
+  remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWriter,
   siblingNames,
@@ -340,6 +342,15 @@ export function createShellDependencies(
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return parsePageText(await engineHost.pageText(session, page));
+  },
+  // THE LINK READ, composed here for the two reads above's reason. Unlike the
+  // text, nothing is parsed on the way through: the host answers a declared
+  // shape rather than a format, so there is no second reader to keep out of the
+  // hostile process.
+  (docId, sessions, page) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return engineHost.pageLinks(session, page);
   });
 
   const openedDocument = engineHost.openedDocument;
@@ -428,6 +439,8 @@ function engineSessionOpener(
   readonly geometry: PageGeometryReader;
   /** One page's structured text as MuPDF's JSON, from whichever host is live. */
   readonly pageText: HostPageTextReader;
+  /** One page's links, from whichever host is live. */
+  readonly pageLinks: HostPageLinksReader;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -550,6 +563,20 @@ function engineSessionOpener(
     return pageText(session, page);
   };
 
+  /** The link read's half of the same registration. See {@link pageText}. */
+  let pageLinks: HostPageLinksReader | null = null;
+
+  const readPageLinksThroughHost: HostPageLinksReader = (session, page) => {
+    if (pageLinks === null) {
+      throw new Error(
+        'A link read reached the engine with no host link reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return pageLinks(session, page);
+  };
+
   /**
    * Tokens are minted from handles ONE host issued, and
    * `createRemoteSessions`' own words are that they are *"not transferable
@@ -657,6 +684,7 @@ function engineSessionOpener(
     writer = remoteMupdfWriter(client, remote, sessionAreas(platform));
     geometry = remoteMupdfGeometry(client, remote);
     pageText = remoteMupdfPageText(client, remote);
+    pageLinks = remoteMupdfPageLinks(client, remote);
     return live.value;
   };
 
@@ -806,6 +834,7 @@ function engineSessionOpener(
     writers,
     geometry: readGeometry,
     pageText: readPageTextThroughHost,
+    pageLinks: readPageLinksThroughHost,
     closeHost,
     rebuildSessions: create,
   };

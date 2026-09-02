@@ -102,6 +102,77 @@ export const ENGINE_GEOMETRY_MAX_PAGES = 512;
  */
 export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
 
+/**
+ * How many links one page may report.
+ *
+ * A COUNT rather than a byte size, because links cross as a declared shape and
+ * each one is bounded by its own schema — so the only unbounded axis is how
+ * many there are.
+ *
+ * 4096 for the same reason the byte bound is generous: the lower bound is the
+ * real constraint. A page of a link-heavy index carries hundreds; a page with
+ * four thousand is one no panel could present to a reader anyway.
+ *
+ * **The trigger:** the first page refused by this is the evidence the bound is
+ * wrong, and the fix is a measurement of what such a page contains.
+ */
+export const ENGINE_PAGE_LINKS_MAX = 4096;
+
+/**
+ * How long a link's URI may be.
+ *
+ * The one string in this shape that a document controls, so it is the one that
+ * needs a length. 2048 is the ceiling every browser applies to a URL in
+ * practice, which makes it a bound a real document cannot legitimately cross
+ * rather than a number chosen here.
+ */
+export const ENGINE_LINK_URI_MAX = 2048;
+
+/**
+ * A link's rectangle, in the page's own units.
+ *
+ * A hostile host can send `Infinity` or `NaN` through JSON as easily as a
+ * coordinate, and a rectangle carrying either reaches a renderer's layout
+ * arithmetic — where it produces an element of infinite size rather than an
+ * error anybody can trace. **`z.number()` refuses both**: zod 4.4.3 rejects
+ * non-finite numbers by default, so the base schema is what carries this and
+ * `.finite()` is a deprecated no-op. Stated because the property matters and
+ * the modifier that used to advertise it is gone.
+ */
+const linkBoundsSchema = z
+  .object({
+    x0: z.number(),
+    y0: z.number(),
+    x1: z.number(),
+    y1: z.number(),
+  })
+  .strict();
+
+/**
+ * One link, as it crosses from the host.
+ *
+ * A DISCRIMINATED UNION, so `{kind: 'internal', uri}` is unrepresentable rather
+ * than merely unexpected — an internal link carries a page and an external one
+ * carries a URI, and a shape with both optional would let a hostile host send
+ * the pair and leave every reader to decide which to believe (B5).
+ */
+const engineLinkSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('internal'),
+      page: z.number().int().nonnegative(),
+      bounds: linkBoundsSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('external'),
+      uri: z.string().max(ENGINE_LINK_URI_MAX),
+      bounds: linkBoundsSchema,
+    })
+    .strict(),
+]);
+
 const sessionSchema = z.string().min(1).max(ENGINE_SESSION_ID_MAX_CHARS);
 
 /**
@@ -425,6 +496,49 @@ export const engineChannels = {
          * argument the session id and the correlation id already make.
          */
         json: z.string().max(ENGINE_PAGE_TEXT_MAX_BYTES),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * One page's links.
+   *
+   * ## PARSED HERE, unlike the text beside it, and the difference is who owns
+   *   the format
+   *
+   * `engine/page-text` carries MuPDF's JSON unread, because MuPDF owns that
+   * format and a host that parsed it would be shipping an opinion about a tree
+   * it did not compute. A link is not a format: it is three values MuPDF hands
+   * back through an API, and there is no serialisation to preserve. So the
+   * shape crosses declared, and the schema is what bounds it.
+   *
+   * **The internal/external split crosses too**, because it is the engine that
+   * knows — `isExternal()` is MuPDF's answer, and a reader working it out from
+   * the URI would be a second opinion about a question the authority already
+   * answers (B3a). Invariant 24 rests on that split: a surface may jump to an
+   * internal destination and must ask before following an external one.
+   */
+  'engine/page-links': channel(
+    'Reads one page’s links from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        /**
+         * The page's links, bounded in COUNT rather than trusted.
+         *
+         * The host is hostile by invariant 25's own premise, so a document
+         * claiming a hundred thousand links on one page is a peer deciding how
+         * many bytes of our frame it spends. A page that genuinely carries more
+         * than this is a page no reader can use a panel for.
+         */
+        links: z.array(engineLinkSchema).max(ENGINE_PAGE_LINKS_MAX),
       })
       .strict(),
     ['no-such-session'],

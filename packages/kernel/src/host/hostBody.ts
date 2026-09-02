@@ -8,6 +8,7 @@ import { engineChannels } from './engineChannels.js';
 import {
   type HostContainmentProbe,
   type HostFilesystem,
+  type HostPageLinksReader,
   type HostPageTextReader,
   createEngineHandlers,
 } from './engineHandlers.js';
@@ -72,6 +73,8 @@ export interface HostBodyDependencies {
   readonly geometry: PageGeometryReader;
   /** How this process reads one page's structured text, as MuPDF's JSON. */
   readonly pageText: HostPageTextReader;
+  /** How this process reads one page's links. `readPageLinks`. */
+  readonly pageLinks: HostPageLinksReader;
   /** Where session ids come from. `cryptoBytes`. */
   readonly tokens: TokenBytesSource;
   /**
@@ -142,6 +145,7 @@ export function startEngineHost(
       dependencies.probe,
       dependencies.geometry,
       dependencies.pageText,
+      dependencies.pageLinks,
     ),
     transport: {
       write: stream.write,

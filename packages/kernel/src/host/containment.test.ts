@@ -515,6 +515,9 @@ describe('the engine host answers a containment probe', () => {
     pageText: () => {
       throw new Error('a containment probe must not read page text');
     },
+    pageLinks: () => {
+      throw new Error('a containment probe must not read page links');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {
@@ -532,6 +535,7 @@ describe('the engine host answers a containment probe', () => {
         },
         forbidden.geometry,
         forbidden.pageText,
+        forbidden.pageLinks,
       ),
       () => undefined,
     );

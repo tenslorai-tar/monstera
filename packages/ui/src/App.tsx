@@ -31,6 +31,7 @@ import { historyCommand, pageMoveCommand } from './commands/navigationCommands.j
 import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './StatusBar.js';
+import { LinksPanel } from './LinksPanel.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -450,6 +451,15 @@ export function App({ client, settings }: AppProps): ReactElement {
       {open === undefined || pageCount === undefined ? null : (
         <StatusBar page={currentPage} pageCount={pageCount} zoom={shownZoom} />
       )}
+      {/* THE LINKS PANEL, which renders nothing with no document for the find
+          bar's reason. It is the third source of a jump, after the keys and the
+          thumbnails, and it dispatches the same one. */}
+      <LinksPanel
+        client={client}
+        docId={open?.docId}
+        page={context.page}
+        onJump={navigator.jumpTo}
+      />
       {/* E2's substrate, reached by a person. It renders nothing with no
           document open, for `QuickToolbar`'s reason: a find field over no
           document is a control that cannot work. */}

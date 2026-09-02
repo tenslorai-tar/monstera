@@ -129,6 +129,7 @@ export function createContractHandlers(deps: {
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
+    'document.pageLinks': pageLinksHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
     // runs `migrate` and falls back per setting; a schema here would be this
@@ -330,6 +331,32 @@ function searchPageHandler(commands: DocumentCommands): ContractHandlers['docume
         matches: matches.map(({ line, offset, text }) => ({ line, offset, text })),
         truncated,
       });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * One page's links, with internal destinations already resolved.
+ *
+ * The three refusals are `searchPageHandler`'s, for the same reason: a link
+ * read needs an engine session, so a document that has none refuses in exactly
+ * the ways a search does. Sharing the shape rather than the code is deliberate
+ * — a helper over four lines of `catch` would hide which codes each channel
+ * actually declares, and the declaration is what a renderer switches on.
+ */
+function pageLinksHandler(commands: DocumentCommands): ContractHandlers['document.pageLinks'] {
+  return async ({
+    docId,
+    page,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.pageLinks']>>> => {
+    try {
+      const { version, links } = await commands.pageLinks(docId, page);
+      return ok({ version, links });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

@@ -56,6 +56,23 @@ const handlers: ContractHandlers = {
         truncated: false,
       }),
     ),
+  // ONE OF EACH KIND, for the search fixture's reason: a list holding only
+  // internal links would let a boundary that dropped the external branch pass,
+  // and the external branch is the one invariant 24 rests on.
+  'document.pageLinks': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        links: [
+          { kind: 'internal' as const, page: 4, bounds: { x0: 1, y0: 2, x1: 3, y1: 4 } },
+          {
+            kind: 'external' as const,
+            uri: 'https://example.org/',
+            bounds: { x0: 5, y0: 6, x1: 7, y1: 8 },
+          },
+        ],
+      }),
+    ),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the

@@ -102,6 +102,27 @@ export interface BrowserShim {
   revealedLog: () => number;
 }
 
+/**
+ * One link a test seeds a page with.
+ *
+ * The contract's own shape, restated here rather than imported, because the
+ * contract exports schemas rather than types for this and a `z.infer` in a
+ * fixture's signature is a type a test author cannot read. It is checked
+ * against the real one where it matters: the shim's answers go through
+ * `createClient`, which parses them.
+ */
+export type ShimPageLink =
+  | {
+      readonly kind: 'internal';
+      readonly page: number;
+      readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+    }
+  | {
+      readonly kind: 'external';
+      readonly uri: string;
+      readonly bounds: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+    };
+
 export interface BrowserShimOptions {
   readonly version?: string;
   readonly installChannel?: 'store' | 'web' | 'development';
@@ -191,6 +212,18 @@ export interface BrowserShimOptions {
    * renderer asked for page 2. A page with no entry holds no text.
    */
   readonly pageLines?: readonly (readonly string[])[];
+
+  /**
+   * The links each page carries, indexed by page.
+   *
+   * Seeded by the test rather than canned here, for `pageLines`' reason: a shim
+   * answering the same links whatever it was asked would let a panel pass
+   * against a renderer that requested the wrong page.
+   *
+   * A page with no entry has no links, which is a real state — most pages of
+   * most documents have none.
+   */
+  readonly pageLinks?: readonly (readonly ShimPageLink[])[];
 
   /**
    * What a previous run stored, as `settings.load` will answer it.
@@ -283,6 +316,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // a test holding the array it seeded would watch it empty underneath.
   const viewModels = [...(options.viewModels ?? [])];
   const pageLines = options.pageLines ?? [];
+  const pageLinks = options.pageLinks ?? [];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -495,6 +529,26 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
           // The same one-past-the-limit rule the kernel uses, so a shim answer
           // and a real one disagree about nothing a test could come to rely on.
           truncated: found.length > limit,
+        }),
+      );
+    },
+
+    /**
+     * One page's links, from the fixture the shim was built with.
+     *
+     * **One of each kind on the first page**, because the split is what a
+     * surface acts on: an internal link offers a jump and an external one has
+     * to be asked about (invariant 24). A shim that answered only internals
+     * would let a panel that ignored the distinction pass every case.
+     */
+    'document.pageLinks': ({ docId, page }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          links: pageLinks[page] ?? [],
         }),
       );
     },

@@ -57,6 +57,11 @@ export const PALETTE_LABEL = messageKey('surface.palette.label');
 export const PALETTE_PLACEHOLDER = messageKey('surface.palette.placeholder');
 export const PALETTE_EMPTY = messageKey('surface.palette.empty');
 export const PALETTE_TITLE = messageKey('command.palette.title');
+export const LINKS_LABEL = messageKey('surface.links.label');
+export const LINKS_EMPTY = messageKey('surface.links.empty');
+export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
+export const LINKS_TO_PAGE = messageKey('surface.links.to-page');
+export const LINKS_EXTERNAL = messageKey('surface.links.external');
 export const STATUS_LABEL = messageKey('surface.status.label');
 export const STATUS_PAGE_OF = messageKey('surface.status.page-of');
 export const STATUS_ZOOM = messageKey('surface.status.zoom');
@@ -137,6 +142,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PALETTE_PLACEHOLDER]: 'Search commands',
   [PALETTE_EMPTY]: 'No command matches.',
   [PALETTE_TITLE]: 'Command palette',
+  [LINKS_LABEL]: 'Links on this page',
+  [LINKS_EMPTY]: 'This page has no links.',
+  [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',
+  [LINKS_TO_PAGE]: 'Go to page {page}',
+  [LINKS_EXTERNAL]: 'Opens {uri}',
   [STATUS_LABEL]: 'Document status',
   [STATUS_PAGE_OF]: 'Page {page} of {count}',
   [STATUS_ZOOM]: '{percent}%',

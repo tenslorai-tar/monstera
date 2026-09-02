@@ -3,6 +3,7 @@ import type { Handlers } from '@monstera/contract';
 import type { CommandExecution } from '../commandSpecs.js';
 import type { EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
+import type { PageLink } from '../pageLinks.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
 import type { EngineChannels } from './engineChannels.js';
 
@@ -19,6 +20,24 @@ import type { EngineChannels } from './engineChannels.js';
  * opinion about the structure MuPDF computed.
  */
 export type HostPageTextReader = (session: MupdfSession, page: number) => Promise<string>;
+
+/**
+ * Reads one page's links.
+ *
+ * Injected for `HostPageTextReader`'s reason: the handler proof drives this
+ * channel with no parsed document, and `packages/kernel` is the host body, so
+ * its proofs must not need a native library to decide whether a handler is
+ * correct.
+ *
+ * **The shape IS interpreted here**, unlike the text beside it, and the channel
+ * says why: a link is three values MuPDF hands back through an API rather than
+ * a format anybody owns, so there is no serialisation for a second reader to
+ * disagree with.
+ */
+export type HostPageLinksReader = (
+  session: MupdfSession,
+  page: number,
+) => Promise<readonly PageLink[]>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -113,6 +132,7 @@ export function createEngineHandlers(
   probe: HostContainmentProbe,
   geometry: PageGeometryReader,
   pageText: HostPageTextReader,
+  pageLinks: HostPageLinksReader,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -237,6 +257,15 @@ export function createEngineHandlers(
       // (§3.2), and the schema's size bound is what makes the string safe to
       // carry rather than trust.
       return { ok: true, value: { json: await pageText(held.session, page) } };
+    },
+
+    'engine/page-links': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for the reader above's reason: a link read of a document
+      // the adapter already parsed either works or is a defect, including a
+      // page index outside it.
+      return { ok: true, value: { links: [...(await pageLinks(held.session, page))] } };
     },
 
     'engine/apply': async ({ session, command }) => {

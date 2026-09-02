@@ -5,7 +5,7 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { EngineChannels } from './engineChannels.js';
-import type { HostPageTextReader } from './engineHandlers.js';
+import type { HostPageLinksReader, HostPageTextReader } from './engineHandlers.js';
 
 /**
  * Running commands against a session an engine host holds (ADR-0023 Decision
@@ -212,6 +212,29 @@ export function remoteMupdfPageText(
       'engine/page-text',
       await client['engine/page-text']({ session: sessions.handleFor(session), page }),
     ).json;
+}
+
+/**
+ * One page's links, over the boundary.
+ *
+ * The sibling of {@link remoteMupdfPageText}, and it returns the shape rather
+ * than a string for the reason the channel gives: a link is not a format
+ * anybody owns, so there is nothing to keep a second reader away from.
+ *
+ * @param client the engine host's channels, through the contract's own
+ *   validating client — so a malformed answer is rejected at the boundary
+ *   wrapper rather than by a second parse here (B3a).
+ * @param sessions main's token registry.
+ */
+export function remoteMupdfPageLinks(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostPageLinksReader {
+  return async (session, page) =>
+    answered(
+      'engine/page-links',
+      await client['engine/page-links']({ session: sessions.handleFor(session), page }),
+    ).links;
 }
 
 /**

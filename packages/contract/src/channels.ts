@@ -100,6 +100,52 @@ export const MAX_VIEW_MODEL_PAGES = 512;
 export const MAX_SEARCH_MATCHES = 512;
 
 /**
+ * How many links one page may report to the renderer.
+ *
+ * A COUNT, because each link is a declared shape whose own fields are bounded —
+ * so the only unbounded axis is how many there are. Any constant satisfies
+ * invariant 11; the real constraint is the lower one, and a page of a
+ * link-heavy index carries hundreds rather than thousands.
+ *
+ * **The trigger:** the first page refused by this is the evidence the bound is
+ * wrong, and the fix is a measurement of what that page contains.
+ */
+export const MAX_PAGE_LINKS = 4096;
+
+/**
+ * How long a link's URI may be.
+ *
+ * The one string in that shape a DOCUMENT controls, so it is the one that needs
+ * a length. 2048 is the ceiling browsers apply to a URL in practice, which
+ * makes it a bound a real document cannot legitimately cross rather than a
+ * number chosen here.
+ */
+export const MAX_LINK_URI_LENGTH = 2048;
+
+/**
+ * A link's rectangle, in the page's own units.
+ *
+ * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
+ *
+ * This was written `z.number().finite()` on the reasoning that a non-finite
+ * corner travels through JSON as easily as a coordinate and arrives in the
+ * renderer's layout arithmetic, where it produces an element of infinite size
+ * rather than an error anybody can trace. The reasoning is right and the call
+ * was a **no-op**: zod 4.4.3 rejects non-finite numbers by default, and
+ * `.finite()` is deprecated for saying so.
+ *
+ * Recorded rather than silently dropped, because the property is load-bearing
+ * and the next reader deserves to know it is the base schema that carries it —
+ * not a modifier they might remove as noise.
+ */
+const linkBoundsSchema = z.object({
+  x0: z.number(),
+  y0: z.number(),
+  x1: z.number(),
+  y1: z.number(),
+});
+
+/**
  * The longest query this boundary will carry.
  *
  * Not an L11 bound — a query is the *renderer's* string and does not scale with
@@ -606,6 +652,66 @@ export const channels = {
        * and a results surface would silently stop paging.
        */
       truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * The links on one page.
+   *
+   * ## ONE PAGE, for `document.searchPage`'s reason
+   *
+   * A document-wide answer would scale with the document, which is what
+   * invariant 11 forbids per operation. A links panel shows the page a reader
+   * is on; a panel for a thousand-page document that fetched every link to show
+   * twelve is the same defect the text substrate was measured into avoiding.
+   *
+   * ## The internal/external split CROSSES, and it is the security half
+   *
+   * Invariant 24: opening a document runs none of its content, and **no
+   * external fetch until the user asks, for that item**. A renderer that had to
+   * work out which links leave the document from their URIs would be a second
+   * opinion about a question MuPDF answers — and every place that got it wrong
+   * would be a page that fetches on open.
+   *
+   * An internal link carries a resolved page and no URI: a renderer needs the
+   * page, and handing it the destination string as well would give it a second
+   * way to act on a link it must not interpret (§3.2).
+   */
+  'document.pageLinks': channel(
+    'The links on one page, with internal destinations already resolved.',
+    z.object({
+      docId: docIdSchema,
+      /** Zero-based, as every page index that crosses this contract is. */
+      page: z.number().int().nonnegative(),
+    }),
+    z.object({
+      version: docVersionSchema,
+      links: z
+        .array(
+          z.discriminatedUnion('kind', [
+            z.object({
+              kind: z.literal('internal'),
+              /** Zero-based, so a caller can hand it straight to a jump. */
+              page: z.number().int().nonnegative(),
+              bounds: linkBoundsSchema,
+            }),
+            z.object({
+              kind: z.literal('external'),
+              /**
+               * The URI exactly as the document carries it.
+               *
+               * **Nothing on either side follows it.** A renderer shows it and
+               * asks; opening it is a separate action a person takes, which is
+               * what invariant 24 means by *for that item*.
+               */
+              uri: z.string().max(MAX_LINK_URI_LENGTH),
+              bounds: linkBoundsSchema,
+            }),
+          ]),
+        )
+        .max(MAX_PAGE_LINKS)
+        .readonly(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

@@ -95,6 +95,7 @@ export {
 export {
   type HostContainmentProbe,
   type HostFilesystem,
+  type HostPageLinksReader,
   type HostPageTextReader,
   type HostSession,
   type HostSessions,
@@ -120,6 +121,7 @@ export {
   createRemoteSessions,
   remoteMupdfExecution,
   remoteMupdfGeometry,
+  remoteMupdfPageLinks,
   remoteMupdfPageText,
 } from './host/remoteEngine.js';
 export {
@@ -214,4 +216,7 @@ export {
   plainTextOf,
 } from './textStructure.js';
 export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
+// THE TYPES ONLY, for the reason above: a shape a consumer holds needs no
+// engine, and `readPageLinks` — which does — stays behind `/engine`.
+export type { LinkBounds, PageLink } from './pageLinks.js';
 export { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';
