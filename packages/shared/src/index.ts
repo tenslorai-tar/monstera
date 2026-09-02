@@ -21,7 +21,7 @@ export {
   err,
   toStructuredError,
 } from './result.js';
-export { type Rgb, channels, contrast, luminance, onColor } from './colour.js';
+export { type Rgb, channels, contrast, luminance, onColor, onColorRounded } from './colour.js';
 export { type MessageKey, isDottedName, messageDomain, messageKey } from './messages.js';
 // The five coordinate spaces and the ONE thing permitted to convert between
 // them (invariant L3). The point constructors are exported and `Brand`'s

@@ -1,4 +1,4 @@
-import { type Rgb, channels, contrast, luminance, onColor } from '@monstera/shared';
+import { type Rgb, channels, onColorRounded } from '@monstera/shared';
 import { z } from 'zod';
 
 import { ACCENT_TITLE } from '../messages/en.js';
@@ -46,9 +46,18 @@ export const ACCENT_SETTING: SettingDefinition<
  * ground while doing it. A hex parser in this file would have been a second
  * implementation of that — and a worse one, since it would silently disagree on
  * `#abc` and on anything carrying alpha (B3a).
+ *
+ * **IT DOES NOT ROUND, and that is the point of the type it takes.** It read
+ * `Math.round(value)` until 2026-09-03, which made it a second place deciding
+ * how a solved colour becomes eight bits — the exact class `onColorRounded`
+ * exists to hold. Every caller now hands it an integral triple, so a
+ * non-integral one arriving here is a caller that skipped the solver, and
+ * `toString(16)` on a fraction produces a hex digit string nobody can read
+ * rather than a silently wrong colour. That is the loud failure, and it is
+ * better than the quiet correction it replaces.
  */
 function toHex([r, g, b]: Rgb): string {
-  const pair = (value: number): string => Math.round(value).toString(16).padStart(2, '0');
+  const pair = (value: number): string => value.toString(16).padStart(2, '0');
   return `#${pair(r)}${pair(g)}${pair(b)}`;
 }
 
@@ -80,58 +89,25 @@ function surfaces(root: HTMLElement): Rgb[] {
 }
 
 /**
- * A colour that clears `floor` against `grounds` **after being rounded to eight
- * bits per channel**, which is what a CSS custom property holds.
+ * MOVED TO `@monstera/shared` ON 2026-09-03, as `onColorRounded`.
  *
- * ## Why `onColor` alone is not enough, measured rather than anticipated
+ * It lived here for one day and governed one user-chosen colour, while
+ * `useOnColor` — which governs every contrast-bearing colour this application
+ * renders — rounded to nearest with no direction and no verification. The same
+ * defect at the site `CLAUDE.md` names as the mechanism, which is Rule 0's
+ * classic half-fix: one handler closed and its sibling left open, and the
+ * sibling was the load-bearing one.
  *
- * It blends in continuous channels and answers a colour that clears; what is
- * applied is the ROUNDED colour, which is a different one. Measured 2026-09-02:
- * solving `#808080` against itself at 4.5:1 answers **23.59** per channel at
- * 4.5137:1, and rounding that to **24** lands at 4.4957 — under the floor it
- * was just checked against.
+ * *How a solved colour becomes a channel value* is a property of the solver
+ * rather than of the accent feature, so it sits beside `onColor`, `luminance`
+ * and `contrast` and both callers take it. The reasoning below moved with it.
  *
- * That is the file's own rule one level down. *Storing a derived colour is a
- * defect* is about a colour going stale; this is the same colour failing to
- * survive its own serialisation.
- *
- * ## Rounded TOWARD THE POLE, which makes a loop unnecessary
- *
- * `onColor` blends along the axis from `wanted` to black or to white, and
- * contrast against a fixed ground is monotonic along that axis. So rounding
- * each channel **away from where it came from** — down when the answer is
- * darker than what was asked for, up when it is lighter — can only increase the
- * ratio. Rounding to nearest is what loses it, because half the time nearest is
- * back toward the ground.
- *
- * **Re-solving from the rounded colour was tried first and does not
- * terminate.** `onColor` returns the smallest blend that clears, which from 24
- * is 23.906 — rounding to 24 again, for ever. The loop ran its bound and
- * refused colours that are perfectly usable. The direction is the fix; the
- * iteration was treating the symptom.
- *
- * @returns the rounded colour, or `undefined` when no colour on the axis clears
+ * The measurement that produced it, kept here because this is where it was
+ * made: solving `#808080` against itself at 4.5:1 answers **23.59** per channel
+ * at 4.5137:1, and rounding to **24** lands at 4.4957 — under the floor it was
+ * just checked against. `onColorRounded`'s own header carries the mechanism and
+ * the two approaches that were tried.
  */
-function solveRounded(wanted: Rgb, grounds: readonly Rgb[], floor: number): Rgb | undefined {
-  const solved = onColor(wanted, grounds, floor);
-  if (!solved.ok) return undefined;
-
-  // WHICH WAY IT MOVED. Equal means `onColor` returned what it was given, which
-  // it does only when that already clears — and `wanted` reaching here is
-  // always integral, so there is nothing to round.
-  const moved = luminance(solved.value) - luminance(wanted);
-  const round = moved < 0 ? Math.floor : moved > 0 ? Math.ceil : Math.round;
-  const rounded: Rgb = [
-    Math.max(0, Math.min(255, round(solved.value[0]))),
-    Math.max(0, Math.min(255, round(solved.value[1]))),
-    Math.max(0, Math.min(255, round(solved.value[2]))),
-  ];
-
-  // VERIFIED ANYWAY. The argument above is monotonicity, and an argument is not
-  // a measurement — this is the line that makes the applied colour checked
-  // rather than reasoned about.
-  return grounds.every((ground) => contrast(rounded, ground) >= floor) ? rounded : undefined;
-}
 
 /**
  * Applies a chosen accent, or reports why it cannot be used.
@@ -172,24 +148,23 @@ export function applyAccent(root: HTMLElement, accent: string): string | undefin
     return 'The theme surfaces could not be read, so no accent can be checked against them.';
   }
 
-  const written = solveRounded(wanted, grounds, ACCENT_FLOOR);
-  if (written === undefined) {
+  const written = onColorRounded(wanted, grounds, ACCENT_FLOOR);
+  if (!written.ok) {
     return (
-      `"${accent}" cannot be adjusted to clear ${String(ACCENT_FLOOR)}:1 against this theme's ` +
-      `surfaces as an eight-bit colour.`
+      `"${accent}" cannot be used as an accent against this theme's surfaces: ${written.error}`
     );
   }
 
   // SOLVED AGAINST THE APPLIED ACCENT, which is the surface the label sits on,
-  // and against the ROUNDED one for the reason `solveRounded` states. Against
-  // the page's background it would be a colour that reads over the page and
-  // not over the button.
-  const label = solveRounded(written, [written], ON_ACCENT_FLOOR);
-  if (label === undefined) {
-    return `No label colour clears ${String(ON_ACCENT_FLOOR)}:1 against the adjusted accent.`;
+  // and against the ROUNDED one for `onColorRounded`'s reason. Against the
+  // page's background it would be a colour that reads over the page and not
+  // over the button.
+  const label = onColorRounded(written.value, [written.value], ON_ACCENT_FLOOR);
+  if (!label.ok) {
+    return `No label colour works against the adjusted accent: ${label.error}`;
   }
 
-  root.style.setProperty('--accent', toHex(written));
-  root.style.setProperty('--on-accent', toHex(label));
+  root.style.setProperty('--accent', toHex(written.value));
+  root.style.setProperty('--on-accent', toHex(label.value));
   return undefined;
 }

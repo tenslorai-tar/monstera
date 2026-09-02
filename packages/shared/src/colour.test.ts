@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type Rgb, channels, contrast, luminance, onColor } from './colour.js';
+import { type Rgb, channels, contrast, luminance, onColor, onColorRounded } from './colour.js';
 
 const WHITE: Rgb = [255, 255, 255];
 const BLACK: Rgb = [0, 0, 0];
@@ -123,5 +123,84 @@ describe('onColor', () => {
     const solved = onColor(wanted, [WHITE], 4.5);
     if (!solved.ok) throw new Error(`expected a solution, got: ${solved.error}`);
     expect(luminance(solved.value)).toBeLessThan(luminance(wanted));
+  });
+});
+
+describe('onColorRounded', () => {
+  /** Whether every channel is a value a CSS colour or a canvas can carry. */
+  function isEightBit([r, g, b]: Rgb): boolean {
+    return [r, g, b].every(
+      (channel) => Number.isInteger(channel) && channel >= 0 && channel <= 255,
+    );
+  }
+
+  it('CLEARS THE FLOOR AFTER ROUNDING, which onColor alone does not guarantee', () => {
+    // THE MEASURED INSTANCE, and the reason this function exists. `onColor`
+    // answers 23.59 per channel here at 4.5137:1; rounding that to nearest
+    // gives 24, which is 4.4957:1 — under the ratio it was just solved for.
+    //
+    // Asserted on the RETURNED value rather than on the solver's, because the
+    // returned one is what a caller writes. Checking the solver's answer is
+    // precisely the mistake this case exists for.
+    const grey: Rgb = [0x80, 0x80, 0x80];
+    const solved = onColor(grey, [grey], 4.5);
+    if (!solved.ok) throw new Error('the continuous solve should succeed here');
+    // NEAREST, spelt out — the rounding this function replaced. Built as a
+    // tuple rather than cast from `map`, so the shape is the type rather than
+    // an assertion about it.
+    const nearest: Rgb = [
+      Math.round(solved.value[0]),
+      Math.round(solved.value[1]),
+      Math.round(solved.value[2]),
+    ];
+    expect(contrast(nearest, grey)).toBeLessThan(4.5);
+
+    const rounded = onColorRounded(grey, [grey], 4.5);
+    if (!rounded.ok) throw new Error(`expected a rounded solution, got: ${rounded.error}`);
+    expect(isEightBit(rounded.value)).toBe(true);
+    expect(contrast(rounded.value, grey)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('clears EVERY background, not just the first', () => {
+    // A colour clearing one ground and failing the other is the defect a
+    // single-ground check cannot see, and rounding is where it would appear:
+    // the direction is chosen once for all channels.
+    const grounds: Rgb[] = [WHITE, DARK_SURFACE];
+    const rounded = onColorRounded([0x80, 0x80, 0x80], grounds, 3);
+    if (!rounded.ok) throw new Error(`expected a rounded solution, got: ${rounded.error}`);
+    for (const ground of grounds) {
+      expect(contrast(rounded.value, ground)).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('passes onColor’s own refusal through rather than inventing one', () => {
+    // 21:1 is reachable only between pure black and pure white, so a mid-grey
+    // ground admits nothing. The caller must meet the solver's words, not a
+    // second explanation — two wordings for one refusal is two opinions about
+    // why a design cannot be satisfied.
+    const refused = onColorRounded([0x80, 0x80, 0x80], [[0x80, 0x80, 0x80]], 21);
+    expect(refused.ok).toBe(false);
+    expect(!refused.ok && refused.error).toContain('black–white axis');
+  });
+
+  it('returns an EIGHT-BIT colour for an answer that needed no adjustment', () => {
+    // `onColor` returns `wanted` unchanged when it already clears, and `wanted`
+    // is normally integral — so this is the branch where the direction is
+    // "unmoved" and rounding to nearest is correct. Without a case it is a
+    // branch nothing reaches, since every other case moves.
+    const rounded = onColorRounded(BLACK, [WHITE], 4.5);
+    if (!rounded.ok) throw new Error(`expected a rounded solution, got: ${rounded.error}`);
+    expect(rounded.value).toStrictEqual(BLACK);
+  });
+
+  it('CONTROL: it does not simply return what it was given', () => {
+    // Without this, "clears the floor" is satisfied by a function that answers
+    // `wanted` whenever `wanted` happens to clear — and every case above uses a
+    // colour that does not, so none of them would notice.
+    const wanted: Rgb = [0xf0, 0xf0, 0xf0];
+    const rounded = onColorRounded(wanted, [WHITE], 4.5);
+    if (!rounded.ok) throw new Error(`expected a rounded solution, got: ${rounded.error}`);
+    expect(rounded.value).not.toStrictEqual(wanted);
+    expect(luminance(rounded.value)).toBeLessThan(luminance(wanted));
   });
 });

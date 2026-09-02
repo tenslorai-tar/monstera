@@ -1,4 +1,4 @@
-import { type Rgb, channels, onColor } from '@monstera/shared';
+import { type Rgb, channels, onColorRounded } from '@monstera/shared';
 import { type RefObject, useEffect } from 'react';
 
 /**
@@ -146,12 +146,24 @@ export function useOnColor(
         return;
       }
 
-      const result = onColor(wanted, backgrounds, minimum);
+      // ROUNDED BY THE SOLVER, not here. This read `result.value.map(Math.round)`
+      // until 2026-09-03, which is nearest — and nearest is back toward the
+      // ground half the time, so the colour written could fail the ratio it had
+      // just been solved for. Measured: 23.59 rounds to 24 and drops 4.5137:1
+      // to 4.4957:1.
+      //
+      // `onColorRounded` is the same function `settings/accent.ts` was using,
+      // moved to `shared` beside `onColor` because *how a solved colour becomes
+      // eight bits* belongs to the solver rather than to whichever feature is
+      // asking. Its failure lands on the path that was already here: an
+      // unreachable floor removes the property rather than writing a colour
+      // nobody checked.
+      const result = onColorRounded(wanted, backgrounds, minimum);
       if (!result.ok) {
         element.style.removeProperty(property);
         return;
       }
-      element.style.setProperty(property, `rgb(${result.value.map(Math.round).join(', ')})`);
+      element.style.setProperty(property, `rgb(${result.value.join(', ')})`);
     };
 
     apply();

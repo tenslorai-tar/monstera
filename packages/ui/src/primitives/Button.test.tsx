@@ -167,6 +167,38 @@ describe('Button', () => {
       expect(contrast(applied, newAccent)).toBeGreaterThanOrEqual(4.5);
     });
 
+    it('CLEARS THE FLOOR AFTER ROUNDING, on an accent chosen because it did not', async () => {
+      // THE FIX AT THE SITE THAT MATTERS, and it is here because the hook's own
+      // cases did not reach it.
+      //
+      // `useOnColor` read `result.value.map(Math.round)` until 2026-09-03 —
+      // nearest, which is back toward the fill half the time. With `--text` at
+      // `#e7eaec` on this accent, `onColor` answers 234.482, 237.047, 238.757
+      // at just over 4.5:1, and nearest rounds it to `#eaedef`, which measures
+      // **4.4965:1**. The button would have carried a colour that fails the
+      // ratio it had just been solved for.
+      //
+      // `#0068d8` is not a hand-picked oddity: a partial scan on 2026-09-03
+      // found **72** accents with this shape in the first slice it walked. The
+      // defect was common and invisible, because every existing case here uses
+      // an accent whose answer happens to round the harmless way.
+      declareTokens('#0068d8');
+      render(<Button label={SAVE} variant="primary" />);
+      const button = screen.getByRole('button', { name: 'Save' });
+
+      await vi.waitFor(() => {
+        expect(button.style.color).not.toBe('');
+      });
+
+      const applied = channels(button.style.color);
+      const accent = channels('#0068d8');
+      if (applied === null || accent === null) throw new Error('a colour did not parse');
+      // ASSERTED ON WHAT THE ELEMENT CARRIES, parsed back out of the style,
+      // because that is the colour a browser paints. Asserting on the solver's
+      // answer is exactly the mistake this case exists for.
+      expect(contrast(applied, accent)).toBeGreaterThanOrEqual(4.5);
+    });
+
     it('reads the tokens at the control, not at the document root', async () => {
       // THE TWO READ SITES ARE MADE TO DISAGREE, which is the only way a case
       // can tell them apart. The root says the fill is nearly black, where the

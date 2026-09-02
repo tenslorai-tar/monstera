@@ -197,3 +197,88 @@ export function onColor(
   // Ties go darker — see the note above.
   return ok(darker <= lighter ? blend(wanted, BLACK, darker) : blend(wanted, WHITE, lighter));
 }
+
+/**
+ * The same answer as {@link onColor}, in the eight bits a channel value has.
+ *
+ * ## Why this is here rather than at a call site
+ *
+ * `onColor` solves in continuous channels; every consumer of its answer writes
+ * it somewhere that holds an integer per channel — a CSS custom property, an
+ * `rgb()` string, a canvas fill. **Those are different colours**, and the
+ * difference can cross the floor: measured 2026-09-02, solving `#808080`
+ * against itself at 4.5:1 answers **23.59** per channel at 4.5137:1, and
+ * rounding that to **24** lands at **4.4957** — under the ratio it had just
+ * been checked against.
+ *
+ * So *how a solved colour becomes a channel value* is a property of the solver,
+ * not of whoever is calling it. It lived in `settings/accent.ts` for one day
+ * and governed one user-chosen colour, while `useOnColor` — which governs every
+ * contrast-bearing colour the application renders — rounded to nearest with no
+ * direction and no verification. That is Rule 0's classic half-fix: one handler
+ * closed and its sibling left open, and the sibling was the load-bearing one.
+ *
+ * ## Rounded TOWARD THE POLE, which is what makes a loop unnecessary
+ *
+ * `onColor` blends along the axis from `wanted` toward black or toward white,
+ * and contrast against a fixed ground is monotonic along that axis. Rounding
+ * each channel **away from where it came from** — down when the answer is
+ * darker than what was asked for, up when it is lighter — can only increase the
+ * ratio. Rounding to nearest is what loses it, because half the time nearest is
+ * back toward the ground.
+ *
+ * **Re-solving from the rounded colour was tried first and does not
+ * terminate.** `onColor` returns the smallest blend that clears, which from 24
+ * is 23.906 — rounding to 24 again, for ever. A bounded loop then refused
+ * colours that are perfectly usable. The direction is the fix; the iteration
+ * was treating the symptom.
+ *
+ * @returns the rounded colour, or a failure carrying `onColor`'s own words when
+ *   nothing on the axis clears — so a caller cannot use an answer without
+ *   deciding what to do about its absence, which is `onColor`'s contract and
+ *   not a second one.
+ */
+export function onColorRounded(
+  wanted: Rgb,
+  backgrounds: readonly Rgb[],
+  minimum: number,
+): Result<Rgb, string> {
+  const solved = onColor(wanted, backgrounds, minimum);
+  if (!solved.ok) return solved;
+
+  // WHICH WAY IT MOVED. Equal means `onColor` returned what it was given, which
+  // it does only when that already clears; rounding to nearest is then correct
+  // because there is nothing to preserve a direction of.
+  const moved = luminance(solved.value) - luminance(wanted);
+  const round = moved < 0 ? Math.floor : moved > 0 ? Math.ceil : Math.round;
+  const rounded: Rgb = [
+    clampChannel(round(solved.value[0])),
+    clampChannel(round(solved.value[1])),
+    clampChannel(round(solved.value[2])),
+  ];
+
+  // VERIFIED ANYWAY. The argument above is monotonicity, and an argument is not
+  // a measurement — this is the line that makes the returned colour checked
+  // rather than reasoned about.
+  if (backgrounds.every((background) => contrast(rounded, background) >= minimum)) {
+    return ok(rounded);
+  }
+  return err(
+    `rgb(${rounded.join(', ')}) clears ${String(minimum)}:1 in full precision and not once ` +
+      `rounded to eight bits per channel. Returning it would hand back a colour that fails ` +
+      `the ratio it was solved for.`,
+  );
+}
+
+/**
+ * A channel value, held inside the range one byte can carry.
+ *
+ * The rounding above moves away from the ground, so a solve that already
+ * reached black or white can push a channel to −1 or 256 — values `rgb()`
+ * clamps silently and a canvas takes as-is. Clamped here so the returned colour
+ * is one that can be written anywhere, and so the verification below is
+ * checking what a caller will actually use.
+ */
+function clampChannel(value: number): number {
+  return Math.max(0, Math.min(255, value));
+}
