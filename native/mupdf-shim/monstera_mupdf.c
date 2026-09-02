@@ -1063,3 +1063,82 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
          * accounting untrustworthy rather than clamping to a plausible zero. */
         c->acct.imbalance = 1;
 }
+
+/*
+ * One page's structured text, as MuPDF's own JSON.
+ *
+ * WHY MuPDF'S SERIALISER AND NOT A SHAPE OF OURS. `fz_print_stext_page_as_json`
+ * is the authority's own answer to "what did the structuring produce"; a struct
+ * walked here would be a second opinion about a format MuPDF owns, and it would
+ * silently stop describing the tree the day MuPDF adds a block type (B3a). The
+ * cost is a parse on the far side, which is a spike's price and not a seam's.
+ *
+ * `flags` is passed to fz_stext_options unchanged, so the caller chooses among
+ * MuPDF's own segmentation options — FZ_STEXT_SEGMENT (4096),
+ * FZ_STEXT_PARAGRAPH_BREAK (8192), FZ_STEXT_TABLE_HUNT (16384) — rather than
+ * this file deciding which of them a text substrate wants. That decision is
+ * E2's and it is not taken in C.
+ *
+ * THE BUFFER CONTRACT IS mz_store_debug'S, deliberately: the caller sizes, this
+ * writes what fits, and `needed_out` reports the full length so a short buffer
+ * is a measurable state rather than silent truncation. A NUL is written because
+ * the payload is UTF-8 JSON, and fz_buffer_storage does not terminate.
+ *
+ * SCALE 1.0f, so coordinates arrive in the page's own units. Scaling here would
+ * bake a rendering decision into an extraction path, which is the coordinate
+ * confusion invariant L3 exists to prevent.
+ */
+MZ_EXPORT int mz_stext_json(mz_ctx *c, mz_doc *d, int number, int flags,
+                            char *out_buf, int buf_len, double *needed_out)
+{
+    fz_stext_page *text = NULL;
+    fz_buffer *buf = NULL;
+    fz_output *out = NULL;
+    fz_stext_options opts;
+    unsigned char *data = NULL;
+    size_t len = 0;
+
+    if (c == NULL || d == NULL || out_buf == NULL || buf_len <= 0 || needed_out == NULL)
+        return MZ_ERR;
+
+    memset(&opts, 0, sizeof(opts));
+    opts.flags = flags;
+
+    /* All three are assigned inside the try and read from fz_always or
+     * fz_catch, so all three take fz_var — the rule in this file's header, and
+     * the failure it describes is a silent leak rather than a crash. */
+    fz_var(text);
+    fz_var(buf);
+    fz_var(out);
+
+    fz_try(c->fz) {
+        text = fz_new_stext_page_from_page_number(c->fz, d->doc, number, &opts);
+        buf = fz_new_buffer(c->fz, 4096);
+        out = fz_new_output_with_buffer(c->fz, buf);
+        fz_print_stext_page_as_json(c->fz, out, text, 1.0f);
+        fz_close_output(c->fz, out);
+        len = fz_buffer_storage(c->fz, buf, &data);
+    }
+    fz_always(c->fz) {
+        fz_drop_output(c->fz, out);
+    }
+    fz_catch(c->fz) {
+        fz_drop_buffer(c->fz, buf);
+        fz_drop_stext_page(c->fz, text);
+        mz_record(c);
+        return MZ_ERR;
+    }
+
+    *needed_out = (double)len;
+    {
+        size_t room = (size_t)buf_len - 1;
+        size_t take = (len < room) ? len : room;
+        if (data != NULL && take > 0)
+            memcpy(out_buf, data, take);
+        out_buf[take] = '\0';
+    }
+
+    fz_drop_buffer(c->fz, buf);
+    fz_drop_stext_page(c->fz, text);
+    return MZ_OK;
+}
