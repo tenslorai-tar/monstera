@@ -179,6 +179,20 @@ export interface BrowserShimOptions {
   }[];
 
   /**
+   * What a page holds, for `document.searchPage` to search.
+   *
+   * **Lines rather than matches**, so the shim searches rather than agreeing
+   * with whatever a test expected. A shim answering canned matches would let a
+   * UI test pass against a renderer that sent the wrong query, the wrong page,
+   * or no query at all — which is the display-only defect wearing a green
+   * check, and the exact thing the wired-tools pair exists to catch.
+   *
+   * Indexed by page, so a test can put its needle on page 2 and assert the
+   * renderer asked for page 2. A page with no entry holds no text.
+   */
+  readonly pageLines?: readonly (readonly string[])[];
+
+  /**
    * What a previous run stored, as `settings.load` will answer it.
    *
    * A fixture rather than something a test writes first through
@@ -268,6 +282,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   // Copied for the reason the opens queue is copied: this one is consumed, and
   // a test holding the array it seeded would watch it empty underneath.
   const viewModels = [...(options.viewModels ?? [])];
+  const pageLines = options.pageLines ?? [];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -442,6 +457,46 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // written around.
       const model = viewModels.length > 1 ? (viewModels.shift() ?? FLAT) : (viewModels[0] ?? FLAT);
       return Promise.resolve(ok({ version: asDocVersion(current), ...model }));
+    },
+
+    /**
+     * SEARCHES, rather than answering canned matches.
+     *
+     * A shim that returned a fixed list would agree with a renderer that sent
+     * the wrong page, the wrong query, or a query it never built — and the UI
+     * half of the wired pair would go green over a control dispatching into the
+     * void. So the needle is actually looked for, in lines the test supplied.
+     *
+     * The matching rule is `findInPages`' own — case-insensitive, overlapping
+     * occurrences counted — because a second rule here would make a UI test
+     * that passes say nothing about the kernel that ships (B3a).
+     */
+    'document.searchPage': ({ docId, page, query, limit }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const lines = pageLines[page] ?? [];
+      const needle = query.toLowerCase();
+      const found: { line: number; offset: number; text: string }[] = [];
+      for (const [line, text] of lines.entries()) {
+        const haystack = text.toLowerCase();
+        for (let from = 0; ; ) {
+          const offset = haystack.indexOf(needle, from);
+          if (offset < 0) break;
+          found.push({ line, offset, text });
+          from = offset + 1;
+        }
+      }
+
+      return Promise.resolve(
+        ok({
+          version: asDocVersion(current),
+          matches: found.slice(0, limit),
+          // The same one-past-the-limit rule the kernel uses, so a shim answer
+          // and a real one disagree about nothing a test could come to rely on.
+          truncated: found.length > limit,
+        }),
+      );
     },
 
     // SETTINGS SURVIVE WITHIN ONE SHIM, and do not survive constructing another.

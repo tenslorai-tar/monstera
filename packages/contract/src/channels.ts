@@ -75,6 +75,40 @@ export const MAX_RANGE_BYTES = 16 * 1024 * 1024;
  * what that surface draws — not a larger round number.
  */
 export const MAX_VIEW_MODEL_PAGES = 512;
+
+/**
+ * How many matches one page's search may answer with.
+ *
+ * L11's mechanism for the search channel, and it needs the bound more plainly
+ * than its two siblings do: a common word in a dense page produces a result
+ * list that scales with the *content*, and across a document-wide search that
+ * is document-scaled by another name.
+ *
+ * **The caller states its own limit and this is the ceiling on it**, so
+ * *exhausted* and *truncated* stay distinguishable — a bound applied silently
+ * would make "no more matches" and "the cap was reached" the same observation
+ * for every caller. `truncated` in the result is what separates them.
+ *
+ * 512 for the same reason `MAX_VIEW_MODEL_PAGES` is: any constant satisfies the
+ * invariant, so the only real constraint is the lower one, and no results
+ * surface shows more than a screenful before the user narrows the query.
+ *
+ * **The trigger:** the first surface that legitimately needs more than this from
+ * one page is the evidence the bound is wrong, and the fix is a measurement of
+ * what that surface shows — not a larger round number.
+ */
+export const MAX_SEARCH_MATCHES = 512;
+
+/**
+ * The longest query this boundary will carry.
+ *
+ * Not an L11 bound — a query is the *renderer's* string and does not scale with
+ * the document — but a schema that accepted an unbounded one would let a
+ * renderer hand main an arbitrarily large allocation, and every other payload
+ * here is bounded. 512 is far above any search a person types and far below
+ * anything worth worrying about.
+ */
+export const MAX_QUERY_LENGTH = 512;
 export const channels = {
   'app.info': channel(
     'Version and install channel of the running application.',
@@ -506,6 +540,72 @@ export const channels = {
        * fixture anyone reaches for first.
        */
       rotations: z.array(z.number().int().nonnegative()).readonly(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Matches for one page, in the reading order the text substrate produced.
+   *
+   * ## ONE PAGE PER OPERATION, and that is L11 and §9.17 together
+   *
+   * A document-wide search is this channel called once per page, by the
+   * renderer, which is the design rather than a cost to reduce later
+   * ([ADR-0035](../../../docs/DECISIONS/0035-extracted-text-is-never-resident-in-main.md)).
+   * Measured 2026-09-02: a text-heavy document's extracted text is **3.59× the
+   * file size**, so `main` holding it — even transiently, since the budget is a
+   * peak — is over twice its whole multiple before the canonical bytes it
+   * already holds. Reading a page at a time bounds what is resident by the
+   * largest page rather than by the document.
+   *
+   * The row's *cancellable background indexing* needs a per-page grain to cancel
+   * at, so the shape the invariants force is also the shape the feature wants.
+   *
+   * ## `page` is ZERO-BASED, like every other page index that crosses here
+   *
+   * PDF.js numbers from 1. A renderer holds both and has already sent the wrong
+   * one once — see `document.viewModel`'s note, which is the same trap and the
+   * reason `SHOWN_PAGE` exists. A match's `page` comes back in the frame it went
+   * out in, so nothing here changes numbering scheme mid-channel.
+   */
+  'document.searchPage': channel(
+    'Matches for a query on one page, in reading order, bounded by the caller.',
+    z.object({
+      docId: docIdSchema,
+      page: z.number().int().nonnegative(),
+      /**
+       * Refused when empty, at the boundary rather than in the kernel.
+       *
+       * Every position matches an empty query, so the honest answers are a
+       * page-sized result list and a silent zero, and both are wrong. A renderer
+       * with an empty search box has not asked a question yet.
+       */
+      query: z.string().min(1).max(MAX_QUERY_LENGTH),
+      limit: z.number().int().positive().max(MAX_SEARCH_MATCHES),
+    }),
+    z.object({
+      version: docVersionSchema,
+      matches: z
+        .array(
+          z.object({
+            /** Index within this page's reading order, not a visual row. */
+            line: z.number().int().nonnegative(),
+            /** Offset within the line, in UTF-16 code units. */
+            offset: z.number().int().nonnegative(),
+            /** The line the match sits in, so a result needs no second call. */
+            text: z.string(),
+          }),
+        )
+        .max(MAX_SEARCH_MATCHES)
+        .readonly(),
+      /**
+       * Whether the limit stopped the search rather than the page running out.
+       *
+       * **The whole reason the limit is a parameter.** Without this a caller
+       * cannot tell *this page holds four matches* from *you asked for four*,
+       * and a results surface would silently stop paging.
+       */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

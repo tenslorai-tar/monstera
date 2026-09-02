@@ -45,6 +45,17 @@ const handlers: ContractHandlers = {
   // a flat document produce alike.
   'document.viewModel': () =>
     Promise.resolve(ok({ version: asDocVersion(1), pageCount: 2, rotations: [0, 90] })),
+  // ONE MATCH AND `truncated: false`, so a case can assert what crossed rather
+  // than that something did. An empty list is the shape a dropped array and a
+  // page with no hits produce alike — and it is search's reassuring answer.
+  'document.searchPage': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        matches: [{ line: 2, offset: 7, text: 'a line holding the query' }],
+        truncated: false,
+      }),
+    ),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the

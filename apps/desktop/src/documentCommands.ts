@@ -9,10 +9,13 @@ import {
   type DeclaredCommands,
   type DocumentService,
   type PageGeometry,
+  type PageText,
   type SaveDependencies,
   type SaveOutcome,
   type SessionsByWriter,
+  type TextMatch,
   declaredCommands,
+  findInPages,
   saveDocument,
 } from '@monstera/kernel';
 import type { DocId, DocVersion } from '@monstera/shared';
@@ -299,6 +302,39 @@ export interface DocumentViewModel extends PageGeometry {
 }
 
 /**
+ * Reads one page's text, for the search that consumes it.
+ *
+ * The sibling of {@link DocumentGeometry} and injected for the same reason: a
+ * handler proof must be able to drive the channel without a parsed document, so
+ * this module names no engine.
+ *
+ * **One page, and the signature is where that is enforced.** Taking an array
+ * would put the whole of [ADR-0035](../../../docs/DECISIONS/0035-extracted-text-is-never-resident-in-main.md)
+ * back at each call site: a document's extracted text is 3.59× its bytes, which
+ * `main` may not hold even transiently. A parameter that cannot express *every
+ * page* is B5 over a rule somebody has to remember.
+ */
+export type DocumentPageText = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  page: number,
+) => Promise<PageText>;
+
+/** One page's matches, stamped with the version the lane read them at. */
+export interface PageSearchResult {
+  readonly version: DocVersion;
+  readonly matches: readonly TextMatch[];
+  /**
+   * Whether the limit stopped the search rather than the page running out.
+   *
+   * Carried rather than derived from `matches.length === limit`, which is the
+   * off-by-one that makes a page holding exactly `limit` matches look truncated
+   * for ever and a results surface page past the end of the document.
+   */
+  readonly truncated: boolean;
+}
+
+/**
  * What an applied mutation produced: the two scalars that describe the document
  * it left behind.
  *
@@ -327,6 +363,7 @@ export class DocumentCommands {
   readonly #engine: EngineSessionSource;
   readonly #save: SaveSource;
   readonly #geometry: DocumentGeometry;
+  readonly #pageText: DocumentPageText;
 
   constructor(
     documents: DocumentService,
@@ -334,12 +371,14 @@ export class DocumentCommands {
     engine: EngineSessionSource,
     save: SaveSource,
     geometry: DocumentGeometry,
+    pageText: DocumentPageText,
   ) {
     this.#documents = documents;
     this.#bus = bus;
     this.#engine = engine;
     this.#save = save;
     this.#geometry = geometry;
+    this.#pageText = pageText;
   }
 
   /**
@@ -387,6 +426,65 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       return this.#geometry(docId, sessions, pages);
+    });
+
+    return { version, ...value };
+  }
+
+  /**
+   * Searches one page, inside the document's lane.
+   *
+   * ## Every guard is `viewModel`'s, in the same order, and for its reasons
+   *
+   * Poison, then session, then the work. A search is a query and does not bump.
+   * A document the supervisor has stopped rebuilding for has no session to read
+   * text from, and answering a search with a plausible **empty result list**
+   * while refusing every command is the worse half of that pair: the user would
+   * be told their word is not in the document.
+   *
+   * The lane matters for the reason it matters for geometry. MuPDF's page tree
+   * is mutated in place, so a text read outside the lane can interleave with an
+   * `apply` and describe neither the document before the command nor the one
+   * after it.
+   *
+   * ## ONE PAGE, AND THE TEXT IS DROPPED WHEN THIS RETURNS
+   *
+   * ADR-0035: a document's extracted text is **3.59× its bytes**, measured, so
+   * `main` may not hold it — and the budget is a peak, so *transiently* is not
+   * an escape. The page's text lives for the length of this call and only the
+   * matches survive it. A document-wide search is the renderer calling this per
+   * page, which is also the grain the row's *cancellable background indexing*
+   * needs to cancel at.
+   *
+   * @param page the zero-based index, as every page index crossing the contract
+   *   is. PDF.js numbers from 1 and this build has already sent the wrong one
+   *   once; `SHOWN_PAGE` is where the two meet.
+   * @param limit the caller's own bound. Stated rather than defaulted, so
+   *   `truncated` can separate *the page ran out* from *you asked for this many*.
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async searchPage(
+    docId: DocId,
+    page: number,
+    query: string,
+    limit: number,
+  ): Promise<PageSearchResult> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      const text = await this.#pageText(docId, sessions, page);
+      // ASKED FOR ONE MORE THAN THE LIMIT, which is what makes `truncated`
+      // honest: a page holding exactly `limit` matches is not truncated, and
+      // `matches.length === limit` cannot tell that from a page holding more.
+      const found = findInPages([text], query, { limit: limit + 1 });
+      return {
+        matches: found.slice(0, limit).map((match) => ({ ...match, page })),
+        truncated: found.length > limit,
+      };
     });
 
     return { version, ...value };

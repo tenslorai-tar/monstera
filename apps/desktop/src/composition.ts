@@ -11,6 +11,7 @@ import {
   DocumentNotOpenError,
   DocumentService,
   EngineOpenFailed,
+  type HostPageTextReader,
   type HostTermination,
   type PageGeometryReader,
   type ProbeTarget,
@@ -21,7 +22,9 @@ import {
   createRemoteSessions,
   engineChannels,
   nodeFileSurface,
+  parsePageText,
   remoteMupdfGeometry,
+  remoteMupdfPageText,
   remoteMupdfWriter,
   siblingNames,
 } from '@monstera/kernel';
@@ -326,6 +329,17 @@ export function createShellDependencies(
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return engineHost.geometry(session, pages);
+  },
+  // THE TEXT READ, composed here for the geometry read's reason and PARSED
+  // here for a different one: `parsePageText` is the one reader of MuPDF's
+  // format (§3.2) and it must not run in the host, so the host answers with a
+  // string and main turns it into a page. ADR-0035 is why only one page can be
+  // asked for — a document's extracted text is 3.59× its bytes, which main may
+  // not hold even transiently.
+  async (docId, sessions, page) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return parsePageText(await engineHost.pageText(session, page));
   });
 
   const openedDocument = engineHost.openedDocument;
@@ -412,6 +426,8 @@ function engineSessionOpener(
   readonly openedDocument: (docId: DocId) => void;
   readonly writers: WriterRegistry;
   readonly geometry: PageGeometryReader;
+  /** One page's structured text as MuPDF's JSON, from whichever host is live. */
+  readonly pageText: HostPageTextReader;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -513,6 +529,28 @@ function engineSessionOpener(
   };
 
   /**
+   * One page's text, bound to whichever host is live.
+   *
+   * The geometry reader's sibling, late-bound through its own holder for the
+   * same reason and refusing on `null` for the same one — a session was
+   * resolved, so a host issued it, and a divergence says so rather than
+   * answering with an empty page. **An empty page is what search reads as *your
+   * word is not in this document*,** which is the worst answer available here.
+   */
+  let pageText: HostPageTextReader | null = null;
+
+  const readPageTextThroughHost: HostPageTextReader = (session, page) => {
+    if (pageText === null) {
+      throw new Error(
+        'A text read reached the engine with no host text reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return pageText(session, page);
+  };
+
+  /**
    * Tokens are minted from handles ONE host issued, and
    * `createRemoteSessions`' own words are that they are *"not transferable
    * between hosts"*. So the registry is rebuilt with the host rather than held
@@ -553,8 +591,12 @@ function engineSessionOpener(
         writer = null;
         // AND THE GEOMETRY READER, for the same reason and by the same
         // divergence: one left bound to a dead host answers a view-model read
-        // from a client that has already settled every call.
+        // from a client that has already settled every call. The text reader is
+        // cleared beside it and never separately — two readers on one host that
+        // are cleared at different moments is the divergence they exist to
+        // refuse, one layer down.
         geometry = null;
+        pageText = null;
         void onEngineHostEnded(sessions, termination, {
           documents,
           failures,
@@ -614,6 +656,7 @@ function engineSessionOpener(
     const client = createClient(engineChannels, live.value.client.invoke);
     writer = remoteMupdfWriter(client, remote, sessionAreas(platform));
     geometry = remoteMupdfGeometry(client, remote);
+    pageText = remoteMupdfPageText(client, remote);
     return live.value;
   };
 
@@ -752,12 +795,20 @@ function engineSessionOpener(
     host = null;
     writer = null;
     geometry = null;
+    pageText = null;
     if (live === null) return;
     const connection = await live.catch(() => null);
     connection?.close();
   };
 
-  return { openedDocument, writers, geometry: readGeometry, closeHost, rebuildSessions: create };
+  return {
+    openedDocument,
+    writers,
+    geometry: readGeometry,
+    pageText: readPageTextThroughHost,
+    closeHost,
+    rebuildSessions: create,
+  };
 }
 
 /**

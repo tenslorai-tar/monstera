@@ -95,6 +95,7 @@ export {
 export {
   type HostContainmentProbe,
   type HostFilesystem,
+  type HostPageTextReader,
   type HostSession,
   type HostSessions,
   createEngineHandlers,
@@ -119,6 +120,7 @@ export {
   createRemoteSessions,
   remoteMupdfExecution,
   remoteMupdfGeometry,
+  remoteMupdfPageText,
 } from './host/remoteEngine.js';
 export {
   type CanonicalPath,

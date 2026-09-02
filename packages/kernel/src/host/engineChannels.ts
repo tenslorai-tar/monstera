@@ -82,6 +82,26 @@ export const ENGINE_SESSION_ID_MAX_CHARS = 64;
  */
 export const ENGINE_GEOMETRY_MAX_PAGES = 512;
 
+/**
+ * How large one page's structured-text payload may be.
+ *
+ * **The host is hostile by invariant 25's own premise**, so an unbounded string
+ * here is a peer choosing how many bytes of our frame it spends — the argument
+ * `ENGINE_SESSION_ID_MAX_CHARS` already makes, applied to the one payload on
+ * this contract whose size follows a document's content.
+ *
+ * 8 MB against a measured page. `scripts/research/textRetention.mjs` reads a
+ * dense 50-line page at roughly 8 KB of JSON, so this is three orders of
+ * magnitude above the shape it was measured on — the lower bound is the real
+ * constraint, exactly as it is for `MAX_RANGE_BYTES`, because a bound that
+ * refuses a page a working viewer must render stops being a guard.
+ *
+ * **The trigger:** the first page refused by this is the evidence the bound is
+ * wrong, and the fix is a measurement of what such a page contains — not a
+ * larger round number.
+ */
+export const ENGINE_PAGE_TEXT_MAX_BYTES = 8 * 1024 * 1024;
+
 const sessionSchema = z.string().min(1).max(ENGINE_SESSION_ID_MAX_CHARS);
 
 /**
@@ -351,6 +371,60 @@ export const engineChannels = {
               }),
           )
           .readonly(),
+      })
+      .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * One page's text, structured, from the process that holds the session.
+   *
+   * ## Why it is a channel, and why it carries text rather than matches
+   *
+   * The same reason geometry is: main holds bytes and never parses, so only the
+   * host can answer. It carries the page's **text** rather than a query's
+   * matches because searching is not the engine's concern — the substrate's
+   * reading order is what search consumes, and putting a query here would make
+   * the host stateful about something that is not a document
+   * ([ADR-0035](../../../../docs/DECISIONS/0035-extracted-text-is-never-resident-in-main.md)
+   * rejects a per-search cache in the host for that reason).
+   *
+   * ## ONE PAGE, and the singular is the L11 mechanism
+   *
+   * A page array here would let a caller ask for the document, which is exactly
+   * what ADR-0035 forbids main to hold: measured, a text-heavy document's
+   * extracted text is 3.59× its bytes. Geometry can carry a bounded window
+   * because a rotation is one number; a page's text is unbounded by the page's
+   * content, so the only honest bound is *one page*, and a schema that cannot
+   * express more is B5 over a limit somebody has to remember.
+   *
+   * ## The payload is MuPDF's own JSON, unparsed
+   *
+   * `parsePageText` is the one reader of it (§3.2), and it lives main-side so
+   * the host ships no opinion about the structure. Re-serialising a parsed shape
+   * here would be a second format for the same answer, and the frame would then
+   * describe a tree this build invented rather than the one MuPDF computed.
+   */
+  'engine/page-text': channel(
+    'Reads one page’s structured text from a session this host holds.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based index, as `commands.ts` declares them. */
+        page: z.number().int().nonnegative(),
+      })
+      .strict(),
+    z
+      .object({
+        /**
+         * MuPDF's structured-text JSON for that page.
+         *
+         * Bounded by {@link ENGINE_PAGE_TEXT_MAX_BYTES} rather than trusted: the
+         * host is hostile by invariant 25's own premise, and an unbounded string
+         * is a peer deciding how many bytes of our frame it spends — the same
+         * argument the session id and the correlation id already make.
+         */
+        json: z.string().max(ENGINE_PAGE_TEXT_MAX_BYTES),
       })
       .strict(),
     ['no-such-session'],

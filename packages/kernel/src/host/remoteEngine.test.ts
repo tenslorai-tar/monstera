@@ -7,6 +7,7 @@ import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter, withDocument } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
+import { readPageTextJson } from '../pageText.js';
 import { engineChannels } from './engineChannels.js';
 import { type HostSession, createEngineHandlers } from './engineHandlers.js';
 import {
@@ -132,6 +133,9 @@ async function joined(): Promise<{
       // crossed — which a stub cannot answer without becoming the thing under
       // test.
       readPageGeometry,
+      // THE REAL READER for the same reason, so the text case below is about
+      // what the HOST's document says rather than what a stub was told to say.
+      readPageTextJson,
     ),
     (incident) => incidents.push(incident),
   );
@@ -375,6 +379,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         () => {
           throw new Error('unused');
         },
+        () => {
+          throw new Error('unused');
+        },
       ),
       (incident) => incidents.push(incident),
     );
@@ -437,6 +444,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         // page 0 answers a raw 45 and page 1 a legal quarter turn.
         (_held, pages) =>
           Promise.resolve({ pageCount: 3, rotations: pages.map((page) => (page === 0 ? 45 : 90)) }),
+        () => {
+          throw new Error('the rotation-refusal case must not read page text');
+        },
       ),
       (incident) => incidents.push(incident),
     );

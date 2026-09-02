@@ -7,6 +7,20 @@ import type { ContainmentProbePaths, ContainmentReport } from './containment.js'
 import type { EngineChannels } from './engineChannels.js';
 
 /**
+ * Reads one page's structured text as MuPDF's own JSON.
+ *
+ * Injected rather than imported for {@link PageGeometryReader}'s reason: a
+ * handler proof must be able to drive this channel without a parsed document,
+ * and `packages/kernel` is the host body — so its proofs must not need a native
+ * library to decide whether a handler is correct.
+ *
+ * **The JSON is not parsed here.** `parsePageText` is the one reader of that
+ * format and it lives main-side, so nothing in the hostile process holds an
+ * opinion about the structure MuPDF computed.
+ */
+export type HostPageTextReader = (session: MupdfSession, page: number) => Promise<string>;
+
+/**
  * The engine host's side of Decision 10: it looks the spec up and calls it
  * against a session **it** holds.
  *
@@ -98,6 +112,7 @@ export function createEngineHandlers(
   files: HostFilesystem,
   probe: HostContainmentProbe,
   geometry: PageGeometryReader,
+  pageText: HostPageTextReader,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -207,6 +222,21 @@ export function createEngineHandlers(
       // an index outside the document, which is a caller that has lost track of
       // the page count rather than a state to report.
       return { ok: true, value: await geometry(held.session, pages) };
+    },
+
+    'engine/page-text': async ({ session, page }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // NO try/catch, for `engine/page-geometry`'s reason: a text read of a
+      // document the adapter already parsed either works or is a defect,
+      // including a page index outside it.
+      //
+      // THE JSON IS PASSED THROUGH UNPARSED. Parsing here would put a second
+      // reader of MuPDF's format in the hostile process and re-serialise a
+      // shape this build invented; `parsePageText` main-side is the one reader
+      // (§3.2), and the schema's size bound is what makes the string safe to
+      // carry rather than trust.
+      return { ok: true, value: { json: await pageText(held.session, page) } };
     },
 
     'engine/apply': async ({ session, command }) => {

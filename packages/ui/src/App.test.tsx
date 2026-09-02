@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
-import { act, render as renderBare, screen } from '@testing-library/react';
+import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -11,6 +11,7 @@ import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { THEME_SETTING } from './settings/appearance.js';
+import { SHOWN_PAGE } from './shownPage.js';
 import { SettingsStore } from './settingsStore.js';
 
 /**
@@ -433,6 +434,101 @@ describe('App', () => {
       const asked = sent.filter((call) => call.id === 'document.viewModel');
       expect(asked).not.toHaveLength(0);
       expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0] });
+    });
+
+    /**
+     * The UI half of SEARCH's wired pair.
+     *
+     * The kernel half lives in `apps/desktop/src/documentCommands.test.ts` and
+     * says a search finds text that is really in a document. This says a person
+     * can reach it: type, submit, and `document.searchPage` goes out with the
+     * query that was typed and the page that is on screen.
+     *
+     * Neither half alone counts. A field that dispatched into a handler
+     * answering nothing would pass this; a command that searched perfectly with
+     * no way to invoke it would pass the other.
+     */
+    it('the FIND control sends the typed query for the page on screen', async () => {
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.searchPage': {
+          version: asDocVersion(1),
+          matches: [{ line: 1, offset: 4, text: 'the needle sits here' }],
+          truncated: false,
+        },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      const field = screen.getByLabelText('Find on this page');
+      await act(async () => {
+        fireEvent.change(field, { target: { value: 'needle' } });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Search this page' }).click();
+        await Promise.resolve();
+      });
+
+      // THE PARAMS, not the channel. A bar that sent an empty query, or the
+      // wrong page, dispatches `document.searchPage` exactly as correctly as one
+      // that searches — which is the whole reason this asserts four fields.
+      const searched = sent.filter((call) => call.id === 'document.searchPage');
+      expect(searched).toHaveLength(1);
+      expect(searched[0]?.params).toStrictEqual({
+        docId: DOC,
+        page: SHOWN_PAGE.kernel,
+        query: 'needle',
+        limit: 100,
+      });
+
+      // AND THE CORRESPONDENCE, taken from the same object the surface takes it
+      // from rather than written as `0` here. Three numbers cross this boundary
+      // — a page, a line and an offset — and only the page changes meaning on
+      // the other side; asserting a literal would pin the constant instead of
+      // the property, which is exactly how the rotate shipped wrong.
+      const asked = sent.filter((call) => call.id === 'document.viewModel');
+      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [SHOWN_PAGE.kernel] });
+
+      // The matched line reaches the screen, so this is not a dispatch into a
+      // void that happens to be well formed.
+      expect(screen.getByText('the needle sits here')).toBeDefined();
+    });
+
+    it('CONTROL: an empty query dispatches NOTHING', async () => {
+      // Without this the case above passes for a bar that searches on every
+      // render, or on focus — and an empty query is the state the box starts in,
+      // so that bar would search the document before the user typed anything.
+      const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Search this page' }).click();
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.searchPage')).toStrictEqual([]);
+    });
+
+    it('the find CHORD takes the caret to the field the bar renders', async () => {
+      // The command's whole effect, asserted as the effect rather than as a
+      // dispatch: `document.find` sends no channel, so a case counting calls
+      // would find none and prove nothing.
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      expect(document.activeElement).not.toBe(screen.getByLabelText('Find on this page'));
+
+      await act(async () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, cancelable: true }),
+        );
+        await Promise.resolve();
+      });
+
+      expect(document.activeElement).toBe(screen.getByLabelText('Find on this page'));
     });
 
     /*

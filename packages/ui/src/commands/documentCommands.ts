@@ -6,7 +6,7 @@ import type { z } from 'zod';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
-import { ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
+import { FIND_TITLE, ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
 import { SHOWN_PAGE } from '../shownPage.js';
 
@@ -155,6 +155,48 @@ function hasDocument(context: CommandContext): boolean {
  * the property that makes a single control sufficient — a rotate-left beside it
  * would be a second registration and is one, when somebody wants it.
  */
+/**
+ * Sends the user to the find bar.
+ *
+ * ## Why this command does not search
+ *
+ * A search needs a query, and a registered command's `run(context)` takes the
+ * application's state and no arguments — which is right: a command is invoked by
+ * a toolbar, a chord and a palette alike, and none of them can supply a string.
+ * So the string belongs to a surface and this command's whole job is to put the
+ * caret in it. `FindBar` is what searches, and its own dispatch is asserted
+ * separately.
+ *
+ * **That makes this a control with a real effect rather than a stub**: focus
+ * moves, observably, which is what `Ctrl+F` means in every application this one
+ * replaces. A command that opened a search panel that then did nothing would be
+ * the display-only sin; this one hands off to a surface that works.
+ *
+ * ## Focus by attribute, not by a ref through the registry
+ *
+ * A command reaching into a component's internals would be the second wiring
+ * place the registry exists to forbid — the registry would then carry both a
+ * command and a handle to the thing it acts on. `data-find-input` is the
+ * surface's own contract with the document, and the query selector is the whole
+ * of it.
+ */
+export function findCommand(): UiCommand {
+  return {
+    id: 'document.find',
+    title: FIND_TITLE,
+    shortcut: 'Ctrl+F',
+    placements: [{ surface: 'quick-toolbar', order: 40 }],
+    when: hasDocument,
+    run: (): void => {
+      const field = document.querySelector('[data-find-input]');
+      // `instanceof` rather than a cast: the selector is a string and the
+      // element it finds is whatever the DOM holds, so a surface that renamed
+      // its input leaves this doing nothing rather than throwing at a user.
+      if (field instanceof HTMLInputElement) field.focus();
+    },
+  };
+}
+
 export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.rotate-page',

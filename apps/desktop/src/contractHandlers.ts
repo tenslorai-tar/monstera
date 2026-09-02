@@ -128,6 +128,7 @@ export function createContractHandlers(deps: {
     'document.save': saveHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
+    'document.searchPage': searchPageHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
     // runs `migrate` and falls back per setting; a schema here would be this
@@ -291,6 +292,44 @@ function viewModelHandler(commands: DocumentCommands): ContractHandlers['documen
   }): Promise<Awaited<ReturnType<ContractHandlers['document.viewModel']>>> => {
     try {
       return ok(await commands.viewModel(docId, pages));
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Searches one page, refusing in exactly the cases a command refuses.
+ *
+ * The same three codes and the same reason {@link viewModelHandler} gives, and
+ * the asymmetry it prevents is sharper here: a search that answered while every
+ * command was refused would tell the user their word is **not in the
+ * document**. There is no reading of an empty result list a caller can tell
+ * from a real one.
+ *
+ * **The matches are stripped of their `page` on the way out.** The kernel stamps
+ * each with the page it searched; the channel's caller named that page in the
+ * request and gets it back unchanged, so carrying it per match would put the
+ * same number on the wire once per hit — small, and still a payload growing
+ * with the result set for no information (L11's habit, if not its letter).
+ */
+function searchPageHandler(commands: DocumentCommands): ContractHandlers['document.searchPage'] {
+  return async ({
+    docId,
+    page,
+    query,
+    limit,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.searchPage']>>> => {
+    try {
+      const { version, matches, truncated } = await commands.searchPage(docId, page, query, limit);
+      return ok({
+        version,
+        matches: matches.map(({ line, offset, text }) => ({ line, offset, text })),
+        truncated,
+      });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

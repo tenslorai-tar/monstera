@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { PDFDocument } from '@cantoo/pdf-lib';
+import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Command, channels, type Incident, wrapHandler, IncidentLog } from '@monstera/contract';
@@ -21,6 +21,7 @@ import {
   localMupdfWriter,
   mupdfWriter,
   readPageGeometry,
+  readPageText,
   withDocument,
 } from '@monstera/kernel/engine';
 import type { DocId } from '@monstera/shared';
@@ -33,6 +34,7 @@ import { createContractHandlers } from './contractHandlers.js';
 import {
   DocumentCommands,
   type DocumentGeometry,
+  type DocumentPageText,
   DocumentPoisonedError,
   MissingSessionError,
   type SaveSource,
@@ -177,6 +179,27 @@ const localGeometry: DocumentGeometry = (id, sessions, pages) => {
   return readPageGeometry(held, pages);
 };
 
+/** Refuses, for {@link noGeometry}'s reason: a case must say it reads text. */
+const noPageText: DocumentPageText = () =>
+  Promise.reject(new Error('this case does not read page text'));
+
+/**
+ * The production composition of the text read, the way `composition.ts`
+ * assembles it — a session lookup and `readPageText`.
+ *
+ * The real reader rather than a stub answering plausible lines: what the search
+ * cases below claim is that a query finds what is IN the document, and a stub
+ * is the one thing that cannot say so.
+ */
+const localPageText: DocumentPageText = async (id, sessions, page) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  const { pages } = await readPageText(held, [page]);
+  const only = pages[0];
+  if (only === undefined) throw new Error('one page was requested');
+  return only;
+};
+
 /** Every page of the three-page fixture, in order. */
 const ALL_PAGES = [0, 1, 2];
 
@@ -184,7 +207,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   beforeAll(openDocument);
 
   it('applies the command and returns the version the LANE stamped', async () => {
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText);
 
     // Opened at 1; one applied mutation makes it 2 (ADR-0009 §5).
     const applied = await commands.execute(docId, rotateOnce);
@@ -231,7 +254,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // before either applies and BOTH inverses record the pre-command state —
     // so undoing twice would leave the page at 90 rather than back where it
     // started, and the document would be in a state it was never in.
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText);
 
     await Promise.all([commands.execute(docId, rotateOnce), commands.execute(docId, rotateOnce)]);
 
@@ -260,7 +283,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   });
 
   it('a session that cannot be found is a DEFECT, not an outcome', async () => {
-    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry, noPageText);
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(MissingSessionError);
   });
@@ -281,7 +304,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     poisoned.recordFailure([docId], 'host-death');
     poisoned.recordFailure([docId], 'host-death');
 
-    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, noGeometry, noPageText);
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(DocumentPoisonedError);
   });
@@ -290,7 +313,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // Without this the case above is satisfied by an `execute` that refuses
     // everything, and by a supervisor whose `poisoned` answers a count for a
     // document it has never heard of.
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText);
 
     const applied = await commands.execute(docId, rotateOnce);
     expect(applied.version).toBeGreaterThan(0);
@@ -301,7 +324,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   beforeAll(openDocument);
 
   it('reports the geometry the session holds, stamped with the lane version', async () => {
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText);
 
     const model = await commands.viewModel(docId, ALL_PAGES);
 
@@ -311,7 +334,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   });
 
   it('THE CLAIM: a rotate moves the view model while the BYTE ROUTE reports nothing', async () => {
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText);
 
     const before = await commands.viewModel(docId, ALL_PAGES);
     const applied = await commands.execute(docId, rotateOnce);
@@ -337,7 +360,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
     poisoned.recordFailure([docId], 'host-death');
     poisoned.recordFailure([docId], 'host-death');
 
-    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry);
+    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry, localPageText);
 
     // The asymmetry this rejects: refusing every command while answering reads
     // would draw a document nobody can act on, and a plausible-looking model is
@@ -346,7 +369,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   });
 
   it('a document with no session is a DEFECT here, as it is for a command', async () => {
-    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry);
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry, localPageText);
 
     await expect(commands.viewModel(docId, ALL_PAGES)).rejects.toThrow(MissingSessionError);
   });
@@ -376,7 +399,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
   it('a document that is not open is a DECLARED code, carrying no incident id', async () => {
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const commands = new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry);
+    const commands = new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry, noPageText);
     const result = await wrapped(commands)({ docId, command: rotateOnce });
 
     // The whole failure, asserted as a whole: a declared outcome hides nothing,
@@ -388,7 +411,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // Without this, the case above is satisfied by a handler that reports
     // `document-not-open` for everything.
     const { sink, seen } = recorder();
-    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry, noPageText);
     const result = await wrapped(commands, sink)({ docId, command: rotateOnce });
 
     expect(result.ok).toBe(false);
@@ -435,7 +458,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       poisoned.hold(docId, { mupdf: session });
       poisoned.recordFailure([docId], 'host-death');
       poisoned.recordFailure([docId], 'host-death');
-      const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry);
+      const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry, localPageText);
 
       const result = await wrappedRead(commands)({ docId, pages: [0] });
 
@@ -446,7 +469,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // Without this, the case above is satisfied by a handler that refuses
       // everything — which would blank the renderer while looking like careful
       // error mapping.
-      const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry);
+      const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText);
 
       const result = await wrappedRead(commands)({ docId, pages: [0] });
 
@@ -458,7 +481,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
     it('a defect is `internal` with an id, so the two are not one bucket', async () => {
       const { sink, seen } = recorder();
-      const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry);
+      const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry, localPageText);
 
       const result = await wrappedRead(commands, sink)({ docId, pages: [0] });
 
@@ -498,7 +521,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           thrown.stack = `Error: Could not read ${SECRET}\n    at sessionFor (${SECRET}:2:2)`;
           throw thrown;
         },
-      }, noSaving, noGeometry);
+      }, noSaving, noGeometry, noPageText);
     }
 
     it('the renderer-facing failure carries the path in NO field', async () => {
@@ -539,7 +562,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // The hard shape an in-process test cannot see (audit item 2): the
     // transport clones, and a value carrying anything unclonable passes every
     // function call and dies at the first Electron call.
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText);
     const params = { docId, command: rotateOnce };
     expect(structuredClone(params)).toStrictEqual(params);
 
@@ -547,7 +570,9 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     expect(structuredClone(success)).toStrictEqual(success);
 
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const declined = await wrapped(new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry))(params);
+    const declined = await wrapped(
+      new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry, noPageText),
+    )(params);
     expect(structuredClone(declined)).toStrictEqual(declined);
   });
 
@@ -604,7 +629,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             if (held_ === undefined) throw new Error('the fixture holds a session');
             return mupdfWriter.serialise(held_);
           },
-        }, localGeometry),
+        }, localGeometry, localPageText),
       };
     }
 
@@ -658,5 +683,138 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // silently re-established at a path something else had removed.
       expect(existsSync(path)).toBe(false);
     });
+  });
+});
+
+/**
+ * The KERNEL half of search's wired pair (`CLAUDE.md`'s wired-tools rule).
+ *
+ * A UI test can only say a control dispatched `document.searchPage`. What it
+ * cannot say is that the command finds text that is really in the document, in
+ * the order a reader meets it — and a search that dispatched perfectly into a
+ * handler answering nothing is the display-only sin one layer down.
+ *
+ * So these run against a **real MuPDF session over a real document whose text
+ * this file placed**, through the production composition: `DocumentCommands`,
+ * the real `EngineSessions`, and `readPageText` behind `localPageText`.
+ */
+describe('search is E2s first consumer, through the composition point', () => {
+  /** Two pages, with the needle only on the second. */
+  const PAGE_LINES = [
+    ['alpha on the first page', 'beta on the first page'],
+    ['gamma on the second page', 'the needle sits here', 'delta on the second page'],
+  ];
+
+  let searchable: DocId;
+  let searchSession: MupdfSession;
+  let searchService: DocumentService;
+
+  beforeAll(async () => {
+    const document = await PDFDocument.create();
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    for (const lines of PAGE_LINES) {
+      const sheet = document.addPage([612, 792]);
+      for (const [index, text] of lines.entries()) {
+        sheet.drawText(text, { x: 72, y: 700 - index * 24, size: 12, font });
+      }
+    }
+    const bytes = await document.save({ useObjectStreams: false });
+
+    const path = join(directory, 'searchable.pdf');
+    writeFileSync(path, bytes);
+    const registry = new CapabilityRegistry();
+    searchService = new DocumentService(registry, { documentBytesCeiling: AMPLE_CEILING });
+    const outcome = await searchService.open(registry.mint(path));
+    if (outcome.kind !== 'opened') throw new Error(`Fixture did not open: ${outcome.kind}`);
+    searchable = outcome.docId;
+    searchSession = await mupdfWriter.open(bytes);
+  });
+
+  function searchCommands(): DocumentCommands {
+    const held = new EngineSessions();
+    held.hold(searchable, { mupdf: searchSession });
+    return new DocumentCommands(
+      searchService,
+      bus(),
+      held,
+      noSaving,
+      localGeometry,
+      localPageText,
+    );
+  }
+
+  it('finds text that is really in the document, on the page it is on', async () => {
+    const found = await searchCommands().searchPage(searchable, 1, 'needle', 10);
+
+    expect(found.matches).toHaveLength(1);
+    expect(found.matches[0]?.text).toBe('the needle sits here');
+    // The page comes back stamped with the page that was searched, so a caller
+    // holding results from several pages needs no bookkeeping of its own.
+    expect(found.matches[0]?.page).toBe(1);
+    expect(found.matches[0]?.line).toBe(1);
+    expect(found.truncated).toBe(false);
+  });
+
+  it('CONTROL: the same query on the page WITHOUT it finds nothing', async () => {
+    // Without this, the case above passes for a search that ignores its page
+    // argument and scans the document — which is precisely what ADR-0035
+    // forbids and what a page-at-a-time channel exists to prevent.
+    const found = await searchCommands().searchPage(searchable, 0, 'needle', 10);
+    expect(found.matches).toStrictEqual([]);
+  });
+
+  it('stamps the version the LANE read at, as every query here does', async () => {
+    const found = await searchCommands().searchPage(searchable, 1, 'needle', 10);
+    expect(found.version).toBeGreaterThan(0);
+  });
+
+  it('reports truncation, and does NOT report it for a page holding exactly the limit', async () => {
+    // THE OFF-BY-ONE THIS PAIR EXISTS FOR. `matches.length === limit` cannot
+    // tell a full page from a truncated one, so a results surface built on it
+    // pages past the end of the document for ever.
+    const commands = searchCommands();
+
+    // 'the' appears on both lines 0 and 2 of page 1, and in 'the needle sits
+    // here' — three occurrences, so a limit of 3 is exactly full.
+    const exact = await commands.searchPage(searchable, 1, 'the', 3);
+    expect(exact.matches).toHaveLength(3);
+    expect(exact.truncated).toBe(false);
+
+    const cut = await commands.searchPage(searchable, 1, 'the', 2);
+    expect(cut.matches).toHaveLength(2);
+    expect(cut.truncated).toBe(true);
+  });
+
+  it('REFUSES a page outside the document rather than answering with no matches', async () => {
+    // An empty result list is what a user reads as "your word is not in this
+    // document", so a bad page index must never produce one.
+    await expect(searchCommands().searchPage(searchable, 9, 'needle', 10)).rejects.toThrow(
+      RangeError,
+    );
+  });
+
+  it('refuses a poisoned document, as every command and query here does', async () => {
+    // Poisoned the way the supervisor poisons: two consecutive failures, which
+    // is Decision 9a's bound. Reaching for a shortcut here would test a state
+    // the real component cannot produce.
+    const poisonedHost = new EngineSessions();
+    poisonedHost.hold(searchable, { mupdf: searchSession });
+    poisonedHost.recordFailure([searchable], 'host-death');
+    poisonedHost.recordFailure([searchable], 'host-death');
+    const commands = new DocumentCommands(
+      searchService,
+      bus(),
+      poisonedHost,
+      noSaving,
+      localGeometry,
+      localPageText,
+    );
+
+    // The asymmetry this prevents: a search answering while every command is
+    // refused tells the user their word is absent from a document nobody can
+    // act on.
+    await expect(commands.searchPage(searchable, 1, 'needle', 10)).rejects.toBeInstanceOf(
+      DocumentPoisonedError,
+    );
   });
 });

@@ -40,6 +40,13 @@ export const HISTORY_TRIMMED_LOST = messageKey('dialog.history-trimmed.lost');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
+export const FIND_TITLE = messageKey('command.find.title');
+export const FIND_LABEL = messageKey('surface.find.label');
+export const FIND_SUBMIT = messageKey('surface.find.submit');
+export const FIND_MATCHES = messageKey('surface.find.matches');
+export const FIND_EMPTY = messageKey('surface.find.empty');
+export const FIND_TRUNCATED = messageKey('surface.find.truncated');
+export const FIND_REFUSED = messageKey('surface.find.refused');
 export const UNDO_TITLE = messageKey('command.undo.title');
 export const SAVE_TITLE = messageKey('command.save.title');
 export const DOCUMENT_TOOLS_LABEL = messageKey('surface.quick-toolbar.label');
@@ -83,6 +90,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a name that promised the document would be a name the behaviour contradicts
   // the moment there is a second page.
   [ROTATE_PAGE_TITLE]: 'Rotate page',
+  [FIND_TITLE]: 'Find',
+  [FIND_LABEL]: 'Find on this page',
+  // NOT 'Find', which is the toolbar command's title: two controls sharing an
+  // accessible name is one a screen-reader user cannot tell apart, and it was
+  // found by a test that could not tell them apart either.
+  [FIND_SUBMIT]: 'Search this page',
+  // A COUNT, because "found" without one cannot say whether narrowing the query
+  // helped, which is the user's next decision.
+  [FIND_MATCHES]: '{count} matches on this page',
+  // NOT "no results", which reads as a failure. The document was searched and
+  // the word is not on this page — which is an answer.
+  [FIND_EMPTY]: 'Nothing on this page matches.',
+  [FIND_TRUNCATED]: 'More matches than can be listed. Narrow the search.',
+  // The document was NOT searched, which is a different thing from finding
+  // nothing and must never render as it.
+  [FIND_REFUSED]: 'This page could not be searched just now.',
   [UNDO_TITLE]: 'Undo',
   [SAVE_TITLE]: 'Save',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',

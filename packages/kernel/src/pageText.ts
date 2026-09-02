@@ -1,3 +1,5 @@
+import type * as mupdf from 'mupdf';
+
 import type { MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
 import { type PageText, STEXT_OPTION_STRING, parsePageText } from './textStructure.js';
@@ -57,20 +59,54 @@ export function readPageText(
       }
     }
 
-    const read = pages.map((number) => {
-      const structured = document.loadPage(number).toStructuredText(STEXT_OPTION_STRING);
-      try {
-        return parsePageText(structured.asJSON());
-      } finally {
-        // MuPDF's JS objects hold native memory that the finaliser frees on its
-        // own schedule. A page of text is small; a document-wide search is one
-        // per page, and the engine host's job object is what turns "eventually"
-        // into a breach. Dropped in `finally` so a parse failure does not leak
-        // the structure it failed to read.
-        structured.destroy();
-      }
-    });
+    const read = pages.map((number) => parsePageText(structuredJson(document, number)));
 
     return { pageCount, pages: read };
   });
+}
+
+/**
+ * One page's structured text as MuPDF's JSON, unparsed.
+ *
+ * **The host's reader** — `hostEntry.ts` hands this to the engine handlers, so
+ * the hostile process produces the payload and forms no opinion about it.
+ * `parsePageText` is the one reader of the format and it runs main-side (§3.2),
+ * which is what keeps a second interpretation of MuPDF's tree from existing.
+ *
+ * The page index is validated the same way {@link readPageText} validates its
+ * array: a page outside the document is a `RangeError`, never an empty answer,
+ * because empty is what a consumer reads as *no text here*.
+ */
+export function readPageTextJson(session: MupdfSession, page: number): Promise<string> {
+  return withDocument(session, (document) => {
+    const pageCount = document.countPages();
+    if (!Number.isInteger(page) || page < 0 || page >= pageCount) {
+      throw new RangeError(
+        `Page ${String(page)} is outside this document, which has ${String(pageCount)} ` +
+          'page(s). Page indices are zero-based.',
+      );
+    }
+    return structuredJson(document, page);
+  });
+}
+
+/**
+ * The one place a `StructuredText` is created and dropped.
+ *
+ * MuPDF's JS objects hold native memory the finaliser frees on its own
+ * schedule. A page of text is small; a document-wide search is one per page,
+ * and the engine host's job object is what turns *eventually* into a breach.
+ * Dropped in `finally`, so a failure between the call and the string does not
+ * leak the structure it failed to read.
+ *
+ * @param document the open document, inside a `withDocument`
+ * @param page a zero-based index the caller has already validated
+ */
+function structuredJson(document: mupdf.PDFDocument, page: number): string {
+  const structured = document.loadPage(page).toStructuredText(STEXT_OPTION_STRING);
+  try {
+    return structured.asJSON();
+  } finally {
+    structured.destroy();
+  }
 }

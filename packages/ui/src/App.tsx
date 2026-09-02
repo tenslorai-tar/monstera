@@ -10,7 +10,13 @@ import {
   type ReactElement,
 } from 'react';
 
-import { rotatePageCommand, saveCommand, undoCommand } from './commands/documentCommands.js';
+import {
+  findCommand,
+  rotatePageCommand,
+  saveCommand,
+  undoCommand,
+} from './commands/documentCommands.js';
+import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
@@ -112,6 +118,10 @@ export function App({ client, settings }: AppProps): ReactElement {
         rotatePageCommand({ client, onApplied: applied, show }),
         undoCommand({ client, onApplied: applied, show }),
         saveCommand({ client, show }),
+        // NO DEPS: it takes the caret to the find bar and searches nothing, so
+        // there is no client for it to hold. A command needing none is what a
+        // command that acts on a surface looks like.
+        findCommand(),
       ]),
     [applied, client, show],
   );
@@ -139,6 +149,10 @@ export function App({ client, settings }: AppProps): ReactElement {
       ) : (
         <PageCanvas client={client} document={open} onVersionMoved={setOpen} />
       )}
+      {/* E2's substrate, reached by a person. It renders nothing with no
+          document open, for `QuickToolbar`'s reason: a find field over no
+          document is a control that cannot work. */}
+      <FindBar client={client} docId={open?.docId} />
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
           each command placed on it declares `when`. */}

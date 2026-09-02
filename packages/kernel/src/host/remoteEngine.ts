@@ -5,6 +5,7 @@ import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { EngineChannels } from './engineChannels.js';
+import type { HostPageTextReader } from './engineHandlers.js';
 
 /**
  * Running commands against a session an engine host holds (ADR-0023 Decision
@@ -184,6 +185,33 @@ export function remoteMupdfGeometry(
       'engine/page-geometry',
       await client['engine/page-geometry']({ session: sessions.handleFor(session), pages }),
     );
+}
+
+/**
+ * Reading one page's structured text from the process that holds the session.
+ *
+ * {@link remoteMupdfGeometry}'s sibling, for the same reason and by the same
+ * split: text is a query, so it does not belong on the writer whose membership
+ * rule is *the bus calls this*.
+ *
+ * **It returns the JSON rather than a parsed page.** `parsePageText` runs in
+ * main, on a string this host produced, so there is exactly one reader of
+ * MuPDF's format in the application and none of it is in the hostile process.
+ *
+ * @param client the engine host's channels, through the contract's own
+ *   validating client — so a malformed answer is rejected at the boundary
+ *   wrapper rather than by a second parse here (B3a).
+ * @param sessions main's token registry.
+ */
+export function remoteMupdfPageText(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostPageTextReader {
+  return async (session, page) =>
+    answered(
+      'engine/page-text',
+      await client['engine/page-text']({ session: sessions.handleFor(session), page }),
+    ).json;
 }
 
 /**

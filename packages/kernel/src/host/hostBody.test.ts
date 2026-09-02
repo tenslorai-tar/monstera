@@ -121,6 +121,9 @@ function start(stream: HostByteStream) {
       geometry: () => {
         throw new Error('no case here reads a page tree');
       },
+      pageText: () => {
+        throw new Error('no case here reads page text');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

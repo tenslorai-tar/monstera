@@ -7,6 +7,7 @@ import { ENGINE_HOST_MAX_IN_FLIGHT } from '@monstera/contract';
 import { localMupdfExecution } from '../commandSpecs.js';
 import { mupdfWriter } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
+import { readPageTextJson } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
 import { probeContainment } from './containment.js';
 import { type HostByteStream, startEngineHost } from './hostBody.js';
@@ -120,6 +121,10 @@ startEngineHost(
     },
     probe: probeContainment,
     geometry: readPageGeometry,
+    // THE JSON, not a parsed page: `parsePageText` is the one reader of MuPDF's
+    // format and it lives main-side, so this process ships no opinion about the
+    // structure it computed.
+    pageText: readPageTextJson,
     tokens: cryptoBytes,
     // Where a handler's thrown diagnostic goes. Never the pipe: main gets
     // `internal` and an id, and the text stays on this side — which is the
