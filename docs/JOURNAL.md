@@ -717,6 +717,215 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-02 — Stage audit: `996b973..b7d34f2` — a feature made a lower layer's availability its precondition
+
+Range: **16 commits, 54 files.** 3 proofs added, 13 modified, 0 removed; 8 source
+files added, 20 changed, 0 removed — from `npm run audit:scope`. Taken because
+the pre-commit gate refused the commit that crosses 60 files, and refused it
+*before* the crossing rather than after: `check:docs` measures against HEAD, so
+the crossing commit would otherwise be invisible until the push.
+
+The range is Stage 0's close and its day-count correction, then Stage 1's
+opening: E2's measurement, ADR-0034, the text substrate, search end to end,
+ADR-0035, and the two audit findings closed on the way. Findings **AAAAAA-1** to
+**AAAAAA-4**.
+
+### The range's headline
+
+**Continuous scroll took the page count from `document.viewModel`, which needs an
+engine session — so a document PDF.js reads perfectly rendered nothing wherever
+no host starts.** The single-page version never had that coupling: it drew
+unconditionally and treated the model as advisory, with a refused read meaning
+*this renderer does not know the rotation* rather than *there is nothing to
+draw*.
+
+The scroller needed a count before it could lay out slots, and the model was the
+nearest thing that had one. PDF.js has it, needs nobody's permission for it, and
+is the authority on the document's own structure (§3.2).
+
+**No unit test could see it.** happy-dom completes no parse, so `view` is
+`undefined` there either way and every case asserts around it. What saw it was
+`proof:canvaspixels` in real Chromium — which waited **60 seconds** for a page
+that could not arrive, twice, before the cause was found.
+
+**The general shape is worth more than the instance: a feature that needs one
+more fact reaches for the nearest source of it, and the nearest source has
+availability the feature does not.** The question to ask of any new dependency in
+a rendering path is not *is this correct* but *is this available whenever the
+thing that needs it is*.
+
+### 1. Root cause or workaround
+
+Sixteen commits. No workaround. Three entries worth separating:
+
+| the change | mechanism | verdict |
+|---|---|---|
+| `shellLog` rotation case reduced from `MAX_FILES * 20` to `* 6` | 51 MB of synchronous I/O to prove a cap of five; 1512 ms locally against a 5 s bound | root cause — the loop, not the timeout, and the bite was re-verified |
+| the page count moved from the view model to the parser | §3.2 makes PDF.js the authority on the page tree; the model needs a session and the count does not | root cause |
+| `min-block-size` on a page slot | a zero-height element never intersects, so the observer drops it and nothing measured ever becomes visible | root cause — it is a deadlock, not a cosmetic minimum |
+
+### 2. Verified against the easy shape only?
+
+**No, and deliberately not, twice.** ADR-0034's fixtures put the two columns on
+*shared baselines*, which is the shape a baseline-keyed grouper merges — staggered
+ones are handled correctly by the broken version. ADR-0035 measured a
+**text-heavy** document, which the perf corpus lacks entirely: its 200 MB fixture
+is one image, and a budget argued against that says nothing about a file that is
+all words.
+
+The gap that remains is named in ADR-0034: both are **synthetic**. Whether
+`SEGMENT` holds on documents this build did not generate is unmeasured, and the
+ADR takes a dated correction if it does not.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, and it is a strengthening that costs something.** `App.test.tsx` now mocks
+`documentView.js` and `renderPage.js` for the whole file. Before, those cases ran
+against the real modules and asserted around a parse that never completes; now
+they run against stubs.
+
+What that gains is that the cases keep asking their own question — which
+command, with what — instead of PDF.js's. What it costs is that **a change
+breaking `openDocumentView`'s contract with `App` is no longer visible there**.
+`AppViewLifetime.test.tsx` holds the lifetime claims and `proof:canvaspixels`
+holds the real one; neither is new, and the exchange is stated here rather than
+left in a diff.
+
+### 3. Would CI have caught it?
+
+**The headline, yes — and only just.** `proof:canvaspixels` is an unconditional
+step of `ci.yml`'s shim job, so the board would have gone red. It was found
+locally because the sweep was run before the push, which is the arrangement
+working rather than luck.
+
+**AAAAAA-1 below, no**, and that is the finding: a native export nothing ships
+calls is invisible to every check this repository has.
+
+### 4. Non-vacuous proofs
+
+Thirteen modified proofs, each diff read. **Nineteen of the deletions in
+`documentCommands.test.ts` are one mechanical change** — a constructor gaining a
+sixth parameter — and every one is the same call with `noPageText` or
+`localPageText` appended. No case lost an assertion.
+
+Two mutations run:
+
+- `monstera/no-bare-y-flip` returning early reddens its offender case; reporting
+  every subtraction reddens its innocent control. Both directions.
+- the `never`-default pair: **neither cap mechanism alone reddens** the
+  rotation-cap case, because the rename bound and the delete sweep cover each
+  other. Disabling both reddens it. Recorded beside the assertion, because a
+  future reader mutating one line would conclude it is vacuous.
+
+### 4a. Instrument resolution tests
+
+`textAccuracy.ts`'s runs **before it measured anything real**, which is the rule:
+the same four lines in column-major and row-major order, asserting the **gap**
+rather than two bounds — a gap of zero is the blind case however good each figure
+looks alone. It separates 1.00 from 0.78.
+
+`textRetention.mjs` carries a control on every invocation: both shapes must find
+the same match count, since a per-page loop that silently read fewer pages would
+report a smaller footprint and look like the better shape.
+
+### 4b. Searches and their positive controls
+
+`textStructure.mjs`'s summariser **was blind and reported the reassuring
+answer** — *0 lines, 0 merged* under `SEGMENT`, which is indistinguishable from a
+page that segmented perfectly. MuPDF nests text blocks under
+`{"type":"structure","contents":[…]}` and the walk read only the top level. It
+now refuses to print a number until it reads two lines and one merge from a
+nested page it is known to hold.
+
+### 4c. Does the check derive its extent from the set it governs?
+
+`PageList` derives its slot count from `numPages`, which is correct: the failure
+feared is a slot that does not exist for a page that does, and the parser is the
+authority. `browserShim.test.ts`'s channel list is a hand-kept literal and
+**caught the new channel**, which is the anchor working.
+
+### 5. Executed, or asserted?
+
+**Executed:** the three-fixture MuPDF readings; the retention ratio at two sizes;
+`proof:canvaspixels` passing after the fix; the shim rebuilt with 25 exports; 964
+unit tests; the a11y gate.
+
+**Asserted:** that `SEGMENT` holds on real documents. Named in ADR-0034 as
+unmeasured rather than implied.
+
+### 6. Architecture before the feature?
+
+**Yes, twice, each in its own commit.** ADR-0034 and §3.2's amendment landed
+before `textStructure.ts`; ADR-0035 and §9.17's amendment landed before
+`document.searchPage` existed. In both cases the measurement came before the ADR,
+which is the order that makes an ADR a record rather than an argument.
+
+### 7. Do the documents still match the code?
+
+`SHOWN_PAGE` was deleted and its two callers moved to `CommandContext.page`; the
+comments that cited it were rewritten rather than left pointing at a file that no
+longer exists. ADR-0034's addition corrects an obligation whose **subject** had
+dissolved, which no sweep would have found because nothing about it changed.
+
+### The findings
+
+**AAAAAA-1. The shipped shim gained an export the product does not call.**
+
+`mz_stext_json` was added to `native/mupdf-shim` for ADR-0034's measurement, and
+the product reaches structured text through the **npm** MuPDF instead —
+`hostEntry.ts` wires `readPageTextJson`, which is `toStructuredText`. So the
+shipped DLL carries an entry point whose only caller is a hand-run research
+script.
+
+That is the shape ADR-0013 refused for Ghostscript in terms: *"a component's
+presence must be traceable to a feature"*, and *"a binary in the 1.0 installer
+that nothing calls is the wired-tools rule one layer down."* The same argument
+reaches an export inside a binary.
+
+**Not removed here**, and the reason is that it is the honest instrument for a
+question E2 still owes: the corpus score's whole subject is the flag choice, and
+the flag word is what the C ABI takes. **The decision owed is whether the
+research path should use the npm package too** — which would make the export
+removable and the measurement one layer further from what the host runs. Recorded
+rather than taken, because it is a decision about what the score measures.
+
+**AAAAAA-2. A per-slot arrow in an effect's dependency array re-rasterised every
+visible page on every parent render.**
+
+`onMeasured={(measured) => …}` is a new function each render and sits in
+`PageSlot`'s draw effect dependencies. Measured: a page drew **twice** for one
+visible page. On a scroller the parent's state changes constantly, so this is a
+full bitmap re-render per unrelated update.
+
+Caught by an existing case counting the rotations handed to `renderPage` — which
+was written for RRRRR-2 and had nothing to do with this. **A test that counts
+calls rather than asserting a final state is what noticed**, and the general form
+is worth keeping: an effect that draws should have dependencies you can enumerate
+and defend, and an inline closure is never one of them.
+
+**AAAAAA-3. `data-failed` moved off the element a harness reads, and turned a
+failure into a wait.**
+
+`canvasHarness.ts` reads `dataset.failed` off `canvas.m-page` to separate *the
+parse threw* from *the render has not finished*. Rendering the failure state as a
+`<div>` left the marker somewhere nothing looks, so every parse failure became a
+sixty-second bound — which the harness's own message says is what a working
+renderer with no display produces. **Two states sharing one output**, introduced
+by moving a marker rather than by changing any logic.
+
+The lesson is the one this repository keeps paying: **an element another
+component reads is an interface.** A refactor that changes which element carries
+an attribute is a contract change, and nothing type-checks it.
+
+**AAAAAA-4. A page that failed to draw was silently blank.**
+
+`PageSlot`'s draw was wrapped in a bare `.catch()`, so a page that threw looked
+exactly like a page still rendering — for ever, and to every observer. It now
+marks the canvas. Found while diagnosing the headline, which is the ordinary way
+a swallow is found: it costs you the diagnosis before it costs you the defect.
+
+---
+
 ## 2026-09-01 — Stage audit: `64caaaa..996b973` — an amendment stated a relationship and did not sweep it
 
 Range: **30 commits, 55 files.** 3 proofs added, 15 modified, 0 removed; 7 source
