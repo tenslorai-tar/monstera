@@ -1838,6 +1838,30 @@ catches what the author was not thinking about.
 2. **A scan for the class**, so a seventh caller cannot spell its own. Not
    written, because it must first be decided what the four above do.
 3. **What revokes the Electron grant inside `npm run local`** (VVVVV-3).
+
+   > **ANSWERED 2026-09-02, and it is not a bug.** `provisionElectron` rebuilds
+   > the extracted tree from the verified archive on **every** run, deliberately:
+   > returning early when the binary is on disk *"is WRONG the instant a CI cache
+   > can populate it — a restored tree skips the digest check, which turns a
+   > hash-pinned artifact into an unpinned one"*. A fresh extraction carries no
+   > ACE, so the grant dies by construction each time. Three observations in one
+   > session, reproducible on demand: `npm run local`, then
+   > `node scripts/provision/containerGrants.mjs --check` exits 1.
+   >
+   > **What made it findable was the exit code**, not more looking. It sat open
+   > for a range while the check printed `NOT granted` and exited 0, so the
+   > disarmed state was indistinguishable from a clean tree to anything reading a
+   > status — and the third observation was the first one that announced itself.
+   > ZZZZZ-2 was written as a missing case; it turns out to have been the whole
+   > detector for this.
+   >
+   > **The fix is open and is not a weaker extraction.** ADR-0027's rule is that
+   > whatever installs an artefact owns its state, so the extraction should
+   > re-apply the grant it invalidated. `containerGrants.mjs` imports
+   > `electronRoot` from `electron.mjs`, so the reverse edge is a cycle: closing
+   > this means moving that path to a module both can import, which is a design
+   > rather than a line, and it is not taken inside a range whose subject is
+   > Stage 1's text substrate.
 4. The `proof:hookprobe` and `proof:testresolution` bounds, still the cause
    under two detectors.
 

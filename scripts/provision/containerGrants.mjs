@@ -318,9 +318,25 @@ if (import.meta.url.endsWith(process.argv[1]?.replaceAll('\\', '/') ?? ' ')) {
     // That is finding VVVVV-3's consequence rather than its cause: a sweep
     // re-extracted `.tools/electron` mid-run, which leaves a tree with no
     // container grant, and the check that would have said so answered success.
-    // **Which command re-extracts it is still not established** and this does
-    // not establish it — what it does is stop the disarmed state reading as a
-    // pass, which is the half that can be fixed without reproducing the sweep.
+    //
+    // **THE CAUSE IS NOW ESTABLISHED, 2026-09-02, and it is not a bug.**
+    // `provisionElectron` rebuilds the extracted tree from the verified archive
+    // on **every** run, deliberately: its own comment records that returning
+    // early when the binary is on disk *"is WRONG the instant a CI cache can
+    // populate it — a restored tree skips the digest check, which turns a
+    // hash-pinned artifact into an unpinned one"*. A fresh extraction carries no
+    // ACE, so the grant is destroyed by construction each time, and `npm run
+    // local` runs that provisioning. Three observations in one session, all
+    // reproducible on demand.
+    //
+    // **The fix is not here and is not a weaker extraction.** ADR-0027's rule is
+    // that whatever installs an artefact owns its state, so the extraction
+    // should re-apply the grant it invalidated — which this module cannot do
+    // from this side, because it imports `electronRoot` from `electron.mjs` and
+    // the reverse edge would be a cycle. Closing it means moving that path to a
+    // module both can import, which is a change with a design in it rather than
+    // a line. Until then this exit code is what stops the disarmed state reading
+    // as a pass, and `npm run provision:grants` is what restores it.
     //
     // `--check` failing on drift is this repository's own idiom, not a new one:
     // `generateNotice.mjs --check` already does it.
