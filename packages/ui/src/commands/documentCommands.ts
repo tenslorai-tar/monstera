@@ -8,6 +8,8 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import {
   FIND_TITLE,
+  FIT_PAGE_TITLE,
+  FIT_WIDTH_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
@@ -15,6 +17,7 @@ import {
   ZOOM_OUT_TITLE,
 } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
+import { type ZoomMode, zoomInFrom, zoomOutFrom } from '../zoom.js';
 
 /**
  * The three commands that act on the open document.
@@ -57,6 +60,17 @@ import type { CommandContext, UiCommand } from '../registries/commands.js';
  * ADR-0021's budget. Nothing here should be repaired in anticipation of the
  * answer.
  */
+
+/**
+ * What the zoom commands need.
+ *
+ * The updater takes the SHOWN scale and returns a mode: the ladder steps from
+ * what a reader can see, and a fit is a mode with no number, so neither
+ * direction of that signature can be simplified to a number.
+ */
+interface ZoomDeps {
+  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+}
 
 /** What replaced the view, as the renderer needs to rebuild it. */
 export interface Applied {
@@ -196,20 +210,12 @@ function hasDocument(context: CommandContext): boolean {
  * *100%* would then be a rounding artefact away from *fit*. A list has exact
  * members, and a reader stepping out and back arrives at the value they left.
  *
- * The steps are the ones every viewer this one replaces offers, and they are
- * closer together near 100% because that is where a reader adjusts.
+ * **The ladder and the fits MOVED to `zoom.ts` on 2026-09-02**, when fit-width
+ * and fit-page arrived. A fit is not a number this module can produce — it is a
+ * relationship between the scroller's box and the page's — so what a zoom *is*
+ * stopped being expressible here, and leaving half of it behind would be two
+ * places deciding it.
  */
-export const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4] as const;
-
-/** The step above `zoom`, or `zoom` where there is none. */
-export function zoomIn(zoom: number): number {
-  return ZOOM_STEPS.find((step) => step > zoom) ?? zoom;
-}
-
-/** The step below `zoom`, or `zoom` where there is none. */
-export function zoomOut(zoom: number): number {
-  return [...ZOOM_STEPS].reverse().find((step) => step < zoom) ?? zoom;
-}
 
 /**
  * Zooming in and out, as two registrations rather than one parameterised.
@@ -224,10 +230,7 @@ export function zoomOut(zoom: number): number {
  * the control at 400% would make it vanish from the toolbar and the palette
  * mid-session — which reads as a bug rather than a limit.
  */
-export function zoomCommand(
-  direction: 'in' | 'out',
-  deps: { readonly onZoom: (next: (current: number) => number) => void },
-): UiCommand {
+export function zoomCommand(direction: 'in' | 'out', deps: ZoomDeps): UiCommand {
   return {
     id: direction === 'in' ? 'view.zoom-in' : 'view.zoom-out',
     title: direction === 'in' ? ZOOM_IN_TITLE : ZOOM_OUT_TITLE,
@@ -235,7 +238,33 @@ export function zoomCommand(
     placements: [{ surface: 'quick-toolbar', order: direction === 'in' ? 50 : 60 }],
     when: hasDocument,
     run: (): void => {
-      deps.onZoom(direction === 'in' ? zoomIn : zoomOut);
+      // STEPPED FROM WHAT IS SHOWN, not from the mode. A reader at fit-width is
+      // in a mode with no number of its own, and the ladder has to start
+      // somewhere a person can see — the scale on screen. `shownScale` is the
+      // resolved one, which for a fit is what the scroller computed.
+      deps.onZoom(direction === 'in' ? zoomInFrom : zoomOutFrom);
+    },
+  };
+}
+
+/**
+ * Fit-width and fit-page, as two registrations for `zoomCommand`'s reason.
+ *
+ * **These set a MODE, and that is the whole feature.** A command that resolved
+ * the fit to a number would have to know the scroller's box, which it does not
+ * and must not — and the number would be stale the next time the window moved.
+ * The scroller resolves it on every layout, so *fit* stays fitted.
+ */
+export function fitCommand(fit: 'width' | 'page', deps: ZoomDeps): UiCommand {
+  const mode: ZoomMode = fit === 'width' ? { kind: 'fit-width' } : { kind: 'fit-page' };
+  return {
+    id: fit === 'width' ? 'view.fit-width' : 'view.fit-page',
+    title: fit === 'width' ? FIT_WIDTH_TITLE : FIT_PAGE_TITLE,
+    shortcut: fit === 'width' ? 'Ctrl+1' : 'Ctrl+0',
+    placements: [{ surface: 'quick-toolbar', order: fit === 'width' ? 70 : 80 }],
+    when: hasDocument,
+    run: (): void => {
+      deps.onZoom(() => mode);
     },
   };
 }

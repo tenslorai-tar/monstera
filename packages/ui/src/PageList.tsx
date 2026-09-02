@@ -1,10 +1,12 @@
 import type { ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
-import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react';
+import type React from 'react';
+import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
+import { type Box, type ZoomMode, resolveZoom, zoomInFrom, zoomOutFrom } from './zoom.js';
 
 /**
  * Continuous scroll, with each page rasterised only while it is near the
@@ -71,8 +73,23 @@ export interface PageListProps {
   readonly version: DocVersion;
   /** Told which page the user is looking at, zero-based. */
   readonly onCurrentPage: (page: number) => void;
-  /** The magnification a reader asked for. `1` is 100%. */
-  readonly zoom: number;
+  /**
+   * What the reader asked for — a scale, or a fit.
+   *
+   * A MODE rather than a number, because a fit has no number until this
+   * component has measured its own box and a page's. See `zoom.ts`.
+   */
+  readonly mode: ZoomMode;
+  /** Asks for a new mode, given the scale currently shown. */
+  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+  /**
+   * Reports the scale a fit resolved to.
+   *
+   * The owner holds the mode and cannot resolve it, so without this the `±`
+   * commands would have no number to step from at fit-width — they would step
+   * from the last explicit scale, which is not what the reader can see.
+   */
+  readonly onShownZoom: (shown: number) => void;
 }
 
 /**
@@ -123,27 +140,97 @@ export function PageList({
   docId,
   version,
   onCurrentPage,
-  zoom,
+  mode,
+  onZoom,
+  onShownZoom,
 }: PageListProps): ReactElement {
   const slots = useRef(new Map<number, HTMLElement>());
+  const scroller = useRef<HTMLDivElement | null>(null);
   /**
-   * The zoom the pages are actually rasterised at, which lags `zoom`.
+   * The scroller's own box, remeasured whenever it changes.
    *
-   * **The two tiers are these two numbers.** `zoom` moves the moment a reader
-   * asks and the browser stretches the bitmap it already has; `renderZoom`
-   * follows once the gesture settles, and the page is redrawn at
-   * `devicePixelRatio × renderZoom` — one device pixel per bitmap pixel, which
-   * is E1's bar.
+   * **A `ResizeObserver` and not a `resize` listener on the window**: the box
+   * that matters is this element's, and it changes for reasons the window does
+   * not see — a sidebar opening, a panel resizing, a font loading. A window
+   * listener would answer for three of those and miss the rest, which is a fit
+   * that is correct until the first time the layout moves without the window.
    *
-   * Rasterising on every step would redraw every visible page per keystroke of
-   * a zoom gesture, which is the thing the stretch exists to avoid.
+   * `undefined` until the first observation, which `resolveZoom` treats as *no
+   * answer yet* rather than as a box of zero.
    */
-  const [renderZoom, setRenderZoom] = useState(zoom);
+  const [viewport, setViewport] = useState<Box | undefined>(undefined);
 
   useEffect(() => {
-    if (renderZoom === zoom) return;
+    const element = scroller.current;
+    if (element === null) return;
+    const seen = new ResizeObserver((entries) => {
+      const box = entries[entries.length - 1]?.contentRect;
+      if (box !== undefined) setViewport({ width: box.width, height: box.height });
+    });
+    seen.observe(element);
+    return (): void => {
+      seen.disconnect();
+    };
+  }, []);
+
+  const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([FIRST_PAGE.kernel]));
+  const [sizes, setSizes] = useState<ReadonlyMap<number, Measured>>(new Map());
+
+  /**
+   * The page's box at scale 1, which is the other half of a fit.
+   *
+   * A bitmap divided by the scale it was drawn at IS the page in CSS pixels,
+   * which is what `Measured` carries `drawnAt` for — so the fit costs no extra
+   * measurement and cannot disagree with what is on screen.
+   *
+   * **Undefined before anything has drawn**, so a fit has no answer then; that
+   * is correct rather than a gap, because there is no page to fit yet.
+   *
+   * **The FIRST measured page and not the current one**, which is a limitation
+   * and is stated: a document whose pages differ in size will fit to the first
+   * one visited rather than to the page under the reader. Fixing that means the
+   * fit changing as the reader scrolls, which is a design question about
+   * whether *fit* follows the page or the document, and is not answered here.
+   */
+  const pageBox = useMemo((): Box | undefined => {
+    const [first] = [...sizes.values()];
+    return first === undefined
+      ? undefined
+      : { width: first.width / first.drawnAt, height: first.height / first.drawnAt };
+  }, [sizes]);
+
+  /**
+   * What the reader's mode resolves to, right now.
+   *
+   * A fit that cannot be answered falls back to **1**, and that fallback is the
+   * one place this component draws a zoom nobody asked for. It is bounded to
+   * the frames before the first page has been measured — a fit needs a page,
+   * and a page has to be drawn once at some scale for there to be one.
+   */
+  const shown = resolveZoom(mode, viewport, pageBox) ?? 1;
+
+  /**
+   * The zoom the pages are actually rasterised at, which lags `shown`.
+   *
+   * **The two tiers are these two numbers.** `shown` moves the moment a reader
+   * asks — or the moment a resize changes what a fit means — and the browser
+   * stretches the bitmap it already has; `renderZoom` follows once things
+   * settle, and the page is redrawn at `devicePixelRatio × renderZoom`, one
+   * device pixel per bitmap pixel, which is E1's bar.
+   *
+   * **A RESIZE FEEDS THE SAME DEBOUNCE**, which is the reason this is derived
+   * from `shown` rather than from the mode: dragging a window edge at fit-width
+   * produces a continuous stream of new scales, and rasterising each one would
+   * redraw every visible page per pixel of drag. The stretch covers the drag
+   * and one true render lands when it stops — the same mechanism the ± ladder
+   * already used, for free.
+   */
+  const [renderZoom, setRenderZoom] = useState(shown);
+
+  useEffect(() => {
+    if (renderZoom === shown) return;
     const timer = setTimeout(() => {
-      setRenderZoom(zoom);
+      setRenderZoom(shown);
     }, RERENDER_AFTER_MS);
     // CLEARED ON EVERY CHANGE, which is what makes this a debounce rather than
     // a throttle: a reader stepping the zoom five times gets one re-render, not
@@ -151,9 +238,39 @@ export function PageList({
     return (): void => {
       clearTimeout(timer);
     };
-  }, [renderZoom, zoom]);
-  const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([FIRST_PAGE.kernel]));
-  const [sizes, setSizes] = useState<ReadonlyMap<number, Measured>>(new Map());
+  }, [renderZoom, shown]);
+
+  // Told upward so the commands can step the ladder from what is on screen. A
+  // fit's number lives here and nowhere else, so a `+` pressed at fit-width
+  // would otherwise step from a mode that has no number.
+  useEffect(() => {
+    onShownZoom(shown);
+  }, [onShownZoom, shown]);
+
+  /**
+   * Ctrl+scroll, which is a zoom rather than a scroll.
+   *
+   * `preventDefault` is what stops the browser's own page zoom, which would
+   * scale the whole shell — chrome and all — instead of the document.
+   *
+   * **React's `onWheel` is passive on the root in some builds**, and a passive
+   * listener cannot preventDefault. It is attached here rather than through an
+   * explicit non-passive `addEventListener` because the element is not the
+   * document root, where that default applies; if a browser is ever observed
+   * ignoring it, the fix is an effect with `{ passive: false }` and not a
+   * different gesture.
+   */
+  const onWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>): void => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      // DIRECTION ONLY. A wheel's `deltaY` is in units that differ by device
+      // and by `deltaMode`, so treating its magnitude as an amount makes a
+      // trackpad and a mouse zoom at different rates. The ladder is the amount.
+      onZoom(event.deltaY < 0 ? zoomInFrom : zoomOutFrom);
+    },
+    [onZoom],
+  );
   /**
    * What is known about each visible page's rotation.
    *
@@ -307,7 +424,7 @@ export function PageList({
   }, [onCurrentPage, visible]);
 
   return (
-    <div className="m-page-list">
+    <div className="m-page-list" ref={scroller} onWheel={onWheel}>
       {Array.from({ length: pageCount }, (_, page) => (
         <PageSlot
           key={page}
@@ -319,7 +436,7 @@ export function PageList({
           draw={visible.has(page) && rotations.has(page)}
           rotation={rotations.get(page)}
           size={sizes.get(page) ?? lastKnownBefore(sizes, page)}
-          zoom={zoom}
+          zoom={shown}
           renderZoom={renderZoom}
           onMeasured={measured}
         />

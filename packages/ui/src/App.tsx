@@ -11,11 +11,13 @@ import {
 
 import {
   findCommand,
+  fitCommand,
   rotatePageCommand,
   saveCommand,
   undoCommand,
   zoomCommand,
 } from './commands/documentCommands.js';
+import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -120,14 +122,42 @@ export function App({ client, settings }: AppProps): ReactElement {
   const [currentPage, setCurrentPage] = useState<number>(FIRST_PAGE.kernel);
 
   /**
-   * The magnification, where `1` is 100%.
+   * The magnification the reader asked for, as a MODE.
    *
    * Held here for the current page's reason: the commands that change it are
    * registered here, and the surface that draws at it is a child. It is
    * deliberately **not** a setting — a zoom that survived a restart would be a
    * preference, and §10.4's settings registry is where a preference goes.
+   *
+   * **A mode and not a number, because this component cannot resolve a fit** —
+   * it has no idea how wide the scroller is, and giving it one would move
+   * layout measurement up here to serve two commands. `PageList` resolves it
+   * and reports what it resolved to.
    */
-  const [zoom, setZoom] = useState(1);
+  const [zoomMode, setZoomMode] = useState<ZoomMode>(DEFAULT_ZOOM);
+  /**
+   * The scale actually on screen, which is the mode's number or a fit's answer.
+   *
+   * The ± commands step from THIS, not from the mode: a reader at fit-width has
+   * no number in their mode, and stepping from the last explicit scale would
+   * jump to somewhere they cannot see.
+   */
+  const [shownZoom, setShownZoom] = useState(1);
+
+  /**
+   * The updater the zoom commands are given.
+   *
+   * It closes over the shown scale rather than taking it as an argument at the
+   * call, because a command's `run(context)` cannot carry one — the same
+   * constraint that makes `findCommand` send the caret to a surface instead of
+   * taking a query.
+   */
+  const changeZoom = useCallback(
+    (next: (shown: number) => ZoomMode): void => {
+      setZoomMode(next(shownZoom));
+    },
+    [shownZoom],
+  );
 
   const registry = useMemo(
     () =>
@@ -142,10 +172,12 @@ export function App({ client, settings }: AppProps): ReactElement {
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
         findCommand(),
-        zoomCommand('in', { onZoom: setZoom }),
-        zoomCommand('out', { onZoom: setZoom }),
+        zoomCommand('in', { onZoom: changeZoom }),
+        zoomCommand('out', { onZoom: changeZoom }),
+        fitCommand('width', { onZoom: changeZoom }),
+        fitCommand('page', { onZoom: changeZoom }),
       ]),
-    [applied, client, show],
+    [applied, changeZoom, client, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -179,7 +211,9 @@ export function App({ client, settings }: AppProps): ReactElement {
           document={open}
           onVersionMoved={setOpen}
           onCurrentPage={setCurrentPage}
-          zoom={zoom}
+          mode={zoomMode}
+          onZoom={changeZoom}
+          onShownZoom={setShownZoom}
         />
       )}
       {/* E2's substrate, reached by a person. It renders nothing with no
@@ -295,13 +329,17 @@ function PageCanvas({
   document: open,
   onVersionMoved,
   onCurrentPage,
-  zoom,
+  mode,
+  onZoom,
+  onShownZoom,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
   readonly onVersionMoved: (next: OpenDocument) => void;
   readonly onCurrentPage: (page: number) => void;
-  readonly zoom: number;
+  readonly mode: ZoomMode;
+  readonly onZoom: (next: (shown: number) => ZoomMode) => void;
+  readonly onShownZoom: (shown: number) => void;
 }): ReactElement {
   const [failed, setFailed] = useState(false);
   /**
@@ -427,7 +465,9 @@ function PageCanvas({
       docId={open.docId}
       version={open.version}
       onCurrentPage={onCurrentPage}
-      zoom={zoom}
+      mode={mode}
+      onZoom={onZoom}
+      onShownZoom={onShownZoom}
     />
   );
 }

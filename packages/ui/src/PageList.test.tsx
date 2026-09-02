@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PageList } from './PageList.js';
 import type { DocumentView } from './documentView.js';
+import type { ZoomMode } from './zoom.js';
 
 /**
  * The scroller, driven through a stubbed `IntersectionObserver`.
@@ -27,6 +28,15 @@ import type { DocumentView } from './documentView.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000ff');
 const VERSION = asDocVersion(1);
+
+/**
+ * Explicit scales, so a case that is not about fitting says so.
+ *
+ * The fit modes are exercised in `zoom.test.ts`, against the arithmetic, where
+ * a case can state a box instead of arranging for one to be laid out.
+ */
+const SCALE_1: ZoomMode = { kind: 'scale', scale: 1 };
+const SCALE_2: ZoomMode = { kind: 'scale', scale: 2 };
 
 /** Every rasterisation, as `[pdfjsPage, scale]`. */
 const rasterised: [number, number][] = [];
@@ -66,6 +76,25 @@ beforeEach(() => {
   // reads. The double implements what is used and the cast says so in one place
   // rather than each member being optional — which would let the component start
   // reading one and this stub keep passing.
+  // A SECOND BROWSER API HAPPY-DOM DOES NOT FIRE, and a missing one would make
+  // the component throw at mount rather than fail a case — which reads as a
+  // broken test file rather than as a scroller that cannot measure itself.
+  // Nothing here reports a size: every case in this file uses an explicit
+  // scale, so the viewport stays unmeasured and `resolveZoom` answers from the
+  // mode alone. The fit arithmetic is `zoom.test.ts`'s subject.
+  const resize: { ResizeObserver: typeof ResizeObserver } = globalThis;
+  resize.ResizeObserver = class {
+    observe(): void {
+      // Deliberately silent; see above.
+    }
+    unobserve(): void {
+      // Not called by this component, which disconnects instead.
+    }
+    disconnect(): void {
+      // Recorded by absence, as with the intersection observer below.
+    }
+  };
+
   const target: { IntersectionObserver: typeof IntersectionObserver } = globalThis;
   target.IntersectionObserver = class {
     constructor(callback: IntersectionObserverCallback) {
@@ -163,7 +192,9 @@ describe('PageList', () => {
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
-        zoom={1}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
       />,
     );
     await settle();
@@ -184,7 +215,9 @@ describe('PageList', () => {
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
-        zoom={1}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
       />,
     );
     await settle();
@@ -210,7 +243,9 @@ describe('PageList', () => {
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
-        zoom={1}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
       />,
     );
     await settle();
@@ -244,7 +279,9 @@ describe('PageList', () => {
         docId={DOC}
         version={VERSION}
         onCurrentPage={vi.fn()}
-        zoom={1}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
       />,
     );
     await settle();
@@ -294,7 +331,9 @@ describe('PageList', () => {
           docId={DOC}
           version={VERSION}
           onCurrentPage={vi.fn()}
-          zoom={1}
+          mode={SCALE_1}
+          onZoom={vi.fn()}
+          onShownZoom={vi.fn()}
         />,
       );
       await settle();
@@ -311,7 +350,9 @@ describe('PageList', () => {
             docId={DOC}
             version={VERSION}
             onCurrentPage={vi.fn()}
-            zoom={2}
+            mode={SCALE_2}
+            onZoom={vi.fn()}
+            onShownZoom={vi.fn()}
           />,
         );
         await Promise.resolve();
@@ -339,7 +380,9 @@ describe('PageList', () => {
             docId={DOC}
             version={VERSION}
             onCurrentPage={vi.fn()}
-            zoom={1}
+            mode={SCALE_1}
+            onZoom={vi.fn()}
+            onShownZoom={vi.fn()}
           />,
         );
         await act(async () => {
@@ -354,7 +397,9 @@ describe('PageList', () => {
             docId={DOC}
             version={VERSION}
             onCurrentPage={vi.fn()}
-            zoom={2}
+            mode={SCALE_2}
+            onZoom={vi.fn()}
+            onShownZoom={vi.fn()}
           />,
         );
 
@@ -387,7 +432,9 @@ describe('PageList', () => {
         docId={DOC}
         version={VERSION}
         onCurrentPage={current}
-        zoom={1}
+        mode={SCALE_1}
+        onZoom={vi.fn()}
+        onShownZoom={vi.fn()}
       />,
     );
     await settle();

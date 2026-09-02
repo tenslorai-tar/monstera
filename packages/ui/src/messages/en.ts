@@ -43,6 +43,8 @@ export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
 export const FIND_TITLE = messageKey('command.find.title');
 export const ZOOM_IN_TITLE = messageKey('command.zoom-in.title');
 export const ZOOM_OUT_TITLE = messageKey('command.zoom-out.title');
+export const FIT_WIDTH_TITLE = messageKey('command.fit-width.title');
+export const FIT_PAGE_TITLE = messageKey('command.fit-page.title');
 export const FIND_LABEL = messageKey('surface.find.label');
 export const FIND_SUBMIT = messageKey('surface.find.submit');
 export const FIND_MATCHES = messageKey('surface.find.matches');
@@ -95,6 +97,8 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_TITLE]: 'Find',
   [ZOOM_IN_TITLE]: 'Zoom in',
   [ZOOM_OUT_TITLE]: 'Zoom out',
+  [FIT_WIDTH_TITLE]: 'Fit width',
+  [FIT_PAGE_TITLE]: 'Fit page',
   [FIND_LABEL]: 'Find on this page',
   // NOT 'Find', which is the toolbar command's title: two controls sharing an
   // accessible name is one a screen-reader user cannot tell apart, and it was
