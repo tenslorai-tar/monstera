@@ -110,12 +110,18 @@ async function nestedDocumentWithLinks(): Promise<Uint8Array> {
   const document = await buildDocumentWithLinks();
   const root = document.catalog.Pages();
   const kids = root.Kids();
+  // THE COUNT, not three undefined-checks. `PDFArray.get` is typed as always
+  // answering, so comparing each result to `undefined` is a condition the types
+  // say can never hold — and the thing actually worth asserting is that the
+  // fixture has the three pages this nesting assumes.
+  if (kids.size() !== 3) {
+    throw new Error(
+      `the fixture should have three pages before nesting, not ${String(kids.size())}`,
+    );
+  }
   const first = kids.get(0);
   const second = kids.get(1);
   const third = kids.get(2);
-  if (first === undefined || second === undefined || third === undefined) {
-    throw new Error('the fixture should have three pages before nesting');
-  }
 
   // An intermediate /Pages node holding the first two, with the third left as a
   // direct child — so the tree is genuinely uneven rather than merely deeper.
