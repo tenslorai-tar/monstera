@@ -196,3 +196,21 @@ export {
   HostConnectionLost,
   createHostClient,
 } from './host/client.js';
+// THE TEXT SUBSTRATE'S PURE HALF, on the main surface rather than `/engine`:
+// parsing, searching and scoring import no engine and bind no native library,
+// so a consumer that holds a `PageText` needs no reason to reach for `/engine`
+// (ADR-0026). Reading one from a document does, and `readPageText` is there.
+export {
+  type FitzRect,
+  type PageText,
+  type TextBlock,
+  type TextLine,
+  STEXT_FLAGS,
+  STEXT_OPTIONS,
+  STEXT_OPTION_STRING,
+  linesOf,
+  parsePageText,
+  plainTextOf,
+} from './textStructure.js';
+export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
+export { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';

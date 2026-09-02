@@ -58,8 +58,29 @@ export const STEXT_OPTIONS = {
   tableHunt: 16384,
 } as const;
 
-/** The flag word every caller passes, so no consumer chooses its own. */
+/**
+ * The flag word, for the C shim's `mz_stext_json`.
+ *
+ * `native/mupdf-shim` takes an `int` because that is what crosses koffi.
+ */
 export const STEXT_FLAGS: number = STEXT_OPTIONS.segment;
+
+/**
+ * The same choice, spelt as MuPDF's option STRING for `toStructuredText`.
+ *
+ * **Two spellings of one decision, and that is precisely why they live in one
+ * module.** The npm package takes a string that
+ * `fz_parse_stext_options` reads; the C shim takes the flag word above. Left at
+ * their call sites they would be two opinions about which options this
+ * application wants, drifting the moment one is changed — B3a's shape, and the
+ * exact failure Part E2 describes as constants "required to mirror exactly
+ * across copies".
+ *
+ * The names are MuPDF's own, from `source/fitz/stext-device.c`'s
+ * `fz_parse_stext_options`: `segment` and `table-hunt`. `table-hunt` is absent
+ * rather than written `table-hunt=0`, so adding it is visibly a change.
+ */
+export const STEXT_OPTION_STRING = 'segment';
 
 /** A rectangle in MuPDF's space, as two corners rather than a size. */
 export interface FitzRect {
