@@ -12,7 +12,6 @@ import {
   FIND_SUBMIT,
   FIND_TRUNCATED,
 } from './messages/en.js';
-import { SHOWN_PAGE } from './shownPage.js';
 
 /**
  * The find bar: E2's text substrate, reached by a person.
@@ -25,17 +24,25 @@ import { SHOWN_PAGE } from './shownPage.js';
  * one, so the string belongs to a surface and the command's job is to send the
  * user to it. `document.find` focuses this field; submitting it searches.
  *
- * ## ONE PAGE, and it is `SHOWN_PAGE` rather than a literal
+ * ## ONE PAGE, and it is the CURRENT one rather than a literal
  *
- * The renderer draws one page, so a search runs over that page. The number goes
- * out as {@link SHOWN_PAGE}`.kernel` — never a `0` typed here — because PDF.js
- * numbers from 1 and this build has already sent the wrong one once, in a
- * rotate, on a build where nothing on screen could disagree.
+ * A search runs over the page the reader is looking at, which the scroller
+ * reports and `CommandContext` carries. It went out as `SHOWN_PAGE.kernel` while
+ * the renderer drew one page; continuous scroll made that a live value rather
+ * than a constant, and the property that mattered survived the change — the
+ * number is never typed here, because PDF.js counts from 1 and this build has
+ * already sent the wrong one once, in a rotate, where nothing on screen could
+ * disagree.
  *
  * That is also what makes the wired pair meaningful. The kernel's cases assert
  * which page was searched and this surface's assert which page was requested;
- * both take the number from the same object, so a disagreement is a visible edit
- * to `shownPage.ts` rather than two literals that never meet.
+ * neither holds a literal, so a disagreement is a visible edit to the one place
+ * the correspondence lives.
+ *
+ * **Searching only the current page is a limit, and it is the honest one to
+ * start with.** A document-wide search is this channel per page with a
+ * cancellable walk over them, which the row names as *background indexing* and
+ * which needs a results surface to arrive into.
  *
  * ## The result is a COUNT and the lines, not a navigable list
  *
@@ -55,6 +62,8 @@ export interface FindBarProps {
    * is invariant L2 as a type rather than as a rule about what a renderer holds.
    */
   readonly docId: DocId | undefined;
+  /** The page to search, zero-based, from the scroller. */
+  readonly page: number | undefined;
 }
 
 /**
@@ -72,14 +81,14 @@ type FindState =
   | { readonly kind: 'answered'; readonly lines: readonly string[]; readonly truncated: boolean }
   | { readonly kind: 'refused' };
 
-export function FindBar({ client, docId }: FindBarProps): ReactElement | null {
+export function FindBar({ client, docId, page }: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
   const [query, setQuery] = useState('');
   const [state, setState] = useState<FindState>({ kind: 'idle' });
   const inputId = useId();
 
   const search = useCallback(async (): Promise<void> => {
-    if (docId === undefined) return;
+    if (docId === undefined || page === undefined) return;
     // AN EMPTY QUERY IS NOT A SEARCH. The channel refuses it and the kernel
     // refuses it; refusing it here too means the user does not meet a validation
     // failure for having an empty box, which is the state the box starts in.
@@ -90,7 +99,7 @@ export function FindBar({ client, docId }: FindBarProps): ReactElement | null {
 
     const answer = await client['document.searchPage']({
       docId,
-      page: SHOWN_PAGE.kernel,
+      page,
       query,
       limit: PAGE_LIMIT,
     });
@@ -108,7 +117,7 @@ export function FindBar({ client, docId }: FindBarProps): ReactElement | null {
       lines: answer.value.matches.map((match) => match.text),
       truncated: answer.value.truncated,
     });
-  }, [client, docId, query]);
+  }, [client, docId, page, query]);
 
   if (docId === undefined) return null;
 

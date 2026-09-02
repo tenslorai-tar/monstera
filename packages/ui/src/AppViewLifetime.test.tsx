@@ -106,7 +106,11 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
 /** A view that records its own closing, so a leak is a count rather than a hunch. */
 function viewNamed(name: string): DocumentView {
   return {
-    document: {} as DocumentView['document'],
+    // ONE PAGE, because the scroller lays out `numPages` slots and an empty
+    // document object gives it `undefined` — which renders no slots, draws
+    // nothing, and would make every rotation case here pass for a renderer that
+    // had stopped drawing entirely.
+    document: { numPages: 1 } as DocumentView['document'],
     version: asDocVersion(1),
     close: () => {
       closes.push(name);

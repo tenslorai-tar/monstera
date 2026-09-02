@@ -8,7 +8,6 @@ import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { FIND_TITLE, ROTATE_PAGE_TITLE, SAVE_TITLE, UNDO_TITLE } from '../messages/en.js';
 import type { CommandContext, UiCommand } from '../registries/commands.js';
-import { SHOWN_PAGE } from '../shownPage.js';
 
 /**
  * The three commands that act on the open document.
@@ -129,21 +128,23 @@ function hasDocument(context: CommandContext): boolean {
 /**
  * Rotates the page on screen a quarter turn clockwise.
  *
- * ## The shown page, and the index it is NOT
+ * ## The current page, which stopped being a constant on 2026-09-02
  *
- * The renderer shows one page and has no page navigation, so *the page on
- * screen* is that page. Rotating "the current page" is what this will mean when
- * there is a current page; today the two are the same value and the command
- * says the true one rather than the aspirational one.
+ * This read `SHOWN_PAGE.kernel`, because the renderer drew one page and *the
+ * page on screen* had one answer. Continuous scroll ends that: the context now
+ * carries the page the reader is looking at, and this command means that one.
+ * `SHOWN_PAGE`'s own header predicted the change — *"the day there are several,
+ * every caller of this is the list of places that have to learn which one"* —
+ * and the list turned out to be two entries, because the context every command
+ * already receives is where the answer belongs.
  *
  * **It said `pages: [1]` until 2026-08-30, and that is the page after the one on
- * screen.** The reasoning in this comment was right and the literal was wrong:
+ * screen.** The reasoning in that comment was right and the literal was wrong:
  * PDF.js numbers pages from 1, the document model indexes them from 0, and a
  * build with no navigation and no view model had nothing that could disagree —
  * the rotation landed on page 2 of every document and the canvas showed page 1
- * unchanged. {@link SHOWN_PAGE} now holds both numbers in one place, so a caller
- * picking one picks the other's sibling rather than checking a literal against a
- * paragraph in another file.
+ * unchanged. The correspondence now lives in `pageNumbering.ts` and the value
+ * comes from the scroller, so neither half is a literal at a call site.
  *
  * A rotation of every page would be a different command with a different name,
  * and giving this one a `pages` array the surface cannot populate would be a
@@ -204,10 +205,14 @@ export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
     placements: [{ surface: 'quick-toolbar', order: 10 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
-      if (context.docId === undefined) return;
+      // BOTH, and neither is redundant. A document with no current page is a
+      // state the type allows and the scroller has not produced — rotating page
+      // 0 by default would be the plausible wrong action `SHOWN_PAGE`'s own
+      // history is about.
+      if (context.docId === undefined || context.page === undefined) return;
       const answer = await deps.client['document.execute']({
         docId: context.docId,
-        command: { kind: 'rotatePages', pages: [SHOWN_PAGE.kernel], quarterTurns: 1 },
+        command: { kind: 'rotatePages', pages: [context.page], quarterTurns: 1 },
       });
       // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING. `document-busy`,
       // `document-not-open` and `document-poisoned` all leave the document

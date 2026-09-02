@@ -11,6 +11,7 @@ const context: CommandContext = {
   version: undefined,
   hasSelection: false,
   dirty: false,
+  page: undefined,
 };
 
 function command(id: string, over: Partial<UiCommand> = {}): UiCommand {

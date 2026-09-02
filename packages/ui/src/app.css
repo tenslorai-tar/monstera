@@ -58,6 +58,64 @@ body {
 }
 
 /*
+ * Continuous scroll. The list scrolls, not the surface: a scrollable landmark
+ * that also holds the toolbar and the find bar would scroll those out of reach,
+ * which is the bug every viewer with a floating control has had once.
+ *
+ * `gap` rather than margins on the slots, for the reason the start screen gives:
+ * a document with one page and a document with six space themselves the same way
+ * and neither slot needs a rule about being first or last.
+ */
+.m-page-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-16);
+  block-size: 100%;
+  overflow-y: auto;
+  padding-block: var(--space-16);
+}
+
+/*
+ * A page's place in the document, which exists before the page is drawn.
+ *
+ * The inline size and block size are written by the component from the page's
+ * own measurements — or from the nearest measured page while it is still
+ * unvisited — so the scrollbar describes the document rather than the part of it
+ * that has been rasterised. Nothing here declares a size for that reason.
+ *
+ * `flex-shrink: 0`, because a column flex container shrinks its children to fit
+ * and that would compress every unvisited slot to nothing — which is exactly the
+ * scrollbar collapse this element exists to prevent.
+ */
+.m-page-slot {
+  flex-shrink: 0;
+  background: var(--surface2);
+
+  /*
+   * A SLOT IS NEVER ZERO-SIZED, and this is the fix for a deadlock rather than a
+   * cosmetic minimum.
+   *
+   * An unvisited slot has no measured size, so its only content is a canvas that
+   * has not been drawn into — which is zero-high. A zero-high element never
+   * intersects the viewport, so the observer reports it invisible, the component
+   * drops it from the visible set, and it is never drawn: nothing is ever
+   * visible, so nothing is ever measured, so nothing is ever visible.
+   *
+   * Measured in real Chromium by `proof:canvaspixels`, which waited 60s for a
+   * page that could not arrive. happy-dom cannot show it — it has no layout, so
+   * its observer never fires and the seeded first page stays visible for the
+   * wrong reason. This is the case the browser-level proof exists to catch.
+   *
+   * The value only decides the scrollbar before a page has been drawn; the
+   * component writes the real size the moment one is. So it needs to be
+   * non-zero and roughly page-shaped, and nothing downstream depends on it.
+   */
+  min-inline-size: 200px;
+  min-block-size: 260px;
+}
+
+/*
  * §10.3's floating quick toolbar: a vertical pill on the canvas edge.
  *
  * `position: fixed` and not `absolute`, because the document surface scrolls

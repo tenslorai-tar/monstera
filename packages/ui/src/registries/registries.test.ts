@@ -20,6 +20,7 @@ const context: CommandContext = {
   version: asDocVersion(1),
   hasSelection: false,
   dirty: false,
+  page: 0,
 };
 
 // The title is a CONSTANT rather than derived from the id, and that is not
@@ -95,7 +96,13 @@ describe('CommandRegistry', () => {
       }),
     ]);
 
-    const other: CommandContext = { docId: undefined, version: undefined, hasSelection: true, dirty: true };
+    const other: CommandContext = {
+      docId: undefined,
+      version: undefined,
+      hasSelection: true,
+      dirty: true,
+      page: undefined,
+    };
     registry.available(other);
 
     expect(seen).toStrictEqual([other]);

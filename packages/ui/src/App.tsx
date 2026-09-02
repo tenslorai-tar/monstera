@@ -5,7 +5,6 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type ReactElement,
 } from 'react';
@@ -29,10 +28,10 @@ import { CLOSE_LABEL } from './messages/en.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
-import { renderPage } from './renderPage.js';
 import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
 import type { SettingsStore } from './settingsStore.js';
-import { SHOWN_PAGE } from './shownPage.js';
+import { FIRST_PAGE } from './pageNumbering.js';
+import { PageList } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { StartScreen } from './surfaces/StartScreen.js';
@@ -109,6 +108,16 @@ export function App({ client, settings }: AppProps): ReactElement {
     setOpen((previous) => (previous === undefined ? undefined : { ...previous, ...next }));
   }, []);
 
+  /**
+   * The page the reader is looking at, zero-based.
+   *
+   * Held here rather than in the scroller because it is what every **command**
+   * means by *this page*, and commands are registered here. It starts at the
+   * first page: a document that has just opened is scrolled to the top, and the
+   * observer confirms it on the first frame rather than contradicting it.
+   */
+  const [currentPage, setCurrentPage] = useState<number>(FIRST_PAGE.kernel);
+
   const registry = useMemo(
     () =>
       new CommandRegistry([
@@ -135,8 +144,13 @@ export function App({ client, settings }: AppProps): ReactElement {
       version: open?.version,
       hasSelection: false,
       dirty: false,
+      // WHERE THE READER IS, told by the scroller. `undefined` with no document
+      // rather than a defaulted `FIRST_PAGE.kernel`: a command that ran against
+      // page 0 of a document nobody opened is exactly the plausible-looking
+      // action this type exists to make unrepresentable.
+      page: open === undefined ? undefined : currentPage,
     }),
-    [open],
+    [currentPage, open],
   );
 
   useShortcuts(registry, context);
@@ -147,12 +161,17 @@ export function App({ client, settings }: AppProps): ReactElement {
       {open === undefined ? (
         <StartScreen registry={registry} context={context} />
       ) : (
-        <PageCanvas client={client} document={open} onVersionMoved={setOpen} />
+        <PageCanvas
+          client={client}
+          document={open}
+          onVersionMoved={setOpen}
+          onCurrentPage={setCurrentPage}
+        />
       )}
       {/* E2's substrate, reached by a person. It renders nothing with no
           document open, for `QuickToolbar`'s reason: a find field over no
           document is a control that cannot work. */}
-      <FindBar client={client} docId={open?.docId} />
+      <FindBar client={client} docId={open?.docId} page={context.page} />
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
           each command placed on it declares `when`. */}
@@ -261,13 +280,23 @@ function PageCanvas({
   client,
   document: open,
   onVersionMoved,
+  onCurrentPage,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
   readonly onVersionMoved: (next: OpenDocument) => void;
+  readonly onCurrentPage: (page: number) => void;
 }): ReactElement {
-  const canvas = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
+  /**
+   * The live view, once open.
+   *
+   * In state rather than a local, because the scroller is a CHILD now and a
+   * child cannot be rendered from a variable an effect closed over. Cleared by
+   * the same cleanup that closes it, so a render can never hold a view that has
+   * been torn down.
+   */
+  const [ready, setReady] = useState<DocumentView | undefined>(undefined);
 
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
@@ -300,23 +329,6 @@ function PageCanvas({
 
     const show = async (): Promise<void> => {
       try {
-        // THE MODEL IS READ FIRST, and the order is the finding rather than a
-        // preference. A parser opened against bytes that carry the old rotation
-        // renders correctly only if the rotation it is given comes from the
-        // kernel — so the read that supplies it has to have happened before the
-        // draw, and reading it after would put one frame of the wrong geometry
-        // on screen every time a command lands.
-        //
-        // Read here rather than lifted into `App`: the model belongs to a
-        // (document, version) pair, and this effect's dependencies ARE that
-        // pair. Holding it one level up would make a late answer's arrival a
-        // question about which render it belonged to.
-        const model = await client['document.viewModel']({
-          docId: open.docId,
-          pages: [SHOWN_PAGE.kernel],
-        });
-        if (stopped()) return;
-
         view = await openDocumentView({
           client,
           docId: open.docId,
@@ -334,19 +346,12 @@ function PageCanvas({
           await view.close();
           return;
         }
-        if (canvas.current === null) return;
-        // `undefined` where the read was refused, which hands `renderPage` the
-        // page's own rotation rather than a flat zero. A model that could not be
-        // read is a document this renderer knows less about — not one it knows
-        // is upright — and the two are a quarter turn apart on any document that
-        // arrives already turned.
-        await renderPage(
-          view.document,
-          SHOWN_PAGE.pdfjs,
-          canvas.current,
-          1,
-          rotationFor(model, open.version),
-        );
+        // HANDED TO THE SCROLLER, which draws. This effect's job ends at a live
+        // view: the model read moved into `PageList`, because with continuous
+        // scroll the pages to read rotations FOR are the ones on screen, and
+        // this effect does not know which those are. L11's *name the pages you
+        // are about to draw* is a question only the scroller can answer.
+        setReady(view);
       } catch {
         // A parse that fails is a document this renderer cannot show. It is not
         // a crash and it is not silence: the surface stays empty and says so
@@ -360,47 +365,52 @@ function PageCanvas({
 
     return (): void => {
       cancelled = true;
+      // CLEARED BEFORE IT IS CLOSED, so no render can hold a torn-down view.
+      // The state update and the close are the same teardown; separating them
+      // is how a component ends up drawing through a closed parser for one
+      // frame, which reads as an intermittent blank page.
+      setReady(undefined);
       void view?.close();
     };
   }, [client, moved, open.byteLength, open.docId, open.version]);
 
-  return <canvas className="m-page" data-failed={failed ? 'true' : undefined} ref={canvas} />;
-}
+  if (failed) {
+    // A CANVAS, and the element is the contract rather than the appearance.
+    // `canvasHarness.ts` reads `data-failed` off `canvas.m-page` to tell a parse
+    // that threw from a render that has not finished — and moving the marker
+    // onto a container turned every failure into a sixty-second wait, which is
+    // what a working renderer with no display also produces. The two must not
+    // share an output.
+    return <canvas className="m-page" data-failed="true" />;
+  }
 
-/**
- * The shown page's rotation out of a view-model answer, or `undefined`.
- *
- * Four states collapse to `undefined` and each is *this renderer does not know*
- * rather than *this page is upright*: the read was refused, the document has no
- * pages, the array is shorter than the page count it reported, or the answer
- * describes a **different version**. The third is worth naming on its own —
- * `rotations[0]` on an empty array is `undefined` in JavaScript and `0` in almost
- * any hand-written guard, and the difference is a document drawn flat because a
- * message lost an entry.
- *
- * ## The version comparison is finding RRRRR-2, and it was argued before it existed
- *
- * The channel's own comment says the version travels back *"so a caller can
- * recognise a **late** answer — a command can bump while this is in flight"*.
- * Nothing read it. What dropped a stale read was the effect's cancel guard, which
- * is a different mechanism with a different reach: the model is read, then the
- * transport is opened, and a command landing between those two awaits leaves a
- * model describing version N+1 about to be drawn over bytes bound to N.
- *
- * That is ADR-0031's own hazard — *a document assembled from two versions* —
- * arriving through geometry instead of through byte offsets, and with nothing
- * thrown, because nothing was comparing anything. `readRange` refuses a range for
- * the wrong version; this refuses a rotation for one, and the refusal is
- * `undefined` rather than `0` for the same reason every other state here is.
- *
- * @param version the version the view is being opened at — not the one the model
- *   arrived with, which is the value under test.
- */
-function rotationFor(
-  model: Awaited<ReturnType<ContractClient['document.viewModel']>>,
-  version: DocVersion,
-): number | undefined {
-  if (!model.ok) return undefined;
-  if (model.value.version !== version) return undefined;
-  return model.value.rotations[0];
+  if (ready === undefined) {
+    // NOT A SPINNER: the parser is what knows how many pages there are, so
+    // until it opens there is nothing honest to lay out. The failure case above
+    // is the one that carries a marker.
+    return <div className="m-page-list" />;
+  }
+
+  return (
+    <PageList
+      client={client}
+      view={ready}
+      // FROM THE PARSER, NOT FROM THE VIEW MODEL, and this is a correction
+      // rather than a preference. The count came from `document.viewModel` for
+      // one build, which made the whole surface depend on an **engine session**:
+      // where none can be created the model is refused, and a viewer that
+      // rendered nothing then would show an empty window for a document PDF.js
+      // can read perfectly.
+      //
+      // Measured by `proof:canvaspixels`, which waited 60 seconds for a page
+      // that could not arrive. The single-page version never had the coupling —
+      // it drew unconditionally and treated the model as advisory — and the
+      // scroller reintroduced it by needing a count before it could lay out.
+      // PDF.js has the count and needs nobody's permission for it.
+      pageCount={ready.document.numPages}
+      docId={open.docId}
+      version={open.version}
+      onCurrentPage={onCurrentPage}
+    />
+  );
 }

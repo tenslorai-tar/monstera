@@ -4,14 +4,14 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { THEME_SETTING } from './settings/appearance.js';
-import { SHOWN_PAGE } from './shownPage.js';
+import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
 
 /**
@@ -28,6 +28,40 @@ import { SettingsStore } from './settingsStore.js';
  * read, in real Chromium.
  */
 activateCatalogue('en', EN);
+
+/**
+ * THE PARSER IS STUBBED HERE, and continuous scroll is why.
+ *
+ * These cases are about dispatch and about surfaces: which command a control
+ * sends, with what, and what the document surface renders. None is about PDF.js.
+ *
+ * The single-page version drew into a canvas that existed whether or not the
+ * parse finished, so a stub was unnecessary — under happy-dom the parse never
+ * finishes, and the cases asserted around it. The scroller cannot: **how many
+ * slots a document has is the PARSER's answer**, so a surface with no parser has
+ * no shape, and every case here would assert about an empty container.
+ *
+ * That is the seam being honest rather than a testing inconvenience. What it
+ * costs is stated in `AppViewLifetime.test.tsx`'s own header — a mock is per
+ * file, not per case — and what it buys is that these cases keep asking their
+ * own question instead of PDF.js's.
+ */
+vi.mock('./documentView.js', () => ({
+  openDocumentView: () =>
+    Promise.resolve({
+      // TWO PAGES, matching the view-model fixture below. A one-page stub would
+      // make "a slot per page" and "a slot" the same observation.
+      document: { numPages: 2 },
+      close: () => Promise.resolve(),
+    }),
+}));
+
+// MOCKED FOR THE VIEW'S REASON: happy-dom implements no 2d context, so the real
+// `renderPage` refuses before it draws — which these cases would then have to
+// treat as a failure rather than as the environment.
+vi.mock('./renderPage.js', () => ({
+  renderPage: () => Promise.resolve({ width: 595, height: 842 }),
+}));
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
@@ -219,21 +253,26 @@ describe('App', () => {
 
   it('shows the page surface once a document is open, and stops showing the start screen', async () => {
     // The `opened` answer is what turns the start screen into a document view.
-    // Both halves are asserted because a surface that added the canvas WITHOUT
+    // Both halves are asserted because a surface that added the pages WITHOUT
     // removing the start screen is a different defect from one that did neither.
-    const { client } = recordingClient({
-      kind: 'opened',
-      docId: DOC,
-      version: asDocVersion(1),
-      byteLength: 1024,
-    });
+    //
+    // `answeringClient` rather than `recordingClient` since continuous scroll:
+    // the list's LENGTH comes from the view model's page count, so a client that
+    // answers every channel the same way cannot produce a document with pages.
+    // That is the scroller's shape being real rather than a test detail — a
+    // surface built from a count has to be given one.
+    const { client } = answeringClient(OPEN_DOCUMENT_ANSWERS);
     const { container } = render(<App client={client} settings={freshSettings()} />);
 
-    await act(async () => {
-      screen.getByRole('button', { name: 'Open a document' }).click();
-      await Promise.resolve();
-    });
+    await withDocumentOpen();
 
+    // TWO PAGES, because the fixture's model says two. A list that rendered one
+    // slot per document, or a fixed number, passes `not.toBeNull()` and fails
+    // this — which is the difference between *a surface appeared* and *the
+    // document's shape appeared*.
+    expect(container.querySelectorAll('.m-page-slot')).toHaveLength(2);
+    // And the first page has a canvas: slots exist for every page, a canvas only
+    // for the ones in view.
     expect(container.querySelector('canvas.m-page')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Open a document' })).toBeNull();
   });
@@ -477,18 +516,22 @@ describe('App', () => {
       expect(searched).toHaveLength(1);
       expect(searched[0]?.params).toStrictEqual({
         docId: DOC,
-        page: SHOWN_PAGE.kernel,
+        page: FIRST_PAGE.kernel,
         query: 'needle',
         limit: 100,
       });
 
-      // AND THE CORRESPONDENCE, taken from the same object the surface takes it
+      // AND THE CORRESPONDENCE, taken from the same place the surface takes it
       // from rather than written as `0` here. Three numbers cross this boundary
       // — a page, a line and an offset — and only the page changes meaning on
       // the other side; asserting a literal would pin the constant instead of
       // the property, which is exactly how the rotate shipped wrong.
+      //
+      // A document that has just opened is scrolled to the top, so the current
+      // page is the first one. What this pins is that the bar sends the page the
+      // reader is on, not that the reader is on page 0.
       const asked = sent.filter((call) => call.id === 'document.viewModel');
-      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [SHOWN_PAGE.kernel] });
+      expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [FIRST_PAGE.kernel] });
 
       // The matched line reaches the screen, so this is not a dispatch into a
       // void that happens to be well formed.

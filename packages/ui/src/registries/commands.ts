@@ -40,6 +40,26 @@ export interface CommandContext {
   readonly hasSelection: boolean;
   /** Whether the document has unsaved changes. */
   readonly dirty: boolean;
+  /**
+   * The page the user is looking at, **zero-based**, or `undefined` with no
+   * document.
+   *
+   * ## Why this arrived, and what it replaced
+   *
+   * `SHOWN_PAGE` was a constant, because this build drew one page and *the page
+   * on screen* had one answer. Continuous scroll ends that: several pages are
+   * on screen and one of them is the one a command means. Its own header said
+   * the day would come — *"the day there are several, every caller of this is
+   * the list of places that have to learn which one"* — and this is that list,
+   * reduced to one entry by putting the answer in the context every command
+   * already receives.
+   *
+   * **Zero-based, like every page index that crosses the contract.** PDF.js
+   * numbers from 1 and this build has already sent the wrong one once;
+   * `pageNumbering.ts` is where the two meet and is the only place that
+   * converts.
+   */
+  readonly page: number | undefined;
 }
 
 /**

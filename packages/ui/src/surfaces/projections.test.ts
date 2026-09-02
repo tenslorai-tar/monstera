@@ -19,6 +19,7 @@ const context: CommandContext = {
   version: asDocVersion(1),
   hasSelection: false,
   dirty: false,
+  page: 0,
 };
 
 const ANY_TITLE = messageKey('command.any.label');

@@ -31,6 +31,10 @@ const CONTEXT: CommandContext = {
   version: asDocVersion(1),
   hasSelection: false,
   dirty: false,
+  // NOT THE FIRST PAGE. A fixture at page 0 would make a command that ignored
+  // the context and sent a literal zero pass every case below, which is the
+  // exact defect the rotate shipped with in the other direction.
+  page: 3,
 };
 
 /** The context with no document, for the `when` cases. */
@@ -39,6 +43,7 @@ const NO_DOCUMENT: CommandContext = {
   version: undefined,
   hasSelection: false,
   dirty: false,
+  page: undefined,
 };
 
 /**
