@@ -49,11 +49,28 @@ import { join } from 'node:path';
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import koffi from 'koffi';
 
+import { scoreAgainstTruth } from '../../packages/kernel/dist/textAccuracy.js';
+import { parsePageText } from '../../packages/kernel/dist/textStructure.js';
+import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { requireCurrentShim } from '../lib/shimBinary.mjs';
 
 const ROOT = repoRoot();
+
+// THE SHIPPED PARSER IS READ FROM `dist`, so a stale build would have this
+// reporting about code nobody is running — and this session watched exactly
+// that happen, when a reverted mutation left two source files newer than the
+// renderer bundle. The shim has its own freshness guard in `requireCurrentShim`;
+// this is the same question asked of the TypeScript side.
+refuseStaleBuild(
+  ROOT,
+  [
+    ['packages/kernel/src/textStructure.ts', 'packages/kernel/dist/textStructure.js', 'tsc'],
+    ['packages/kernel/src/textAccuracy.ts', 'packages/kernel/dist/textAccuracy.js', 'tsc'],
+  ],
+  2,
+);
 
 const lib = koffi.load(requireCurrentShim({ root: ROOT }));
 const mz_init = lib.func('int mz_init(_Out_ void **out)');
@@ -143,9 +160,10 @@ async function buildProseFixture() {
  * the parse would fail somewhere unrelated.
  *
  * @param {unknown} ctx @param {unknown} doc @param {number} flags
- * @returns {unknown}
+ * @returns {string} MuPDF's JSON, unparsed, so the shipped parser can be handed
+ *   exactly what the engine sent rather than a re-serialisation of it
  */
-function readStext(ctx, doc, flags) {
+function readStextJson(ctx, doc, flags) {
   let size = 1 << 16;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const buffer = Buffer.alloc(size);
@@ -155,11 +173,16 @@ function readStext(ctx, doc, flags) {
     }
     const full = Number(needed[0]);
     if (full < size) {
-      return JSON.parse(buffer.subarray(0, full).toString('utf8'));
+      return buffer.subarray(0, full).toString('utf8');
     }
     size = full + 1024;
   }
   throw new Error('the structured-text buffer never converged, which is a bug in this loop');
+}
+
+/** @param {unknown} ctx @param {unknown} doc @param {number} flags @returns {unknown} */
+function readStext(ctx, doc, flags) {
+  return JSON.parse(readStextJson(ctx, doc, flags));
 }
 
 /**
@@ -323,6 +346,28 @@ async function main() {
     };
 
     report('two columns, 268pt gutter', doc, true);
+
+    // THE SHIPPED PARSER AGAINST THE REAL ENGINE, not against a transcription.
+    // The unit tests feed `parsePageText` a payload written by hand from a
+    // reading — which is the first caller's problem in miniature: a fixture
+    // that is my transcription of MuPDF can be wrong in exactly the way that
+    // makes both the fixture and the parser agree. This is the only place the
+    // two meet with nothing hand-copied between them.
+    process.stdout.write('  THE SHIPPED PARSER, over the real engine output\n');
+    const columnMajorTruth = [
+      ...truth.filter((run) => run.column === 'left').map((run) => run.text),
+      ...truth.filter((run) => run.column === 'right').map((run) => run.text),
+    ];
+    for (const setting of settings) {
+      const page = parsePageText(readStextJson(ctx, doc, setting.flags));
+      const score = scoreAgainstTruth(page, columnMajorTruth);
+      process.stdout.write(
+        `    ${setting.name.padEnd(22)} lines ${score.lines.toFixed(2)}  order ${score.order.toFixed(2)}` +
+          `${score.missing.length > 0 ? `  missing ${score.missing.join(',')}` : ''}\n`,
+      );
+    }
+    process.stdout.write('\n');
+
     mz_close(ctx, doc);
 
     // THE HARD SHAPES. A flag measured only on the layout it was made for is
