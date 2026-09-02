@@ -142,7 +142,7 @@ function reportProblem(
  * question three times and a fourth command asking it slightly differently is
  * how a control appears on the start screen.
  */
-function hasDocument(context: CommandContext): boolean {
+export function hasDocument(context: CommandContext): boolean {
   return context.docId !== undefined;
 }
 

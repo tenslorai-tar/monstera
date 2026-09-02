@@ -195,6 +195,9 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        rulers={false}
+        showGrid={false}
+        unit="in"
       />,
     );
     await settle();
@@ -218,6 +221,9 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        rulers={false}
+        showGrid={false}
+        unit="in"
       />,
     );
     await settle();
@@ -246,6 +252,9 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        rulers={false}
+        showGrid={false}
+        unit="in"
       />,
     );
     await settle();
@@ -282,6 +291,9 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        rulers={false}
+        showGrid={false}
+        unit="in"
       />,
     );
     await settle();
@@ -334,6 +346,9 @@ describe('PageList', () => {
           mode={SCALE_1}
           onZoom={vi.fn()}
           onShownZoom={vi.fn()}
+          rulers={false}
+          showGrid={false}
+          unit="in"
         />,
       );
       await settle();
@@ -353,6 +368,9 @@ describe('PageList', () => {
             mode={SCALE_2}
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
+            rulers={false}
+            showGrid={false}
+            unit="in"
           />,
         );
         await Promise.resolve();
@@ -383,6 +401,9 @@ describe('PageList', () => {
             mode={SCALE_1}
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
+            rulers={false}
+            showGrid={false}
+            unit="in"
           />,
         );
         await act(async () => {
@@ -400,6 +421,9 @@ describe('PageList', () => {
             mode={SCALE_2}
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
+            rulers={false}
+            showGrid={false}
+            unit="in"
           />,
         );
 
@@ -435,6 +459,9 @@ describe('PageList', () => {
         mode={SCALE_1}
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
+        rulers={false}
+        showGrid={false}
+        unit="in"
       />,
     );
     await settle();

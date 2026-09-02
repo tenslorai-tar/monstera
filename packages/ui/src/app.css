@@ -74,6 +74,119 @@ body {
   block-size: 100%;
   overflow-y: auto;
   padding-block: var(--space-16);
+
+  /*
+   * THE CONTAINING BLOCK FOR THE RULERS, which are absolutely positioned and
+   * must not scroll away with the pages. Without this they would position
+   * against the nearest positioned ancestor — the app surface — and the
+   * horizontal ruler would sit above the wrong element.
+   */
+  position: relative;
+}
+
+/*
+ * The grid, as ONE repeating gradient rather than an element per line.
+ *
+ * A page at 400% with a 1cm grid needs a few hundred lines, and a few hundred
+ * absolutely-positioned elements is a layout cost paid on every scroll for
+ * decoration. The gradient is painted by the compositor and costs nothing to
+ * scroll.
+ *
+ * `--m-grid` is set inline by the scroller because the spacing is the one
+ * genuinely dynamic value here — it is a function of the zoom. The COLOUR is a
+ * token and stays here, which is the split §10.2 asks for.
+ */
+.m-page-list-grid {
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--border-soft) 0 1px,
+      transparent 1px var(--m-grid, 72px)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--border-soft) 0 1px,
+      transparent 1px var(--m-grid, 72px)
+    );
+  /*
+   * ANCHORED TO THE PAGE'S CORNER, not to the scroller's. `--m-grid-x` and
+   * `--m-grid-y` carry the page origin, so a grid line is a mark the reader can
+   * find on the ruler. Without this the two would be regular, aligned to
+   * different zeros, and silently disagree.
+   */
+  background-position: var(--m-grid-x, 0) var(--m-grid-y, 0);
+}
+
+.m-ruler {
+  position: absolute;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-chrome-10);
+  /*
+   * NOT A POINTER TARGET. The ruler sits over the scroller's padding, and a
+   * strip that swallowed a click would make the area beside the page dead —
+   * including the drag a future selection tool will want.
+   */
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.m-ruler-h {
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: var(--space-16);
+  border-block-end: 1px solid var(--border);
+}
+
+.m-ruler-v {
+  inset-inline-start: 0;
+  inset-block: 0;
+  inline-size: var(--space-16);
+  border-inline-end: 1px solid var(--border);
+}
+
+.m-tick {
+  position: absolute;
+  inline-size: 1px;
+  background: var(--border-control);
+}
+
+.m-ruler-h .m-tick {
+  inset-block-end: 0;
+  block-size: var(--space-4);
+}
+
+.m-ruler-v .m-tick {
+  inset-inline-end: 0;
+  block-size: 1px;
+  inline-size: var(--space-4);
+}
+
+/*
+ * A MAJOR TICK CARRIES ITS LABEL AS TEXT CONTENT, so it stops being a bare rule
+ * and needs a box that text fits in. The tick line itself becomes a border, so
+ * the mark stays exactly one pixel wide wherever the label ends up.
+ */
+.m-tick-major {
+  background: none;
+  inline-size: auto;
+  block-size: auto;
+  padding-inline-start: var(--space-4);
+  border-inline-start: 1px solid var(--border-control);
+  line-height: 1;
+}
+
+.m-ruler-h .m-tick-major {
+  inset-block: 0;
+}
+
+.m-ruler-v .m-tick-major {
+  inset-inline: 0;
+  border-inline-start: none;
+  border-block-start: 1px solid var(--border-control);
+  padding-block-start: var(--space-2);
+  padding-inline-start: var(--space-2);
 }
 
 /*

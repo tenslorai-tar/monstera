@@ -18,6 +18,7 @@ import {
   zoomCommand,
 } from './commands/documentCommands.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
+import { toggleGridCommand, toggleRulersCommand } from './commands/viewCommands.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -25,6 +26,8 @@ import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG } from './dialogs/commandProblem.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
+import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
+import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { type DocumentView, openDocumentView } from './documentView.js';
 import { CLOSE_LABEL } from './messages/en.js';
@@ -32,6 +35,9 @@ import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import { THEME_SETTING, type Theme, applyTheme } from './settings/appearance.js';
+import { GRID_SETTING, RULERS_SETTING, RULER_UNIT_SETTING } from './settings/viewing.js';
+import type { RulerUnit } from './rulerGeometry.js';
+import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { PageList } from './PageList.js';
@@ -90,10 +96,19 @@ export function App({ client, settings }: AppProps): ReactElement {
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
+        SETTINGS_PROBLEM_DIALOG,
       ]),
     [],
   );
   const { open: openDialog, show, close } = useDialogHost(dialogs);
+
+  // A FAILED WRITE NEEDS A DIALOG, so the subscription lives where `show` does.
+  //
+  // It subscribed in `main.tsx` until 2026-09-02, before the hydrate, so a
+  // change during startup could not be lost. Nothing is lost by moving it: the
+  // only callers of `set` are registered commands, which do not exist until
+  // this component has built the registry above.
+  useEffect(() => persistSettings(client, settings, show), [client, settings, show]);
 
   // WHAT A COMMAND LEFT BEHIND, applied to the open document.
   //
@@ -144,6 +159,13 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const [shownZoom, setShownZoom] = useState(1);
 
+  // The three reading aids, live. Read here rather than in the scroller because
+  // the scroller takes a `SettingsStore` from nobody — it is handed what it
+  // needs, which keeps it testable without a store.
+  const rulers = useSetting(settings, RULERS_SETTING);
+  const showGrid = useSetting(settings, GRID_SETTING);
+  const unit = useSetting(settings, RULER_UNIT_SETTING);
+
   /**
    * The updater the zoom commands are given.
    *
@@ -176,8 +198,10 @@ export function App({ client, settings }: AppProps): ReactElement {
         zoomCommand('out', { onZoom: changeZoom }),
         fitCommand('width', { onZoom: changeZoom }),
         fitCommand('page', { onZoom: changeZoom }),
+        toggleRulersCommand({ settings }),
+        toggleGridCommand({ settings }),
       ]),
-    [applied, changeZoom, client, show],
+    [applied, changeZoom, client, settings, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -214,6 +238,9 @@ export function App({ client, settings }: AppProps): ReactElement {
           mode={zoomMode}
           onZoom={changeZoom}
           onShownZoom={setShownZoom}
+          rulers={rulers}
+          showGrid={showGrid}
+          unit={unit}
         />
       )}
       {/* E2's substrate, reached by a person. It renders nothing with no
@@ -332,6 +359,9 @@ function PageCanvas({
   mode,
   onZoom,
   onShownZoom,
+  rulers,
+  showGrid,
+  unit,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -340,6 +370,9 @@ function PageCanvas({
   readonly mode: ZoomMode;
   readonly onZoom: (next: (shown: number) => ZoomMode) => void;
   readonly onShownZoom: (shown: number) => void;
+  readonly rulers: boolean;
+  readonly showGrid: boolean;
+  readonly unit: RulerUnit;
 }): ReactElement {
   const [failed, setFailed] = useState(false);
   /**
@@ -468,6 +501,9 @@ function PageCanvas({
       mode={mode}
       onZoom={onZoom}
       onShownZoom={onShownZoom}
+      rulers={rulers}
+      showGrid={showGrid}
+      unit={unit}
     />
   );
 }

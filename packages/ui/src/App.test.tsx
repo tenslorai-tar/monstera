@@ -10,6 +10,7 @@ import { App } from './App.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
+import { ALL_SETTINGS } from './settings/all.js';
 import { THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
@@ -80,7 +81,11 @@ const DOC = asDocId('doc-1');
  * case that assumed the default would pass in file order and fail alone.
  */
 function freshSettings(): SettingsStore {
-  return new SettingsStore(new SettingsRegistry([THEME_SETTING]));
+  // THE SHIPPED LIST, not a hand-picked subset. `App` reads four settings and
+  // `SettingsStore.get` throws for an unregistered id, so a subset here is a
+  // store the component under test cannot run against — and a subset that
+  // happened to be enough today is one that silently stops matching `main.tsx`.
+  return new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
 }
 
 // The root element is shared by every case in this file, and the theme cases

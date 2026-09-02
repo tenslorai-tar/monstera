@@ -7,9 +7,9 @@ import { createRendererClient } from './bridge.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
-import { THEME_SETTING } from './settings/appearance.js';
+import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
-import { hydrateSettings, persistSettings } from './settingsSync.js';
+import { hydrateSettings } from './settingsSync.js';
 
 import './tokens.css';
 import './app.css';
@@ -58,15 +58,9 @@ if (container === null) {
 activateCatalogue('en', EN);
 
 const client = createRendererClient();
-const settings = new SettingsStore(new SettingsRegistry([THEME_SETTING]));
+const settings = new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
 
 // NOTHING HERE WAITS FOR MAIN, and that is the point of the shape.
-//
-// Subscribing first means a change arriving during startup is not lost.
-// `persistSettings` ignores the `'*'` a hydrate emits, so subscribing before
-// hydrating does not write the file back over itself — which matters because
-// `hydrate` drops ids this build's registry does not know, so a write triggered
-// by a hydrate would delete a newer build's settings from disk on startup.
 //
 // The hydrate is FIRED, not awaited. Awaiting it — even with a bound — makes the
 // renderer's first paint depend on an IPC answer, and `proof:rendererpolicy`
@@ -74,7 +68,15 @@ const settings = new SettingsStore(new SettingsRegistry([THEME_SETTING]));
 // which is exactly what a missing preload looks like to a user. The theme
 // arrives a round trip later and `useTheme` applies it in a LAYOUT effect, so
 // the correction lands before the next paint.
-persistSettings(client, settings);
+//
+// `persistSettings` MOVED INTO `App` on 2026-09-02, because it now reports a
+// failed write and the dialog host that shows it lives there. It used to
+// subscribe here, before the hydrate, so a change arriving during startup could
+// not be lost — and that ordering is preserved rather than abandoned: nothing
+// can change a setting before `App` mounts, since the only callers of `set` are
+// registered commands, and `persistSettings` still ignores the `'*'` a hydrate
+// emits. (That last part is what stops a write triggered by a hydrate deleting
+// a newer build's settings from disk on startup.)
 void hydrateSettings(client, settings);
 
 createRoot(container).render(

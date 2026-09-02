@@ -6,6 +6,8 @@ import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } 
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
+import { Rulers } from './Rulers.js';
+import { type RulerUnit, gridSpacing } from './rulerGeometry.js';
 import { type Box, type ZoomMode, resolveZoom, zoomInFrom, zoomOutFrom } from './zoom.js';
 
 /**
@@ -90,6 +92,17 @@ export interface PageListProps {
    * from the last explicit scale, which is not what the reader can see.
    */
   readonly onShownZoom: (shown: number) => void;
+  /** Whether the two rulers are drawn. `viewing.rulers`. */
+  readonly rulers: boolean;
+  /** Whether the grid overlay is drawn. `viewing.grid`. */
+  readonly showGrid: boolean;
+  /**
+   * What both are read in. `viewing.ruler-unit`.
+   *
+   * ONE unit for both, passed as one prop, because a grid line a reader cannot
+   * find on the ruler means nothing.
+   */
+  readonly unit: RulerUnit;
 }
 
 /**
@@ -143,6 +156,9 @@ export function PageList({
   mode,
   onZoom,
   onShownZoom,
+  rulers,
+  showGrid,
+  unit,
 }: PageListProps): ReactElement {
   const slots = useRef(new Map<number, HTMLElement>());
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -260,6 +276,42 @@ export function PageList({
    * ignoring it, the fix is an effect with `{ passive: false }` and not a
    * different gesture.
    */
+  /**
+   * Where the page's zero sits inside the scroller, in CSS pixels.
+   *
+   * **Read from the first slot's own box**, not computed from the page size and
+   * a guessed margin: the slot is centred by CSS and the margin is a token, so
+   * arithmetic here would be a second opinion about a layout the stylesheet
+   * owns — and it would be wrong the day the margin changes.
+   *
+   * Both numbers go NEGATIVE once the page is scrolled past, which is correct:
+   * a ruler whose origin clamped to zero would put its zero mark wherever the
+   * viewport happened to start.
+   */
+  const [pageOrigin, setPageOrigin] = useState({ x: 0, y: 0 });
+
+  const measureOrigin = useCallback((): void => {
+    const box = scroller.current;
+    const slot = slots.current.get(FIRST_PAGE.kernel);
+    if (box === null || slot === undefined) return;
+    const outer = box.getBoundingClientRect();
+    const inner = slot.getBoundingClientRect();
+    setPageOrigin({ x: inner.left - outer.left, y: inner.top - outer.top });
+  }, []);
+
+  // Recomputed on scroll, on resize, and whenever the page is redrawn at a new
+  // scale — the three things that move the page's corner. A ruler that updated
+  // only on scroll drifts on zoom, silently, and looks right until measured.
+  useEffect(() => {
+    measureOrigin();
+  }, [measureOrigin, shown, viewport, sizes]);
+
+  const onScroll = useCallback((): void => {
+    measureOrigin();
+  }, [measureOrigin]);
+
+  const grid = showGrid ? gridSpacing(unit, shown) : undefined;
+
   const onWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>): void => {
       if (!event.ctrlKey) return;
@@ -424,7 +476,31 @@ export function PageList({
   }, [onCurrentPage, visible]);
 
   return (
-    <div className="m-page-list" ref={scroller} onWheel={onWheel}>
+    <div
+      className={grid === undefined ? 'm-page-list' : 'm-page-list m-page-list-grid'}
+      // THE SPACING IS A CUSTOM PROPERTY, not an inline background. The grid is
+      // a repeating gradient in `app.css`, so its colour is a token there and
+      // this passes only the number that has to be computed — which is the
+      // token rule's own line: a value that is genuinely dynamic.
+      style={
+        grid === undefined
+          ? undefined
+          : ({
+              '--m-grid': `${String(grid)}px`,
+              // THE SAME ORIGIN THE RULER USES, so a grid line is a mark the
+              // reader can find on the ruler. Two regular grids aligned to
+              // different zeros look correct and disagree.
+              '--m-grid-x': `${String(pageOrigin.x)}px`,
+              '--m-grid-y': `${String(pageOrigin.y)}px`,
+            } as React.CSSProperties)
+      }
+      ref={scroller}
+      onWheel={onWheel}
+      onScroll={onScroll}
+    >
+      {rulers && viewport !== undefined ? (
+        <Rulers unit={unit} zoom={shown} size={viewport} origin={pageOrigin} />
+      ) : null}
       {Array.from({ length: pageCount }, (_, page) => (
         <PageSlot
           key={page}

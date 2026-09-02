@@ -14,6 +14,11 @@ import type { z } from 'zod';
 export type SettingCategory =
   | 'general'
   | 'appearance'
+  // What is drawn OVER the document, as against how the shell is painted:
+  // rulers, grid, page layout, dark page mode. `BUILD-PROMPT.md:608-611` groups
+  // them this way, and the distinction is one a reader makes — nobody looks for
+  // the grid under the theme.
+  | 'viewing'
   | 'editing'
   | 'privacy'
   | 'advanced';

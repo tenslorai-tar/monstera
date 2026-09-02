@@ -1,4 +1,4 @@
-import type { SettingsRegistry } from './registries/settings.js';
+import type { SettingDefinition, SettingsRegistry } from './registries/settings.js';
 
 /**
  * The renderer's live settings values.
@@ -61,6 +61,21 @@ export class SettingsStore {
    */
   get(id: string): unknown {
     return this.#registry.read(id, this.#values.get(id));
+  }
+
+  /**
+   * The declaration behind an id, or `undefined` for an id nothing registered.
+   *
+   * **A narrow accessor rather than exposing the registry**, because this
+   * class's whole reason for existing is that callers ask *it* rather than
+   * reaching past it — a public registry would let a component read a value
+   * from the definition and bypass every migration and validation here.
+   *
+   * What needs it is reporting: a failure has to name the setting a user
+   * recognises, and the title is the registry's rather than the caller's (B3).
+   */
+  definition(id: string): SettingDefinition | undefined {
+    return this.#registry.get(id);
   }
 
   /**

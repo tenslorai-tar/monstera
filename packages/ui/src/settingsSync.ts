@@ -1,5 +1,6 @@
 import type { ContractClient } from '@monstera/contract';
 
+import { SETTINGS_PROBLEM_DIALOG_ID } from './dialogs/settingsProblem.js';
 import type { SettingsStore } from './settingsStore.js';
 
 /**
@@ -79,18 +80,53 @@ export async function hydrateSettings(client: ContractClient, store: SettingsSto
  * write would make the file the sum of a sequence, and an interrupted sequence
  * leaves a state no single write produced.
  *
- * ## The result is not awaited, and the failure is not reported
+ * ## The result is not awaited, and the failure IS reported — since 2026-09-02
  *
- * A subscriber cannot block: it runs inside `set`, which the settings dialog
- * calls from an event handler. A write that fails is a preference that will not
- * survive the restart, which the user discovers at the restart — reporting it at
- * the moment of the change would need a dialog this application does not have
- * yet, and inventing one here would be a surface with no registration behind it.
- * The gap is real and is named in the FEATURES row rather than papered over.
+ * A subscriber cannot block: it runs inside `set`, which a command calls from
+ * an event handler. So the write is still fired rather than awaited, and the
+ * answer is handled in a continuation.
+ *
+ * **This closes row 292's owed clause, and the trigger was `set` acquiring its
+ * first shipped caller** — the rulers' toggle commands. Until then no write
+ * could fail under a user, so there was nothing to report; the row said so.
+ *
+ * Reporting matters here more than it looks: the change DID take effect in
+ * memory, so the ruler appears and the user has every reason to think the
+ * matter is settled. What failed is only that it will not survive a restart —
+ * which they meet in a later session with no way to connect it to what they
+ * did. Silence puts the failure where it cannot be diagnosed.
+ *
+ * ## The title comes from the REGISTRY, not from the caller
+ *
+ * `show` is handed the setting's own declared title, looked up by id, so the
+ * dialog names the preference a user recognises rather than an id. A caller
+ * passing its own wording would be a second name for one setting (B3).
  */
-export function persistSettings(client: ContractClient, store: SettingsStore): () => void {
+export function persistSettings(
+  client: ContractClient,
+  store: SettingsStore,
+  show: (id: string, props: unknown) => void,
+): () => void {
   return store.subscribe((id) => {
     if (id === '*') return;
-    void client['settings.save']({ values: store.all() });
+    // CAPTURED BEFORE THE AWAIT. `store.get` would answer whatever the value is
+    // when the write comes back, and a user who changed it twice would be told
+    // about the wrong one.
+    const title = store.definition(id)?.title;
+    void client['settings.save']({ values: store.all() }).then(
+      (answer) => {
+        if (answer.ok || title === undefined) return;
+        show(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });
+      },
+      () => {
+        // A REJECTION IS NOT AN ANSWER. The boundary rejects when the channel
+        // itself failed — no preload, a wedged main — which is a defect in this
+        // build rather than a storage problem, and the user's position is
+        // identical either way: applied now, not remembered. Reporting both
+        // through one dialog is honest; swallowing this one would make the
+        // worst case the quiet one.
+        if (title !== undefined) show(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });
+      },
+    );
   });
 }

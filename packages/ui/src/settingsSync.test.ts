@@ -1,7 +1,8 @@
 import { type ContractClient, channels, createClient } from '@monstera/contract';
-import { ok } from '@monstera/shared';
-import { describe, expect, it } from 'vitest';
+import { INTERNAL_FAILURE, err, ok } from '@monstera/shared';
+import { describe, expect, it, vi } from 'vitest';
 
+import { SETTINGS_PROBLEM_DIALOG_ID } from './dialogs/settingsProblem.js';
 import { SettingsRegistry } from './registries/settings.js';
 import { THEME_SETTING } from './settings/appearance.js';
 import { SettingsStore } from './settingsStore.js';
@@ -116,7 +117,7 @@ describe('settings sync', () => {
   it('a change is SAVED, and read back by a store that never saw it', async () => {
     const { client } = persistentClient();
     const writer = freshStore();
-    persistSettings(client, writer);
+    persistSettings(client, writer, vi.fn());
 
     writer.set(THEME_SETTING.id, 'dark');
     // The save is not awaited by `persistSettings` — a subscriber cannot block —
@@ -145,7 +146,7 @@ describe('settings sync', () => {
     // the file without that value, before the user touched anything.
     const { client, stored } = persistentClient({ 'from.a.newer.build': 'keep me' });
     const store = freshStore();
-    persistSettings(client, store);
+    persistSettings(client, store, vi.fn());
 
     await hydrateSettings(client, store);
     await Promise.resolve();
@@ -162,7 +163,7 @@ describe('settings sync', () => {
     // perfectly — the guard passing because the mechanism is absent.
     const { client, stored } = persistentClient({ 'from.a.newer.build': 'keep me' });
     const store = freshStore();
-    persistSettings(client, store);
+    persistSettings(client, store, vi.fn());
 
     await hydrateSettings(client, store);
     store.set(THEME_SETTING.id, 'light');
@@ -177,10 +178,62 @@ describe('settings sync', () => {
     expect(stored()).toStrictEqual({ [THEME_SETTING.id]: 'light' });
   });
 
+  it('a save that FAILS is reported, naming the setting from the registry', async () => {
+    // ROW 292'S OWED CLAUSE. The write is fired and not awaited — a subscriber
+    // cannot block — so the failure has to be handled in a continuation, and
+    // until this case existed nothing looked at the answer at all.
+    //
+    // `settings.save` declares no failure codes, so the reachable failure is
+    // `internal`: main's handler calls `write` and a throw becomes an internal
+    // failure carrying an incident id. That is what a full disk looks like from
+    // here.
+    const shown: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, (id) =>
+      id === 'settings.save'
+        ? Promise.resolve(err({ code: INTERNAL_FAILURE, incident: 'incident-1' }))
+        : Promise.resolve(ok({ stored: {} })),
+    );
+    const store = freshStore();
+    persistSettings(client, store, (id, props) => shown.push({ id, props }));
+
+    store.set(THEME_SETTING.id, 'dark');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // THE SETTING'S OWN TITLE, from the registry rather than from the caller —
+    // asserting only that *a* dialog opened would pass for one naming the wrong
+    // preference, which is the whole thing a user needs from it.
+    expect(shown).toStrictEqual([
+      { id: SETTINGS_PROBLEM_DIALOG_ID, props: { setting: THEME_SETTING.title } },
+    ]);
+
+    // AND THE VALUE IS STILL APPLIED, which is what the dialog says and what
+    // makes the report worth making. A case that only checked the dialog would
+    // pass for an implementation that also rolled the change back — leaving the
+    // user with an error about something that then did not happen.
+    expect(store.get(THEME_SETTING.id)).toBe('dark');
+  });
+
+  it('CONTROL: a save that SUCCEEDS reports nothing', async () => {
+    // Without this, `persistSettings` opening the dialog on every write
+    // satisfies the case above perfectly — and a preference that reported a
+    // failure every time it worked is worse than one that reported none.
+    const shown: { id: string; props: unknown }[] = [];
+    const { client } = persistentClient();
+    const store = freshStore();
+    persistSettings(client, store, (id, props) => shown.push({ id, props }));
+
+    store.set(THEME_SETTING.id, 'dark');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(shown).toStrictEqual([]);
+  });
+
   it('unsubscribing stops the saves', async () => {
     const { client, stored } = persistentClient();
     const store = freshStore();
-    const stop = persistSettings(client, store);
+    const stop = persistSettings(client, store, vi.fn());
 
     stop();
     store.set(THEME_SETTING.id, 'dark');

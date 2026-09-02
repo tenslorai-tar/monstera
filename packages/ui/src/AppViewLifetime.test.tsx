@@ -11,7 +11,7 @@ import type { DocumentView } from './documentView.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import { SettingsRegistry } from './registries/settings.js';
-import { THEME_SETTING } from './settings/appearance.js';
+import { ALL_SETTINGS } from './settings/all.js';
 import { SettingsStore } from './settingsStore.js';
 
 /**
@@ -78,7 +78,8 @@ function render(ui: ReactElement): ReturnType<typeof renderBare> {
 }
 
 function freshSettings(): SettingsStore {
-  return new SettingsStore(new SettingsRegistry([THEME_SETTING]));
+  // The shipped list; see `App.test.tsx` for why a subset is not equivalent.
+  return new SettingsStore(new SettingsRegistry(ALL_SETTINGS));
 }
 
 function answeringClient(model?: Readonly<Record<string, unknown>>): ContractClient {

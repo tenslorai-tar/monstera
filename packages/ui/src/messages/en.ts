@@ -45,6 +45,14 @@ export const ZOOM_IN_TITLE = messageKey('command.zoom-in.title');
 export const ZOOM_OUT_TITLE = messageKey('command.zoom-out.title');
 export const FIT_WIDTH_TITLE = messageKey('command.fit-width.title');
 export const FIT_PAGE_TITLE = messageKey('command.fit-page.title');
+export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
+export const GRID_TITLE = messageKey('setting.viewing.grid.title');
+export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
+export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
+export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
+export const SETTINGS_PROBLEM_TITLE = messageKey('dialog.settings-problem.title');
+export const SETTINGS_APPLIED_NOW = messageKey('dialog.settings-problem.applied');
+export const SETTINGS_NOT_STORED = messageKey('dialog.settings-problem.not-stored');
 export const FIND_LABEL = messageKey('surface.find.label');
 export const FIND_SUBMIT = messageKey('surface.find.submit');
 export const FIND_MATCHES = messageKey('surface.find.matches');
@@ -99,6 +107,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ZOOM_OUT_TITLE]: 'Zoom out',
   [FIT_WIDTH_TITLE]: 'Fit width',
   [FIT_PAGE_TITLE]: 'Fit page',
+  [RULERS_TITLE]: 'Show rulers',
+  [GRID_TITLE]: 'Show grid',
+  [RULER_UNIT_TITLE]: 'Ruler unit',
+  [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
+  [VERTICAL_RULER_LABEL]: 'Vertical ruler',
+  [SETTINGS_PROBLEM_TITLE]: 'Preference not saved',
+  [SETTINGS_APPLIED_NOW]: '{setting} is in effect now.',
+  [SETTINGS_NOT_STORED]: 'It could not be stored, so it will not be remembered next time.',
   [FIND_LABEL]: 'Find on this page',
   // NOT 'Find', which is the toolbar command's title: two controls sharing an
   // accessible name is one a screen-reader user cannot tell apart, and it was
