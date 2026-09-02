@@ -24,6 +24,16 @@ import { type PageText, STEXT_OPTION_STRING, parsePageText } from './textStructu
  * The scale is left at its default of 1, so coordinates arrive in the page's
  * own units. Scaling here would bake a rendering decision into an extraction
  * path, which is the coordinate confusion invariant L3 exists to prevent.
+ *
+ * ## THE `mupdf` IMPORT HERE IS TYPE-ONLY, and there is one runtime path
+ *
+ * Written down 2026-09-02 so the next reader does not re-derive it. This file
+ * and `rotatePages.ts` both `import type * as mupdf`, which erases; the only
+ * module in the product that imports the package at run time is
+ * `mupdfWriter.ts`, and everything else reaches the engine through the session
+ * it hands out. So there is no second engine path in the product, and a reading
+ * taken anywhere else is a reading of a neighbouring path — which is what
+ * ADR-0034's 2026-09-02 addition records happening to its own measurements.
  */
 export interface PageTextResult {
   /** The document's page count, so a caller can bound a search without a second call. */

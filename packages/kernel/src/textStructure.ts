@@ -46,41 +46,41 @@ import { type FitzPoint, fitzPoint } from '@monstera/shared';
  * subject is a table owes the reading ADR-0034 did for prose before turning it
  * on.
  *
- * The numbers are MuPDF's own, from `include/mupdf/fitz/structured-text.h`.
- * They are spelt as literals with their names beside them rather than imported,
- * because the shim's ABI carries an `int` and there is no header to import from
- * — and a bare `4096` at a call site is the thing this constant exists to stop.
+ * The names are MuPDF's own, from `source/fitz/stext-device.c`'s
+ * `fz_parse_stext_options`.
+ *
+ * ## ONE ENCODING, as of 2026-09-02, and that is the point of this shape
+ *
+ * This module carried the choice **twice** until then: a flag word `4096` for
+ * the C shim's `mz_stext_json`, and the string `'segment'` for the npm
+ * package's `toStructuredText`. Two independent literals, with nothing deriving
+ * one from the other and nothing comparing them — and the argument for it was
+ * that living in one module makes drift *visible to a reader*, which is a
+ * paragraph someone has to read and act on rather than a state that cannot
+ * arise. QQQ-3's ruling exactly, and worse here because the flag word had **no
+ * product caller**: drift would have run toward the side nothing exercises.
+ *
+ * The shim export is gone and so is the flag word. ADR-0034's K.0 bans *"a
+ * second set of stext options anywhere"*, and two encodings of one set is that
+ * shape one step short of it. What remains is a set of option NAMES, which is
+ * how the engine's own parser spells them, so adding `tableHunt` to what this
+ * application asks for is one edit here and nothing else anywhere (B5).
  */
 export const STEXT_OPTIONS = {
   /** `FZ_STEXT_SEGMENT` — segment the page into reading-order regions. */
-  segment: 4096,
+  segment: 'segment',
   /** `FZ_STEXT_TABLE_HUNT` — off; see the note above. */
-  tableHunt: 16384,
+  tableHunt: 'table-hunt',
 } as const;
 
 /**
- * The flag word, for the C shim's `mz_stext_json`.
+ * What this application asks `toStructuredText` for.
  *
- * `native/mupdf-shim` takes an `int` because that is what crosses koffi.
+ * `tableHunt` is ABSENT rather than written `table-hunt=0`, so turning it on is
+ * visibly a change to this line. Composed from the set above rather than spelt,
+ * because a literal here would be the second opinion the set exists to prevent.
  */
-export const STEXT_FLAGS: number = STEXT_OPTIONS.segment;
-
-/**
- * The same choice, spelt as MuPDF's option STRING for `toStructuredText`.
- *
- * **Two spellings of one decision, and that is precisely why they live in one
- * module.** The npm package takes a string that
- * `fz_parse_stext_options` reads; the C shim takes the flag word above. Left at
- * their call sites they would be two opinions about which options this
- * application wants, drifting the moment one is changed — B3a's shape, and the
- * exact failure Part E2 describes as constants "required to mirror exactly
- * across copies".
- *
- * The names are MuPDF's own, from `source/fitz/stext-device.c`'s
- * `fz_parse_stext_options`: `segment` and `table-hunt`. `table-hunt` is absent
- * rather than written `table-hunt=0`, so adding it is visibly a change.
- */
-export const STEXT_OPTION_STRING = 'segment';
+export const STEXT_OPTION_STRING: string = STEXT_OPTIONS.segment;
 
 /** A rectangle in MuPDF's space, as two corners rather than a size. */
 export interface FitzRect {

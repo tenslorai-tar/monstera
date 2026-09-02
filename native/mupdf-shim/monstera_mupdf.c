@@ -1065,7 +1065,26 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
 }
 
 /*
- * One page's structured text, as MuPDF's own JSON.
+ * mz_stext_json WAS HERE AND WAS REMOVED ON 2026-09-02, and the reason is a
+ * rule rather than a tidy-up, so it is recorded instead of silently deleted.
+ *
+ * It exported one page's structured text as MuPDF's own JSON and took an int
+ * FLAG WORD. The npm `mupdf` package — the same engine, 1.28.0, checked — reaches
+ * the same serialiser through `toStructuredText(options).asJSON()` and takes an
+ * option STRING. So the flag word here and the string there were two encodings
+ * of one decision, declared as two independent literals in `textStructure.ts`
+ * with nothing deriving one from the other and nothing comparing them. This
+ * export had no product caller at all, so any drift would have run toward the
+ * side nothing exercises.
+ *
+ * ADR-0034's K.0 bans a second set of stext options anywhere; two encodings of
+ * one set is that shape one step short. Deleting the export makes the second
+ * encoding unrepresentable rather than discouraged (B5).
+ *
+ * IF A SHIM PATH IS EVER NEEDED, it comes back taking the option string and
+ * calling fz_parse_stext_options, so `textStructure.ts` still holds the only
+ * set. The notes below are kept because they are what the next author of that
+ * function would otherwise have to rediscover.
  *
  * WHY MuPDF'S SERIALISER AND NOT A SHAPE OF OURS. `fz_print_stext_page_as_json`
  * is the authority's own answer to "what did the structuring produce"; a struct
@@ -1088,57 +1107,3 @@ MZ_EXPORT void mz_free_pixmap(mz_ctx *c, void *pixmap)
  * bake a rendering decision into an extraction path, which is the coordinate
  * confusion invariant L3 exists to prevent.
  */
-MZ_EXPORT int mz_stext_json(mz_ctx *c, mz_doc *d, int number, int flags,
-                            char *out_buf, int buf_len, double *needed_out)
-{
-    fz_stext_page *text = NULL;
-    fz_buffer *buf = NULL;
-    fz_output *out = NULL;
-    fz_stext_options opts;
-    unsigned char *data = NULL;
-    size_t len = 0;
-
-    if (c == NULL || d == NULL || out_buf == NULL || buf_len <= 0 || needed_out == NULL)
-        return MZ_ERR;
-
-    memset(&opts, 0, sizeof(opts));
-    opts.flags = flags;
-
-    /* All three are assigned inside the try and read from fz_always or
-     * fz_catch, so all three take fz_var — the rule in this file's header, and
-     * the failure it describes is a silent leak rather than a crash. */
-    fz_var(text);
-    fz_var(buf);
-    fz_var(out);
-
-    fz_try(c->fz) {
-        text = fz_new_stext_page_from_page_number(c->fz, d->doc, number, &opts);
-        buf = fz_new_buffer(c->fz, 4096);
-        out = fz_new_output_with_buffer(c->fz, buf);
-        fz_print_stext_page_as_json(c->fz, out, text, 1.0f);
-        fz_close_output(c->fz, out);
-        len = fz_buffer_storage(c->fz, buf, &data);
-    }
-    fz_always(c->fz) {
-        fz_drop_output(c->fz, out);
-    }
-    fz_catch(c->fz) {
-        fz_drop_buffer(c->fz, buf);
-        fz_drop_stext_page(c->fz, text);
-        mz_record(c);
-        return MZ_ERR;
-    }
-
-    *needed_out = (double)len;
-    {
-        size_t room = (size_t)buf_len - 1;
-        size_t take = (len < room) ? len : room;
-        if (data != NULL && take > 0)
-            memcpy(out_buf, data, take);
-        out_buf[take] = '\0';
-    }
-
-    fz_drop_buffer(c->fz, buf);
-    fz_drop_stext_page(c->fz, text);
-    return MZ_OK;
-}

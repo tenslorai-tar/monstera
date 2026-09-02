@@ -218,3 +218,42 @@ In order, and the local re-derivation is last rather than first:
 **This addition settles nothing about whether Stage 5 needs any of that.** It
 settles what the answer would have to look like, so the question arrives with a
 test attached rather than as an argument in the commit that wants the feature.
+
+## Addition, 2026-09-02 — the measurements above were taken through a path the product does not use, and they reproduce
+
+The readings in this document were taken through `mz_stext_json`, an export of
+our C shim, over koffi. **The product does not use that path and never did**:
+`pageText.ts` reaches the same MuPDF serialiser through the npm `mupdf`
+package's `toStructuredText(options).asJSON()`. So the evidence for a decision
+about what the product's text substrate does came from a neighbouring path —
+which K.0's own logic condemns, since the two paths encoded the option set
+differently (an `int` flag word against an option string) and nothing compared
+them.
+
+That second encoding is now deleted. `mz_stext_json` is gone from the shim,
+`STEXT_FLAGS` is gone from `textStructure.ts`, and `STEXT_OPTIONS` holds MuPDF's
+option **names** — so what this application asks for is one string composed from
+one set, and adding `table-hunt` is a single edit (B5 rather than a paragraph
+telling a reader to keep two literals in step).
+
+**The spike was re-pointed at the product's path and every reading reproduced**,
+run 2026-09-02, npm `mupdf` 1.28.0 against the shim's MuPDF 1.28.0 — the same
+engine version, which is what made the move a re-measurement rather than a
+different experiment:
+
+| fixture | default | `segment` | `segment,table-hunt` |
+|---|---|---|---|
+| two columns, 268pt gutter | row-major, 5 blocks | **COLUMN-major**, 10 blocks | row-major, 11 blocks |
+| two columns, 60pt gutter | row-major, 5 blocks | **COLUMN-major**, 10 blocks | row-major, 11 blocks |
+| single-column prose | 5 blocks, 5 lines | unchanged | **11 blocks, 10 lines** |
+
+The shipped parser's scores are unchanged too: `lines 1.00 / order 0.78` with no
+options, `1.00 / 1.00` under `segment`.
+
+**So the conclusion stands and its evidence is now about the right thing.** The
+distinction is worth keeping even though the numbers agreed: they agreed because
+both paths call `fz_print_stext_page_as_json` in the same engine build, and
+nothing in the original reading established that — it was assumed. A version
+skew between the shim and the package would have made the table describe a
+structure the product never sees, silently, and no check in this repository
+looks for that.

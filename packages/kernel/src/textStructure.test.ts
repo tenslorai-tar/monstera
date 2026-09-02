@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { scoreAgainstTruth } from './textAccuracy.js';
-import { STEXT_FLAGS, STEXT_OPTIONS, linesOf, parsePageText, plainTextOf } from './textStructure.js';
+import {
+  STEXT_OPTION_STRING,
+  STEXT_OPTIONS,
+  linesOf,
+  parsePageText,
+  plainTextOf,
+} from './textStructure.js';
 
 /**
  * MuPDF's JSON for the two-column fixture, as `SEGMENT` returns it.
@@ -64,19 +70,33 @@ function unsegmentedTwoColumn(): string {
 const TRUTH = ['left0', 'left1', 'right0', 'right1'];
 
 describe('the stext options', () => {
-  it('names SEGMENT and leaves TABLE_HUNT out of the flag word', () => {
+  it('asks for SEGMENT and leaves TABLE_HUNT out of what it asks for', () => {
     // THE POINT OF THE MODULE, asserted rather than assumed. ADR-0034 measured
     // TABLE_HUNT splitting a prose line in two and undoing SEGMENT's ordering,
-    // so it is declared — a consumer may opt in — and not set.
-    expect(STEXT_FLAGS & STEXT_OPTIONS.segment).toBe(STEXT_OPTIONS.segment);
-    expect(STEXT_FLAGS & STEXT_OPTIONS.tableHunt).toBe(0);
+    // so it is declared — a consumer may opt in — and not asked for.
+    //
+    // SPLIT ON THE SEPARATOR rather than matched as a substring: `table-hunt`
+    // contains no option name, but a future option whose name is a prefix of
+    // another would make `includes` answer yes for an option nobody asked for.
+    const asked = STEXT_OPTION_STRING.split(',');
+    expect(asked).toContain(STEXT_OPTIONS.segment);
+    expect(asked).not.toContain(STEXT_OPTIONS.tableHunt);
   });
 
-  it('CONTROL: the two options are different bits, so the case above can fail', () => {
-    // Without this, both assertions pass for a flag word of any value if the
-    // two constants happened to be equal — the case would be checking one thing
+  it('CONTROL: the two options are different names, so the case above can fail', () => {
+    // Without this, both assertions pass for any option string if the two
+    // constants happened to be equal — the case would be checking one thing
     // twice and reporting it as two.
     expect(STEXT_OPTIONS.segment).not.toBe(STEXT_OPTIONS.tableHunt);
+  });
+
+  it('spells the names MuPDFs own parser accepts, not names invented here', () => {
+    // `fz_parse_stext_options` matches these literally, and an unknown option
+    // is IGNORED rather than refused — so a misspelt name gives a page parsed
+    // with default options and no error anywhere. That is the reassuring answer
+    // for a defect, which is why the spelling is asserted rather than trusted.
+    expect(STEXT_OPTIONS.segment).toBe('segment');
+    expect(STEXT_OPTIONS.tableHunt).toBe('table-hunt');
   });
 });
 

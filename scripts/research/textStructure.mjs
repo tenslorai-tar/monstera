@@ -47,22 +47,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
-import koffi from 'koffi';
+import * as mupdf from 'mupdf';
 
 import { scoreAgainstTruth } from '../../packages/kernel/dist/textAccuracy.js';
-import { parsePageText } from '../../packages/kernel/dist/textStructure.js';
+import { STEXT_OPTIONS, parsePageText } from '../../packages/kernel/dist/textStructure.js';
 import { refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { repoRoot } from '../lib/gitScope.mjs';
 import { formatError } from '../lib/reportError.mjs';
-import { requireCurrentShim } from '../lib/shimBinary.mjs';
 
 const ROOT = repoRoot();
 
 // THE SHIPPED PARSER IS READ FROM `dist`, so a stale build would have this
 // reporting about code nobody is running — and this session watched exactly
 // that happen, when a reverted mutation left two source files newer than the
-// renderer bundle. The shim has its own freshness guard in `requireCurrentShim`;
-// this is the same question asked of the TypeScript side.
+// renderer bundle.
 refuseStaleBuild(
   ROOT,
   [
@@ -72,19 +70,34 @@ refuseStaleBuild(
   2,
 );
 
-const lib = koffi.load(requireCurrentShim({ root: ROOT }));
-const mz_init = lib.func('int mz_init(_Out_ void **out)');
-const mz_drop = lib.func('void mz_drop(void *c)');
-const mz_open = lib.func('int mz_open(void *c, const char *path, _Out_ void **out)');
-const mz_close = lib.func('int mz_close(void *c, void *d)');
-const mz_last_error = lib.func('const char *mz_last_error(void *c)');
-const mz_stext_json = lib.func(
-  'int mz_stext_json(void *c, void *d, int number, int flags, _Out_ char *out, int len, _Out_ double *needed)',
-);
-
-/** MuPDF's own option bits, from `include/mupdf/fitz/structured-text.h`. */
-const FZ_STEXT_SEGMENT = 4096;
-const FZ_STEXT_TABLE_HUNT = 16384;
+/**
+ * The option strings this spike compares.
+ *
+ * ## IT WENT THROUGH THE C SHIM UNTIL 2026-09-02, and the move is the finding
+ *
+ * It called `mz_stext_json` over koffi with an integer flag word. That export
+ * existed for this file and for nothing else, which made the flag word a
+ * SECOND ENCODING of a decision the product spells as an option string — two
+ * literals in `textStructure.ts` with nothing comparing them, drifting toward
+ * the side nothing exercises. The export is gone and the flag word with it.
+ *
+ * **The instrument is stronger for it, not merely tidier.** It now reaches the
+ * engine the way `pageText.ts` does, so what it measures is the path that
+ * ships. A spike that measures a path the product does not use is evidence
+ * about the wrong thing, however careful the reading — and ADR-0034's table was
+ * exactly that until this change.
+ *
+ * Same engine either way: the npm package is MuPDF **1.28.0** and so is the
+ * shim (`scripts/provision/mupdf.mjs`), checked 2026-09-02, which is what made
+ * the move safe rather than a re-measurement of something else.
+ *
+ * The names come from `textStructure.ts` rather than being spelt here, because
+ * a literal `'segment'` in this file would be the third opinion the deletion
+ * was for.
+ */
+const NO_OPTIONS = '';
+const SEGMENT = STEXT_OPTIONS.segment;
+const SEGMENT_AND_TABLE_HUNT = `${STEXT_OPTIONS.segment},${STEXT_OPTIONS.tableHunt}`;
 
 /** Page geometry, in PDF user units. The gutter is wide enough to be obvious. */
 const PAGE = { width: 612, height: 792 };
@@ -152,37 +165,34 @@ async function buildProseFixture() {
 }
 
 /**
- * Reads one page's structured text at the given flags.
+ * Reads one page's structured text at the given options.
  *
- * **The buffer is grown until it fits rather than assumed large enough.** The
- * shim reports the full length in `needed`, so a short read is a measurable
- * state; treating the first answer as complete would silently truncate JSON and
- * the parse would fail somewhere unrelated.
+ * **`asJSON` and not a walk of the object graph**, for `pageText.ts`' reason:
+ * MuPDF's serialiser is the authority's own answer to *what did the structuring
+ * produce*, and a walk here would be a second opinion about a format MuPDF
+ * owns. It is also the same call the product makes, so what this measures is
+ * the shipped path rather than a neighbouring one.
  *
- * @param {unknown} ctx @param {unknown} doc @param {number} flags
+ * The `StructuredText` is destroyed in `finally`: it is a native allocation
+ * behind a JavaScript handle, and a spike that leaks one per reading holds
+ * every page of every fixture for the length of the run.
+ *
+ * @param {mupdf.Document} doc @param {string} options
  * @returns {string} MuPDF's JSON, unparsed, so the shipped parser can be handed
  *   exactly what the engine sent rather than a re-serialisation of it
  */
-function readStextJson(ctx, doc, flags) {
-  let size = 1 << 16;
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const buffer = Buffer.alloc(size);
-    const needed = [0];
-    if (mz_stext_json(ctx, doc, 0, flags, buffer, size, needed) !== 0) {
-      throw new Error(`mz_stext_json failed — ${String(mz_last_error(ctx))}`);
-    }
-    const full = Number(needed[0]);
-    if (full < size) {
-      return buffer.subarray(0, full).toString('utf8');
-    }
-    size = full + 1024;
+function readStextJson(doc, options) {
+  const structured = doc.loadPage(0).toStructuredText(options);
+  try {
+    return structured.asJSON();
+  } finally {
+    structured.destroy();
   }
-  throw new Error('the structured-text buffer never converged, which is a bug in this loop');
 }
 
-/** @param {unknown} ctx @param {unknown} doc @param {number} flags @returns {unknown} */
-function readStext(ctx, doc, flags) {
-  return JSON.parse(readStextJson(ctx, doc, flags));
+/** @param {mupdf.Document} doc @param {string} options @returns {unknown} */
+function readStext(doc, options) {
+  return JSON.parse(readStextJson(doc, options));
 }
 
 /**
@@ -262,19 +272,25 @@ const CONTROL_PAGE = {
 
 async function main() {
   const workspace = mkdtempSync(join(tmpdir(), 'monstera-textstructure-'));
-  const ctxOut = [null];
-  if (mz_init(ctxOut) !== 0) throw new Error('mz_init failed');
-  const ctx = ctxOut[0];
+  /** @type {mupdf.Document[]} */
+  const opened = [];
 
-  /** @param {string} name @param {Uint8Array} bytes @returns {unknown} */
+  /**
+   * Opens a fixture through the package, and remembers it so `finally` can
+   * destroy it.
+   *
+   * **The bytes are also written to disk**, unchanged from when this went
+   * through the shim. Nothing here reads them back; they are what makes a
+   * surprising reading reproducible by hand against another tool, which is the
+   * one thing a research instrument owes a reader who does not believe it.
+   *
+   * @param {string} name @param {Uint8Array} bytes @returns {mupdf.Document}
+   */
   const openFixture = (name, bytes) => {
-    const path = join(workspace, `${name}.pdf`);
-    writeFileSync(path, bytes);
-    const docOut = [null];
-    if (mz_open(ctx, path, docOut) !== 0) {
-      throw new Error(`mz_open ${name} failed — ${String(mz_last_error(ctx))}`);
-    }
-    return docOut[0];
+    writeFileSync(join(workspace, `${name}.pdf`), bytes);
+    const doc = mupdf.Document.openDocument(bytes, 'application/pdf');
+    opened.push(doc);
+    return doc;
   };
 
   try {
@@ -283,9 +299,9 @@ async function main() {
     const doc = openFixture('two-column-wide', wide.bytes);
 
     const settings = [
-      { name: 'default (no options)', flags: 0 },
-      { name: 'SEGMENT', flags: FZ_STEXT_SEGMENT },
-      { name: 'SEGMENT | TABLE_HUNT', flags: FZ_STEXT_SEGMENT | FZ_STEXT_TABLE_HUNT },
+      { name: 'default (no options)', options: NO_OPTIONS },
+      { name: 'SEGMENT', options: SEGMENT },
+      { name: 'SEGMENT | TABLE_HUNT', options: SEGMENT_AND_TABLE_HUNT },
     ];
 
     // THE WALK PROVES IT CAN SEE BEFORE IT REPORTS ANYTHING. Nested blocks are
@@ -310,21 +326,20 @@ async function main() {
 
     if (process.argv.includes('--raw')) {
       for (const setting of settings) {
-        const raw = readStext(ctx, doc, setting.flags);
+        const raw = readStext(doc, setting.options);
         process.stdout.write(`===== ${setting.name} =====\n${JSON.stringify(raw, null, 1)}\n\n`);
       }
-      mz_close(ctx, doc);
       return;
     }
 
     /** @type {Array<{ fixture: string, setting: string, blocks: number, lines: number, merged: number, order: string }>} */
     const rows = [];
 
-    /** @param {string} fixture @param {unknown} handle @param {boolean} twoColumn */
+    /** @param {string} fixture @param {mupdf.Document} handle @param {boolean} twoColumn */
     const report = (fixture, handle, twoColumn) => {
       process.stdout.write(`  ${fixture}\n`);
       for (const setting of settings) {
-        const summary = summarise(readStext(ctx, handle, setting.flags));
+        const summary = summarise(readStext(handle, setting.options));
         // COLUMN-MAJOR is the property search and extraction actually need: all
         // of one column before any of the other. Row-major reads across the
         // gutter even when every individual line is clean, which is why
@@ -359,7 +374,7 @@ async function main() {
       ...truth.filter((run) => run.column === 'right').map((run) => run.text),
     ];
     for (const setting of settings) {
-      const page = parsePageText(readStextJson(ctx, doc, setting.flags));
+      const page = parsePageText(readStextJson(doc, setting.options));
       const score = scoreAgainstTruth(page, columnMajorTruth);
       process.stdout.write(
         `    ${setting.name.padEnd(22)} lines ${score.lines.toFixed(2)}  order ${score.order.toFixed(2)}` +
@@ -368,26 +383,23 @@ async function main() {
     }
     process.stdout.write('\n');
 
-    mz_close(ctx, doc);
-
-    // THE HARD SHAPES. A flag measured only on the layout it was made for is
+    // THE HARD SHAPES. An option measured only on the layout it was made for is
     // checklist item 2, and the two below are where a segmentation decision
     // would go wrong in opposite directions: a gutter too narrow to detect, and
     // a page that already reads correctly and can only be made worse.
     const narrow = await buildTwoColumnFixture(LEFT_X + 60);
-    const narrowDoc = openFixture('two-column-narrow', narrow.bytes);
-    report('two columns, 60pt gutter', narrowDoc, true);
-    mz_close(ctx, narrowDoc);
+    report('two columns, 60pt gutter', openFixture('two-column-narrow', narrow.bytes), true);
 
-    const proseDoc = openFixture('prose', await buildProseFixture());
-    report('single-column prose', proseDoc, false);
-    mz_close(ctx, proseDoc);
+    report('single-column prose', openFixture('prose', await buildProseFixture()), false);
 
     if (process.argv.includes('--json')) {
       process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
     }
   } finally {
-    mz_drop(ctx);
+    // EVERY DOCUMENT, including the ones a `--raw` run returned early past.
+    // The list is appended to at open rather than tracked per branch, so a
+    // future early return cannot leave one behind.
+    for (const doc of opened) doc.destroy();
     rmSync(workspace, { recursive: true, force: true });
   }
 }

@@ -207,7 +207,6 @@ export {
   type PageText,
   type TextBlock,
   type TextLine,
-  STEXT_FLAGS,
   STEXT_OPTIONS,
   STEXT_OPTION_STRING,
   linesOf,
