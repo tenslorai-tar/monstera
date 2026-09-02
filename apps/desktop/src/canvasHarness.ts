@@ -100,6 +100,45 @@ export interface CanvasReadback {
   readonly renderFailed: boolean;
   /** How long the wait took, so a bound that is being approached is visible. */
   readonly elapsedMs: number;
+  /**
+   * The same reading taken again after the shipped zoom control was clicked.
+   *
+   * **This is E1's headline clause and it is not the clause above.** *"Glyph
+   * edges are pixel-exact at every zoom on every display"* is a statement about
+   * zooms other than 1, and a canvas read at zoom 1 cannot make it — the scale
+   * is the one number that is not exercised. The renderer's own cases prove the
+   * right scale is handed to the rasteriser; this proves the rasteriser honours
+   * it, in real Chromium, and the two together are the property.
+   */
+  readonly zoomed: ZoomedReadback;
+}
+
+/** A canvas reading taken after the zoom control was driven. */
+export interface ZoomedReadback {
+  /**
+   * How many times the control was found and clicked.
+   *
+   * **Reported rather than assumed, because a control that is absent clicks
+   * zero times and leaves the canvas at its original size** — which is also what
+   * a renderer that ignored the zoom produces. Without this number the two are
+   * one observation, and the reassuring one is the one that reads as a pass.
+   */
+  readonly clicks: number;
+  /** How the wait ended: the canvas changed size, or the bound was reached. */
+  readonly settledBy: 'resized' | 'bound';
+  readonly width: number;
+  readonly height: number;
+  readonly painted: number;
+  /**
+   * The window's device-pixel ratio, so the expected size is readable.
+   *
+   * The renderer draws at `devicePixelRatio × zoom`, so a reading of 1190x1684
+   * means one thing at a ratio of 1 and something else at 2. The proof asserts
+   * the absolute size rather than deriving it from this — a derived expectation
+   * would move with a misreported ratio, which is the mutation that cannot
+   * separate anything — and reports the ratio so a failure is diagnosable.
+   */
+  readonly devicePixelRatio: number;
 }
 
 /**
@@ -193,7 +232,7 @@ function settle(ms: number): Promise<void> {
 }
 
 /**
- * Clicks the shipped Open control, by its accessible name.
+ * Clicks a shipped control, by its accessible name.
  *
  * ## Found by ROLE AND NAME, never by a test id or a class
  *
@@ -208,7 +247,11 @@ function settle(ms: number): Promise<void> {
  * thrown, because "the button is missing" and "the button did nothing" are
  * different defects and the proof says which.
  */
-async function clickOpen(contents: Electron.WebContents, name: string): Promise<boolean> {
+async function clickControl(
+  contents: Electron.WebContents,
+  name: string,
+  what: string,
+): Promise<boolean> {
   return evaluate(
     contents,
     `(() => {
@@ -220,7 +263,7 @@ async function clickOpen(contents: Electron.WebContents, name: string): Promise<
        return true;
      })()`,
     (value): value is boolean => typeof value === 'boolean',
-    'open control',
+    what,
   );
 }
 
@@ -244,6 +287,20 @@ async function clickOpen(contents: Electron.WebContents, name: string): Promise<
  */
 async function waitForCanvas(
   contents: Electron.WebContents,
+  /**
+   * A width that does not count as settled, or `null` for the first draw.
+   *
+   * **The zoom wait cannot be "the canvas has pixels"** — it already has them,
+   * from the draw before the zoom, and a poll on paint alone returns instantly
+   * with the old bitmap. So the second wait excludes the size it started at, and
+   * what it is waiting for is the SECOND rasterisation rather than any.
+   *
+   * Deliberately a width to reject rather than a width to expect: waiting for
+   * 1190 would make the harness assert the number the proof exists to assert,
+   * and a renderer that resized to something else would be reported as a
+   * timeout rather than as the wrong size.
+   */
+  notWidth: number | null = null,
 ): Promise<{ settledBy: CanvasReadback['settledBy']; width: number; height: number; failed: boolean; elapsedMs: number }> {
   const startedAt = process.hrtime.bigint();
   const elapsed = (): number => Number((process.hrtime.bigint() - startedAt) / 1_000_000n);
@@ -274,7 +331,7 @@ async function waitForCanvas(
     // anything can make about an arbitrary page. Paint is what finishing looks
     // like, and the counter above returns zero for both ways of not having done
     // it.
-    if (state.present) {
+    if (state.present && state.width !== notWidth) {
       const painted = await evaluate(
         contents,
         // NULL-SAFE, because the canvas is absent on exactly the path this harness
@@ -306,12 +363,82 @@ async function waitForCanvas(
 }
 
 /**
+ * How many times the shipped zoom-in control is clicked.
+ *
+ * **Three, because the shipped ladder is `[0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]`**
+ * (`packages/ui/src/commands/documentCommands.ts`) and a document opens at 1, so
+ * three steps land on **2** — a whole-number scale whose expected canvas is a
+ * doubling rather than a rounding, which keeps the assertion exact.
+ *
+ * The count is not derived from the ladder because this file cannot import the
+ * renderer's module, and it does not need to be: a ladder that changes lands on
+ * some other zoom, the canvas comes back a size the proof does not expect, and
+ * the case fails naming both numbers. That is the loud direction.
+ */
+const ZOOM_CLICKS = 3;
+
+/**
+ * Drives the shipped zoom control and reads the canvas again.
+ *
+ * ## Why this waits for a SIZE CHANGE rather than for time
+ *
+ * The re-render is debounced, so a fixed sleep either races it or hides how long
+ * it took. The observable is the canvas's backing store changing, which is the
+ * second rasterisation arriving, and `waitForCanvas` already knows how to wait
+ * for pixels — it only needed to be told which size means *not yet*.
+ *
+ * ## The clicks are counted, and that is the control
+ *
+ * A missing control, a control that is disabled, and a renderer that ignores the
+ * zoom all leave the canvas at the size it already had. Counting successful
+ * clicks separates the first from the other two, and the size assertion in the
+ * proof separates the rest.
+ */
+async function readZoomed(
+  contents: Electron.WebContents,
+  name: string,
+  beforeWidth: number,
+): Promise<ZoomedReadback> {
+  let clicks = 0;
+  for (let step = 0; step < ZOOM_CLICKS; step += 1) {
+    if (await clickControl(contents, name, 'zoom control')) clicks += 1;
+  }
+
+  const settled = await waitForCanvas(contents, beforeWidth);
+  const painted = await evaluate(
+    contents,
+    `(${COUNT_PAINTED})(document.querySelector('canvas.m-page') ?? null)`,
+    (value): value is number => typeof value === 'number',
+    'zoomed painted count',
+  );
+  const ratio = await evaluate(
+    contents,
+    'window.devicePixelRatio',
+    (value): value is number => typeof value === 'number',
+    'device pixel ratio',
+  );
+
+  return {
+    clicks,
+    settledBy: settled.settledBy === 'drawn' ? 'resized' : 'bound',
+    width: settled.width,
+    height: settled.height,
+    painted,
+    devicePixelRatio: ratio,
+  };
+}
+
+/**
  * Brings up the shipped shell against `fixture` and reports what was drawn.
  *
  * @param fixture absolute path to the document the substituted picker returns
  * @param openControlName the accessible name of the start screen's Open control
  */
-export async function reportCanvasPixels(fixture: string, openControlName: string): Promise<void> {
+export async function reportCanvasPixels(
+  fixture: string,
+  openControlName: string,
+  zoomControlName: string,
+): Promise<void> {
   await app.whenReady();
 
   // THE SHIPPED THREE CALLS, in the shipped order. `main.ts` creates the window
@@ -341,7 +468,7 @@ export async function reportCanvasPixels(fixture: string, openControlName: strin
     });
   });
 
-  const dispatched = await clickOpen(contents, openControlName);
+  const dispatched = await clickControl(contents, openControlName, 'open control');
   const settled = await waitForCanvas(contents);
 
   const painted = await evaluate(
@@ -392,8 +519,11 @@ export async function reportCanvasPixels(fixture: string, openControlName: strin
     'blank control',
   );
 
+  const zoomed = await readZoomed(contents, zoomControlName, settled.width);
+
   const readback: CanvasReadback = {
     dispatched,
+    zoomed,
     settledBy: settled.settledBy,
     width: settled.width,
     height: settled.height,
