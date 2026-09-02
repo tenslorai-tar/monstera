@@ -50,6 +50,13 @@ export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
+export const PALETTE_LABEL = messageKey('surface.palette.label');
+export const PALETTE_PLACEHOLDER = messageKey('surface.palette.placeholder');
+export const PALETTE_EMPTY = messageKey('surface.palette.empty');
+export const PALETTE_TITLE = messageKey('command.palette.title');
+export const STATUS_LABEL = messageKey('surface.status.label');
+export const STATUS_PAGE_OF = messageKey('surface.status.page-of');
+export const STATUS_ZOOM = messageKey('surface.status.zoom');
 export const THUMBNAILS_LABEL = messageKey('surface.thumbnails.label');
 export const THUMBNAIL_PAGE = messageKey('surface.thumbnails.page');
 export const NEXT_PAGE_TITLE = messageKey('command.page-next.title');
@@ -120,6 +127,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',
+  [PALETTE_LABEL]: 'Command palette',
+  [PALETTE_PLACEHOLDER]: 'Search commands',
+  [PALETTE_EMPTY]: 'No command matches.',
+  [PALETTE_TITLE]: 'Command palette',
+  [STATUS_LABEL]: 'Document status',
+  [STATUS_PAGE_OF]: 'Page {page} of {count}',
+  [STATUS_ZOOM]: '{percent}%',
   [THUMBNAILS_LABEL]: 'Page thumbnails',
   [THUMBNAIL_PAGE]: 'Page {page}',
   [NEXT_PAGE_TITLE]: 'Next page',

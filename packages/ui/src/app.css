@@ -67,6 +67,95 @@ body {
  * and neither slot needs a rule about being first or last.
  */
 /*
+ * The palette floats over everything, near the top.
+ *
+ * Not centred vertically: a list that grows downward from a fixed point keeps
+ * the query field still as results filter, and a centred panel moves the field
+ * under the reader's fingers on every keystroke.
+ */
+.m-palette {
+  position: fixed;
+  inset-block-start: 10vh;
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: min(560px, 90vw);
+  max-block-size: 60vh;
+  overflow-y: auto;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-10);
+  box-shadow: var(--elevation-3);
+  padding: var(--space-8);
+}
+
+.m-palette-query {
+  inline-size: 100%;
+  padding: var(--space-8);
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-4);
+}
+
+.m-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.m-palette-item {
+  inline-size: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-16);
+  align-items: center;
+  padding: var(--space-8);
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: start;
+}
+
+.m-palette-item:hover,
+.m-palette-item:focus-visible {
+  background: var(--surface2);
+}
+
+.m-palette-chord {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  font-variant-numeric: tabular-nums;
+}
+
+.m-palette-empty {
+  color: var(--muted);
+  padding: var(--space-8);
+}
+
+.m-status-bar {
+  display: flex;
+  gap: var(--space-16);
+  justify-content: flex-end;
+  align-items: center;
+  padding-inline: var(--space-8);
+  block-size: var(--space-24);
+  flex: 0 0 auto;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  border-block-start: 1px solid var(--border); /* decorative: separates the strip from the document area; nothing in it is interactive */
+  /*
+   * TABULAR FIGURES, because the page number changes on every scroll and
+   * proportional digits shift the text beside them as they do. The movement is
+   * small and constant, which is the kind that is read as jitter rather than as
+   * information.
+   */
+  font-variant-numeric: tabular-nums;
+}
+
+/*
  * The sidebar and the spine, side by side.
  *
  * `min-block-size: 0` on the row is what lets both children scroll: a flex item

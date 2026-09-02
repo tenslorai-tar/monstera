@@ -1,4 +1,4 @@
-import { GRID_TITLE, RULERS_TITLE } from '../messages/en.js';
+import { GRID_TITLE, PALETTE_TITLE, RULERS_TITLE } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 import { GRID_SETTING, RULERS_SETTING } from '../settings/viewing.js';
@@ -64,6 +64,34 @@ export function toggleRulersCommand(deps: { readonly settings: SettingsStore }):
       // built once and a captured boolean would toggle from whatever was true at
       // registration for ever.
       deps.settings.set(RULERS_SETTING.id, deps.settings.get(RULERS_SETTING.id) !== true);
+    },
+  };
+}
+
+/**
+ * Opens the command palette.
+ *
+ * ## Registered like anything else, and it appears in ITSELF
+ *
+ * That reads odd and is right: the palette lists every available command, and
+ * excluding this one would be a special case in the projection — the exact
+ * hand-maintained exception the registry exists to forbid. A reader who runs it
+ * from the palette gets the palette, which is harmless.
+ *
+ * **No `when`**, unlike everything else on this surface: the palette is how a
+ * reader finds *Open*, so a palette that required a document would be closed on
+ * the one screen where it is most needed. It has no `placements` either — it is
+ * reached by its chord, and a button labelled *Command palette* is a control
+ * whose whole purpose is to save a keystroke it costs a click to reach.
+ */
+export function commandPaletteCommand(deps: { readonly onOpen: () => void }): UiCommand {
+  return {
+    id: 'view.command-palette',
+    title: PALETTE_TITLE,
+    shortcut: 'Ctrl+K',
+    placements: [],
+    run: (): void => {
+      deps.onOpen();
     },
   };
 }

@@ -19,10 +19,16 @@ import {
   zoomCommand,
 } from './commands/documentCommands.js';
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
-import { toggleGridCommand, toggleRulersCommand } from './commands/viewCommands.js';
+import {
+  commandPaletteCommand,
+  toggleGridCommand,
+  toggleRulersCommand,
+} from './commands/viewCommands.js';
+import { CommandPalette } from './CommandPalette.js';
 import { historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
+import { StatusBar } from './StatusBar.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -288,6 +294,21 @@ export function App({ client, settings }: AppProps): ReactElement {
     [store],
   );
 
+  /**
+   * Whether the command palette is open.
+   *
+   * App-shell state, so it lives here rather than in a document's store — §6 is
+   * explicit that the two do not mix, and a palette that closed when a document
+   * did would be a surface with a lifetime it has no reason to have.
+   */
+  const [palette, setPalette] = useState(false);
+  const openPalette = useCallback(() => {
+    setPalette(true);
+  }, []);
+  const closePalette = useCallback(() => {
+    setPalette(false);
+  }, []);
+
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
   const unit = useSetting(settings, RULER_UNIT_SETTING);
@@ -326,6 +347,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         fitCommand('page', { onZoom: changeZoom }),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
+        commandPaletteCommand({ onOpen: openPalette }),
         pageMoveCommand('next', { navigator }),
         pageMoveCommand('previous', { navigator }),
         pageMoveCommand('first', { navigator }),
@@ -333,7 +355,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         historyCommand('back', { navigator }),
         historyCommand('forward', { navigator }),
       ]),
-    [applied, changeZoom, client, navigator, settings, show],
+    [applied, changeZoom, client, navigator, openPalette, settings, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -383,6 +405,15 @@ export function App({ client, settings }: AppProps): ReactElement {
           showGrid={showGrid}
           unit={unit}
         />
+      )}
+      {palette ? (
+        <CommandPalette registry={registry} context={context} onClose={closePalette} />
+      ) : null}
+      {/* NOTHING WITH NO DOCUMENT, for `QuickToolbar`'s reason: a status bar
+          reporting page 1 of 0 at 100% over the start screen is a control that
+          describes nothing. */}
+      {open === undefined || pageCount === undefined ? null : (
+        <StatusBar page={currentPage} pageCount={pageCount} zoom={shownZoom} />
       )}
       {/* E2's substrate, reached by a person. It renders nothing with no
           document open, for `QuickToolbar`'s reason: a find field over no
