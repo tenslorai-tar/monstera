@@ -66,6 +66,7 @@
     "proof:electronimports": "node scripts/proofs/electronImports.proof.mjs",
     "proof:rendererpolicy": "node scripts/proofs/rendererPolicy.proof.mjs",
     "proof:canvaspixels": "node scripts/proofs/canvasPixels.proof.mjs",
+    "proof:rendergeometry": "node scripts/proofs/renderGeometry.proof.mjs",
     "proof:viewportrotation": "node scripts/proofs/viewportRotation.proof.mjs",
     "proof:kernelload": "node scripts/proofs/kernelLoad.proof.mjs",
     "provision:electron": "node scripts/provision/electron.mjs",

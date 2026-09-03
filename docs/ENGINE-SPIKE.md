@@ -302,13 +302,49 @@ The general lesson, and the reason this is written down rather than fixed
 quietly: **an inverse that restores the rendering is not an inverse.** A test
 that compares rendered output would have passed on the wrong implementation.
 
+## Results — row 1, PDF.js, 2026-09-03
+
+Run with `npm run proof:rendergeometry`, against `pdfjs-dist@6.2.108` in the
+shipped renderer, driven through the canvas harness — so what is measured is
+the built bundle inside a real Electron window under invariant 27's CSP, not a
+library in isolation.
+
+The fixtures are 400×600, deliberately non-square, and the crop is at a non-zero
+origin. Both properties are read as the canvas's **size**, because both of the
+defects they separate draw a correct-looking page: a renderer that ignores
+`/Rotate` produces a portrait page that is sideways, and one that uses the
+MediaBox shows more of the document than its author published.
+
+| Case | Verdict | Evidence |
+|---|---|---|
+| Upright page renders at its own MediaBox | CONFIRMED | 400×600, 240 000 painted |
+| `/Rotate 90` renders landscape | CONFIRMED | 600×400, 240 000 painted |
+| `/CropBox` smaller than `/MediaBox` renders the crop | CONFIRMED | 200×300, 60 000 painted |
+| A named, **non-embedded** standard font draws glyphs | CONFIRMED | 400×600, 43 320 painted |
+
+**The four runtime asset directories, one at a time.** The spike's environment
+note says each needs a URL and that a missing one degrades *silently*. This
+build sets none, and the four do not have one answer:
+
+- `wasm/` — **not needed on this path.** `documentView.ts` passes
+  `useWasm: false`, measured refused under this CSP in the window and in a
+  worker, so the shipped `*_nowasm_fallback.js` decoders are what run.
+- `iccs/` — **unreachable, and settled.** `qcms` arrives by a synchronous XHR
+  that `connect-src 'none'` refuses; PDF.js falls back by `/Alternate` or `/N`.
+- `standard_fonts/` — **not needed for the standard 14**, measured above: a page
+  whose only ink is named, non-embedded Helvetica drew 43 320 pixels. What is
+  established is that **glyphs appear**; whether they are Helvetica's own
+  outlines or a substitute is not, and this proof does not claim it.
+- `cmaps/` — **not executed.** A fixture that needs one is a CID font with an
+  `Identity-H` encoding, and building it needs a CJK font this repository does
+  not ship. The trigger is the first CJK document in the fixture corpus.
+
 ### Still to execute
 
 These rows are unblocked but not yet exercised, and remain provisional:
 PDFium text editing and HD render (needs the koffi FFI host), signatures via
-`@signpdf`, print/export rasterisation at DPI, and the PDF.js render path with
-its four runtime asset directories. Each is executed as its stage arrives, and
-its result appended here.
+`@signpdf`, and print/export rasterisation at DPI. Each is executed as its stage
+arrives, and its result appended here.
 
 Two more were added on 2026-08-18 by [ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md),
 and they differ from the list above in an important way: those rows have an
