@@ -1,4 +1,9 @@
 import { i18n } from '@lingui/core';
+// A DIRECT DEPENDENCY, declared in this package's `package.json` at the same
+// version as `@lingui/core`. It arrives transitively either way; depending on
+// it without saying so is a module that vanishes on a minor bump of a package
+// this one does not control.
+import { compileMessage } from '@lingui/message-utils/compileMessage';
 import type { MessageKey } from '@monstera/shared';
 
 /**
@@ -79,6 +84,39 @@ export class MessageMissing extends Error {
 i18n.on('missing', (event) => {
   throw new MessageMissing(event.locale, event.id);
 });
+
+/**
+ * THE MESSAGE COMPILER, REGISTERED BY US RATHER THAN INHERITED.
+ *
+ * ## The defect, measured 2026-09-03
+ *
+ * `I18n`'s constructor registers `compileMessage` **only when
+ * `process.env.NODE_ENV !== 'production'`** (`@lingui/core` 6.6.0,
+ * `dist/index.mjs:239`). Without a compiler, `_(id, values)` returns the raw
+ * catalogue string, so every placeholder reaches the screen literally: the
+ * built renderer rendered *"Monstera closed unexpectedly. Reopen {name}?"*, and
+ * `Page {page} of {count}`, and `{count} matches on this page`.
+ *
+ * **Nothing in this repository could see it.** Every unit test runs in
+ * development mode, where the constructor registers the compiler for us, so
+ * every case asserting an interpolated string passed. What found it is the axe
+ * gate, because that is the one check that drives the BUILT renderer — the
+ * artefact the difference lives in.
+ *
+ * ## Why registering it rather than precompiling the catalogue
+ *
+ * Lingui's own answer is to precompile with its CLI, which is a build step, a
+ * generated artefact and a second representation of `messages/en.ts` that can
+ * go stale. `setMessagesCompiler` is the library's documented alternative for
+ * *"if you need to compile catalogs at runtime"*, and it makes this build's
+ * behaviour **the same in both modes** — which is the property that failed
+ * here. A behaviour that depends on `NODE_ENV` is one that no test can hold.
+ *
+ * The cost is the ICU parser in the production bundle. That is the same parser
+ * every development run already loads, and the alternative is a class of defect
+ * that only the shipped artefact can exhibit.
+ */
+i18n.setMessagesCompiler(compileMessage);
 
 /**
  * Loads a catalogue and makes it the active one.

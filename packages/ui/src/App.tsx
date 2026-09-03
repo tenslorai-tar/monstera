@@ -35,7 +35,7 @@ import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
 import { FindBar } from './FindBar.js';
-import { openDocumentCommand } from './commands/openDocument.js';
+import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
@@ -123,6 +123,14 @@ export interface AppProps {
 
 export function App({ client, settings }: AppProps): ReactElement {
   const [open, setOpen] = useState<OpenDocument | undefined>(undefined);
+  /**
+   * The last open that produced no document and something to say.
+   *
+   * Held here rather than inside the start screen because the COMMAND produces
+   * it and the command is registered here — a surface that owned this would
+   * have to be reachable from the registry, which is the second wiring place.
+   */
+  const [openProblem, setOpenProblem] = useState<OpenProblem | undefined>(undefined);
 
   // ONE registry instance, and the dialog host's state feeds the command that
   // opens it. `useDialogHost` owns `show`, so the command captures it the same
@@ -360,7 +368,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   const registry = useMemo(
     () =>
       new CommandRegistry([
-        openDocumentCommand({ client, onOpened: setOpen }),
+        openDocumentCommand({ client, onOpened: setOpen, onProblem: setOpenProblem }),
         showAboutCommand({ client, show }),
         revealLogCommand({ client }),
         rotatePageCommand({ client, onApplied: applied, show }),
@@ -434,7 +442,7 @@ export function App({ client, settings }: AppProps): ReactElement {
     <main className="m-document-surface">
       {open === undefined ? (
         <>
-          <StartScreen registry={registry} context={context} />
+          <StartScreen registry={registry} context={context} problem={openProblem} />
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}

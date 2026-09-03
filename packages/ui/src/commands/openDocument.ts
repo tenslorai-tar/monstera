@@ -22,6 +22,15 @@ import type { UiCommand } from '../registries/commands.js';
  * file it wants, which is why it cannot express the wrong one (§2, invariant
  * L5). This command is that sentence with a button on it.
  */
+/**
+ * An open that ended with no document and something to say about it.
+ *
+ * The channel's own variant names rather than a message: what to show is the
+ * surface's decision and the strings are i18n keys, so a command producing a
+ * sentence here would put user-facing text in the layer that dispatches.
+ */
+export type OpenProblem = 'absent' | 'at-capacity';
+
 export function openDocumentCommand(deps: {
   readonly client: ContractClient;
   /**
@@ -40,6 +49,21 @@ export function openDocumentCommand(deps: {
     readonly byteLength: number;
     readonly name: string;
   }) => void;
+  /**
+   * Called when the open did not produce a document and the user should be
+   * told.
+   *
+   * **`absent` and `at-capacity` only.** `cancelled` is a person changing their
+   * mind and needs no message; `already-open` is the document they asked for,
+   * on screen. Reporting those two would put an error in front of somebody who
+   * got what they wanted.
+   *
+   * This existed as nothing at all until 2026-09-03: every non-`opened` outcome
+   * returned silently, so picking a file that had been moved produced **no
+   * feedback of any kind** — a control that appears to do nothing, which is the
+   * defect the wired-tools rule is about wearing a successful dispatch.
+   */
+  readonly onProblem: (problem: OpenProblem) => void;
 }): UiCommand {
   return {
     id: 'document.open',
@@ -55,6 +79,10 @@ export function openDocumentCommand(deps: {
       // A failure here is `internal` — the channel declares no codes, because
       // every way this ends that a user can cause is a variant of the result.
       if (!answer.ok) return;
+      if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity') {
+        deps.onProblem(answer.value.kind);
+        return;
+      }
       if (answer.value.kind !== 'opened') return;
       deps.onOpened({
         docId: answer.value.docId,

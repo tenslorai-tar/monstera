@@ -72,6 +72,10 @@ export const FIND_BAD_PATTERN = messageKey('surface.find.bad-pattern');
 export const FIND_DOCUMENT_MATCHES = messageKey('surface.find.document-matches');
 export const FIND_DOCUMENT_EMPTY = messageKey('surface.find.document-empty');
 export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
+export const START_TITLE = messageKey('surface.start.title');
+export const START_INVITATION = messageKey('surface.start.invitation');
+export const START_ABSENT = messageKey('surface.start.absent');
+export const START_AT_CAPACITY = messageKey('surface.start.at-capacity');
 export const RECENT_LABEL = messageKey('surface.recent.label');
 export const RECENT_EMPTY = messageKey('surface.recent.empty');
 export const RECENT_MISSING = messageKey('surface.recent.missing');
@@ -186,6 +190,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_DOCUMENT_MATCHES]: '{count} matches in this document',
   [FIND_DOCUMENT_EMPTY]: 'Nothing in this document matches.',
   [FIND_MATCH_ON_PAGE]: 'Page {page}: {text}',
+  [START_TITLE]: 'Monstera',
+  [START_INVITATION]: 'Open a PDF to begin.',
+  // SAYS WHAT HAPPENED AND WHAT IS LIKELY. A file the picker offered and the
+  // service could not read has almost always moved, and naming that is what
+  // makes the message actionable rather than a report.
+  [START_ABSENT]: 'That file could not be opened. It may have been moved, renamed or deleted.',
+  [START_AT_CAPACITY]: 'There is not enough room to open that document. Close another one first.',
   [RECENT_LABEL]: 'Recent documents',
   [RECENT_EMPTY]: 'Nothing opened yet.',
   // NAMES WHAT HAPPENED rather than blaming the reader. A row goes stale

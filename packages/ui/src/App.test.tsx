@@ -1054,10 +1054,85 @@ describe('App', () => {
     const { client } = recordingClient({ kind: 'cancelled' });
     const { container } = render(<App client={client} settings={freshSettings()} />);
 
-    expect(container.querySelectorAll('.m-start-screen button')).toHaveLength(3);
+    // `.m-start-actions`, not `.m-start-screen`: the screen now holds a
+    // problem region as well, and scoping to the projection's own container is
+    // what keeps this counting COMMANDS rather than every control on the page.
+    expect(container.querySelectorAll('.m-start-actions button')).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();
+  });
+
+  describe('the start screen reports an open that produced no document', () => {
+    /** A client whose `document.open` answers one outcome. */
+    function openAnswering(outcome: unknown): ContractClient {
+      return createClient(channels, (id) => {
+        if (id === 'document.open') return Promise.resolve(ok(outcome));
+        const answer = OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+    }
+
+    /** Picks a document and settles, returning nothing. */
+    async function pick(): Promise<void> {
+      await act(async () => {
+        screen.getByRole('button', { name: 'Open a document' }).click();
+        await Promise.resolve();
+      });
+    }
+
+    it('SAYS SO when the file has gone, where it used to say nothing at all', async () => {
+      // The defect this closes: every outcome that was not a document returned
+      // silently, so picking a moved file produced no feedback of any kind — a
+      // control that appears to do nothing, behind a dispatch that worked.
+      render(<App client={openAnswering({ kind: 'absent' })} settings={freshSettings()} />);
+      await pick();
+
+      expect(
+        screen.getByText('That file could not be opened. It may have been moved, renamed or deleted.'),
+      ).toBeDefined();
+    });
+
+    it('says something DIFFERENT when there is no room, because the answer is different', async () => {
+      // Two outcomes, two next actions: one is *find the file*, the other is
+      // *close a document*. One message for both would be a sentence that helps
+      // with neither.
+      render(
+        <App
+          client={openAnswering({ kind: 'at-capacity', wouldHold: 4096, ceiling: 2048 })}
+          settings={freshSettings()}
+        />,
+      );
+      await pick();
+
+      expect(
+        screen.getByText('There is not enough room to open that document. Close another one first.'),
+      ).toBeDefined();
+    });
+
+    it('CONTROL: a cancelled pick says nothing', async () => {
+      // A person changing their mind is not an error, and a screen that
+      // reported one would train the reader to ignore the region entirely.
+      const { container } = render(
+        <App client={openAnswering({ kind: 'cancelled' })} settings={freshSettings()} />,
+      );
+      await pick();
+
+      expect(container.querySelector('.m-start-problem')).toBeNull();
+    });
+
+    it('is announced ASSERTIVELY, because nothing else answers the reader', async () => {
+      // `role="alert"` rather than the status bar's polite region: this appears
+      // in response to something they just did, and a polite region would queue
+      // behind whatever a screen reader was already saying.
+      const { container } = render(
+        <App client={openAnswering({ kind: 'absent' })} settings={freshSettings()} />,
+      );
+      await pick();
+
+      expect(container.querySelector('.m-start-problem')?.getAttribute('role')).toBe('alert');
+    });
   });
 
   describe('the recent list', () => {

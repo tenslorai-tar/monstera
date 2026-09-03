@@ -4,7 +4,8 @@
 // than the class — "this expression is not constructable", at compile time.
 import { AxeBuilder } from '@axe-core/playwright';
 import { BRIDGE_KEY } from '@monstera/contract';
-import { expect, test } from '@playwright/test';
+import { asFileHandle } from '@monstera/shared';
+import { type Page, expect, test } from '@playwright/test';
 
 import { createBrowserShim } from './browserShim.js';
 
@@ -44,8 +45,20 @@ import { createBrowserShim } from './browserShim.js';
 /** The impact levels §10.4's threshold covers. */
 const BLOCKING = new Set(['serious', 'critical']);
 
-test.beforeEach(async ({ page }) => {
-  const shim = createBrowserShim();
+/**
+ * Puts the browser shim behind the page's bridge.
+ *
+ * A function each test calls rather than a `beforeEach`, because the SCREEN a
+ * test renders depends on what the shim answers — a start screen with a recent
+ * list and a recovery offer is a different composed screen from an empty one,
+ * and §10.4's gate is on every screen rather than on every route. One shim for
+ * all of them could only ever produce the first-launch one.
+ */
+async function bridge(
+  page: Page,
+  options: Parameters<typeof createBrowserShim>[0] = {},
+): Promise<void> {
+  const shim = createBrowserShim(options);
 
   // The client is keyed by channel; the bridge is keyed by string. The cast is
   // that one fact and nothing wider — `any` would also erase the parameter and
@@ -76,9 +89,11 @@ test.beforeEach(async ({ page }) => {
       },
     });
   }, BRIDGE_KEY);
-});
+}
 
 test('CONTROL: axe reports a planted violation on this very page', async ({ page }) => {
+  await bridge(page);
+
   // WITHOUT THIS, THE GATE IS UNFALSIFIABLE. *No serious violations* is what a
   // clean screen reports, what an empty document reports, and what an axe that
   // never ran reports — three states with one output, and the one everybody
@@ -112,9 +127,18 @@ test('CONTROL: axe reports a planted violation on this very page', async ({ page
   expect(planted.every((violation) => BLOCKING.has(String(violation.impact)))).toBe(true);
 });
 
-test('the start screen renders through the contract and has no serious a11y violations', async ({
-  page,
-}) => {
+/**
+ * Renders the screen the shim describes and asserts §10.4's threshold on it.
+ *
+ * The mount assertion is inside here rather than in each case, because it is
+ * every case's positive control: an empty document has zero accessibility
+ * violations, so a page that failed to mount scores a perfect result — the
+ * reassuring answer, from the failure this gate is least able to notice.
+ */
+async function expectNoSeriousViolations(
+  page: Page,
+  present: string,
+): Promise<void> {
   const failures: string[] = [];
   page.on('pageerror', (error) => {
     failures.push(`pageerror: ${error.message}`);
@@ -122,11 +146,12 @@ test('the start screen renders through the contract and has no serious a11y viol
 
   await page.goto('/');
 
-  // THE MOUNT IS ASSERTED FIRST, and this is the case's own positive control.
-  // An empty document has zero accessibility violations, so a page that failed
-  // to mount scores a perfect result — the reassuring answer, from the failure
-  // this gate is least able to notice.
   await expect(page.locator('#root')).not.toBeEmpty();
+  // AND THE SCREEN THIS CASE IS ABOUT IS THE ONE ON SCREEN. `#root` is
+  // non-empty for every state the application can be in, so a case seeding a
+  // recovery offer and getting a first-launch screen would pass — and would
+  // report a clean result about a screen it never rendered.
+  await expect(page.getByText(present)).toBeVisible();
   expect(failures, failures.join('\n')).toEqual([]);
 
   const results = await new AxeBuilder({ page }).analyze();
@@ -147,4 +172,56 @@ test('the start screen renders through the contract and has no serious a11y viol
         results.violations.map((v) => `${String(v.impact)}:${v.id}`).join(', ') || 'none'
       }`,
   ).toEqual([]);
+}
+
+test('the start screen renders through the contract and has no serious a11y violations', async ({
+  page,
+}) => {
+  await bridge(page);
+
+  await expectNoSeriousViolations(page, 'Open a PDF to begin.');
+});
+
+test('a message with a PLACEHOLDER renders its value, in the production build', async ({
+  page,
+}) => {
+  // THE CONTROL FOR A DEFECT ONLY THIS ARTEFACT CAN HAVE, found 2026-09-03.
+  //
+  // `@lingui/core` 6.6.0 registers its runtime message compiler only when
+  // `NODE_ENV !== 'production'`, so without one the built renderer returned the
+  // raw catalogue string and every placeholder reached the screen literally —
+  // *"Reopen {name}?"*, *"Page {page} of {count}"*. Every unit test in this
+  // repository runs in development mode, where the constructor registers the
+  // compiler for us, so all of them passed. `i18n.ts` now registers it.
+  //
+  // This case is here rather than beside the i18n module because the artefact
+  // is the subject: the difference does not exist in a vitest run, and a case
+  // that could not see it would be asserting the thing that was already true.
+  await bridge(page, {
+    recent: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
+    lastExitClean: false,
+  });
+  await page.goto('/');
+
+  await expect(page.getByText('Reopen annual report.pdf?')).toBeVisible();
+  // AND THE PLACEHOLDER IS NOT ON SCREEN. Asserting the interpolated text alone
+  // would pass for a page rendering both — which is not a state this library
+  // produces, and is exactly the assumption that let the defect through.
+  await expect(page.getByText('{name}')).toHaveCount(0);
+});
+
+test('the start screen WITH a recent list and a recovery offer is clean too', async ({ page }) => {
+  // A DIFFERENT COMPOSED SCREEN, which is what §10.4's *every* is about: the
+  // offer, the list and the controls together are what a reader meets after a
+  // run that did not finish, and nothing about the empty screen's result says
+  // anything about this one's contrast, focus order or naming.
+  await bridge(page, {
+    recent: [
+      { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
+      { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+    ],
+    lastExitClean: false,
+  });
+
+  await expectNoSeriousViolations(page, 'Monstera closed unexpectedly. Reopen annual report.pdf?');
 });

@@ -49,10 +49,58 @@ body {
  */
 .m-start-screen {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-16);
+  gap: var(--space-8);
   padding-block: var(--space-16);
+  text-align: center;
+}
+
+/*
+ * `--font-display`, whose own comment in `tokens.css` says what it is for: *one
+ * display size: the start-screen wordmark*. It has had no caller until now, so
+ * this is the token being used for the thing it was declared for rather than a
+ * size chosen here.
+ */
+.m-start-title {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-display);
+  font-weight: 600;
+}
+
+.m-start-invitation {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-content-16);
+}
+
+/*
+ * The controls, as a grid rather than a row.
+ *
+ * `auto-fit` with a `minmax` track: the buttons wrap into as many columns as the
+ * window allows and none of them stretches to fill a wide one. A fixed column
+ * count would be a number that is wrong at some width, and this screen is the
+ * first thing a reader sees at whatever size they happen to have.
+ */
+.m-start-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, max-content));
+  gap: var(--space-8);
+  justify-content: center;
+  margin-block-start: var(--space-8);
+}
+
+/*
+ * An open that produced no document. `--text` and not a colour of its own for
+ * `.m-status-problem`'s reason: the token set declares no error role, and a raw
+ * hex in a component is a lint error. The message and `role="alert"` are what
+ * carry it.
+ */
+.m-start-problem {
+  margin: 0;
+  color: var(--text);
+  max-inline-size: 40ch;
 }
 
 .m-recent {
