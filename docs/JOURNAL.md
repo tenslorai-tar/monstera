@@ -8,7 +8,8 @@ the fact is not a baseline, it is a rationalisation.
 | Stage | Baseline estimate | Actual | Verdict |
 |---|---|---|---|
 | 0 — walking skeleton | 15 working days | **18 days worked** (2026-08-16 → 2026-09-02) | **1.20× — continue** |
-| 1 — viewer core | 10 working days | **2 days worked so far** (2026-09-02 → 2026-09-03), 49 commits | **0.20× — continue.** Interim: the stage has not reached its last commit |
+| 1 — viewer core | 10 working days | **2 days worked** (2026-09-02 → 2026-09-03), 52 commits | **0.20× — continue** |
+| 2 — page management | **2 working days** (owner, 2026-09-03) | in progress (started 2026-09-03, Stage 1's last day) | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -57,44 +58,65 @@ test named. What Stage 0 does *not* ship is recorded rather than absorbed: the
 invariant 18(ii)'s restore mechanism stays deferred with a live exposure on the
 host-death path (`docs/ARCHITECTURE.md`, amended 2026-09-01).
 
-### Stage 1's reading, taken 2026-09-03 and marked INTERIM
+### Stage 1's trajectory gate, taken 2026-09-03
 
-**2 days, 49 commits, against a 10-working-day baseline — 0.20×.** Counted the
-way Stage 0 was: `git log --format=%ad --date=short d1d051d~1..HEAD | sort -u`
-returns **2026-09-02** and **2026-09-03**, and the figure is the count of
-distinct dates carrying a commit rather than a schedule anybody kept.
-`d1d051d` — *"E2's first question is who clusters"* — is the first Stage 1
-commit, because `BUILD-PROMPT.md:686` says the stage *"begins with the E2 text
-substrate"*.
+**2 days, 52 commits, against a 10-working-day baseline — 0.20×.** Counted the
+way Stage 0 was, with the command named so nobody re-derives it:
+`git log --format=%ad --date=short d1d051d~1..HEAD | sort -u` returns
+**2026-09-02** and **2026-09-03**. The figure is the count of distinct dates
+carrying a commit, not a schedule anybody kept. `d1d051d` — *"E2's first
+question is who clusters"* — is the first Stage 1 commit, because
+`BUILD-PROMPT.md:686` says the stage *"begins with the E2 text substrate"*.
 
 **The shared day is counted here as well as in Stage 0**, per the note above, so
 this figure is generous to Stage 1 by up to a day. That is the direction to err
 in for a stage running under estimate — the opposite of the direction Stage 0's
 row had to be pushed twice.
 
-**Verdict on this reading: continue.** 0.20× is nowhere near the 3× that arms a
-decision, and the gate's other two options exist for the case where effort has
-run away, which this is the reverse of.
+**Verdict: continue.** 0.20× is nowhere near the 3× that arms a decision, and
+the gate's other two options exist for effort running away, which this is the
+reverse of.
 
-**IT IS INTERIM BECAUSE THE STAGE HAS NOT REACHED ITS LAST COMMIT**, which is the
-correction Stage 0's own row records — *a stage ends when its last commit lands,
-not when its acceptance test first passes*. Recording a final actual now would
-repeat that mistake in the flattering direction, on a stage that already reads
-far under estimate.
+**The reading was recorded as INTERIM earlier the same day and is now final**,
+because the one thing standing in its way moved rather than landed. `D1`'s HD
+render toggle read `blocked` on a PDFium release to pin; on the owner's decision
+of 2026-09-03 that row is **deferred to Stage 5**, where PDFium's first
+non-optional consumer is — D4's in-place text editing (`BUILD-PROMPT.md:257`) —
+and it carries row 298's second-host clause with it. The B4 for the host body
+lands there too, when the generalisation has two callers instead of one.
 
-**What stands between here and the last commit is one row and one owner
-action.** `BUILD-PROMPT.md:686` names Stage 1's D1 as *"search, tabs, zoom
-quality E1 tier-1"* and all three are done, as are 22 of D1's 25 rows. Of the
-three that are not: thumbnail drag-reorder is **deferred to Stage 2** on the
-page-reorder command, ADR-0006's PDF.js row is **partly** executed with `cmaps/`
-waiting on the first CJK document in the corpus, and the **HD render toggle is
-blocked** — both of the design questions it sent up are now answered from the
-record, and what remains is a PDFium release to pin, its SHA-256, and the
-authorisation to download it. That is the owner's, not a feature commit's.
+**What D1 closes with.** `BUILD-PROMPT.md:686` names Stage 1's D1 as *"search,
+tabs, zoom quality E1 tier-1"* and all three are done, as are **22 of its 24
+rows** — counted with
+`awk 'NR>=44' docs/FEATURES.md | awk '/^## D2/{exit} /^\|/{print}'`, which is 16
+plain `done`, 6 `done` with a clause, and the two below. No row reads `blocked`.
 
-**A stage does not close over a row that reads `blocked`.** Flipping the progress
-table while D1 carries one would be the defect this journal already names at
-document scale: the body corrected and the status cell left standing.
+- **ADR-0006's PDF.js row: `partly`.** Executed; `cmaps/` alone is not, because
+  its fixture needs a CJK font this repository does not ship. Trigger: the first
+  CJK document in the corpus.
+- **Thumbnail drag-reorder: deferred to Stage 2**, on D2's page-reorder command,
+  which is the row that closes it.
+
+### Stage 2's baseline: 2 working days
+
+**Owner's decision, 2026-09-03, taken before the stage began.** That order is
+what makes it a baseline rather than the rationalisation this journal's own
+header warns about — *"one recorded after the fact is not a baseline"*. It is
+owner-set and **not derived**: it is not adjusted against D2's row count, and a
+stage with twenty-three rows is not thereby given a larger number.
+
+No amendment to the founding record is involved. `BUILD-PROMPT.md:651-656` fixes
+the estimates for Stage 0 and Stage 1 and says actuals are tracked here; a
+baseline for a later stage is this file's to hold.
+
+**The trigger is six days**, and this is the first estimate here that can
+plausibly arm. Stage 0's 3× was 45 days and Stage 1's was 30; neither was ever
+in reach. Two days is a number a single hard defect can spend.
+
+**If it arms, the response is the record's three options in writing** —
+*continue*, *cut scope*, or *halt and reassess with the user*. Never a revised
+estimate: an estimate rewritten to match the actual is the abort condition
+deleted, which is the failure the gate exists to prevent.
 
 ---
 
@@ -104,7 +126,7 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
-### STAGE 0 IS CLOSED (2026-09-02); STAGE 1 IS OPEN ON ONE BLOCKED ROW
+### STAGE 0 IS CLOSED (2026-09-02)
 
 The exit **test** was met on 2026-09-01, each clause flipped against a run rather
 than against a row, and both of `BUILD-PROMPT.md`'s additional conditions read
@@ -118,55 +140,59 @@ D1 complete."* Search is the first thing that would otherwise grow its own text
 extraction beside the substrate, which is the second wiring place the substrate
 exists to prevent.
 
-**What Stage 1 inherits, named so it is not rediscovered.** Each has a row in
-`docs/FEATURES.md`; none of them blocks starting:
+**What Stage 1 inherited** is recorded in the Stage 2 section below, updated
+2026-09-03 with what each of those items turned out to be: the renderer's two
+memory terms split and one of them expired its trigger, and the rest carried
+forward unchanged.
 
-- the **renderer's two memory terms**, whose trigger is E1 tier-1's bitmap
-  cache — inside D1, so this fires during Stage 1 rather than after it;
+**Stage 1 ended with the trajectory gate**, which is the same shape as the row
+above: actual against 10 working days, in writing, and one of *continue*, *cut
+scope*, or *halt and reassess*. Taken 2026-09-03 — see the table.
+
+### STAGE 1 IS CLOSED (2026-09-03) AND STAGE 2 IS OPEN
+
+**22 of D1's 24 rows are done**, including the three `BUILD-PROMPT.md:686`
+names — search, tabs, zoom quality E1 tier-1. The actual and the verdict are in
+the table above at **0.20×**, and the gate is taken: **continue**.
+
+Two rows are not done, and neither is Stage 1's:
+
+- **ADR-0006's PDF.js row: `partly`.** Executed; `cmaps/` alone is not, because
+  its fixture needs a CJK font this repository does not ship. Trigger: the first
+  CJK document in the corpus.
+- **Thumbnail drag-reorder: deferred to Stage 2**, on D2's page-reorder command,
+  which is the row that closes it.
+
+**The HD render toggle left D1 on the owner's decision** and is D4/Stage 5's,
+where PDFium's first non-optional consumer is. It carries row 298's second-host
+clause and ADR-0006's PDFium row with it, and the B4 for the host body lands
+there — with two callers instead of one.
+
+### WHAT STAGE 2 IS, AND WHAT IT INHERITS
+
+**`BUILD-PROMPT.md:691` defines it**: *"D2 as commands with inverses; remap
+invariants proven (annotations/bookmarks follow pages)."* Twenty-three D2 rows,
+plus the remap contract that clause names, plus the thumbnail row above.
+
+**The baseline is 2 working days** (owner, 2026-09-03) and the 3× trigger is
+six. See the stage table for why that is the first estimate here that can arm.
+
+**What it inherits, named so it is not rediscovered.** Each has a row in
+`docs/FEATURES.md`; none blocks starting:
+
+- the **renderer's proportional memory term**, which now waits on an
+  *instrument* rather than on a renderer — `perf:gate` spawns roles and none
+  composes one. The **cap** term is measured unfired.
 - **`mupdf-host`'s `base 128 MB`**, deferred on the discriminator for a bimodal
   CI sample, with both named candidates falsified;
 - **invariant 18(ii)'s restore mechanism**, deferred with an exposure that is
-  live today on the host-death path;
-- the **end-to-end rotate** and §2's other view-model members, each placed at
-  the stage of the feature that reads it.
+  live today on the host-death path.
 
-**Stage 1 ends with the trajectory gate**, which is the same shape as the row
-above: actual against 10 working days, in writing, and one of *continue*, *cut
-scope*, or *halt and reassess*.
-
-### WHAT STAGE 1 STILL OWES, read 2026-09-03
-
-**22 of D1's 25 rows are done** — counted with
-`awk 'NR>=44' docs/FEATURES.md | awk '/^## D2/{exit} /^\|/{print}'`, which is 16
-plain `done`, 6 `done` with a clause, and the three below — and the three
-`BUILD-PROMPT.md:686` names —
-search, tabs, zoom quality E1 tier-1 — are among them. The gate's interim
-reading is in the table above at **0.20×**.
-
-Three rows are not done, and only one of them is work:
-
-- **HD render toggle (PDFium): `blocked`, and it is the ONE thing between here
-  and the stage's last commit.** Both design questions this row sent up as the
-  owner's are now answered from the record — whether an HD raster may cross
-  (ADR-0031 bans a *snapshot*, invariant 11 is *per operation*, §9.17
-  anticipates a bitmap-cache cap, so it may cross under a caller-stated maximum
-  with a ceiling as `MAX_RANGE_BYTES` is) and the licences (§8 already puts
-  `pdfium.dll` in its *prebuilt binaries we download* half, with
-  `fetchVerified.mjs` for the pinned hash and `nativeComponents.json` for the
-  bundled list). **What remains is a PDFium release to pin, its SHA-256, and the
-  authorisation to download it** — an owner action, not a design.
-  The B4 for the host body is deliberately unwritten until then, by the row's
-  own argument: generalising `hostBody.ts` while one engine exists is an
-  abstraction with one caller.
-- **Thumbnail drag-reorder: deferred to Stage 2**, trigger the page-reorder
-  command, which is D2's.
-- **ADR-0006's PDF.js row: `partly`.** Executed, with `cmaps/` alone unexecuted
-  because its fixture needs a CJK font this repository does not ship. Trigger:
-  the first CJK document in the corpus.
-
-**Stage 2 is what follows and is not started.** D2 as commands with inverses,
-and the remap invariants proven — annotations and bookmarks following pages.
-The thumbnail row above joins it on arrival.
+**What Stage 2 is the first to be able to break.** Page operations move pages,
+and three things D1 shipped point at pages by number: named destinations, the
+outline, and the back-stack in each document's store. Reorder is the first
+command that can invalidate any of them, which is why the remap contract is a
+D2 row rather than a D3 one.
 
 > ### CLOSED 2026-08-18T06:45Z — the guard fired
 >
