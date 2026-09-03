@@ -479,7 +479,7 @@ export function App({ client, settings }: AppProps): ReactElement {
       {/* E2's substrate, reached by a person. It renders nothing with no
           document open, for `QuickToolbar`'s reason: a find field over no
           document is a control that cannot work. */}
-      <FindBar client={client} docId={open?.docId} page={context.page} />
+      <FindBar client={client} docId={open?.docId} page={context.page} pageCount={pageCount} />
       {/* A projection, like the start screen, and it renders nothing when its
           model is empty — which is every moment no document is focused, because
           each command placed on it declares `when`. */}

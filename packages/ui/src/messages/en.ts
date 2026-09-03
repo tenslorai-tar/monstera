@@ -61,6 +61,17 @@ export const DESTINATIONS_LABEL = messageKey('surface.destinations.label');
 export const DESTINATIONS_EMPTY = messageKey('surface.destinations.empty');
 export const DESTINATIONS_UNAVAILABLE = messageKey('surface.destinations.unavailable');
 export const DESTINATION_UNRESOLVED = messageKey('surface.destinations.unresolved');
+export const FIND_CASE_SENSITIVE = messageKey('surface.find.case-sensitive');
+export const FIND_WHOLE_WORD = messageKey('surface.find.whole-word');
+export const FIND_REGEX = messageKey('surface.find.regex');
+export const FIND_ALL_PAGES = messageKey('surface.find.all-pages');
+export const FIND_CANCEL = messageKey('surface.find.cancel');
+export const FIND_PROGRESS = messageKey('surface.find.progress');
+export const FIND_CANCELLED = messageKey('surface.find.cancelled');
+export const FIND_BAD_PATTERN = messageKey('surface.find.bad-pattern');
+export const FIND_DOCUMENT_MATCHES = messageKey('surface.find.document-matches');
+export const FIND_DOCUMENT_EMPTY = messageKey('surface.find.document-empty');
+export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
 export const LAYERS_LABEL = messageKey('surface.layers.label');
 export const LAYERS_EMPTY = messageKey('surface.layers.empty');
 export const LAYERS_UNAVAILABLE = messageKey('surface.layers.unavailable');
@@ -153,6 +164,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DESTINATIONS_EMPTY]: 'This document has no outline.',
   [DESTINATIONS_UNAVAILABLE]: 'The outline could not be read.',
   [DESTINATION_UNRESOLVED]: '{title} (goes nowhere)',
+  [FIND_CASE_SENSITIVE]: 'Match case',
+  [FIND_WHOLE_WORD]: 'Whole word',
+  [FIND_REGEX]: 'Regular expression',
+  [FIND_ALL_PAGES]: 'Search all pages',
+  [FIND_CANCEL]: 'Cancel',
+  [FIND_PROGRESS]: 'Searched {done} of {count} pages',
+  // NAMES WHAT WAS DISCARDED. A cancelled walk keeps nothing, and a message
+  // that only said "cancelled" would leave a reader wondering whether the
+  // partial count they glimpsed is still on screen.
+  [FIND_CANCELLED]: 'Search cancelled. No results were kept.',
+  [FIND_BAD_PATTERN]: 'That is not a valid regular expression.',
+  [FIND_DOCUMENT_MATCHES]: '{count} matches in this document',
+  [FIND_DOCUMENT_EMPTY]: 'Nothing in this document matches.',
+  [FIND_MATCH_ON_PAGE]: 'Page {page}: {text}',
   [LAYERS_LABEL]: 'Layers',
   [LAYERS_EMPTY]: 'This document has no layers.',
   [LAYERS_UNAVAILABLE]: 'The layers could not be read.',

@@ -524,6 +524,13 @@ describe('App', () => {
         page: FIRST_PAGE.kernel,
         query: 'needle',
         limit: 100,
+        // THE FLAGS THE BAR IS SHOWING, sent explicitly rather than omitted
+        // when unset. A bar that dropped them would look identical here while
+        // the checkboxes on screen said something else — the flags are what the
+        // user set, and what was asked for is what must cross.
+        caseSensitive: false,
+        wholeWord: false,
+        regex: false,
       });
 
       // AND THE CORRESPONDENCE, taken from the same place the surface takes it
@@ -541,6 +548,181 @@ describe('App', () => {
       // The matched line reaches the screen, so this is not a dispatch into a
       // void that happens to be well formed.
       expect(screen.getByText('the needle sits here')).toBeDefined();
+    });
+
+    it('a TOGGLED option reaches the channel, and only the one that was toggled', async () => {
+      // The other half of the case above. That one pins that the flags cross;
+      // this pins that they carry what the user set — a bar sending three
+      // constants passes the first and none of this.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.searchPage': { version: asDocVersion(1), matches: [], truncated: false },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Find on this page'), {
+          target: { value: 'ne+dle' },
+        });
+        screen.getByLabelText('Regular expression').click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Search this page' }).click();
+        await Promise.resolve();
+      });
+
+      const searched = sent.filter((call) => call.id === 'document.searchPage');
+      expect(searched[0]?.params).toStrictEqual({
+        docId: DOC,
+        page: FIRST_PAGE.kernel,
+        query: 'ne+dle',
+        limit: 100,
+        caseSensitive: false,
+        wholeWord: false,
+        regex: true,
+      });
+    });
+
+    it('SEARCHES EVERY PAGE when asked, one page at a time', async () => {
+      // The whole-document walk, which is `document.searchPage` per page —
+      // ADR-0035 keeps a document's text out of `main`, so there is no channel
+      // that could answer this in one call.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.searchPage': {
+          version: asDocVersion(1),
+          matches: [{ line: 0, offset: 0, text: 'a line' }],
+          truncated: false,
+        },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Find on this page'), {
+          target: { value: 'needle' },
+        });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Search all pages' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      // The fixture's document has two pages, and the walk asked for both —
+      // in order, and by the kernel's numbering rather than the reader's.
+      expect(
+        sent
+          .filter((call) => call.id === 'document.searchPage')
+          .map((call) => (call.params as { page: number }).page),
+      ).toStrictEqual([0, 1]);
+      // TWO MATCHES, one per page, reported as a document total. A walk that
+      // published the last page's answer alone would say one.
+      expect(screen.getByText('2 matches in this document')).toBeDefined();
+    });
+
+    it('CANCELLING a whole-document search keeps NOTHING it had already found', async () => {
+      // The property the walk exists for, asserted where a reader meets it. A
+      // partial count is indistinguishable from a complete one on screen — it
+      // says "one match" about a document holding two — so the cancelled state
+      // has no matches to show rather than an empty list it chose not to show.
+      //
+      // The answers are DEFERRED so the walk can be caught mid-flight. With an
+      // immediately-resolving client the two-page walk finishes before any
+      // click could land, and the case would assert about a completed search.
+      const pending: (() => void)[] = [];
+      const client = createClient(channels, (id, _params) => {
+        if (id === 'document.searchPage') {
+          return new Promise((resolve) => {
+            pending.push(() => {
+              resolve(
+                ok({
+                  version: asDocVersion(1),
+                  matches: [{ line: 0, offset: 0, text: 'a line' }],
+                  truncated: false,
+                }),
+              );
+            });
+          });
+        }
+        const answer = (OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Find on this page'), {
+          target: { value: 'needle' },
+        });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Search all pages' }).click();
+        await Promise.resolve();
+      });
+
+      // Page 0 is in flight and nothing has been answered yet.
+      expect(pending).toHaveLength(1);
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Cancel' }).click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        // The answer to page 0 arrives AFTER the cancel, which is the ordering
+        // that matters: it is an answer to a question the reader withdrew.
+        pending[0]?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('Search cancelled. No results were kept.')).toBeDefined();
+      // NO COUNT, of any size. `1 match` and `2 matches` are both wrong here,
+      // and asserting the absence of the string is what separates *published
+      // nothing* from *published the part it had*.
+      expect(screen.queryByText(/matches in this document/u)).toBeNull();
+      // AND IT STOPPED ASKING. Page 1 was never requested, so the cancel
+      // reached the walk rather than only the surface.
+      expect(pending).toHaveLength(1);
+    });
+
+    it('an UNPARSEABLE pattern says so, rather than "this page could not be searched"', async () => {
+      // The one refusal on this channel that is about what the user typed. A
+      // person types `(` on the way to `(a)`, and telling them the document is
+      // unavailable is both wrong and unactionable.
+      const client = createClient(channels, (id, _params) => {
+        if (id === 'document.searchPage') {
+          return Promise.resolve(err({ code: 'search-pattern-invalid' }));
+        }
+        const answer = (OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        fireEvent.change(screen.getByLabelText('Find on this page'), { target: { value: '(' } });
+        screen.getByLabelText('Regular expression').click();
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Search this page' }).click();
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('That is not a valid regular expression.')).toBeDefined();
+      // AND NOT THE OTHER SENTENCE. Without this the case passes for a bar that
+      // shows both, which is the state a reader cannot act on.
+      expect(screen.queryByText('This page could not be searched just now.')).toBeNull();
     });
 
     it('CONTROL: an empty query dispatches NOTHING', async () => {

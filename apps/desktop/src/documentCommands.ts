@@ -15,13 +15,14 @@ import {
   type PageText,
   type SaveDependencies,
   type SaveOutcome,
+  type SearchOptions,
   type SessionsByWriter,
   type TextMatch,
   declaredCommands,
   findInPages,
   saveDocument,
 } from '@monstera/kernel';
-import type { DocId, DocVersion } from '@monstera/shared';
+import { type DocId, type DocVersion, type QueryProblem, compileQuery } from '@monstera/shared';
 
 /**
  * The composition point (ADR-0009, 2026-08-19): the one place that owns
@@ -188,6 +189,27 @@ export interface SaveSource {
   readonly deps: SaveDependencies;
   /** A document's current bytes. */
   readonly flush: DocumentFlush;
+}
+
+/**
+ * The query itself could not be compiled.
+ *
+ * An **outcome**, not a defect, and the class is what carries that distinction
+ * to the handler — matched on the class rather than on the message, for
+ * `DocumentPoisonedError`'s reason. It is the only refusal here that says
+ * nothing about the document: the user typed a pattern, and a person typing one
+ * passes through several that do not parse.
+ */
+export class InvalidSearchPatternError extends Error {
+  override readonly name = 'InvalidSearchPatternError';
+
+  constructor(query: string, reason: QueryProblem) {
+    super(
+      `A search query was refused before any page was read (${reason}): ${JSON.stringify(query)}. ` +
+        'An empty query matches every position and an unparseable pattern matches nothing, so ' +
+        'neither can be answered with a result list.',
+    );
+  }
 }
 
 /** An open document had no session for the writer its command routes to. */
@@ -523,8 +545,19 @@ export class DocumentCommands {
    * @param page the zero-based index, as every page index crossing the contract
    *   is. PDF.js numbers from 1 and this build has already sent the wrong one
    *   once; `SHOWN_PAGE` is where the two meet.
+   * ## THE PATTERN IS COMPILED BEFORE THE LANE, and that is not tidiness
+   *
+   * Under `regex` the query is the user's, and a pattern that does not parse is
+   * something a person types on the way to one that does. Compiling first means
+   * a half-written pattern never occupies the document's lane behind a queue of
+   * real work — and it is the only refusal here that is about the QUERY rather
+   * than about the document, so it is the only one that can be decided without
+   * reading anything.
+   *
    * @param limit the caller's own bound. Stated rather than defaulted, so
    *   `truncated` can separate *the page ran out* from *you asked for this many*.
+   * @throws {InvalidSearchPatternError} when `regex` is set and the query does
+   *   not compile.
    * @throws the same set `viewModel` throws, for the same reasons.
    */
   async searchPage(
@@ -532,7 +565,11 @@ export class DocumentCommands {
     page: number,
     query: string,
     limit: number,
+    options: SearchOptions = {},
   ): Promise<PageSearchResult> {
+    const compiled = compileQuery(query, options);
+    if (!compiled.ok) throw new InvalidSearchPatternError(query, compiled.error);
+
     const { version, value } = await this.#documents.run(docId, async () => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
@@ -544,10 +581,14 @@ export class DocumentCommands {
       // ASKED FOR ONE MORE THAN THE LIMIT, which is what makes `truncated`
       // honest: a page holding exactly `limit` matches is not truncated, and
       // `matches.length === limit` cannot tell that from a page holding more.
-      const found = findInPages([text], query, { limit: limit + 1 });
+      const found = findInPages([text], query, { ...options, limit: limit + 1 });
+      // The refusal was decided above, so this cannot be reached — and it is a
+      // throw rather than an empty list, because a search that answered nothing
+      // here would report the reassuring answer for a query it never ran.
+      if (!found.ok) throw new InvalidSearchPatternError(query, found.error);
       return {
-        matches: found.slice(0, limit).map((match) => ({ ...match, page })),
-        truncated: found.length > limit,
+        matches: found.value.slice(0, limit).map((match) => ({ ...match, page })),
+        truncated: found.value.length > limit,
       };
     });
 

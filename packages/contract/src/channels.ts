@@ -653,6 +653,24 @@ export const channels = {
        */
       query: z.string().min(1).max(MAX_QUERY_LENGTH),
       limit: z.number().int().positive().max(MAX_SEARCH_MATCHES),
+      /**
+       * How the query is compared — the same four the find bar offers.
+       *
+       * **Optional with defaults on the far side, rather than required here.**
+       * The matching rule lives in one module (`@monstera/shared`'s
+       * `textMatch.ts`) and its defaults are stated there; restating them in the
+       * schema would be a second opinion about what an omitted flag means, and
+       * the two would agree until one of them changed.
+       *
+       * **The pattern is NOT compiled here**, though it could be. A schema that
+       * rejected an unparseable regex would answer with `internal` plus an
+       * incident id — the shape reserved for a defect — for a person who has
+       * typed `(` on the way to `(a)`. It is a declared failure instead.
+       */
+      caseSensitive: z.boolean().optional(),
+      wholeWord: z.boolean().optional(),
+      regex: z.boolean().optional(),
+      normalise: z.enum(['nfc', 'nfkc', 'none']).optional(),
     }),
     z.object({
       version: docVersionSchema,
@@ -678,7 +696,13 @@ export const channels = {
        */
       truncated: z.boolean(),
     }),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    // `search-pattern-invalid` is DECLARED rather than left to `internal`, and
+    // the difference is who it is about: the other three describe the document,
+    // this one describes what the user typed. An incident id and "something
+    // went wrong" is the wrong answer to a regex with an unclosed bracket, and
+    // a renderer that could not tell the two apart would have to show one of
+    // them for both.
+    ['document-not-open', 'document-busy', 'document-poisoned', 'search-pattern-invalid'],
   ),
 
   /**

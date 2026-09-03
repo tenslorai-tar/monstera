@@ -1,3 +1,11 @@
+import {
+  type QueryProblem,
+  type Result,
+  type TextMatchOptions,
+  findInLines,
+  ok,
+} from '@monstera/shared';
+
 import { type PageText, type TextLine, linesOf } from './textStructure.js';
 
 /**
@@ -40,25 +48,30 @@ export interface TextMatch {
   readonly line: number;
   /** Offset of the match within the line's text, in UTF-16 code units. */
   readonly offset: number;
-  /** The line the match sits in, so a caller needs no second lookup. */
+  /**
+   * The line the match sits in, so a caller needs no second lookup.
+   *
+   * **After normalisation**, which is what keeps it and `offset` consistent:
+   * NFC can change a line's length, so an offset into the raw extraction would
+   * not index the string the caller was handed.
+   */
   readonly text: string;
 }
 
-/** How a query is compared against the text. */
-export interface SearchOptions {
-  /** Default false — a reader looking for "pdf" expects "PDF". */
-  readonly caseSensitive?: boolean;
-  /**
-   * Stop after this many matches, across all pages.
-   *
-   * **Absent means unbounded, and that is deliberate.** A default cap would make
-   * *"no more matches"* and *"the cap was reached"* the same observation for
-   * every caller that did not set one, which is the reassuring answer wearing a
-   * result's clothes. A caller that wants a bound states it and can then tell
-   * the two apart by comparing the count.
-   */
-  readonly limit?: number;
-}
+/**
+ * How a query is compared against the text.
+ *
+ * The matching rule itself is `@monstera/shared`'s, because the browser shim
+ * answers the same channel and may not import the kernel — see `textMatch.ts`.
+ * This alias is what a kernel caller names.
+ *
+ * `limit` is absent-means-unbounded, and that is deliberate: a default cap
+ * would make *"no more matches"* and *"the cap was reached"* the same
+ * observation for every caller that did not set one, which is the reassuring
+ * answer wearing a result's clothes. A caller that wants a bound states it and
+ * can then tell the two apart by comparing the count.
+ */
+export type SearchOptions = TextMatchOptions;
 
 /**
  * Every occurrence of `query` in the given pages, in reading order.
@@ -67,48 +80,37 @@ export interface SearchOptions {
  *   them. The `page` index in each match is the position in THIS array, so a
  *   caller searching a subset maps it back itself rather than this module
  *   guessing what the subset meant.
- * @throws on an empty query — see below.
+ * @returns the matches, or the reason the query could not be compiled — an
+ *   empty query or, under `regex`, a pattern that does not parse. A `Result`
+ *   rather than a throw, because both are things a person types into a field
+ *   and a half-written pattern is not an exceptional condition.
  */
 export function findInPages(
   pages: readonly PageText[],
   query: string,
   options: SearchOptions = {},
-): readonly TextMatch[] {
-  if (query === '') {
-    // AN EMPTY QUERY MATCHES EVERY POSITION, so the honest answers are "every
-    // offset in the document" and "nothing", and both are wrong. Refusing is
-    // the third option: a caller with an empty search box has not asked a
-    // question yet, and a result list of every character is what it would get.
-    throw new Error(
-      'findInPages was given an empty query. Every position matches it, so any answer here is ' +
-        'either a document-sized result list or a silent zero, and the caller has not actually ' +
-        'asked a question.',
-    );
-  }
-
-  const caseSensitive = options.caseSensitive ?? false;
-  const needle = caseSensitive ? query : query.toLowerCase();
+): Result<readonly TextMatch[], QueryProblem> {
   const limit = options.limit;
-
   const matches: TextMatch[] = [];
   for (const [page, pageText] of pages.entries()) {
-    for (const [line, entry] of linesOf(pageText).entries()) {
-      const haystack = caseSensitive ? entry.text : entry.text.toLowerCase();
-      let from = 0;
-      for (;;) {
-        const offset = haystack.indexOf(needle, from);
-        if (offset < 0) break;
-        matches.push({ page, line, offset, text: entry.text });
-        if (limit !== undefined && matches.length >= limit) return matches;
-        // ADVANCE BY ONE, not by the needle's length: overlapping occurrences
-        // are occurrences. Searching "aa" in "aaa" finds two, and a reader
-        // stepping through matches expects the one starting at offset 1.
-        from = offset + 1;
-      }
-    }
+    // THE REMAINING BUDGET, page by page. Handing each page the caller's whole
+    // limit would return up to `limit` matches PER PAGE, which is the bound
+    // silently multiplying by the document's length — and a caller comparing
+    // the count against its own limit to decide `truncated` would then be
+    // wrong in the direction that reads as "there is more".
+    const perPage: SearchOptions =
+      limit === undefined ? options : { ...options, limit: limit - matches.length };
+    const found = findInLines(
+      linesOf(pageText).map((line) => line.text),
+      query,
+      perPage,
+    );
+    if (!found.ok) return found;
+    for (const hit of found.value) matches.push({ page, ...hit });
+    if (limit !== undefined && matches.length >= limit) return ok(matches);
   }
 
-  return matches;
+  return ok(matches);
 }
 
 /** The line a match sits in, for a caller that holds the pages. */

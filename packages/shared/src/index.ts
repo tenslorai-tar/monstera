@@ -23,6 +23,20 @@ export {
 } from './result.js';
 export { type Rgb, channels, contrast, luminance, onColor, onColorRounded } from './colour.js';
 export { type MessageKey, isDottedName, messageDomain, messageKey } from './messages.js';
+// The matching rule, once. Both the kernel's search and the browser shim's
+// answer to `document.searchPage` take it from here — the shim may not import
+// the kernel, and a shim with its own rule agrees with the kernel until the day
+// it does not (B3a).
+export {
+  type CompiledQuery,
+  type LineMatch,
+  type Normalisation,
+  type QueryProblem,
+  type TextMatchOptions,
+  compileQuery,
+  findInLines,
+  normalised,
+} from './textMatch.js';
 // The five coordinate spaces and the ONE thing permitted to convert between
 // them (invariant L3). The point constructors are exported and `Brand`'s
 // `brandValue` is not, deliberately: a caller may build a point in a space, and

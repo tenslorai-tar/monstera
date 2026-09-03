@@ -1,17 +1,30 @@
 import { useLingui } from '@lingui/react';
-import { type ReactElement, useCallback, useId, useState } from 'react';
+import { type ReactElement, useCallback, useId, useRef, useState } from 'react';
 
 import type { ContractClient } from '@monstera/contract';
 import type { DocId } from '@monstera/shared';
 
+import { type DocumentMatch, searchDocument } from './documentSearch.js';
 import {
+  FIND_ALL_PAGES,
+  FIND_BAD_PATTERN,
+  FIND_CANCEL,
+  FIND_CANCELLED,
+  FIND_CASE_SENSITIVE,
+  FIND_DOCUMENT_EMPTY,
+  FIND_DOCUMENT_MATCHES,
   FIND_EMPTY,
   FIND_LABEL,
   FIND_MATCHES,
+  FIND_MATCH_ON_PAGE,
+  FIND_PROGRESS,
   FIND_REFUSED,
+  FIND_REGEX,
   FIND_SUBMIT,
   FIND_TRUNCATED,
+  FIND_WHOLE_WORD,
 } from './messages/en.js';
+import { pdfjsPageOf } from './pageNumbering.js';
 
 /**
  * The find bar: E2's text substrate, reached by a person.
@@ -39,17 +52,20 @@ import {
  * neither holds a literal, so a disagreement is a visible edit to the one place
  * the correspondence lives.
  *
- * **Searching only the current page is a limit, and it is the honest one to
- * start with.** A document-wide search is this channel per page with a
- * cancellable walk over them, which the row names as *background indexing* and
- * which needs a results surface to arrive into.
+ * ## The WHOLE DOCUMENT is the same channel, per page, and it is cancellable
+ *
+ * `searchDocument` walks the pages one at a time, because ADR-0035 says a
+ * document's text never lands in `main` at once. **A cancelled walk publishes
+ * nothing** — see that module — so this surface has no state in which a partial
+ * count can be shown, and the button that cancels does not have to also clear
+ * anything.
  *
  * ## The result is a COUNT and the lines, not a navigable list
  *
  * Navigation between matches needs a current match, a next-match affordance and
  * a way to scroll a page that does not scroll yet — all of which belong with
- * continuous scroll. What ships is what can be true today: how many matches this
- * page holds and which lines they are on, which is observable, correct, and
+ * continuous scroll. What ships is what can be true today: how many matches
+ * were found and which lines they are on, which is observable, correct, and
  * survives being asked twice.
  */
 export interface FindBarProps {
@@ -64,6 +80,8 @@ export interface FindBarProps {
   readonly docId: DocId | undefined;
   /** The page to search, zero-based, from the scroller. */
   readonly page: number | undefined;
+  /** How many pages the document has, for the whole-document walk. */
+  readonly pageCount: number | undefined;
 }
 
 /**
@@ -79,13 +97,37 @@ const PAGE_LIMIT = 100;
 type FindState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'answered'; readonly lines: readonly string[]; readonly truncated: boolean }
+  | {
+      readonly kind: 'document';
+      readonly matches: readonly DocumentMatch[];
+      readonly truncated: boolean;
+    }
+  | { readonly kind: 'searching'; readonly done: number; readonly count: number }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'bad-pattern' }
   | { readonly kind: 'refused' };
 
-export function FindBar({ client, docId, page }: FindBarProps): ReactElement | null {
+/** The three flags a person can set, as the channel names them. */
+interface FindOptions {
+  readonly caseSensitive: boolean;
+  readonly wholeWord: boolean;
+  readonly regex: boolean;
+}
+
+export function FindBar({ client, docId, page, pageCount }: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
   const [query, setQuery] = useState('');
+  const [options, setOptions] = useState<FindOptions>({
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+  });
   const [state, setState] = useState<FindState>({ kind: 'idle' });
   const inputId = useId();
+  // A REF, not state: aborting must not re-render, and the walk holds this
+  // controller for its whole life. Kept so the cancel button can reach the walk
+  // that is running rather than one a re-render rebuilt.
+  const walk = useRef<AbortController | null>(null);
 
   const search = useCallback(async (): Promise<void> => {
     if (docId === undefined || page === undefined) return;
@@ -102,6 +144,7 @@ export function FindBar({ client, docId, page }: FindBarProps): ReactElement | n
       page,
       query,
       limit: PAGE_LIMIT,
+      ...options,
     });
 
     // A REFUSAL IS RENDERED, never swallowed. `document-busy` and its siblings
@@ -109,7 +152,11 @@ export function FindBar({ client, docId, page }: FindBarProps): ReactElement | n
     // one would tell the user their word is absent from a document nobody
     // looked in.
     if (!answer.ok) {
-      setState({ kind: 'refused' });
+      // A BAD PATTERN IS ITS OWN STATE, because it is the only refusal here
+      // that is about what the user typed rather than about the document —
+      // "this page could not be searched" is the wrong sentence for a missing
+      // bracket, and it is the one a reader would act on by retrying.
+      setState({ kind: answer.error.code === 'search-pattern-invalid' ? 'bad-pattern' : 'refused' });
       return;
     }
     setState({
@@ -117,9 +164,45 @@ export function FindBar({ client, docId, page }: FindBarProps): ReactElement | n
       lines: answer.value.matches.map((match) => match.text),
       truncated: answer.value.truncated,
     });
-  }, [client, docId, page, query]);
+  }, [client, docId, options, page, query]);
+
+  const searchAll = useCallback(async (): Promise<void> => {
+    if (docId === undefined || pageCount === undefined || query === '') return;
+
+    const controller = new AbortController();
+    walk.current = controller;
+    setState({ kind: 'searching', done: 0, count: pageCount });
+
+    const outcome = await searchDocument({
+      client,
+      docId,
+      pageCount,
+      query,
+      perPage: PAGE_LIMIT,
+      options,
+      signal: controller.signal,
+      onProgress: ({ pagesSearched }) => {
+        setState({ kind: 'searching', done: pagesSearched, count: pageCount });
+      },
+    });
+
+    walk.current = null;
+    if (outcome.kind === 'cancelled') {
+      setState({ kind: 'cancelled' });
+      return;
+    }
+    if (outcome.kind === 'refused') {
+      setState({
+        kind: outcome.code === 'search-pattern-invalid' ? 'bad-pattern' : 'refused',
+      });
+      return;
+    }
+    setState({ kind: 'document', matches: outcome.matches, truncated: outcome.truncated });
+  }, [client, docId, options, pageCount, query]);
 
   if (docId === undefined) return null;
+
+  const searching = state.kind === 'searching';
 
   return (
     <form
@@ -143,7 +226,51 @@ export function FindBar({ client, docId, page }: FindBarProps): ReactElement | n
         }}
       />
       <button type="submit">{_(FIND_SUBMIT)}</button>
+      {pageCount === undefined ? null : searching ? (
+        <button
+          type="button"
+          data-find-cancel="true"
+          onClick={() => {
+            walk.current?.abort();
+          }}
+        >
+          {_(FIND_CANCEL)}
+        </button>
+      ) : (
+        <button
+          type="button"
+          data-find-all="true"
+          onClick={() => {
+            void searchAll();
+          }}
+        >
+          {_(FIND_ALL_PAGES)}
+        </button>
+      )}
+      <fieldset className="m-find-options">
+        {OPTION_ROWS.map(({ key, label }) => (
+          <label key={key}>
+            <input
+              type="checkbox"
+              data-find-option={key}
+              checked={options[key]}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setOptions((current) => ({ ...current, [key]: checked }));
+              }}
+            />
+            {_(label)}
+          </label>
+        ))}
+      </fieldset>
       {state.kind === 'refused' ? <p className="m-find-problem">{_(FIND_REFUSED)}</p> : null}
+      {state.kind === 'bad-pattern' ? (
+        <p className="m-find-problem">{_(FIND_BAD_PATTERN)}</p>
+      ) : null}
+      {state.kind === 'cancelled' ? <p className="m-find-problem">{_(FIND_CANCELLED)}</p> : null}
+      {searching ? (
+        <p className="m-find-progress">{_(FIND_PROGRESS, { done: state.done, count: state.count })}</p>
+      ) : null}
       {state.kind === 'answered' ? (
         <div className="m-find-results">
           <p>
@@ -162,6 +289,39 @@ export function FindBar({ client, docId, page }: FindBarProps): ReactElement | n
           </ul>
         </div>
       ) : null}
+      {state.kind === 'document' ? (
+        <div className="m-find-results">
+          <p>
+            {state.matches.length === 0
+              ? _(FIND_DOCUMENT_EMPTY)
+              : _(FIND_DOCUMENT_MATCHES, { count: state.matches.length })}
+          </p>
+          {state.truncated ? <p className="m-find-truncated">{_(FIND_TRUNCATED)}</p> : null}
+          <ul>
+            {state.matches.map((match, index) => (
+              <li key={`${String(index)}:${String(match.page)}:${String(match.offset)}`}>
+                {/* THE PAGE AS A READER COUNTS IT. The walk carries the
+                    kernel's zero-based index and `pdfjsPageOf` is the one
+                    place the two numbering schemes meet. */}
+                {_(FIND_MATCH_ON_PAGE, { page: pdfjsPageOf(match.page), text: match.text })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </form>
   );
 }
+
+/**
+ * The option checkboxes, as data.
+ *
+ * A row per flag rather than three near-identical blocks: the flags differ only
+ * in their name and their label, and three copies of a checkbox is three places
+ * to forget `data-find-option` — which is what a UI test finds them by.
+ */
+const OPTION_ROWS = [
+  { key: 'caseSensitive', label: FIND_CASE_SENSITIVE },
+  { key: 'wholeWord', label: FIND_WHOLE_WORD },
+  { key: 'regex', label: FIND_REGEX },
+] as const satisfies readonly { key: keyof FindOptions; label: (typeof FIND_REGEX)[][number] }[];

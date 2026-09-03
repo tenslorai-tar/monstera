@@ -11,7 +11,11 @@ import {
 import { type DocId, err, ok } from '@monstera/shared';
 
 import { executeCommandHandler } from './commandHandlers.js';
-import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
+import {
+  type DocumentCommands,
+  DocumentPoisonedError,
+  InvalidSearchPatternError,
+} from './documentCommands.js';
 import type { SettingsSurface } from './settingsFile.js';
 
 /**
@@ -325,9 +329,19 @@ function searchPageHandler(commands: DocumentCommands): ContractHandlers['docume
     page,
     query,
     limit,
+    ...options
   }): Promise<Awaited<ReturnType<ContractHandlers['document.searchPage']>>> => {
     try {
-      const { version, matches, truncated } = await commands.searchPage(docId, page, query, limit);
+      const { version, matches, truncated } = await commands.searchPage(
+        docId,
+        page,
+        query,
+        limit,
+        // SPREAD, not four named fields. The schema's optional flags arrive as
+        // absent-or-set and the matching rule's defaults live in one module;
+        // naming them here would be a place to write `?? false` a second time.
+        options,
+      );
       return ok({
         version,
         matches: matches.map(({ line, offset, text }) => ({ line, offset, text })),
@@ -337,6 +351,9 @@ function searchPageHandler(commands: DocumentCommands): ContractHandlers['docume
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      if (thrown instanceof InvalidSearchPatternError) {
+        return err({ code: 'search-pattern-invalid' });
+      }
       throw thrown;
     }
   };

@@ -1,6 +1,8 @@
 import { PDFDocument, StandardFonts } from '@cantoo/pdf-lib';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { ok } from '@monstera/shared';
+
 import type { ByteImage } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { readPageText } from './pageText.js';
@@ -110,7 +112,9 @@ describe('readPageText, against a real MuPDF session', () => {
     const session = await mupdfWriter.open(columns);
     const { pages } = await readPageText(session, [0]);
 
-    const matches = findInPages(pages, 'right');
+    const found = findInPages(pages, 'right');
+    if (!found.ok) throw new Error(`the query compiles: ${found.error}`);
+    const matches = found.value;
     expect(matches).toHaveLength(ROWS);
     // Located in reading order: all five right-column runs sit after all five
     // left ones, so their line indices start at ROWS rather than interleaving.
@@ -121,7 +125,10 @@ describe('readPageText, against a real MuPDF session', () => {
   it('CONTROL: a search for text this document does not contain finds nothing', async () => {
     const session = await mupdfWriter.open(columns);
     const { pages } = await readPageText(session, [0]);
-    expect(findInPages(pages, 'centre')).toStrictEqual([]);
+    // `ok` with an empty list, not a refusal — the distinction the `Result`
+    // exists for, and asserting the wrapper is what keeps "found nothing" from
+    // covering "could not compile".
+    expect(findInPages(pages, 'centre')).toStrictEqual(ok([]));
   });
 
   it('reads a genuinely blank page as a page with no text, not as a failure', async () => {

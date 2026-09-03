@@ -7,7 +7,15 @@ import {
   createClient,
   wrapHandlers,
 } from '@monstera/contract';
-import { type DocId, type DocVersion, asDocId, asDocVersion, err, ok } from '@monstera/shared';
+import {
+  type DocId,
+  type DocVersion,
+  asDocId,
+  asDocVersion,
+  err,
+  findInLines,
+  ok,
+} from '@monstera/shared';
 
 /**
  * The fourth contract surface: a `ContractClient` with no Electron and no kernel.
@@ -562,34 +570,38 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * half of the wired pair would go green over a control dispatching into the
      * void. So the needle is actually looked for, in lines the test supplied.
      *
-     * The matching rule is `findInPages`' own — case-insensitive, overlapping
-     * occurrences counted — because a second rule here would make a UI test
-     * that passes say nothing about the kernel that ships (B3a).
+     * The matching rule is `@monstera/shared`'s `findInLines`, which is what
+     * the kernel's search calls too. This was a lower-case `indexOf` loop with
+     * a comment claiming it followed the kernel's rule — true while that rule
+     * was one line, and a claim the moment case, whole-word, regex and
+     * normalisation joined it (B3a).
      */
-    'document.searchPage': ({ docId, page, query, limit }) => {
+    'document.searchPage': ({ docId, page, query, limit, ...options }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
-      const lines = pageLines[page] ?? [];
-      const needle = query.toLowerCase();
-      const found: { line: number; offset: number; text: string }[] = [];
-      for (const [line, text] of lines.entries()) {
-        const haystack = text.toLowerCase();
-        for (let from = 0; ; ) {
-          const offset = haystack.indexOf(needle, from);
-          if (offset < 0) break;
-          found.push({ line, offset, text });
-          from = offset + 1;
-        }
+      // `findInLines`, NOT a rule written here. This handler had its own
+      // lower-case `indexOf` loop and a comment saying it followed the kernel's
+      // rule; that was true while the rule was one line and became a claim the
+      // moment case, whole-word, regex and normalisation landed. The matcher
+      // moved to `@monstera/shared` — which both this package and the kernel
+      // may import — so there is one answer rather than two that agree for a
+      // while (B3a).
+      const found = findInLines(pageLines[page] ?? [], query, { ...options, limit: limit + 1 });
+      if (!found.ok) {
+        // The same refusal the real handler makes, and it is reachable here:
+        // the channel accepts any non-empty string, so an unparseable pattern
+        // reaches a handler rather than the schema.
+        return Promise.resolve(err({ code: 'search-pattern-invalid' }));
       }
 
       return Promise.resolve(
         ok({
           version: asDocVersion(current),
-          matches: found.slice(0, limit),
+          matches: found.value.slice(0, limit),
           // The same one-past-the-limit rule the kernel uses, so a shim answer
           // and a real one disagree about nothing a test could come to rely on.
-          truncated: found.length > limit,
+          truncated: found.value.length > limit,
         }),
       );
     },
