@@ -43,9 +43,36 @@ export interface LineMatch {
   readonly line: number;
   /** Offset within `text`, in UTF-16 code units. */
   readonly offset: number;
-  /** The line the match sits in, after normalisation, so `offset` indexes it. */
+  /**
+   * The line the match sits in, after normalisation, so `offset` indexes it.
+   *
+   * **Clipped to {@link MATCH_TEXT_WINDOW}**, which is the document's own
+   * content meeting invariant L11: a line's length is chosen by whoever made
+   * the PDF, so an unclipped line is a payload a hostile document sets — once
+   * per match. The clip keeps `offset` valid by moving it with the window, so
+   * the pair still indexes what the caller was handed.
+   */
   readonly text: string;
 }
+
+/**
+ * How much of a line a match carries.
+ *
+ * Above `MAX_QUERY_LENGTH` (512), so a match of the longest query a person can
+ * type still fits inside its own window with room around it. Below anything a
+ * result row could show: a line this long is already more than a reader scans,
+ * and the number that matters is that it does not depend on the document.
+ */
+export const MATCH_TEXT_WINDOW = 1024;
+
+/**
+ * How much of the line before the match the window tries to keep.
+ *
+ * A match at position 0 of its window reads as though the line begins there.
+ * The lead is best-effort — a match near the start of a long line gets the
+ * line's own beginning instead, which is better context than a fixed offset.
+ */
+const MATCH_TEXT_LEAD = 64;
 
 /** Which Unicode normalisation a search applies before comparing. */
 export type Normalisation = 'nfc' | 'nfkc' | 'none';
@@ -246,9 +273,25 @@ export function findInLines(
   for (const [line, raw] of lines.entries()) {
     const text = normalised(raw, compiled.value.normalise);
     for (const hit of compiled.value.matchesIn(text)) {
-      matches.push({ line, offset: hit.offset, text });
+      matches.push({ line, ...clipped(text, hit.offset) });
       if (limit !== undefined && matches.length >= limit) return ok(matches);
     }
   }
   return ok(matches);
+}
+
+/**
+ * A match's line, bounded, with its offset moved to match.
+ *
+ * The window always contains the match's START, which is what keeps `offset`
+ * an index into the string beside it: `start` is at most `offset`, because
+ * `Math.min` takes it when the line's tail is shorter than the window. A match
+ * longer than the window is truncated at its end and the offset still points
+ * at its beginning, which is the only property a caller can rely on when the
+ * document chose the length.
+ */
+function clipped(text: string, offset: number): { offset: number; text: string } {
+  if (text.length <= MATCH_TEXT_WINDOW) return { offset, text };
+  const start = Math.max(0, Math.min(offset - MATCH_TEXT_LEAD, text.length - MATCH_TEXT_WINDOW));
+  return { offset: offset - start, text: text.slice(start, start + MATCH_TEXT_WINDOW) };
 }

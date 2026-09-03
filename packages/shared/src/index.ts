@@ -33,6 +33,7 @@ export {
   type Normalisation,
   type QueryProblem,
   type TextMatchOptions,
+  MATCH_TEXT_WINDOW,
   compileQuery,
   findInLines,
   normalised,

@@ -1,3 +1,4 @@
+import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';
@@ -117,6 +118,50 @@ describe('findInPages', () => {
       expect(matchesOf(pages, 'a', { limit: 4 }).map((match) => match.page)).toStrictEqual([
         0, 0, 0, 1,
       ]);
+    });
+  });
+
+  describe('a line the DOCUMENT made long', () => {
+    // Invariant L11 at the one place a document chooses a payload's size. A
+    // line's length is whatever the PDF's author wrote, and every match carries
+    // its line — up to the channel's match limit, per call.
+    const long = 'x'.repeat(20_000);
+
+    it('CLIPS the line to the window, and moves the offset with it', () => {
+      const pages = [pageOf([`${long}needle${long}`])];
+
+      const [match] = matchesOf(pages, 'needle');
+      if (match === undefined) throw new Error('one match was found above');
+
+      expect(match.text.length).toBe(MATCH_TEXT_WINDOW);
+      // THE PAIR STILL HOLDS, which is the whole reason the offset moves: a
+      // clip that left the offset alone would point past the end of the string
+      // it was handed, and a highlighter would draw nothing or throw.
+      expect(match.text.slice(match.offset, match.offset + 'needle'.length)).toBe('needle');
+    });
+
+    it('keeps the line WHOLE when it fits, so ordinary results are untouched', () => {
+      // The control. Without it, the case above passes for a build that clips
+      // every line to 1024 characters — which would silently shorten every
+      // result in a document nobody would call hostile.
+      const short = 'the needle sits here';
+      const [match] = matchesOf([pageOf([short])], 'needle');
+
+      expect(match?.text).toBe(short);
+    });
+
+    it('keeps the offset inside the window for a match at the very END', () => {
+      // The edge the arithmetic is about: the window cannot start at the match
+      // when there is not a window's worth of line left, so it starts earlier
+      // and the offset has to follow. A clip that always started at the match
+      // would run past the end of the line.
+      const pages = [pageOf([`${long}needle`])];
+
+      const [match] = matchesOf(pages, 'needle');
+      if (match === undefined) throw new Error('one match was found above');
+
+      expect(match.offset).toBeLessThan(MATCH_TEXT_WINDOW);
+      expect(match.text.slice(match.offset)).toBe('needle');
     });
   });
 

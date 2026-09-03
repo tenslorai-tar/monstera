@@ -1,3 +1,4 @@
+import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
@@ -264,7 +265,17 @@ export const channels = {
     'Version and install channel of the running application.',
     z.object({}),
     z.object({
-      version: z.string().min(1),
+      /**
+       * The running application's version.
+       *
+       * Bounded because every string that crosses is: this one comes from
+       * `package.json` rather than from a document, so it was never an L11
+       * hazard — and *this particular string cannot be large* is an argument
+       * about today's caller, which is the shape the sweep in
+       * `payloadBounds.test.ts` exists to stop accepting. 64 is far above any
+       * version this project can have and far below anything worth carrying.
+       */
+      version: z.string().min(1).max(64),
       /**
        * Baked at build time (E4). Exactly one update provider is active, and
        * the Store build must never self-update, so this is a property of the
@@ -744,7 +755,17 @@ export const channels = {
        * correctly on every document whose pages started at zero, which is every
        * fixture anyone reaches for first.
        */
-      rotations: z.array(z.number().int().nonnegative()).readonly(),
+      /**
+       * BOUNDED HERE TOO, and not only by the request that produced it.
+       *
+       * The params already cap `pages` at `MAX_VIEW_MODEL_PAGES`, so a correct
+       * handler cannot answer with more — which is an argument about the
+       * handler and not a property of the boundary. L11 is about what may
+       * cross, and a result schema that accepts an array of any length accepts
+       * a document-sized one from a handler that got it wrong. Found by the
+       * L11 sweep in `payloadBounds.test.ts`, 2026-09-03.
+       */
+      rotations: z.array(z.number().int().nonnegative()).max(MAX_VIEW_MODEL_PAGES).readonly(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
@@ -815,8 +836,17 @@ export const channels = {
             line: z.number().int().nonnegative(),
             /** Offset within the line, in UTF-16 code units. */
             offset: z.number().int().nonnegative(),
-            /** The line the match sits in, so a result needs no second call. */
-            text: z.string(),
+            /**
+             * The line the match sits in, so a result needs no second call.
+             *
+             * **BOUNDED, and this was the L11 gap the sweep found** (2026-09-03).
+             * A line's length is chosen by whoever made the PDF, so an unclipped
+             * one is a payload a hostile document sets — up to
+             * `MAX_SEARCH_MATCHES` times per call. `findInLines` clips to a
+             * window around the match and moves `offset` with it, so the pair
+             * still indexes what crossed.
+             */
+            text: z.string().max(MATCH_TEXT_WINDOW),
           }),
         )
         .max(MAX_SEARCH_MATCHES)
