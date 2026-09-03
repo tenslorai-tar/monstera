@@ -67,7 +67,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { git, repoRoot } from './gitScope.mjs';
 
@@ -212,13 +213,27 @@ export function formatShrunkCases(shrunk) {
  * says (B3a). `ok` is *the instrument could look*, never *nothing shrank* —
  * the check exits 0 whatever it finds.
  *
+ * ## THE SCRIPT'S PATH COMES FROM THIS MODULE, AND THE CWD FROM THE REPOSITORY
+ *
+ * They are two different questions and resolving both from `repoRoot()` reddened
+ * Guards on both matrix legs. `preCommit.proof.mjs` drives the hook inside a
+ * **fixture repository** under the temp directory, so `repoRoot()` there is
+ * `/tmp/monstera-hook-XXXXXX` — which has an index to inspect and no
+ * `scripts/` to run. Every case failed with `MODULE_NOT_FOUND`.
+ *
+ * That is checklist item 2's quietest axis: this was written against the rich
+ * ambient environment — a real checkout where the two roots coincide — and the
+ * real caller in the proof gets the bare one. The neighbouring hook checks are
+ * behind `touchesDependencies()` and `touchesContractTypes()`, which are false
+ * in that fixture, so nothing before this ran unconditionally enough to find it.
+ *
+ * `import.meta.url` is where the code is; `repoRoot()` is the tree it reads.
+ *
  * @returns {{ ok: boolean, output: string }}
  */
 export function runTestAnchors() {
-  const root = repoRoot();
-  const result = spawnSync(process.execPath, [join(root, 'scripts', 'checks', 'testAnchors.mjs')], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  const here = dirname(fileURLToPath(import.meta.url));
+  const script = join(here, '..', 'checks', 'testAnchors.mjs');
+  const result = spawnSync(process.execPath, [script], { cwd: repoRoot(), encoding: 'utf8' });
   return { ok: result.status === 0, output: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }

@@ -84,7 +84,7 @@ far under estimate.
 
 **What stands between here and the last commit is one row and one owner
 action.** `BUILD-PROMPT.md:686` names Stage 1's D1 as *"search, tabs, zoom
-quality E1 tier-1"* and all three are done, as are 20 of D1's 23 rows. Of the
+quality E1 tier-1"* and all three are done, as are 22 of D1's 25 rows. Of the
 three that are not: thumbnail drag-reorder is **deferred to Stage 2** on the
 page-reorder command, ADR-0006's PDF.js row is **partly** executed with `cmaps/`
 waiting on the first CJK document in the corpus, and the **HD render toggle is
@@ -136,7 +136,10 @@ scope*, or *halt and reassess*.
 
 ### WHAT STAGE 1 STILL OWES, read 2026-09-03
 
-**20 of D1's 23 rows are done**, and the three `BUILD-PROMPT.md:686` names —
+**22 of D1's 25 rows are done** — counted with
+`awk 'NR>=44' docs/FEATURES.md | awk '/^## D2/{exit} /^\|/{print}'`, which is 16
+plain `done`, 6 `done` with a clause, and the three below — and the three
+`BUILD-PROMPT.md:686` names —
 search, tabs, zoom quality E1 tier-1 — are among them. The gate's interim
 reading is in the table above at **0.20×**.
 
