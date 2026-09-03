@@ -22,6 +22,7 @@ import {
   captureSetLayerVisibility,
   invertSetLayerVisibility,
 } from './layers.js';
+import { applyMovePage, captureMovePage, invertMovePage } from './pageOrder.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
@@ -146,6 +147,12 @@ const declared = {
     apply: applySetLayerVisibility,
     capture: captureSetLayerVisibility,
     invert: invertSetLayerVisibility,
+  },
+  movePage: {
+    ...declaredCommands.movePage,
+    apply: applyMovePage,
+    capture: captureMovePage,
+    invert: invertMovePage,
   },
 } satisfies CommandSpecs;
 

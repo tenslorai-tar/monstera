@@ -15,6 +15,7 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
 import type { PriorLayerVisibility } from './layers.js';
+import type { PriorPageOrder } from './pageOrder.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -84,6 +85,19 @@ export interface CommandPrior {
    * `!command.visible` flips a layer the command left alone.
    */
   readonly setLayerVisibility: PriorLayerVisibility;
+  /**
+   * Where a page was, and where it went.
+   *
+   * The odd one of the three: the other two carry state read OFF the document
+   * before it changed, and this carries the move itself. That is not a
+   * shortcut — a single move has no prior structure to hold, because the tree
+   * it produces is a function of the tree it started from and the two indices.
+   *
+   * What the capture adds over the command is **validation against the
+   * document**: an inverse cannot be built from a `to` this document never had,
+   * which is the state `captureMovePage` refuses rather than records.
+   */
+  readonly movePage: PriorPageOrder;
 }
 
 /**

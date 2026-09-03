@@ -66,7 +66,26 @@ const LAYER_SPEC = `  setLayerVisibility: {
     replay: 'reapply-intent',
   },`;
 
-/** What a command-table fixture imports: the rotation's three, and the layer's. */
+/**
+ * The move's entry, for the fixtures that need a table complete except one.
+ *
+ * Separate from {@link LAYER_SPEC} because the missing-a-kind case omits the
+ * NEWEST kind and needs every other one present — so the two cannot be a single
+ * blob, and adding a command means adding its constant here.
+ */
+const MOVE_SPEC = `  movePage: {
+    kind: 'movePage',
+    writer: 'mupdf',
+    apply: applyMovePage,
+    capture: captureMovePage,
+    invert: invertMovePage,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/** What a command-table fixture imports: three per command kind. */
 const SPEC_IMPORTS = `import {
   applyRotatePages,
   captureRotatePages,
@@ -74,6 +93,9 @@ const SPEC_IMPORTS = `import {
   applySetLayerVisibility,
   captureSetLayerVisibility,
   invertSetLayerVisibility,
+  applyMovePage,
+  captureMovePage,
+  invertMovePage,
 } from '@monstera/kernel/engine';`;
 
 /**
@@ -416,6 +438,7 @@ export const specs: CommandSpecs = {
     replay: 'reapply-intent',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
 };
 `,
   },
@@ -423,13 +446,18 @@ ${LAYER_SPEC}
     name: 'a spec table missing a command kind does not compile',
     expect: 'reject',
     code: 'TS2741',
-    // THE SECOND KIND IS THE ONE OMITTED, and that is a strengthening rather
+    // THE NEWEST KIND IS THE ONE OMITTED, and that is a strengthening rather
     // than bookkeeping. This fixture was `{}` while one command existed, which
     // asks whether an EMPTY table compiles — a question no real commit poses.
     // Omitting the newest kind from an otherwise complete table is what
     // actually happens when a command is added, and it is what §6 exists to
     // catch.
-    because: /Property 'setLayerVisibility' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+    //
+    // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
+    // case fail with the wrong property name until the table is filled in and
+    // the regex advanced, which is the reminder that a kind was added and the
+    // table has to grow. `movePage` on 2026-09-03, `setLayerVisibility` before.
+    because: /Property 'movePage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -448,6 +476,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+${LAYER_SPEC}
 };
 `,
   },
@@ -456,7 +485,7 @@ export const specs: CommandSpecs = {
     expect: 'reject',
     code: 'TS2353',
     because: /'notDeclared' does not exist in type 'CommandSpecs'/u,
-    notBecause: /rotatePages|setLayerVisibility/u,
+    notBecause: /rotatePages|setLayerVisibility|movePage/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
 ${SPEC_IMPORTS}
@@ -473,6 +502,7 @@ export const specs: CommandSpecs = {
     replay: 'reapply-intent',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -513,6 +543,7 @@ export const specs: CommandSpecs = {
     undo: 'inverse',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
 };
 `,
   },
@@ -536,6 +567,7 @@ export const specs: CommandSpecs = {
     replay: 'reapply-intent',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
 };
 `,
   },
@@ -568,6 +600,7 @@ export const specs: CommandSpecs = {
     replay: 'reapply-intent',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
 };
 `,
   },
@@ -596,6 +629,7 @@ export const specs: CommandSpecs = {
     replay: 'reapply-intent',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
 };
 `,
   },
@@ -627,13 +661,17 @@ export const spec: CommandSpec<'rotatePages'> = {
     code: 'TS2322',
     // Atomic: one line, no continuation, so the message IS the reason.
     //
-    // The member ORDER in the printed union is the compiler's and not ours —
-    // it read `1 | 3 | 2` while `rotatePages` was the only kind and prints
-    // `2 | 3 | 1` since `setLayerVisibility` joined it (measured 2026-09-03,
-    // TypeScript 6.0.3). Anchoring on the printed order is deliberate: an
-    // order-insensitive pattern would also match a union this command's type
-    // never had.
-    because: /Type '45' is not assignable to type '2 \| 3 \| 1'/u,
+    // The member ORDER in the printed union is the compiler's and not ours, and
+    // it moves when the COMMAND UNION changes even though this command's own
+    // type does not: `1 | 3 | 2` while `rotatePages` was the only kind, then
+    // `2 | 3 | 1` with `setLayerVisibility`, now `3 | 1 | 2` with `movePage`
+    // (all measured, TypeScript 6.0.3, the last on 2026-09-03).
+    //
+    // Anchoring on the printed order is deliberate — an order-insensitive
+    // pattern would also match a union this command's type never had — and the
+    // cost is stated rather than discovered: this line is edited by every
+    // commit that adds a command kind, and the edit is loud.
+    because: /Type '45' is not assignable to type '3 \| 1 \| 2'/u,
     // Atomic and scalar: the quoted types are `45` and the literal union, so
     // there is no second property name in reach.
     notBecause: null,
@@ -1062,7 +1100,12 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // union's does so in a CONTINUATION under a summary the atomic one has no
     // equivalent of. Matching the missing property alone accepts both, which
     // the harness's own resolution test refuses.
-    because: /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\}'/u,
+    // ONE ELIDED MEMBER PER COMMAND KIND, so this pattern widens with the union
+    // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
+    // three since `movePage` (2026-09-03). Written out rather than made
+    // repetition-insensitive for the case above's reason: `(\{…\} \| )+` would
+    // match a union of any size, including one this type never had.
+    because: /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

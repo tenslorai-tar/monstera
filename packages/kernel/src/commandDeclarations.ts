@@ -179,6 +179,28 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  movePage: {
+    kind: 'movePage',
+    // Invariant L6, and this is the command that measured it. ADR-0006: MuPDF's
+    // own `rearrangePages` drops `/AcroForm` EVEN FOR THE IDENTITY PERMUTATION,
+    // and the widget annotations survive on their pages — so the fields still
+    // render while the field tree is orphaned, and the document silently stops
+    // being a valid AcroForm. The `/Kids` rewrite through the PDFObject API is
+    // what preserves all four catalog entries.
+    writer: 'mupdf',
+    // The inverse of a move is a move, and it is NOT `{ from: to, to: from }`.
+    // Moving 0→2 in `0 1 2 3` gives `1 2 0 3`; moving 2→0 from there gives
+    // `0 1 2 3` — correct here and only because a single move's inverse happens
+    // to be the transposed move when nothing else shifted. `invertMovePage`
+    // derives it rather than transposing, because the transposition is right
+    // for a reason that does not generalise and a reader would copy it.
+    invertible: true,
+    undo: 'inverse',
+    // A move rewrites `/Kids` to a derived order. Re-running it from the same
+    // document produces the same tree, so the log stores intent.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

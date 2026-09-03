@@ -17,6 +17,14 @@ export {
   readLayers,
   type Layer,
 } from './layers.js';
+export {
+  applyMovePage,
+  captureMovePage,
+  invertMovePage,
+  movePermutation,
+  remapPageIndex,
+  type PriorPageOrder,
+} from './pageOrder.js';
 export { localMupdfWriter } from './localEngine.js';
 
 /**

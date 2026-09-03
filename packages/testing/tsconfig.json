@@ -15,10 +15,6 @@
   "include": [
     "src/**/*"
   ],
-  // See packages/shared/tsconfig.json and scripts/lib/probeLeftovers.mjs.
-  "exclude": [
-    "src/**/__boundary_probe__.ts"
-  ],
   "references": [
     {
       "path": "../shared"

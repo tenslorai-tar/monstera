@@ -33,8 +33,30 @@
  * a doc generator or a search index added later reads these files too and knows
  * nothing about any ignore file. An exclude closes the readers somebody has
  * thought of. A sweep repairs the tree, which is what every reader looks at —
- * so the sweep is the load-bearing half and the excludes are a second line for
- * the two readers we can name today.
+ * so the sweep is the load-bearing half.
+ *
+ * ## AND THE EXCLUDES ARE NOT FREE, which is the second argument for the sweep
+ *
+ * `exclude` entries were added to the seven package tsconfigs beside this and
+ * **reverted the same day**, because they broke `boundaries.proof.mjs` on both
+ * matrix legs: excluding `__boundary_probe__.ts` from a package's project takes
+ * it out of the TypeScript program, and the typed lint rules the proof
+ * exercises cannot then parse it — every one of 202 cases reported `(fatal)`
+ * instead of the rule it was asserting.
+ *
+ * So the probe has to be IN the project for the proof to work at all, and the
+ * reader that breaks on a leftover is the same reader that has to see it.
+ *
+ * `tsconfig.scripts.json`'s exclude went the same way, for a different reason:
+ * it names paths that exist only while a proof is mid-run, and `check:docs`'
+ * rule that every `scripts/` path a tracked document names must resolve
+ * reported both — correctly.
+ *
+ * **Two attempts, two different things broken, so the sweep is not the
+ * load-bearing half of two — it is the whole fix.** That is worth more than
+ * either instance: *a change that hides a file from a reader can disable a
+ * check that needed to read it*, and the two are hard to tell apart from
+ * outside, because both make the file stop being reported.
  *
  * ## WHY THIS CLASS IS INVISIBLE, which is the part worth carrying
  *

@@ -11,11 +11,5 @@
   "include": [
     "src/**/*"
   ],
-  // A proof killed at its timeout leaves this file here; see
-  // scripts/lib/probeLeftovers.mjs. The startup sweep is the repair — this
-  // closes the reader we can name, and is not a substitute for it.
-  "exclude": [
-    "src/**/__boundary_probe__.ts"
-  ],
   "references": []
 }
