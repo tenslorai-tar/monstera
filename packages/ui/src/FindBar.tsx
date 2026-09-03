@@ -17,6 +17,9 @@ import {
   FIND_LABEL,
   FIND_MATCHES,
   FIND_MATCH_ON_PAGE,
+  FIND_MATCH_POSITION,
+  FIND_NEXT_MATCH,
+  FIND_PREVIOUS_MATCH,
   FIND_PROGRESS,
   FIND_REFUSED,
   FIND_REGEX,
@@ -60,13 +63,24 @@ import { pdfjsPageOf } from './pageNumbering.js';
  * count can be shown, and the button that cancels does not have to also clear
  * anything.
  *
- * ## The result is a COUNT and the lines, not a navigable list
+ * ## The document walk IS navigable, and the page search is not
  *
- * Navigation between matches needs a current match, a next-match affordance and
- * a way to scroll a page that does not scroll yet — all of which belong with
- * continuous scroll. What ships is what can be true today: how many matches
- * were found and which lines they are on, which is observable, correct, and
- * survives being asked twice.
+ * This section said navigation *"needs a current match, a next-match affordance
+ * and a way to scroll a page that does not scroll yet — all of which belong
+ * with continuous scroll"*. Continuous scroll landed in `215fb1d` and the
+ * sentence stayed, which is the shape `CLAUDE.md` item 7 names: a claim
+ * falsified by a commit that never touched the file holding it. The trigger had
+ * fired and only this comment could have said so.
+ *
+ * So the whole-document result carries an **active match** and `onJump` moves
+ * the scroller to its page. The per-page result deliberately does not: every
+ * match it holds is on the page the reader is already looking at, so a jump
+ * would be a scroll to where they are, and a *match 3 of 7* readout that never
+ * moved anything is the display-only defect with a number on it.
+ *
+ * What is still owed is highlighting the match's own glyphs, which needs DOM
+ * ranges over a text layer — D4's *Select and copy* row, in Stage 5. Landing on
+ * the right page is what can be true today.
  */
 export interface FindBarProps {
   readonly client: ContractClient;
@@ -82,6 +96,14 @@ export interface FindBarProps {
   readonly page: number | undefined;
   /** How many pages the document has, for the whole-document walk. */
   readonly pageCount: number | undefined;
+  /**
+   * Move the scroller to a page, ZERO-BASED as the document model indexes them.
+   *
+   * The same `navigator.jumpTo` a thumbnail, an outline entry and the status
+   * bar's field dispatch — passed in rather than reached for, so this surface
+   * has no second way to move the reader.
+   */
+  readonly onJump: (page: number) => void;
 }
 
 /**
@@ -101,6 +123,19 @@ type FindState =
       readonly kind: 'document';
       readonly matches: readonly DocumentMatch[];
       readonly truncated: boolean;
+      /**
+       * Which match the reader is on, an index into `matches`.
+       *
+       * IN THE SAME VARIANT as the list it indexes, rather than a `useState` of
+       * its own, because the illegal state here is *an index and a list that
+       * disagree* — a second search that answered with fewer matches while a
+       * separate `active` still held 40 would read a match that is not there.
+       * One `setState` replaces both or neither (B5).
+       *
+       * `-1` for a walk that found nothing, so the navigation controls have a
+       * state to be absent in that is not a valid position.
+       */
+      readonly active: number;
     }
   | { readonly kind: 'searching'; readonly done: number; readonly count: number }
   | { readonly kind: 'cancelled' }
@@ -114,7 +149,13 @@ interface FindOptions {
   readonly regex: boolean;
 }
 
-export function FindBar({ client, docId, page, pageCount }: FindBarProps): ReactElement | null {
+export function FindBar({
+  client,
+  docId,
+  page,
+  pageCount,
+  onJump,
+}: FindBarProps): ReactElement | null {
   const { _ } = useLingui();
   const [query, setQuery] = useState('');
   const [options, setOptions] = useState<FindOptions>({
@@ -197,8 +238,49 @@ export function FindBar({ client, docId, page, pageCount }: FindBarProps): React
       });
       return;
     }
-    setState({ kind: 'document', matches: outcome.matches, truncated: outcome.truncated });
-  }, [client, docId, options, pageCount, query]);
+    // THE FIRST MATCH IS THE ACTIVE ONE AND THE READER IS TAKEN TO IT. A walk
+    // that reported *12 matches* and left the reader on the page they started
+    // from makes them find the first one by hand, which is the work the walk
+    // just did.
+    const first = outcome.matches[0];
+    setState({
+      kind: 'document',
+      matches: outcome.matches,
+      truncated: outcome.truncated,
+      active: first === undefined ? -1 : 0,
+    });
+    if (first !== undefined) onJump(first.page);
+  }, [client, docId, onJump, options, pageCount, query]);
+
+  /**
+   * Step the active match and take the reader to its page.
+   *
+   * **It wraps**, in both directions. A reader on the last match pressing
+   * *next* is asking to continue, and a control that did nothing there is
+   * indistinguishable from one that is broken — the position readout is what
+   * makes the wrap legible rather than disorienting, which is why the two ship
+   * together.
+   *
+   * The modulo is written with `+ count` because JavaScript's `%` keeps the
+   * sign of its left operand, so `(0 - 1) % n` is `-1` rather than the last
+   * index — the spelling without it walks backwards off the front of the list.
+   *
+   * The jump happens HERE and not in the state updater: React invokes an
+   * updater twice under StrictMode, and a scroll is not a thing to do twice
+   * because it happened to be cheap the first time.
+   */
+  const step = useCallback(
+    (by: 1 | -1): void => {
+      if (state.kind !== 'document' || state.active === -1) return;
+      const count = state.matches.length;
+      const active = (state.active + by + count) % count;
+      const match = state.matches[active];
+      if (match === undefined) return;
+      setState({ ...state, active });
+      onJump(match.page);
+    },
+    [onJump, state],
+  );
 
   if (docId === undefined) return null;
 
@@ -297,9 +379,47 @@ export function FindBar({ client, docId, page, pageCount }: FindBarProps): React
               : _(FIND_DOCUMENT_MATCHES, { count: state.matches.length })}
           </p>
           {state.truncated ? <p className="m-find-truncated">{_(FIND_TRUNCATED)}</p> : null}
+          {state.active === -1 ? null : (
+            <div className="m-find-navigation">
+              <button
+                type="button"
+                data-find-previous="true"
+                onClick={() => {
+                  step(-1);
+                }}
+              >
+                {_(FIND_PREVIOUS_MATCH)}
+              </button>
+              {/* ONE-BASED FOR A READER, like every other count on screen. The
+                  active index is an index into the list; nobody is shown
+                  "match 0 of 12". */}
+              <p className="m-find-position">
+                {_(FIND_MATCH_POSITION, {
+                  position: state.active + 1,
+                  count: state.matches.length,
+                })}
+              </p>
+              <button
+                type="button"
+                data-find-next="true"
+                onClick={() => {
+                  step(1);
+                }}
+              >
+                {_(FIND_NEXT_MATCH)}
+              </button>
+            </div>
+          )}
           <ul>
             {state.matches.map((match, index) => (
-              <li key={`${String(index)}:${String(match.page)}:${String(match.offset)}`}>
+              <li
+                key={`${String(index)}:${String(match.page)}:${String(match.offset)}`}
+                // `aria-current` rather than a class alone: which match a reader
+                // is on is information, and a screen reader that only gets the
+                // list gets a count with no position in it.
+                aria-current={index === state.active ? 'true' : undefined}
+                className={index === state.active ? 'm-find-match is-active' : 'm-find-match'}
+              >
                 {/* THE PAGE AS A READER COUNTS IT. The walk carries the
                     kernel's zero-based index and `pdfjsPageOf` is the one
                     place the two numbering schemes meet. */}

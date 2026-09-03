@@ -785,3 +785,40 @@ body {
  * reads to the next author as though one exists. Adding a real family token is a
  * §10.2 role decision and not this dialog's to take.
  */
+
+/*
+ * Match navigation, and this is the ONLY styled part of the find bar.
+ *
+ * The bar itself has never had a rule in this file, and adding a full layout
+ * for it here would be a surface redesign riding along with a feature. What is
+ * styled is what the feature needs to be true: which match a reader is on has
+ * to be visible, or `aria-current` is the only place the answer exists and a
+ * sighted reader is told a number and shown nothing.
+ */
+.m-find-navigation {
+  display: flex;
+  gap: var(--space-8);
+  align-items: baseline;
+}
+
+.m-find-position {
+  margin: 0;
+  color: var(--muted);
+  /* The position and the total both change as a reader steps; proportional
+     digits make the row jitter under the pointer that is clicking it. */
+  font-variant-numeric: tabular-nums;
+}
+
+.m-find-match {
+  padding: var(--space-2) var(--space-4);
+}
+
+/*
+ * NOT COLOUR ALONE. A background shift is what a reader sees at a glance, and
+ * the border is what survives `forced-colors`, where the ground is the system's
+ * and this rule's background is discarded.
+ */
+.m-find-match.is-active {
+  background: var(--surface2);
+  border-inline-start: 2px solid var(--accent);
+}
