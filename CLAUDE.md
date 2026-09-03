@@ -140,7 +140,11 @@ patching around. Add to it; do not re-pay for it.
   command is what makes the gap visible in review, because the reviewer can see
   that no command is named. *Be careful* is not checkable; a missing citation is.
 - **B7 TypeScript strict everywhere; `any` is an error, not a warning.** React
-  function components only. `eslint-plugin-react-hooks`' full recommended set is
+  function components only, with **one** confined exception: React has no
+  function form for an error boundary, so `packages/ui/src/ErrorBoundary.tsx`
+  alone may declare a class, and `monstera/no-class-components` enforces that
+  everywhere else (§10.5a,
+  [ADR-0036](docs/DECISIONS/0036-the-error-boundary-is-the-one-class-component.md)). `eslint-plugin-react-hooks`' full recommended set is
   registered against `packages/ui` and every rule in it is an **error**,
   including the four the plugin ships as warnings — verified by
   `npm run proof:lintrules`, which reads the set from the plugin so a version
