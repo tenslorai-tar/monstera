@@ -4,6 +4,7 @@ import {
   DARK_PAGE_TITLE,
   GRID_TITLE,
   LOUPE_TITLE,
+  SPLIT_VIEW_TITLE,
   RULERS_TITLE,
   RULER_UNIT_TITLE,
 } from '../messages/en.js';
@@ -71,6 +72,29 @@ export const DARK_PAGE_SETTING: SettingDefinition<z.ZodBoolean> = {
 export const LOUPE_SETTING: SettingDefinition<z.ZodBoolean> = {
   id: 'viewing.loupe',
   title: LOUPE_TITLE,
+  schema: z.boolean(),
+  fallback: false,
+  category: 'viewing',
+};
+
+/**
+ * Whether the document is shown in two viewports side by side.
+ *
+ * ## One document, one parser, two scrollers
+ *
+ * The second viewport is not a second document: both panes render through the
+ * same `DocumentView`, so a split view costs one more set of visible page
+ * bitmaps and not a second parse, a second worker or a second byte transport.
+ * Side-by-side compare of two DIFFERENT documents is a different feature, and
+ * it waits for multi-document tabs.
+ *
+ * A setting rather than component state, for the loupe's reason: it is a way of
+ * reading the reader chooses, and a reader who works in split view wants it
+ * back next time.
+ */
+export const SPLIT_VIEW_SETTING: SettingDefinition<z.ZodBoolean> = {
+  id: 'viewing.split',
+  title: SPLIT_VIEW_TITLE,
   schema: z.boolean(),
   fallback: false,
   category: 'viewing',

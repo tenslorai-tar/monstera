@@ -24,6 +24,7 @@ import {
   toggleDarkPageCommand,
   toggleGridCommand,
   toggleLoupeCommand,
+  toggleSplitViewCommand,
   toggleRulersCommand,
 } from './commands/viewCommands.js';
 import { CommandPalette } from './CommandPalette.js';
@@ -45,7 +46,7 @@ import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { type DocumentView, openDocumentView } from './documentView.js';
-import { CLOSE_LABEL } from './messages/en.js';
+import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
@@ -63,6 +64,7 @@ import {
   LOUPE_SETTING,
   RULERS_SETTING,
   RULER_UNIT_SETTING,
+  SPLIT_VIEW_SETTING,
   applyDarkPage,
 } from './settings/viewing.js';
 import type { RulerUnit } from './rulerGeometry.js';
@@ -349,6 +351,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   const showGrid = useSetting(settings, GRID_SETTING);
   const unit = useSetting(settings, RULER_UNIT_SETTING);
   const loupe = useSetting(settings, LOUPE_SETTING);
+  const split = useSetting(settings, SPLIT_VIEW_SETTING);
 
   /**
    * The updater the zoom commands are given.
@@ -386,6 +389,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
         toggleLoupeCommand({ settings }),
+        toggleSplitViewCommand({ settings }),
         commandPaletteCommand({ onOpen: openPalette }),
         pageMoveCommand('next', { navigator }),
         pageMoveCommand('previous', { navigator }),
@@ -466,6 +470,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           rulers={rulers}
           showGrid={showGrid}
           unit={unit}
+          split={split}
         />
       )}
       {palette ? (
@@ -662,6 +667,7 @@ function PageCanvas({
   rulers,
   showGrid,
   unit,
+  split,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -681,6 +687,8 @@ function PageCanvas({
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
+  /** Whether a second viewport onto the same document is shown. */
+  readonly split: boolean;
 }): ReactElement {
   const [failed, setFailed] = useState(false);
   /**
@@ -842,6 +850,59 @@ function PageCanvas({
         showGrid={showGrid}
         unit={unit}
       />
+      {/* THE SECOND VIEWPORT, over the SAME parser.
+          One document, two scrollers: a pane that opened its own view would
+          parse the document twice, start a second worker and hold a second copy
+          of every page it drew — which is the sidebar's argument one component
+          out, and §9.17's renderer budget is a bitmap cache.
+
+          BOTH PANES MAY RENDER THE SAME PAGE AT ONCE, and that is the property
+          this arrangement rests on. Read from the shipped library rather than
+          assumed: `PDFPageProxy.render` holds its in-flight tasks in a **Set**
+          and adds to it (`pdfjs-dist/build/pdf.mjs:15747`, 6.2.108), completing
+          each against its own canvas from one shared operator list. READ, not
+          run — happy-dom has no 2d context, so no test here can execute two
+          concurrent rasterisations, and this is the first caller that asks for
+          them.
+
+          It reports NOTHING back. `onCurrentPage`, `onShownZoom` and
+          `onPageCount` all have one owner in `App`, and a second reporter would
+          make the status bar and the navigation commands follow whichever pane
+          scrolled last — a reader in the left pane pressing PageDown and
+          watching the right one move. What that costs is stated on the row:
+          the commands act on the first pane, and *focus follows the pane* is
+          owed rather than done. */}
+      {split ? (
+        <PageList
+          client={client}
+          view={ready}
+          pageCount={ready.document.numPages}
+          docId={open.docId}
+          version={open.version}
+          onCurrentPage={ignorePage}
+          mode={mode}
+          onZoom={onZoom}
+          onShownZoom={ignoreZoom}
+          goTo={undefined}
+          onWentTo={ignoreWentTo}
+          loupe={loupe}
+          rulers={rulers}
+          showGrid={showGrid}
+          unit={unit}
+          label={SPLIT_SECOND_LABEL}
+        />
+      ) : null}
     </div>
   );
 }
+
+/**
+ * The second pane's callbacks, as module constants.
+ *
+ * Stable identities, so the pane's effects do not re-run on every render of its
+ * parent — a fresh arrow per render is a new dependency each time, and the
+ * scroller's observer is torn down and rebuilt by exactly that.
+ */
+const ignorePage = (_page: number): void => undefined;
+const ignoreZoom = (_shown: number): void => undefined;
+const ignoreWentTo = (): void => undefined;

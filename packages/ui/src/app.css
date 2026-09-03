@@ -513,6 +513,15 @@ body {
   block-size: 100%;
   overflow-y: auto;
   padding-block: var(--space-16);
+  /*
+   * SHARES THE WIDTH WITH A SECOND PANE, and `min-inline-size: 0` is what makes
+   * that work: a flex item's default minimum is its content, so a scroller full
+   * of page canvases refuses to shrink below the width of a page and the second
+   * pane is pushed off the surface instead. With one pane the basis is the
+   * whole width and nothing changes.
+   */
+  flex: 1 1 0;
+  min-inline-size: 0;
 
   /*
    * THE CONTAINING BLOCK FOR THE RULERS, which are absolutely positioned and
@@ -535,6 +544,17 @@ body {
  * genuinely dynamic value here — it is a function of the zoom. The COLOUR is a
  * token and stays here, which is the split §10.2 asks for.
  */
+/*
+ * The seam between two viewports of one document.
+ *
+ * The adjacent-sibling selector means it exists only when a second pane does,
+ * rather than a rule that draws an edge on a single view nobody asked to
+ * divide.
+ */
+.m-page-list + .m-page-list {
+  border-inline-start: 1px solid var(--border); /* decorative: separates two scrollable regions of one document and bounds neither; each pane's own controls carry their focus rings */
+}
+
 .m-page-list-grid {
   background-image:
     repeating-linear-gradient(

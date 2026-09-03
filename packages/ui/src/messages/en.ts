@@ -47,6 +47,8 @@ export const FIT_WIDTH_TITLE = messageKey('command.fit-width.title');
 export const FIT_PAGE_TITLE = messageKey('command.fit-page.title');
 export const DARK_PAGE_TITLE = messageKey('setting.viewing.dark-page.title');
 export const LOUPE_TITLE = messageKey('setting.viewing.loupe.title');
+export const SPLIT_VIEW_TITLE = messageKey('setting.viewing.split.title');
+export const SPLIT_SECOND_LABEL = messageKey('surface.split.second-label');
 export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
 export const GRID_TITLE = messageKey('setting.viewing.grid.title');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
@@ -162,6 +164,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIT_PAGE_TITLE]: 'Fit page',
   [DARK_PAGE_TITLE]: 'Dark page',
   [LOUPE_TITLE]: 'Loupe',
+  [SPLIT_VIEW_TITLE]: 'Split view',
+  // NAMES WHICH PANE IT IS. Two scrollable regions with the same accessible
+  // name are two regions a screen-reader user cannot tell apart, and the second
+  // one is the whole point of the feature.
+  [SPLIT_SECOND_LABEL]: 'Second view of this document',
   [RULERS_TITLE]: 'Show rulers',
   [GRID_TITLE]: 'Show grid',
   [RULER_UNIT_TITLE]: 'Ruler unit',

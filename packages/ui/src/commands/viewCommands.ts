@@ -4,6 +4,7 @@ import {
   LOUPE_TITLE,
   PALETTE_TITLE,
   RULERS_TITLE,
+  SPLIT_VIEW_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
@@ -12,6 +13,7 @@ import {
   GRID_SETTING,
   LOUPE_SETTING,
   RULERS_SETTING,
+  SPLIT_VIEW_SETTING,
 } from '../settings/viewing.js';
 import type { SettingsStore } from '../settingsStore.js';
 
@@ -131,6 +133,25 @@ export function toggleLoupeCommand(deps: { readonly settings: SettingsStore }): 
     when: hasDocument,
     run: (): void => {
       deps.settings.set(LOUPE_SETTING.id, deps.settings.get(LOUPE_SETTING.id) !== true);
+    },
+  };
+}
+
+/**
+ * The split view's toggle. See {@link toggleRulersCommand} for why this shape.
+ *
+ * `when: hasDocument` like its neighbours: a second viewport onto nothing is a
+ * control that divides an empty surface in two.
+ */
+export function toggleSplitViewCommand(deps: { readonly settings: SettingsStore }): UiCommand {
+  return {
+    id: 'view.toggle-split',
+    title: SPLIT_VIEW_TITLE,
+    shortcut: 'Ctrl+Shift+E',
+    placements: [{ surface: 'quick-toolbar', order: 130 }],
+    when: hasDocument,
+    run: (): void => {
+      deps.settings.set(SPLIT_VIEW_SETTING.id, deps.settings.get(SPLIT_VIEW_SETTING.id) !== true);
     },
   };
 }

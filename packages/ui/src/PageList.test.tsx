@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
+import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, ok } from '@monstera/shared';
-import { act, render } from '@testing-library/react';
+import { render as renderBare, act } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PageList } from './PageList.js';
+import { activateCatalogue, i18n } from './i18n.js';
+import { EN } from './messages/en.js';
 import type { DocumentView } from './documentView.js';
 import type { ZoomMode } from './zoom.js';
 
@@ -28,6 +32,24 @@ import type { ZoomMode } from './zoom.js';
 
 const DOC = asDocId('00000000-0000-4000-8000-0000000000ff');
 const VERSION = asDocVersion(1);
+
+/**
+ * The catalogue, because the scroller resolves a name for itself.
+ *
+ * It takes one only in a split view — the sole scroller on screen is the
+ * document surface and needs no name — but the hook is called either way, and
+ * `useLingui` throws without a provider. That is `Button`'s trade rather than
+ * this file's: a `MessageKey` resolved through the hook re-renders on a locale
+ * change, where the module-level resolver would not.
+ */
+function Messages({ children }: { children: ReactNode }): ReactElement {
+  activateCatalogue('en', EN);
+  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
+}
+
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(ui, { wrapper: Messages });
+}
 
 /**
  * Explicit scales, so a case that is not about fitting says so.

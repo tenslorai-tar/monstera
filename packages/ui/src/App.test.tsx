@@ -14,6 +14,7 @@ import { ALL_SETTINGS } from './settings/all.js';
 import { THEME_SETTING } from './settings/appearance.js';
 import { FIRST_PAGE } from './pageNumbering.js';
 import { SettingsStore } from './settingsStore.js';
+import { SPLIT_VIEW_SETTING } from './settings/viewing.js';
 
 /**
  * The UI-level half of the wired-tools pair for `document.open`.
@@ -1132,6 +1133,92 @@ describe('App', () => {
       await pick();
 
       expect(container.querySelector('.m-start-problem')?.getAttribute('role')).toBe('alert');
+    });
+  });
+
+  describe('the split view', () => {
+    /** Opens a document and returns the settings store driving the surface. */
+    async function withDocument(): Promise<{ readonly settings: SettingsStore }> {
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      const settings = freshSettings();
+      render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      return { settings };
+    }
+
+    it('shows ONE viewport by default, and TWO once the setting is on', async () => {
+      const { settings } = await withDocument();
+
+      expect(document.querySelectorAll('.m-page-list')).toHaveLength(1);
+
+      await act(async () => {
+        settings.set(SPLIT_VIEW_SETTING.id, true);
+        await Promise.resolve();
+      });
+
+      // TWO SCROLLERS, over one document. The count is the observation because
+      // a second pane that failed to mount and a setting that was not read
+      // produce the same screen.
+      expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);
+    });
+
+    it('gives the second viewport a NAME, and leaves the first without one', async () => {
+      // Two unnamed scrollable regions are two a screen-reader user cannot tell
+      // apart, which is the whole of what the split is for. The first keeps no
+      // name because with one pane there is nothing to distinguish it from.
+      const { settings } = await withDocument();
+      await act(async () => {
+        settings.set(SPLIT_VIEW_SETTING.id, true);
+        await Promise.resolve();
+      });
+
+      const panes = [...document.querySelectorAll('.m-page-list')];
+      expect(panes.map((pane) => pane.getAttribute('aria-label'))).toStrictEqual([
+        null,
+        'Second view of this document',
+      ]);
+    });
+
+    it('THE CONTROL DISPATCHES, and the setting is what it writes', async () => {
+      // The UI half of the wired pair. The other half is the setting itself: a
+      // registered definition with a schema and a fallback, which
+      // `settings.test.ts` covers, and the surface above, which renders it.
+      const { settings } = await withDocument();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Split view' }).click();
+        await Promise.resolve();
+      });
+
+      expect(settings.get(SPLIT_VIEW_SETTING.id)).toBe(true);
+      expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);
+    });
+
+    it('opens NO SECOND PARSER — both panes render through the same view', async () => {
+      // The property the feature rests on. A pane that opened its own view
+      // would parse the document twice, start a second worker and hold a second
+      // copy of every page it drew — invisible on screen and doubled in memory.
+      //
+      // Read as the number of RANGE READS: a second parser fetches the
+      // document's tail to find its trailer, so a second view is a second burst
+      // of `document.readRange`. Under happy-dom no parse completes, so what
+      // this asserts is that the split adds no new reads at all.
+      const { client, sent } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      const settings = freshSettings();
+      render(<App client={client} settings={settings} />);
+      await withDocumentOpen();
+      const before = sent.filter((call) => call.id === 'document.readRange').length;
+
+      await act(async () => {
+        settings.set(SPLIT_VIEW_SETTING.id, true);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.readRange')).toHaveLength(before);
+      // AND THE SECOND PANE IS REALLY THERE, so the case is not passing because
+      // nothing was added at all.
+      expect(document.querySelectorAll('.m-page-list')).toHaveLength(2);
     });
   });
 

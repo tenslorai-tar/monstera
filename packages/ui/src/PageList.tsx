@@ -1,5 +1,6 @@
+import { useLingui } from '@lingui/react';
 import type { ContractClient } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -123,6 +124,15 @@ export interface PageListProps {
    * find on the ruler means nothing.
    */
   readonly unit: RulerUnit;
+  /**
+   * An accessible name for this viewport, when there is more than one.
+   *
+   * Absent for the only scroller on screen: that one is the document surface
+   * and needs no name distinguishing it from anything. In a split view both
+   * panes are scrollable regions, and two unnamed ones are two a screen-reader
+   * user cannot tell apart — which is the whole of what the split is for.
+   */
+  readonly label?: MessageKey;
 }
 
 /**
@@ -182,7 +192,9 @@ export function PageList({
   rulers,
   showGrid,
   unit,
+  label,
 }: PageListProps): ReactElement {
+  const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
@@ -543,6 +555,11 @@ export function PageList({
               '--m-grid-y': `${String(pageOrigin.y)}px`,
             } as React.CSSProperties)
       }
+      // NAMED ONLY WHEN THERE ARE TWO. A single scroller is the document
+      // surface and needs no name of its own; two unnamed scrollable regions
+      // are two a screen-reader user cannot tell apart, and telling them apart
+      // is the whole of what the split view is for.
+      aria-label={label === undefined ? undefined : i18n._(label)}
       ref={scroller}
       onWheel={onWheel}
       onScroll={onScroll}

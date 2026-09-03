@@ -7,6 +7,7 @@ import {
   LOUPE_SETTING,
   RULERS_SETTING,
   RULER_UNIT_SETTING,
+  SPLIT_VIEW_SETTING,
 } from './viewing.js';
 
 /**
@@ -45,4 +46,5 @@ export const ALL_SETTINGS: readonly SettingDefinition[] = [
   RULER_UNIT_SETTING,
   DARK_PAGE_SETTING,
   LOUPE_SETTING,
+  SPLIT_VIEW_SETTING,
 ];
