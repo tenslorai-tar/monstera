@@ -269,6 +269,25 @@ jobs:
       - name: Prove the architecture boundaries are enforced
         run: node scripts/ci/annotate.mjs scripts/proofs/boundaries.proof.mjs
 
+      # The step above is the one that caused this: `boundaries.proof.mjs`
+      # plants a file into `packages/*/src` so a PATH-scoped lint rule has
+      # something at that path to report, and a `finally` does not run when
+      # `checkLocal.mjs` kills a script at its bound. It went 180.5s against a
+      # 180s bound on 2026-09-03 and left two probes in the tree, where they
+      # redden `build` and `typecheck` — and `git status` cannot show them,
+      # because the fix for the ESLint half made the names gitignored.
+      #
+      # Its separating case plants a leftover BY HAND before a proof starts, so
+      # a clean tree afterwards can only be the startup sweep.
+      #
+      # HERE AND NOT ON GUARDS, which is where it was written and where it went
+      # red: it SPAWNS `electronImports.proof.mjs`, which imports `eslint`, and
+      # Guards installs nothing. `check:jobplacement` did not catch it because
+      # this proof's own imports are node builtins and local libs — a module
+      # need that arrives through a spawn is invisible to a scan of the file.
+      - name: Prove a killed proof's leftovers are repaired by the next run
+        run: node scripts/ci/annotate.mjs scripts/proofs/probeLeftovers.proof.mjs
+
       # electron.d.ts is 56% comments, and a text search matches prose as readily
       # as a declaration — so it would witness a symbol that had been REMOVED,
       # which is the reassuring answer and is what invariant 25 rests on.
