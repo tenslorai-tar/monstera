@@ -2,6 +2,7 @@ import {
   FIRST_PAGE_TITLE,
   GO_BACK_TITLE,
   GO_FORWARD_TITLE,
+  GO_TO_TITLE,
   LAST_PAGE_TITLE,
   NEXT_PAGE_TITLE,
   PREVIOUS_PAGE_TITLE,
@@ -99,6 +100,44 @@ export function pageMoveCommand(
         last: count - 1,
       }[move];
       deps.navigator.jumpTo(within(target, count));
+    },
+  };
+}
+
+/**
+ * Ctrl+Shift+G: the caret goes to the status bar's page field.
+ *
+ * **Not Ctrl+G**, which `view.toggle-grid` already claims — and the registry
+ * said so on the first run rather than dispatching to whichever registration
+ * came last. Acrobat's own chord for this is Ctrl+Shift+N; that one is a
+ * browser convention strong enough that a reader pressing it expects a private
+ * window, so the free chord next to the taken one is the better neighbour.
+ *
+ * **It carries no page number, and cannot.** A registered command's `run` takes
+ * the application's state and no arguments, because a menu, a chord and the
+ * palette all invoke it and none of them can supply one — the same reason
+ * `findCommand` sends the caret to a field rather than taking a query. So the
+ * number belongs to a surface and this command's whole job is to get the reader
+ * there.
+ *
+ * The field is found by `data-goto-input` rather than through a ref this
+ * surface exported into the registry, which would be the second wiring place
+ * the registry exists to forbid.
+ */
+export function goToCommand(): UiCommand {
+  return {
+    id: 'view.go-to',
+    title: GO_TO_TITLE,
+    shortcut: 'Ctrl+Shift+G',
+    placements: [],
+    when: hasDocument,
+    run: (): void => {
+      const field = document.querySelector('[data-goto-input]');
+      // `instanceof` rather than a cast, for `findCommand`'s reason: the
+      // selector is a string and what it finds is whatever the DOM holds, so a
+      // surface that renamed its field leaves this doing nothing rather than
+      // throwing at a reader.
+      if (field instanceof HTMLInputElement) field.focus();
     },
   };
 }

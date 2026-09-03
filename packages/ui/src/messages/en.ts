@@ -80,6 +80,9 @@ export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
 export const LINKS_TO_PAGE = messageKey('surface.links.to-page');
 export const LINKS_EXTERNAL = messageKey('surface.links.external');
+export const STATUS_GO_TO = messageKey('surface.status.go-to');
+export const STATUS_GO_TO_OUTSIDE = messageKey('surface.status.go-to-outside');
+export const GO_TO_TITLE = messageKey('command.go-to.title');
 export const STATUS_LABEL = messageKey('surface.status.label');
 export const STATUS_PAGE_OF = messageKey('surface.status.page-of');
 export const STATUS_ZOOM = messageKey('surface.status.zoom');
@@ -186,6 +189,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',
   [LINKS_TO_PAGE]: 'Go to page {page}',
   [LINKS_EXTERNAL]: 'Opens {uri}',
+  [STATUS_GO_TO]: 'Go to page',
+  // NAMES THE RANGE. "That page does not exist" leaves a reader guessing where
+  // the document ends, and the count is on screen a few pixels away only while
+  // they are looking at it rather than at the field they just typed into.
+  [STATUS_GO_TO_OUTSIDE]: 'This document has pages 1 to {count}.',
+  [GO_TO_TITLE]: 'Go to page',
   [STATUS_LABEL]: 'Document status',
   [STATUS_PAGE_OF]: 'Page {page} of {count}',
   [STATUS_ZOOM]: '{percent}%',

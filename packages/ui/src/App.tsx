@@ -27,7 +27,7 @@ import {
   toggleRulersCommand,
 } from './commands/viewCommands.js';
 import { CommandPalette } from './CommandPalette.js';
-import { historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
+import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { type DocumentStore, DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './StatusBar.js';
@@ -376,6 +376,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         pageMoveCommand('last', { navigator }),
         historyCommand('back', { navigator }),
         historyCommand('forward', { navigator }),
+        goToCommand(),
       ]),
     [applied, changeZoom, client, navigator, openPalette, settings, show],
   );
@@ -451,7 +452,14 @@ export function App({ client, settings }: AppProps): ReactElement {
           reporting page 1 of 0 at 100% over the start screen is a control that
           describes nothing. */}
       {open === undefined || pageCount === undefined ? null : (
-        <StatusBar page={currentPage} pageCount={pageCount} zoom={shownZoom} />
+        <StatusBar
+          page={currentPage}
+          pageCount={pageCount}
+          zoom={shownZoom}
+          // THE SAME `jumpTo` a key, a thumbnail and an outline entry dispatch,
+          // so a typed page is recorded in the history exactly as those are.
+          onGoTo={navigator.jumpTo}
+        />
       )}
       {/* THE LINKS PANEL, which renders nothing with no document for the find
           bar's reason. It is the third source of a jump, after the keys and the

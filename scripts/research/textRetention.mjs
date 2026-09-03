@@ -104,6 +104,23 @@ function retainedBytes(value) {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
 
+/**
+ * How many matches a search found, THROWING if the query was refused.
+ *
+ * `findInPages` answers a `Result` since queries can be empty or unparseable.
+ * Neither is possible here — the needle is a literal in this file — so the
+ * refusal branch is a defect in this instrument rather than an outcome, and it
+ * must not become a zero: this figure is the control that both shapes did the
+ * same work, and a silent zero on both sides would satisfy it exactly.
+ *
+ * @param {import('@monstera/shared').Result<readonly unknown[], string>} found
+ * @returns {number}
+ */
+function matchCount(found) {
+  if (!found.ok) throw new Error(`this probe's own query was refused: ${found.error}`);
+  return found.value.length;
+}
+
 async function main() {
   const requested = process.argv.indexOf('--pages');
   const pages = requested < 0 ? 40 : Number(process.argv[requested + 1] ?? 40);
@@ -129,7 +146,7 @@ async function main() {
     const whole = await readPageText(session, every);
     const wholePeak = peakRssBytes();
     const wholeRetained = retainedBytes(whole.pages);
-    const hits = findInPages(whole.pages, 'lazy').length;
+    const hits = matchCount(findInPages(whole.pages, 'lazy'));
 
     process.stdout.write(
       `  WHOLE DOCUMENT, retained\n` +
@@ -151,7 +168,7 @@ async function main() {
       const page = one.pages[0];
       if (page === undefined) throw new Error('one page was requested');
       largestPage = Math.max(largestPage, retainedBytes(page));
-      perPageHits += findInPages([page], 'lazy').length;
+      perPageHits += matchCount(findInPages([page], 'lazy'));
     }
     const perPagePeak = peakRssBytes();
 

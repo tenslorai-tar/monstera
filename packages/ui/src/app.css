@@ -236,7 +236,7 @@ body {
   background: var(--surface);
   color: var(--muted);
   font-size: var(--font-chrome-11);
-  border-block-start: 1px solid var(--border); /* decorative: separates the strip from the document area; nothing in it is interactive */
+  border-block-start: 1px solid var(--border); /* decorative: separates the strip from the document area, and bounds neither of the controls inside it */
   /*
    * TABULAR FIGURES, because the page number changes on every scroll and
    * proportional digits shift the text beside them as they do. The movement is
@@ -244,6 +244,46 @@ body {
    * information.
    */
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The go-to field, and it is deliberately narrow.
+ *
+ * A page number is at most a few digits, and a box sized for a sentence reads
+ * as one — a reader would expect to be able to type a heading into it. The
+ * width is in `ch`, which is the unit that means "digits" here rather than a
+ * pixel count that stops being right at another font size.
+ */
+.m-status-goto {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.m-status-goto input {
+  inline-size: 5ch;
+  text-align: end;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  padding-inline: var(--space-2);
+}
+
+/*
+ * A page the document does not have carries NO COLOUR OF ITS OWN, and that is a
+ * decision rather than an omission.
+ *
+ * The token set has no error role — `tokens.css` declares backgrounds, text,
+ * borders and the accent, and nothing else. Inventing one here would be a raw
+ * hex in a component, which §10.2 makes a lint error, and adding one to the
+ * token file is a brand decision with three themes and a contrast check behind
+ * it. What carries the refusal instead is the sentence beside the field and
+ * `aria-invalid` on it — text and state, which reach a reader who cannot see a
+ * colour at all. A red border would be an addition to that, never a
+ * replacement.
+ */
+.m-status-problem {
+  color: var(--text);
 }
 
 /*

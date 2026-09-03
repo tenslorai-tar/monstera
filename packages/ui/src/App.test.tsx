@@ -761,6 +761,47 @@ describe('App', () => {
       expect(document.activeElement).toBe(screen.getByLabelText('Find on this page'));
     });
 
+    it('the GO-TO chord takes the caret to the status bar field', async () => {
+      // The command's whole effect, asserted as the effect: `view.go-to`
+      // carries no page number and sends no channel, for `document.find`'s
+      // reason — a registered command's `run` takes no arguments, so the number
+      // belongs to the surface and the command's job is to get the reader
+      // there.
+      //
+      // `Ctrl+Shift+G` rather than `Ctrl+G`, which `view.toggle-grid` holds —
+      // the shortcut map refused the collision on the first run rather than
+      // dispatching to whichever registration came last.
+      //
+      // WHAT IS NOT ASSERTED HERE: that submitting the field moves the reader.
+      // The status readout follows `currentPage`, which the SCROLLER reports
+      // from an intersection observer that happy-dom never runs — so a case
+      // asserting "Page 2 of 2" fails for the environment rather than for the
+      // wiring. The conversion and the dispatch are `StatusBar.test.tsx`'s,
+      // against `onGoTo`; what stays uncovered by both is one line in `App`
+      // handing that prop `navigator.jumpTo`, which is the same prop three
+      // other jump surfaces are wired with in the same block.
+      const { client } = answeringClient({ ...OPEN_DOCUMENT_ANSWERS });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      const field = screen.getByLabelText('Go to page');
+      expect(document.activeElement).not.toBe(field);
+
+      await act(async () => {
+        document.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'G',
+            ctrlKey: true,
+            shiftKey: true,
+            cancelable: true,
+          }),
+        );
+        await Promise.resolve();
+      });
+
+      expect(document.activeElement).toBe(field);
+    });
+
     /*
      * WHAT IS NOT ASSERTED HERE, and where it is instead.
      *
