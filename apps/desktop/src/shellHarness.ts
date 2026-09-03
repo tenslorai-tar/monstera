@@ -5,6 +5,7 @@ import { app, dialog } from 'electron';
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { startShell } from './main.js';
+import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
 /**
@@ -356,6 +357,11 @@ startShell(() => {
     // every launch, and a throw here would make the harness fail at startup for
     // a reason unrelated to what it measures.
     createEphemeralSettings(),
+    // Ephemeral for the settings' reason, and with one of its own: this harness
+    // exercises the QUIT path, which writes the clean-exit marker. A real store
+    // here would leave the developer's own marker set by a harness run and make
+    // the next crash-recovery offer silent.
+    createRecentFiles(createEphemeralSettings()),
   );
 
   if (quitProbe === null) return dependencies;

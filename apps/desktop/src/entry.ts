@@ -5,7 +5,8 @@ import { app, shell } from 'electron';
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
-import { createSettingsFile } from './settingsFile.js';
+import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
+import { createJsonFile, createSettingsFile } from './settingsFile.js';
 import { createShellLog } from './shellLog.js';
 import { startShell } from './main.js';
 
@@ -64,6 +65,12 @@ startShell(() =>
     // application and the OS respectively are entitled to empty. Resolved here
     // because only this file may ask Electron where the user's data lives.
     createSettingsFile(app.getPath('userData')),
+    // The recent list, beside the settings and in its own document. Not IN the
+    // settings file, and that is invariant L2 rather than tidiness:
+    // `settings.load` hands the renderer everything that file holds, so a path
+    // stored there would be a path in the renderer with nothing having decided
+    // to send it.
+    createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved here and handed down. Under

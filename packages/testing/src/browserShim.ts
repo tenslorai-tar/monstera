@@ -10,6 +10,7 @@ import {
 import {
   type DocId,
   type DocVersion,
+  type FileHandle,
   asDocId,
   asDocVersion,
   err,
@@ -326,6 +327,24 @@ export interface BrowserShimOptions {
    * that never mentions opening quietly open a document.
    */
   readonly opens?: readonly OpenAnswer[];
+
+  /**
+   * What `document.recent` answers.
+   *
+   * Empty by default, because a first launch is the real state a start screen
+   * must render — and a default list would make every case that never mentions
+   * recent files show one.
+   */
+  readonly recent?: readonly { readonly handle: FileHandle; readonly name: string }[];
+
+  /**
+   * Whether the previous run exited cleanly. Defaults to `true`.
+   *
+   * The default is the ordinary state and the interesting fixture is `false`,
+   * which is what a surface offering to recover has to be driven by. A shim
+   * defaulting to `false` would make every case a crash-recovery case.
+   */
+  readonly lastExitClean?: boolean;
 }
 
 /**
@@ -386,6 +405,7 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const destinations = options.destinations ?? [];
   // Copied and consumed, exactly like `viewModels`.
   const layerLists = [...(options.layers ?? [])];
+  const recentEntries = options.recent ?? [];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -413,6 +433,33 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       // and then refused every command against it would hand a test the one
       // state the real boundary cannot produce, and the test written against it
       // would assert on a shape nothing ships.
+      if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
+      return Promise.resolve(ok(answer));
+    },
+
+    /**
+     * The recent list, from the fixture.
+     *
+     * **Handles rather than paths, exactly as the real one answers.** A shim
+     * that carried paths would let a surface pass here while doing something
+     * invariant L2 forbids in the product — and the whole point of a recent
+     * entry's handle is that a renderer can name a file it cannot read.
+     */
+    'document.recent': () =>
+      Promise.resolve(ok({ entries: recentEntries, lastExitClean: options.lastExitClean ?? true })),
+
+    /**
+     * Opens a recent document, and REFUSES a handle the fixture did not name.
+     *
+     * The refusal is the half worth having: a shim that opened anything would
+     * let a surface pass while sending a stale handle, which is the one thing
+     * this channel's `unknown-handle` outcome exists for.
+     */
+    'document.openRecent': ({ handle }) => {
+      if (!recentEntries.some((entry) => entry.handle === handle)) {
+        return Promise.resolve(err({ code: 'unknown-handle' }));
+      }
+      const answer = queuedOpens.shift() ?? { kind: 'cancelled' as const };
       if (answer.kind === 'opened') versions.set(answer.docId, answer.version);
       return Promise.resolve(ok(answer));
     },

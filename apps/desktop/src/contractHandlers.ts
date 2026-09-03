@@ -16,6 +16,7 @@ import {
   DocumentPoisonedError,
   InvalidSearchPatternError,
 } from './documentCommands.js';
+import type { RecentFiles } from './recentFiles.js';
 import type { SettingsSurface } from './settingsFile.js';
 
 /**
@@ -112,6 +113,8 @@ export function createContractHandlers(deps: {
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
   readonly pickDocument: PickDocument;
+  /** The recent-files list, which is also where the clean-exit marker lives. */
+  readonly recent: RecentFiles;
   readonly settings: SettingsSurface;
   /**
    * Shows the diagnostics log.
@@ -127,6 +130,8 @@ export function createContractHandlers(deps: {
     // handler type is asynchronous because the real document channels are.
     'app.info': () => Promise.resolve(ok({ ...deps.appInfo })),
     'document.open': openDocumentHandler(deps),
+    'document.recent': recentHandler(deps),
+    'document.openRecent': openRecentHandler(deps),
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
@@ -488,6 +493,7 @@ function openDocumentHandler(deps: {
   readonly capabilities: CapabilityRegistry;
   readonly openedDocument: OpenedDocument;
   readonly pickDocument: PickDocument;
+  readonly recent: RecentFiles;
 }): ContractHandlers['document.open'] {
   return async (): Promise<Awaited<ReturnType<ContractHandlers['document.open']>>> => {
     const picked = await deps.pickDocument();
@@ -505,7 +511,80 @@ function openDocumentHandler(deps: {
     // document has a session or is poisoned already, and a second entry for it
     // would spend Decision 9a's failure bound a second time on a document that
     // never failed.
-    if (outcome.kind === 'opened') deps.openedDocument(outcome.docId);
+    if (outcome.kind === 'opened') {
+      deps.openedDocument(outcome.docId);
+      // RECORDED HERE, where the path and the name are both in hand. Recording
+      // in the service would put a list of paths inside the thing that holds
+      // documents; recording in the renderer is impossible, which is L2 doing
+      // its job.
+      deps.recent.record({ path: picked, name: outcome.name });
+    }
+
+    return ok(outcome);
+  };
+}
+
+/** The recent list, with a handle per entry rather than a path. */
+function recentHandler(deps: {
+  readonly capabilities: CapabilityRegistry;
+  readonly recent: RecentFiles;
+}): ContractHandlers['document.recent'] {
+  return () =>
+    Promise.resolve(
+      ok({
+        // MINTED HERE, not stored. `mint` is idempotent per path, so the handle
+        // an entry carries is the same one that document would have if opened —
+        // and minting at the boundary rather than persisting the token means a
+        // list written by a previous run cannot carry a capability into this
+        // one.
+        entries: deps.recent.list().map((entry) => ({
+          handle: deps.capabilities.mint(entry.path),
+          name: entry.name,
+        })),
+        lastExitClean: deps.recent.lastExitClean(),
+      }),
+    );
+}
+
+/**
+ * Opens a document the recent list named.
+ *
+ * The picker is skipped and nothing else is: the same service, the same
+ * revocation rule, the same recording. What replaces the picker is a handle
+ * main minted for a path main recorded, which is the whole of why a renderer
+ * naming a file here is not a renderer choosing one.
+ *
+ * **A file that has gone is FORGOTTEN.** `absent` for a recent entry means the
+ * document moved or was deleted since it was opened, and leaving it in the list
+ * would offer the user the same dead file every launch.
+ */
+function openRecentHandler(deps: {
+  readonly documents: DocumentService;
+  readonly capabilities: CapabilityRegistry;
+  readonly openedDocument: OpenedDocument;
+  readonly recent: RecentFiles;
+}): ContractHandlers['document.openRecent'] {
+  return async ({
+    handle,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.openRecent']>>> => {
+    const path = deps.capabilities.resolve(handle);
+    // A HANDLE THIS RUN DOES NOT KNOW. The registry is per-run and a renderer
+    // may hold a list from before a reload, so this is an outcome a surface
+    // acts on by asking for the list again — not a defect.
+    if (path === undefined) return err({ code: 'unknown-handle' });
+
+    const outcome: ChannelResult<'document.openRecent'> = await deps.documents.open(handle);
+
+    if (outcome.kind === 'absent') {
+      deps.capabilities.revoke(handle);
+      deps.recent.forget(path);
+    }
+    if (outcome.kind === 'at-capacity') deps.capabilities.revoke(handle);
+
+    if (outcome.kind === 'opened') {
+      deps.openedDocument(outcome.docId);
+      deps.recent.record({ path, name: outcome.name });
+    }
 
     return ok(outcome);
   };

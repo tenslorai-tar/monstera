@@ -75,6 +75,27 @@ function handlers() {
     pickDocument: () => {
       throw new Error('registration cases must not reach the picker');
     },
+    // A THROWING `RecentFiles`, not `createRecentFiles` over a throwing file:
+    // the real one reads and writes at construction — it clears the clean-exit
+    // marker immediately — so a throwing file surface would fail while these
+    // cases were being built rather than if one reached the list.
+    recent: {
+      list: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      record: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      forget: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      lastExitClean: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      markCleanExit: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+    },
     settings: {
       read: () => {
         throw new Error('registration cases must not reach the settings surface');

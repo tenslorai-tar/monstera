@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { app, ipcMain, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
+import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 import { registerContractHandlers } from './registerHandlers.js';
@@ -456,6 +457,9 @@ export async function reportCanvasPixels(
     // a harness that wrote into the real `userData` would leave the application
     // configured by a test run.
     createEphemeralSettings(),
+    // Ephemeral for the same reason: a harness that recorded into the real
+    // recent list would put its fixtures in the user's start screen.
+    createRecentFiles(createEphemeralSettings()),
     null,
   );
   const window = createMainWindow(session.defaultSession, deps.failures);

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
 import { commandSchema } from './commands.js';
-import { docIdSchema, docVersionSchema } from './schemas.js';
+import { docIdSchema, docVersionSchema, fileHandleSchema } from './schemas.js';
 
 /**
  * Every IPC channel, defined once.
@@ -160,6 +160,17 @@ export const MAX_LAYER_NAME_LENGTH = 256;
 export const MAX_DOCUMENT_NAME_LENGTH = 255;
 
 /**
+ * How many recent documents may cross.
+ *
+ * The store's own cap, restated as the boundary's bound — and restated rather
+ * than imported because `apps/desktop` may import this package and not the
+ * reverse. The two agreeing is asserted by a case rather than by the type,
+ * which is the honest arrangement: a bound the sender could exceed is the one
+ * worth having at a boundary.
+ */
+export const MAX_RECENT_ENTRIES = 10;
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
@@ -192,6 +203,62 @@ const linkBoundsSchema = z.object({
  * anything worth worrying about.
  */
 export const MAX_QUERY_LENGTH = 512;
+
+/**
+ * What opening a document answers, for the two channels that open one.
+ *
+ * Named once because `document.open` and `document.openRecent` differ in what
+ * they are ASKED and not in what they answer — a renderer that handles one
+ * handles the other, and two copies of a five-variant union would be two places
+ * for the next variant to land in one of.
+ *
+ * See `document.open` for what each variant means and why `cancelled` is an
+ * outcome rather than a failure.
+ */
+const openOutcomeSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('opened'),
+    docId: docIdSchema,
+    version: docVersionSchema,
+    /**
+     * The document's size in bytes — what a `PDFDataRangeTransport` is
+     * constructed with. Bounded, so L11 is untouched: a number is the same size
+     * for a 2 KB document and a 2 GB one.
+     */
+    byteLength: z.number().int().nonnegative(),
+    /**
+     * What to call this document on screen — its file name, and **only** its
+     * file name.
+     *
+     * ## Stated by main rather than derived by the renderer
+     *
+     * There is no path here to derive it from, by invariant L2, and that is the
+     * point rather than an inconvenience: a renderer that could produce a name
+     * would be a renderer that had a path. So main answers the question it is
+     * the only one able to answer, and the renderer displays a string.
+     *
+     * ## A NAME, not a path, and the difference is a leak
+     *
+     * `report.pdf`, never `C:\Users\someone\Documents\report.pdf`. A status bar
+     * showing the second one puts a user's directory layout on screen — in a
+     * screenshot, in a screen share, in a support ticket — and it is the same
+     * thing L2 keeps out of the renderer's hands, arriving as text.
+     * `documentService.ts` sends `basename` for that reason.
+     */
+    name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+  }),
+  z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
+  z.object({ kind: z.literal('absent') }),
+  z.object({
+    kind: z.literal('at-capacity'),
+    /** What the resident total would have become, in bytes. */
+    wouldHold: z.number().int().nonnegative(),
+    /** The ceiling it would have crossed. */
+    ceiling: z.number().int().nonnegative(),
+  }),
+  z.object({ kind: z.literal('cancelled') }),
+]);
+
 export const channels = {
   'app.info': channel(
     'Version and install channel of the running application.',
@@ -325,50 +392,84 @@ export const channels = {
   'document.open': channel(
     'Opens a document chosen in a picker main owns, returning its id and version.',
     z.object({}),
-    z.discriminatedUnion('kind', [
-      z.object({
-        kind: z.literal('opened'),
-        docId: docIdSchema,
-        version: docVersionSchema,
-        /**
-         * The document's size in bytes — what a `PDFDataRangeTransport` is
-         * constructed with. Bounded, so L11 is untouched: a number is the same
-         * size for a 2 KB document and a 2 GB one.
-         */
-        byteLength: z.number().int().nonnegative(),
-        /**
-         * What to call this document on screen — its file name, and **only**
-         * its file name.
-         *
-         * ## Stated by main rather than derived by the renderer
-         *
-         * There is no path here to derive it from, by invariant L2, and that is
-         * the point rather than an inconvenience: a renderer that could produce
-         * a name would be a renderer that had a path. So main answers the
-         * question it is the only one able to answer, and the renderer displays
-         * a string.
-         *
-         * ## A NAME, not a path, and the difference is a leak
-         *
-         * `report.pdf`, never `C:\Users\someone\Documents\report.pdf`. A status
-         * bar showing the second one puts a user's directory layout on screen —
-         * in a screenshot, in a screen share, in a support ticket — and it is
-         * the same thing L2 keeps out of the renderer's hands, arriving as
-         * text. `documentService.ts` sends `basename` for that reason.
-         */
-        name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
-      }),
-      z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
-      z.object({ kind: z.literal('absent') }),
-      z.object({
-        kind: z.literal('at-capacity'),
-        /** What the resident total would have become, in bytes. */
-        wouldHold: z.number().int().nonnegative(),
-        /** The ceiling it would have crossed. */
-        ceiling: z.number().int().nonnegative(),
-      }),
-      z.object({ kind: z.literal('cancelled') }),
-    ]),
+    openOutcomeSchema,
+  ),
+
+  /**
+   * The documents this user opened recently, and whether the last run finished.
+   *
+   * ## A HANDLE PER ENTRY, never a path
+   *
+   * A recent-files list is a list of paths, and the renderer holds none
+   * (invariant L2). What crosses is a `FileHandle` — the capability the
+   * registry already mints for an open document, which a renderer may name and
+   * cannot read — with the file's name beside it for the label. So this list is
+   * exactly as much as a renderer needs to offer a document and no more.
+   *
+   * The handle is what `document.openRecent` takes, which is what makes the
+   * pair honest: nothing here lets a renderer name a file main did not already
+   * record.
+   *
+   * ## `lastExitClean` rides along, and that is not two channels squashed
+   *
+   * The crash-recovery offer is *this list* plus *did the last run finish*, and
+   * neither half is useful alone: a marker saying the last run died tells the
+   * renderer nothing to do about it, and a list says nothing about whether to
+   * offer one. A surface asking one question gets one answer.
+   */
+  'document.recent': channel(
+    'The documents opened recently, and whether the previous run exited cleanly.',
+    z.object({}),
+    z.object({
+      entries: z
+        .array(
+          z.object({
+            handle: fileHandleSchema,
+            name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+          }),
+        )
+        .max(MAX_RECENT_ENTRIES)
+        .readonly(),
+      /**
+       * `false` when the previous run did not reach its shutdown.
+       *
+       * **True on a first launch**, which is the honest reading: there is no
+       * previous run that failed to finish, and a first launch offering to
+       * recover from a crash that never happened is worse than one that says
+       * nothing.
+       */
+      lastExitClean: z.boolean(),
+    }),
+  ),
+
+  /**
+   * Opens a document from the recent list, by the handle that list carried.
+   *
+   * ## Why not a parameter on `document.open`
+   *
+   * `document.open` takes NO parameters, and that is its invariant: main picks,
+   * main mints, the kernel opens, so *"opened the wrong file"* is not a state a
+   * renderer can steer into. Adding an optional handle to it would end that
+   * sentence for every caller in order to serve one.
+   *
+   * Here the renderer does name a file, and what makes that safe is where the
+   * name came from: a handle main minted for a document main recorded. The
+   * registry resolves it or refuses; a renderer cannot construct one, because
+   * the value is a minted token rather than a path in a coat.
+   *
+   * The outcomes are `document.open`'s, including `cancelled` — which this can
+   * never answer, and which is present because the two channels share a result
+   * type on purpose. A renderer handling one handles the other.
+   */
+  'document.openRecent': channel(
+    'Opens a document the recent list named, by its handle.',
+    z.object({ handle: fileHandleSchema }),
+    openOutcomeSchema,
+    // `unknown-handle` rather than `internal`: a handle can be stale — the
+    // registry is per-run and a renderer may hold a list from before a restart —
+    // and that is an outcome a surface acts on by refreshing the list, not a
+    // defect with an incident id.
+    ['unknown-handle'],
   ),
 
   'document.execute': channel(

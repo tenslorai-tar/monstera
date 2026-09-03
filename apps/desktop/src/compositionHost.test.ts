@@ -14,6 +14,7 @@ import {
   hostHarness,
 } from './engineHostFake.js';
 import type { DirectoryCreationSurface, DirectoryPath } from './sessionDirectories.js';
+import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
 /**
@@ -201,6 +202,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('sessioned.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -253,6 +255,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('undone.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -326,6 +329,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('malformed.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -376,6 +380,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('uncontained.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -439,6 +444,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('networked.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -480,6 +486,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('unreadable.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       platform,
     );
 
@@ -511,6 +518,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -564,6 +572,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(path),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -645,6 +654,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(null),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       spy.platform,
     );
 
@@ -670,6 +680,7 @@ describe('the composition root, with an engine host platform', () => {
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
       platform,
     );
 

@@ -61,7 +61,25 @@ export const SETTINGS_FILE = 'settings.json';
  * and `temp` are routinely on different volumes.
  */
 export function createSettingsFile(directory: string): SettingsSurface {
-  const path = join(directory, SETTINGS_FILE);
+  return createJsonFile(directory, SETTINGS_FILE);
+}
+
+/**
+ * A JSON document under `directory`, read leniently and written atomically.
+ *
+ * **The settings file's own body, given a second caller.** The recent-files list
+ * needs exactly this — a JSON object in `userData`, a missing or corrupt file
+ * meaning *nothing stored*, and a write that a crash cannot truncate — and a
+ * second implementation of it would be a second opinion about how this build
+ * puts a document on disk (B3a). What is NOT shared is the meaning: what the
+ * object holds and what a missing key means belong to each caller.
+ *
+ * The file name is a parameter rather than a second exported constant, so a
+ * caller names its own document and there is no table of file names to keep in
+ * step with the functions that read them.
+ */
+export function createJsonFile(directory: string, fileName: string): SettingsSurface {
+  const path = join(directory, fileName);
 
   return {
     read(): Readonly<Record<string, unknown>> {

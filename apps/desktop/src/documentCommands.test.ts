@@ -34,6 +34,7 @@ const AMPLE_CEILING = 64 * 1024 * 1024;
 
 import { executeCommandHandler } from './commandHandlers.js';
 import { createContractHandlers } from './contractHandlers.js';
+import { createRecentFiles } from './recentFiles.js';
 import {
   DocumentCommands,
   type DocumentGeometry,
@@ -485,6 +486,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           documents: service,
           openedDocument: () => undefined,
           pickDocument: () => Promise.resolve(null),
+          recent: createRecentFiles({ read: () => ({}), write: () => undefined }),
           settings: { read: () => ({}), write: () => undefined },
           revealLog: () => Promise.resolve(false),
         })['document.viewModel'],

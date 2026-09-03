@@ -1,9 +1,16 @@
 import { CapabilityRegistry, DocumentNotOpenError, DocumentService } from '@monstera/kernel';
-import { type DocId, type FileHandle, asDocId, asDocVersion } from '@monstera/shared';
+import {
+  type DocId,
+  type FileHandle,
+  asDocId,
+  asDocVersion,
+  asFileHandle,
+} from '@monstera/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import type { DocumentCommands } from './documentCommands.js';
+import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
 
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
@@ -44,6 +51,9 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
   const sessioned: DocId[] = [];
   const revealed: boolean[] = [];
   const settings = createEphemeralSettings();
+  // RETURNED, like `settings`, so a case can read what the handlers recorded
+  // rather than assert that a call was made.
+  const recent = createRecentFiles(createEphemeralSettings());
   const handlers = createContractHandlers({
     appInfo,
     capabilities,
@@ -51,6 +61,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
     documents,
     openedDocument: (docId) => sessioned.push(docId),
     pickDocument,
+    recent,
     // RETURNED, so cases about persistence read the same object the handlers
     // wrote rather than a second copy. `settings.save` answering `stored: true`
     // is a claim about a surface having accepted the values, and a test that
@@ -63,7 +74,7 @@ function harness(outcome: OpenOutcome, pickDocument: PickDocument) {
       return Promise.resolve(true);
     },
   });
-  return { capabilities, handlers, opened, revealed, sessioned, settings };
+  return { capabilities, handlers, opened, recent, revealed, sessioned, settings };
 }
 
 const A_DOC: DocId = asDocId('doc-1');
@@ -269,6 +280,7 @@ describe('document.open', () => {
           documents,
           openedDocument: () => undefined,
           pickDocument: () => Promise.resolve(null),
+          recent: createRecentFiles(createEphemeralSettings()),
           settings: createEphemeralSettings(),
           revealLog: () => Promise.resolve(false),
         }),
@@ -340,6 +352,121 @@ describe('document.open', () => {
   });
 });
 
+describe('the recent list', () => {
+  it('RECORDS an opened document, with the name and not the path', async () => {
+    const { handlers, recent } = harness(
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
+      () => Promise.resolve('C:/docs/a.pdf'),
+    );
+
+    await handlers['document.open']({});
+
+    // The store holds the path — it is main's and never crosses — and the name
+    // beside it. Asserting both is what separates *recorded something* from
+    // *recorded the right thing*.
+    expect(recent.list()).toStrictEqual([{ path: 'C:/docs/a.pdf', name: 'a.pdf' }]);
+  });
+
+  it('does NOT record a document that failed to open', async () => {
+    // The control, and it is the direction that matters: a list that recorded
+    // every pick would offer the reader files that are not there, which is the
+    // one thing a recent list must not do.
+    const { handlers, recent } = harness({ kind: 'absent' }, () =>
+      Promise.resolve('C:/docs/gone.pdf'),
+    );
+
+    await handlers['document.open']({});
+
+    expect(recent.list()).toStrictEqual([]);
+  });
+
+  it('answers with a HANDLE per entry and no path anywhere in the payload', async () => {
+    // Invariant L2 at the one place this feature could break it: the list main
+    // holds is paths, and what crosses is capabilities. A payload carrying a
+    // path would satisfy every other assertion here.
+    const { capabilities, handlers } = harness(
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
+      () => Promise.resolve('C:/docs/a.pdf'),
+    );
+    await handlers['document.open']({});
+
+    const listed = await handlers['document.recent']({});
+
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.entries).toHaveLength(1);
+    expect(listed.value.entries[0]?.name).toBe('a.pdf');
+    // The handle RESOLVES to the path, which is what makes it the right handle
+    // rather than any handle — and the payload's own text holds no path.
+    const handle = listed.value.entries[0]?.handle;
+    expect(handle === undefined ? undefined : capabilities.resolve(handle)).toBe('C:/docs/a.pdf');
+    expect(JSON.stringify(listed.value)).not.toContain('C:/docs');
+  });
+
+  it('reopens by the handle the list carried, without a picker', async () => {
+    const picked = vi.fn<PickDocument>(() => Promise.resolve('C:/docs/a.pdf'));
+    const { capabilities, handlers, opened } = harness(
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
+      picked,
+    );
+    await handlers['document.open']({});
+    // `mint` rather than `asFileHandleFrom`, which revokes what it minted: this
+    // case needs the LIVE handle the open produced, and minting is idempotent
+    // per path, so this is that handle rather than a second one.
+    const handle = capabilities.mint('C:/docs/a.pdf');
+
+    const result = await handlers['document.openRecent']({ handle });
+
+    expect(result.ok).toBe(true);
+    // THE PICKER WAS NOT ASKED AGAIN. Without this the case passes for a
+    // handler that ignores its parameter and opens whatever the picker says,
+    // which is a recent list that opens the wrong document.
+    expect(picked).toHaveBeenCalledTimes(1);
+    expect(opened).toStrictEqual([handle, handle]);
+  });
+
+  it('REFUSES a handle this run never minted, rather than reporting a defect', async () => {
+    // The registry is per-run, so a renderer holding a list from before a
+    // reload names handles that resolve to nothing. That is an outcome a
+    // surface acts on by asking for the list again — an `internal` with an
+    // incident id would be a defect report for an ordinary event.
+    const { handlers } = harness(
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
+      () => Promise.resolve('C:/docs/a.pdf'),
+    );
+
+    const result = await handlers['document.openRecent']({ handle: asFileHandle('not-minted') });
+
+    expect(result).toStrictEqual({ ok: false, error: { code: 'unknown-handle' } });
+  });
+
+  it('FORGETS an entry whose file has gone', async () => {
+    // `absent` for a recent entry means the file moved or was deleted since it
+    // was opened. Leaving it would offer the reader the same dead row on every
+    // launch, for ever.
+    const capabilities = new CapabilityRegistry();
+    const handle = capabilities.mint('C:/docs/gone.pdf');
+    const { documents } = serviceAnswering({ kind: 'absent' });
+    const recent = createRecentFiles(createEphemeralSettings());
+    recent.record({ path: 'C:/docs/gone.pdf', name: 'gone.pdf' });
+    const handlers = createContractHandlers({
+      appInfo,
+      capabilities,
+      commands: unusedCommands,
+      documents,
+      openedDocument: () => undefined,
+      pickDocument: () => Promise.resolve(null),
+      recent,
+      settings: createEphemeralSettings(),
+      revealLog: () => Promise.resolve(false),
+    });
+
+    await handlers['document.openRecent']({ handle });
+
+    expect(recent.list()).toStrictEqual([]);
+  });
+});
+
 describe('log.reveal', () => {
   /**
    * The main-side half of the wired-tools pair. The other halves are
@@ -372,6 +499,7 @@ describe('log.reveal', () => {
       documents: {} as unknown as DocumentService,
       openedDocument: () => undefined,
       pickDocument: () => Promise.resolve(null),
+      recent: createRecentFiles(createEphemeralSettings()),
       settings: createEphemeralSettings(),
       revealLog: () => Promise.resolve(false),
     });

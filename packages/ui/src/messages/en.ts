@@ -72,6 +72,11 @@ export const FIND_BAD_PATTERN = messageKey('surface.find.bad-pattern');
 export const FIND_DOCUMENT_MATCHES = messageKey('surface.find.document-matches');
 export const FIND_DOCUMENT_EMPTY = messageKey('surface.find.document-empty');
 export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
+export const RECENT_LABEL = messageKey('surface.recent.label');
+export const RECENT_EMPTY = messageKey('surface.recent.empty');
+export const RECENT_MISSING = messageKey('surface.recent.missing');
+export const RECOVER_OFFER = messageKey('surface.recent.recover-offer');
+export const RECOVER_LABEL = messageKey('surface.recent.recover-label');
 export const LAYERS_LABEL = messageKey('surface.layers.label');
 export const LAYERS_EMPTY = messageKey('surface.layers.empty');
 export const LAYERS_UNAVAILABLE = messageKey('surface.layers.unavailable');
@@ -181,6 +186,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_DOCUMENT_MATCHES]: '{count} matches in this document',
   [FIND_DOCUMENT_EMPTY]: 'Nothing in this document matches.',
   [FIND_MATCH_ON_PAGE]: 'Page {page}: {text}',
+  [RECENT_LABEL]: 'Recent documents',
+  [RECENT_EMPTY]: 'Nothing opened yet.',
+  // NAMES WHAT HAPPENED rather than blaming the reader. A row goes stale
+  // because the file moved or the list outlived the run that made it, and
+  // neither is something they did.
+  [RECENT_MISSING]: 'That document could not be opened. It may have been moved or renamed.',
+  [RECOVER_OFFER]: 'Monstera closed unexpectedly. Reopen {name}?',
+  [RECOVER_LABEL]: 'Reopen',
   [LAYERS_LABEL]: 'Layers',
   [LAYERS_EMPTY]: 'This document has no layers.',
   [LAYERS_UNAVAILABLE]: 'The layers could not be read.',

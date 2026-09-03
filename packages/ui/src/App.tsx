@@ -72,6 +72,7 @@ import { FIRST_PAGE } from './pageNumbering.js';
 import { PageList } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
+import { RecentFiles } from './RecentFiles.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 
 /**
@@ -432,7 +433,13 @@ export function App({ client, settings }: AppProps): ReactElement {
   return (
     <main className="m-document-surface">
       {open === undefined ? (
-        <StartScreen registry={registry} context={context} />
+        <>
+          <StartScreen registry={registry} context={context} />
+          {/* BESIDE the projection, not inside it: a recent file is data with a
+              control, not a registered command, and registering one per row
+              would mean rebuilding the registry whenever the list changed. */}
+          <RecentFiles client={client} onOpened={setOpen} />
+        </>
       ) : (
         <PageCanvas
           client={client}

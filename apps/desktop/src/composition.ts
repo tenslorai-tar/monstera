@@ -68,6 +68,7 @@ import {
   sessionDirectoryName,
   sessionDirectoryPaths,
 } from './sessionDirectories.js';
+import type { RecentFiles } from './recentFiles.js';
 import type { SettingsSurface } from './settingsFile.js';
 import type { ShellFailureSink } from './shellFailure.js';
 import type { ShellLog } from './shellLog.js';
@@ -207,6 +208,16 @@ export function createShellDependencies(
    * and this file may not ask Electron anything.
    */
   settings: SettingsSurface,
+  /**
+   * The recent-files list, as a surface for `settings`' reason.
+   *
+   * REQUIRED for the same argument, one axis over: a default in memory would
+   * make *this build forgets what you opened* the state a caller gets by saying
+   * nothing — and it would also make the clean-exit marker always report a
+   * clean previous run, which is a crash-recovery offer that never fires while
+   * every test passes.
+   */
+  recent: RecentFiles,
   enginePlatform: EngineHostPlatform | null = null,
   /**
    * Where diagnostics go, as a surface rather than a directory — the same trade
@@ -387,6 +398,7 @@ export function createShellDependencies(
       documents,
       openedDocument,
       pickDocument,
+      recent,
       settings,
       // `false` WITHOUT A LOG, which is the channel's declared state for
       // *there is nothing to show* rather than a stub standing in for one. The
@@ -418,6 +430,13 @@ export function createShellDependencies(
         await documents.close(docId);
       }
       await engineHost.closeHost();
+      // LAST, and after the awaits rather than before them. The marker says
+      // *this run reached the end of its shutdown*, so writing it first would
+      // set it for a run that then hung closing the host — which is exactly the
+      // run a crash-recovery offer exists for. `quitAfterShutdown` reports a
+      // teardown that throws and quits anyway, so a failure above leaves the
+      // marker clear, which is the honest reading of that too.
+      recent.markCleanExit();
     },
   };
 }

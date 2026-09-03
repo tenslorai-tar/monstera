@@ -39,12 +39,64 @@ body {
  * the children, so a surface with one control and a surface with six space
  * themselves the same way and neither has a rule about being first or last.
  */
+/*
+ * The start screen's controls, and the recent list under them.
+ *
+ * `block-size: auto` on the controls now that something sits below: the row
+ * used to take the whole height because it was the only thing there, and
+ * leaving it would push the list off the bottom of a short window. The pair is
+ * centred as a column instead.
+ */
 .m-start-screen {
   display: flex;
-  block-size: 100%;
   align-items: center;
   justify-content: center;
   gap: var(--space-16);
+  padding-block: var(--space-16);
+}
+
+.m-recent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--muted);
+}
+
+.m-recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.m-recent-item {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: var(--space-2) var(--space-8);
+}
+
+.m-recent-item:hover,
+.m-recent-item:focus-visible {
+  background: var(--surface2);
+}
+
+/*
+ * The offer after a run that did not finish. A row rather than a block, so the
+ * sentence and the control it belongs to read as one thing — the button says
+ * *Reopen* and means nothing without the name beside it.
+ */
+.m-recent-recover {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+  margin: 0;
+  color: var(--text);
 }
 
 /*

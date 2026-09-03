@@ -116,6 +116,11 @@ const OTHER_ANSWERS: Partial<Record<string, unknown>> = {
   // Takes no parameters and answers a boolean. Nothing else in this file's
   // fixtures is shaped like it.
   'log.reveal': { revealed: false },
+  // The start screen asks for this on every mount, so every case that renders
+  // one needs an answer. Empty and clean is the first-launch state: a list
+  // here would put rows in front of cases that are about something else, and
+  // `lastExitClean: false` would put a recovery offer there.
+  'document.recent': { entries: [], lastExitClean: true },
 };
 
 function recordingClient(answer: unknown): {
@@ -128,6 +133,19 @@ function recordingClient(answer: unknown): {
     return Promise.resolve(ok(OTHER_ANSWERS[id] ?? answer));
   });
   return { client, calls };
+}
+
+/**
+ * The calls a COMMAND made, with the start screen's own read taken out.
+ *
+ * The recent list reads `document.recent` when it mounts, so *nothing was
+ * dispatched* is no longer *no channel was called* — and the cases below are
+ * about what a control does, not about whether a surface loads its own data.
+ * Named rather than filtered inline so the exclusion is one decision with a
+ * reason on it rather than four `.filter`s that read as noise.
+ */
+function commandCalls(calls: readonly string[]): readonly string[] {
+  return calls.filter((id) => id !== 'document.recent');
 }
 
 /** One recorded call, with what the renderer sent. */
@@ -240,7 +258,7 @@ describe('App', () => {
       await Promise.resolve();
     });
 
-    expect(calls).toStrictEqual(['document.open']);
+    expect(commandCalls(calls)).toStrictEqual(['document.open']);
   });
 
   it('CONTROL: nothing is dispatched until the control is used', async () => {
@@ -254,7 +272,7 @@ describe('App', () => {
       await Promise.resolve();
     });
 
-    expect(calls).toStrictEqual([]);
+    expect(commandCalls(calls)).toStrictEqual([]);
   });
 
   it('shows the page surface once a document is open, and stops showing the start screen', async () => {
@@ -313,7 +331,7 @@ describe('App', () => {
       await Promise.resolve();
     });
 
-    expect(calls).toStrictEqual(['document.open']);
+    expect(commandCalls(calls)).toStrictEqual(['document.open']);
   });
 
   it('CONTROL: an UNREGISTERED chord dispatches nothing and is left to the browser', async () => {
@@ -331,7 +349,7 @@ describe('App', () => {
       await Promise.resolve();
     });
 
-    expect(calls).toStrictEqual([]);
+    expect(commandCalls(calls)).toStrictEqual([]);
     expect(event.defaultPrevented).toBe(false);
   });
 
@@ -1040,6 +1058,158 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Open a document' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'About' })).toBeDefined();
     expect(screen.getByRole('button', { name: 'Reveal diagnostics log' })).toBeDefined();
+  });
+
+  describe('the recent list', () => {
+    /** A client answering `document.recent` with what a case wants. */
+    function withRecent(recent: unknown): { readonly client: ContractClient; readonly sent: Sent[] } {
+      const sent: Sent[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.recent') return Promise.resolve(ok(recent));
+        if (id === 'document.openRecent') {
+          return Promise.resolve(
+            ok({
+              kind: 'opened' as const,
+              docId: DOC,
+              version: asDocVersion(1),
+              byteLength: 1024,
+              name: 'annual.pdf',
+            }),
+          );
+        }
+        const answer = (OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id] ?? OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      return { client, sent };
+    }
+
+    it('OPENS BY THE HANDLE the list carried, and no path is anywhere in reach', async () => {
+      // The renderer names a file here, which nothing else in this build does —
+      // and what makes it safe is that the value is a capability main minted,
+      // not a path. A row that sent a name, or an index, would be a renderer
+      // choosing a file.
+      const { client, sent } = withRecent({
+        entries: [
+          { handle: 'handle-a', name: 'annual.pdf' },
+          { handle: 'handle-b', name: 'notes.pdf' },
+        ],
+        lastExitClean: true,
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'notes.pdf' }).click();
+        await Promise.resolve();
+      });
+
+      // THE SECOND ROW'S HANDLE, so a surface that always sent the first one
+      // fails — which is the shape a list built from an index rather than from
+      // the row's own datum produces.
+      expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
+        { id: 'document.openRecent', params: { handle: 'handle-b' } },
+      ]);
+    });
+
+    it('shows an EMPTY list as empty rather than as nothing', async () => {
+      const { client } = withRecent({ entries: [], lastExitClean: true });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('Nothing opened yet.')).toBeDefined();
+    });
+
+    it('OFFERS TO REOPEN after a run that did not finish, naming the document', async () => {
+      // The crash-recovery clause. Both halves have to be true: a previous run
+      // that did not reach its shutdown, and something to reopen.
+      const { client, sent } = withRecent({
+        entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
+        lastExitClean: false,
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText('Monstera closed unexpectedly. Reopen annual.pdf?')).toBeDefined();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Reopen' }).click();
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
+        { id: 'document.openRecent', params: { handle: 'handle-a' } },
+      ]);
+    });
+
+    it('CONTROL: a clean previous run offers nothing, on the same list', async () => {
+      // Without this, the case above passes for a surface that offers recovery
+      // on every launch — which is the version a reader would learn to dismiss.
+      const { client } = withRecent({
+        entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
+        lastExitClean: true,
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
+      // AND THE ROW IS STILL THERE, so the case is not passing because the list
+      // failed to render at all.
+      expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
+    });
+
+    it('CONTROL: an unclean run with NOTHING to reopen offers nothing', async () => {
+      // The other half of the conjunction. An offer with no document behind it
+      // is a control that cannot work — the display-only defect, arriving as a
+      // message rather than as a button.
+      const { client } = withRecent({ entries: [], lastExitClean: false });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
+    });
+
+    it('says so when a row cannot be opened, and drops it', async () => {
+      // A handle from a list held across a reload resolves to nothing this run
+      // minted. The reader gets a sentence and the dead row goes.
+      const sent: Sent[] = [];
+      const client = createClient(channels, (id, params) => {
+        sent.push({ id, params });
+        if (id === 'document.recent') {
+          return Promise.resolve(
+            ok({ entries: [{ handle: 'stale', name: 'annual.pdf' }], lastExitClean: true }),
+          );
+        }
+        if (id === 'document.openRecent') return Promise.resolve(err({ code: 'unknown-handle' }));
+        const answer = (OPEN_DOCUMENT_ANSWERS as Record<string, unknown>)[id] ?? OTHER_ANSWERS[id];
+        if (answer === undefined) throw new Error(`this fixture has no answer for ${id}`);
+        return Promise.resolve(ok(answer));
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'annual.pdf' }).click();
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.getByText('That document could not be opened. It may have been moved or renamed.'),
+      ).toBeDefined();
+    });
   });
 
   /**

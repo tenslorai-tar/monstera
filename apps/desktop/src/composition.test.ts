@@ -6,6 +6,7 @@ import { asDocId } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createShellDependencies } from './composition.js';
+import { createRecentFiles } from './recentFiles.js';
 import { createEphemeralSettings } from './settingsFile.js';
 import type { AppInfo } from './contractHandlers.js';
 
@@ -54,6 +55,7 @@ describe('the composition root, with no engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('poisoned.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
     );
 
     const opened = await handlers['document.open']({});
@@ -88,6 +90,7 @@ describe('the composition root, with no engine host platform', () => {
       appInfo,
       () => Promise.resolve(aDocument('unsaveable.pdf')),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
     );
 
     const opened = await handlers['document.open']({});
@@ -117,6 +120,7 @@ describe('the composition root, with no engine host platform', () => {
       appInfo,
       () => Promise.resolve(null),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
     );
 
     const executed = await handlers['document.execute']({
@@ -142,6 +146,7 @@ describe('the composition root, with no engine host platform', () => {
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
       createEphemeralSettings(),
+      createRecentFiles(createEphemeralSettings()),
     );
 
     const first = await handlers['document.open']({});

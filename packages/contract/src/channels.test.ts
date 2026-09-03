@@ -1,4 +1,4 @@
-import { asDocId, asDocVersion, ok } from '@monstera/shared';
+import { asDocId, asDocVersion, asFileHandle, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
@@ -32,6 +32,18 @@ function ignore(_incident: Incident): void {
 const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '0.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  // ONE ENTRY AND A DIRTY MARKER, for the layers fixture's reason: an empty
+  // list and `lastExitClean: true` are what a boundary that dropped both fields
+  // produces, and they are also the ordinary state — so the fixture that
+  // separates them is the unusual one.
+  'document.recent': () =>
+    Promise.resolve(
+      ok({
+        entries: [{ handle: asFileHandle('handle-1'), name: 'annual.pdf' }],
+        lastExitClean: false,
+      }),
+    ),
+  'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
