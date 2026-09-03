@@ -807,6 +807,33 @@ body {
  */
 
 /*
+ * The second pane: its picker above whichever scroller it is showing.
+ *
+ * A grid with the picker at its natural height and the scroller taking the
+ * rest, so the two panes' pages line up at the same y — which is the whole of
+ * what side-by-side comparison is for, and a picker that pushed one pane down
+ * would undo it.
+ */
+.m-second-pane {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-block-size: 0;
+}
+
+.m-compare {
+  display: contents;
+}
+
+.m-compare-pick {
+  display: flex;
+  gap: var(--space-8);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg2);
+  color: var(--muted);
+}
+
+/*
  * The open documents' tab strip.
  *
  * A row that SCROLLS rather than wraps: a second line of tabs moves everything
@@ -816,10 +843,19 @@ body {
 .m-tabs {
   display: flex;
   gap: var(--space-2);
+  align-items: center;
   overflow-x: auto;
   padding: var(--space-2) var(--space-4);
   background: var(--bg2);
   border-block-end: 1px solid var(--border); /* decorative: separates the strip from the document area; each tab carries its own focus ring */
+}
+
+.m-tab-list {
+  display: flex;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .m-tab {
@@ -839,7 +875,8 @@ body {
 }
 
 .m-tab-name,
-.m-tab-close {
+.m-tab-close,
+.m-tab-open {
   background: none;
   border: 1px solid transparent;
   color: var(--text);
@@ -862,7 +899,9 @@ body {
 .m-tab-name:hover,
 .m-tab-name:focus-visible,
 .m-tab-close:hover,
-.m-tab-close:focus-visible {
+.m-tab-close:focus-visible,
+.m-tab-open:hover,
+.m-tab-open:focus-visible {
   background: var(--surface2);
 }
 

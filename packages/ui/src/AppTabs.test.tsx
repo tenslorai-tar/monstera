@@ -208,7 +208,7 @@ describe('multi-document tabs', () => {
     const { container } = render(<App client={built} settings={freshSettings()} />);
 
     await openOne();
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+    expect(container.querySelectorAll('.m-tab')).toHaveLength(1);
 
     // THROUGH THE STRIP'S OWN CONTROL, which is the only visible route to a
     // second document: the start screen is gone once one is open, and a chord
@@ -219,12 +219,14 @@ describe('multi-document tabs', () => {
       await Promise.resolve();
     });
 
-    const tabs = container.querySelectorAll('[role="tab"]');
+    const tabs = container.querySelectorAll('.m-tab');
     expect(tabs).toHaveLength(2);
     // THE NEW ONE IS ACTIVE. A strip that appended without activating leaves
     // the reader looking at the document they had, having just asked for
     // another — and renders exactly the same two tabs.
-    expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+    expect(container.querySelector('[aria-current="true"]')?.getAttribute('data-tab-select')).toBe(
+      SECOND,
+    );
     expect(container.querySelector('.m-status-name')?.textContent).toBe('notes.pdf');
   });
 
@@ -282,7 +284,7 @@ describe('multi-document tabs', () => {
     // leave the reader somewhere, and "somewhere" is a decision: a build that
     // left `activeId` naming a closed document shows the start screen with a
     // tab still in the strip.
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+    expect(container.querySelectorAll('.m-tab')).toHaveLength(1);
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
   });
 
@@ -309,7 +311,7 @@ describe('multi-document tabs', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(container.querySelectorAll('.m-tab')).toHaveLength(2);
     expect(container.querySelector('.m-status-name')?.textContent).toBe('annual.pdf');
   });
 });

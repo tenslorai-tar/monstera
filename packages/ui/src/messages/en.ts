@@ -77,6 +77,9 @@ export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
 export const FIND_NEXT_MATCH = messageKey('surface.find.next-match');
 export const FIND_PREVIOUS_MATCH = messageKey('surface.find.previous-match');
 export const FIND_MATCH_POSITION = messageKey('surface.find.match-position');
+export const COMPARE_PICK = messageKey('surface.compare.pick');
+export const COMPARE_SAME = messageKey('surface.compare.same');
+export const COMPARE_SECOND_LABEL = messageKey('surface.compare.second-label');
 export const TAB_STRIP_LABEL = messageKey('surface.tabs.label');
 export const TAB_CLOSE = messageKey('surface.tabs.close');
 export const TAB_OPEN_ANOTHER = messageKey('surface.tabs.open-another');
@@ -212,6 +215,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // far they have to go as much as where they are, and "match 7" alone is the
   // half that tells them neither.
   [FIND_MATCH_POSITION]: 'Match {position} of {count}',
+  [COMPARE_PICK]: 'Compare with',
+  // THE DEFAULT IS THIS DOCUMENT AGAIN, which is split view. Naming it as an
+  // option rather than as an absence is what makes it something a reader can
+  // return to.
+  [COMPARE_SAME]: 'This document',
+  [COMPARE_SECOND_LABEL]: 'Second view: {name}',
   [TAB_STRIP_LABEL]: 'Open documents',
   // THE FILE'S NAME IS IN THE CONTROL'S NAME. Six tabs give six close buttons,
   // and six of them called "Close" are six controls a screen-reader user

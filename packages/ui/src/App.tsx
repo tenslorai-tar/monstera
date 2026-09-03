@@ -28,6 +28,7 @@ import {
   toggleRulersCommand,
 } from './commands/viewCommands.js';
 import { CommandPalette } from './CommandPalette.js';
+import { ComparePane } from './ComparePane.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
 import { DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
@@ -46,7 +47,7 @@ import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
 import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
-import { type DocumentView, openDocumentView } from './documentView.js';
+import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { DialogRegistry } from './registries/dialogs.js';
@@ -154,6 +155,16 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const [tabs, setTabs] = useState<readonly OpenDocument[]>([]);
   const [activeId, setActiveId] = useState<DocId | undefined>(undefined);
+  /**
+   * The document the second pane compares against, or none.
+   *
+   * App-shell state and not a setting: which two documents a reader is
+   * comparing is about this moment, and a comparison that survived a restart
+   * would name documents that are not open. Split view IS a setting — that one
+   * is *how I like to read* — and the two live in different places for that
+   * reason rather than by oversight.
+   */
+  const [compareId, setCompareId] = useState<DocId | undefined>(undefined);
   const open = tabs.find((tab) => tab.docId === activeId);
 
   /**
@@ -706,6 +717,13 @@ export function App({ client, settings }: AppProps): ReactElement {
           showGrid={showGrid}
           unit={unit}
           split={split}
+          // COMPARE, and the second pane is where it lives: it is the split
+          // view's pane showing a different document rather than a third
+          // surface. `others` is every open document, including this one —
+          // *this document* is a choice a reader returns to, not an absence.
+          compare={tabs.find((tab) => tab.docId === compareId)}
+          others={tabs}
+          onCompare={setCompareId}
         />
         </ErrorBoundary>
       )}
@@ -913,6 +931,9 @@ function PageCanvas({
   showGrid,
   unit,
   split,
+  compare,
+  others,
+  onCompare,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -934,18 +955,15 @@ function PageCanvas({
   readonly unit: RulerUnit;
   /** Whether a second viewport onto the same document is shown. */
   readonly split: boolean;
-}): ReactElement {
-  const [failed, setFailed] = useState(false);
   /**
-   * The live view, once open.
-   *
-   * In state rather than a local, because the scroller is a CHILD now and a
-   * child cannot be rendered from a variable an effect closed over. Cleared by
-   * the same cleanup that closes it, so a render can never hold a view that has
-   * been torn down.
+   * The document the second pane compares against, or `undefined` for a second
+   * view of this one.
    */
-  const [ready, setReady] = useState<DocumentView | undefined>(undefined);
-
+  readonly compare: OpenDocument | undefined;
+  /** Every open document, as the compare picker's choices. */
+  readonly others: readonly OpenDocument[];
+  readonly onCompare: (docId: DocId | undefined) => void;
+}): ReactElement {
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
       // THE NAME IS CARRIED THROUGH, and it is not the command's to change: a
@@ -962,74 +980,10 @@ function PageCanvas({
     [onVersionMoved, open.docId, open.name],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    /**
-     * READ THROUGH A CALL, and the reason is a narrowing that would delete a
-     * guard.
-     *
-     * There are now two suspension points and therefore two reads. After the
-     * first `if (cancelled) return`, TypeScript narrows the variable to `false`
-     * for the rest of the block — and it does **not** widen it again across an
-     * `await`, because it models no concurrent writer. The only assignment it
-     * would learn from is in the cleanup below, which flow analysis never
-     * connects to this body. The second read then lints as always falsy, and
-     * both obvious responses are wrong: deleting the guard removes the check
-     * that matters most, and disabling the rule turns off a check that is right
-     * about every other line in this file.
-     *
-     * A call has no narrowing to inherit. Holding the flag on an object does not
-     * help — property narrowing survives an `await` the same way.
-     */
-    const stopped = (): boolean => cancelled;
-    let view: DocumentView | undefined;
-
-    const show = async (): Promise<void> => {
-      try {
-        view = await openDocumentView({
-          client,
-          docId: open.docId,
-          version: open.version,
-          byteLength: open.byteLength,
-          onVersionMoved: moved,
-        });
-        // CLOSED HERE, not left to the cleanup, because the cleanup has already
-        // run: it read `view` while it was still `undefined` and closed nothing.
-        // The original shape returned without closing on this path, which leaked
-        // a parser, a worker and a transport every time a document closed while
-        // its view was opening — IIIII-1's hazard on the one path that reaches it
-        // by ordinary use rather than by a version bump.
-        if (stopped()) {
-          await view.close();
-          return;
-        }
-        // HANDED TO THE SCROLLER, which draws. This effect's job ends at a live
-        // view: the model read moved into `PageList`, because with continuous
-        // scroll the pages to read rotations FOR are the ones on screen, and
-        // this effect does not know which those are. L11's *name the pages you
-        // are about to draw* is a question only the scroller can answer.
-        setReady(view);
-      } catch {
-        // A parse that fails is a document this renderer cannot show. It is not
-        // a crash and it is not silence: the surface stays empty and says so
-        // through `failed`, and the diagnostic belongs to main, which is the
-        // only side that may hold one (ADR-0009 §9).
-        if (!stopped()) setFailed(true);
-      }
-    };
-
-    void show();
-
-    return (): void => {
-      cancelled = true;
-      // CLEARED BEFORE IT IS CLOSED, so no render can hold a torn-down view.
-      // The state update and the close are the same teardown; separating them
-      // is how a component ends up drawing through a closed parser for one
-      // frame, which reads as an intermittent blank page.
-      setReady(undefined);
-      void view?.close();
-    };
-  }, [client, moved, open.byteLength, open.docId, open.version]);
+  // THE LIFETIME LIVES IN A HOOK NOW, because compare gave it a second caller.
+  // Every hazard it carries — the call-not-variable cancellation flag, the
+  // close on the late path, the clear before the close — is stated there.
+  const { ready, failed } = useDocumentView(client, open, moved);
 
   // THE COUNT GOES UP, because the navigation commands are registered in `App`
   // and need an end to clamp against. It cannot be read there: the number is
@@ -1122,27 +1076,54 @@ function PageCanvas({
           the commands act on the first pane, and *focus follows the pane* is
           owed rather than done. */}
       {split ? (
-        <PageList
-          client={client}
-          view={ready}
-          pageCount={ready.document.numPages}
-          docId={open.docId}
-          version={open.version}
-          onCurrentPage={ignorePage}
-          mode={mode}
-          onZoom={onZoom}
-          onShownZoom={ignoreZoom}
-          goTo={undefined}
-          // The same page the first pane starts at, so a split opens on what
-          // the reader is looking at rather than at the top of the document.
-          startAt={current}
-          onWentTo={ignoreWentTo}
-          loupe={loupe}
-          rulers={rulers}
-          showGrid={showGrid}
-          unit={unit}
-          label={SPLIT_SECOND_LABEL}
-        />
+        // THE PANE IS THE SAME SEAM AND THE PARSER IS THE DIFFERENCE. With
+        // nothing chosen this is split view — the second viewport over `ready`,
+        // one parse for two panes. With a document chosen it is compare, and a
+        // second document is a second parse by necessity: reading one
+        // document's pages through the other's parser is not an optimisation
+        // available to anybody.
+        //
+        // The picker is rendered either way, because a control that appears
+        // only once you have done the thing it is for is a control nobody
+        // finds. With one document open it offers *this document* alone, which
+        // is a truthful list of the choices.
+        <div className="m-second-pane">
+          <ComparePane
+            client={client}
+            against={compare}
+            others={others}
+            onPick={onCompare}
+            mode={mode}
+            onZoom={onZoom}
+            loupe={loupe}
+            rulers={rulers}
+            showGrid={showGrid}
+            unit={unit}
+          />
+          {compare === undefined ? (
+            <PageList
+              client={client}
+              view={ready}
+              pageCount={ready.document.numPages}
+              docId={open.docId}
+              version={open.version}
+              onCurrentPage={ignorePage}
+              mode={mode}
+              onZoom={onZoom}
+              onShownZoom={ignoreZoom}
+              goTo={undefined}
+              // The same page the first pane starts at, so a split opens on
+              // what the reader is looking at rather than at the top.
+              startAt={current}
+              onWentTo={ignoreWentTo}
+              loupe={loupe}
+              rulers={rulers}
+              showGrid={showGrid}
+              unit={unit}
+              label={SPLIT_SECOND_LABEL}
+            />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

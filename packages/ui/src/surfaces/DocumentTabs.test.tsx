@@ -36,21 +36,26 @@ function only<T extends Element>(container: HTMLElement, selector: string, kind:
 }
 
 describe('DocumentTabs', () => {
-  it('renders one tab per document and marks the ACTIVE one', () => {
-    // TWO TABS AND THE SECOND SELECTED. A fixture with one tab cannot tell a
+  it('renders one tab per document and marks the SHOWING one', () => {
+    // TWO TABS AND THE SECOND SHOWING. A fixture with one tab cannot tell a
     // strip that marks the active document from one that marks every tab, and
-    // selecting the FIRST cannot tell it from one that marks index 0.
+    // marking the FIRST cannot tell it from one that marks index 0.
     const { container } = render(
       <Wrapped>
         <DocumentTabs {...NOTHING} tabs={TABS} activeId={SECOND} />
       </Wrapped>,
     );
 
-    const tabs = container.querySelectorAll('[role="tab"]');
-    expect(tabs).toHaveLength(2);
-    expect(tabs[0]?.getAttribute('aria-selected')).toBe('false');
-    expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+    const rows = container.querySelectorAll('.m-tab');
+    expect(rows).toHaveLength(2);
     expect(container.querySelector('.m-tab-current')?.getAttribute('data-tab')).toBe(SECOND);
+    // `aria-current` ON THE CONTROL, and on exactly one of them. NOT
+    // `role="tab"`: that role's children are declared presentational, which
+    // the close button inside each row contradicts, and it promises arrow-key
+    // rotation this strip does not implement — see the component's header.
+    const current = container.querySelectorAll('[aria-current="true"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]?.getAttribute('data-tab-select')).toBe(SECOND);
   });
 
   it('SELECTS BY DOCUMENT ID, not by position', () => {
@@ -100,6 +105,6 @@ describe('DocumentTabs', () => {
       </Wrapped>,
     );
 
-    expect(container.querySelector('[role="tablist"]')).toBeNull();
+    expect(container.querySelector('.m-tabs')).toBeNull();
   });
 });

@@ -143,6 +143,15 @@ export interface PageListProps {
    * user cannot tell apart — which is the whole of what the split is for.
    */
   readonly label?: MessageKey;
+  /**
+   * What a placeholder in {@link label} stands for.
+   *
+   * A key and its values, never a resolved string, for `Button`'s reason: a
+   * caller that formatted the name itself would hold user-facing text and
+   * would format it in whatever language it assumed. Compare names its pane
+   * with the document in it, which is the first label here to carry one.
+   */
+  readonly labelValues?: Readonly<Record<string, string | number>> | undefined;
 }
 
 /**
@@ -203,6 +212,7 @@ export function PageList({
   showGrid,
   unit,
   label,
+  labelValues,
   startAt,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
@@ -570,7 +580,13 @@ export function PageList({
       // surface and needs no name of its own; two unnamed scrollable regions
       // are two a screen-reader user cannot tell apart, and telling them apart
       // is the whole of what the split view is for.
-      aria-label={label === undefined ? undefined : i18n._(label)}
+      aria-label={
+        label === undefined
+          ? undefined
+          : labelValues === undefined
+            ? i18n._(label)
+            : i18n._(label, labelValues)
+      }
       ref={scroller}
       onWheel={onWheel}
       onScroll={onScroll}

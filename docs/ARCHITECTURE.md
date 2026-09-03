@@ -844,12 +844,27 @@ say**.
     the canonical bytes it already holds. Text is read a page at a time,
     searched and dropped, so what is resident is bounded by the largest page. The
     **`mupdf-host`** budget is a *containment* limit: a breach means
-    kill-and-restart, never a raised number. The
-    **`mupdf-host`** budget is a *containment* limit: a breach means
     kill-and-restart, never a raised number. The **`renderer`** budget is
     **provisional and two-term** — a file-size-proportional term plus an
-    absolute bitmap-cache cap — and is not assertable until a renderer exists to
-    measure; a number invented for it now would be the mistake ADR-0007 records.
+    absolute bitmap-cache cap — and a number invented for either now would be
+    the mistake ADR-0007 records.
+
+    **The two terms' preconditions are no longer the same, read 2026-09-03.**
+    This clause said neither was assertable *"until a renderer exists to
+    measure"*, and one now does: it opens documents, draws pages and holds two
+    parsers when a reader compares. So the **proportional** term's stated
+    blocker has expired, and what it now waits on is an instrument —
+    `perf:gate` measures roles by spawning them, and no role composes a
+    renderer. The **cap** term's blocker has not expired and is a different
+    thing: there is no bitmap cache to cap. A page slot drops its canvas when
+    it leaves the scroller's margin, and only the ACTIVE document's view is
+    mounted, so nothing retains a bitmap for a page or a document that is not on
+    screen. Compare holds two live views and both are being looked at, which is
+    two documents' worth of draw rather than a cache.
+
+    Stated here rather than left as one sentence covering both, because a
+    precondition that has expired for half a claim is how a claim goes on
+    reading as blocked.
 
     **The multiple is of the document's cost, not of the process's footprint.**
     It is measured as peak RSS *above that process's own fixed baseline* — the

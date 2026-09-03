@@ -197,13 +197,18 @@ test('a message with a PLACEHOLDER renders its value, in the production build', 
   // This case is here rather than beside the i18n module because the artefact
   // is the subject: the difference does not exist in a vitest run, and a case
   // that could not see it would be asserting the thing that was already true.
+  // THE RECOVERY OFFER IS DRIVEN BY THE RECORDED SESSION, not by the head of
+  // the recent list — multi-document tabs ended that correspondence, and the
+  // interpolated string this case is about moved with it onto the per-document
+  // control.
   await bridge(page, {
     recent: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
     lastExitClean: false,
+    lastSession: [{ handle: asFileHandle('handle-a'), name: 'annual report.pdf' }],
   });
   await page.goto('/');
 
-  await expect(page.getByText('Reopen annual report.pdf?')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reopen annual report.pdf' })).toBeVisible();
   // AND THE PLACEHOLDER IS NOT ON SCREEN. Asserting the interpolated text alone
   // would pass for a page rendering both — which is not a state this library
   // produces, and is exactly the assumption that let the defect through.
@@ -215,13 +220,20 @@ test('the start screen WITH a recent list and a recovery offer is clean too', as
   // offer, the list and the controls together are what a reader meets after a
   // run that did not finish, and nothing about the empty screen's result says
   // anything about this one's contrast, focus order or naming.
+  // TWO DOCUMENTS IN THE SESSION, which is the screen tabs made possible: the
+  // offer is a list of controls now, and a screen with one row would not
+  // exercise the arrangement a reader meets after losing several.
   await bridge(page, {
     recent: [
       { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
       { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
     ],
     lastExitClean: false,
+    lastSession: [
+      { handle: asFileHandle('handle-a'), name: 'annual report.pdf' },
+      { handle: asFileHandle('handle-b'), name: 'notes.pdf' },
+    ],
   });
 
-  await expectNoSeriousViolations(page, 'Monstera closed unexpectedly. Reopen annual report.pdf?');
+  await expectNoSeriousViolations(page, 'Monstera closed unexpectedly. These documents were open:');
 });
