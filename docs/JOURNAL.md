@@ -8,7 +8,7 @@ the fact is not a baseline, it is a rationalisation.
 | Stage | Baseline estimate | Actual | Verdict |
 |---|---|---|---|
 | 0 — walking skeleton | 15 working days | **18 days worked** (2026-08-16 → 2026-09-02) | **1.20× — continue** |
-| 1 — viewer core | 10 working days | in progress (started 2026-09-02, Stage 0's last day) | — |
+| 1 — viewer core | 10 working days | **2 days worked so far** (2026-09-02 → 2026-09-03), 49 commits | **0.20× — continue.** Interim: the stage has not reached its last commit |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -57,6 +57,45 @@ test named. What Stage 0 does *not* ship is recorded rather than absorbed: the
 invariant 18(ii)'s restore mechanism stays deferred with a live exposure on the
 host-death path (`docs/ARCHITECTURE.md`, amended 2026-09-01).
 
+### Stage 1's reading, taken 2026-09-03 and marked INTERIM
+
+**2 days, 49 commits, against a 10-working-day baseline — 0.20×.** Counted the
+way Stage 0 was: `git log --format=%ad --date=short d1d051d~1..HEAD | sort -u`
+returns **2026-09-02** and **2026-09-03**, and the figure is the count of
+distinct dates carrying a commit rather than a schedule anybody kept.
+`d1d051d` — *"E2's first question is who clusters"* — is the first Stage 1
+commit, because `BUILD-PROMPT.md:686` says the stage *"begins with the E2 text
+substrate"*.
+
+**The shared day is counted here as well as in Stage 0**, per the note above, so
+this figure is generous to Stage 1 by up to a day. That is the direction to err
+in for a stage running under estimate — the opposite of the direction Stage 0's
+row had to be pushed twice.
+
+**Verdict on this reading: continue.** 0.20× is nowhere near the 3× that arms a
+decision, and the gate's other two options exist for the case where effort has
+run away, which this is the reverse of.
+
+**IT IS INTERIM BECAUSE THE STAGE HAS NOT REACHED ITS LAST COMMIT**, which is the
+correction Stage 0's own row records — *a stage ends when its last commit lands,
+not when its acceptance test first passes*. Recording a final actual now would
+repeat that mistake in the flattering direction, on a stage that already reads
+far under estimate.
+
+**What stands between here and the last commit is one row and one owner
+action.** `BUILD-PROMPT.md:686` names Stage 1's D1 as *"search, tabs, zoom
+quality E1 tier-1"* and all three are done, as are 20 of D1's 23 rows. Of the
+three that are not: thumbnail drag-reorder is **deferred to Stage 2** on the
+page-reorder command, ADR-0006's PDF.js row is **partly** executed with `cmaps/`
+waiting on the first CJK document in the corpus, and the **HD render toggle is
+blocked** — both of the design questions it sent up are now answered from the
+record, and what remains is a PDFium release to pin, its SHA-256, and the
+authorisation to download it. That is the owner's, not a feature commit's.
+
+**A stage does not close over a row that reads `blocked`.** Flipping the progress
+table while D1 carries one would be the defect this journal already names at
+document scale: the body corrected and the status cell left standing.
+
 ---
 
 ## Where the build stands
@@ -65,7 +104,7 @@ Kept current so any agent can resume without the prior session's context. Status
 per item is in [`FEATURES.md`](FEATURES.md); this is the shortlist of what is
 next and what is owed.
 
-### STAGE 0 IS CLOSED (2026-09-02) AND STAGE 1 IS OPEN
+### STAGE 0 IS CLOSED (2026-09-02); STAGE 1 IS OPEN ON ONE BLOCKED ROW
 
 The exit **test** was met on 2026-09-01, each clause flipped against a run rather
 than against a row, and both of `BUILD-PROMPT.md`'s additional conditions read
@@ -94,6 +133,37 @@ exists to prevent.
 **Stage 1 ends with the trajectory gate**, which is the same shape as the row
 above: actual against 10 working days, in writing, and one of *continue*, *cut
 scope*, or *halt and reassess*.
+
+### WHAT STAGE 1 STILL OWES, read 2026-09-03
+
+**20 of D1's 23 rows are done**, and the three `BUILD-PROMPT.md:686` names —
+search, tabs, zoom quality E1 tier-1 — are among them. The gate's interim
+reading is in the table above at **0.20×**.
+
+Three rows are not done, and only one of them is work:
+
+- **HD render toggle (PDFium): `blocked`, and it is the ONE thing between here
+  and the stage's last commit.** Both design questions this row sent up as the
+  owner's are now answered from the record — whether an HD raster may cross
+  (ADR-0031 bans a *snapshot*, invariant 11 is *per operation*, §9.17
+  anticipates a bitmap-cache cap, so it may cross under a caller-stated maximum
+  with a ceiling as `MAX_RANGE_BYTES` is) and the licences (§8 already puts
+  `pdfium.dll` in its *prebuilt binaries we download* half, with
+  `fetchVerified.mjs` for the pinned hash and `nativeComponents.json` for the
+  bundled list). **What remains is a PDFium release to pin, its SHA-256, and the
+  authorisation to download it** — an owner action, not a design.
+  The B4 for the host body is deliberately unwritten until then, by the row's
+  own argument: generalising `hostBody.ts` while one engine exists is an
+  abstraction with one caller.
+- **Thumbnail drag-reorder: deferred to Stage 2**, trigger the page-reorder
+  command, which is D2's.
+- **ADR-0006's PDF.js row: `partly`.** Executed, with `cmaps/` alone unexecuted
+  because its fixture needs a CJK font this repository does not ship. Trigger:
+  the first CJK document in the corpus.
+
+**Stage 2 is what follows and is not started.** D2 as commands with inverses,
+and the remap invariants proven — annotations and bookmarks following pages.
+The thumbnail row above joins it on arrival.
 
 > ### CLOSED 2026-08-18T06:45Z — the guard fired
 >

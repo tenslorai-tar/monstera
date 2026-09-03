@@ -23,7 +23,7 @@ wired-tools rule.
 | Stage | Scope | Status |
 |---|---|---|
 | 0 | Walking skeleton — the architecture, whole | **done** |
-| 1 | Viewer core (D1) | **wip** |
+| 1 | Viewer core (D1) | **wip — 20 of 23 D1 rows done, including all three the exit names; blocked on the HD render toggle's PDFium pin. Gate reading 0.20×** |
 | 2 | Page management (D2) | — |
 | 3 | Annotation platform, then tools (D3) | — |
 | 4 | Forms (D5) | — |

@@ -163,6 +163,14 @@ const NOT_RUN_BY_CI = new Map([
     'the pre-commit set is the gate, against the index; ci.yml runs the PROOF as the ' +
       'completeness control over the emit, which is a different question.',
   ],
+  [
+    'check:testanchors',
+    'the pre-commit hook runs it on every commit, and CI STRUCTURALLY CANNOT: it compares a ' +
+      'staged blob against HEAD, and a runner checks out HEAD — so both sides would be the same ' +
+      'blob and every run would print the reassuring answer. Registering it there would add a ' +
+      'green step that cannot fail. guards.yml runs proof:testanchors instead, which drives the ' +
+      'counter and the comparison over constructed blobs.',
+  ],
 ]);
 
 const argv = process.argv.slice(2);
