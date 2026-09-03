@@ -234,6 +234,28 @@ describe('DocumentService — one file is one document', () => {
     expect(service.size).toBe(1);
   });
 
+  it('reports the file NAME, and nothing of the directory it sits in', async () => {
+    // The renderer has no path to derive this from — invariant L2 — so main
+    // states it. What must not cross is the rest of the path: a status bar
+    // showing `C:\Users\someone\…` puts a user's directory layout into every
+    // screenshot and screen share, which is the leak L2 prevents arriving as
+    // text.
+    const registry = new CapabilityRegistry();
+    const service = newService(registry);
+
+    const outcome = await service.open(registry.mint(original()));
+
+    expect(outcome).toMatchObject({ kind: 'opened', name: 'annual.pdf' });
+    // AND THE SEPARATING ASSERTION. `toMatchObject` above passes for a name
+    // that happens to end correctly, and the fixture's directory is a temporary
+    // path with no fixed spelling — so what is asserted is that no separator
+    // survived, which only a basename satisfies.
+    if (outcome.kind === 'opened') {
+      expect(outcome.name).not.toMatch(/[\\/]/u);
+      expect(original()).toContain(outcome.name);
+    }
+  });
+
   it('a second open by a different path form returns the same DocId', async () => {
     const registry = new CapabilityRegistry();
     const service = newService(registry);

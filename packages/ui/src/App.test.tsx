@@ -170,6 +170,7 @@ const OPEN_DOCUMENT_ANSWERS = {
     docId: DOC,
     version: asDocVersion(1),
     byteLength: 1024,
+    name: 'annual.pdf',
   },
   // A parse never completes under happy-dom — no canvas, no worker — so the
   // range answer only has to be well formed. What these cases are about is the

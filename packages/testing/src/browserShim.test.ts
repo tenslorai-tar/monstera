@@ -222,7 +222,7 @@ describe('browser shim', () => {
       const shim = createBrowserShim({
         opens: [
           { kind: 'cancelled' },
-          { kind: 'opened', docId, version: asDocVersion(1), byteLength: 1024 },
+          { kind: 'opened', docId, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
         ],
       });
 
@@ -232,7 +232,7 @@ describe('browser shim', () => {
       });
       expect(await shim.client['document.open']({})).toStrictEqual({
         ok: true,
-        value: { kind: 'opened', docId, version: 1, byteLength: 1024 },
+        value: { kind: 'opened', docId, version: 1, byteLength: 1024, name: 'a.pdf' },
       });
       // Exhausted, so back to the default rather than repeating the last.
       expect(await shim.client['document.open']({})).toStrictEqual({
@@ -248,7 +248,9 @@ describe('browser shim', () => {
       // assert on a shape nothing ships.
       const docId = asDocId('doc-8');
       const shim = createBrowserShim({
-        opens: [{ kind: 'opened', docId, version: asDocVersion(3), byteLength: 1024 }],
+        opens: [
+          { kind: 'opened', docId, version: asDocVersion(3), byteLength: 1024, name: 'a.pdf' },
+        ],
       });
 
       await shim.client['document.open']({});
@@ -303,7 +305,13 @@ describe('browser shim', () => {
       // somebody widening the schema.
       const shim = createBrowserShim({
         opens: [
-          { kind: 'opened', docId: asDocId('doc-9'), version: asDocVersion(1), byteLength: 1024 },
+          {
+            kind: 'opened',
+            docId: asDocId('doc-9'),
+            version: asDocVersion(1),
+            byteLength: 1024,
+            name: 'a.pdf',
+          },
         ],
       });
 
@@ -331,6 +339,7 @@ describe('browser shim', () => {
             docId: DOC,
             version: asDocVersion(version),
             byteLength: bytes.byteLength,
+            name: 'a.pdf',
           },
         ],
         documentBytes: new Map([[DOC, bytes]]),
@@ -381,7 +390,9 @@ describe('browser shim', () => {
       // Zero bytes is a document a parser rejects for reasons that have nothing
       // to do with what a test was asking about, so the shim refuses instead.
       const shim = createBrowserShim({
-        opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: 600 }],
+        opens: [
+          { kind: 'opened', docId: DOC, version: asDocVersion(1), byteLength: 600, name: 'a.pdf' },
+        ],
       });
       await shim.client['document.open']({});
 
@@ -404,7 +415,9 @@ describe('browser shim', () => {
 
     async function opened(viewModels?: readonly { pageCount: number; rotations: number[] }[]) {
       const shim = createBrowserShim({
-        opens: [{ kind: 'opened', docId: DOC, version: asDocVersion(3), byteLength: 600 }],
+        opens: [
+          { kind: 'opened', docId: DOC, version: asDocVersion(3), byteLength: 600, name: 'a.pdf' },
+        ],
         ...(viewModels === undefined ? {} : { viewModels }),
       });
       await shim.client['document.open']({});

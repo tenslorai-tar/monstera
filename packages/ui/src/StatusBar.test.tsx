@@ -20,11 +20,30 @@ describe('StatusBar', () => {
     // silently, because "Page 3 of 10" is a perfectly plausible thing to read.
     const { container } = render(
       <Wrapped>
-        <StatusBar page={3} pageCount={10} zoom={1} onGoTo={vi.fn()} />
+        <StatusBar name="annual.pdf" page={3} pageCount={10} zoom={1} onGoTo={vi.fn()} />
       </Wrapped>,
     );
 
     expect(container.querySelector('.m-status-page')?.textContent).toBe('Page 4 of 10');
+  });
+
+  it('shows the document NAME main stated, and nothing of a path', () => {
+    // The renderer has no path to cut this from — invariant L2 — so the field
+    // crosses on `document.open`. What this surface must not do is dress it up:
+    // a name shown with a directory in front of it would put a user's folder
+    // layout in every screenshot.
+    const { container } = render(
+      <Wrapped>
+        <StatusBar name="annual report.pdf" page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} />
+      </Wrapped>,
+    );
+
+    const shown = container.querySelector('.m-status-name');
+    expect(shown?.textContent).toBe('annual report.pdf');
+    // The whole name is on the element too, because the visible one is ellipsed
+    // when the bar is narrow and a truncated name is the one thing a reader
+    // checking which document this is cannot use.
+    expect(shown?.getAttribute('title')).toBe('annual report.pdf');
   });
 
   it('shows the zoom as a percentage, rounded for display', () => {
@@ -34,7 +53,7 @@ describe('StatusBar', () => {
     // then draws at.
     const { container } = render(
       <Wrapped>
-        <StatusBar page={0} pageCount={1} zoom={1.3361} onGoTo={vi.fn()} />
+        <StatusBar name="annual.pdf" page={0} pageCount={1} zoom={1.3361} onGoTo={vi.fn()} />
       </Wrapped>,
     );
 
@@ -48,7 +67,7 @@ describe('StatusBar', () => {
     // because the role is what assistive technology reads.
     const { container } = render(
       <Wrapped>
-        <StatusBar page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} />
+        <StatusBar name="annual.pdf" page={0} pageCount={1} zoom={1} onGoTo={vi.fn()} />
       </Wrapped>,
     );
 
@@ -68,7 +87,7 @@ describe('StatusBar', () => {
       const went = vi.fn();
       const { container } = render(
         <Wrapped>
-          <StatusBar page={3} pageCount={10} zoom={1} onGoTo={went} />
+          <StatusBar name="annual.pdf" page={3} pageCount={10} zoom={1} onGoTo={went} />
         </Wrapped>,
       );
       const field = container.querySelector('[data-goto-input]');

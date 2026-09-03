@@ -98,6 +98,7 @@ function answeringClient(model?: Readonly<Record<string, unknown>>): ContractCli
       docId: DOC,
       version: asDocVersion(1),
       byteLength: 1024,
+      name: 'annual.pdf',
     },
     'document.viewModel': model ?? {
       version: asDocVersion(1),

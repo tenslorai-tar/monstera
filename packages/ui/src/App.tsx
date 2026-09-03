@@ -99,6 +99,14 @@ interface OpenDocument {
   readonly docId: DocId;
   readonly version: DocVersion;
   readonly byteLength: number;
+  /**
+   * What to call it on screen — the file's name, stated by main.
+   *
+   * The renderer holds no path (invariant L2), so this is not something it
+   * could derive; a renderer that could produce a name would be a renderer
+   * holding the thing L2 keeps out.
+   */
+  readonly name: string;
 }
 
 export interface AppProps {
@@ -453,6 +461,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           describes nothing. */}
       {open === undefined || pageCount === undefined ? null : (
         <StatusBar
+          name={open.name}
           page={currentPage}
           pageCount={pageCount}
           zoom={shownZoom}
@@ -671,9 +680,18 @@ function PageCanvas({
 
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
-      onVersionMoved({ docId: open.docId, version: next.version, byteLength: next.byteLength });
+      // THE NAME IS CARRIED THROUGH, and it is not the command's to change: a
+      // rotate that returned a document identity would be a different
+      // operation, and dropping the field here would empty the status bar every
+      // time a command ran.
+      onVersionMoved({
+        docId: open.docId,
+        name: open.name,
+        version: next.version,
+        byteLength: next.byteLength,
+      });
     },
-    [onVersionMoved, open.docId],
+    [onVersionMoved, open.docId, open.name],
   );
 
   useEffect(() => {

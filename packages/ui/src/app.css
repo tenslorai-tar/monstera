@@ -254,6 +254,24 @@ body {
  * width is in `ch`, which is the unit that means "digits" here rather than a
  * pixel count that stops being right at another font size.
  */
+/*
+ * The document's name, at the far end from the numbers.
+ *
+ * `margin-inline-end: auto` rather than a `justify-content` change on the bar:
+ * the bar packs its readouts to the end, and this pushes one item to the start
+ * without moving the rest. A long name is ellipsed rather than allowed to
+ * squeeze the page and zoom readouts out of the strip — the `title` attribute
+ * carries the whole of it, and the file is identified by its start far more
+ * often than by its end.
+ */
+.m-status-name {
+  margin-inline-end: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
 .m-status-goto {
   display: flex;
   gap: var(--space-4);

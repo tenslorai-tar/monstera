@@ -148,6 +148,18 @@ export const MAX_LAYERS = 1024;
 export const MAX_LAYER_NAME_LENGTH = 256;
 
 /**
+ * How long a document's name may be.
+ *
+ * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
+ * limit rather than a number chosen here — the name main sends is a file name,
+ * and a bound looser than the filesystem's would be admitting a value no file
+ * can have. **It bounds the string and does not shorten it**: truncating a name
+ * on the way to the renderer would put a lie in the one place a reader checks
+ * which document they are looking at.
+ */
+export const MAX_DOCUMENT_NAME_LENGTH = 255;
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
@@ -324,6 +336,27 @@ export const channels = {
          * size for a 2 KB document and a 2 GB one.
          */
         byteLength: z.number().int().nonnegative(),
+        /**
+         * What to call this document on screen — its file name, and **only**
+         * its file name.
+         *
+         * ## Stated by main rather than derived by the renderer
+         *
+         * There is no path here to derive it from, by invariant L2, and that is
+         * the point rather than an inconvenience: a renderer that could produce
+         * a name would be a renderer that had a path. So main answers the
+         * question it is the only one able to answer, and the renderer displays
+         * a string.
+         *
+         * ## A NAME, not a path, and the difference is a leak
+         *
+         * `report.pdf`, never `C:\Users\someone\Documents\report.pdf`. A status
+         * bar showing the second one puts a user's directory layout on screen —
+         * in a screenshot, in a screen share, in a support ticket — and it is
+         * the same thing L2 keeps out of the renderer's hands, arriving as
+         * text. `documentService.ts` sends `basename` for that reason.
+         */
+        name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
       }),
       z.object({ kind: z.literal('already-open'), docId: docIdSchema }),
       z.object({ kind: z.literal('absent') }),

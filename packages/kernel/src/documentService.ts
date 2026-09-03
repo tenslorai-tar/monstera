@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFile, writeFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 
 import {
   type Brand,
@@ -636,6 +637,19 @@ export type OpenOutcome =
        * exists to make unsayable.
        */
       readonly byteLength: number;
+      /**
+       * The file's name, for a surface to show — `report.pdf`, never the path.
+       *
+       * Here because it is the one thing about the file that a renderer both
+       * needs and cannot have: invariant L2 keeps paths out of renderer-facing
+       * types, so a name derived over there is a name derived from something
+       * that must not be there. The `basename` is taken once, at the moment the
+       * service is the only holder of the path.
+       *
+       * Only on `opened`, for `byteLength`'s reason: `already-open` carries no
+       * state by design (ADR-0009 §2).
+       */
+      readonly name: string;
     }
   | { readonly kind: 'already-open'; readonly docId: DocId }
   | { readonly kind: 'absent' }
@@ -1221,7 +1235,10 @@ export class DocumentService {
       queued: 0,
       log: new CommandLog(),
     });
-    return { kind: 'opened', docId, version, byteLength: bytes.byteLength };
+    // `basename`, and the ONE call site. Everything downstream of here holds a
+    // name and no path, which is invariant L2 arriving as a value rather than
+    // as a rule someone downstream has to remember.
+    return { kind: 'opened', docId, version, byteLength: bytes.byteLength, name: basename(path) };
   }
 
   /**

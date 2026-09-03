@@ -11,8 +11,17 @@ import {
 import { kernelPageOf, pdfjsPageOf } from './pageNumbering.js';
 
 /**
- * The strip along the bottom: where the reader is, how big the page is, and the
- * one place a page can be asked for by number.
+ * The strip along the bottom: which document this is, where the reader is, how
+ * big the page is, and the one place a page can be asked for by number.
+ *
+ * ## The name comes from MAIN, and could not come from anywhere else
+ *
+ * A renderer holds an opaque `DocId` and no filesystem path (invariant L2), so
+ * there is nothing here to cut a file name out of — which is the invariant
+ * working rather than a gap in it. `document.open` carries the name because
+ * main is the only side that can state it, and what crosses is a name and never
+ * a path: a status bar showing `C:\Users\someone\…` puts a directory layout
+ * into every screenshot and screen share.
  *
  * ## It COMPUTES nothing, which is the property that matters
  *
@@ -50,11 +59,19 @@ import { kernelPageOf, pdfjsPageOf } from './pageNumbering.js';
  * shifting the layout as they change.
  */
 export function StatusBar({
+  name,
   page,
   pageCount,
   zoom,
   onGoTo,
 }: {
+  /**
+   * The document's name, as main stated it on `document.open`.
+   *
+   * Not derived here and not derivable: the renderer holds no path (L2), which
+   * is why this crosses as its own field rather than being cut from one.
+   */
+  readonly name: string;
   /** Zero-based, as everything that crosses the contract is. */
   readonly page: number;
   readonly pageCount: number;
@@ -70,6 +87,12 @@ export function StatusBar({
 
   return (
     <footer className="m-status-bar" role="status" aria-label={i18n._(STATUS_LABEL)}>
+      {/* FIRST, and at the far end of the bar the numbers are not at. A reader
+          with two windows open checks which document this is; the page and the
+          zoom are things they check while reading it. */}
+      <span className="m-status-name" title={name}>
+        {name}
+      </span>
       <span className="m-status-page">
         {i18n._(STATUS_PAGE_OF, { page: pdfjsPageOf(page), count: pageCount })}
       </span>

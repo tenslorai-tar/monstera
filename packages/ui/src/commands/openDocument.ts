@@ -38,6 +38,7 @@ export function openDocumentCommand(deps: {
     readonly docId: DocId;
     readonly version: DocVersion;
     readonly byteLength: number;
+    readonly name: string;
   }) => void;
 }): UiCommand {
   return {
@@ -59,6 +60,10 @@ export function openDocumentCommand(deps: {
         docId: answer.value.docId,
         version: answer.value.version,
         byteLength: answer.value.byteLength,
+        // CARRIED, not derived. There is no path here to derive it from, which
+        // is invariant L2 doing its job rather than a gap: main states the name
+        // because main is the only side that can.
+        name: answer.value.name,
       });
     },
   };

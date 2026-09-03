@@ -90,7 +90,7 @@ describe('document.open', () => {
     // as at the type, and a reviewer sees a sentence rather than a signature.
     const picked = vi.fn<PickDocument>(() => Promise.resolve('C:/docs/a.pdf'));
     const { handlers } = harness(
-      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024 },
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
       picked,
     );
 
@@ -101,7 +101,7 @@ describe('document.open', () => {
 
   it('reports cancellation as an outcome, and does not mint', async () => {
     const { capabilities, handlers, opened } = harness(
-      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024 },
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
       () => Promise.resolve(null),
     );
 
@@ -118,7 +118,7 @@ describe('document.open', () => {
 
   it('mints a handle for the picked path and opens THAT handle', async () => {
     const { capabilities, handlers, opened } = harness(
-      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024 },
+      { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
       () => Promise.resolve('C:/docs/a.pdf'),
     );
 
@@ -126,7 +126,11 @@ describe('document.open', () => {
 
     expect(result).toStrictEqual({
       ok: true,
-      value: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024 },
+      // THE NAME CROSSES AND THE PATH DOES NOT, which is the assertion the
+      // field exists for: the fixture's document is at `C:/docs/a.pdf` and what
+      // reaches a renderer is `a.pdf`. A handler that passed the outcome through
+      // unchanged from a service that had sent the path would fail here.
+      value: { kind: 'opened', docId: A_DOC, version: 1, byteLength: 1024, name: 'a.pdf' },
     });
     expect(opened).toHaveLength(1);
     // The handle the service received resolves to the path the picker chose.
@@ -180,7 +184,7 @@ describe('document.open', () => {
 
     it('keeps it when the document opened, because the service took it', async () => {
       const { capabilities, handlers, opened } = harness(
-        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024 },
+        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
         () => Promise.resolve('C:/docs/a.pdf'),
       );
 
@@ -193,7 +197,7 @@ describe('document.open', () => {
   describe('the engine session', () => {
     it('asks for one, naming the document that opened', async () => {
       const { handlers, sessioned } = harness(
-        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024 },
+        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
         () => Promise.resolve('C:/docs/a.pdf'),
       );
 
@@ -233,7 +237,7 @@ describe('document.open', () => {
 
     it('does not ask when the picker was dismissed', async () => {
       const { handlers, sessioned } = harness(
-        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024 },
+        { kind: 'opened', docId: A_DOC, version: asDocVersion(1), byteLength: 1024, name: 'a.pdf' },
         () => Promise.resolve(null),
       );
 
