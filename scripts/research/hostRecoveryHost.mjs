@@ -205,9 +205,28 @@ async function main() {
     );
   }
 
+  // TYPED AT THE CALL SITE, and this is the repair for a red board rather than
+  // tidiness. `built` answers `Promise<any>`, so every call through these
+  // modules was unchecked — and when `createShellDependencies` gained a
+  // `recent` parameter in its FOURTH position, this file went on passing the
+  // engine platform there. Nothing said so: the shell then reported
+  // `deps.recent.record is not a function` and, downstream of it, that no
+  // engine platform had been supplied at all, on a runner, in a job whose logs
+  // are not public.
+  //
+  // The annotation is what made it legible; the type is what stops the next
+  // one. Pointed at `src` rather than `dist` on purpose — a type that resolves
+  // only after a build makes `npm run typecheck` depend on one, and the source
+  // is the same declaration.
+  //
+  /** @type {typeof import('../../apps/desktop/src/composition.js')} */
   const composition = await built('apps/desktop/dist/composition.js');
+  /** @type {typeof import('../../apps/desktop/src/engineHostPlatform.js')} */
   const platformModule = await built('apps/desktop/dist/engineHostPlatform.js');
+  /** @type {typeof import('../../apps/desktop/src/settingsFile.js')} */
   const settingsModule = await built('apps/desktop/dist/settingsFile.js');
+  /** @type {typeof import('../../apps/desktop/src/recentFiles.js')} */
+  const recentModule = await built('apps/desktop/dist/recentFiles.js');
   const { buildLargeFixture } = await built('scripts/perf/largeFixture.mjs');
 
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-host-recovery-'));
@@ -233,10 +252,15 @@ async function main() {
       );
     }
 
+    // EPHEMERAL FOR BOTH SURFACES, and the recent list gets its own rather
+    // than sharing the settings one: they are two documents on disk in the
+    // product, and a harness that merged them would be exercising a shape
+    // nothing ships.
     const { handlers } = composition.createShellDependencies(
       { version: '0.0.0', installChannel: 'development' },
       () => Promise.resolve(document),
       settingsModule.createEphemeralSettings(),
+      recentModule.createRecentFiles(settingsModule.createEphemeralSettings()),
       platform,
     );
 
