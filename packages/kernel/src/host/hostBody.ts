@@ -9,6 +9,7 @@ import {
   type HostContainmentProbe,
   type HostFilesystem,
   type HostDestinationsReader,
+  type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   createEngineHandlers,
@@ -78,6 +79,8 @@ export interface HostBodyDependencies {
   readonly pageLinks: HostPageLinksReader;
   /** How this process reads the document's outline. `readDestinations`. */
   readonly destinations: HostDestinationsReader;
+  /** How this process reads the document's layers. `readLayers`. */
+  readonly layers: HostLayersReader;
   /** Where session ids come from. `cryptoBytes`. */
   readonly tokens: TokenBytesSource;
   /**
@@ -150,6 +153,7 @@ export function startEngineHost(
       dependencies.pageText,
       dependencies.pageLinks,
       dependencies.destinations,
+      dependencies.layers,
     ),
     transport: {
       write: stream.write,

@@ -130,6 +130,9 @@ function start(stream: HostByteStream) {
       destinations: () => {
         throw new Error('no case here reads the outline');
       },
+      layers: () => {
+        throw new Error('no case here reads the layers');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

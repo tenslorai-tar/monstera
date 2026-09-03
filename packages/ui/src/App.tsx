@@ -33,6 +33,7 @@ import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
+import { LayersPanel } from './LayersPanel.js';
 import { FindBar } from './FindBar.js';
 import { openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -470,6 +471,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         page={context.page}
         onJump={navigator.jumpTo}
       />
+      {/* THE LAYERS PANEL, keyed on the version rather than the page because
+          its own toggle moves the version — a command, not a view preference,
+          so what it shows is re-read from the document after every mutation
+          including an undo of its own. */}
+      <LayersPanel client={client} docId={open?.docId} version={open?.version} />
       {/* E2's substrate, reached by a person. It renders nothing with no
           document open, for `QuickToolbar`'s reason: a find field over no
           document is a control that cannot work. */}

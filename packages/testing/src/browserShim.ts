@@ -136,6 +136,21 @@ export interface ShimDestination {
   readonly depth: number;
 }
 
+/**
+ * One optional-content group a test seeds a document with.
+ *
+ * `index` is what a toggle names — the group's position in `/OCProperties/OCGs`
+ * — and it is carried rather than derived from the array position so that a
+ * test can make the two differ. A panel that sent a row's position where a
+ * layer's address was wanted toggles the wrong layer, and a fixture where the
+ * two coincide is a fixture the defect handles correctly.
+ */
+export interface ShimLayer {
+  readonly index: number;
+  readonly name: string;
+  readonly visible: boolean;
+}
+
 export interface BrowserShimOptions {
   readonly version?: string;
   readonly installChannel?: 'store' | 'web' | 'development';
@@ -247,6 +262,28 @@ export interface BrowserShimOptions {
   readonly destinations?: readonly ShimDestination[];
 
   /**
+   * What `document.layers` answers, in order, across the whole shim.
+   *
+   * **Scripted, for `viewModels`' reason and not for a weaker one.** The
+   * obvious shape is to hold one list and have the shim apply a
+   * `setLayerVisibility` command to it, which is a second implementation of
+   * what a toggle means (B3a): visibility is `/OCProperties`' default
+   * configuration, whose `/BaseState` decides whether hiding a layer ADDS to
+   * `/OFF` or REMOVES from `/ON`, and a shim that assigned one boolean would
+   * agree with the kernel until it met a document of the second kind. The
+   * kernel's answer is proven against a real engine in `layers.test.ts`.
+   *
+   * A sequence asks what a renderer test can answer: *did the panel read again
+   * after the version moved, and draw what it was told?* The last entry
+   * repeats, so one list is a stable document and two describe a change.
+   *
+   * At least one hidden layer is what makes a case about visibility mean
+   * anything — a list where everything is visible cannot tell a panel that read
+   * the flag from one that assumed it.
+   */
+  readonly layers?: readonly (readonly ShimLayer[])[];
+
+  /**
    * What a previous run stored, as `settings.load` will answer it.
    *
    * A fixture rather than something a test writes first through
@@ -339,6 +376,8 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
   const pageLines = options.pageLines ?? [];
   const pageLinks = options.pageLinks ?? [];
   const destinations = options.destinations ?? [];
+  // Copied and consumed, exactly like `viewModels`.
+  const layerLists = [...(options.layers ?? [])];
 
   // `Promise.resolve`, not `async`. The contract's handler type is asynchronous
   // because the real ones are; nothing here awaits anything, and `async` on a
@@ -574,6 +613,22 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
 
       return Promise.resolve(ok({ version: asDocVersion(current), destinations }));
+    },
+
+    /**
+     * The document's layers, from the scripted sequence — see `layers` in the
+     * options for why a toggle is not applied here.
+     */
+    'document.layers': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      // The last entry repeats rather than the queue emptying into none, for
+      // the reason `document.viewModel` states: a panel that appeared to lose
+      // its layers on the third read would be reacting to a shim behaviour no
+      // product code can produce.
+      const layers = layerLists.length > 1 ? (layerLists.shift() ?? []) : (layerLists[0] ?? []);
+      return Promise.resolve(ok({ version: asDocVersion(current), layers }));
     },
 
     'document.pageLinks': ({ docId, page }) => {

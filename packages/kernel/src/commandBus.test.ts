@@ -9,7 +9,7 @@ import {
   CommandBus,
   UnregisteredWriterError,
 } from './commandBus.js';
-import { CommandLog, type LogEntry, type LogTrim } from './commandLog.js';
+import { CommandLog, type LogEntry, type LogEntryFor, type LogTrim } from './commandLog.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
@@ -144,7 +144,36 @@ async function ownRotationIn(bytes: ByteImage): Promise<string> {
 
 describe('CommandLog — a cursor, not a stack', () => {
   /** Entries distinguishable by their inverse, so order is observable. */
-  function entry(page: number): LogEntry {
+  /**
+   * TYPED TO THE KIND IT BUILDS, not to `LogEntry`.
+   *
+   * It returned `LogEntry` while there was one command, so `entry.command.pages`
+   * read straight off the union. With two commands the union has a member that
+   * carries no `pages`, and every assertion below stopped compiling — correctly:
+   * a log entry read out of the log genuinely may be either.
+   *
+   * The fixture knows which one it made, so it says so. That keeps the
+   * assertions about the pages this fixture put in rather than about a narrowing
+   * the cases would otherwise have to perform on every line.
+   */
+  /**
+   * The pages a recorded entry rotated, refusing an entry of another kind.
+   *
+   * **A CHECK, not a convenience.** Everything read back out of the log is a
+   * `LogEntry` — either kind — so these cases have to narrow, and narrowing by
+   * refusing is what turns *the log gave me the wrong entry* into a named
+   * failure rather than a missing property. That distinction did not exist
+   * while one command did.
+   */
+  function pagesOf(recorded: LogEntry | undefined): readonly number[] {
+    if (recorded === undefined) throw new Error('expected an entry, got none');
+    if (recorded.command.kind !== 'rotatePages') {
+      throw new Error(`expected a rotatePages entry, got ${recorded.command.kind}`);
+    }
+    return recorded.command.pages;
+  }
+
+  function entry(page: number): LogEntryFor<'rotatePages'> {
     return {
       kind: 'invertible',
       command: { kind: 'rotatePages', pages: [page], quarterTurns: 1 },
@@ -160,7 +189,7 @@ describe('CommandLog — a cursor, not a stack', () => {
     expect(log.entries).toHaveLength(2);
     const undone = log.undo();
 
-    expect(undone?.command.pages).toStrictEqual([1]);
+    expect(pagesOf(undone)).toStrictEqual([1]);
     expect(log.entries).toHaveLength(1);
     // The entry is still there — that is the whole difference from a stack, and
     // it is what makes redo possible at all.
@@ -173,7 +202,7 @@ describe('CommandLog — a cursor, not a stack', () => {
     log.record(entry(0));
     log.undo();
 
-    expect(log.redo()?.command.pages).toStrictEqual([0]);
+    expect(pagesOf(log.redo())).toStrictEqual([0]);
     expect(log.entries).toHaveLength(1);
     expect(log.canRedo).toBe(false);
   });
@@ -192,7 +221,7 @@ describe('CommandLog — a cursor, not a stack', () => {
     // Keeping the tail would let redo replay a command against a document that
     // has since diverged — a corrupted document, not a surprising history.
     expect(log.redoDepth).toBe(0);
-    expect(log.entries.map((e) => e.command.pages)).toStrictEqual([[0], [9]]);
+    expect(log.entries.map((recorded) => pagesOf(recorded))).toStrictEqual([[0], [9]]);
   });
 
   it('CONTROL: the ends are states, not errors', () => {

@@ -96,6 +96,7 @@ export {
   type HostContainmentProbe,
   type HostFilesystem,
   type HostDestinationsReader,
+  type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostSession,
@@ -123,6 +124,7 @@ export {
   remoteMupdfExecution,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
+  remoteMupdfLayers,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
 } from './host/remoteEngine.js';
@@ -222,4 +224,5 @@ export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // engine, and `readPageLinks` — which does — stays behind `/engine`.
 export type { LinkBounds, PageLink } from './pageLinks.js';
 export type { Destination } from './destinations.js';
+export type { Layer, PriorLayerVisibility } from './layers.js';
 export { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';

@@ -87,6 +87,18 @@ const handlers: ContractHandlers = {
         ],
       }),
     ),
+  // ONE VISIBLE AND ONE HIDDEN, because a fixture where everything is visible
+  // cannot tell a boundary that carried the flag from one that dropped it.
+  'document.layers': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        layers: [
+          { index: 0, name: 'Shown', visible: true },
+          { index: 1, name: 'Hidden', visible: false },
+        ],
+      }),
+    ),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the

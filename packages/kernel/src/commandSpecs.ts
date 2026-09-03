@@ -1,4 +1,4 @@
-import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import {
@@ -13,9 +13,15 @@ import type {
   Capture,
   EngineWriter,
   Invert,
+  MupdfSession,
   WriterSession,
   WriterShapeOf,
 } from './engineSeam.js';
+import {
+  applySetLayerVisibility,
+  captureSetLayerVisibility,
+  invertSetLayerVisibility,
+} from './layers.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
@@ -134,6 +140,12 @@ const declared = {
     // could see the command could compute a reversing rotation, which is the
     // one implementation §3 forbids.
     invert: invertRotatePages,
+  },
+  setLayerVisibility: {
+    ...declaredCommands.setLayerVisibility,
+    apply: applySetLayerVisibility,
+    capture: captureSetLayerVisibility,
+    invert: invertSetLayerVisibility,
   },
 } satisfies CommandSpecs;
 
@@ -282,8 +294,56 @@ export type RegisteredWriter<W extends WriterOfRecord> = Pick<
  * Every member is a lookup in {@link declaredSpecs} and a call. There is no
  * second table and no switch — §6's routing does the dispatch.
  */
+/**
+ * One spec, narrowed to the command it was declared for.
+ *
+ * ## The correlated-union limit, and why the answer is not a switch
+ *
+ * `declaredSpecs[command.kind].apply(session, command)` compiled while there
+ * was one command and stops the moment there are two: TypeScript resolves the
+ * indexed access over the whole union, so the parameter type becomes the
+ * INTERSECTION of every member's — and two commands with different `kind`
+ * literals intersect to `never`. The lookup is correct and the checker cannot
+ * see that the index and the argument came from the same value.
+ *
+ * The obvious repair is an exhaustive `switch`, and this file forbids it in its
+ * own words: *"There is no second table and no switch — §6's routing does the
+ * dispatch."* A switch would be a second routing place, which is the thing the
+ * table exists to prevent — and it would need a new arm per command, which is
+ * exactly the maintenance the mapped type removes.
+ *
+ * So the correlation is asserted **once**, here, rather than at each of the
+ * three call sites below. It is sound by construction: `spec` is looked up by
+ * `command.kind` and `command` is that same value, so the pair always agrees.
+ */
+function specFor(command: Command): DeclaredSpecs[CommandKind] {
+  return declaredSpecs[command.kind];
+}
+
 export const localMupdfExecution: CommandExecution<'mupdf'> = {
-  apply: (session, command) => declaredSpecs[command.kind].apply(session, command),
-  capture: (session, command) => declaredSpecs[command.kind].capture(session, command),
-  invert: (session, kind, inverse) => declaredSpecs[kind].invert(session, inverse),
+  // METHOD SYNTAX, so `K` is in scope for the assertion. An arrow would put the
+  // cast at `CommandKind` — the whole union — which widens `capture`'s prior
+  // state to a union too and stops being assignable to `CommandPrior[K]`. The
+  // narrowing has to name the instantiation it is claiming.
+  apply<K extends CommandKind>(session: MupdfSession, command: CommandOfKind<K>): Promise<void> {
+    return (specFor(command).apply as Apply<'mupdf', K>)(session, command);
+  },
+  capture<K extends CommandKind>(
+    session: MupdfSession,
+    command: CommandOfKind<K>,
+  ): Promise<CaptureResult<CommandPrior[K]>> {
+    return (specFor(command).capture as Capture<'mupdf', K>)(session, command);
+  },
+  // `invert` LOOKS like it needs no narrowing — the kind arrives separately, so
+  // there is no `command.kind` for the checker to resolve independently. It
+  // needs one anyway, and for the mirror-image reason: `declaredSpecs[kind]`
+  // over a generic `kind` gives the union of specs, whose `invert` parameter is
+  // the INTERSECTION of every prior-state type. Same limit, other direction.
+  invert<K extends CommandKind>(
+    session: MupdfSession,
+    kind: K,
+    inverse: CommandPrior[K],
+  ): Promise<void> {
+    return (declaredSpecs[kind].invert as Invert<'mupdf', K>)(session, inverse);
+  },
 };

@@ -14,6 +14,7 @@ import type { Brand } from '@monstera/shared';
 //
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
+import type { PriorLayerVisibility } from './layers.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -73,6 +74,16 @@ export type Checkpoint = Brand<ByteImage, 'Checkpoint'>;
  */
 export interface CommandPrior {
   readonly rotatePages: readonly PriorPageRotation[];
+  /**
+   * A layer's own visibility, read before it was changed.
+   *
+   * §3's shape again, on a different axis: `PriorPageRotation` carries absence
+   * because a rotation may be inherited, and this carries the boolean the
+   * document held because a toggle may have changed nothing. Both exist so an
+   * inverse RESTORES rather than derives — an inverse computed as
+   * `!command.visible` flips a layer the command left alone.
+   */
+  readonly setLayerVisibility: PriorLayerVisibility;
 }
 
 /**
@@ -313,10 +324,37 @@ export class CommandLog implements ReadonlyCommandLog {
    * §4: a new command truncates the tail. Keeping it would let redo replay a
    * command against a document that has since diverged, which is a corrupted
    * document rather than a surprising undo history.
+   *
+   * ## GENERIC IN THE KIND, which one command could not reveal
+   *
+   * This took `LogEntry` until 2026-09-03 and the bus passes `LogEntryFor<K>`
+   * for a generic `K`. Those are the same type when `CommandKind` has one
+   * member and are **not** when it has two: for an unresolved `K`,
+   * `CommandOfKind<K>` is assignable to no single union member, so the whole
+   * entry is assignable to none of them.
+   *
+   * The signature was correct-by-accident, and the second command is what said
+   * so. A cast at the call site would have been the workaround — the value
+   * genuinely is a `LogEntry` for every concrete `K`, which is exactly the kind
+   * of true statement that hides a signature saying less than it means.
+   *
+   * ## The one narrowing, and why it is HERE rather than at the callers
+   *
+   * `LogEntryFor<K>` with an unresolved `K` is assignable to no member of the
+   * distributed union, and TypeScript has no way to say *this is one of them,
+   * whichever K turns out to be*. Something has to assert it.
+   *
+   * Asserting it once, at the single point where an entry enters storage, means
+   * every caller keeps a signature that says what it means. The alternative is
+   * a cast at each call site — which is the same unsoundness spread over more
+   * places, each of which would have to re-derive why it is safe. Both the
+   * `command` and the `inverse` come from the same `K` by construction, which
+   * is the property `LogEntryFor` exists to enforce and the reason this is safe
+   * rather than convenient.
    */
-  record(entry: LogEntry): void {
+  record<K extends CommandKind>(entry: LogEntryFor<K>): void {
     this.#entries.length = this.#applied;
-    this.#entries.push(entry);
+    this.#entries.push(entry as LogEntry);
     this.#applied += 1;
   }
 

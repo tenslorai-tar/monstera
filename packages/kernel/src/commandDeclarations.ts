@@ -157,6 +157,28 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  setLayerVisibility: {
+    kind: 'setLayerVisibility',
+    // `/OCProperties` is part of the document's structure, and invariant L6's
+    // argument applies to it directly: ADR-0006 measured a rebuild DROPPING
+    // /OCProperties, so this is written in place, for the same reason a
+    // rotation is. Through MuPDF's OBJECT api and not its layer api — the
+    // latter writes session state that a save does not carry (`layers.ts`,
+    // measured 2026-09-03).
+    writer: 'mupdf',
+    // ADR-0009 §3: the inverse restores prior state verbatim. A layer's prior
+    // visibility is a boolean the document already carried, so the inverse is
+    // the command with that boolean — and it must be the state CAPTURED rather
+    // than the negation of what was asked for, because a command that set a
+    // layer to the value it already had must invert to a no-op rather than to
+    // a flip.
+    invertible: true,
+    undo: 'inverse',
+    // Visibility is a value written to a key. Re-running it produces the same
+    // bytes, so the log stores intent.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

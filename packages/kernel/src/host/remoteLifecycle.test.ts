@@ -213,6 +213,9 @@ function joined(
       () => {
         throw new Error('the lifecycle half must not read the outline');
       },
+      () => {
+        throw new Error('the lifecycle half must not read the layers');
+      },
     ),
     (incident) => incidents.push(incident),
   );
@@ -403,6 +406,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         () => {
           throw new Error('the byte-size case must not read the outline');
+        },
+        () => {
+          throw new Error('the byte-size case must not read the layers');
         },
       ),
       () => undefined,

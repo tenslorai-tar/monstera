@@ -10,6 +10,7 @@ import {
   type DocumentService,
   type PageGeometry,
   type Destination,
+  type Layer,
   type PageLink,
   type PageText,
   type SaveDependencies,
@@ -228,32 +229,32 @@ export class DocumentPoisonedError extends Error {
   }
 }
 
-/**
- * Fails to compile the day a second command kind exists.
+/*
+ * THE SECOND-COMMAND TRIGGER FIRED ON 2026-09-03, and this is what it produced.
  *
- * **The hard shape this unit has NOT been verified against** (audit item 2),
- * named rather than left for someone to discover. With one kind, `Command` *is*
- * `CommandOfKind<'rotatePages'>`, so {@link DocumentCommands.execute} infers `K`
- * as that kind and every correlated lookup below — `declaredSpecs[command.kind]`
- * to a spec, `spec.writer` to a session — resolves to one concrete type.
+ * A type-level guard stood here that failed to compile the day a second command
+ * kind existed. It said exactly what would break — *with two kinds a caller
+ * holding the wire union infers `K` as the union, and `DeclaredSpecs[K]`
+ * becomes a union of specs; `spec.writer` is then a union of writers, and
+ * TypeScript cannot correlate the session it selects with the `apply` that will
+ * receive it* — and named the fix: a narrowing step from `Command` to
+ * `CommandOfKind<K>`.
  *
- * With two kinds a caller holding the wire union infers `K` as the union, and
- * `DeclaredSpecs[K]` becomes a *union of specs*: `spec.writer` is then a union of
- * writers, and TypeScript cannot correlate the session it selects with the
- * `apply` that will receive it. That needs a narrowing step from `Command` to
- * `CommandOfKind<K>`, which is a design with exactly zero data points today —
- * §6's mapped table routes, and what is missing is the discrimination in front
- * of it.
+ * `setLayerVisibility` arrived and every word of that happened. The narrowing
+ * is in {@link DocumentCommands.execute}, one line, with the claim stated where
+ * it is made.
  *
- * So this is a trigger rather than a guess, the same mechanism `CommandBus.redo`
- * uses for `replay: 'stored-effect'`: it arrives at the moment the path becomes
- * reachable, and not before. `[X] extends [Y]` is the non-distributive form —
- * the bare `X extends Y` distributes and would answer `true` for a union that has
- * grown.
+ * The guard is REMOVED rather than kept, because a trigger that has fired and
+ * been acted on is a permanently red build. What it was for is recorded here:
+ * it is the shape worth copying, not the line. `CommandBus.redo` still carries
+ * one for `replay: 'stored-effect'`, and it has not fired.
+ *
+ * One thing the guard did NOT predict, and it is the more interesting half: the
+ * same limit appeared in four other places at once — `CommandLog.record`,
+ * `localMupdfExecution`'s dispatch, the capture handler's tagged prior, and the
+ * remote capture's tag check. A trigger sited where somebody expected the
+ * problem found its own site correctly and said nothing about the other four.
  */
-type SingleCommandKindToday = [CommandKind] extends ['rotatePages'] ? true : never;
-const singleCommandKind: SingleCommandKindToday = true;
-void singleCommandKind;
 
 /**
  * How a document's current bytes are obtained for a save.
@@ -362,6 +363,18 @@ export interface DocumentDestinations {
   readonly destinations: readonly Destination[];
 }
 
+/** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
+export type DocumentLayersReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<readonly Layer[]>;
+
+/** The layers, stamped with the version the lane read them at. */
+export interface DocumentLayers {
+  readonly version: DocVersion;
+  readonly layers: readonly Layer[];
+}
+
 /** One page's matches, stamped with the version the lane read them at. */
 export interface PageSearchResult {
   readonly version: DocVersion;
@@ -408,6 +421,7 @@ export class DocumentCommands {
   readonly #pageText: DocumentPageText;
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
+  readonly #layers: DocumentLayersReader;
 
   constructor(
     documents: DocumentService,
@@ -418,6 +432,7 @@ export class DocumentCommands {
     pageText: DocumentPageText,
     pageLinks: DocumentPageLinksReader,
     destinations: DocumentDestinationsReader,
+    layers: DocumentLayersReader,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -427,6 +442,7 @@ export class DocumentCommands {
     this.#pageText = pageText;
     this.#pageLinks = pageLinks;
     this.#destinations = destinations;
+    this.#layers = layers;
   }
 
   /**
@@ -597,6 +613,30 @@ export class DocumentCommands {
   }
 
   /**
+   * The document's layers.
+   *
+   * A READ, in the lane for the other reads' reason. The toggle is a command
+   * and goes through {@link execute} — there is no mutating method here,
+   * because a second path that changed a layer would be one no undo could
+   * reach.
+   *
+   * @throws the same set `viewModel` throws, for the same reasons.
+   */
+  async layers(docId: DocId): Promise<DocumentLayers> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#layers(docId, sessions);
+    });
+
+    return { version, layers: value };
+  }
+
+  /**
    * Runs one command through the lane and returns the version it produced.
    *
    * **The ordering is the whole of this method**, and every part of it is
@@ -631,6 +671,17 @@ export class DocumentCommands {
     docId: DocId,
     command: CommandOfKind<K>,
   ): Promise<Applied> {
+    // NO NARROWING NEEDED HERE, AND THE GUARD PREDICTED ONE. Written as an
+    // assertion first, on the guard's own reasoning; lint reported it as
+    // changing nothing, which is the checker saying `declaredCommands` indexed
+    // by a generic `K` resolves fine when every member agrees on the field
+    // being read. Both commands route to `mupdf`, so `spec.writer` is one
+    // literal either way.
+    //
+    // Recorded because the guard was RIGHT that a second command would break
+    // something and WRONG about where: it fired here and the breakage was in
+    // five other places. A trigger sited where somebody expects the problem
+    // catches the moment, not the location.
     const spec: DeclaredCommands[K] = declaredCommands[command.kind];
 
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {

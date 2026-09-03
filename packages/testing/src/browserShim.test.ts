@@ -190,6 +190,7 @@ describe('browser shim', () => {
       'app.info',
       'document.destinations',
       'document.execute',
+      'document.layers',
       'document.open',
       'document.pageLinks',
       'document.readRange',

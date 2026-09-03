@@ -1,6 +1,7 @@
-import { commandSchema, channel } from '@monstera/contract';
+import { type CommandKind, commandSchema, channel } from '@monstera/contract';
 import { z } from 'zod';
 
+import type { CommandPrior } from '../commandLog.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
 /**
@@ -163,6 +164,26 @@ export const ENGINE_DESTINATIONS_MAX = 4096;
 export const ENGINE_DESTINATION_TITLE_MAX = 512;
 
 /**
+ * How many layers may cross, and how long a name may be.
+ *
+ * Much smaller than the outline's, because the shapes differ: a design carries
+ * a handful of optional-content groups where a manual carries hundreds of
+ * headings. A bound copied from the outline would be one nobody had thought
+ * about — the number is supposed to be a statement about what the thing is.
+ */
+export const ENGINE_LAYERS_MAX = 1024;
+export const ENGINE_LAYER_NAME_MAX = 256;
+
+/** One optional-content group, as it crosses from the host. */
+const engineLayerSchema = z
+  .object({
+    index: z.number().int().nonnegative(),
+    name: z.string().max(ENGINE_LAYER_NAME_MAX),
+    visible: z.boolean(),
+  })
+  .strict();
+
+/**
  * One outline entry, as it crosses from the host.
  *
  * `page` is **nullable rather than optional**, matching the reader: an entry
@@ -248,6 +269,25 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
       prior: z.array(priorPageRotationSchema).readonly(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal('setLayerVisibility'),
+      /**
+       * The layer's own visibility, as it was.
+       *
+       * **The state, not the negation of the command.** A command setting a
+       * layer to the value it already had must invert to a no-op, and an
+       * inverse derived as `!command.visible` flips it — which is why this
+       * crosses at all rather than being recomputed on arrival.
+       */
+      prior: z
+        .object({
+          layer: z.number().int().nonnegative(),
+          visible: z.boolean(),
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 
 /**
@@ -264,6 +304,37 @@ const capturedPriorSchema = z.discriminatedUnion('kind', [
  * present — three to four times the whole frame. So this branch is a live path,
  * not a defensive one.
  */
+/** Prior state with its kind, as it crosses. */
+export type CapturedPrior = z.infer<typeof capturedPriorSchema>;
+
+/**
+ * Pairs a command kind with the prior state captured for it.
+ *
+ * ## The correlated-union limit, for the third time in one change
+ *
+ * `{ kind: command.kind, prior: captured.prior }` builds an object whose two
+ * fields are each widened to a union independently — `{kind: A|B, prior: X|Y}`
+ * — and that is not assignable to `{kind:A,prior:X} | {kind:B,prior:Y}`, which
+ * is what the schema declares. The value is correct by construction and the
+ * checker cannot see the correlation.
+ *
+ * It compiled while there was one command, because a union of one is its own
+ * member. The second command surfaced it in three places at once:
+ * `CommandLog.record`, `localMupdfExecution`'s dispatch, and here.
+ *
+ * **This is the one that got a constructor rather than a cast**, because it is
+ * the one with more than one caller — the capture handler and the inverse it
+ * sends back both build this pair. A function is where the claim can be stated
+ * once and where a future caller inherits it, instead of copying a cast whose
+ * reasoning lives in someone else's comment (B3a).
+ */
+export function taggedPrior<K extends CommandKind>(
+  kind: K,
+  prior: CommandPrior[K],
+): CapturedPrior {
+  return { kind, prior } as CapturedPrior;
+}
+
 const captureResultSchema = z.discriminatedUnion('captured', [
   z.object({ captured: z.literal(true), value: capturedPriorSchema }).strict(),
   z.object({ captured: z.literal(false), reason: z.string().min(1) }).strict(),
@@ -600,6 +671,20 @@ export const engineChannels = {
         destinations: z.array(engineDestinationSchema).max(ENGINE_DESTINATIONS_MAX),
       })
       .strict(),
+    ['no-such-session'],
+  ),
+
+  /**
+   * The document's optional-content groups.
+   *
+   * Whole-document for `engine/destinations`' reason: layers are a property of
+   * the document's structure, read once when it opens, and a design carries a
+   * handful rather than one per page.
+   */
+  'engine/layers': channel(
+    'Reads the document’s optional-content groups from a session this host holds.',
+    z.object({ session: sessionSchema }).strict(),
+    z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
     ['no-such-session'],
   ),
 

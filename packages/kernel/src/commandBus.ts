@@ -1,6 +1,6 @@
 import type { CommandKind, CommandOfKind } from '@monstera/contract';
 
-import type { Checkpoint, LogEntry, LogEntryFor, LogTrim } from './commandLog.js';
+import type { Checkpoint, LogEntryFor, LogTrim } from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
 // (ADR-0023 Decision 10). Importing the spec table here would reach
@@ -139,9 +139,21 @@ export class CheckpointRestoreNotBuiltError extends Error {
   }
 }
 
-/** What one execution did, for a caller that needs to know without reading the log. */
-export interface Executed {
-  readonly entry: LogEntry;
+/**
+ * What one execution did, for a caller that needs to know without reading the
+ * log.
+ *
+ * **Generic in the kind**, for `CommandLog.record`'s reason: `LogEntryFor<K>`
+ * with an unresolved `K` is assignable to no single member of `LogEntry`, so a
+ * non-generic field here forces a cast at the one place that knows the kind.
+ * With one command in the union the two were the same type and nothing said so;
+ * the second command is what revealed it.
+ *
+ * The default keeps every existing reader unchanged — `Executed` still means
+ * *an entry for some command* where a caller does not care which.
+ */
+export interface Executed<K extends CommandKind = CommandKind> {
+  readonly entry: LogEntryFor<K>;
   /** The version this command produced (ADR-0009 §5). */
   readonly version: DocumentContext['version'];
   /**

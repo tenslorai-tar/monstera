@@ -135,13 +135,14 @@ body {
 }
 
 /*
- * The outline and the links panel.
+ * The outline, the links panel and the layers panel.
  *
- * One block for both because they are the same shape — a list of rows, some of
- * which are controls — and a second set of rules differing only in a class name
- * is the copy the token file exists to prevent.
+ * One block for all three because they are the same shape — a list of rows,
+ * some of which are controls — and a second set of rules differing only in a
+ * class name is the copy the token file exists to prevent.
  */
 .m-destinations,
+.m-layers,
 .m-links-panel {
   max-block-size: 40vh;
   overflow-y: auto;
@@ -151,6 +152,7 @@ body {
 }
 
 .m-destinations-list,
+.m-layers-list,
 .m-links-list {
   list-style: none;
   margin: 0;
@@ -196,7 +198,27 @@ body {
   color: var(--muted);
 }
 
+/*
+ * A layer row. The whole row is the label, so the checkbox and the name are one
+ * hit target and one focus stop — a name that is not part of the control is a
+ * word the pointer and the screen reader both have to work around.
+ */
+.m-layer {
+  display: flex;
+  gap: var(--space-8);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.m-layer:hover,
+.m-layer:focus-within {
+  background: var(--surface2);
+}
+
 .m-destinations-empty,
+.m-layers-empty,
 .m-links-empty {
   margin: 0;
   padding: var(--space-4);

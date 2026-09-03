@@ -4,9 +4,10 @@ import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
-import type { EngineChannels } from './engineChannels.js';
+import { type EngineChannels, taggedPrior } from './engineChannels.js';
 import type {
   HostDestinationsReader,
+  HostLayersReader,
   HostPageLinksReader,
   HostPageTextReader,
 } from './engineHandlers.js';
@@ -259,6 +260,18 @@ export function remoteMupdfDestinations(
     ).destinations;
 }
 
+/** The document's layers, over the boundary. See {@link remoteMupdfDestinations}. */
+export function remoteMupdfLayers(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostLayersReader {
+  return async (session) =>
+    answered(
+      'engine/layers',
+      await client['engine/layers']({ session: sessions.handleFor(session) }),
+    ).layers;
+}
+
 /**
  * @param client the engine host's channels, through the contract's own
  *   validating client — so a malformed answer is rejected at the boundary
@@ -287,26 +300,40 @@ export function remoteMupdfExecution(
       );
       if (!answer.captured) return { captured: false, reason: answer.reason };
 
-      // NO TAG CHECK HERE, AND THAT IS A MEASURED ABSENCE RATHER THAN AN
-      // OVERSIGHT. One was written — *the peer answered a different question* —
-      // and lint reported it as a comparison that is always false: `mupdf`
-      // routes exactly ONE kind, so a schema-valid response can only carry that
-      // tag and the branch is unreachable. A disable would have been a rule
-      // turned off to keep a check that checks nothing.
+      // THE TAG CHECK, WRITTEN THE DAY ITS TRIGGER FIRED — 2026-09-03.
       //
-      // What guards this today is the type system, and it guards it in the
-      // right direction. `CommandPrior[K]` resolves because `K` is constrained
-      // to one literal; the day a second command is routed to this writer, this
-      // line **stops compiling**, and that is where the narrowing and its
-      // runtime tag check get written — arriving at the moment the path becomes
+      // This block used to say there was none, and said exactly why: `mupdf`
+      // routed one kind, so a schema-valid response could only carry that tag,
+      // lint reported the comparison as always false, and a disable would have
+      // been a rule turned off to keep a check that checks nothing. It ended:
+      // *the day a second command is routed to this writer, this line stops
+      // compiling, and that is where the narrowing and its runtime tag check
+      // get written.*
+      //
+      // `setLayerVisibility` is that second command and the line did stop
+      // compiling. The deferral is recorded here rather than removed, because a
+      // trigger that fired as written is the evidence the shape was right — and
+      // the shape is the transferable part: state the condition, put it where
+      // the compiler will raise it, and let it arrive when the path becomes
       // reachable rather than sitting green until then.
       //
-      // The tag stays ON THE WIRE regardless, and is not dead weight: a bare
-      // array would make the second kind a breaking wire change instead of a
-      // union widening, and the discriminator is what lets a response be
-      // validated on its own terms rather than against the request the
-      // correlation id points at.
-      return { captured: true, prior: answer.value.prior };
+      // The check is not a formality now. Two kinds can be tagged, so a peer
+      // that answered the wrong one produces prior state of the wrong shape,
+      // and the inverse built from it would restore something that was never
+      // captured.
+      if (answer.value.kind !== command.kind) {
+        throw new Error(
+          `engine/capture answered prior state tagged "${answer.value.kind}" for a ` +
+            `"${command.kind}" command. The peer answered a different question, and prior state ` +
+            `of the wrong shape would build an inverse that restores something nobody captured.`,
+        );
+      }
+
+      // NARROWED BY THE CHECK ABOVE, which the checker cannot follow: the tag
+      // and `K` are correlated through a comparison rather than through a
+      // discriminant it can distribute over. The assertion is what that check
+      // earns, and it is one line below the thing that establishes it.
+      return { captured: true, prior: answer.value.prior as CommandPrior[K] };
     },
 
     invert: async <K extends KindsRoutedTo<'mupdf'>>(
@@ -318,13 +345,20 @@ export function remoteMupdfExecution(
         'engine/invert',
         await client['engine/invert']({
           session: sessions.handleFor(session),
-          // No cast: `kind` and `inverse` are bound to the same `K` in the
-          // signature, and the wire schema's `.readonly()` makes its inferred
-          // type the same one `CommandPrior` states — so the pair type-checks
-          // rather than being asserted. It did NOT before that `.readonly()`,
-          // and the cast it needed read as a formality while being the only
-          // thing standing between two types that differed.
-          inverse: { kind, prior: inverse },
+          // THROUGH `taggedPrior` SINCE 2026-09-03, and the reason the object
+          // literal stopped working is worth keeping.
+          //
+          // This used to say *no cast*: `kind` and `inverse` are bound to the
+          // same `K`, and the wire schema's `.readonly()` made its inferred
+          // type the one `CommandPrior` states, so the pair type-checked. Both
+          // halves of that are still true and they are no longer sufficient —
+          // with two kinds, `{ kind, prior }` is an object whose fields are
+          // widened independently, and TypeScript cannot see that they came
+          // from one `K`.
+          //
+          // The correlation is asserted in one place rather than here, which
+          // is why this is a call and not a cast (see `taggedPrior`).
+          inverse: taggedPrior(kind, inverse),
         }),
       );
     },

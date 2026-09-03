@@ -12,6 +12,7 @@ import {
   DocumentService,
   EngineOpenFailed,
   type HostDestinationsReader,
+  type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
   type HostTermination,
@@ -27,6 +28,7 @@ import {
   parsePageText,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
+  remoteMupdfLayers,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
   remoteMupdfWriter,
@@ -360,6 +362,13 @@ export function createShellDependencies(
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return engineHost.destinations(session);
+  },
+  // THE LAYERS, a read like the two above. The TOGGLE is not here: it is a
+  // command, and commands route through the bus in `execute`.
+  (docId, sessions) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return engineHost.layers(session);
   });
 
   const openedDocument = engineHost.openedDocument;
@@ -452,6 +461,8 @@ function engineSessionOpener(
   readonly pageLinks: HostPageLinksReader;
   /** The document's outline, from whichever host is live. */
   readonly destinations: HostDestinationsReader;
+  /** The document's layers, from whichever host is live. */
+  readonly layers: HostLayersReader;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -602,6 +613,20 @@ function engineSessionOpener(
     return destinations(session);
   };
 
+  /** The layers' half of the same registration. See {@link pageText}. */
+  let layers: HostLayersReader | null = null;
+
+  const readLayersThroughHost: HostLayersReader = (session) => {
+    if (layers === null) {
+      throw new Error(
+        'A layer read reached the engine with no host layer reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return layers(session);
+  };
+
   /**
    * Tokens are minted from handles ONE host issued, and
    * `createRemoteSessions`' own words are that they are *"not transferable
@@ -711,6 +736,7 @@ function engineSessionOpener(
     pageText = remoteMupdfPageText(client, remote);
     pageLinks = remoteMupdfPageLinks(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
+    layers = remoteMupdfLayers(client, remote);
     return live.value;
   };
 
@@ -862,6 +888,7 @@ function engineSessionOpener(
     pageText: readPageTextThroughHost,
     pageLinks: readPageLinksThroughHost,
     destinations: readDestinationsThroughHost,
+    layers: readLayersThroughHost,
     closeHost,
     rebuildSessions: create,
   };

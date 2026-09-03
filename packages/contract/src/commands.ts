@@ -45,7 +45,44 @@ export const rotatePagesSchema = z.object({
  * a compile error — see `commandSpecs.ts`. That is the mechanism: a new command
  * cannot be added without routing it and without declaring both of §3a's axes.
  */
-export const commandSchema = z.discriminatedUnion('kind', [rotatePagesSchema]);
+/**
+ * Show or hide one optional-content group.
+ *
+ * ## A COMMAND, not a view setting, and the distinction is where it is stored
+ *
+ * A layer's visibility lives in the document — `/OCProperties`' default
+ * configuration — so turning one off and saving produces a file that opens with
+ * it off, in every other reader. That makes it a mutation, and a mutation goes
+ * through the bus with a capture and an inverse like every other one. A toggle
+ * held in renderer state would render correctly and vanish on save, which is
+ * the wired-tools rule's own example of a control that does not survive.
+ *
+ * ## The layer is named by INDEX, which is its position in `/OCGs`
+ *
+ * Naming a layer by its title instead would need a second opinion about which
+ * layer a title means — two layers may share one — and would put this build in
+ * the business of resolving that.
+ *
+ * **The index is NOT MuPDF's layer index**, and the difference is measured
+ * rather than notional: a document listing *Visible* then *Hidden* in `/OCGs`
+ * is reported by `countLayers`/`getLayerName` with Hidden at 0
+ * (`layers.test.ts`, 2026-09-03). This said the opposite until the same day's
+ * round-trip case showed that MuPDF's layer API writes session state a save
+ * does not carry, so the whole command moved to the object tree — see
+ * `layers.ts`, which is the one place either enumeration is read.
+ */
+export const setLayerVisibilitySchema = z.object({
+  kind: z.literal('setLayerVisibility'),
+  /** The layer's position in `/OCProperties/OCGs`. */
+  layer: z.number().int().nonnegative(),
+  /** What it becomes. The inverse carries what it was. */
+  visible: z.boolean(),
+});
+
+export const commandSchema = z.discriminatedUnion('kind', [
+  rotatePagesSchema,
+  setLayerVisibilitySchema,
+]);
 
 export type Command = z.infer<typeof commandSchema>;
 export type CommandKind = Command['kind'];

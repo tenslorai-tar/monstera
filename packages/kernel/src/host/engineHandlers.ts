@@ -4,9 +4,10 @@ import type { CommandExecution } from '../commandSpecs.js';
 import type { EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
+import type { Layer } from '../layers.js';
 import type { PageLink } from '../pageLinks.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
-import type { EngineChannels } from './engineChannels.js';
+import { type EngineChannels, taggedPrior } from './engineChannels.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -50,6 +51,9 @@ export type HostPageLinksReader = (
 export type HostDestinationsReader = (
   session: MupdfSession,
 ) => Promise<readonly Destination[]>;
+
+/** Reads the document's layers. Injected for the readers above's reason. */
+export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -146,6 +150,7 @@ export function createEngineHandlers(
   pageText: HostPageTextReader,
   pageLinks: HostPageLinksReader,
   destinations: HostDestinationsReader,
+  layers: HostLayersReader,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -287,6 +292,12 @@ export function createEngineHandlers(
       return { ok: true, value: { destinations: [...(await destinations(held.session))] } };
     },
 
+    'engine/layers': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      return { ok: true, value: { layers: [...(await layers(held.session))] } };
+    },
+
     'engine/apply': async ({ session, command }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
@@ -303,7 +314,7 @@ export function createEngineHandlers(
           // and the prior state cannot disagree at the source. What it buys is
           // on the other side: main refuses an answer whose tag is not the one
           // it asked for, and that check needs a tag to check.
-          { ok: true, value: { captured: true, value: { kind: command.kind, prior: captured.prior } } }
+          { ok: true, value: { captured: true, value: taggedPrior(command.kind, captured.prior) } }
         : { ok: true, value: { captured: false, reason: captured.reason } };
     },
 

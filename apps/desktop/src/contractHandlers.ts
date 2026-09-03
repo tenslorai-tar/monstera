@@ -131,6 +131,7 @@ export function createContractHandlers(deps: {
     'document.searchPage': searchPageHandler(deps.commands),
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
+    'document.layers': layersHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
     // runs `migrate` and falls back per setting; a schema here would be this
@@ -382,6 +383,24 @@ function destinationsHandler(
     try {
       const { version, destinations } = await commands.destinations(docId);
       return ok({ version, destinations });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The document's layers. A READ — the toggle is a command through
+ * `document.execute`, so there is no mutating handler here.
+ */
+function layersHandler(commands: DocumentCommands): ContractHandlers['document.layers'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.layers']>>> => {
+    try {
+      const { version, layers } = await commands.layers(docId);
+      return ok({ version, layers });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

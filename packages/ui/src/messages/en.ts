@@ -61,6 +61,9 @@ export const DESTINATIONS_LABEL = messageKey('surface.destinations.label');
 export const DESTINATIONS_EMPTY = messageKey('surface.destinations.empty');
 export const DESTINATIONS_UNAVAILABLE = messageKey('surface.destinations.unavailable');
 export const DESTINATION_UNRESOLVED = messageKey('surface.destinations.unresolved');
+export const LAYERS_LABEL = messageKey('surface.layers.label');
+export const LAYERS_EMPTY = messageKey('surface.layers.empty');
+export const LAYERS_UNAVAILABLE = messageKey('surface.layers.unavailable');
 export const LINKS_LABEL = messageKey('surface.links.label');
 export const LINKS_EMPTY = messageKey('surface.links.empty');
 export const LINKS_UNAVAILABLE = messageKey('surface.links.unavailable');
@@ -150,6 +153,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DESTINATIONS_EMPTY]: 'This document has no outline.',
   [DESTINATIONS_UNAVAILABLE]: 'The outline could not be read.',
   [DESTINATION_UNRESOLVED]: '{title} (goes nowhere)',
+  [LAYERS_LABEL]: 'Layers',
+  [LAYERS_EMPTY]: 'This document has no layers.',
+  [LAYERS_UNAVAILABLE]: 'The layers could not be read.',
   [LINKS_LABEL]: 'Links on this page',
   [LINKS_EMPTY]: 'This page has no links.',
   [LINKS_UNAVAILABLE]: 'The links on this page could not be read.',

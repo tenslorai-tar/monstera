@@ -137,6 +137,17 @@ export const MAX_DESTINATIONS = 4096;
 export const MAX_DESTINATION_TITLE_LENGTH = 512;
 
 /**
+ * How many layers may reach the renderer, and how long a name may be.
+ *
+ * Much smaller than the outline's, because the shapes differ: a design carries
+ * a handful of optional-content groups where a manual carries hundreds of
+ * headings. A bound copied across would be a number nobody had thought about,
+ * and the number is meant to be a statement about what the thing is.
+ */
+export const MAX_LAYERS = 1024;
+export const MAX_LAYER_NAME_LENGTH = 256;
+
+/**
  * A link's rectangle, in the page's own units.
  *
  * ## `z.number()` ALREADY refuses `Infinity` and `NaN` here, and that matters
@@ -666,6 +677,40 @@ export const channels = {
        * and a results surface would silently stop paging.
        */
       truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * The document's optional-content groups.
+   *
+   * ## A READ, and the toggle is `document.execute`
+   *
+   * There is no `document.setLayerVisibility` channel and there must not be: a
+   * layer's visibility lives in the document, so changing it is a **command**,
+   * and commands go through the one channel that routes them with a capture and
+   * an inverse. A second mutating channel would be the second wiring place — and
+   * it would be one whose changes no undo could reach.
+   *
+   * Whole-document for `document.destinations`' reason: layers are structure,
+   * read once when a document opens.
+   */
+  'document.layers': channel(
+    'The document’s optional-content groups, with each one’s current visibility.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      layers: z
+        .array(
+          z.object({
+            /** The layer's address, as a `setLayerVisibility` command names it. */
+            index: z.number().int().nonnegative(),
+            name: z.string().max(MAX_LAYER_NAME_LENGTH),
+            visible: z.boolean(),
+          }),
+        )
+        .max(MAX_LAYERS)
+        .readonly(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

@@ -521,6 +521,9 @@ describe('the engine host answers a containment probe', () => {
     destinations: () => {
       throw new Error('a containment probe must not read the outline');
     },
+    layers: () => {
+      throw new Error('a containment probe must not read the layers');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {
@@ -540,6 +543,7 @@ describe('the engine host answers a containment probe', () => {
         forbidden.pageText,
         forbidden.pageLinks,
         forbidden.destinations,
+        forbidden.layers,
       ),
       () => undefined,
     );

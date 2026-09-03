@@ -43,6 +43,40 @@ const PROBE_TSCONFIG = {
 };
 
 /**
+ * The `setLayerVisibility` spec, complete, as every command-table fixture needs
+ * it.
+ *
+ * Written once and interpolated because the table is EXHAUSTIVE by type: the
+ * moment a second command kind existed, every fixture below that omits it
+ * failed for that reason rather than for the reason it was written to test —
+ * which is how `proof:contract` went red on the commit that added the second
+ * kind. Six copies by hand would be six chances to make a fixture's error the
+ * wrong one, and the six cases differ from each other only inside
+ * `rotatePages`.
+ */
+const LAYER_SPEC = `  setLayerVisibility: {
+    kind: 'setLayerVisibility',
+    writer: 'mupdf',
+    apply: applySetLayerVisibility,
+    capture: captureSetLayerVisibility,
+    invert: invertSetLayerVisibility,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/** What a command-table fixture imports: the rotation's three, and the layer's. */
+const SPEC_IMPORTS = `import {
+  applyRotatePages,
+  captureRotatePages,
+  invertRotatePages,
+  applySetLayerVisibility,
+  captureSetLayerVisibility,
+  invertSetLayerVisibility,
+} from '@monstera/kernel/engine';`;
+
+/**
  * One probe.
  *
  * A `reject` case declares **why** it expects to be rejected, not merely that
@@ -92,6 +126,7 @@ export const handlers: ContractHandlers = {
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -139,6 +174,7 @@ export const handlers: ContractHandlers = {
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -261,6 +297,7 @@ export const shim: ContractClient = {
   'document.pageLinks': () => Promise.resolve(ok({ version: asDocVersion(1), links: [] })),
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
+  'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -353,7 +390,40 @@ export const failure = describeEngineHostGone({ code: 'shutdown', detail: 'we cl
     // which is this file's own stated failure mode.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+${SPEC_IMPORTS}
+export const specs: CommandSpecs = {
+  rotatePages: {
+    kind: 'rotatePages',
+    writer: 'mupdf',
+    apply: applyRotatePages,
+    capture: captureRotatePages,
+    invert: invertRotatePages,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
+${LAYER_SPEC}
+};
+`,
+  },
+  {
+    name: 'a spec table missing a command kind does not compile',
+    expect: 'reject',
+    code: 'TS2741',
+    // THE SECOND KIND IS THE ONE OMITTED, and that is a strengthening rather
+    // than bookkeeping. This fixture was `{}` while one command existed, which
+    // asks whether an EMPTY table compiles — a question no real commit poses.
+    // Omitting the newest kind from an otherwise complete table is what
+    // actually happens when a command is added, and it is what §6 exists to
+    // catch.
+    because: /Property 'setLayerVisibility' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+    notBecause: null,
+    // §6: omit a kind and it does not compile. This is the case that makes the
+    // table exhaustive by construction rather than by review.
+    source: `
+import type { CommandSpecs } from '@monstera/kernel';
+${SPEC_IMPORTS}
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -370,28 +440,14 @@ export const specs: CommandSpecs = {
 `,
   },
   {
-    name: 'a spec table missing a command kind does not compile',
-    expect: 'reject',
-    code: 'TS2741',
-    because: /Property 'rotatePages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
-    notBecause: null,
-    // §6: omit a kind and it does not compile. This is the case that makes the
-    // table exhaustive by construction rather than by review.
-    source: `
-import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
-export const specs: CommandSpecs = {};
-`,
-  },
-  {
     name: 'a spec table with an unrouted command kind does not compile',
     expect: 'reject',
     code: 'TS2353',
     because: /'notDeclared' does not exist in type 'CommandSpecs'/u,
-    notBecause: /rotatePages/u,
+    notBecause: /rotatePages|setLayerVisibility/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+${SPEC_IMPORTS}
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -404,6 +460,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+${LAYER_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -432,7 +489,7 @@ export const specs: CommandSpecs = {
     // retrofit arriving one command at a time.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+${SPEC_IMPORTS}
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -443,6 +500,7 @@ export const specs: CommandSpecs = {
     invertible: true,
     undo: 'inverse',
   },
+${LAYER_SPEC}
 };
 `,
   },
@@ -454,7 +512,7 @@ export const specs: CommandSpecs = {
     notBecause: /reproducible/u,
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+${SPEC_IMPORTS}
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -465,6 +523,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+${LAYER_SPEC}
 };
 `,
   },
@@ -483,7 +542,7 @@ export const specs: CommandSpecs = {
     // forbids — signing, OCR and AI all land here.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+${SPEC_IMPORTS}
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -496,6 +555,7 @@ export const specs: CommandSpecs = {
     reproducible: false,
     replay: 'reapply-intent',
   },
+${LAYER_SPEC}
 };
 `,
   },
@@ -510,7 +570,7 @@ export const specs: CommandSpecs = {
     // is how a checkpoint quietly becomes optional.
     source: `
 import type { CommandSpecs } from '@monstera/kernel';
-import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+${SPEC_IMPORTS}
 export const specs: CommandSpecs = {
   rotatePages: {
     kind: 'rotatePages',
@@ -523,6 +583,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+${LAYER_SPEC}
 };
 `,
   },
@@ -553,7 +614,14 @@ export const spec: CommandSpec<'rotatePages'> = {
     expect: 'reject',
     code: 'TS2322',
     // Atomic: one line, no continuation, so the message IS the reason.
-    because: /Type '45' is not assignable to type '1 \| 3 \| 2'/u,
+    //
+    // The member ORDER in the printed union is the compiler's and not ours —
+    // it read `1 | 3 | 2` while `rotatePages` was the only kind and prints
+    // `2 | 3 | 1` since `setLayerVisibility` joined it (measured 2026-09-03,
+    // TypeScript 6.0.3). Anchoring on the printed order is deliberate: an
+    // order-insensitive pattern would also match a union this command's type
+    // never had.
+    because: /Type '45' is not assignable to type '2 \| 3 \| 1'/u,
     // Atomic and scalar: the quoted types are `45` and the literal union, so
     // there is no second property name in reach.
     notBecause: null,
@@ -703,8 +771,13 @@ import type { ByteImage, CommandExecution } from '@monstera/kernel';
 // PRODUCE a new one. Capture is the same shape for both kinds, because
 // capture only ever reads.
 export const execution: CommandExecution<'pdf-lib'> = {
+  // The DISCRIMINANT, not a per-kind field. CommandOfKind<K> for an
+  // uninstantiated K is the correlated-union limit: no member of the
+  // distributed union carries every member's fields, so only the discriminant
+  // is reachable here. This read the rotation's own pages while one command
+  // kind existed, which compiled for the same reason it now does not.
   apply: (image, command) =>
-    Promise.resolve(command.pages.length === 0 ? image : new Uint8Array(image)),
+    Promise.resolve(command.kind === 'rotatePages' ? new Uint8Array(image) : image),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
   invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image)),
 };
@@ -941,7 +1014,7 @@ export const spec: CommandSpec<'rotatePages'> = {
     name: 'a command missing a required parameter does not compile',
     expect: 'reject',
     code: 'TS2741',
-    because: /Property 'quarterTurns' is missing/u,
+    because: /^Property 'quarterTurns' is missing/u,
     // THE CONTROL FOR `diagnose`'s ATOMIC BRANCH, which is the half that had
     // none. An atomic diagnostic has no continuation, so its reason IS the
     // summary with the location prefix stripped — the summary folded back in by
@@ -952,6 +1025,35 @@ export const spec: CommandSpec<'rotatePages'> = {
     // This one quotes `{ kind: "rotatePages"; pages: number[]; }`, so `pages`
     // is present in the line and is NOT the reason.
     notBecause: /pages/u,
+    // ONE MEMBER, not the union, and the reason is the property this case
+    // exists for. Written `Command`, the assignment was atomic while
+    // `rotatePages` was the only kind; against a two-member union the compiler
+    // answers TS2322 with a continuation, and the atomic branch would have
+    // lost its only control silently. Naming the member keeps the diagnostic
+    // atomic by construction rather than by how many commands exist today.
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', pages: [0] };
+`,
+  },
+  {
+    name: 'and against the UNION it is refused too, with the continuation the union produces',
+    expect: 'reject',
+    code: 'TS2322',
+    // The shape a caller actually writes, and it is a different diagnostic from
+    // the case above rather than the same one: assigning to a union reports the
+    // assignment and names the missing property in its continuation. Both
+    // matter — the atomic one proves `diagnose` folds a summary back in, this
+    // one proves the union still refuses an incomplete member.
+    // ANCHORED ON THE ASSIGNMENT LINE, which is the whole difference between
+    // this case and the one above: both reasons name `quarterTurns`, and the
+    // union's does so in a CONTINUATION under a summary the atomic one has no
+    // equivalent of. Matching the missing property alone accepts both, which
+    // the harness's own resolution test refuses.
+    because: /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\}'/u,
+    // Nothing to exclude: the harness elides every quoted type, so no second
+    // property name is in reach of this reason.
+    notBecause: null,
     source: `
 import type { Command } from '@monstera/contract';
 export const partial: Command = { kind: 'rotatePages', pages: [0] };
