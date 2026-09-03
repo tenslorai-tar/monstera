@@ -38,5 +38,12 @@
     "types": ["node"]
   },
 
-  "include": ["scripts/**/*.mjs", "eslint.config.js", "vitest.config.mjs"]
+  "include": ["scripts/**/*.mjs", "eslint.config.js", "vitest.config.mjs"],
+
+  // `electronImports.proof.mjs` plants `__import_probe__.mjs` under `scripts/`,
+  // which the include above reaches — so a run killed before its cleanup
+  // reddens THIS half of `npm run typecheck`, the half `npx tsc -b` alone does
+  // not run. See scripts/lib/probeLeftovers.mjs: the startup sweep is the
+  // repair, and this closes the reader we can name rather than replacing it.
+  "exclude": ["scripts/__import_probe__.mjs", "scripts/__import_probe__.js"]
 }

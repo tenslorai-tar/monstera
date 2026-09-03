@@ -1276,6 +1276,28 @@ if (changedForProofs !== null) {
         : `  ok  no proof imports any of the ${String(changed.length)} file(s) changed against HEAD\n`),
   );
 }
+/*
+ * THIS LINE IS MORE LOAD-BEARING THAN IT LOOKS, measured 2026-09-03.
+ *
+ * `proof:boundaries` exceeded its bound — 180.5s against 180s — and was killed
+ * before its `finally`, leaving two probe files in the source tree. Every run
+ * after that was measured against a tree in which `npm run build` and
+ * `npm run typecheck` fail on a file nobody wrote, and `git status` showed
+ * clean because those names are gitignored. A sweep reporting **117 passed**
+ * was reported as evidence, and it was not the reading it appeared to be.
+ *
+ * What was unaffected is the board, and the reason is worth stating rather than
+ * assuming: the probes are gitignored and were never committed, and a runner
+ * checks out the commit — so CI compiles a tree that has never had one. The
+ * board was green on exactly the commits the local sweep was confused about.
+ *
+ * So the sentence below is not modesty. A local sweep measures the machine it
+ * ran on, including whatever a previous run left there; the board measures the
+ * commit. `probeLeftovers.mjs` now repairs that particular tree at the start of
+ * both planting proofs, which removes this instance and not the class — the
+ * class is *anything a killed script leaves behind*, and this line is what
+ * covers the rest of it.
+ */
 process.stdout.write('The board is the mechanism; this is the minute before the push.\n');
 
 const clean =

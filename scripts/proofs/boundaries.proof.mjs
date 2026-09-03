@@ -32,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 
 import { ALLOWED_IMPORTS, PACKAGES, PACKAGE_DIR } from '../../eslint.config.js';
+import { formatProbeLeftovers, sweepProbeLeftovers } from '../lib/probeLeftovers.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -209,6 +210,16 @@ async function lint(file) {
   );
   const errors = results.reduce((total, result) => total + result.errorCount, 0);
   return { rules, clean: errors === 0 };
+}
+
+// BEFORE ANYTHING ELSE. A run killed at its timeout never reaches the `finally`
+// below, and this proof's own bound was exceeded on 2026-09-03 — 180.5s against
+// 180s — leaving two probes in the tree. See probeLeftovers.mjs for why the
+// repair is a sweep rather than a longer list of readers to exclude.
+{
+  const removed = sweepProbeLeftovers(REPO_ROOT);
+  const notice = formatProbeLeftovers(removed, REPO_ROOT);
+  if (notice !== null) process.stdout.write(notice);
 }
 
 /** @type {string[]} */

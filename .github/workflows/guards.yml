@@ -536,6 +536,18 @@ jobs:
       - name: Prove the test-case-count instrument sees a shrink and ignores a gain
         run: node scripts/ci/annotate.mjs scripts/proofs/testAnchors.proof.mjs
 
+      # Two proofs plant a file into the source tree so a PATH-scoped lint rule
+      # has something at that path to report, and a `finally` does not run when
+      # checkLocal.mjs kills a script at its bound. The leftovers then redden
+      # `npm run build` and `npm run typecheck` for every later run, and
+      # `git status` cannot show them because the earlier fix for the ESLint
+      # half made the names gitignored.
+      #
+      # Its separating case plants a leftover BY HAND before a proof starts, so
+      # a clean tree afterwards can only be the startup sweep.
+      - name: Prove a killed proof's leftovers are repaired by the next run
+        run: node scripts/ci/annotate.mjs scripts/proofs/probeLeftovers.proof.mjs
+
       # The local sweep resolves what an npm script RUNS instead of refusing
       # anything that is not a bare `node` invocation — which is how typecheck,
       # lint and build sat in its roster running nothing. The failure to fear is

@@ -156,6 +156,7 @@
     "proof:shimreach": "node scripts/proofs/shimReach.proof.mjs",
     "proof:proofanchors": "node scripts/proofs/proofAnchors.proof.mjs",
     "check:proofanchors": "node scripts/checks/proofAnchors.mjs",
+    "proof:probeleftovers": "node scripts/proofs/probeLeftovers.proof.mjs",
     "proof:testanchors": "node scripts/proofs/testAnchors.proof.mjs",
     "check:testanchors": "node scripts/checks/testAnchors.mjs",
     "proof:pathdispatch": "node scripts/proofs/pathDispatch.proof.mjs",

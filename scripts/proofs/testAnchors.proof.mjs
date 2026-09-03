@@ -158,13 +158,18 @@ try {
       `the case.`,
   );
 
-  process.stdout.write(roster.format('test-anchor case'));
+  // FAILURES FIRST, and `format` only on the success path — see
+  // `probeLeftovers.proof.mjs` for the diagnosis this ordering prevents: a
+  // failing case is not RECORDED, so formatting over a red run reports it as a
+  // case that stopped running.
   if (failures.length > 0) {
     process.stderr.write(
       `\nTest-anchor proof — ${String(failures.length)} failure(s):\n\n` +
         `${failures.map((failure) => `  - ${failure}`).join('\n\n')}\n\n`,
     );
     process.exitCode = 1;
+  } else {
+    process.stdout.write(roster.format('test-anchor case'));
   }
 } catch (error) {
   process.stderr.write(`\n${formatError(error)}\n`);

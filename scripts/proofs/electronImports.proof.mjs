@@ -53,6 +53,7 @@ import { ELECTRON_SPECIFIERS } from '../../eslint.config.js';
 import { fileExists, verifyFileDigest } from '../lib/fetchVerified.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { PLAIN_NODE_EXTENSIONS } from '../lib/plainNodeScope.mjs';
+import { formatProbeLeftovers, sweepProbeLeftovers } from '../lib/probeLeftovers.mjs';
 import { formatError } from '../lib/reportError.mjs';
 import { BUILDS, scriptsLoadingAtRuntime, unpinnedRuntimeExists } from '../provision/electron.mjs';
 
@@ -77,6 +78,16 @@ const PROBE = join(REPO_ROOT, 'scripts', '__import_probe__.mjs');
  * looked exactly like this one.
  */
 const PROBE_JS = join(REPO_ROOT, 'scripts', '__import_probe__.js');
+
+// BEFORE ANYTHING ELSE, for `boundaries.proof.mjs`'s reason and one sharper:
+// this probe lives under `scripts/`, which `tsconfig.scripts.json` includes, so
+// a leftover here reddens the SECOND half of `npm run typecheck` — the half
+// `npx tsc -b` alone does not run. See probeLeftovers.mjs.
+{
+  const removed = sweepProbeLeftovers(REPO_ROOT);
+  const notice = formatProbeLeftovers(removed, REPO_ROOT);
+  if (notice !== null) process.stdout.write(notice);
+}
 
 /** @type {string[]} */
 const failures = [];
