@@ -51,6 +51,7 @@
  */
 
 import { noBareYFlip } from './noBareYFlip.mjs';
+import { noClassComponents } from './noClassComponents.mjs';
 import { noInstallRootWrites } from './noInstallRootWrites.mjs';
 import { noRawHex } from './noRawHex.mjs';
 
@@ -112,6 +113,7 @@ export const monsteraPlugin = {
     'no-raw-hex': noRawHex,
     'no-install-root-writes': noInstallRootWrites,
     'no-bare-y-flip': noBareYFlip,
+    'no-class-components': noClassComponents,
   },
 };
 

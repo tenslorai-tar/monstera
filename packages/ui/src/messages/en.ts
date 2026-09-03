@@ -77,6 +77,9 @@ export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
 export const FIND_NEXT_MATCH = messageKey('surface.find.next-match');
 export const FIND_PREVIOUS_MATCH = messageKey('surface.find.previous-match');
 export const FIND_MATCH_POSITION = messageKey('surface.find.match-position');
+export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
+export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
+export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
 export const START_TITLE = messageKey('surface.start.title');
 export const START_INVITATION = messageKey('surface.start.invitation');
 export const START_ABSENT = messageKey('surface.start.absent');
@@ -206,6 +209,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // far they have to go as much as where they are, and "match 7" alone is the
   // half that tells them neither.
   [FIND_MATCH_POSITION]: 'Match {position} of {count}',
+  [VIEW_PROBLEM_TITLE]: 'This document could not be displayed.',
+  // NAMES WHAT SURVIVED, which is the actionable half. A reader who has just
+  // watched a view vanish assumes the worst about their file; §10.5a's
+  // guarantee is that nothing of theirs is involved, and saying so is what
+  // makes *try again* worth pressing.
+  [VIEW_PROBLEM_BODY]: 'Your file is unchanged. Trying again returns to the same page.',
+  [VIEW_PROBLEM_RETRY]: 'Try again',
   [START_TITLE]: 'Monstera',
   [START_INVITATION]: 'Open a PDF to begin.',
   // SAYS WHAT HAPPENED AND WHAT IS LIKELY. A file the picker offered and the

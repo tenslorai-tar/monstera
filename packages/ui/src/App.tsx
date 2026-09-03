@@ -35,6 +35,7 @@ import { StatusBar } from './StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
 import { DestinationsPanel } from './DestinationsPanel.js';
 import { LayersPanel } from './LayersPanel.js';
+import { ErrorBoundary } from './ErrorBoundary.js';
 import { FindBar } from './FindBar.js';
 import { type OpenProblem, openDocumentCommand } from './commands/openDocument.js';
 import { revealLogCommand } from './commands/revealLog.js';
@@ -76,6 +77,7 @@ import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
 import { StartScreen } from './surfaces/StartScreen.js';
+import { ViewProblem } from './surfaces/ViewProblem.js';
 
 /**
  * The renderer's root component.
@@ -453,6 +455,41 @@ export function App({ client, settings }: AppProps): ReactElement {
           <RecentFiles client={client} onOpened={setOpen} />
         </>
       ) : (
+        // THE ERROR BOUNDARY, AND ITS POSITION IS THE GUARANTEE (§10.5a).
+        //
+        // It sits HERE — inside this component, around the view — rather than
+        // around `<App>`, and that placement is what makes "reload is cheap"
+        // true rather than hopeful. `open`, `zoomMode`, `currentPage` and the
+        // scroll request all live in this component, ABOVE the boundary, so a
+        // reset re-renders the view from state the failure never touched: the
+        // same document, the same page, the same zoom. A boundary around the
+        // whole app would have to restore all three, and a restore is a
+        // mechanism that can be wrong where a position cannot (B5).
+        //
+        // `key` on the document, so opening a different file clears a caught
+        // error rather than showing the previous document's failure over the
+        // new one — a boundary that latches is a document you cannot open.
+        //
+        // THE RETRY RE-ISSUES THE SCROLL REQUEST, and holding the state above
+        // the boundary is not enough without it. Measured: a reset remounts the
+        // scroller, which seeds its first page as visible and reports it — so
+        // `currentPage` was preserved across the failure and then overwritten
+        // by the fresh view a moment later, and a reader who threw on page 40
+        // came back to page 1 with every piece of state intact. `goTo` is the
+        // seam that already exists for *put the reader here*, so the retry sets
+        // it in the same event as the reset and the remounted view starts where
+        // the reader was.
+        <ErrorBoundary
+          key={open.docId}
+          fallback={({ reset }) => (
+            <ViewProblem
+              onRetry={() => {
+                setGoTo(currentPage);
+                reset();
+              }}
+            />
+          )}
+        >
         <PageCanvas
           client={client}
           document={open}
@@ -472,6 +509,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           unit={unit}
           split={split}
         />
+        </ErrorBoundary>
       )}
       {palette ? (
         <CommandPalette registry={registry} context={context} onClose={closePalette} />

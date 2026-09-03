@@ -108,6 +108,38 @@ The larger claim underneath — that a renderer which throws loses no *work* —
 is §2's and not this component's: the truth is main's canonical bytes plus the
 command log, and the renderer holds a `DocId` and a `DocVersion`.
 
+## Correction — 2026-09-03, the same day: placement is necessary and not sufficient
+
+The section above says the recovery guarantee *"does not come from the boundary
+restoring anything"* and that being below the state *"is a shape that cannot"*
+be wrong. **The first half is right for two of the three properties and wrong
+for the page**, found by building the case that asserts the guarantee rather
+than by reading the sentence again.
+
+Measured: with the boundary mounted below the state, a throw and a retry left
+`open`, `zoomMode` and `currentPage` intact — and the remounted scroller seeded
+its first page as visible and **reported** it through `onCurrentPage`, so the
+preserved page was overwritten by the fresh view a moment later. Every piece of
+state was correct and the reader was on page 1.
+
+So the retry re-issues the scroll request through `goTo` — the seam that already
+exists for *put the reader here* — in the same event as the reset. The document
+and the zoom hold by placement; the page holds by placement **plus** that
+request.
+
+**What was wrong was not the design but the certainty of the sentence.** A
+position genuinely cannot be wrong about what it *preserves*; it says nothing
+about what a remounted child then reports over the top, and the two are easy to
+read as one because both are about the boundary's place in the tree. The
+question placement does not answer is: **what does this subtree derive on
+mount?**
+
+The test asserts it as a call rather than as an end state, for the reason
+`CLAUDE.md` gives: `currentPage` reads 1 after the retry whatever happened,
+because the seed fires either way, so only *the reader's page was requested*
+separates a correct retry from an absent one. Dropping the re-request reddens
+that assertion alone.
+
 ## What this does not cover, stated so it is not assumed
 
 A React error boundary catches errors thrown **during rendering**, in lifecycle

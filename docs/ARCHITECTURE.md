@@ -1593,14 +1593,26 @@ confined exception, alongside the `any` adapters
 > is an error over `packages/ui` and exempts that one path, so the exception is
 > enforced by the tree rather than remembered.
 
-**The boundary is mounted BELOW the state it protects**, and that placement is
-the guarantee rather than a detail. §10.5 requires a designed error state; this
-one additionally promises that recovery is cheap, which means: after a throw the
-reader returns to **the same document, the same page and the same zoom**. That
-holds because the state naming those three lives above the boundary and is never
-inside the failure — a shape that cannot be wrong, rather than a restore that
-can (B5). A renderer that throws loses no *work* for §2's separate reason: the
-truth is main's canonical bytes and the command log.
+**The boundary is mounted BELOW the state it protects**, and §10.5 requires a
+designed error state; this one additionally promises that recovery is cheap,
+which means: after a throw the reader returns to **the same document, the same
+page and the same zoom**.
+
+**Placement is necessary and it is not sufficient, measured 2026-09-03.** The
+state naming those three lives above the boundary and survives the failure
+intact — and a reset remounts the scroller, which seeds its first page as
+visible and *reports* it, overwriting the preserved page a moment later. So a
+reader who threw on page 40 came back with every piece of state correct and the
+view at page 1. The reset therefore **re-issues the scroll request** through the
+`goTo` seam that already exists for *put the reader here*, in the same event, so
+the remounted view starts where the reader was. The document and the zoom hold
+by placement alone; the page needs both.
+
+That distinction is the transferable part: **a view that derives state from its
+own mount will overwrite what was preserved for it**, and asking what a remount
+*reports* is the question placement does not answer. A renderer that throws
+loses no *work* for §2's separate reason: the truth is main's canonical bytes
+and the command log.
 
 ### 10.6 Motion
 

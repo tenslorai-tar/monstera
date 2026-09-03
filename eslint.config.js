@@ -438,6 +438,17 @@ export default tseslint.config(
       // `.ts` at that — which is why this list is `.tsx` under the two packages
       // that render, and why enabling this needed no token to move.
       'monstera/no-raw-hex': 'error',
+      // B7, amended by ADR-0036: React function components only, with
+      // `ErrorBoundary.tsx` the single exception — React declares
+      // `getDerivedStateFromError` on a class and ships no hook. The owner is
+      // exempted INSIDE the rule, because that exemption is the rule's meaning
+      // (a confinement, not a ban) rather than a fact about the layout.
+      //
+      // `.tsx` under the rendering packages is the right scope for the same
+      // reason the two rules above take it: a React component is a `.tsx`
+      // thing here, and widening to `.ts` would put every plain class in the
+      // shell and the kernel under a rule about React.
+      'monstera/no-class-components': 'error',
     },
   },
 

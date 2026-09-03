@@ -63,6 +63,11 @@ import {
   PLANTED_Y_FLIP_OFFENDER,
 } from '../lib/noBareYFlip.mjs';
 import {
+  CLASS_COMPONENT_OWNER,
+  PLANTED_CLASS_COMPONENT_INNOCENT,
+  PLANTED_CLASS_COMPONENT_OFFENDER,
+} from '../lib/noClassComponents.mjs';
+import {
   PATH_OWNER,
   PLANTED_INSTALL_ROOT_OFFENDER,
 } from '../lib/noInstallRootWrites.mjs';
@@ -451,6 +456,66 @@ async function main() {
         .map((m) => `${m.ruleId}: ${m.message}`)
         .join(' | ')}\n      A rule that fires on onColor() output bans the one producer §10.2 ` +
         `names, and one that fires on "#12345" fires on anchors and ids.`,
+    );
+
+    // -------------------------------------------------------------------
+    // B7's function-components rule, amended by ADR-0036. It needs the planted
+    // offender for the reason the two above do and one more: the ONLY class
+    // component in this repository is the owner, which the rule exempts — so a
+    // matcher that matched nothing, a rule that was never registered, and a
+    // correct rule over a correct tree all report the same zero.
+    // -------------------------------------------------------------------
+    const CLASSES = 'monstera/no-class-components';
+    const classOffender = join(literalDirectory, 'legacy.tsx');
+    writeFileSync(classOffender, `${PLANTED_CLASS_COMPONENT_OFFENDER}\n`, 'utf8');
+    const classFindings = (await eslint.lintFiles([classOffender]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === CLASSES);
+
+    check(
+      'both spellings of a React class component are reported, at error severity',
+      classFindings.filter((message) => message.severity === 2).length === 2,
+      `findings on the planted module: ${
+        classFindings.map((m) => `${m.ruleId}(${String(m.severity)})`).join(', ') || 'none'
+      }\n      TWO, because \`extends Component\` and \`extends React.Component\` take different ` +
+        `branches of the superclass reader, and a fixture exercising one leaves the other ` +
+        `unproven.`,
+    );
+
+    // THE FALSE-POSITIVE HALF, and it decides whether this rule survives
+    // contact with the codebase. B7 bans React class COMPONENTS; a rule
+    // reporting every class reports `DocumentStores` and is disabled within a
+    // day, which costs the exception's confinement rather than one case.
+    const classInnocent = join(literalDirectory, 'plain.tsx');
+    writeFileSync(classInnocent, `${PLANTED_CLASS_COMPONENT_INNOCENT}\n`, 'utf8');
+    const classFalsePositives = (await eslint.lintFiles([classInnocent]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === CLASSES);
+
+    check(
+      'a function component, a plain class and a non-React subclass are NOT reported',
+      classFalsePositives.length === 0,
+      `findings on the innocent module: ${
+        classFalsePositives.map((m) => m.message).join(' | ') || 'none'
+      }\n      \`extends Error\` is the one a base-blind rule gets wrong, and it is ordinary ` +
+        `code in a codebase that declares error types.`,
+    );
+
+    // THE CONFINEMENT'S OTHER HALF, the same shape `entry.ts` and `geometry.ts`
+    // already have. ADR-0036 permits exactly one class component; a rule that
+    // reported its owner would be red on the single file the amendment exists
+    // to allow, and it would pass both cases above while being a ban.
+    const classOwner = join(ROOT, CLASS_COMPONENT_OWNER);
+    const ownerClasses = (await eslint.lintFiles([classOwner]))
+      .flatMap((result) => result.messages)
+      .filter((message) => message.ruleId === CLASSES);
+
+    check(
+      'CONTROL: the error boundary itself is NOT reported',
+      ownerClasses.length === 0,
+      `findings on ${CLASS_COMPONENT_OWNER}: ${ownerClasses.map((m) => m.message).join(' | ')}\n` +
+        `      That file is the one ADR-0036 permits, and React has no function form for what ` +
+        `it does — so a rule reporting it is a ban wearing a confinement's name.`,
     );
 
     // -------------------------------------------------------------------
