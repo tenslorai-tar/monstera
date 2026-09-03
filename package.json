@@ -156,6 +156,8 @@
     "proof:shimreach": "node scripts/proofs/shimReach.proof.mjs",
     "proof:proofanchors": "node scripts/proofs/proofAnchors.proof.mjs",
     "check:proofanchors": "node scripts/checks/proofAnchors.mjs",
+    "proof:testanchors": "node scripts/proofs/testAnchors.proof.mjs",
+    "check:testanchors": "node scripts/checks/testAnchors.mjs",
     "proof:pathdispatch": "node scripts/proofs/pathDispatch.proof.mjs",
     "check:pathdispatch": "node scripts/security/pathDispatch.mjs",
     "ocr:doors": "node scripts/security/ocrDoors.mjs",

@@ -523,6 +523,19 @@ jobs:
       - name: Every proof declares how many cases it has, or is named as owing one
         run: node scripts/ci/annotate.mjs scripts/checks/proofAnchors.mjs
 
+      # ZZZZZ-4's other half, which the two steps above cannot reach: the class
+      # also lives in the `.test.ts` files, where an `it()` is counted by the
+      # RUNNER rather than by itself, so vitest's total agrees with a collection
+      # that has quietly shrunk.
+      #
+      # ONLY THE PROOF RUNS HERE. `check:testanchors` compares a staged blob
+      # against HEAD, and CI checks out HEAD — so both sides are the same blob
+      # by construction and every run would print the reassuring answer. It
+      # lives in the pre-commit set, which is the only place the two sides
+      # differ; this step proves the instrument it uses can see.
+      - name: Prove the test-case-count instrument sees a shrink and ignores a gain
+        run: node scripts/ci/annotate.mjs scripts/proofs/testAnchors.proof.mjs
+
       # The local sweep resolves what an npm script RUNS instead of refusing
       # anything that is not a bare `node` invocation — which is how typecheck,
       # lint and build sat in its roster running nothing. The failure to fear is

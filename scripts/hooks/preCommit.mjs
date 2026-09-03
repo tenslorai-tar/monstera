@@ -25,6 +25,7 @@ import {
 } from '../lib/typeOnlyExports.mjs';
 import { report as reportStagedSyntax, scan as scanStagedSyntax } from '../lib/stagedSyntax.mjs';
 import { changedPaths, readStagedBlob } from '../lib/gitScope.mjs';
+import { runTestAnchors } from '../lib/testCaseCounts.mjs';
 import { formatDisarmament, hookDisarmament } from '../lib/hookIntegrity.mjs';
 import { explainDocumentFailures, runDocumentRules } from './documentConsistency.mjs';
 import { formatError } from '../lib/reportError.mjs';
@@ -278,6 +279,28 @@ async function main() {
       process.stderr.write(explainDocumentFailures(documents.failures));
       return 1;
     }
+  }
+
+  // ZZZZZ-4's other half: a `.test.ts` whose case set shrank (see
+  // scripts/lib/testCaseCounts.mjs for the anchor's direction and the four
+  // things it cannot see).
+  //
+  // IT REPORTS AND DOES NOT BLOCK, so its result is printed and its return
+  // value is not consulted. Removing a case is legitimate, and a gate here
+  // would need an override — which `CLAUDE.md` names as a workaround with a
+  // config flag on it. What the class needs is that the removal is seen.
+  //
+  // HERE rather than in CI, and that is the only place it can work: CI checks
+  // out `HEAD`, so the two sides of the comparison are the same blob by
+  // construction and every run would report the reassuring answer.
+  {
+    const anchors = runTestAnchors();
+    process.stdout.write(anchors.output);
+    // A NON-ZERO EXIT IS THE INSTRUMENT REFUSING TO LOOK, not a shrink — the
+    // check exits 0 whatever it finds and 1 when its own positive control
+    // fails. That distinction is why this branch is not `if (!anchors.ok)
+    // return 1` over the shrink case.
+    if (!anchors.ok) return 1;
   }
 
   // Only when the commit touches dependency resolution — it costs a few
