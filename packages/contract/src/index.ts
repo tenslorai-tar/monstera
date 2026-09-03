@@ -21,6 +21,12 @@ export {
   // Invariant L11's mechanism. Exported so a caller can size its reads under
   // the bound rather than discover it as a refusal.
   MAX_RANGE_BYTES,
+  // The recent list's cap, RESTATED in `apps/desktop` because this package may
+  // not import that one. Exported so the case that holds the two together has
+  // something to compare against — without it the agreement is a sentence in
+  // this file's comment and nothing else, which is what the audit of
+  // `87540a5..HEAD` found it to be.
+  MAX_RECENT_ENTRIES,
   channelIds,
   channels,
 } from './channels.js';

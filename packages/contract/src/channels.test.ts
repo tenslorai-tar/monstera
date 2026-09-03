@@ -2,7 +2,13 @@ import { asDocId, asDocVersion, asFileHandle, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { createClient, wrapHandlers } from './boundary.js';
-import { MAX_RANGE_BYTES, channelIds, channels, type ContractHandlers } from './channels.js';
+import {
+  MAX_LAYERS,
+  MAX_RANGE_BYTES,
+  channelIds,
+  channels,
+  type ContractHandlers,
+} from './channels.js';
 import type { Incident } from './incident.js';
 
 /** Discards a diagnostic. The sink is required rather than defaulted. */
@@ -207,6 +213,51 @@ describe('the shipping contract, exercised through its own map', () => {
     if (result.ok && result.value.kind === 'bytes') {
       expect(result.value.bytes.byteLength).toBe(MAX_RANGE_BYTES);
     }
+  });
+
+  it('a layer list past the bound is REFUSED, so the bound is reachable', async () => {
+    // FOUND BY THE STAGE AUDIT of `87540a5..HEAD`. `readLayers` clamped its
+    // own count with `Math.min(groups.length, MAX_LAYERS)`, so the array
+    // reaching this schema had already been cut to fit and `.max(MAX_LAYERS)`
+    // was a check that could not fail — while the reader was shown a subset of
+    // their document's layers with nothing saying so.
+    //
+    // The kernel no longer clamps, and this is what makes that bound live.
+    const many = Array.from({ length: MAX_LAYERS + 1 }, (_unused, index) => ({
+      index,
+      name: 'Layer',
+      visible: true,
+    }));
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, { ...handlers, 'document.layers': () =>
+        Promise.resolve(ok({ version: asDocVersion(1), layers: many })),
+      }, ignore)[id](params),
+    );
+
+    const result = await client['document.layers']({ docId: asDocId('doc-1') });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it('CONTROL: a layer list AT the bound is served, so the refusal is not "everything"', async () => {
+    // `readRange`'s control, for `readRange`'s reason: the case above passes
+    // for a schema that refuses every layer list, which is also what a typo in
+    // the bound produces and which would take the whole panel with it.
+    const exactly = Array.from({ length: MAX_LAYERS }, (_unused, index) => ({
+      index,
+      name: 'Layer',
+      visible: true,
+    }));
+    const client = createClient(channels, (id, params) =>
+      wrapHandlers(channels, { ...handlers, 'document.layers': () =>
+        Promise.resolve(ok({ version: asDocVersion(1), layers: exactly })),
+      }, ignore)[id](params),
+    );
+
+    const result = await client['document.layers']({ docId: asDocId('doc-1') });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.layers).toHaveLength(MAX_LAYERS);
   });
 
   it('L11: the bound is on the SIZE, not on the offset, so a late range is served', async () => {

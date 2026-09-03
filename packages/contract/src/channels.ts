@@ -168,6 +168,12 @@ export const MAX_DOCUMENT_NAME_LENGTH = 255;
  * reverse. The two agreeing is asserted by a case rather than by the type,
  * which is the honest arrangement: a bound the sender could exceed is the one
  * worth having at a boundary.
+ *
+ * **That case did not exist until 2026-09-03**, and this comment was the whole
+ * of what made it look covered — the constant was named in exactly two places,
+ * both in this file. `recentFiles.test.ts` now holds it. A sentence describing
+ * a mechanism reads exactly like one, which is why the audit that found this
+ * looked for the case rather than for a disagreement.
  */
 export const MAX_RECENT_ENTRIES = 10;
 

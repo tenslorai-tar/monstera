@@ -1,3 +1,4 @@
+import { MAX_RECENT_ENTRIES } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
 import { MAX_RECENT, createRecentFiles } from './recentFiles.js';
@@ -21,6 +22,23 @@ function aFile(initial: Readonly<Record<string, unknown>> = {}): SettingsSurface
 }
 
 describe('the recent list', () => {
+  it('AGREES WITH THE BOUNDARY about how many entries may cross', () => {
+    // FOUND BY THE STAGE AUDIT of `87540a5..HEAD`, and the finding is the
+    // sentence rather than the numbers. `MAX_RECENT_ENTRIES`' own comment says
+    // *"The two agreeing is asserted by a case rather than by the type, which
+    // is the honest arrangement"* — and there was no such case. The constant
+    // was named in exactly two places, both inside `channels.ts`, so the
+    // mechanism the comment described did not exist and reading the comment was
+    // what made it look covered.
+    //
+    // Restated rather than imported for the reason that comment gives: the
+    // contract may not import `apps/desktop`. So the store's cap and the
+    // boundary's bound are two numbers, and this is the only thing that can
+    // notice them parting. Raise one alone and every recent-files read is
+    // refused at the boundary, at run time, with nothing red at build time.
+    expect(MAX_RECENT).toBe(MAX_RECENT_ENTRIES);
+  });
+
   it('keeps what was recorded, newest first', () => {
     const recent = createRecentFiles(aFile());
 

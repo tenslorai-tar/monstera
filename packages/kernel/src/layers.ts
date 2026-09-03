@@ -78,12 +78,30 @@ export interface PriorLayerVisibility {
 }
 
 /**
- * How many layers may be reported.
+ * There is deliberately NO bound applied here; `MAX_LAYERS` is the contract's.
  *
- * A bound for the reason every bound here is one: the count comes from the
- * document. A design with more than this has a layer panel nobody could use.
+ * This module clamped the count with `Math.min(groups.length, MAX_LAYERS)`,
+ * which made two things true and neither was decided. A document with more
+ * groups than the bound showed a **subset with nothing saying so** — the reader
+ * toggles what they can see and the rest are invisible and unaddressable — and
+ * `document.layers`' own `.max(MAX_LAYERS)` became a check that **cannot fail**,
+ * since the array reaching it had already been cut to fit.
+ *
+ * Its two siblings, written in the same range, do the opposite: neither
+ * `pageLinks` nor `destinations` clamps, and both bounds' comments say *"the
+ * first document refused by this is the evidence the bound is wrong"*. So this
+ * one held a second opinion about how a bound is communicated (B3a), and the
+ * silent half was the one nobody could observe.
+ *
+ * A refusal is loud and a truncation is not, and the panel already renders a
+ * refusal as its `unavailable` state. `search` reports a `truncated` flag
+ * instead — correctly, because there the CALLER states a limit and *exhausted*
+ * and *capped* must stay distinguishable. Nothing states a limit here.
+ *
+ * Found by the stage audit of `87540a5..HEAD`; `payloadBounds.test.ts` proves
+ * every result declares a bound and is structurally unable to see one applied
+ * before the schema reads it.
  */
-const MAX_LAYERS = 1024;
 
 /**
  * Follows an indirect reference, and tolerates a missing key.
@@ -183,9 +201,8 @@ export function readLayers(session: MupdfSession): Promise<readonly Layer[]> {
     if (groups === null) return [];
     const config = defaultConfig(document);
 
-    const count = Math.min(groups.length, MAX_LAYERS);
     const layers: Layer[] = [];
-    for (let index = 0; index < count; index += 1) {
+    for (let index = 0; index < groups.length; index += 1) {
       const group = groups.get(index);
       const name = deref(deref(group).get('Name'));
       layers.push({

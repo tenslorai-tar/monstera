@@ -717,7 +717,175 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
-## 2026-09-03 — Stage audit: `b7d34f2..87540a5` — a fixture's second axis nearly reported a defect that was not there
+## 2026-09-03 — Stage audit: `87540a5..c00bab4` — a bound that truncated where its two siblings refuse, and a comment that described a case nobody had written
+
+Range: **17 commits, 94 files.** 9 proofs added, 22 modified, 0 removed; 10
+source files added, 40 changed, 0 removed — from `npm run audit:scope`. Taken
+because `check:docs` refused the next commit: *"87540a5..HEAD plus this commit:
+102 files (one batch is 100)."*
+
+The range is the nested page tree and the guard its lint failure exposed, the
+named-destinations panel, the layer toggle that did not survive a save, search's
+option list, the go-to field, the document's name as a contract field, recent
+files with the crash-recovery clause, the start screen, the payload-bounds
+sweep, ADR-0006's PDF.js row, split view, the HD render row's two clauses, the
+re-recorded picker probe, two lying status cells with match navigation behind
+one of them, and ADR-0036's B4 amendment.
+
+### The headline: three readers were built in one range and one of them bounds itself differently
+
+**CCCCCC-1. `readLayers` clamped its own count, so the reader was shown a subset
+of their document with nothing saying so — and the schema bound became a check
+that cannot fail.**
+
+`packages/kernel/src/layers.ts` read
+`const count = Math.min(groups.length, MAX_LAYERS);`. Two consequences, and
+neither was decided anywhere:
+
+- a document with more than 1024 optional-content groups produced a panel
+  listing 1024 of them, with no flag, no message and no way to reach the rest.
+  The reader toggles what they can see and the remainder are invisible and
+  unaddressable.
+- `document.layers`' own `.max(MAX_LAYERS)` could never reject, because the
+  array reaching it had already been cut to fit. A bound that cannot fire is a
+  green check verifying nothing — item 4, arriving in a schema rather than in a
+  proof.
+
+**What makes it a finding rather than a preference is the two siblings.**
+`pageLinks` and `destinations` were written in the same range by the same hand,
+and neither clamps: their bounds live only in the schema, and both constants'
+comments say *"the first document refused by this is the evidence the bound is
+wrong."* `MAX_LAYERS`' comment says nothing about refusal or truncation. So this
+was a second opinion about **how a bound is communicated** (B3a), and the silent
+half is the one no observer can see.
+
+`search` is the third arrangement and it is correct: it reports a `truncated`
+flag, because there the **caller** states a limit and *exhausted* and *capped*
+must stay distinguishable. Nothing states a limit for layers.
+
+Fixed by deleting the clamp, so the schema governs and a refusal is loud — the
+panel already renders one as its `unavailable` state. Two contract cases hold
+it: `MAX_LAYERS + 1` entries are refused, and **exactly `MAX_LAYERS` are
+served**, which is `readRange`'s own control for `readRange`'s reason — the
+first case passes for a schema that refuses every layer list, and that is also
+what a typo in the bound produces.
+
+**The instrument that could not see it is worth naming.**
+`payloadBounds.test.ts`, added in this same range, sweeps every channel result
+for an undeclared bound. It proves each result *declares* one. It is
+structurally unable to see a bound **applied before the schema reads it**, which
+is exactly this defect — and its green is what the layers channel had been
+sitting behind.
+
+A sweep for the shape found three other pre-schema clamps and all three are
+correct, which is what makes the finding specific rather than a rule: search's
+`slice(0, limit)` is the caller's own limit with `truncated` reporting it;
+`textMatch`'s window clips a match's surrounding **context** for display and
+drops no items a reader would act on; and the recent list's `slice(0,
+MAX_RECENT)` is our own policy rather than the document's content. **The
+question that separates them: does what the bound drops belong to the
+document?**
+
+### CCCCCC-2. A comment described the mechanism that held two constants together, and the mechanism did not exist
+
+`MAX_RECENT_ENTRIES`, in `packages/contract/src/channels.ts`:
+
+> The store's own cap, restated as the boundary's bound — and restated rather
+> than imported because `apps/desktop` may import this package and not the
+> reverse. **The two agreeing is asserted by a case rather than by the type**,
+> which is the honest arrangement.
+
+There was no such case. `MAX_RECENT_ENTRIES` was named in exactly two places,
+both inside `channels.ts`; `MAX_RECENT` was named only in `apps/desktop`.
+Nothing in the repository compared them.
+
+The reasoning in that comment is right — the contract may not import the shell,
+so the two numbers cannot be one — and the sentence naming the compensation is
+what made it read as covered. Raise either constant alone and every
+`document.recent` read is refused at the boundary, at run time, with nothing red
+at build time and a start screen that shows no recent files for a reason nobody
+would look for in a bound.
+
+Fixed: `MAX_RECENT_ENTRIES` is exported and `recentFiles.test.ts` asserts the
+two are equal. The comment now records that the case arrived a range late.
+
+**This is `CLAUDE.md`'s own class and the third time this project has paid it**
+— the digest asserted `monstera/no-bare-y-flip` existed before it did, and
+asserted a wider `no-raw-hex` than the law. A sentence describing a mechanism is
+indistinguishable from one, and the reader who would catch it is the one least
+likely to look, because the sentence answers their question. **The audit step
+that works is to grep for the mechanism's name, not to look for a
+disagreement**: a disagreement is what the missing case exists to prevent, so
+today there is nothing to find.
+
+### CCCCCC-3. An observation, not a defect: nine positional constructor parameters, four of them readers
+
+`DocumentCommands` now takes `(documents, bus, engine, save, geometry, pageText,
+pageLinks, destinations, layers)`. Three of the last four have the *same*
+parameter list — `(docId, sessions)` for destinations and layers — and this
+range's 18 hidden deletions in `documentCommands.test.ts` are all the same call
+being rewritten as the list grew twice.
+
+**It does not bite today, and that was established rather than assumed:**
+`Destination` is `{ title, page, depth }` and `Layer` is `{ index, name,
+visible }`, structurally incompatible in both directions, so transposing the two
+readers is a compile error. `DocumentPageLinksReader` takes a third parameter
+and a different element type.
+
+The trigger is precise: **the day two of these readers answer the same shape**,
+a transposition compiles and the panel shows the wrong list. An options object
+removes the class. Recorded here rather than done, because it is a mechanical
+change across every construction site and this range has no reader that makes it
+urgent.
+
+### The checklist, item by item
+
+**1. Root cause or workaround.** Four fixes in the range and all four name a
+mechanism. The layer toggle (`fdab6b1`) was rewritten against the object tree
+after a probe showed `/OCProperties/D/OFF` unchanged by MuPDF's layer API — the
+in-memory descriptor and the serialised tree are two stores, and six cases
+agreed because reader and writer shared the first. The placeholder rendering
+(`ad80a44`) was `@lingui/core` registering its message compiler only when
+`NODE_ENV !== 'production'`; fixed by calling `setMessagesCompiler` ourselves,
+so both modes behave alike rather than one being tested. The nested fixture's
+guard (`17f022a`) was three `=== undefined` comparisons the types say cannot
+hold, replaced by the count that was actually worth asserting. None of the four
+is a retry, a widened type, or a disabled check.
+
+**2. Easy shape only?** The nested page tree is this range's answer to that
+question and it produced its own near-miss, recorded in the previous audit. The
+layers fixture carries `/BaseState /OFF` as well as the default, a document with
+no `/D`, and a group with no `/Name`.
+
+**3. Would CI have caught it?** Not CCCCCC-1 or CCCCCC-2: both are checks that
+pass, and a check that passes is what CI reports. `proof:rendergeometry`, the
+range's new proof, is an unconditional step on both matrix legs
+(`ci.yml:507`) — read from the workflow and from the fact that the step carries
+no `if:`, and its no-runtime branch reports the seven runtime cases as
+UNVERIFIABLE by name rather than shrinking its roster silently.
+
+**4a/4b. Instruments.** `renderGeometryFixtures.mjs` and `canvasReadback.mjs`
+are the two new ones. The first is resolution-tested by the proof's own control
+— the upright page renders 400×600 against the rotated page's 600×400 and the
+cropped page's 200×300, three values a blind instrument could not separate. The
+second carries `controlName`, which **throws** when the catalogue has no entry
+rather than answering with a name nobody minted. `textRetention.mjs` gained
+`matchCount`, which throws on a refused query rather than letting it become a
+zero — and a zero on both sides would satisfy that probe's control exactly.
+
+**The `canvasPixels.proof.mjs` extraction (−152 lines) was read against its
+destination by name rather than by the diff.** Every non-trivial removed line
+was matched against `canvasReadback.mjs`; four did not appear, and all four are
+a renamed constant (`REPO_ROOT` → `ROOT`) or a reworded diagnostic. Nothing was
+dropped. That check is cheap and it is the one a net-negative move needs, because
+a move that fails to carry something looks identical to one that carried
+everything.
+
+**7. Documents.** ADR-0036 gained a dated correction on the day it was written —
+its guarantee held for the document and the zoom and not for the page — and the
+index row says so. §10.5a's body is edited to be currently true, which is the
+right treatment for a living-law section and the wrong one for the ADR beside
+it.
 
 Range: **18 commits, 95 files.** 12 proofs added, 20 modified, 0 removed; 20
 source files added, 33 changed, 0 removed — from `npm run audit:scope`.
