@@ -173,6 +173,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.open': 'drives a picker; its answer is measured through the service below',
   'document.openRecent': "same answer as document.open, by a handle rather than a picker",
   'document.recent': 'answers a bounded list of files the user opened, not about a document',
+  // A `DocId` in, a boolean out. Nothing in either direction can grow with a
+  // document, which is the rare case where L11's question has a one-line
+  // answer rather than a bound.
+  'document.close': 'takes an id and answers a boolean',
   // These four need an engine session, and no engine host runs in a unit test.
   // Their bounds are asserted where they can be: the search channel by
   // ADR-0035 and `documentCommands.test.ts`, the rest by the caller-stated

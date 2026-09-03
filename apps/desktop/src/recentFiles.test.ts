@@ -1,4 +1,5 @@
 import { MAX_RECENT_ENTRIES } from '@monstera/contract';
+import { asDocId } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import { MAX_RECENT, createRecentFiles } from './recentFiles.js';
@@ -190,6 +191,78 @@ describe('the recent list', () => {
       }));
 
       expect(createRecentFiles(aFile({ entries })).list()).toHaveLength(MAX_RECENT);
+    });
+  });
+
+  describe('the recorded session', () => {
+    /**
+     * The clause `docs/FEATURES.md`'s crash-recovery row carried: *"that
+     * correspondence expires with multi-document tabs, when this must become a
+     * recorded session rather than an inference."* Tabs landed, so it is
+     * recorded, and these are what say it is recorded rather than derived.
+     */
+    const DRAFT = asDocId('00000000-0000-4000-8000-0000000000d1');
+    const NOTES = asDocId('00000000-0000-4000-8000-0000000000d2');
+
+    it('carries what is OPEN, which is not the head of the recent list', () => {
+      // THE TWO LISTS ARE MADE TO DISAGREE, and that is the case rather than
+      // colour: a fixture where the session is the newest recent entry cannot
+      // tell a recorded session from the inference it replaced.
+      const file = aFile();
+      const first = createRecentFiles(file);
+
+      first.record({ path: 'C:/annual.pdf', name: 'annual.pdf' });
+      first.opened(DRAFT, { path: 'C:/draft.pdf', name: 'draft.pdf' });
+      first.opened(NOTES, { path: 'C:/notes.pdf', name: 'notes.pdf' });
+      first.record({ path: 'C:/latest.pdf', name: 'latest.pdf' });
+
+      // No `markCleanExit`: this run died.
+      const next = createRecentFiles(file);
+
+      expect(next.lastSession().map((entry) => entry.name)).toStrictEqual([
+        'draft.pdf',
+        'notes.pdf',
+      ]);
+      // And the recent list's head is a document that was never open, so the
+      // two answers are genuinely different values rather than one read twice.
+      expect(next.list()[0]?.name).toBe('latest.pdf');
+    });
+
+    it('DROPS a document that was closed before the run ended', () => {
+      // Without this, `opened` alone would satisfy the case above and the
+      // session would grow to every document the run ever showed — which is
+      // the recent list with extra steps.
+      const file = aFile();
+      const first = createRecentFiles(file);
+
+      first.opened(DRAFT, { path: 'C:/draft.pdf', name: 'draft.pdf' });
+      first.opened(NOTES, { path: 'C:/notes.pdf', name: 'notes.pdf' });
+      first.closed(DRAFT);
+
+      expect(
+        createRecentFiles(file)
+          .lastSession()
+          .map((entry) => entry.name),
+      ).toStrictEqual(['notes.pdf']);
+    });
+
+    it('CONTROL: a run that ended cleanly leaves nothing to recover', () => {
+      // A run that finished has nothing to offer, and the offer is driven by
+      // this list rather than by `lastExitClean` alone. `markCleanExit` clears
+      // it explicitly, because the shutdown path closes documents through the
+      // service rather than through this surface — so the live set is NOT
+      // emptied by the closes a clean exit performs.
+      const file = aFile();
+      const first = createRecentFiles(file);
+
+      first.opened(DRAFT, { path: 'C:/draft.pdf', name: 'draft.pdf' });
+      first.markCleanExit();
+
+      expect(createRecentFiles(file).lastSession()).toStrictEqual([]);
+    });
+
+    it('is EMPTY on a first launch, where no previous run recorded anything', () => {
+      expect(createRecentFiles(aFile()).lastSession()).toStrictEqual([]);
     });
   });
 });

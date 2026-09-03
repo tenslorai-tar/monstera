@@ -264,6 +264,11 @@ describe('the error boundary around the document view, in App', () => {
 
     const retry = container.querySelector('[data-view-retry]');
     if (!(retry instanceof HTMLButtonElement)) throw new Error('the fallback offers a retry');
+
+    // FROM HERE, so what is asserted is what the RETRY asked for. Activating a
+    // document also issues a scroll — that is how a tab restores a reader's
+    // page — and a list carrying both cannot say which one this case is about.
+    scrolled.length = 0;
     await act(async () => {
       retry.click();
       await Promise.resolve();

@@ -139,12 +139,32 @@ body {
  * sentence and the control it belongs to read as one thing — the button says
  * *Reopen* and means nothing without the name beside it.
  */
+/*
+ * The recovery offer: a sentence, then one control per document.
+ *
+ * A COLUMN rather than the row this was while it offered a single file. With
+ * several documents the controls carry their file names, and names are as long
+ * as their files — a row would push the last of them off the edge, which is
+ * the one a reader is least likely to look for.
+ */
 .m-recent-recover {
-  display: flex;
+  display: grid;
   gap: var(--space-8);
-  align-items: center;
   margin: 0;
   color: var(--text);
+}
+
+.m-recent-recover p {
+  margin: 0;
+}
+
+.m-recover-list {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 /*
@@ -785,6 +805,66 @@ body {
  * reads to the next author as though one exists. Adding a real family token is a
  * §10.2 role decision and not this dialog's to take.
  */
+
+/*
+ * The open documents' tab strip.
+ *
+ * A row that SCROLLS rather than wraps: a second line of tabs moves everything
+ * below it down as documents open, and a document surface whose top edge
+ * depends on how many files are open is one nothing can be measured against.
+ */
+.m-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg2);
+  border-block-end: 1px solid var(--border); /* decorative: separates the strip from the document area; each tab carries its own focus ring */
+}
+
+.m-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+  /* The current tab is marked by a border on the block-end edge as well as by
+     a surface, so `forced-colors` — where this rule's background is discarded —
+     still says which document is showing. */
+  border-block-end: 2px solid transparent;
+}
+
+.m-tab-current {
+  background: var(--surface2);
+  border-block-end-color: var(--accent);
+}
+
+.m-tab-name,
+.m-tab-close {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: var(--space-2);
+}
+
+/* The name is ellipsed, never truncated to a shorter name: a tab reading
+   "annual re…" is one a reader can still identify, and `title` carries the
+   whole of it for the pointer. A fixed maximum, because a strip of six
+   documents whose widths depend on their names is one where the tab under the
+   pointer moves as another document opens. */
+.m-tab-name {
+  max-inline-size: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.m-tab-name:hover,
+.m-tab-name:focus-visible,
+.m-tab-close:hover,
+.m-tab-close:focus-visible {
+  background: var(--surface2);
+}
 
 /*
  * Match navigation, and this is the ONLY styled part of the find bar.

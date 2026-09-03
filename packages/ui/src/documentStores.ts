@@ -1,6 +1,8 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
+import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
+
 /**
  * One store per open document, created on open and dropped on close
  * (ARCHITECTURE §6).
@@ -85,6 +87,35 @@ export interface DocumentState {
   readonly history: readonly number[];
   /** The index into {@link history} the reader is currently at. */
   readonly historyAt: number;
+  /**
+   * How this document is magnified.
+   *
+   * ## HERE BECAUSE OF TABS, and that is this file's own rule being met again
+   *
+   * The header says a view concern belongs in this store once something reads
+   * it, and zoom lived in `App` while there was one document — where it was
+   * indistinguishable from *the application's zoom*. With two documents open,
+   * a reader who fits one to the width and reads the other at 200% and finds
+   * both changed by switching tabs has met a singleton wearing a per-document
+   * name. Which document a magnification belongs to is only a question once
+   * there are two, and this is the answer.
+   *
+   * A **mode**, not a number, for the reason `App` gives: nothing here can
+   * resolve a fit, because nothing here knows how wide the scroller is.
+   */
+  readonly zoom: ZoomMode;
+  /**
+   * How many pages the document has, once its parser has answered.
+   *
+   * `undefined` until then, which is a real state: the navigation commands
+   * clamp against it and a count of zero would let them clamp to nothing.
+   *
+   * Per document for zoom's reason and one sharper: a stale count is a
+   * *wrong* statement rather than an inconvenient one. Switching from a
+   * ten-page document to a two-page one with a shared count leaves the status
+   * bar reading "Page 1 of 10" over a document that has two.
+   */
+  readonly pageCount: number | undefined;
 }
 
 export interface DocumentActions {
@@ -134,6 +165,17 @@ export interface DocumentActions {
 
   /** Steps forward. See {@link back}. */
   readonly forward: () => number | undefined;
+
+  /** Records the magnification the reader chose for THIS document. */
+  readonly zoomed: (mode: ZoomMode) => void;
+
+  /**
+   * Records how many pages the parser found.
+   *
+   * Idempotent by value: the scroller reports on every mount, and a set that
+   * always wrote would wake every subscriber for an unchanged number.
+   */
+  readonly counted: (pages: number) => void;
 }
 
 /**
@@ -171,6 +213,10 @@ export function createDocumentStore(
     // do nothing, which reads as a broken control rather than as a boundary.
     history: [page],
     historyAt: 0,
+    zoom: DEFAULT_ZOOM,
+    // NOT ZERO. A document whose parser has not answered has an unknown page
+    // count, and zero is a number the navigation commands would clamp against.
+    pageCount: undefined,
     observed: (next) => {
       if (next <= get().version) return false;
       set({ version: next });
@@ -207,6 +253,13 @@ export function createDocumentStore(
       if (target === undefined) return undefined;
       set({ historyAt: at, page: target });
       return target;
+    },
+    zoomed: (mode) => {
+      set({ zoom: mode });
+    },
+    counted: (pages) => {
+      if (pages === get().pageCount) return;
+      set({ pageCount: pages });
     },
   }));
 }

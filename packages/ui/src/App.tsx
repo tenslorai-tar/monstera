@@ -5,8 +5,8 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useRef,
   useState,
+  useSyncExternalStore,
   type ReactElement,
 } from 'react';
 
@@ -29,7 +29,7 @@ import {
 } from './commands/viewCommands.js';
 import { CommandPalette } from './CommandPalette.js';
 import { goToCommand, historyCommand, pageMoveCommand } from './commands/navigationCommands.js';
-import { type DocumentStore, DocumentStores } from './documentStores.js';
+import { DocumentStores } from './documentStores.js';
 import { Thumbnails } from './Thumbnails.js';
 import { StatusBar } from './StatusBar.js';
 import { LinksPanel } from './LinksPanel.js';
@@ -41,7 +41,7 @@ import { type OpenProblem, openDocumentCommand } from './commands/openDocument.j
 import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
-import { COMMAND_PROBLEM_DIALOG } from './dialogs/commandProblem.js';
+import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
 import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
@@ -76,6 +76,7 @@ import { PageList } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
+import { DocumentTabs } from './surfaces/DocumentTabs.js';
 import { StartScreen } from './surfaces/StartScreen.js';
 import { ViewProblem } from './surfaces/ViewProblem.js';
 
@@ -99,7 +100,7 @@ import { ViewProblem } from './surfaces/ViewProblem.js';
  * decision.
  */
 
-/** What the renderer knows about the one open document. */
+/** What the renderer knows about one open document. */
 interface OpenDocument {
   readonly docId: DocId;
   readonly version: DocVersion;
@@ -125,8 +126,44 @@ export interface AppProps {
   readonly settings: SettingsStore;
 }
 
+/**
+ * The subscription for *no document is open*.
+ *
+ * Module-level so its identity is stable: `useSyncExternalStore` re-subscribes
+ * whenever this changes, and a fresh arrow per render would tear down and
+ * rebuild the subscription on every one.
+ */
+const NO_DOCUMENT_SUBSCRIBE = (): (() => void) => (): void => undefined;
+
 export function App({ client, settings }: AppProps): ReactElement {
-  const [open, setOpen] = useState<OpenDocument | undefined>(undefined);
+  /**
+   * Every open document, in the order they were opened.
+   *
+   * ## A LIST AND A SEPARATE ACTIVE ID, not a list with a flag on one entry
+   *
+   * *Two documents both marked active* and *none marked* are both
+   * representable in a list of flagged entries, and every reader would have to
+   * rule them out. One id beside the list makes the first unrepresentable; the
+   * second is a real state — no documents open — and `undefined` says it (B5).
+   *
+   * ## An id and not an index
+   *
+   * Closing a tab renumbers every index after it. An id that no longer names a
+   * tab is a state something has to notice; an index that quietly means a
+   * *different* document is not.
+   */
+  const [tabs, setTabs] = useState<readonly OpenDocument[]>([]);
+  const [activeId, setActiveId] = useState<DocId | undefined>(undefined);
+  const open = tabs.find((tab) => tab.docId === activeId);
+
+  /**
+   * One store per open document, minted with its tab and dropped with it.
+   *
+   * Declared here rather than beside the state it serves, because the callback
+   * that adds a tab is the one that mints a store and the compiler is right
+   * that the order has to say so.
+   */
+  const [stores] = useState(() => new DocumentStores());
   /**
    * The last open that produced no document and something to say.
    *
@@ -172,26 +209,15 @@ export function App({ client, settings }: AppProps): ReactElement {
   // command can only run with a focused document. It is the type saying that a
   // result arriving after a close belongs to nothing, which is the same
   // late-answer hazard `DocumentRangeTransport` drops bytes for.
-  const applied = useCallback((next: { readonly version: DocVersion; readonly byteLength: number }) => {
-    setOpen((previous) => (previous === undefined ? undefined : { ...previous, ...next }));
-  }, []);
+  const applied = useCallback(
+    (next: { readonly version: DocVersion; readonly byteLength: number }) => {
+      setTabs((current) =>
+        current.map((tab) => (tab.docId === activeId ? { ...tab, ...next } : tab)),
+      );
+    },
+    [activeId],
+  );
 
-  /**
-   * The page the reader is looking at, zero-based.
-   *
-   * Held here rather than in the scroller because it is what every **command**
-   * means by *this page*, and commands are registered here. It starts at the
-   * first page: a document that has just opened is scrolled to the top, and the
-   * observer confirms it on the first frame rather than contradicting it.
-   */
-  const [currentPage, setCurrentPage] = useState<number>(FIRST_PAGE.kernel);
-  /**
-   * How many pages the open document has, once its parser has answered.
-   *
-   * Held here rather than only inside the scroller because the navigation
-   * commands need an end to clamp against, and they are registered here.
-   */
-  const [pageCount, setPageCount] = useState<number | undefined>(undefined);
   /**
    * A page the reader asked to be taken to, cleared once the scroller has.
    *
@@ -209,6 +235,67 @@ export function App({ client, settings }: AppProps): ReactElement {
   const [goTo, setGoTo] = useState<number | undefined>(undefined);
 
   /**
+   * Brings a document to the front, and takes the reader back to its page.
+   *
+   * ## Why activation is one callback rather than `setActiveId` in four places
+   *
+   * Only the ACTIVE document's view is mounted, so activating a tab mounts a
+   * scroller. `PageList` seeds one page visible and reports it as the current
+   * one, which is how a document draws something before any intersection has
+   * fired — and a scroller mounting at the top would tell that document's own
+   * store the reader had gone back to page 1, a moment after the store was
+   * asked where they were.
+   *
+   * `startAt` is what stops that: the scroller seeds the page it is mounting
+   * at, so its first report is the truth. This supplies the other half — the
+   * `goTo` request that actually moves it there — and the two belong together,
+   * which is why every route that changes the active document comes through
+   * here rather than calling `setActiveId`.
+   *
+   * ## Only the active view is mounted, and that is a BUDGET decision
+   *
+   * Keeping every tab's scroller mounted would preserve the scroll position
+   * for free, and would hold one set of page bitmaps per open document — which
+   * is the first thing in this build that looks like the cache §9.17's
+   * renderer budget is written about. Unmounting keeps that budget a statement
+   * about one document, and this callback is what it costs.
+   */
+  const activate = useCallback(
+    (docId: DocId): void => {
+      setActiveId(docId);
+      const page = stores.get(docId)?.getState().page;
+      if (page !== undefined) setGoTo(page);
+    },
+    [stores],
+  );
+
+  /**
+   * A document main has opened, added as a tab and brought to the front.
+   *
+   * **Deduped by `docId`**, which is not defensiveness: `document.openRecent`
+   * can answer with a document that is already open, and appending would put a
+   * second tab in front of the reader for the file they asked to look at. The
+   * dedupe and the activation together are what make *open the thing I already
+   * have* mean *show it to me*.
+   */
+  const opened = useCallback(
+    (document: OpenDocument): void => {
+      // THE STORE IS MINTED HERE, beside the tab, because the two have the same
+      // lifetime and `stores.open` refuses a second one for a document that
+      // already has it. Guarded by the same `get`-misses read the render uses,
+      // so re-opening an open document activates its tab rather than throwing.
+      if (stores.get(document.docId) === undefined) {
+        stores.open(document.docId, document.version);
+      }
+      setTabs((current) =>
+        current.some((tab) => tab.docId === document.docId) ? current : [...current, document],
+      );
+      activate(document.docId);
+    },
+    [activate, stores],
+  );
+
+  /**
    * The open document's own store, which is where the back-stack lives.
    *
    * ## THE FIRST REAL CALLER of `documentStores.ts`, and that is deliberate
@@ -224,43 +311,109 @@ export function App({ client, settings }: AppProps): ReactElement {
    * the same file starts a fresh history — which is what a reader expects and
    * what §6 makes automatic.
    */
-  const [stores] = useState(() => new DocumentStores());
-  const [store, setStore] = useState<DocumentStore | undefined>(undefined);
+  /**
+   * The active document's store, read rather than held.
+   *
+   * ## THE LIFETIME MOVED WITH TABS, and that is the finding this row exists to
+   * produce
+   *
+   * A store used to be opened by an effect keyed on the focused `docId` and
+   * dropped by that effect's cleanup — correct while focus and existence were
+   * the same event. With tabs they are two: switching away from a document does
+   * not close it, and an effect written that way would drop the store of every
+   * tab the reader looked away from, taking its history and its zoom with it
+   * and re-minting them empty on the way back. The reader would see a
+   * back-stack that forgets and a magnification that resets, with nothing in
+   * the code saying *close*.
+   *
+   * So a store's lifetime is now the TAB's, and it is opened and closed by the
+   * two callbacks that add and remove one. `get` misses rather than creates —
+   * `documentStores.ts` insists on that — so reading here can never mint a
+   * store for a document that is gone.
+   */
+  const store = activeId === undefined ? undefined : stores.get(activeId);
 
   /**
-   * The version to open a store AT, without making the store depend on it.
+   * The active document's view state, live.
    *
-   * A store's lifetime is the DOCUMENT's, not the version's — every command
-   * bumps the version, and an effect that depended on it would drop and rebuild
-   * the store on every rotate, taking the back-stack with it. But the
-   * constructor needs a starting version, so it is read from a ref that a
-   * separate effect keeps current.
+   * ## WHY THESE THREE MOVED OUT OF `useState` AND INTO THE STORE
    *
-   * **Written in an effect and never during render.** `react-hooks` reports a
-   * ref touched during render and is right to: under a concurrent render the
-   * write can happen for a render that is then thrown away.
+   * The page, the magnification and the page count were `useState` here while
+   * there was one document, where *the application's page* and *this
+   * document's page* are the same sentence. Tabs separate them, and the
+   * separation is not cosmetic: a reader on page 40 of one file who looks at
+   * another and comes back expects page 40, and a status bar reading
+   * "Page 1 of 10" over a two-page document is a wrong statement rather than a
+   * stale one.
+   *
+   * The alternative — keep them here and copy them in and out on every switch —
+   * is a restore, and a restore is a mechanism that can be wrong where a
+   * position cannot. This is §10.5a's own lesson applied a second time in the
+   * same day: put the state where its lifetime is, rather than moving it about
+   * correctly.
+   *
+   * `useSyncExternalStore` rather than a subscription effect, because the
+   * subscribe function is the store's own and re-subscribing when the active
+   * store changes is exactly what switching tabs must do. With no document the
+   * subscribe is a no-op whose unsubscribe is a no-op, and the snapshot is a
+   * stable `undefined` — returning a fresh object there would spin React.
    */
-  const latest = useRef(open);
-  useEffect(() => {
-    latest.current = open;
-  }, [open]);
+  const view = useSyncExternalStore(
+    store?.subscribe ?? NO_DOCUMENT_SUBSCRIBE,
+    () => store?.getState(),
+  );
+  const currentPage = view?.page ?? FIRST_PAGE.kernel;
+  const pageCount = view?.pageCount;
+  const zoomMode = view?.zoom ?? DEFAULT_ZOOM;
 
-  const docId = open?.docId;
-  useEffect(() => {
-    const version = latest.current?.version;
-    if (docId === undefined || version === undefined) {
-      setStore(undefined);
-      return;
-    }
-    setStore(stores.open(docId, version));
-    return (): void => {
-      // DROPPED ON CLOSE, which is §6 rather than tidiness: the store is what
-      // makes a back-stack unable to outlive its document, and a registry that
-      // kept it would put that guarantee back in a caller's hands.
+  /**
+   * Closes one document: the tab, its store, and what main holds for it.
+   *
+   * ## All three, and the third is the one a renderer-only close would miss
+   *
+   * Dropping the tab and the store leaves `main` holding the canonical image
+   * against the capacity ceiling that `at-capacity` reports — so a reader who
+   * opened and closed several large files would be refused the next one by a
+   * budget spent on documents nothing can reach. `document.close` exists for
+   * that, and this is its only caller.
+   *
+   * ## The neighbour to the LEFT, and it is decided before the list changes
+   *
+   * Closing the focused tab has to leave the reader somewhere. The tab to its
+   * left is what every editor does and what a reader reaches for next; the
+   * first tab would send someone closing the fifth of six back to the start.
+   * Reading the index from `tabs` rather than from the filtered list is what
+   * makes that expressible: after the filter, the position is gone.
+   *
+   * ## The failure is REPORTED rather than swallowed
+   *
+   * The channel declares no codes, so the only way this ends badly is
+   * `internal` — a defect with an incident id. The tab still goes, because the
+   * reader asked for it and leaving it would put a document on screen that
+   * this build has already stopped tracking; what must not happen is that the
+   * incident goes nowhere.
+   */
+  const closeTab = useCallback(
+    async (docId: DocId): Promise<void> => {
+      const at = tabs.findIndex((tab) => tab.docId === docId);
+      if (at < 0) return;
+
+      const remaining = tabs.filter((tab) => tab.docId !== docId);
+      setTabs(remaining);
+      if (docId === activeId) {
+        const neighbour = remaining[Math.max(0, at - 1)]?.docId;
+        // `setActiveId` directly for the LAST tab, because there is no document
+        // to activate and `activate` is about arriving somewhere.
+        if (neighbour === undefined) setActiveId(undefined);
+        else activate(neighbour);
+      }
       stores.close(docId);
-      setStore(undefined);
-    };
-  }, [docId, stores]);
+
+      const answer = await client['document.close']({ docId });
+      if (!answer.ok) show(COMMAND_PROBLEM_DIALOG_ID, answer.error);
+    },
+    [activate, activeId, client, show, stores, tabs],
+  );
 
   /**
    * The magnification the reader asked for, as a MODE.
@@ -275,7 +428,6 @@ export function App({ client, settings }: AppProps): ReactElement {
    * layout measurement up here to serve two commands. `PageList` resolves it
    * and reports what it resolved to.
    */
-  const [zoomMode, setZoomMode] = useState<ZoomMode>(DEFAULT_ZOOM);
   /**
    * The scale actually on screen, which is the mode's number or a fit's answer.
    *
@@ -328,8 +480,16 @@ export function App({ client, settings }: AppProps): ReactElement {
   // return to. It does NOT push — see `DocumentState.history`.
   const viewed = useCallback(
     (page: number): void => {
-      setCurrentPage(page);
       store?.getState().viewing(page);
+    },
+    [store],
+  );
+
+  // The parser's answer, told to the document it is about. Idempotent by value
+  // in the store, because the scroller reports on every mount.
+  const counted = useCallback(
+    (pages: number): void => {
+      store?.getState().counted(pages);
     },
     [store],
   );
@@ -365,15 +525,35 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const changeZoom = useCallback(
     (next: (shown: number) => ZoomMode): void => {
-      setZoomMode(next(shownZoom));
+      store?.getState().zoomed(next(shownZoom));
     },
-    [shownZoom],
+    [shownZoom, store],
+  );
+
+  /**
+   * The open command, built once and read by two things.
+   *
+   * The registry projects it onto the start screen; the tab strip triggers the
+   * same `run` for *open another*. Hoisting it here rather than placing it on
+   * a second surface is what keeps that from being a second wiring place —
+   * there is one implementation, and the strip holds no opinion about how a
+   * document is opened.
+   */
+  const openCommand = useMemo(
+    () =>
+      openDocumentCommand({
+        client,
+        onOpened: opened,
+        onProblem: setOpenProblem,
+        onAlreadyOpen: activate,
+      }),
+    [activate, client, opened],
   );
 
   const registry = useMemo(
     () =>
       new CommandRegistry([
-        openDocumentCommand({ client, onOpened: setOpen, onProblem: setOpenProblem }),
+        openCommand,
         showAboutCommand({ client, show }),
         revealLogCommand({ client }),
         rotatePageCommand({ client, onApplied: applied, show }),
@@ -401,7 +581,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         historyCommand('forward', { navigator }),
         goToCommand(),
       ]),
-    [applied, changeZoom, client, navigator, openPalette, settings, show],
+    [applied, changeZoom, client, navigator, openCommand, openPalette, settings, show],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -446,13 +626,31 @@ export function App({ client, settings }: AppProps): ReactElement {
 
   return (
     <main className="m-document-surface">
+      {/* THE OPEN DOCUMENTS. First in the surface because it is what the rest
+          of it is about — the strip names which document every panel, the
+          status bar and every command below refer to. */}
+      <DocumentTabs
+        tabs={tabs}
+        activeId={activeId}
+        onSelect={activate}
+        onClose={(docId) => {
+          void closeTab(docId);
+        }}
+        // THE REGISTERED COMMAND'S OWN `run`, not a second way to open a
+        // document. The strip is where *open another* belongs — it exists
+        // exactly when a document is open, which is exactly when the start
+        // screen's copy is gone.
+        onOpen={() => {
+          void openCommand.run(context);
+        }}
+      />
       {open === undefined ? (
         <>
           <StartScreen registry={registry} context={context} problem={openProblem} />
           {/* BESIDE the projection, not inside it: a recent file is data with a
               control, not a registered command, and registering one per row
               would mean rebuilding the registry whenever the list changed. */}
-          <RecentFiles client={client} onOpened={setOpen} />
+          <RecentFiles client={client} onOpened={opened} />
         </>
       ) : (
         // THE ERROR BOUNDARY, AND ITS POSITION IS THE GUARANTEE (§10.5a).
@@ -493,14 +691,14 @@ export function App({ client, settings }: AppProps): ReactElement {
         <PageCanvas
           client={client}
           document={open}
-          onVersionMoved={setOpen}
+          onVersionMoved={opened}
           onCurrentPage={viewed}
           mode={zoomMode}
           onZoom={changeZoom}
           onShownZoom={setShownZoom}
           goTo={goTo}
           onWentTo={wentTo}
-          onPageCount={setPageCount}
+          onPageCount={counted}
           current={currentPage}
           onJump={navigator.jumpTo}
           loupe={loupe}
@@ -891,6 +1089,10 @@ function PageCanvas({
         onZoom={onZoom}
         onShownZoom={onShownZoom}
         goTo={goTo}
+        // WHERE THIS SCROLLER IS MOUNTING, which with tabs is wherever the
+        // reader left this document. Seeding page 1 here reported them back to
+        // the top of a document they were forty pages into.
+        startAt={current}
         onWentTo={onWentTo}
         loupe={loupe}
         rulers={rulers}
@@ -931,6 +1133,9 @@ function PageCanvas({
           onZoom={onZoom}
           onShownZoom={ignoreZoom}
           goTo={undefined}
+          // The same page the first pane starts at, so a split opens on what
+          // the reader is looking at rather than at the top of the document.
+          startAt={current}
           onWentTo={ignoreWentTo}
           loupe={loupe}
           rulers={rulers}

@@ -456,6 +456,32 @@ export const channels = {
        * nothing.
        */
       lastExitClean: z.boolean(),
+      /**
+       * What was open when the previous run ended, newest last.
+       *
+       * ## It is RECORDED, not inferred, and tabs are why
+       *
+       * With one document on screen the newest recent entry *was* what was
+       * open, and the offer named it. Multi-document tabs ended that
+       * correspondence: a reader with three documents open who loses the
+       * application would be offered the last file they touched and told
+       * nothing about the other two.
+       *
+       * Empty after a clean exit — a run that finished has nothing to recover —
+       * so a renderer reads this as *the offer*, and `lastExitClean` as
+       * *whether to make one*. The two are separate because an unclean exit
+       * with nothing recorded is a real state: a run that died before opening
+       * anything.
+       */
+      lastSession: z
+        .array(
+          z.object({
+            handle: fileHandleSchema,
+            name: z.string().max(MAX_DOCUMENT_NAME_LENGTH),
+          }),
+        )
+        .max(MAX_RECENT_ENTRIES)
+        .readonly(),
     }),
   ),
 
@@ -487,6 +513,42 @@ export const channels = {
     // and that is an outcome a surface acts on by refreshing the list, not a
     // defect with an incident id.
     ['unknown-handle'],
+  ),
+
+  /**
+   * Closes an open document, releasing its bytes, its session and its handle.
+   *
+   * ## Why this channel did not exist until multi-document tabs
+   *
+   * With one document on screen, opening the next one is what ended the last,
+   * and `DocumentService` was doing the closing. Tabs make *close* something a
+   * reader does on purpose to one of several — and without it a session's tab
+   * could vanish from the strip while main went on holding its bytes against
+   * the capacity ceiling that `at-capacity` reports.
+   *
+   * ## It answers a BOOLEAN rather than refusing an unopened document
+   *
+   * `closed: false` means *there was nothing here*, which is the honest answer
+   * to a close that raced a close: two tabs' worth of teardown for one document
+   * is a thing a surface can produce and not a defect it should report. A code
+   * would make the second caller show an error for having been second.
+   *
+   * ## It declares NO codes, and `document-busy` was written here and removed
+   *
+   * `DocumentService.close` removes the record synchronously and then **awaits
+   * the lane**, so work in flight delays the teardown rather than refusing it.
+   * There is no busy refusal to report. Declaring one would have put a code in
+   * the result union that nothing can ever produce — the shape this range's
+   * audit found in `MAX_LAYERS`, a branch that reads as coverage and cannot
+   * fire — and a renderer would carry a handler for it forever.
+   */
+  'document.close': channel(
+    'Closes an open document and releases what main held for it.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      /** Whether a document was there to close. */
+      closed: z.boolean(),
+    }),
   ),
 
   'document.execute': channel(

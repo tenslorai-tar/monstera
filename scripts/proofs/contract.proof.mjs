@@ -113,8 +113,10 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-  'document.recent': () => Promise.resolve(ok({ entries: [], lastExitClean: true })),
+  'document.recent': () =>
+    Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
+  'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
@@ -165,8 +167,10 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const handlers: ContractHandlers = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-  'document.recent': () => Promise.resolve(ok({ entries: [], lastExitClean: true })),
+  'document.recent': () =>
+    Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
+  'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.readRange': ({ begin, end }) =>
@@ -290,8 +294,10 @@ import { ok, asDocVersion } from '@monstera/shared';
 export const shim: ContractClient = {
   'app.info': () => Promise.resolve(ok({ version: '1.0.0', installChannel: 'development' })),
   'document.open': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
-  'document.recent': () => Promise.resolve(ok({ entries: [], lastExitClean: true })),
+  'document.recent': () =>
+    Promise.resolve(ok({ entries: [], lastExitClean: true, lastSession: [] })),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
+  'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.readRange': () =>

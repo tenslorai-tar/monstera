@@ -77,6 +77,9 @@ export const FIND_MATCH_ON_PAGE = messageKey('surface.find.match-on-page');
 export const FIND_NEXT_MATCH = messageKey('surface.find.next-match');
 export const FIND_PREVIOUS_MATCH = messageKey('surface.find.previous-match');
 export const FIND_MATCH_POSITION = messageKey('surface.find.match-position');
+export const TAB_STRIP_LABEL = messageKey('surface.tabs.label');
+export const TAB_CLOSE = messageKey('surface.tabs.close');
+export const TAB_OPEN_ANOTHER = messageKey('surface.tabs.open-another');
 export const VIEW_PROBLEM_TITLE = messageKey('surface.view-problem.title');
 export const VIEW_PROBLEM_BODY = messageKey('surface.view-problem.body');
 export const VIEW_PROBLEM_RETRY = messageKey('surface.view-problem.retry');
@@ -209,6 +212,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // far they have to go as much as where they are, and "match 7" alone is the
   // half that tells them neither.
   [FIND_MATCH_POSITION]: 'Match {position} of {count}',
+  [TAB_STRIP_LABEL]: 'Open documents',
+  // THE FILE'S NAME IS IN THE CONTROL'S NAME. Six tabs give six close buttons,
+  // and six of them called "Close" are six controls a screen-reader user
+  // cannot tell apart.
+  [TAB_CLOSE]: 'Close {name}',
+  [TAB_OPEN_ANOTHER]: 'Open another document',
   [VIEW_PROBLEM_TITLE]: 'This document could not be displayed.',
   // NAMES WHAT SURVIVED, which is the actionable half. A reader who has just
   // watched a view vanish assumes the worst about their file; §10.5a's
@@ -229,8 +238,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // because the file moved or the list outlived the run that made it, and
   // neither is something they did.
   [RECENT_MISSING]: 'That document could not be opened. It may have been moved or renamed.',
-  [RECOVER_OFFER]: 'Monstera closed unexpectedly. Reopen {name}?',
-  [RECOVER_LABEL]: 'Reopen',
+  // NAMES NOTHING, because the list beneath it does. This read "Reopen
+  // {name}?" while one document could be open and the newest recent entry was
+  // that document; with tabs the offer is a recorded set, and a sentence
+  // naming one of several would be the inference tabs ended, in a string.
+  [RECOVER_OFFER]: 'Monstera closed unexpectedly. These documents were open:',
+  // ONE CONTROL PER DOCUMENT, each named with the file it reopens — a column
+  // of buttons all called "Reopen" is a column a screen-reader user cannot
+  // tell apart, which is the tab strip's close control one surface over.
+  [RECOVER_LABEL]: 'Reopen {name}',
   [LAYERS_LABEL]: 'Layers',
   [LAYERS_EMPTY]: 'This document has no layers.',
   [LAYERS_UNAVAILABLE]: 'The layers could not be read.',

@@ -345,6 +345,16 @@ export interface BrowserShimOptions {
    * defaulting to `false` would make every case a crash-recovery case.
    */
   readonly lastExitClean?: boolean;
+
+  /**
+   * What was open when the previous run ended. Defaults to nothing.
+   *
+   * SEPARATE from `recent`, and a shim that derived it from the head of that
+   * list would be modelling the inference multi-document tabs ended rather
+   * than the recording that replaced it. A case about recovery has to be able
+   * to name two documents that are not the two most recently opened.
+   */
+  readonly lastSession?: readonly { readonly handle: FileHandle; readonly name: string }[];
 }
 
 /**
@@ -438,6 +448,18 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
     },
 
     /**
+     * Closes a document, and it FORGETS THE VERSION rather than only answering.
+     *
+     * The version map is what makes `document.execute` accept an id, so a shim
+     * that answered `closed: true` and kept the entry would let a surface go on
+     * commanding a document it had closed — the one state the real boundary
+     * cannot produce, and the state a tab strip's teardown is most likely to
+     * get wrong. `closed` is the map's own answer for the same reason: a
+     * literal `true` here would report a close for a document nobody opened.
+     */
+    'document.close': ({ docId }) => Promise.resolve(ok({ closed: versions.delete(docId) })),
+
+    /**
      * The recent list, from the fixture.
      *
      * **Handles rather than paths, exactly as the real one answers.** A shim
@@ -446,7 +468,13 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * entry's handle is that a renderer can name a file it cannot read.
      */
     'document.recent': () =>
-      Promise.resolve(ok({ entries: recentEntries, lastExitClean: options.lastExitClean ?? true })),
+      Promise.resolve(
+        ok({
+          entries: recentEntries,
+          lastExitClean: options.lastExitClean ?? true,
+          lastSession: options.lastSession ?? [],
+        }),
+      ),
 
     /**
      * Opens a recent document, and REFUSES a handle the fixture did not name.

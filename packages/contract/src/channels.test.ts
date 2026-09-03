@@ -47,6 +47,14 @@ const handlers: ContractHandlers = {
       ok({
         entries: [{ handle: asFileHandle('handle-1'), name: 'annual.pdf' }],
         lastExitClean: false,
+        // TWO ENTRIES, and neither is the newest recent one. That is the whole
+        // point of recording a session rather than inferring it: a fixture
+        // where the session is the head of the recent list cannot tell a
+        // boundary that carries this field from one that rebuilt it.
+        lastSession: [
+          { handle: asFileHandle('handle-7'), name: 'draft.pdf' },
+          { handle: asFileHandle('handle-8'), name: 'notes.pdf' },
+        ],
       }),
     ),
   'document.openRecent': () => Promise.resolve(ok({ kind: 'absent' as const })),
@@ -117,6 +125,10 @@ const handlers: ContractHandlers = {
         ],
       }),
     ),
+  // `true`, because the interesting fixture is a document that WAS there: a
+  // handler answering `false` unconditionally satisfies the schema and tells
+  // every caller their close did nothing.
+  'document.close': () => Promise.resolve(ok({ closed: true })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   // Echoes what it was handed, so a case can assert the values SURVIVED the
   // boundary rather than that the call was accepted. A settings payload is the

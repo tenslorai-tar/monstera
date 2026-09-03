@@ -38,10 +38,15 @@ export function openDocumentCommand(deps: {
    * outcome.
    *
    * `cancelled`, `absent` and `at-capacity` are outcomes rather than failures —
-   * a user dismissing a picker is not an error — and `already-open` carries no
-   * state by design (ADR-0009 §2), so there is nothing to hand over and the
-   * right response is to focus what is already there. None of those is a case
-   * this command can act on, which is why the callback is not told about them.
+   * a user dismissing a picker is not an error — and none is a case this
+   * callback can act on.
+   *
+   * **`already-open` moved to {@link onAlreadyOpen} when tabs landed.** This
+   * paragraph used to end *"there is nothing to hand over and the right
+   * response is to focus what is already there"*, which was true and had
+   * nowhere to send anybody: with one document on screen there was no *there*.
+   * The sentence describing the right response outlived the reason it could
+   * not be taken.
    */
   readonly onOpened: (opened: {
     readonly docId: DocId;
@@ -64,6 +69,14 @@ export function openDocumentCommand(deps: {
    * defect the wired-tools rule is about wearing a successful dispatch.
    */
   readonly onProblem: (problem: OpenProblem) => void;
+  /**
+   * Called when the picked file is a document this build already holds.
+   *
+   * A `DocId` and nothing else, because that is all the outcome carries — and
+   * all that is needed: the renderer has a tab for that document with its own
+   * version, page and zoom, and bringing it forward is the whole response.
+   */
+  readonly onAlreadyOpen: (docId: DocId) => void;
 }): UiCommand {
   return {
     id: 'document.open',
@@ -73,6 +86,17 @@ export function openDocumentCommand(deps: {
     // whole of registering it. `Ctrl+O` because that is what every application
     // this one replaces uses for the same thing.
     shortcut: 'Ctrl+O',
+    // ONE PLACEMENT, and the second reader of this command is the TAB STRIP.
+    //
+    // `quick-toolbar` was tried and reverted in the same session: this command
+    // declares no `when` — it is how a reader finds *Open* and must never be
+    // absent — so placing it there put it on screen with no document open,
+    // which is the one state `QuickToolbar`'s own header says it renders
+    // nothing in. The start screen would then have carried two Open buttons.
+    //
+    // So the strip takes this command's `run` rather than a placement: one
+    // implementation with two triggers, which is not a second wiring place —
+    // there is still exactly one thing that opens a document.
     placements: [{ surface: 'start-screen', order: 0 }],
     run: async (): Promise<void> => {
       const answer = await deps.client['document.open']({});
@@ -81,6 +105,18 @@ export function openDocumentCommand(deps: {
       if (!answer.ok) return;
       if (answer.value.kind === 'absent' || answer.value.kind === 'at-capacity') {
         deps.onProblem(answer.value.kind);
+        return;
+      }
+      // THE READER PICKED A FILE THEY ALREADY HAVE OPEN, and with tabs there
+      // is now somewhere to send them. `already-open` carries only a `docId`
+      // by design (ADR-0009 §2) — no version, no byte length, nothing to
+      // render from — and that is exactly enough to activate the tab whose
+      // state the renderer is already holding.
+      //
+      // It is not a problem and must not be reported as one: the reader asked
+      // for a document and the document is on screen.
+      if (answer.value.kind === 'already-open') {
+        deps.onAlreadyOpen(answer.value.docId);
         return;
       }
       if (answer.value.kind !== 'opened') return;

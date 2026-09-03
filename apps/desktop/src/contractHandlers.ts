@@ -132,6 +132,7 @@ export function createContractHandlers(deps: {
     'document.open': openDocumentHandler(deps),
     'document.recent': recentHandler(deps),
     'document.openRecent': openRecentHandler(deps),
+    'document.close': closeHandler({ documents: deps.documents, recent: deps.recent }),
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
@@ -432,6 +433,39 @@ function layersHandler(commands: DocumentCommands): ContractHandlers['document.l
   };
 }
 
+/**
+ * Closes a document, and deliberately does NOT revoke its handle.
+ *
+ * `mint` is idempotent per path, and `document.recent` mints one for every
+ * entry it answers with — so the handle for a document that has just closed is
+ * the same token the recent list hands the renderer for that file. Revoking it
+ * here would invalidate a capability the renderer is holding and did nothing
+ * wrong to obtain, and the failure would surface later as an `unknown-handle`
+ * on a row the user clicked.
+ *
+ * That is `openDocumentHandler`'s finding read the other way round: the tidy-up
+ * that looks symmetric is wrong wherever two callers share a token. The
+ * registry is per-run, so nothing accumulates across restarts, and a path a
+ * user opened once is a path main already keeps in the recent list.
+ *
+ * **The boolean is decided BEFORE the close**, because `close` returns `void`
+ * for a document that was never open and for one it tore down alike.
+ */
+function closeHandler(deps: {
+  readonly documents: DocumentService;
+  readonly recent: RecentFiles;
+}): ContractHandlers['document.close'] {
+  return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.close']>>> => {
+    const wasOpen = deps.documents.openDocIds().includes(docId);
+    await deps.documents.close(docId);
+    // AFTER the close rather than before it: this list is what a crash would
+    // leave behind, and a document dropped from it while main still held it
+    // would be one a recovery never offered.
+    deps.recent.closed(docId);
+    return ok({ closed: wasOpen });
+  };
+}
+
 function undoHandler(commands: DocumentCommands): ContractHandlers['document.undo'] {
   return async ({ docId }): Promise<Awaited<ReturnType<ContractHandlers['document.undo']>>> => {
     try {
@@ -518,6 +552,10 @@ function openDocumentHandler(deps: {
       // documents; recording in the renderer is impossible, which is L2 doing
       // its job.
       deps.recent.record({ path: picked, name: outcome.name });
+      // AND RECORDED AS OPEN. The recent list is *what this user has looked
+      // at*; the session is *what is on screen now*, which is what a crash
+      // recovery has to offer once several documents can be.
+      deps.recent.opened(outcome.docId, { path: picked, name: outcome.name });
     }
 
     return ok(outcome);
@@ -542,6 +580,14 @@ function recentHandler(deps: {
           name: entry.name,
         })),
         lastExitClean: deps.recent.lastExitClean(),
+        // THE SAME MINTING, for the same reason. These entries are paths the
+        // previous run recorded as open; a handle minted here is one this run
+        // can resolve, and a token persisted across runs would be a capability
+        // surviving the process that granted it.
+        lastSession: deps.recent.lastSession().map((entry) => ({
+          handle: deps.capabilities.mint(entry.path),
+          name: entry.name,
+        })),
       }),
     );
 }
@@ -584,6 +630,11 @@ function openRecentHandler(deps: {
     if (outcome.kind === 'opened') {
       deps.openedDocument(outcome.docId);
       deps.recent.record({ path, name: outcome.name });
+      // BOTH ROUTES RECORD THE SESSION, and this one is the route a recovery
+      // itself takes: reopening after a crash puts the documents back on
+      // screen, and a run that recorded only picker-opened documents would
+      // lose them all to a second crash.
+      deps.recent.opened(outcome.docId, { path, name: outcome.name });
     }
 
     return ok(outcome);

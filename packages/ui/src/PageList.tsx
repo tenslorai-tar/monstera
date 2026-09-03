@@ -104,6 +104,16 @@ export interface PageListProps {
    */
   readonly goTo: number | undefined;
   /**
+   * The page this scroller is MOUNTING at, seeded visible.
+   *
+   * Different from `goTo` in the one way that matters: this is read once, at
+   * mount, and a request is honoured whenever it arrives. With tabs a scroller
+   * mounts every time a reader returns to a document, and a seed of page 1
+   * would report *the reader is on page 1* to that document's own store a
+   * moment after it was asked where they were.
+   */
+  readonly startAt: number;
+  /**
    * Says the request has been acted on, so the owner can clear it.
    *
    * Cleared by this component rather than by a timer, so a jump to a page that
@@ -193,12 +203,13 @@ export function PageList({
   showGrid,
   unit,
   label,
+  startAt,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
   // question of a different container, and a second implementation here would
   // be two opinions about what *near the viewport* means (B3a).
-  const { visible, slotRef, slotFor } = useVisiblePages(MARGIN);
+  const { visible, slotRef, slotFor } = useVisiblePages(MARGIN, startAt);
   const scroller = useRef<HTMLDivElement | null>(null);
   /**
    * The scroller's own box, remeasured whenever it changes.

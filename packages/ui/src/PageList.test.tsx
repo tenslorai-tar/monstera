@@ -7,6 +7,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PageList } from './PageList.js';
+import { FIRST_PAGE } from './pageNumbering.js';
 import { activateCatalogue, i18n } from './i18n.js';
 import { EN } from './messages/en.js';
 import type { DocumentView } from './documentView.js';
@@ -244,6 +245,7 @@ describe('PageList', () => {
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
         rulers={false}
@@ -273,6 +275,7 @@ describe('PageList', () => {
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
         rulers={false}
@@ -307,6 +310,7 @@ describe('PageList', () => {
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
         rulers={false}
@@ -349,6 +353,7 @@ describe('PageList', () => {
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
         rulers={false}
@@ -391,6 +396,7 @@ describe('PageList', () => {
     const { client } = clientAnswering();
     const wentTo = vi.fn();
     const props = {
+      startAt: FIRST_PAGE.kernel,
       client,
       view: viewDrawing(),
       pageCount: 5,
@@ -455,6 +461,7 @@ describe('PageList', () => {
           onZoom={vi.fn()}
           onShownZoom={vi.fn()}
           goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
           onWentTo={vi.fn()}
           loupe={false}
           rulers={false}
@@ -480,6 +487,7 @@ describe('PageList', () => {
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
             goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
             onWentTo={vi.fn()}
             loupe={false}
             rulers={false}
@@ -516,6 +524,7 @@ describe('PageList', () => {
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
             goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
             onWentTo={vi.fn()}
             loupe={false}
             rulers={false}
@@ -539,6 +548,7 @@ describe('PageList', () => {
             onZoom={vi.fn()}
             onShownZoom={vi.fn()}
             goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
             onWentTo={vi.fn()}
             loupe={false}
             rulers={false}
@@ -580,6 +590,7 @@ describe('PageList', () => {
         onZoom={vi.fn()}
         onShownZoom={vi.fn()}
         goTo={undefined}
+        startAt={FIRST_PAGE.kernel}
         onWentTo={vi.fn()}
         loupe={false}
         rulers={false}

@@ -95,6 +95,15 @@ function handlers() {
       markCleanExit: () => {
         throw new Error('registration cases must not reach the recent list');
       },
+      opened: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      closed: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
+      lastSession: () => {
+        throw new Error('registration cases must not reach the recent list');
+      },
     },
     settings: {
       read: () => {

@@ -1258,6 +1258,7 @@ describe('App', () => {
           { handle: 'handle-b', name: 'notes.pdf' },
         ],
         lastExitClean: true,
+        lastSession: [],
       });
       render(<App client={client} settings={freshSettings()} />);
       await act(async () => {
@@ -1278,7 +1279,7 @@ describe('App', () => {
     });
 
     it('shows an EMPTY list as empty rather than as nothing', async () => {
-      const { client } = withRecent({ entries: [], lastExitClean: true });
+      const { client } = withRecent({ entries: [], lastExitClean: true, lastSession: [] });
       render(<App client={client} settings={freshSettings()} />);
       await act(async () => {
         await Promise.resolve();
@@ -1287,43 +1288,88 @@ describe('App', () => {
       expect(screen.getByText('Nothing opened yet.')).toBeDefined();
     });
 
-    it('OFFERS TO REOPEN after a run that did not finish, naming the document', async () => {
-      // The crash-recovery clause. Both halves have to be true: a previous run
-      // that did not reach its shutdown, and something to reopen.
+    it('OFFERS TO REOPEN EVERY DOCUMENT the recorded session held', async () => {
+      // The crash-recovery clause, and its subject changed with tabs. Both
+      // halves still have to be true — a previous run that did not reach its
+      // shutdown, and something to reopen — but the second half is now main's
+      // RECORD of what was on screen rather than the head of the recent list.
+      //
+      // THE FIXTURE MAKES THOSE TWO DISAGREE, which is the whole case: the
+      // session holds two documents and NEITHER is the newest recent entry. A
+      // surface still inferring the offer from `entries[0]` would offer
+      // `annual.pdf`, which is not in the session at all.
       const { client, sent } = withRecent({
         entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
         lastExitClean: false,
+        lastSession: [
+          { handle: 'handle-b', name: 'draft.pdf' },
+          { handle: 'handle-c', name: 'notes.pdf' },
+        ],
       });
       render(<App client={client} settings={freshSettings()} />);
       await act(async () => {
         await Promise.resolve();
       });
 
-      expect(screen.getByText('Monstera closed unexpectedly. Reopen annual.pdf?')).toBeDefined();
+      expect(screen.getByText('Monstera closed unexpectedly. These documents were open:')).toBeDefined();
+      // BOTH, named. One control per document, each carrying the file it
+      // reopens — a column of buttons all called "Reopen" is a column a
+      // screen-reader user cannot tell apart.
+      expect(screen.getByRole('button', { name: 'Reopen draft.pdf' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Reopen notes.pdf' })).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Reopen annual.pdf' })).toBeNull();
 
       await act(async () => {
-        screen.getByRole('button', { name: 'Reopen' }).click();
+        screen.getByRole('button', { name: 'Reopen notes.pdf' }).click();
         await Promise.resolve();
       });
 
       expect(sent.filter((call) => call.id === 'document.openRecent')).toStrictEqual([
-        { id: 'document.openRecent', params: { handle: 'handle-a' } },
+        { id: 'document.openRecent', params: { handle: 'handle-c' } },
       ]);
+    });
+
+    it('CONTROL: an unclean run with NOTHING RECORDED offers nothing', async () => {
+      // A run that died before opening anything. Without this case, the offer
+      // could be driven by `lastExitClean` alone — and a reader who launched
+      // the application and lost it would be shown a recovery prompt with no
+      // rows under it, which reads as a defect rather than as *nothing to
+      // recover*.
+      const { client } = withRecent({
+        entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
+        lastExitClean: false,
+        lastSession: [],
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.queryByText('Monstera closed unexpectedly. These documents were open:'),
+      ).toBeNull();
+      expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
     });
 
     it('CONTROL: a clean previous run offers nothing, on the same list', async () => {
       // Without this, the case above passes for a surface that offers recovery
       // on every launch — which is the version a reader would learn to dismiss.
+      // A SESSION IS SUPPLIED HERE, which is what makes this a control over
+      // `lastExitClean` rather than over emptiness. Main clears the record on
+      // a clean exit, so this fixture is one main would not produce — and that
+      // is deliberate: a control whose input the correct build also refuses
+      // for a second reason separates nothing.
       const { client } = withRecent({
         entries: [{ handle: 'handle-a', name: 'annual.pdf' }],
         lastExitClean: true,
+        lastSession: [{ handle: 'handle-b', name: 'draft.pdf' }],
       });
       render(<App client={client} settings={freshSettings()} />);
       await act(async () => {
         await Promise.resolve();
       });
 
-      expect(screen.queryByRole('button', { name: 'Reopen' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Reopen draft.pdf' })).toBeNull();
       // AND THE ROW IS STILL THERE, so the case is not passing because the list
       // failed to render at all.
       expect(screen.getByRole('button', { name: 'annual.pdf' })).toBeDefined();
@@ -1350,7 +1396,11 @@ describe('App', () => {
         sent.push({ id, params });
         if (id === 'document.recent') {
           return Promise.resolve(
-            ok({ entries: [{ handle: 'stale', name: 'annual.pdf' }], lastExitClean: true }),
+            ok({
+              entries: [{ handle: 'stale', name: 'annual.pdf' }],
+              lastExitClean: true,
+              lastSession: [],
+            }),
           );
         }
         if (id === 'document.openRecent') return Promise.resolve(err({ code: 'unknown-handle' }));

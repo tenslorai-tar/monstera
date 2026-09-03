@@ -1,3 +1,5 @@
+import type { DocId } from '@monstera/shared';
+
 import type { SettingsSurface } from './settingsFile.js';
 
 /**
@@ -57,6 +59,37 @@ export interface RecentFiles {
   lastExitClean(): boolean;
   /** Records that this run finished. Called by the shutdown path. */
   markCleanExit(): void;
+
+  /**
+   * Records that this document is open NOW, for the next run's offer.
+   *
+   * ## Why the session is recorded rather than inferred
+   *
+   * `docs/FEATURES.md`'s crash-recovery row said it: *"With one document open
+   * at a time the newest recent entry IS what was open, so the offer names
+   * it — and that correspondence expires with multi-document tabs, when this
+   * must become a recorded session rather than an inference."* Tabs landed and
+   * the correspondence went with them. A reader with three documents open who
+   * loses the application is offered the last file they touched and told
+   * nothing about the other two.
+   *
+   * Keyed by `DocId` so {@link closed} needs only what a close carries. The
+   * VALUE is the path and name, because a `DocId` is minted per run and means
+   * nothing to the run that reads this.
+   */
+  opened(docId: DocId, entry: RecentEntry): void;
+
+  /** Records that a document is no longer open. */
+  closed(docId: DocId): void;
+
+  /**
+   * What was open when the PREVIOUS run ended, newest first.
+   *
+   * Empty after a clean exit, which is the honest reading rather than an
+   * optimisation: a run that finished has nothing to recover, and
+   * {@link markCleanExit} says so by clearing the list.
+   */
+  lastSession(): readonly RecentEntry[];
 }
 
 /**
@@ -93,9 +126,31 @@ export function createRecentFiles(file: SettingsSurface): RecentFiles {
   // finish.
   const wasClean = stored['cleanExit'] !== false;
   let entries = readEntries(stored['entries']);
+  // READ BEFORE THE CLEARING WRITE BELOW, for `wasClean`'s reason: what was
+  // open belongs to the previous run, and the first thing this constructor
+  // does is start recording this one.
+  const previousSession = readEntries(stored['session']);
+
+  /**
+   * The documents open right now, by the id this run minted for each.
+   *
+   * A `Map` rather than a list, because {@link RecentFiles.closed} carries only
+   * a `DocId` — and insertion order is what makes the recorded session read
+   * newest-last, which is the order the tabs are in.
+   */
+  const live = new Map<DocId, RecentEntry>();
 
   const persist = (cleanExit: boolean): void => {
-    file.write({ entries: [...entries], cleanExit });
+    file.write({
+      entries: [...entries],
+      cleanExit,
+      // BOUNDED THE WAY `entries` IS, and by the same number. What is dropped
+      // is our own record rather than anything the document holds, so this is
+      // a policy about how much we keep — the distinction the layers finding
+      // in this range's audit turns on. An offer with more rows than the
+      // recent list is not an offer.
+      session: [...live.values()].slice(0, MAX_RECENT),
+    });
   };
 
   // CLEARED IMMEDIATELY. From here until `markCleanExit`, the document on disk
@@ -119,8 +174,22 @@ export function createRecentFiles(file: SettingsSurface): RecentFiles {
     },
     lastExitClean: () => wasClean,
     markCleanExit: () => {
+      // CLEARED FIRST. `composition.ts`'s shutdown closes every document
+      // through the service rather than through this surface, so the live map
+      // is not emptied by the closes it performs — and a clean exit that left
+      // a session behind would offer to recover from a run that finished.
+      live.clear();
       persist(true);
     },
+    opened: (docId, entry) => {
+      live.set(docId, entry);
+      persist(false);
+    },
+    closed: (docId) => {
+      if (!live.delete(docId)) return;
+      persist(false);
+    },
+    lastSession: () => previousSession,
   };
 }
 

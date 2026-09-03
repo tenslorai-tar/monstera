@@ -22,14 +22,36 @@ import { FIRST_PAGE } from './pageNumbering.js';
  * per event, in the frame already trying to draw. An observer is told by the
  * browser, off that path.
  *
- * ## The first page is seeded VISIBLE, and that is not an optimisation
+ * ## A page is seeded VISIBLE, and that is not an optimisation
  *
  * happy-dom fires no intersections and a real browser fires none until layout
  * settles, so a list that started with nothing visible would draw nothing on the
- * first frame in both. Seeding the first page means a document shows something
+ * first frame in both. Seeding one page means a document shows something
  * immediately and the observer confirms it rather than contradicting it.
+ *
+ * ## WHICH page is seeded is the caller's, and tabs are why
+ *
+ * This seeded `FIRST_PAGE.kernel` unconditionally, which is right for a scroller
+ * that only ever mounts at the top of a freshly opened document. With tabs a
+ * scroller mounts every time a reader comes back to a document — on page 40, say
+ * — and the seed is REPORTED as the current page through `onCurrentPage`. So a
+ * fixed seed of zero told the document's own store that the reader had gone back
+ * to page 1, a moment after that store had been asked where they were.
+ *
+ * A real browser corrects it: the restored scroll fires an intersection and the
+ * right page arrives. That correction is what made the defect a transient rather
+ * than a bug, and *a wrong value that something else fixes* is the shape this
+ * project treats as a defect anyway — it is right by arrangement rather than by
+ * construction, and the arrangement is two components away.
+ *
+ * Seeding the page the caller is mounting AT makes the first report the truth,
+ * so there is nothing to correct (B5).
  */
-export function useVisiblePages(margin: string): {
+export function useVisiblePages(
+  margin: string,
+  /** The page this scroller is mounting at, seeded visible. */
+  seed: number = FIRST_PAGE.kernel,
+): {
   /** The pages currently within `margin` of the container's viewport. */
   readonly visible: ReadonlySet<number>;
   /** Attach to each page's element. Takes the page number. */
@@ -47,7 +69,10 @@ export function useVisiblePages(margin: string): {
 } {
   const slots = useRef(new Map<number, HTMLElement>());
   const observer = useRef<IntersectionObserver | null>(null);
-  const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([FIRST_PAGE.kernel]));
+  // THE INITIAL VALUE ONLY. `useState` reads it once, which is what makes this
+  // a seed rather than a control: a scroller whose visible set followed this
+  // prop would fight the observer on every scroll.
+  const [visible, setVisible] = useState<ReadonlySet<number>>(new Set([seed]));
 
   /**
    * A callback ref per page.

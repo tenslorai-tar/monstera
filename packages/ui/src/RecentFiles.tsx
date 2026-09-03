@@ -70,6 +70,7 @@ export function RecentFiles({
           kind: 'listed',
           entries: answer.value.entries,
           lastExitClean: answer.value.lastExitClean,
+          session: answer.value.lastSession,
           missing: false,
         });
       },
@@ -113,24 +114,38 @@ export function RecentFiles({
     onOpened(answer.value);
   };
 
-  const newest = state.entries[0];
-
   return (
     <section className="m-recent" aria-label={_(RECENT_LABEL)}>
       {/* THE OFFER, above the list, and only when both halves are true: a
           previous run that did not finish AND something to reopen. Either
-          alone is an offer with nothing behind it. */}
-      {!state.lastExitClean && newest !== undefined ? (
-        <p className="m-recent-recover">
-          {_(RECOVER_OFFER, { name: newest.name })}
-          <Button
-            label={RECOVER_LABEL}
-            variant="primary"
-            onClick={() => {
-              void open(newest.handle);
-            }}
-          />
-        </p>
+          alone is an offer with nothing behind it.
+
+          THE SECOND HALF IS THE RECORDED SESSION, not the head of the list.
+          It named `entries[0]` while one document could be open, where the
+          newest recent entry WAS what was on screen; multi-document tabs ended
+          that correspondence, and a reader with three documents open would
+          have been offered the last one they touched and told nothing about
+          the other two. `lastSession` is what main recorded, and it is empty
+          after a clean exit — so this condition is *the run died* AND *there
+          was something on screen when it did*. */}
+      {!state.lastExitClean && state.session.length > 0 ? (
+        <div className="m-recent-recover">
+          <p>{_(RECOVER_OFFER)}</p>
+          <ul className="m-recover-list">
+            {state.session.map((entry) => (
+              <li key={entry.handle}>
+                <Button
+                  label={RECOVER_LABEL}
+                  values={{ name: entry.name }}
+                  variant="primary"
+                  onClick={() => {
+                    void open(entry.handle);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
       {state.missing ? <p className="m-recent-problem">{_(RECENT_MISSING)}</p> : null}
       {state.entries.length === 0 ? (
@@ -179,6 +194,14 @@ type RecentState =
       readonly kind: 'listed';
       readonly entries: readonly RecentRow[];
       readonly lastExitClean: boolean;
+      /**
+       * What was open when the previous run ended — main's record, not a guess.
+       *
+       * A separate list from `entries` because it is a different question, and
+       * one the recent list stopped being able to answer when several
+       * documents could be open at once.
+       */
+      readonly session: readonly RecentRow[];
       /** Set when a row could not be opened, and cleared by nothing: the row goes. */
       readonly missing: boolean;
     };

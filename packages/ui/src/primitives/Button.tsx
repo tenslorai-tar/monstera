@@ -40,6 +40,18 @@ import { useOnColor } from './useOnColor.js';
 export interface ButtonProps {
   /** The visible text, and the accessible name. */
   label: MessageKey;
+  /**
+   * What a placeholder in {@link label} stands for.
+   *
+   * A LABEL AND ITS VALUES, never a resolved string: a caller that formatted
+   * the sentence itself would hold user-facing text, which is what B9's ban on
+   * literals in JSX is about, and it would do the formatting in whatever
+   * language the caller happened to assume.
+   *
+   * Optional because most labels carry no placeholder, and a required empty
+   * object at every call site is ceremony that teaches nothing.
+   */
+  values?: Readonly<Record<string, string | number>> | undefined;
   /** Filled with `--accent` (`primary`) or bounded by `--border-control`. */
   variant?: 'primary' | 'default';
   disabled?: boolean;
@@ -50,6 +62,7 @@ export interface ButtonProps {
 
 export function Button({
   label,
+  values,
   variant = 'default',
   disabled = false,
   onClick,
@@ -77,7 +90,7 @@ export function Button({
       ref={element}
       type={type}
     >
-      {_(label)}
+      {values === undefined ? _(label) : _(label, values)}
     </BaseButton>
   );
 }
