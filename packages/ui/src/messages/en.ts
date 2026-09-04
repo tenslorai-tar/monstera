@@ -37,6 +37,16 @@ export const REVEAL_LOG_TITLE = messageKey('command.reveal-log.title');
 export const HISTORY_TRIMMED_TITLE = messageKey('dialog.history-trimmed.title');
 export const HISTORY_TRIMMED_APPLIED = messageKey('dialog.history-trimmed.applied');
 export const HISTORY_TRIMMED_LOST = messageKey('dialog.history-trimmed.lost');
+export const DELETE_PAGES_TITLE = messageKey('dialog.delete-pages.title');
+export const DELETE_PAGES_LABEL = messageKey('dialog.delete-pages.label');
+export const DELETE_PAGES_HINT = messageKey('dialog.delete-pages.hint');
+export const DELETE_PAGES_APPLY = messageKey('dialog.delete-pages.apply');
+export const DELETE_PAGES_EMPTY = messageKey('dialog.delete-pages.empty');
+export const DELETE_PAGES_NOT_A_NUMBER = messageKey('dialog.delete-pages.not-a-number');
+export const DELETE_PAGES_OUT_OF_RANGE = messageKey('dialog.delete-pages.out-of-range');
+export const DELETE_PAGES_BACKWARDS = messageKey('dialog.delete-pages.backwards');
+export const DELETE_PAGES_EVERYTHING = messageKey('dialog.delete-pages.everything');
+export const DELETE_PAGES_COMMAND_TITLE = messageKey('command.delete-pages.title');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
@@ -339,6 +349,26 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HISTORY_TRIMMED_LOST]:
     'To stay within the memory this application is allowed, {dropped} older step(s) can no ' +
     'longer be undone. Everything more recent still can.',
+  [DELETE_PAGES_TITLE]: 'Delete pages',
+  [DELETE_PAGES_LABEL]: 'Pages to delete',
+  // AN EXAMPLE, not a description of the grammar. "Comma-separated ranges"
+  // makes a person work out what that means; "1-3, 5" is the same information
+  // in a form they can copy.
+  [DELETE_PAGES_HINT]: '1-3, 5',
+  // NAMES WHAT IT DOES. "OK" on the one control in this build that removes
+  // pages is a button a person presses without reading.
+  [DELETE_PAGES_APPLY]: 'Delete pages',
+  [DELETE_PAGES_EMPTY]: 'Type the pages to delete, for example 1-3, 5.',
+  // THE OFFENDING PART IS QUOTED BACK. A message describing the class leaves a
+  // person re-reading a whole expression to find which piece was wrong.
+  [DELETE_PAGES_NOT_A_NUMBER]: '“{part}” is not a page or a page range.',
+  [DELETE_PAGES_OUT_OF_RANGE]: '“{part}” is outside this document, which has {pageCount} pages.',
+  // The correction is named rather than performed: reading 5-3 as 3-5 would
+  // delete three pages the user did not ask for.
+  [DELETE_PAGES_BACKWARDS]: '“{part}” counts backwards. Write the lower page first.',
+  [DELETE_PAGES_EVERYTHING]:
+    'That is every page. A document with no pages cannot be opened — close it instead.',
+  [DELETE_PAGES_COMMAND_TITLE]: 'Delete pages…',
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',

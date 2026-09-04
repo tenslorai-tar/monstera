@@ -98,14 +98,14 @@ export async function hydrateSettings(client: ContractClient, store: SettingsSto
  *
  * ## The title comes from the REGISTRY, not from the caller
  *
- * `show` is handed the setting's own declared title, looked up by id, so the
+ * `ask` is handed the setting's own declared title, looked up by id, so the
  * dialog names the preference a user recognises rather than an id. A caller
  * passing its own wording would be a second name for one setting (B3).
  */
 export function persistSettings(
   client: ContractClient,
   store: SettingsStore,
-  show: (id: string, props: unknown) => void,
+  ask: (id: string, props: unknown) => Promise<unknown>,
 ): () => void {
   return store.subscribe((id) => {
     if (id === '*') return;
@@ -116,7 +116,7 @@ export function persistSettings(
     void client['settings.save']({ values: store.all() }).then(
       (answer) => {
         if (answer.ok || title === undefined) return;
-        show(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });
+        void ask(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });
       },
       () => {
         // A REJECTION IS NOT AN ANSWER. The boundary rejects when the channel
@@ -125,7 +125,7 @@ export function persistSettings(
         // identical either way: applied now, not remembered. Reporting both
         // through one dialog is honest; swallowing this one would make the
         // worst case the quiet one.
-        if (title !== undefined) show(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });
+        if (title !== undefined) void ask(SETTINGS_PROBLEM_DIALOG_ID, { setting: title });
       },
     );
   });

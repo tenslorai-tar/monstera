@@ -527,6 +527,71 @@ describe('App', () => {
       ).toStrictEqual([1, 2, 3]);
     });
 
+    it('THE DELETE-PAGES CONTROL OPENS A DIALOG, and applying it sends the parsed range', async () => {
+      // The mutation-dialog gate, end to end through the REAL dialog: the
+      // registry entry, the lazy body, the parser and the result schema. The
+      // command-level cases stub `ask` and cannot say the dialog exists; the
+      // seam's own cases use a fixture dialog and cannot say this one is
+      // registered. This is the case that needs all three to be true.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete pages…' }).click();
+        await Promise.resolve();
+      });
+
+      const field = await screen.findByLabelText('Pages to delete');
+      await act(async () => {
+        fireEvent.change(field, { target: { value: '1' } });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete pages' }).click();
+        await Promise.resolve();
+      });
+
+      // ONE-BASED IN, ZERO-BASED OUT, and the conversion happened once. A
+      // command re-converting what the dialog answered would send `[-1]`, which
+      // the contract refuses; one that did not convert at all would send `[1]`
+      // and delete the second page.
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        command: { kind: 'deletePages', pages: [0] },
+      });
+    });
+
+    it('CONTROL: dismissing the delete-pages dialog sends nothing', async () => {
+      // The gate at application scale. Same control, same dialog, closed
+      // instead of applied — and the assertion is the call that was not made,
+      // because the document is untouched either way.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete pages…' }).click();
+        await Promise.resolve();
+      });
+      await screen.findByLabelText('Pages to delete');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Close' }).click();
+        await Promise.resolve();
+      });
+
+      expect(sent.filter((call) => call.id === 'document.execute')).toHaveLength(0);
+    });
+
     it('THE DUPLICATE CONTROL SENDS duplicatePage FOR THE PAGE ON SCREEN', async () => {
       // The UI half of duplicate's pair; `pageOrder.test.ts` is the kernel half
       // and says the copy lands after the source and is a separate page object.

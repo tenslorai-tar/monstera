@@ -32,7 +32,64 @@ const renameEntry = declareDialog({
   ),
 });
 
-const registry = new DialogRegistry([renameEntry]);
+/**
+ * A dialog that ANSWERS, which the rename one above cannot
+ * ([ADR-0038](../../../../docs/DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)).
+ *
+ * Two controls, because the gate needs both directions: one resolves a value
+ * the schema accepts, the other resolves one it refuses. A body that could only
+ * answer correctly would leave the validation on the way out unexercised, and
+ * the schema would be a claim rather than a check.
+ *
+ * The refusing control is why `resolve` is typed against the result schema and
+ * the body still has to cast: the whole point of the case is a body that
+ * answers wrongly, which the type is supposed to make hard.
+ */
+const pickEntry = declareDialog({
+  id: 'dialog.pick',
+  title: messageKey('dialog.pick.title'),
+  props: z.object({ limit: z.number().int().positive() }),
+  result: z.object({ chosen: z.number().int().nonnegative() }),
+  component: lazy(() =>
+    Promise.resolve({
+      default: ({
+        limit,
+        resolve,
+      }: {
+        limit: number;
+        resolve: (result: { chosen: number }) => void;
+      }) => (
+        <>
+          <p>{`picking under ${String(limit)}`}</p>
+          <button
+            type="button"
+            onClick={() => {
+              resolve({ chosen: 2 });
+            }}
+          >
+            Choose
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // DELIBERATELY WRONG, and it type-checks: the result schema
+              // refines `number` with `nonnegative()`, which zod cannot carry
+              // into the inferred type. That is the finding this case pins —
+              // **a schema says more than its type does**, so the runtime check
+              // is not redundant with the compiler and removing it would leave
+              // exactly this value unguarded.
+              resolve({ chosen: -1 });
+            }}
+          >
+            Choose badly
+          </button>
+        </>
+      ),
+    }),
+  ),
+});
+
+const registry = new DialogRegistry([renameEntry, pickEntry]);
 
 /**
  * A real catalogue, because the host no longer takes a resolver.
@@ -44,8 +101,13 @@ const registry = new DialogRegistry([renameEntry]);
  * here rather than read as passing.
  */
 const RENAME_TITLE = messageKey('dialog.rename.title');
+const PICK_TITLE = messageKey('dialog.pick.title');
 const CLOSE = messageKey('action.close.label');
-activateCatalogue('en', { [RENAME_TITLE]: 'Rename document', [CLOSE]: 'Close' });
+activateCatalogue('en', {
+  [RENAME_TITLE]: 'Rename document',
+  [PICK_TITLE]: 'Pick a page',
+  [CLOSE]: 'Close',
+});
 
 function Messages({ children }: { children: ReactNode }): ReactElement {
   return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
@@ -60,8 +122,17 @@ function render(ui: ReactElement): ReturnType<typeof renderBare> {
  * will be. The host takes `open` and `onClose` as props rather than owning
  * them, so a command can open a dialog without reaching into a component.
  */
-function Harness({ id, props }: { id: string; props: unknown }): ReactElement {
-  const { open, show, close } = useDialogHost(registry);
+function Harness({
+  id,
+  props,
+  onAnswer,
+}: {
+  id: string;
+  props: unknown;
+  /** What the dialog settled with, for the cases about the answer. */
+  onAnswer?: (answer: unknown) => void;
+}): ReactElement {
+  const { open, ask, close, resolve } = useDialogHost(registry);
   const [error, setError] = useState<string | undefined>(undefined);
   return (
     <>
@@ -69,7 +140,18 @@ function Harness({ id, props }: { id: string; props: unknown }): ReactElement {
         type="button"
         onClick={() => {
           try {
-            show(id, props);
+            // THE PROMISE IS CONSUMED, because a dropped one is the state
+            // ADR-0038's dismissal path would hide: `ask` settles `undefined`
+            // on close, and a harness that ignored it could not tell a dialog
+            // that answered from one that never settled.
+            void ask(id, props).then(
+              (answer) => {
+                onAnswer?.(answer);
+              },
+              (thrown: unknown) => {
+                setError(String(thrown));
+              },
+            );
           } catch (thrown) {
             setError(String(thrown));
           }
@@ -78,7 +160,13 @@ function Harness({ id, props }: { id: string; props: unknown }): ReactElement {
         Open
       </button>
       {error === undefined ? null : <p>{error}</p>}
-      <DialogHost registry={registry} closeLabel={CLOSE} open={open} onClose={close} />
+      <DialogHost
+        registry={registry}
+        closeLabel={CLOSE}
+        open={open}
+        onClose={close}
+        onResolve={resolve}
+      />
     </>
   );
 }
@@ -145,5 +233,99 @@ describe('DialogHost', () => {
     // would leave its state saying a dialog is open while the primitive had
     // closed, and the next open of a DIFFERENT dialog would then do nothing.
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  /**
+   * ADR-0038's seam: opening a dialog is a question.
+   *
+   * Every case here asserts what the promise SETTLED WITH, because that is the
+   * value a command turns into an argument — and it is the only observable
+   * difference between the paths. The dialog closes either way.
+   */
+  describe('answering', () => {
+    it('SETTLES WITH THE PARSED RESULT when the body resolves', async () => {
+      const answers: unknown[] = [];
+      render(
+        <Harness
+          id="dialog.pick"
+          props={{ limit: 4 }}
+          onAnswer={(answer) => answers.push(answer)}
+        />,
+      );
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByText('picking under 4');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Choose' }).click();
+        await Promise.resolve();
+      });
+
+      // THE VALUE, not merely that something settled. A host that answered
+      // `undefined` on every path would close the dialog exactly as correctly.
+      expect(answers).toStrictEqual([{ chosen: 2 }]);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('CONTROL: SETTLES undefined when the dialog is dismissed', async () => {
+      // The gate, at the seam. Same fixture, same dialog, different exit — and
+      // the pair is what separates a working gate from one that can never
+      // answer at all.
+      const answers: unknown[] = [];
+      render(
+        <Harness
+          id="dialog.pick"
+          props={{ limit: 4 }}
+          onAnswer={(answer) => answers.push(answer)}
+        />,
+      );
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByText('picking under 4');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Close' }).click();
+        await Promise.resolve();
+      });
+
+      expect(answers).toStrictEqual([undefined]);
+    });
+
+    it('REFUSES an answer the result schema rejects, rather than passing it on', async () => {
+      // The value becomes a command's argument, so it is checked on the way out
+      // for the same reason props are checked on the way in. Without this the
+      // result schema is a declaration nothing reads.
+      render(<Harness id="dialog.pick" props={{ limit: 4 }} />);
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByText('picking under 4');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Choose badly' }).click();
+        await Promise.resolve();
+      });
+
+      expect(await screen.findByText(/DialogResultRejected/u)).toBeDefined();
+    });
+
+    it('CONTROL: an informational dialog settles undefined and nothing else', async () => {
+      // `renameEntry` declares no result, so its body has a `resolve` taking
+      // `never` and cannot answer. This is what makes the default structural:
+      // every existing caller's promise is a dismissal or nothing.
+      const answers: unknown[] = [];
+      render(
+        <Harness
+          id="dialog.rename"
+          props={{ name: 'chapter one' }}
+          onAnswer={(answer) => answers.push(answer)}
+        />,
+      );
+      screen.getByRole('button', { name: 'Open' }).click();
+      await screen.findByRole('dialog');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Close' }).click();
+        await Promise.resolve();
+      });
+
+      expect(answers).toStrictEqual([undefined]);
+    });
   });
 });

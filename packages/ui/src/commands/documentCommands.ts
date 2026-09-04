@@ -4,6 +4,8 @@ import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type { z } from 'zod';
 
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
+import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import {
@@ -13,6 +15,7 @@ import {
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
+  DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
@@ -94,7 +97,14 @@ interface DocumentCommandDeps {
    */
   readonly onApplied: (applied: Applied) => void;
   /** Opens a registered dialog. See {@link reportProblem}. */
-  readonly show: (id: string, props: unknown) => void;
+  /**
+   * Opens a registered dialog and awaits its answer (ADR-0038).
+   *
+   * `unknown`, because a dependency bag cannot know which dialog a command will
+   * open. The caller narrows with the dialog's own result schema at the point
+   * it knows the id — which is the same place `openWith` validates the props.
+   */
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
 }
 
 /**
@@ -118,7 +128,7 @@ interface DocumentCommandDeps {
  *
  * ## The parameter is the DIALOG's own props type, and that is not decoration
  *
- * `show` takes `unknown` and the registry validates at the open call, so a code
+ * `ask` takes `unknown` and the registry validates at the open call, so a code
  * the dialog cannot render is refused there — by throwing `DialogPropsRejected`,
  * inside a `run` nothing awaits. A refusal would become an unhandled rejection,
  * which is worse than the silence this function exists to end.
@@ -126,17 +136,20 @@ interface DocumentCommandDeps {
  * Typing the parameter as `z.infer` of the dialog's schema moves that to compile
  * time: a channel gaining a code nobody added to the dialog stops building here,
  * at the call site, rather than throwing on the day a user meets it. The runtime
- * validation stays — it guards every other caller of `show` — and this path can
+ * validation stays — it guards every other caller of `ask` — and this path can
  * no longer reach it (B5).
  *
  * @param failure exactly what the client answered — narrowed by the boundary, so
  *   an `incident` exists precisely when the code is `internal`.
  */
 function reportProblem(
-  deps: Pick<DocumentCommandDeps, 'show'>,
+  deps: Pick<DocumentCommandDeps, 'ask'>,
   failure: z.infer<typeof COMMAND_PROBLEM_DIALOG.props>,
 ): void {
-  deps.show(COMMAND_PROBLEM_DIALOG_ID, failure);
+  // VOIDED, and the promise is genuinely nothing: this dialog declares no
+  // result, so it can only ever settle `undefined` on dismissal. Awaiting it
+  // would hold the command open until the user closed a message.
+  void deps.ask(COMMAND_PROBLEM_DIALOG_ID, failure);
 }
 
 /**
@@ -188,7 +201,7 @@ export async function applyDocumentCommand(
   // INVARIANT 18, AFTER `onApplied` and not instead of it, and guarded on a
   // positive count because the dialog's schema refuses zero.
   if (answer.value.historyDropped > 0) {
-    deps.show(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+    void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
   }
   return true;
 }
@@ -453,6 +466,57 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
 }
 
 /**
+ * Asks which pages to delete, then deletes them.
+ *
+ * ## The FIRST command whose arguments come from a dialog
+ *
+ * `deletePages` has always taken an array; nothing could send one. This is the
+ * surface that can, and it is the mutation-dialog gate's own subject
+ * ([ADR-0038](../../../../docs/DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)).
+ *
+ * **The gate is the `undefined`, and it is not a rule.** A dismissed dialog
+ * settles with no value, so there is nothing to build a command from — the
+ * early return below is the shape rather than a check somebody could forget.
+ * A confirmation flag on the props would have been the version that can be
+ * forgotten.
+ *
+ * ## The answer is already zero-based and already validated
+ *
+ * `parsePageRanges` converts through `pageNumbering.ts` and the dialog's result
+ * schema checks what comes back, so this performs no arithmetic on the pages it
+ * receives. That is deliberate: the one place the 1-based and 0-based frames
+ * meet is that module, and a `- 1` here would be the second.
+ *
+ * The cast is the narrowing `ask`'s `unknown` leaves — the value has been
+ * through `DELETE_PAGES_DIALOG`'s own result schema in `answerOf`, which is the
+ * only thing that can produce it.
+ */
+export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.delete-pages',
+    title: DELETE_PAGES_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 15 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.pageCount === undefined) return;
+      const answer = (await deps.ask(DELETE_PAGES_DIALOG_ID, {
+        pageCount: context.pageCount,
+      })) as DeletePagesAnswer | undefined;
+
+      // DISMISSED. Nothing was collected, so nothing is dispatched — and the
+      // document has not been touched, which is why the case that holds this
+      // asserts the CALL that was not made rather than the state.
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'deletePages',
+        pages: [...answer.pages],
+      });
+    },
+  };
+}
+
+/**
  * Steps one entry back in the document's command log.
  *
  * `Ctrl+Z` because that is what every application this one replaces uses, and
@@ -526,7 +590,14 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
  */
 export function saveCommand(deps: {
   readonly client: ContractClient;
-  readonly show: (id: string, props: unknown) => void;
+  /**
+   * Opens a registered dialog and awaits its answer (ADR-0038).
+   *
+   * `unknown`, because a dependency bag cannot know which dialog a command will
+   * open. The caller narrows with the dialog's own result schema at the point
+   * it knows the id — which is the same place `openWith` validates the props.
+   */
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
 }): UiCommand {
   return {
     id: 'document.save',
@@ -546,7 +617,7 @@ export function saveCommand(deps: {
       // channel answers two shapes describing one thing; the dialog's schema
       // takes one enum, so its body switches once and a sixth outcome is a
       // compile error rather than a branch that renders nothing.
-      deps.show(SAVE_PROBLEM_DIALOG_ID, {
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
       });
     },

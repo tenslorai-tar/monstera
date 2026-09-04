@@ -15,6 +15,7 @@ import {
   findCommand,
   fitCommand,
   deletePageCommand,
+  deletePagesCommand,
   duplicatePageCommand,
   rotatePageCommand,
   saveCommand,
@@ -46,6 +47,7 @@ import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
+import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
 import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
 import { persistSettings } from './settingsSync.js';
@@ -188,7 +190,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   const [openProblem, setOpenProblem] = useState<OpenProblem | undefined>(undefined);
 
   // ONE registry instance, and the dialog host's state feeds the command that
-  // opens it. `useDialogHost` owns `show`, so the command captures it the same
+  // opens it. `useDialogHost` owns `ask`, so the command captures it the same
   // way it captures the client — composition, not a global.
   const dialogs = useMemo(
     () =>
@@ -197,19 +199,20 @@ export function App({ client, settings }: AppProps): ReactElement {
         SAVE_PROBLEM_DIALOG,
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
+        DELETE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
     [],
   );
-  const { open: openDialog, show, close } = useDialogHost(dialogs);
+  const { open: openDialog, ask, close, resolve: resolveDialog } = useDialogHost(dialogs);
 
-  // A FAILED WRITE NEEDS A DIALOG, so the subscription lives where `show` does.
+  // A FAILED WRITE NEEDS A DIALOG, so the subscription lives where `ask` does.
   //
   // It subscribed in `main.tsx` until 2026-09-02, before the hydrate, so a
   // change during startup could not be lost. Nothing is lost by moving it: the
   // only callers of `set` are registered commands, which do not exist until
   // this component has built the registry above.
-  useEffect(() => persistSettings(client, settings, show), [client, settings, show]);
+  useEffect(() => persistSettings(client, settings, ask), [client, settings, ask]);
 
   // WHAT A COMMAND LEFT BEHIND, applied to the open document.
   //
@@ -252,12 +255,12 @@ export function App({ client, settings }: AppProps): ReactElement {
     (from: number, to: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, show },
+        { client, onApplied: applied, ask },
         activeId,
         { kind: 'movePage', from, to },
       );
     },
-    [activeId, applied, client, show],
+    [activeId, applied, ask, client],
   );
 
   /**
@@ -272,12 +275,12 @@ export function App({ client, settings }: AppProps): ReactElement {
     (a: number, b: number): void => {
       if (activeId === undefined) return;
       void applyDocumentCommand(
-        { client, onApplied: applied, show },
+        { client, onApplied: applied, ask },
         activeId,
         { kind: 'swapPages', a, b },
       );
     },
-    [activeId, applied, client, show],
+    [activeId, applied, ask, client],
   );
 
   /**
@@ -472,9 +475,9 @@ export function App({ client, settings }: AppProps): ReactElement {
       stores.close(docId);
 
       const answer = await client['document.close']({ docId });
-      if (!answer.ok) show(COMMAND_PROBLEM_DIALOG_ID, answer.error);
+      if (!answer.ok) void ask(COMMAND_PROBLEM_DIALOG_ID, answer.error);
     },
-    [activate, activeId, client, show, stores, tabs],
+    [activate, activeId, ask, client, stores, tabs],
   );
 
   /**
@@ -616,22 +619,26 @@ export function App({ client, settings }: AppProps): ReactElement {
     () =>
       new CommandRegistry([
         openCommand,
-        showAboutCommand({ client, show }),
+        showAboutCommand({ client, ask }),
         revealLogCommand({ client }),
         // THREE ROTATIONS, one factory. D2's row is a surface over the command
         // Stage 0 already declared — `rotatePages` takes the quarter turns, so
         // 180 and 270 needed no new command and no new contract entry.
-        rotatePageCommand({ client, onApplied: applied, show }, 1),
-        rotatePageCommand({ client, onApplied: applied, show }, 2),
-        rotatePageCommand({ client, onApplied: applied, show }, 3),
+        rotatePageCommand({ client, onApplied: applied, ask }, 1),
+        rotatePageCommand({ client, onApplied: applied, ask }, 2),
+        rotatePageCommand({ client, onApplied: applied, ask }, 3),
         // THE FIRST DESTRUCTIVE COMMAND, and it registers exactly like the
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
-        duplicatePageCommand({ client, onApplied: applied, show }),
-        deletePageCommand({ client, onApplied: applied, show }),
-        undoCommand({ client, onApplied: applied, show }),
-        saveCommand({ client, show }),
+        duplicatePageCommand({ client, onApplied: applied, ask }),
+        deletePageCommand({ client, onApplied: applied, ask }),
+        // THE FIRST COMMAND WHOSE ARGUMENTS COME FROM A DIALOG. Its `run`
+        // awaits an answer and dispatches only if there was one, which is the
+        // whole of the mutation-dialog gate (ADR-0038).
+        deletePagesCommand({ client, onApplied: applied, ask }),
+        undoCommand({ client, onApplied: applied, ask }),
+        saveCommand({ client, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.
@@ -654,7 +661,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         historyCommand('forward', { navigator }),
         goToCommand(),
       ]),
-    [applied, changeZoom, client, navigator, openCommand, openPalette, settings, show],
+    [applied, ask, changeZoom, client, navigator, openCommand, openPalette, settings],
   );
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
@@ -851,7 +858,13 @@ export function App({ client, settings }: AppProps): ReactElement {
       {/* The ONE mount point. `DialogHost` renders nothing when none is open —
           not a hidden dialog — so this is not a control that renders and does
           nothing; it is the seam every dialog arrives through. */}
-      <DialogHost registry={dialogs} closeLabel={CLOSE_LABEL} open={openDialog} onClose={close} />
+      <DialogHost
+        registry={dialogs}
+        closeLabel={CLOSE_LABEL}
+        open={openDialog}
+        onClose={close}
+        onResolve={resolveDialog}
+      />
     </main>
   );
 }

@@ -194,7 +194,12 @@ describe('settings sync', () => {
         : Promise.resolve(ok({ stored: {} })),
     );
     const store = freshStore();
-    persistSettings(client, store, (id, props) => shown.push({ id, props }));
+    persistSettings(client, store, (id, props) => {
+      shown.push({ id, props });
+      // ANSWERS AS A DISMISSAL. `dialog.settings-problem` declares no result,
+      // so `undefined` is the only thing it can ever settle with (ADR-0038).
+      return Promise.resolve(undefined);
+    });
 
     store.set(THEME_SETTING.id, 'dark');
     await Promise.resolve();
@@ -221,7 +226,12 @@ describe('settings sync', () => {
     const shown: { id: string; props: unknown }[] = [];
     const { client } = persistentClient();
     const store = freshStore();
-    persistSettings(client, store, (id, props) => shown.push({ id, props }));
+    persistSettings(client, store, (id, props) => {
+      shown.push({ id, props });
+      // ANSWERS AS A DISMISSAL. `dialog.settings-problem` declares no result,
+      // so `undefined` is the only thing it can ever settle with (ADR-0038).
+      return Promise.resolve(undefined);
+    });
 
     store.set(THEME_SETTING.id, 'dark');
     await Promise.resolve();

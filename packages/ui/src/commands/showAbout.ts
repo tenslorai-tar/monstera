@@ -23,7 +23,7 @@ import type { UiCommand } from '../registries/commands.js';
  */
 export function showAboutCommand(deps: {
   readonly client: ContractClient;
-  readonly show: (id: string, props: unknown) => void;
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
 }): UiCommand {
   return {
     id: 'app.about',
@@ -32,7 +32,10 @@ export function showAboutCommand(deps: {
     run: async (): Promise<void> => {
       const answer = await deps.client['app.info']({});
       if (!answer.ok) return;
-      deps.show(ABOUT_DIALOG_ID, {
+      // Voided: this dialog declares no result and can only settle on
+      // dismissal, so awaiting it would keep the command running until the user
+      // closed a message about the build.
+      void deps.ask(ABOUT_DIALOG_ID, {
         version: answer.value.version,
         installChannel: answer.value.installChannel,
       });

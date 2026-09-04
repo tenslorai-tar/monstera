@@ -3,7 +3,13 @@ import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { CommandContext } from '../registries/commands.js';
-import { type Applied, rotatePageCommand, saveCommand, undoCommand } from './documentCommands.js';
+import {
+  type Applied,
+  deletePagesCommand,
+  rotatePageCommand,
+  saveCommand,
+  undoCommand,
+} from './documentCommands.js';
 
 /**
  * What each document command hands back, and — more often — what it does not.
@@ -82,7 +88,7 @@ function recorder(): {
   readonly applied: Applied[];
   readonly onApplied: (a: Applied) => void;
   readonly shown: { id: string; props: unknown }[];
-  readonly show: (id: string, props: unknown) => void;
+  readonly ask: (id: string, props: unknown) => Promise<unknown>;
 } {
   const applied: Applied[] = [];
   const shown: { id: string; props: unknown }[] = [];
@@ -90,20 +96,37 @@ function recorder(): {
     applied,
     onApplied: (a) => applied.push(a),
     shown,
-    show: (id, props) => shown.push({ id, props }),
+    ask: askRecording(shown),
+  };
+}
+
+/**
+ * An `ask` that records the open and answers `undefined`.
+ *
+ * **Answers as a DISMISSAL**, which is what every dialog these cases open can
+ * do: none of them declares a result. A stub resolving some value would let a
+ * command that read an answer from an informational dialog pass — and the whole
+ * point of ADR-0038's `never` default is that such a dialog cannot answer.
+ */
+function askRecording(
+  shown: { id: string; props: unknown }[],
+): (id: string, props: unknown) => Promise<unknown> {
+  return (id, props) => {
+    shown.push({ id, props });
+    return Promise.resolve(undefined);
   };
 }
 
 describe('rotate page', () => {
   it('hands back BOTH scalars, exactly as the channel answered them', async () => {
-    const { applied, onApplied, show } = recorder();
+    const { applied, onApplied, ask } = recorder();
     const client = clientAnswering('document.execute', {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
     });
 
-    await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, ask }).run(CONTEXT);
 
     // The byte length is the half that is easy to drop, and dropping it is not
     // visible in any state: the version alone rebinds the renderer's transport
@@ -118,14 +141,14 @@ describe('rotate page', () => {
    * happened and by how much.
    */
   it('tells the user when the command cost undo steps, and says how many', async () => {
-    const { applied, shown, onApplied, show } = recorder();
+    const { applied, shown, onApplied, ask } = recorder();
     const client = clientAnswering('document.execute', {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 3,
     });
 
-    await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, ask }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.history-trimmed', props: { dropped: 3 } },
@@ -141,9 +164,9 @@ describe('rotate page', () => {
     // it moved would make the renderer reopen for nothing — a visible reparse
     // for an operation that did not happen. Asserting the absent call is the
     // only thing that separates this from a command that always reports.
-    const { applied, onApplied, show } = recorder();
+    const { applied, onApplied, ask } = recorder();
 
-    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, show }).run(
+    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask }).run(
       CONTEXT,
     );
 
@@ -158,9 +181,9 @@ describe('rotate page', () => {
     // The code is asserted, not the dialog id alone: three commands share one
     // dialog, and which sentence the user reads is decided entirely by the code
     // that is passed through.
-    const { shown, onApplied, show } = recorder();
+    const { shown, onApplied, ask } = recorder();
 
-    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, show }).run(
+    await rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask }).run(
       CONTEXT,
     );
 
@@ -173,14 +196,14 @@ describe('rotate page', () => {
     // Without this, the case above is satisfied by a command that opens the
     // dialog every time — which would put "that could not be done" in front of
     // a user whose rotation worked, and no other case here would notice.
-    const { shown, onApplied, show } = recorder();
+    const { shown, onApplied, ask } = recorder();
     const client = clientAnswering('document.execute', {
       version: asDocVersion(2),
       byteLength: 2048,
       historyDropped: 0,
     });
 
-    await rotatePageCommand({ client, onApplied, show }).run(CONTEXT);
+    await rotatePageCommand({ client, onApplied, ask }).run(CONTEXT);
 
     expect(shown).toStrictEqual([]);
   });
@@ -190,8 +213,8 @@ describe('rotate page', () => {
     // before any projection — so a surface never has to ask, which is the
     // difference between a control that is absent and one that is present and
     // does nothing.
-    const { onApplied, show } = recorder();
-    const command = rotatePageCommand({ client: clientFailing('document-busy'), onApplied, show });
+    const { onApplied, ask } = recorder();
+    const command = rotatePageCommand({ client: clientFailing('document-busy'), onApplied, ask });
 
     expect(command.when?.(NO_DOCUMENT)).toBe(false);
     expect(command.when?.(CONTEXT)).toBe(true);
@@ -200,14 +223,14 @@ describe('rotate page', () => {
 
 describe('undo', () => {
   it('hands back both scalars when something moved', async () => {
-    const { applied, onApplied, show } = recorder();
+    const { applied, onApplied, ask } = recorder();
     const client = clientAnswering('document.undo', {
       kind: 'undone',
       version: asDocVersion(2),
       byteLength: 900,
     });
 
-    await undoCommand({ client, onApplied, show }).run(CONTEXT);
+    await undoCommand({ client, onApplied, ask }).run(CONTEXT);
 
     // NO `historyDropped`, and that is the channel rather than an omission:
     // `document.undo` does not carry one, because undo cannot grow the log and
@@ -220,10 +243,10 @@ describe('undo', () => {
     // `nothing-to-undo` is `ok`, and a command that reported it as a move would
     // reopen the document because a user pressed a key one time too many. The
     // outcome shape is what separates them — the envelope is `ok` either way.
-    const { applied, onApplied, show } = recorder();
+    const { applied, onApplied, ask } = recorder();
     const client = clientAnswering('document.undo', { kind: 'nothing-to-undo' });
 
-    await undoCommand({ client, onApplied, show }).run(CONTEXT);
+    await undoCommand({ client, onApplied, ask }).run(CONTEXT);
 
     expect(applied).toStrictEqual([]);
   });
@@ -232,8 +255,8 @@ describe('undo', () => {
     // §7 makes the shortcut map a projection of the registry, so declaring it
     // here is the whole of registering it. A keymap listing it separately would
     // be the second wiring place.
-    const { onApplied, show } = recorder();
-    expect(undoCommand({ client: clientFailing('document-busy'), onApplied, show }).shortcut).toBe(
+    const { onApplied, ask } = recorder();
+    expect(undoCommand({ client: clientFailing('document-busy'), onApplied, ask }).shortcut).toBe(
       'Ctrl+Z',
     );
   });
@@ -255,7 +278,7 @@ describe('save', () => {
     });
 
     const shown: { id: string; props: unknown }[] = [];
-    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
 
     expect(asked).toBe('document.save');
     // ASSERT THE CALL THAT WAS NOT MADE. A dialog on the successful path is one
@@ -282,7 +305,7 @@ describe('save', () => {
     const shown: { id: string; props: unknown }[] = [];
 
     await expect(
-      saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT),
+      saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT),
     ).resolves.toBeUndefined();
 
     expect(shown).toStrictEqual([
@@ -299,7 +322,7 @@ describe('save', () => {
     const client = clientAnswering('document.save', { kind: 'write-failed' });
     const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.save-problem', props: { outcome: 'write-failed' } },
@@ -320,7 +343,7 @@ describe('save', () => {
     );
     const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.command-problem', props: { code: 'document-busy' } },
@@ -337,10 +360,109 @@ describe('save', () => {
     );
     const shown: { id: string; props: unknown }[] = [];
 
-    await saveCommand({ client, show: (id, props) => shown.push({ id, props }) }).run(CONTEXT);
+    await saveCommand({ client, ask: askRecording(shown) }).run(CONTEXT);
 
     expect(shown).toStrictEqual([
       { id: 'dialog.command-problem', props: { code: 'internal', incident: 'inc-42' } },
     ]);
+  });
+});
+
+/**
+ * The mutation-dialog gate, as a pair of cases that must BOTH exist.
+ *
+ * A gate proven only by its refusal is satisfied by a dialog that can never
+ * answer, which reads exactly like one that works. So the confirming case and
+ * the dismissing case sit together, on the same fixture, differing only in what
+ * the dialog settled with.
+ *
+ * Both assert **the call that was or was not made**, because the document is
+ * unchanged either way from this side — `document.execute` going out is the
+ * only observable difference between a gate that gates and no gate at all.
+ */
+describe('delete pages — the mutation-dialog gate', () => {
+  /**
+   * A client that records every channel call and answers `document.execute`.
+   *
+   * The recorder is the point: `shown` says the dialog opened and `sent` says
+   * whether a command followed it, and only the second separates the two cases.
+   */
+  function recording(): {
+    readonly client: ContractClient;
+    readonly sent: { id: string; params: unknown }[];
+  } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(
+        ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
+      );
+    });
+    return { client, sent };
+  }
+
+  it('dispatches deletePages with EXACTLY the pages the dialog answered', async () => {
+    const { client, sent } = recording();
+    const opened: { id: string; props: unknown }[] = [];
+
+    await deletePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        // ZERO-BASED, as `parsePageRanges` produces them. A command that
+        // converted again would send [1, 3] and delete two other pages.
+        return Promise.resolve({ pages: [0, 2] });
+      },
+    }).run(CONTEXT);
+
+    // THE BOUND WENT IN. Without `pageCount` the dialog cannot refuse a page
+    // the document does not have, and the props schema requires it — so a
+    // command that omitted it would throw at the open call rather than here.
+    expect(opened).toStrictEqual([
+      { id: 'dialog.delete-pages', props: { pageCount: CONTEXT.pageCount } },
+    ]);
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: { docId: DOC, command: { kind: 'deletePages', pages: [0, 2] } },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED dialog dispatches nothing', async () => {
+    // The gate. `ask` settling `undefined` is what a dismissal is, and the
+    // command has no value to build a command from — asserted as the call that
+    // was not made, because the document is untouched either way and an
+    // end-state assertion would pass with the whole mechanism deleted.
+    const { client, sent } = recording();
+
+    await deletePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('CONTROL: with no page count there is no bound, so nothing is asked', async () => {
+    // `pageCount` is `undefined` before the parser has opened the document, and
+    // opening the dialog then would either throw at the props schema or hand a
+    // person a field that cannot refuse anything.
+    const { client, sent } = recording();
+    const opened: { id: string; props: unknown }[] = [];
+
+    await deletePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(NO_DOCUMENT);
+
+    expect(opened).toStrictEqual([]);
+    expect(sent).toStrictEqual([]);
   });
 });
