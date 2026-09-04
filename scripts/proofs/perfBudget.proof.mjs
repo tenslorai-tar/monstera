@@ -470,8 +470,43 @@ const thrown = guarded(() => {
       // together and the ratio does not move. Both directions, because a gate
       // that always failed on the baseline would satisfy the tightening case
       // alone.
-      const belowBaselineMB = Math.max(1, Math.floor(measured.baselineBytes / MB) - 4);
-      const aboveBaselineMB = Math.ceil(measured.baselineBytes / MB) + 4;
+      // ONE MEGABYTE AND THIRTY-TWO GIGABYTES, not a margin either side of the
+      // measurement — and this is a REDUCTION, stated rather than slipped in.
+      //
+      // These budgets were `floor(measured) - 4` and `ceil(measured) + 4`,
+      // which compares a budget derived from ONE measurement against a
+      // DIFFERENT measurement the gate takes for itself moments later. That
+      // holds only while a role's baseline moves less than 4 MB between runs,
+      // and `mupdf-host-real`'s does not. Measured:
+      //
+      //   run 33864082137 (green, 232346d): 91.1 MB and 93.7 MB, two readings
+      //     in one run — a 2.6 MB spread already
+      //   run 33868965385 (red, 4d666f2): the proof measured 94.4 MB, set the
+      //     budget to 90 MB, and the gate's own re-measurement came in at or
+      //     below it — `withinBaseline=true`, so the mutation did not bite
+      //
+      // `scripts/research/baselineSpread.mjs` had already put `mupdf-host` at a
+      // **2.9 MB spread over thirty readings on two machines** (finding
+      // RRRR-3). The margin was 4 MB against a role whose spread was never
+      // measured and whose closest measured sibling is 2.9. A threshold
+      // narrower than the instrument's own spread is a coin toss wearing a
+      // number.
+      //
+      // WHAT IS GIVEN UP: boundary precision — *this budget, one megabyte
+      // under, is refused*. That was never actually proven, because the two
+      // sides were different measurements. What is kept is the property the
+      // pair exists for: the gate READS the baseline budget and compares it to
+      // what it measured, in both directions. The self-consistency assertion
+      // below is what replaces the precision, and it is stronger where it
+      // applies — it holds the gate's verdict against the gate's OWN number, in
+      // the same run, with no second measurement to disagree with.
+      //
+      // AND THE GATE'S OWN COVERAGE IS UNCHANGED. `budgetGate.mjs` still
+      // measures every role against §9.17's real `base 128 MB`; a genuine
+      // regression in the fixed cost is caught there, by the step after this
+      // one. This file proves that term is load-bearing, not what its value is.
+      const belowBaselineMB = 1;
+      const aboveBaselineMB = 32 * 1024;
       const generousOthers = [...others, 'renderer = provisional'];
 
       const tight = runBudgetGate({
@@ -485,9 +520,17 @@ const thrown = guarded(() => {
       const tightRole = tight.results.find((result) => result.role === measured.role);
       check(
         `${measured.role}: a baseline budget below its measured fixed cost turns the gate red`,
-        tightRole?.withinBaseline === false && ratioIsNotWhatFailed(tightRole),
-        `declared base ${String(belowBaselineMB)} MB against a measured ` +
-          `${formatBytes(measured.baselineBytes)}; withinBaseline=${String(tightRole?.withinBaseline)}. ` +
+        tightRole?.withinBaseline === false &&
+          // SELF-CONSISTENT, against the gate's OWN reading in this same run.
+          // `withinBaseline === false` alone is satisfied by a gate that always
+          // refuses; this says the verdict follows from the two numbers the
+          // gate itself holds, which no second measurement can disagree with.
+          tightRole.baselineBytes > tightRole.baselineLimit &&
+          ratioIsNotWhatFailed(tightRole),
+        `declared base ${String(belowBaselineMB)} MB; the gate measured ` +
+          `${formatBytes(tightRole?.baselineBytes ?? 0)} against a limit of ` +
+          `${formatBytes(tightRole?.baselineLimit ?? 0)} and answered ` +
+          `withinBaseline=${String(tightRole?.withinBaseline)}. ` +
           `Without this the baseline is measured, subtracted and asserted by nothing — a number in a ` +
           `detail string, which is the H2 defect.`,
       );
@@ -500,11 +543,19 @@ const thrown = guarded(() => {
           ...generousOthers,
         ]),
       });
+      const looseRole = loose.results.find((result) => result.role === measured.role);
       check(
-        `${measured.role}: and a baseline budget just above it passes`,
-        loose.results.find((result) => result.role === measured.role)?.withinBaseline === true,
-        `declared base ${String(aboveBaselineMB)} MB against a measured ` +
-          `${formatBytes(measured.baselineBytes)} and the gate still failed.`,
+        `${measured.role}: and a baseline budget above it passes`,
+        looseRole?.withinBaseline === true &&
+          // The same self-consistency in the other direction. Without it this
+          // case is satisfied by a gate that always passes, which is precisely
+          // what the tightening case exists to rule out — and the pair only
+          // means anything if each half is about the gate's own arithmetic.
+          looseRole.baselineBytes <= looseRole.baselineLimit,
+        `declared base ${String(aboveBaselineMB)} MB; the gate measured ` +
+          `${formatBytes(looseRole?.baselineBytes ?? 0)} against a limit of ` +
+          `${formatBytes(looseRole?.baselineLimit ?? 0)} and answered ` +
+          `withinBaseline=${String(looseRole?.withinBaseline)}.`,
       );
     }
 
