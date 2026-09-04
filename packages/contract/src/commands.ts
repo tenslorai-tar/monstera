@@ -221,6 +221,58 @@ export const insertBlankPageSchema = z.object({
   at: z.number().int().nonnegative(),
 });
 
+/**
+ * Crop pages by insetting their visible box.
+ *
+ * ## MARGINS, not a rectangle, and the difference is the multi-page case
+ *
+ * A crop rectangle is the obvious wire shape and it is the wrong one: pages in
+ * one document need not be the same size, so a single box means *the same
+ * absolute region* rather than *the same trim*, and cropping a mixed document
+ * would clip some pages and leave white on others. Margins are the operation a
+ * person means, and the kernel computes each page's own box from its own.
+ *
+ * It also keeps the payload off invariant L11: four numbers whatever the
+ * document, where one box per page scales with it.
+ *
+ * ## The numbers are POINTS, in PDF user space
+ *
+ * Not a branded {@link PdfPoint}, because these are **lengths and not
+ * positions** — an inset has no origin to be wrong about, which is what L3's
+ * branding exists to prevent. A surface collecting millimetres converts before
+ * it dispatches; the wire states one unit so nothing downstream has to ask.
+ *
+ * `left` and `right` are the box's own left and right, before rotation. A page
+ * displayed at `/Rotate 90` shows the crop turned with it, which is what a
+ * reader dragging a margin expects, and it is why the kernel writes the box
+ * rather than the renderer computing one.
+ */
+export const cropPagesSchema = z.object({
+  kind: z.literal('cropPages'),
+  /**
+   * Which pages, as a **scope** rather than always a list.
+   *
+   * `'all'` is not sugar. Cropping every page is the ordinary use, and a list
+   * for it is one integer per page — a payload that scales with the document,
+   * which invariant L11 rules out by name. The kernel resolves the scope where
+   * it already holds the page count, so nothing is lost but the crossing.
+   *
+   * This is the first command to need it. `rotatePages` and `deletePages` carry
+   * lists because their whole-document forms are not operations anybody asks
+   * for; the day one is, it takes this shape rather than a second one.
+   */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /** How much to take off each edge, in points. Non-negative; zero is legal. */
+  margins: z
+    .object({
+      top: z.number().nonnegative(),
+      right: z.number().nonnegative(),
+      bottom: z.number().nonnegative(),
+      left: z.number().nonnegative(),
+    })
+    .strict(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -229,6 +281,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   duplicatePageSchema,
   swapPagesSchema,
   insertBlankPageSchema,
+  cropPagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

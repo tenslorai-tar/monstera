@@ -4,6 +4,8 @@ import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type { z } from 'zod';
 
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
+import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
+import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
@@ -15,6 +17,7 @@ import {
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
+  CROP_PAGES_COMMAND_TITLE,
   DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
   INSERT_BLANK_PAGE_TITLE,
@@ -542,6 +545,40 @@ export function deletePagesCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'deletePages',
         pages: [...answer.pages],
+      });
+    },
+  };
+}
+
+/**
+ * Asks for margins and a scope, then crops.
+ *
+ * `deletePagesCommand`'s shape one command along, which is what the dialog seam
+ * being a registry entry buys: the second argument-collecting command is three
+ * lines and a cast, not a second mechanism.
+ *
+ * **The scope is not expanded here.** The dialog answers `'all'` or a list and
+ * the command passes it through, because expanding it would put one integer per
+ * page back on the wire — invariant L11 — and give the kernel a second opinion
+ * about what *all* means.
+ */
+export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.crop-pages',
+    title: CROP_PAGES_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 16 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(CROP_PAGES_DIALOG_ID, { page: context.page })) as
+        | CropPagesAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'cropPages',
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        margins: answer.margins,
       });
     },
   };

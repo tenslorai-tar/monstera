@@ -271,6 +271,23 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  cropPages: {
+    kind: 'cropPages',
+    // A page attribute written in place, exactly as a rotation is. Invariant
+    // L6's argument for MuPDF applies unchanged: a rebuild to change one key
+    // drops the four catalog entries ADR-0006 measured.
+    writer: 'mupdf',
+    // ADR-0009 §3 on a second key: the inverse restores the page's own
+    // `/CropBox` verbatim INCLUDING absence, because a page that displayed its
+    // media box must come back declaring no crop box. Writing the box in
+    // renders identically and is a different document.
+    invertible: true,
+    undo: 'inverse',
+    // The inset is arithmetic on the box the page resolves to, so re-running it
+    // against the same document writes the same numbers.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

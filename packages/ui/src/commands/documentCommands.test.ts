@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { CommandContext } from '../registries/commands.js';
 import {
   type Applied,
+  cropPagesCommand,
   deletePagesCommand,
   rotatePageCommand,
   saveCommand,
@@ -438,6 +439,47 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording();
 
     await deletePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('CROP PASSES THE SCOPE THROUGH, rather than expanding it to a list', async () => {
+    // Invariant L11. A command that expanded `'all'` into one integer per page
+    // would produce the same document and a payload that scales with it — and
+    // it would give the kernel a second opinion about what *all* means, which
+    // is the shape that agrees until one of the two learns about a page range.
+    const { client, sent } = recording();
+
+    await cropPagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () =>
+        Promise.resolve({ pages: 'all', margins: { top: 1, right: 2, bottom: 3, left: 4 } }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'cropPages',
+            pages: 'all',
+            margins: { top: 1, right: 2, bottom: 3, left: 4 },
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a dismissed crop dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await cropPagesCommand({
       client,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),

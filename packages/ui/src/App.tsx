@@ -15,6 +15,7 @@ import {
   findCommand,
   fitCommand,
   deletePageCommand,
+  cropPagesCommand,
   deletePagesCommand,
   duplicatePageCommand,
   insertBlankPageCommand,
@@ -48,6 +49,7 @@ import { revealLogCommand } from './commands/revealLog.js';
 import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
+import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
 import { SETTINGS_PROBLEM_DIALOG } from './dialogs/settingsProblem.js';
@@ -201,6 +203,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
         DELETE_PAGES_DIALOG,
+        CROP_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
     [],
@@ -639,6 +642,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // awaits an answer and dispatches only if there was one, which is the
         // whole of the mutation-dialog gate (ADR-0038).
         deletePagesCommand({ client, onApplied: applied, ask }),
+        cropPagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so

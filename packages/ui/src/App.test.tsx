@@ -592,6 +592,48 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.execute')).toHaveLength(0);
     });
 
+    it('THE CROP CONTROL OPENS A DIALOG, and applying it sends the margins typed', async () => {
+      // The second argument-collecting command, end to end through the real
+      // registry, lazy body and parser. `pageCrop.test.ts` is the kernel half.
+      //
+      // ONE EDGE IS TYPED AND THREE ARE LEFT EMPTY, which is the ordinary crop
+      // and the case that says an empty field means zero rather than blocking.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Crop pages…' }).click();
+        await Promise.resolve();
+      });
+
+      const top = await screen.findByLabelText('Top (points)');
+      await act(async () => {
+        fireEvent.change(top, { target: { value: '12' } });
+        await Promise.resolve();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Crop' }).click();
+        await Promise.resolve();
+      });
+
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        command: {
+          kind: 'cropPages',
+          // `'all'` is the dialog's default scope and it reaches the command
+          // unexpanded — a list here would be invariant L11's payload back.
+          pages: 'all',
+          margins: { top: 12, right: 0, bottom: 0, left: 0 },
+        },
+      });
+    });
+
     it('THE INSERT-BLANK CONTROL SENDS at ONE PAST the page on screen', async () => {
       // The UI half of insert blank's pair; `pageOrder.test.ts` says the page
       // lands there and takes its neighbour's geometry.

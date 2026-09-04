@@ -106,6 +106,19 @@ const DELETE_SPEC = `  deletePages: {
   },`;
 
 /** Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason. */
+const CROP_SPEC = `  cropPages: {
+    kind: 'cropPages',
+    writer: 'mupdf',
+    apply: applyCropPages,
+    capture: captureCropPages,
+    invert: invertCropPages,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const INSERT_SPEC = `  insertBlankPage: {
     kind: 'insertBlankPage',
     writer: 'mupdf',
@@ -167,6 +180,9 @@ const SPEC_IMPORTS = `import {
   applyInsertBlankPage,
   captureInsertBlankPage,
   invertInsertBlankPage,
+  applyCropPages,
+  captureCropPages,
+  invertCropPages,
 } from '@monstera/kernel/engine';`;
 
 /**
@@ -514,6 +530,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
 };
 `,
   },
@@ -531,11 +548,11 @@ ${INSERT_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `insertBlankPage`, `swapPages`, `duplicatePage` and
-    // `deletePages` on 2026-09-04, `movePage` on 2026-09-03,
-    // `setLayerVisibility` before.
+    // table has to grow. `cropPages`, `insertBlankPage`, `swapPages`,
+    // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
+    // 2026-09-03, `setLayerVisibility` before.
     because:
-      /Property 'insertBlankPage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'cropPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -559,6 +576,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
 };
 `,
   },
@@ -589,6 +607,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -634,6 +653,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
 };
 `,
   },
@@ -662,6 +682,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
 };
 `,
   },
@@ -699,6 +720,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
 };
 `,
   },
@@ -732,6 +754,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
 };
 `,
   },
@@ -1235,13 +1258,19 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // the harness's own resolution test refuses.
     // ONE ELIDED MEMBER PER COMMAND KIND, so this pattern widens with the union
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
-    // three since `movePage` (2026-09-03), seven since `deletePages`,
-    // `duplicatePage`, `swapPages` and `insertBlankPage` (2026-09-04). Written
-    // out rather than made repetition-insensitive for the case above's reason:
-    // `(\{…\} \| )+` would match a union of any size, including one this type
-    // never had.
+    // three since `movePage` (2026-09-03), eight since `deletePages`,
+    // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`
+    // (2026-09-04).
+    //
+    // A COUNTED REPETITION, `{7}`, and it is not the repetition-insensitive
+    // spelling this comment used to warn against. `(\{…\} \| )+` matches a
+    // union of ANY size, including one this type never had; `{7}` matches
+    // exactly eight members and nothing else, so the case still fails the day a
+    // command is added and still has to be edited. What it drops is eight
+    // hand-written copies of the same four characters, which had started to be
+    // the thing a reader checked instead of the count.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){7}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

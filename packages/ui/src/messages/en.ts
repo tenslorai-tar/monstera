@@ -47,6 +47,17 @@ export const DELETE_PAGES_OUT_OF_RANGE = messageKey('dialog.delete-pages.out-of-
 export const DELETE_PAGES_BACKWARDS = messageKey('dialog.delete-pages.backwards');
 export const DELETE_PAGES_EVERYTHING = messageKey('dialog.delete-pages.everything');
 export const DELETE_PAGES_COMMAND_TITLE = messageKey('command.delete-pages.title');
+export const CROP_PAGES_TITLE = messageKey('dialog.crop-pages.title');
+export const CROP_PAGES_TOP = messageKey('dialog.crop-pages.top');
+export const CROP_PAGES_BOTTOM = messageKey('dialog.crop-pages.bottom');
+export const CROP_PAGES_LEFT = messageKey('dialog.crop-pages.left');
+export const CROP_PAGES_RIGHT = messageKey('dialog.crop-pages.right');
+export const CROP_PAGES_THIS = messageKey('dialog.crop-pages.this-page');
+export const CROP_PAGES_ALL = messageKey('dialog.crop-pages.all-pages');
+export const CROP_PAGES_APPLY = messageKey('dialog.crop-pages.apply');
+export const CROP_PAGES_NOT_A_NUMBER = messageKey('dialog.crop-pages.not-a-number');
+export const CROP_PAGES_NEGATIVE = messageKey('dialog.crop-pages.negative');
+export const CROP_PAGES_COMMAND_TITLE = messageKey('command.crop-pages.title');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
@@ -373,6 +384,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [DELETE_PAGES_EVERYTHING]:
     'That is every page. A document with no pages cannot be opened — close it instead.',
   [DELETE_PAGES_COMMAND_TITLE]: 'Delete pages…',
+  [CROP_PAGES_TITLE]: 'Crop pages',
+  // THE UNIT IS IN EVERY LABEL, not in a note beside the fields. A person
+  // typing 10 into a box marked "Top" has no way to know what ten of.
+  [CROP_PAGES_TOP]: 'Top (points)',
+  [CROP_PAGES_BOTTOM]: 'Bottom (points)',
+  [CROP_PAGES_LEFT]: 'Left (points)',
+  [CROP_PAGES_RIGHT]: 'Right (points)',
+  [CROP_PAGES_THIS]: 'This page',
+  [CROP_PAGES_ALL]: 'All pages',
+  [CROP_PAGES_APPLY]: 'Crop',
+  [CROP_PAGES_NOT_A_NUMBER]: 'Margins are numbers of points. Leave an edge empty to keep it.',
+  // NAMED SEPARATELY from the general refusal: "that is not a number" is
+  // unhelpful about a string that plainly is one, and cropping by a negative
+  // margin is growing the page — a different operation.
+  [CROP_PAGES_NEGATIVE]: 'A margin cannot be negative. Cropping only takes away.',
+  [CROP_PAGES_COMMAND_TITLE]: 'Crop pages…',
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',

@@ -21,6 +21,7 @@ import type {
   PriorPageOrder,
   PriorPageSwap,
 } from './pageOrder.js';
+import type { PriorPageCrop } from './pageCrop.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -153,6 +154,16 @@ export interface CommandPrior {
    * this table refuses it.
    */
   readonly insertBlankPage: PriorPageInsert;
+  /**
+   * Each cropped page's own `/CropBox`, read before the command ran.
+   *
+   * `PriorPageRotation`'s shape on a second key, and for §3's same reason:
+   * **absence is a value**. A page that displayed its media box because it
+   * declared no crop box must come back declaring none — writing the box in
+   * renders identically and is a different document, and the next crop would
+   * inset from a box the page never had.
+   */
+  readonly cropPages: readonly PriorPageCrop[];
 }
 
 /**
