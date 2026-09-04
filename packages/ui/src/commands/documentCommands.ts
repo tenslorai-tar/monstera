@@ -8,6 +8,8 @@ import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
+import { DUPLICATE_PAGES_DIALOG_ID } from '../dialogs/duplicatePages.js';
+import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import {
@@ -20,6 +22,7 @@ import {
   CROP_PAGES_COMMAND_TITLE,
   DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
+  FIND_DUPLICATES_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
@@ -579,6 +582,55 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
         kind: 'cropPages',
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         margins: answer.margins,
+      });
+    },
+  };
+}
+
+/**
+ * Asks the engine which pages are the same page, then offers to remove the
+ * extra copies.
+ *
+ * ## TWO ROUND TRIPS, and the first one is a read
+ *
+ * The report is a query and removing the copies is a command, which is why
+ * there is no single channel that does both: a mutating read would be the
+ * second wiring place, and its changes would be ones no undo could reach.
+ *
+ * ## The dialog opens even when nothing was found
+ *
+ * A command that silently did nothing is one a person presses twice. *Found
+ * nothing* said out loud is the difference between a measurement and a control
+ * that appears broken — the same reason `nothing-to-undo` is an outcome rather
+ * than a silence.
+ *
+ * A failed read is reported and the dialog is not opened: a dialog headed
+ * *duplicate pages* over a document that could not be walked is a list of none
+ * that means *could not look*.
+ */
+export function findDuplicatePagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.find-duplicate-pages',
+    title: FIND_DUPLICATES_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 17 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const found = await deps.client['document.duplicatePages']({ docId: context.docId });
+      if (!found.ok) {
+        reportProblem(deps, found.error);
+        return;
+      }
+
+      const answer = (await deps.ask(DUPLICATE_PAGES_DIALOG_ID, {
+        groups: found.value.groups.map((group) => ({ pages: [...group.pages] })),
+        truncated: found.value.truncated,
+      })) as DuplicatePagesAnswer | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'deletePages',
+        pages: [...answer.pages],
       });
     },
   };

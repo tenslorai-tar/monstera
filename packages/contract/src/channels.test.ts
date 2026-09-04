@@ -125,6 +125,19 @@ const handlers: ContractHandlers = {
         ],
       }),
     ),
+  // TWO GROUPS AND `truncated: false`, for the layers fixture's reason: one
+  // group would let a boundary that dropped everything after the first answer
+  // correctly, and `truncated: true` is the state a boundary defaulting the
+  // flag cannot produce — so the fixture uses the value a default would give
+  // and the case below is what separates them.
+  'document.duplicatePages': () =>
+    Promise.resolve(
+      ok({
+        version: asDocVersion(1),
+        groups: [{ pages: [0, 3] }, { pages: [1, 2, 4] }],
+        truncated: false,
+      }),
+    ),
   // `true`, because the interesting fixture is a document that WAS there: a
   // handler answering `false` unconditionally satisfies the schema and tells
   // every caller their close did nothing.

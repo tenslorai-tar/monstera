@@ -524,6 +524,9 @@ describe('the engine host answers a containment probe', () => {
     layers: () => {
       throw new Error('a containment probe must not read the layers');
     },
+    duplicates: () => {
+      throw new Error('a containment probe must not look for duplicates');
+    },
   };
 
   function probeHandler(answer: ContainmentReport) {
@@ -544,6 +547,7 @@ describe('the engine host answers a containment probe', () => {
         forbidden.pageLinks,
         forbidden.destinations,
         forbidden.layers,
+        forbidden.duplicates,
       ),
       () => undefined,
     );

@@ -19,6 +19,7 @@ import {
   type PageGeometryReader,
   type ProbeTarget,
   type RemoteMupdfWriter,
+  type MupdfSession,
   type SessionAreaSurface,
   type SnapshotWrite,
   type WriterRegistry,
@@ -29,6 +30,7 @@ import {
   parsePageText,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
+  remoteMupdfDuplicateReport,
   remoteMupdfLayers,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -44,9 +46,22 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import {
   DocumentCommands,
+  type DocumentDuplicatesReader,
   type DocumentSessions,
   MissingSessionError,
 } from './documentCommands.js';
+
+/**
+ * How the host answers a duplicate-page read.
+ *
+ * Named here rather than in `packages/kernel`'s host module because it is the
+ * pair of things a channel answers — the groups and whether the bound stopped
+ * them — and the kernel's `HostDuplicatesReader` deliberately carries only the
+ * first: the bound is the channel's question, not a document's.
+ */
+type DuplicateReport = (
+  session: MupdfSession,
+) => ReturnType<DocumentDuplicatesReader> extends Promise<infer T> ? Promise<T> : never;
 import {
   type EngineHostConnection,
   type EngineHostConnectionSurfaces,
@@ -391,7 +406,14 @@ export function createShellDependencies(
   //
   // Composed here for the flush's reason: the supervisor and the host's opener
   // are both in scope on this line and nowhere else.
-  (docId, write) => engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)));
+  (docId, write) => engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
+  // THE DUPLICATE REPORT, composed here for the reads above's reason: the
+  // reader and the session are both in scope on this line and nowhere else.
+  (docId, sessions) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return engineHost.duplicates(session);
+  });
 
   const openedDocument = engineHost.openedDocument;
 
@@ -493,6 +515,8 @@ function engineSessionOpener(
   readonly destinations: HostDestinationsReader;
   /** The document's layers, from whichever host is live. */
   readonly layers: HostLayersReader;
+  /** The document's duplicate pages, from whichever host is live. */
+  readonly duplicates: DuplicateReport;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -667,6 +691,20 @@ function engineSessionOpener(
     return layers(session);
   };
 
+  /** The duplicate report's half of the same registration. See {@link pageText}. */
+  let duplicates: DuplicateReport | null = null;
+
+  const readDuplicatesThroughHost: DuplicateReport = (session) => {
+    if (duplicates === null) {
+      throw new Error(
+        'A duplicate-page read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return duplicates(session);
+  };
+
   /**
    * Tokens are minted from handles ONE host issued, and
    * `createRemoteSessions`' own words are that they are *"not transferable
@@ -777,6 +815,7 @@ function engineSessionOpener(
     pageLinks = remoteMupdfPageLinks(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     layers = remoteMupdfLayers(client, remote);
+    duplicates = remoteMupdfDuplicateReport(client, remote);
     return live.value;
   };
 
@@ -943,6 +982,7 @@ function engineSessionOpener(
     pageLinks: readPageLinksThroughHost,
     destinations: readDestinationsThroughHost,
     layers: readLayersThroughHost,
+    duplicates: readDuplicatesThroughHost,
     closeHost,
     rebuildSessions: create,
     restoreSessions: buildSessions,

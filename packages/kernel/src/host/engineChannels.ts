@@ -184,6 +184,26 @@ const engineLayerSchema = z
   .strict();
 
 /**
+ * How many duplicate page indices may cross in one answer.
+ *
+ * Larger than every other bound in this file, and the reason is the shape
+ * rather than generosity: a scanned bundle of one repeated blank page is
+ * duplicates all the way down, which is an ordinary document rather than a
+ * hostile one. The renderer's own bound
+ * (`MAX_DUPLICATE_PAGES` in `packages/contract`) is the same number for the
+ * same reason, and the two are separate because this boundary is hostile by
+ * invariant 25 while that one is not.
+ */
+export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
+
+/** One group of identical pages, as it crosses from the host. */
+const engineDuplicateGroupSchema = z
+  .object({
+    pages: z.array(z.number().int().nonnegative()).min(2).max(ENGINE_DUPLICATE_PAGES_MAX),
+  })
+  .strict();
+
+/**
  * One outline entry, as it crosses from the host.
  *
  * `page` is **nullable rather than optional**, matching the reader: an entry
@@ -685,6 +705,26 @@ export const engineChannels = {
     'Reads the document’s optional-content groups from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
     z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
+    ['no-such-session'],
+  ),
+
+  'engine/duplicate-pages': channel(
+    'Groups pages of a session this host holds whose content and resources are identical.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        groups: z.array(engineDuplicateGroupSchema).max(ENGINE_DUPLICATE_PAGES_MAX),
+        /**
+         * Whether the bound stopped the report.
+         *
+         * Computed on THIS side, because only the side that walked the document
+         * knows there was more. Main receiving a full array and inferring
+         * truncation from its length would be inferring it from the bound it
+         * already knows — which answers *you asked for that many* every time.
+         */
+        truncated: z.boolean(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 

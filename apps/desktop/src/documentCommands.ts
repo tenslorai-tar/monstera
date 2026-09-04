@@ -10,6 +10,7 @@ import {
   type DocumentService,
   type PageGeometry,
   type Destination,
+  type DuplicatePageGroup,
   type Layer,
   type PageLink,
   type PageText,
@@ -420,6 +421,26 @@ export interface DocumentLayers {
   readonly layers: readonly Layer[];
 }
 
+/**
+ * Groups identical pages, and says whether the bound stopped the report.
+ *
+ * **The truncation flag rides with the groups**, rather than being a second
+ * question. It is computed where the document was walked, and a caller that
+ * inferred it from the list's length would be inferring it from the bound it
+ * already knows — which answers *you asked for that many* every time.
+ */
+export type DocumentDuplicatesReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<{ readonly groups: readonly DuplicatePageGroup[]; readonly truncated: boolean }>;
+
+/** The duplicate groups, stamped with the version the lane read them at. */
+export interface DocumentDuplicates {
+  readonly version: DocVersion;
+  readonly groups: readonly DuplicatePageGroup[];
+  readonly truncated: boolean;
+}
+
 /** One page's matches, stamped with the version the lane read them at. */
 export interface PageSearchResult {
   readonly version: DocVersion;
@@ -468,6 +489,7 @@ export class DocumentCommands {
   readonly #destinations: DocumentDestinationsReader;
   readonly #layers: DocumentLayersReader;
   readonly #restore: DocumentRestore;
+  readonly #duplicates: DocumentDuplicatesReader;
 
   constructor(
     documents: DocumentService,
@@ -488,6 +510,15 @@ export class DocumentCommands {
     // reader's `(DocId, DocumentSessions, …)` — so a mis-slot is a type error
     // either way; appending is what keeps the *other* eight from moving.
     restore: DocumentRestore,
+    // THE ELEVENTH POSITIONAL PARAMETER, and the fifth reader taking
+    // `(docId, sessions)`. Finding CCCCCC-3 recorded the class and named its
+    // trigger precisely — *the day two of these readers answer the same
+    // shape*, when a transposition compiles and a panel shows the wrong list.
+    // Checked rather than inherited: `Layer`, `Destination`, `PageLink`,
+    // `PageGeometry` and this one's `{ groups, truncated }` are still mutually
+    // incompatible, so the trigger has not fired. The options object that
+    // removes the class remains owed.
+    duplicates: DocumentDuplicatesReader,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -499,6 +530,7 @@ export class DocumentCommands {
     this.#destinations = destinations;
     this.#layers = layers;
     this.#restore = restore;
+    this.#duplicates = duplicates;
   }
 
   /**
@@ -709,6 +741,32 @@ export class DocumentCommands {
     });
 
     return { version, layers: value };
+  }
+
+  /**
+   * Groups identical pages, inside the document's lane.
+   *
+   * `layers`' guards in `layers`' order, and the lane matters for the reason it
+   * matters for the view model: this walks every page's content, and a walk
+   * interleaved with an `apply` would describe neither the document before the
+   * command nor the one after it.
+   *
+   * A READ. What a person does with the answer is delete pages, and that goes
+   * through `execute` like every other mutation — so this returns a list and
+   * changes nothing.
+   */
+  async duplicates(docId: DocId): Promise<DocumentDuplicates> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#duplicates(docId, sessions);
+    });
+
+    return { version, groups: value.groups, truncated: value.truncated };
   }
 
   /**

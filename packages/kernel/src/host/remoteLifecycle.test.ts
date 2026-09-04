@@ -216,6 +216,9 @@ function joined(
       () => {
         throw new Error('the lifecycle half must not read the layers');
       },
+      () => {
+        throw new Error('the lifecycle half must not look for duplicates');
+      },
     ),
     (incident) => incidents.push(incident),
   );
@@ -409,6 +412,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         () => {
           throw new Error('the byte-size case must not read the layers');
+        },
+        () => {
+          throw new Error('the byte-size case must not look for duplicates');
         },
       ),
       () => undefined,

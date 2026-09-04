@@ -6,8 +6,13 @@ import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
 import type { PageLink } from '../pageLinks.js';
+import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
-import { type EngineChannels, taggedPrior } from './engineChannels.js';
+import {
+  ENGINE_DUPLICATE_PAGES_MAX,
+  type EngineChannels,
+  taggedPrior,
+} from './engineChannels.js';
 
 /**
  * Reads one page's structured text as MuPDF's own JSON.
@@ -54,6 +59,17 @@ export type HostDestinationsReader = (
 
 /** Reads the document's layers. Injected for the readers above's reason. */
 export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
+
+/**
+ * Groups pages that are the same page. Injected for the readers above's reason.
+ *
+ * It answers the **whole** set and the bound is applied where the answer is
+ * assembled, not here: a reader that clipped would have to decide what
+ * *truncated* means, which is the channel's question and not a document's.
+ */
+export type HostDuplicatesReader = (
+  session: MupdfSession,
+) => Promise<readonly DuplicatePageGroup[]>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -151,6 +167,7 @@ export function createEngineHandlers(
   pageLinks: HostPageLinksReader,
   destinations: HostDestinationsReader,
   layers: HostLayersReader,
+  duplicates: HostDuplicatesReader,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -296,6 +313,30 @@ export function createEngineHandlers(
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       return { ok: true, value: { layers: [...(await layers(held.session))] } };
+    },
+
+    'engine/duplicate-pages': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      const groups = await duplicates(held.session);
+
+      // BOUNDED BY PAGES, not by groups, and the difference is the document
+      // that produces the worst case: one blank page repeated ten thousand
+      // times is ONE group of ten thousand entries, which a group count does
+      // not see at all. Whole groups are kept or dropped, because half a group
+      // is a list of pages that are duplicates of something not in it.
+      const kept: { pages: number[] }[] = [];
+      let pages = 0;
+      let truncated = false;
+      for (const group of groups) {
+        if (pages + group.pages.length > ENGINE_DUPLICATE_PAGES_MAX) {
+          truncated = true;
+          break;
+        }
+        kept.push({ pages: [...group.pages] });
+        pages += group.pages.length;
+      }
+      return { ok: true, value: { groups: kept, truncated } };
     },
 
     'engine/apply': async ({ session, command }) => {

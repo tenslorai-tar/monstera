@@ -190,6 +190,7 @@ describe('browser shim', () => {
       'app.info',
       'document.close',
       'document.destinations',
+      'document.duplicatePages',
       'document.execute',
       'document.layers',
       'document.open',

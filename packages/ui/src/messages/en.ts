@@ -58,6 +58,13 @@ export const CROP_PAGES_APPLY = messageKey('dialog.crop-pages.apply');
 export const CROP_PAGES_NOT_A_NUMBER = messageKey('dialog.crop-pages.not-a-number');
 export const CROP_PAGES_NEGATIVE = messageKey('dialog.crop-pages.negative');
 export const CROP_PAGES_COMMAND_TITLE = messageKey('command.crop-pages.title');
+export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
+export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
+export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
+export const DUPLICATE_PAGES_GROUP = messageKey('dialog.duplicate-pages.group');
+export const DUPLICATE_PAGES_REMOVE = messageKey('dialog.duplicate-pages.remove');
+export const DUPLICATE_PAGES_TRUNCATED = messageKey('dialog.duplicate-pages.truncated');
+export const FIND_DUPLICATES_COMMAND_TITLE = messageKey('command.find-duplicate-pages.title');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
@@ -400,6 +407,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // margin is growing the page — a different operation.
   [CROP_PAGES_NEGATIVE]: 'A margin cannot be negative. Cropping only takes away.',
   [CROP_PAGES_COMMAND_TITLE]: 'Crop pages…',
+  [DUPLICATE_PAGES_TITLE]: 'Duplicate pages',
+  // WHAT WAS COMPARED, in the user's terms rather than the format's. "Content
+  // and resources" would be true and would leave a person unable to tell
+  // whether their annotated copy counts as the same page — which is exactly the
+  // question this sentence exists to answer.
+  [DUPLICATE_PAGES_COMPARED]:
+    'Pages are compared by what is drawn on them. Comments and form entries are not compared, ' +
+    'and pages that look alike but were built separately are not listed.',
+  [DUPLICATE_PAGES_NONE]: 'No duplicate pages were found.',
+  [DUPLICATE_PAGES_GROUP]: 'Pages {pages}',
+  // THE COUNT IS IN THE LABEL. "Remove duplicates" leaves a person pressing a
+  // button without knowing how many pages go, which is the one thing they want
+  // to know before a delete.
+  [DUPLICATE_PAGES_REMOVE]: 'Remove {count} duplicate page(s)',
+  [DUPLICATE_PAGES_TRUNCATED]:
+    'This list was cut short, so there may be more duplicates than are shown.',
+  [FIND_DUPLICATES_COMMAND_TITLE]: 'Find duplicate pages…',
   // Each reason says what the user can DO. "Contested" and "unverifiable" are
   // the kernel's words for a verdict; a person needs the next action.
   [SAVE_REFUSED_CONTESTED]: 'Another open document is writing to this file. Close it and try again.',

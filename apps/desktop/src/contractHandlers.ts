@@ -141,6 +141,7 @@ export function createContractHandlers(deps: {
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
+    'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
     // runs `migrate` and falls back per setting; a schema here would be this
@@ -422,6 +423,28 @@ function layersHandler(commands: DocumentCommands): ContractHandlers['document.l
     try {
       const { version, layers } = await commands.layers(docId);
       return ok({ version, layers });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The document's duplicate pages. A READ, for `layersHandler`'s reason: what a
+ * person does with the list is delete pages, and deleting is a command.
+ */
+function duplicatePagesHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.duplicatePages'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.duplicatePages']>>> => {
+    try {
+      const { version, groups, truncated } = await commands.duplicates(docId);
+      return ok({ version, groups, truncated });
     } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });

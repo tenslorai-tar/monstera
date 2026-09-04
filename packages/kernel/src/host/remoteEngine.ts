@@ -3,6 +3,7 @@ import type { ClientApi, CommandOfKind } from '@monstera/contract';
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
 import type { MupdfSession } from '../engineSeam.js';
+import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import { type EngineChannels, taggedPrior } from './engineChannels.js';
 import type {
@@ -270,6 +271,31 @@ export function remoteMupdfLayers(
       'engine/layers',
       await client['engine/layers']({ session: sessions.handleFor(session) }),
     ).layers;
+}
+
+/**
+ * The document's duplicate pages, over the boundary.
+ *
+ * **The truncation flag is dropped here, deliberately**, and that is not a loss
+ * of information: this returns the reader shape the composition point expects,
+ * and the flag is the CHANNEL's. `DocumentCommands` reads it from the same
+ * answer through `remoteMupdfDuplicateReport` below — one call, two consumers,
+ * rather than a second round trip for a boolean.
+ */
+export function remoteMupdfDuplicateReport(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): (session: MupdfSession) => Promise<{
+  readonly groups: readonly DuplicatePageGroup[];
+  readonly truncated: boolean;
+}> {
+  return async (session) => {
+    const answer = answered(
+      'engine/duplicate-pages',
+      await client['engine/duplicate-pages']({ session: sessions.handleFor(session) }),
+    );
+    return { groups: answer.groups, truncated: answer.truncated };
+  };
 }
 
 /**

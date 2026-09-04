@@ -149,6 +149,23 @@ export const MAX_LAYERS = 1024;
 export const MAX_LAYER_NAME_LENGTH = 256;
 
 /**
+ * How many duplicate pages may be reported in one answer.
+ *
+ * The report is a list of page indices and a document may be duplicates all the
+ * way down — a scanned bundle of one blank page repeated ten thousand times is
+ * the shape that produces the worst case, and it is not a hostile document, it
+ * is a Tuesday. So the answer is bounded and says when the bound stopped it,
+ * for `document.searchPage`'s reason: without that flag a caller cannot tell
+ * *this document has five hundred duplicates* from *you asked for five
+ * hundred*.
+ *
+ * Bigger than {@link MAX_LAYERS} because the shapes differ again: a person
+ * scanning a list of layers is reading a design's structure, where a person
+ * looking at duplicates is about to delete them and wants the whole set.
+ */
+export const MAX_DUPLICATE_PAGES = 4096;
+
+/**
  * How long a document's name may be.
  *
  * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
@@ -965,6 +982,73 @@ export const channels = {
         )
         .max(MAX_LAYERS)
         .readonly(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Pages that are the same page.
+   *
+   * ## A READ, and removing them is `document.execute`
+   *
+   * `document.layers`' rule one channel along: what a person does with this
+   * list is delete pages, and deleting is a command with a checkpoint and an
+   * undo. A channel that both found and removed them would be a mutating
+   * second wiring place whose changes no undo could reach.
+   *
+   * ## The list ERRS TOWARDS MISSING duplicates, and the surface must say so
+   *
+   * Two pages are reported only when their content bytes are equal **and** they
+   * resolve the same `/Resources` object, so pages that render identically from
+   * independently built resources are absent. That is a false negative by
+   * design: the action this list leads to is deletion, and the two ways of
+   * being wrong are not equal.
+   *
+   * It also compares **content**, not annotations — two pages differing only by
+   * a comment are reported as duplicates. The kernel is where that rule is
+   * stated; this channel carries the result and the surface says what was
+   * compared, because a list headed *duplicates* with no such sentence is one a
+   * person acts on without asking.
+   */
+  'document.duplicatePages': channel(
+    'Groups of pages whose content and resources are identical.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      groups: z
+        .array(
+          z.object({
+            /**
+             * Zero-based indices, ascending. Always at least two.
+             *
+             * Bounded by the same number as the outer array, and both bounds
+             * are real rather than defensive: one group of every page is the
+             * scanned-bundle shape, and one page per group is impossible —
+             * a group of one is not a group — so neither array alone tells you
+             * how much may cross.
+             */
+            pages: z
+              .array(z.number().int().nonnegative())
+              .min(2)
+              .max(MAX_DUPLICATE_PAGES)
+              .readonly(),
+          }),
+        )
+        // AT MOST HALF, because a group is at least two pages. Written as the
+        // arithmetic rather than as `2048` so the relationship survives a
+        // change to either number — a second literal here is a bound that
+        // stops meaning *half* the first time somebody edits one of them.
+        .max(MAX_DUPLICATE_PAGES / 2)
+        .readonly(),
+      /**
+       * Whether {@link MAX_DUPLICATE_PAGES} stopped the report.
+       *
+       * `document.searchPage`'s flag and its reason: without it a caller cannot
+       * tell *this document has that many* from *you asked for that many*, and
+       * a surface offering to remove them all would remove some of them and say
+       * it had finished.
+       */
+      truncated: z.boolean(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

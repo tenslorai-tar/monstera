@@ -97,6 +97,7 @@ export {
   type HostContainmentProbe,
   type HostFilesystem,
   type HostDestinationsReader,
+  type HostDuplicatesReader,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -125,6 +126,7 @@ export {
   remoteMupdfExecution,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
+  remoteMupdfDuplicateReport,
   remoteMupdfLayers,
   remoteMupdfPageLinks,
   remoteMupdfPageText,
@@ -226,4 +228,8 @@ export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 export type { LinkBounds, PageLink } from './pageLinks.js';
 export type { Destination } from './destinations.js';
 export type { Layer, PriorLayerVisibility } from './layers.js';
+// TYPE ONLY. `findDuplicatePages` itself is on `@monstera/kernel/engine` with
+// every other value that binds the native library (ADR-0026); the group shape
+// is a plain object and a consumer naming it must not pull MuPDF in.
+export type { DuplicatePageGroup } from './pageDuplicates.js';
 export { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';

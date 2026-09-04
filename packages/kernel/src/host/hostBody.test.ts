@@ -133,6 +133,9 @@ function start(stream: HostByteStream) {
       layers: () => {
         throw new Error('no case here reads the layers');
       },
+      duplicates: () => {
+        throw new Error('no case here looks for duplicates');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

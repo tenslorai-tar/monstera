@@ -718,6 +718,21 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       return Promise.resolve(ok({ version: asDocVersion(current), layers }));
     },
 
+    /**
+     * No duplicates, and the shim says so rather than being unable to answer.
+     *
+     * The renderer's surface for this is a dialog a person opens deliberately,
+     * so the shim's job is to let it open and report the empty case honestly.
+     * A queue of scripted answers is what the layer and view-model handlers
+     * above have, and it exists for surfaces that read on their own; nothing
+     * here reads without being asked.
+     */
+    'document.duplicatePages': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(ok({ version: asDocVersion(current), groups: [], truncated: false }));
+    },
+
     'document.pageLinks': ({ docId, page }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

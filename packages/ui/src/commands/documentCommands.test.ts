@@ -7,6 +7,7 @@ import {
   type Applied,
   cropPagesCommand,
   deletePagesCommand,
+  findDuplicatePagesCommand,
   rotatePageCommand,
   saveCommand,
   undoCommand,
@@ -473,6 +474,73 @@ describe('delete pages — the mutation-dialog gate', () => {
           },
         },
       },
+    ]);
+  });
+
+  it('THE DUPLICATE FINDER READS FIRST, then deletes the pages the dialog chose', async () => {
+    // Two round trips, and the ORDER is the assertion: a command that deleted
+    // before reading would delete whatever the dialog last answered with,
+    // which on a second run is a plausible list of real pages.
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(
+        ok(
+          id === 'document.duplicatePages'
+            ? { version: asDocVersion(1), groups: [{ pages: [0, 4] }], truncated: false }
+            : { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+        ),
+      );
+    });
+    const opened: { id: string; props: unknown }[] = [];
+
+    await findDuplicatePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        // THE EXTRA COPY, which is what the body computes. The command must not
+        // recompute it: two readings of *which copy survives* is the shape that
+        // agrees until one of them changes its mind about the first page.
+        return Promise.resolve({ pages: [4] });
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.duplicate-pages',
+        props: { groups: [{ pages: [0, 4] }], truncated: false },
+      },
+    ]);
+    expect(sent).toStrictEqual([
+      { id: 'document.duplicatePages', params: { docId: DOC } },
+      {
+        id: 'document.execute',
+        params: { docId: DOC, command: { kind: 'deletePages', pages: [4] } },
+      },
+    ]);
+  });
+
+  it('CONTROL: a failed READ reports the problem and opens no dialog', async () => {
+    // A dialog headed *duplicate pages* over a document that could not be
+    // walked is a list of none that means *could not look* — the reassuring
+    // answer wearing the shape of an answer.
+    const shown: { id: string; props: unknown }[] = [];
+    const opened: unknown[] = [];
+
+    await findDuplicatePagesCommand({
+      client: clientFailing('document-poisoned'),
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        if (id === 'dialog.duplicate-pages') opened.push(props);
+        shown.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([]);
+    expect(shown).toStrictEqual([
+      { id: 'dialog.command-problem', props: { code: 'document-poisoned' } },
     ]);
   });
 

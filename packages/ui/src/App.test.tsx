@@ -592,6 +592,49 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.execute')).toHaveLength(0);
     });
 
+    it('THE DUPLICATE FINDER LISTS WHAT THE ENGINE FOUND, and removes the extra copies', async () => {
+      // The UI half of the pair, end to end: the read channel, the real dialog,
+      // the page-number conversion in its labels, and the delete it dispatches.
+      // `pageDuplicates.test.ts` is the kernel half and says the grouping is
+      // right; nothing there can say a person can reach it.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.duplicatePages': {
+          version: asDocVersion(1),
+          groups: [{ pages: [0, 3] }],
+          truncated: false,
+        },
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Find duplicate pages…' }).click();
+        await Promise.resolve();
+      });
+
+      // ONE-BASED IN THE LABEL. The model's `[0, 3]` reads as pages 1 and 4,
+      // and a body that showed the indices would name two pages the reader
+      // cannot find.
+      await screen.findByText('Pages 1, 4');
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Remove 1 duplicate page(s)' }).click();
+        await Promise.resolve();
+      });
+
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      // THE LATER COPY, and the earlier one survives — asserted because the
+      // opposite choice deletes the page the document's order is built around
+      // and produces a document that also has no duplicates.
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        command: { kind: 'deletePages', pages: [3] },
+      });
+    });
+
     it('THE CROP CONTROL OPENS A DIALOG, and applying it sends the margins typed', async () => {
       // The second argument-collecting command, end to end through the real
       // registry, lazy body and parser. `pageCrop.test.ts` is the kernel half.

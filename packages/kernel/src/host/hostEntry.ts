@@ -9,6 +9,7 @@ import { mupdfWriter } from '../mupdfWriter.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
@@ -131,6 +132,7 @@ startEngineHost(
     pageLinks: readPageLinks,
     destinations: readDestinations,
     layers: readLayers,
+    duplicates: findDuplicatePages,
     tokens: cryptoBytes,
     // Where a handler's thrown diagnostic goes. Never the pipe: main gets
     // `internal` and an id, and the text stays on this side — which is the

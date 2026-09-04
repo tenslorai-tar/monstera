@@ -240,6 +240,8 @@ export const handlers: ContractHandlers = {
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.duplicatePages': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -292,6 +294,8 @@ export const handlers: ContractHandlers = {
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.duplicatePages': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
@@ -419,6 +423,8 @@ export const shim: ContractClient = {
   'document.destinations': () =>
     Promise.resolve(ok({ version: asDocVersion(1), destinations: [] })),
   'document.layers': () => Promise.resolve(ok({ version: asDocVersion(1), layers: [] })),
+  'document.duplicatePages': () =>
+    Promise.resolve(ok({ version: asDocVersion(1), groups: [], truncated: false })),
   'settings.load': () => Promise.resolve(ok({ stored: {} })),
   'settings.save': () => Promise.resolve(ok({ stored: true as const })),
   'log.reveal': () => Promise.resolve(ok({ revealed: true })),
