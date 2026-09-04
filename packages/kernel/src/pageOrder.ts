@@ -121,7 +121,14 @@ function deref(object: PDFObject): PDFObject {
  */
 function rewriteKids(document: PDFDocument, permutation: readonly number[]): void {
   const leaves: PDFObject[] = [];
-  for (let index = 0; index < permutation.length; index += 1) {
+  // OVER THE DOCUMENT'S PAGES, not over `permutation.length`, and the two are
+  // the same number only for a permutation. `leaves` is indexed by SOURCE, so
+  // a keep-set shorter than the document — every delete — would otherwise stop
+  // collecting before it reached the sources it keeps: deleting page 1 of five
+  // asks for `leaves[4]` out of an array of four. Found by the first delete
+  // case, which is the shape a move could never produce.
+  const count = document.countPages();
+  for (let index = 0; index < count; index += 1) {
     const page = document.findPage(index);
     for (const key of INHERITABLE) {
       if (page.get(key).isNull()) {
@@ -142,10 +149,155 @@ function rewriteKids(document: PDFDocument, permutation: readonly number[]): voi
 
   root.put('Kids', kids);
   root.put('Count', permutation.length);
-  for (const leaf of leaves) leaf.put('Parent', root);
+  // REPARENTS WHAT IT KEPT, not every leaf it read. For a move the two sets are
+  // the same — a permutation names every page — and for a delete they are not:
+  // a removed leaf given a `/Parent` pointing at the root is a page that claims
+  // to be in a tree whose `/Kids` does not list it, which is the inconsistent
+  // half of a page tree that some readers repair by trusting `/Parent`.
+  for (const source of permutation) {
+    const leaf = leaves[source];
+    if (leaf !== undefined) leaf.put('Parent', root);
+  }
 
   document.setPageTreeCache(true);
 }
+
+/**
+ * The destination order that removing `removed` produces.
+ *
+ * A **keep-set**, built once from the original frame, which is what makes the
+ * order the indices arrive in irrelevant. Deleting them one at a time is the
+ * shape with the defect: each later index needs shifting by how many earlier
+ * ones went, and that arithmetic is re-derived at every call site until one of
+ * them gets it wrong on a document nobody tested.
+ *
+ * Duplicates collapse, because a `Set` is what the question is.
+ *
+ * @param count how many pages the document has
+ * @param removed zero-based indices in the document as it stands
+ */
+export function keptPermutation(count: number, removed: Iterable<number>): readonly number[] {
+  const gone = new Set(removed);
+  const kept: number[] = [];
+  for (let index = 0; index < count; index += 1) if (!gone.has(index)) kept.push(index);
+  return kept;
+}
+
+/**
+ * Where a page index ends up after a delete, or `null` if it was one of them.
+ *
+ * {@link remapPageIndex}'s sibling, derived from the same array the write uses
+ * for the same reason: a consumer's answer must not be able to disagree with
+ * the tree. `null` carries two states here — *deleted* and *never existed* —
+ * and they are deliberately the same answer, because a destination that no
+ * longer resolves is one thing to a panel however it stopped resolving.
+ */
+export function remapPageIndexAfterDelete(
+  count: number,
+  removed: Iterable<number>,
+  page: number,
+): number | null {
+  if (page < 0 || page >= count) return null;
+  const at = keptPermutation(count, removed).indexOf(page);
+  return at === -1 ? null : at;
+}
+
+/**
+ * The pages a delete would remove, refusing a command this document cannot take.
+ *
+ * Shared by `capture` and `apply` so the two cannot disagree about which
+ * command is legal — the disagreement `applyMovePage`'s own refusal exists to
+ * report rather than to cause.
+ */
+function removableOrThrow(document: PDFDocument, pages: readonly number[]): Set<number> {
+  const count = document.countPages();
+  const gone = new Set(pages);
+  for (const page of gone) {
+    if (page >= count) {
+      throw new RangeError(
+        `page ${String(page)} is outside a document of ${String(count)} page(s). The bus ` +
+          `validates against the document it captured, so reaching here means the two disagree.`,
+      );
+    }
+  }
+  // REFUSED, and this is the one rule the schema could not carry: it needs the
+  // page count. A PDF with an empty `/Kids` is not a document a reader opens,
+  // and producing one would turn an undo into the only way back to a file that
+  // still parses — which invariant 18 permits and no user expects.
+  if (gone.size >= count) {
+    throw new RangeError(
+      `deleting ${String(gone.size)} of ${String(count)} page(s) would leave a document with ` +
+        `none, which is not a PDF a reader can open. Close the document instead.`,
+    );
+  }
+  return gone;
+}
+
+/**
+ * Reports that a delete's prior state cannot be recorded — **always**.
+ *
+ * Not a stub. `CommandPrior['deletePages']` is `never`, so the `captured: true`
+ * member of this return type cannot be constructed: the only value this
+ * function can produce is the refusal below, and the type says so rather than
+ * this comment. The bus reads it, takes a checkpoint and applies anyway, which
+ * is ADR-0009 §4's declared answer for a non-invertible command.
+ *
+ * It still **validates**, and that is the point of having it rather than a
+ * constant: a command naming a page the document does not have, or naming all
+ * of them, must throw here — before `apply` writes — rather than be quietly
+ * converted into a checkpoint that reproduces the same failure on redo.
+ */
+export function captureDeletePages(
+  session: MupdfSession,
+  command: CommandOfKind<'deletePages'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    const gone = removableOrThrow(document, command.pages);
+    return {
+      captured: false,
+      reason:
+        `${String(gone.size)} deleted page(s) cannot be recorded as prior state — a page's ` +
+        `objects are document-scaled and have no serialisable inverse`,
+    };
+  });
+}
+
+/**
+ * Unreachable, and required by {@link CommandSpec}'s shape.
+ *
+ * `Invert<'mupdf', 'deletePages'>` takes a `CommandPrior['deletePages']`, which
+ * is `never`, so no caller can construct an argument for it and no log entry
+ * can carry one. It throws rather than resolving: a reachable path here would
+ * mean the type had been widened, and a quiet resolve would let that land as an
+ * undo that silently did nothing.
+ *
+ * Kept rather than omitted because the spec table requires all three functions
+ * — the same reasoning `commandLog.ts` gives for keeping a branch no code can
+ * reach: the fact it encodes is true, and deleting it moves the failure to
+ * whoever widens the type.
+ */
+export const invertDeletePages: Invert<'mupdf', 'deletePages'> = (): Promise<void> => {
+  throw new Error(
+    'a deleted page has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};
+
+/**
+ * Removes pages.
+ *
+ * The same `/Kids` rewrite a move takes, with {@link keptPermutation} in place
+ * of {@link movePermutation} — one page-tree writer, because two would be two
+ * opinions about inheritance push-down and the second would be found by a
+ * landscape page that came back portrait (B3a).
+ */
+export const applyDeletePages: Apply<'mupdf', 'deletePages'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'deletePages'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const gone = removableOrThrow(document, command.pages);
+    rewriteKids(document, keptPermutation(document.countPages(), gone));
+  });
 
 /**
  * Records where the page was, before it moves.

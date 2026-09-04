@@ -98,6 +98,25 @@ export interface CommandPrior {
    * which is the state `captureMovePage` refuses rather than records.
    */
   readonly movePage: PriorPageOrder;
+  /**
+   * **`never`, and that is the declaration rather than a placeholder.**
+   *
+   * A deleted page's prior state is its object and everything that object
+   * reaches — content streams, resources, annotations — which is
+   * document-scaled and has no serialisable form. Recording it would put
+   * unbudgeted document-scaled bytes in the log, where `retainedBytes` counts
+   * **checkpoints only** and would report a figure smaller than what the
+   * process holds. §4's retention would then trim against a number that is
+   * wrong in the direction nobody notices.
+   *
+   * So a delete is a checkpoint command, and `never` is what makes that
+   * structural rather than a rule: `CaptureResult<never>`'s `{ captured: true }`
+   * member requires a `prior: never` and cannot be constructed, and
+   * `LogEntryFor<'deletePages'>`'s `invertible` member cannot either. **An
+   * invertible delete is unrepresentable** (B5) — there is no runtime check
+   * anywhere for it, and none is needed.
+   */
+  readonly deletePages: never;
 }
 
 /**

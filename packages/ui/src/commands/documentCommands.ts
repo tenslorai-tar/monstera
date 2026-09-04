@@ -12,6 +12,7 @@ import {
   FIT_WIDTH_TITLE,
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
+  DELETE_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
@@ -377,6 +378,49 @@ export function rotatePageCommand(
         kind: 'rotatePages',
         pages: [context.page],
         quarterTurns,
+      });
+    },
+  };
+}
+
+/**
+ * Removes the page on screen.
+ *
+ * ## The page comes from the context, exactly as a rotation's does
+ *
+ * `context.page` is what the scroller reports as current, and both guards below
+ * are load-bearing for `rotatePageCommand`'s reason: deleting page 0 because no
+ * page was current is the plausible wrong action, and it is worse here than for
+ * a rotation, since a rotation can be undone by looking at the screen and a
+ * delete cannot.
+ *
+ * ## No shortcut, deliberately
+ *
+ * `Delete` is the obvious chord and it is wrong: the same key removes an
+ * annotation, a selection and text, and a command registered on it here would
+ * fire while the user's attention is on any of them. The first destructive
+ * command in the build does not get the key that is about to be contested — D3
+ * decides that, with a focus rule rather than a first-come registration.
+ *
+ * ## It is undone by a CHECKPOINT, which is the reason this row waited
+ *
+ * `deletePages` is the first command declaring `invertible: false`, so its log
+ * entry is terminal and undoing it restores the bytes the bus snapshotted
+ * ([ADR-0037](../../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+ * Nothing about this dispatch says so, and that is the point — the surface is
+ * the same four steps every other command's is.
+ */
+export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.delete-page',
+    title: DELETE_PAGE_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 13 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'deletePages',
+        pages: [context.page],
       });
     },
   };

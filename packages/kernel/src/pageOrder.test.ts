@@ -3,11 +3,15 @@ import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter } from './mupdfWriter.js';
 import {
+  applyDeletePages,
   applyMovePage,
+  captureDeletePages,
   captureMovePage,
   invertMovePage,
+  keptPermutation,
   movePermutation,
   remapPageIndex,
+  remapPageIndexAfterDelete,
 } from './pageOrder.js';
 
 /**
@@ -285,6 +289,118 @@ describe('captureMovePage and invertMovePage', () => {
       await invertMovePage(session, capture.prior);
 
       expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('keptPermutation and remapPageIndexAfterDelete', () => {
+  it('removes every named index IN THE ORIGINAL FRAME, not one after another', () => {
+    // THE FIXTURE SEPARATES THE TWO READINGS, which is the whole reason the
+    // indices are not adjacent. Deleting 1 then 3 sequentially removes the
+    // page that was at 4, because 3 slid down — so `[0, 2, 3]` is the answer a
+    // sequential implementation gives and `[0, 2, 4]` is the correct one. A
+    // fixture of adjacent indices produces the same array either way.
+    expect(keptPermutation(5, [1, 3])).toStrictEqual([0, 2, 4]);
+  });
+
+  it('is order- and duplicate-insensitive, because it is a set question', () => {
+    expect(keptPermutation(5, [3, 1])).toStrictEqual([0, 2, 4]);
+    expect(keptPermutation(5, [1, 1, 3])).toStrictEqual([0, 2, 4]);
+  });
+
+  it('answers where a surviving page ENDS UP, and null for one that was removed', () => {
+    // Page 4 survives at index 2 once 1 and 3 are gone. Asked of a deleted page
+    // the answer is null — and the same null a page past the end gets, because
+    // *this no longer resolves* is one state to whoever holds the reference.
+    expect(remapPageIndexAfterDelete(5, [1, 3], 4)).toBe(2);
+    expect(remapPageIndexAfterDelete(5, [1, 3], 0)).toBe(0);
+    expect(remapPageIndexAfterDelete(5, [1, 3], 3)).toBeNull();
+    expect(remapPageIndexAfterDelete(5, [1, 3], 9)).toBeNull();
+  });
+});
+
+describe('applyDeletePages', () => {
+  it('DELETES THE PAGES, and the saved document says which ones', async () => {
+    const cut = await edited(await flatDocument(5), (session) =>
+      applyDeletePages(session, { kind: 'deletePages', pages: [1, 3] }),
+    );
+
+    // Read with pdf-lib after a save, for this file's stated reason: an engine
+    // agreeing with itself about its own cache proves nothing about the bytes.
+    expect(await widthsOf(cut)).toStrictEqual([100, 102, 104]);
+  });
+
+  it('IS CORRECT ON A NESTED TREE, and carries the inherited rotation down', async () => {
+    // Both halves of the nested hazard in one case, because for a delete they
+    // interact: pages 0 and 1 inherit `/Rotate 90` from the intermediate node,
+    // and page 0 is the one being removed — so a flatten that pushed nothing
+    // down would leave page 1 upright while the ORDER looked right.
+    const source = await nestedDocument(4);
+    expect(await rotationsOf(source)).toStrictEqual([90, 90, 0, 0]);
+
+    const cut = await edited(source, (session) =>
+      applyDeletePages(session, { kind: 'deletePages', pages: [0] }),
+    );
+
+    expect(await widthsOf(cut)).toStrictEqual([101, 102, 103]);
+    expect(await rotationsOf(cut)).toStrictEqual([90, 0, 0]);
+  });
+
+  it('REFUSES a delete that would empty the document', async () => {
+    // The one rule the schema cannot carry, because it needs the page count.
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        applyDeletePages(session, { kind: 'deletePages', pages: [0, 1, 2] }),
+      ).rejects.toThrow(/would leave a document with none/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('REFUSES an index the document does not have', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        applyDeletePages(session, { kind: 'deletePages', pages: [9] }),
+      ).rejects.toThrow(/outside a document of 3 page/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('captureDeletePages', () => {
+  it('NEVER captures, and says why — which is what makes the entry terminal', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      const capture = await captureDeletePages(session, { kind: 'deletePages', pages: [1] });
+
+      expect(capture.captured).toBe(false);
+      if (capture.captured) throw new Error('a delete cannot be captured');
+      expect(capture.reason).toMatch(/no serialisable inverse/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('THROWS rather than refusing when the command is invalid, so redo cannot repeat it', async () => {
+    // The distinction ADR-0009's 2026-08-19 decision draws, and it is the one
+    // thing this capture can get wrong. *Prior state cannot be recorded* is an
+    // outcome the bus answers with a checkpoint; *this command is not legal for
+    // this document* is a caller error. Converted into the first, an
+    // out-of-range delete would be recorded as a terminal entry, take a
+    // checkpoint, and fail at `apply` — after the log had grown.
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        captureDeletePages(session, { kind: 'deletePages', pages: [9] }),
+      ).rejects.toThrow(/outside a document of 3 page/u);
+      await expect(
+        captureDeletePages(session, { kind: 'deletePages', pages: [0, 1, 2] }),
+      ).rejects.toThrow(/would leave a document with none/u);
     } finally {
       await mupdfWriter.close(session);
     }

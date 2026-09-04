@@ -42,6 +42,7 @@ export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
 export const ROTATE_PAGE_180_TITLE = messageKey('command.rotate-page-180.title');
 export const ROTATE_PAGE_270_TITLE = messageKey('command.rotate-page-270.title');
+export const DELETE_PAGE_TITLE = messageKey('command.delete-page.title');
 export const FIND_TITLE = messageKey('command.find.title');
 export const ZOOM_IN_TITLE = messageKey('command.zoom-in.title');
 export const ZOOM_OUT_TITLE = messageKey('command.zoom-out.title');
@@ -178,6 +179,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ROTATE_PAGE_TITLE]: 'Rotate page',
   [ROTATE_PAGE_180_TITLE]: 'Rotate page 180°',
   [ROTATE_PAGE_270_TITLE]: 'Rotate page 270°',
+  // NAMES WHAT GOES, not the verb alone. *Delete* beside three *Rotate page*
+  // controls reads as a mode rather than an action on the page being looked at,
+  // and this is the one control in the toolbar that removes something.
+  [DELETE_PAGE_TITLE]: 'Delete page',
   [FIND_TITLE]: 'Find',
   [ZOOM_IN_TITLE]: 'Zoom in',
   [ZOOM_OUT_TITLE]: 'Zoom out',

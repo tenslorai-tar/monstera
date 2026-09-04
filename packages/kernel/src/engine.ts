@@ -18,11 +18,16 @@ export {
   type Layer,
 } from './layers.js';
 export {
+  applyDeletePages,
   applyMovePage,
+  captureDeletePages,
   captureMovePage,
+  invertDeletePages,
   invertMovePage,
+  keptPermutation,
   movePermutation,
   remapPageIndex,
+  remapPageIndexAfterDelete,
   type PriorPageOrder,
 } from './pageOrder.js';
 export { localMupdfWriter } from './localEngine.js';

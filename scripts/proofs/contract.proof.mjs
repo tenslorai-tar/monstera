@@ -85,6 +85,26 @@ const MOVE_SPEC = `  movePage: {
     replay: 'reapply-intent',
   },`;
 
+/**
+ * The first spec declaring `invertible: false`, kept separate for
+ * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
+ * which is now this one.
+ *
+ * It is also the only spec in these fixtures whose `invert` can never be
+ * called: `CommandPrior['deletePages']` is `never`.
+ */
+const DELETE_SPEC = `  deletePages: {
+    kind: 'deletePages',
+    writer: 'mupdf',
+    apply: applyDeletePages,
+    capture: captureDeletePages,
+    invert: invertDeletePages,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
 /** What a command-table fixture imports: three per command kind. */
 const SPEC_IMPORTS = `import {
   applyRotatePages,
@@ -96,6 +116,9 @@ const SPEC_IMPORTS = `import {
   applyMovePage,
   captureMovePage,
   invertMovePage,
+  applyDeletePages,
+  captureDeletePages,
+  invertDeletePages,
 } from '@monstera/kernel/engine';`;
 
 /**
@@ -439,6 +462,7 @@ export const specs: CommandSpecs = {
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
+${DELETE_SPEC}
 };
 `,
   },
@@ -456,8 +480,9 @@ ${MOVE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `movePage` on 2026-09-03, `setLayerVisibility` before.
-    because: /Property 'movePage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+    // table has to grow. `deletePages` on 2026-09-04, `movePage` on 2026-09-03,
+    // `setLayerVisibility` before.
+    because: /Property 'deletePages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -477,6 +502,7 @@ export const specs: CommandSpecs = {
     replay: 'reapply-intent',
   },
 ${LAYER_SPEC}
+${MOVE_SPEC}
 };
 `,
   },
@@ -503,6 +529,7 @@ export const specs: CommandSpecs = {
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
+${DELETE_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -544,6 +571,7 @@ export const specs: CommandSpecs = {
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
+${DELETE_SPEC}
 };
 `,
   },
@@ -568,6 +596,7 @@ export const specs: CommandSpecs = {
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
+${DELETE_SPEC}
 };
 `,
   },
@@ -601,6 +630,7 @@ export const specs: CommandSpecs = {
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
+${DELETE_SPEC}
 };
 `,
   },
@@ -630,6 +660,7 @@ export const specs: CommandSpecs = {
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
+${DELETE_SPEC}
 };
 `,
   },
@@ -1017,6 +1048,37 @@ export const entry: LogEntry = {
 `,
   },
   {
+    name: 'AN INVERTIBLE DELETE IS UNREPRESENTABLE, because its prior state is never',
+    expect: 'reject',
+    code: 'TS2322',
+    // B5 rather than a runtime check, and there is no runtime check anywhere
+    // for it. `CommandPrior['deletePages']` is `never` — a deleted page's prior
+    // state is its object graph, which is document-scaled and has no
+    // serialisable form — so `LogEntryFor<'deletePages'>`'s invertible member
+    // cannot be constructed and `CaptureResult<never>` can only report refusal.
+    //
+    // WITHOUT THIS CASE the property rests on a comment. A later hand widening
+    // `never` to something serialisable would put unbudgeted document-scaled
+    // bytes in the log, where `retainedBytes` counts checkpoints only and would
+    // under-report by exactly that amount — in the direction nobody notices.
+    because: /Type '\{…\}' is not assignable to type 'never'/u,
+    notBecause: null,
+    // `LogEntryFor<'deletePages'>` and NOT the collapsed `LogEntry`. Against
+    // the union TypeScript reports an excess-property mismatch on `inverse`
+    // measured against every kind's prior state at once, which is a true
+    // diagnostic about the wrong thing — it would still fire if this kind's
+    // prior state were an ordinary object. Naming the kind is what puts `never`
+    // in the message.
+    source: `
+import type { LogEntryFor } from '@monstera/kernel';
+export const entry: LogEntryFor<'deletePages'> = {
+  kind: 'invertible',
+  command: { kind: 'deletePages', pages: [1] },
+  inverse: { pages: [1] },
+};
+`,
+  },
+  {
     name: 'a TERMINAL entry may not be built without a checkpoint',
     expect: 'reject',
     code: 'TS2322',
@@ -1102,10 +1164,11 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // the harness's own resolution test refuses.
     // ONE ELIDED MEMBER PER COMMAND KIND, so this pattern widens with the union
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
-    // three since `movePage` (2026-09-03). Written out rather than made
-    // repetition-insensitive for the case above's reason: `(\{…\} \| )+` would
-    // match a union of any size, including one this type never had.
-    because: /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\}'/u,
+    // three since `movePage` (2026-09-03), four since `deletePages`
+    // (2026-09-04). Written out rather than made repetition-insensitive for the
+    // case above's reason: `(\{…\} \| )+` would match a union of any size,
+    // including one this type never had.
+    because: /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\} \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

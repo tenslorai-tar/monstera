@@ -22,7 +22,14 @@ import {
   captureSetLayerVisibility,
   invertSetLayerVisibility,
 } from './layers.js';
-import { applyMovePage, captureMovePage, invertMovePage } from './pageOrder.js';
+import {
+  applyDeletePages,
+  applyMovePage,
+  captureDeletePages,
+  captureMovePage,
+  invertDeletePages,
+  invertMovePage,
+} from './pageOrder.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
@@ -153,6 +160,15 @@ const declared = {
     apply: applyMovePage,
     capture: captureMovePage,
     invert: invertMovePage,
+  },
+  deletePages: {
+    ...declaredCommands.deletePages,
+    apply: applyDeletePages,
+    capture: captureDeletePages,
+    // UNREACHABLE BY THE TYPE and required by this table's shape. See
+    // `invertDeletePages` — `CommandPrior['deletePages']` is `never`, so
+    // nothing can build an argument for it.
+    invert: invertDeletePages,
   },
 } satisfies CommandSpecs;
 

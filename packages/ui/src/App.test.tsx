@@ -527,6 +527,38 @@ describe('App', () => {
       ).toStrictEqual([1, 2, 3]);
     });
 
+    it('THE DELETE CONTROL SENDS deletePages FOR THE PAGE ON SCREEN', async () => {
+      // The UI half of delete's wired pair. The kernel half is
+      // `pageOrder.test.ts`, which reads a saved document back with pdf-lib and
+      // says the right pages went; this says a person can reach it and that the
+      // index it carries is the one being displayed.
+      //
+      // THE COMMAND KIND IS PART OF THE ASSERTION. A control wired to
+      // `rotatePages` dispatches `document.execute` just as correctly, and the
+      // toolbar would look identical — which is what the pair exists to
+      // separate.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete page' }).click();
+        await Promise.resolve();
+      });
+
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        // ZERO, and it is the KERNEL frame — `SHOWN_PAGE`'s correspondence
+        // again, on the command where getting it wrong deletes the wrong page.
+        command: { kind: 'deletePages', pages: [0] },
+      });
+    });
+
     /**
      * The UI half of SEARCH's wired pair.
      *

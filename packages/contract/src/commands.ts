@@ -117,10 +117,42 @@ export const movePageSchema = z.object({
   to: z.number().int().nonnegative(),
 });
 
+/**
+ * Remove pages from the document.
+ *
+ * ## The indices are all in the ORIGINAL frame, and all removed at once
+ *
+ * `deletePages([1, 3])` removes the pages that are at 1 and 3 **now**, not the
+ * page at 1 followed by whatever slid into 3. The two readings differ on every
+ * multi-page delete and both render plausibly, so the frame is stated rather
+ * than left to whoever writes the loop — this file's header already makes the
+ * same statement about `movePage`'s two indices, for the same reason.
+ *
+ * Applying them one at a time in the kernel is the shape that has the bug: it
+ * needs each later index shifted by how many earlier ones were removed, which
+ * is arithmetic a reader has to re-derive at every call site. The kernel builds
+ * one keep-set instead, so the order the indices arrive in cannot matter.
+ *
+ * ## Duplicates are accepted and a delete of everything is refused
+ *
+ * A repeated index is the same page named twice, which is a set operation with
+ * an obvious answer, and refusing it would make a UI that gathers a selection
+ * responsible for de-duplicating it. **A document with no pages is a different
+ * matter**: it is not a PDF a reader can open, and the refusal cannot live in
+ * this schema because it needs the page count. It is the kernel's, stated in
+ * `pageOrder.ts` and thrown before anything is written.
+ */
+export const deletePagesSchema = z.object({
+  kind: z.literal('deletePages'),
+  /** Zero-based page indices, in the document as it stands. */
+  pages: z.array(z.number().int().nonnegative()).min(1),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
   movePageSchema,
+  deletePagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

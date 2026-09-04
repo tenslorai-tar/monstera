@@ -831,6 +831,46 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
   });
 
   /**
+   * The command the whole restore path exists for, end to end.
+   *
+   * `deletePages` is terminal **by the type** — `CommandPrior['deletePages']` is
+   * `never`, so no capture can succeed and no invertible entry can be built —
+   * and this is the first command in the build that is. What the case asserts is
+   * that the checkpoint the bus took holds the document **before** the delete,
+   * compared against a serialisation taken by hand beforehand.
+   *
+   * That comparison is the one an end-state assertion cannot make: the bus does
+   * not put the session back, the supervisor does, so a stub session still shows
+   * the deleted document afterwards whatever the bus wrote.
+   */
+  it('a deletePages entry is TERMINAL, and its checkpoint holds the document before it', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    const supervisor = restoreStub();
+    try {
+      const before = await mupdfWriter.serialise(session);
+
+      const executed = await bus.execute(session, context, {
+        kind: 'deletePages',
+        pages: [1],
+      });
+      expect(executed.entry.kind).toBe('terminal');
+      // The document really lost a page — without this the case passes for a
+      // command that recorded a checkpoint and applied nothing.
+      expect(await withDocument(session, (document) => document.countPages())).toBe(2);
+
+      await bus.undo({ mupdf: session }, context, supervisor.restore);
+
+      expect(context.written()).toHaveLength(1);
+      expect(context.written()[0]?.bytes).toStrictEqual(before);
+      expect(context.log.entries).toHaveLength(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
    * The restore's failure is the log's failure too.
    *
    * A supervisor that cannot rebuild leaves the document holding the session it

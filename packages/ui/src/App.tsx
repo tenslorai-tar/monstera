@@ -14,6 +14,7 @@ import {
   applyDocumentCommand,
   findCommand,
   fitCommand,
+  deletePageCommand,
   rotatePageCommand,
   saveCommand,
   undoCommand,
@@ -602,6 +603,11 @@ export function App({ client, settings }: AppProps): ReactElement {
         rotatePageCommand({ client, onApplied: applied, show }, 1),
         rotatePageCommand({ client, onApplied: applied, show }, 2),
         rotatePageCommand({ client, onApplied: applied, show }, 3),
+        // THE FIRST DESTRUCTIVE COMMAND, and it registers exactly like the
+        // three above it. What is different is invisible here and deliberately
+        // so: its log entry is terminal, and undoing it restores the checkpoint
+        // the bus took rather than an inverse (ADR-0037).
+        deletePageCommand({ client, onApplied: applied, show }),
         undoCommand({ client, onApplied: applied, show }),
         saveCommand({ client, show }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so

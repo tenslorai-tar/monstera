@@ -201,6 +201,27 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  deletePages: {
+    kind: 'deletePages',
+    // Invariant L6 and `movePage`'s measurement: the same `/Kids` rewrite, with
+    // a keep-set instead of a permutation. `rearrangePages` would express a
+    // delete natively and is banned for the reason ADR-0006 measured — it drops
+    // `/AcroForm` even for the identity permutation.
+    writer: 'mupdf',
+    // THE FIRST COMMAND TO DECLARE THIS, and the type has named it since the
+    // day `Invertibility` was written. A deleted page's prior state is its
+    // object graph, which has no serialisable form and is document-scaled —
+    // `CommandPrior['deletePages']` is `never` so that an invertible delete
+    // cannot be constructed at all.
+    invertible: false,
+    undo: 'checkpoint',
+    // Deleting is a rewrite of `/Kids` to a derived order, exactly as a move
+    // is. Re-running it against the same document produces the same tree, so
+    // the log stores intent — invertibility and reproducibility are orthogonal
+    // (§3a) and this is the first command in the build where they differ.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */
