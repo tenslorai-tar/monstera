@@ -76,6 +76,30 @@ async function cell(mode) {
   if (mode === 'barrel') {
     // What `composition.ts` reaches when it writes `from '@monstera/kernel'`.
     await load('index.js');
+  } else if (mode === 'nodeCrypto') {
+    // NOT A KERNEL MODULE, and it is here because the question is the same one
+    // this instrument already answers — *what does this import cost the process
+    // that pays it* — asked of a Node built-in rather than of a barrel.
+    //
+    // `pageDuplicates.js` imports `createHash`, and `hostEntry.js` imports
+    // `pageDuplicates.js`, so this landed in the ENGINE HOST's fixed cost on
+    // 2026-09-04. The gate's reading moved from 91.1–93.7 MB to 94.4 MB across
+    // that commit, which is inside the same readings' own spread and therefore
+    // attributes nothing. This is the reading that can.
+    //
+    // MEASURED 2026-09-04, and the answer is +0.1 MB: Node already loads it.
+    // Five sweeps under `node` put both cells at 58.4–58.6 MB; five under
+    // `electron` — which is what the host runs as — put both at 40.8–41.0 MB.
+    //
+    // **The first electron sweep said +2.8 MB and it was the odd point.** Over
+    // five, that step appeared once on `nodeCrypto` and once on `bare`, in
+    // opposite directions, with +0.1 MB the other three times. A single pair
+    // would have been written up as a runtime-specific cost — SSSS-2's shape,
+    // which is real for other imports — and the question that separated it is
+    // the cheap one: what else is different about the odd point? Nothing. The
+    // runtime is bimodal at startup and the step lands on whichever cell meets
+    // it.
+    await import('node:crypto');
   } else if (mode !== 'bare') {
     // ONE MODULE PER CELL. The first version of this instrument loaded
     // `composition.ts`'s three named modules together and reported them as a
@@ -99,6 +123,7 @@ async function cell(mode) {
  */
 const CELLS = [
   'bare',
+  'nodeCrypto',
   'capabilityRegistry',
   'documentService',
   'commandBus',
