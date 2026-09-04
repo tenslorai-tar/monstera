@@ -453,6 +453,12 @@ export async function reportCanvasPixels(
     // `createDocumentPicker()` — which is the point of the seam, and the reason
     // the dialog is the only thing this proof does not reach.
     () => Promise.resolve(fixture),
+    // NEVER CALLED, and it throws rather than answering: this harness renders a
+    // document and writes no copy, so a picker that returned a plausible path
+    // would let a copy land on a developer's disk if anything ever reached it.
+    () => {
+      throw new Error('the canvas harness writes no copy, so nothing may pick a destination');
+    },
     // EPHEMERAL, because this proof runs on a developer's machine and on CI, and
     // a harness that wrote into the real `userData` would leave the application
     // configured by a test run.

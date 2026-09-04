@@ -294,6 +294,7 @@ export const handlers: ContractHandlers = {
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
+  'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -348,6 +349,7 @@ export const handlers: ContractHandlers = {
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
+  'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -477,6 +479,7 @@ export const shim: ContractClient = {
   'document.close': () => Promise.resolve(ok({ closed: true })),
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
+  'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
   'document.viewModel': () =>

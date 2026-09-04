@@ -19,6 +19,7 @@ import {
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
+  saveCopyCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -661,6 +662,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),
+        saveCopyCommand({ client, onApplied: applied, ask }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so
         // there is no client for it to hold. A command needing none is what a
         // command that acts on a surface looks like.

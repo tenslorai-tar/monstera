@@ -194,6 +194,21 @@ export interface BrowserShimOptions {
     'contested' | 'replaced' | 'target-absent' | 'unverifiable' | 'write-failed'
   >;
   /**
+   * What `document.saveCopy` answers, for {@link saveRefusals}' reason.
+   *
+   * **Not a map by document**, which is the difference from the field above and
+   * is the channel's shape rather than a simplification: writing a copy is one
+   * dialog the user is in front of, so a case is about *what happened this
+   * time* and never about two documents disagreeing.
+   *
+   * A number is a byte count and means the copy landed; `'write-failed'` is the
+   * filesystem refusing; an object carries the count of other open documents
+   * reaching the destination. **Absent means the user dismissed the dialog**,
+   * which is the default so that the outcome a renderer most often mishandles
+   * is the one it meets unless a case says otherwise.
+   */
+  readonly copyDestination?: number | 'write-failed' | { readonly openElsewhere: number };
+  /**
    * The bytes each document is readable as, by id.
    *
    * **Real bytes rather than a generator**, because the one caller that matters
@@ -585,6 +600,34 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
       }
 
       return Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(current) }));
+    },
+
+    /**
+     * Writing a copy, which in the shim is **the picker's outcome and nothing
+     * else**.
+     *
+     * There is no filesystem here and no dialog, so the only part of this
+     * channel a browser-side case can be about is what the renderer does with
+     * each answer. `copyDestination` is what a case sets to choose one:
+     * `undefined` — the default — is the user dismissing the dialog, which is
+     * also the state a renderer most often gets wrong by treating it as a
+     * failure.
+     *
+     * **Cancelled is the DEFAULT deliberately**, for the recent-files fixture's
+     * reason: a shim that copied by default would let a case asserting *the
+     * status bar says copied* pass without ever choosing that outcome.
+     */
+    'document.saveCopy': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
     },
 
     // THE STALE RULE IS MODELLED, and it is the one behaviour here that is not

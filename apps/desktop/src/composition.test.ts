@@ -36,6 +36,18 @@ import type { AppInfo } from './contractHandlers.js';
  */
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
 
+/**
+ * A destination picker no case here reaches, and it THROWS.
+ *
+ * Every case in this file is about opening, poisoning or handler assembly; none
+ * writes a copy. A stub returning a plausible path would let a case that
+ * accidentally reached it write a file on a developer's disk, and would pass
+ * while doing so.
+ */
+const noDestination = (): Promise<string | null> => {
+  throw new Error('no case here writes a copy, so nothing may pick a destination');
+};
+
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-composition-'));
 
 afterAll(() => {
@@ -54,6 +66,7 @@ describe('the composition root, with no engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('poisoned.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
     );
@@ -89,6 +102,7 @@ describe('the composition root, with no engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('unsaveable.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
     );
@@ -119,6 +133,7 @@ describe('the composition root, with no engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(null),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
     );
@@ -145,6 +160,7 @@ describe('the composition root, with no engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
     );

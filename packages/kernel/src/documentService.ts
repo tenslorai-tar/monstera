@@ -809,6 +809,20 @@ export type WriteTargetVerdict =
     };
 
 /**
+ * Whether a chosen destination may receive a copy.
+ *
+ * Two members, against {@link WriteTargetVerdict}'s five, and the difference is
+ * the question — see {@link DocumentService.checkCopyTarget}. A copy has no
+ * prior identity to have been replaced, and an absent file is what it usually
+ * writes.
+ */
+export type CopyTargetVerdict =
+  /** Nothing open reaches this path. The write creates or overwrites it. */
+  | { readonly kind: 'writable' }
+  /** Another open document reaches this file. Writing loses its unsaved edits. */
+  | { readonly kind: 'contested'; readonly others: readonly DocId[] };
+
+/**
  * Releases whatever a document holds outside this index — the engine session,
  * above all.
  *
@@ -1733,6 +1747,79 @@ export class DocumentService {
     if (others.length > 0) return { kind: 'contested', others };
 
     return replacementVerdict(record.openedIdentity, target);
+  }
+
+  /**
+   * Whether a destination the user chose is safe to write a copy to.
+   *
+   * ## Why this is not {@link checkWriteTarget} with a path parameter
+   *
+   * That check answers *may this document overwrite the file it was opened
+   * from*, and three of its five verdicts are about **replacement** — whether
+   * what is on disk is still the file this document was read from. A
+   * destination the user has just chosen in a save dialog has no such history:
+   * it is either a new file or one the user knowingly picked to overwrite, and
+   * the dialog already asked them about the second. Reporting `replaced` for a
+   * file this document was never opened from would be a refusal with no
+   * meaning.
+   *
+   * **What survives is `contested`, and it survives because it is the one
+   * verdict about US.** Another open document reaching the destination means
+   * writing loses that document's unsaved edits — invariant 18's *"a failed
+   * save never loses work"* read from the other side, since the work lost
+   * belongs to a tab the user is not looking at. Nothing outside this service
+   * can answer it: the open-document index is here.
+   *
+   * ## Absence is a PERMISSION here and a refusal there
+   *
+   * `checkWriteTarget` reports `target-absent` as a refusal — a save whose file
+   * has vanished has lost the thing it was going to overwrite. For a copy,
+   * nothing at the destination is the ordinary case and the write creates it.
+   * The same reading, opposite verdicts, because the question is different.
+   *
+   * @param destination the path the picker returned
+   */
+  async checkCopyTarget(destination: string): Promise<CopyTargetVerdict> {
+    return this.#throughIndexLane(async () => {
+      const target = await this.#readIdentity(destination);
+      // NOTHING THERE, so nothing to contest. A new file cannot hold anybody's
+      // unsaved work.
+      if (target === null) return { kind: 'writable' } as const;
+
+      const reaching = await this.#documentsAt(target);
+      // NO CONTROL IS POSSIBLE HERE, and that is the difference from
+      // `checkWriteTarget`, which requires the search to find the document
+      // whose own file it is reading. This destination need not be any open
+      // document's file, so an empty result is the ordinary answer rather than
+      // a broken walk — the one place in this service where *found nothing* is
+      // permitted to mean nothing was there.
+      //
+      // What keeps it honest is that the walk is the same `#documentsAt` the
+      // controlled caller uses, so a broken walk turns that check red first.
+      return reaching.length > 0
+        ? ({ kind: 'contested', others: reaching } as const)
+        : ({ kind: 'writable' } as const);
+    });
+  }
+
+  /**
+   * The document's file NAME, or `undefined` when it is not open.
+   *
+   * ## A name is not a path, and that is the whole of why this may exist
+   *
+   * Invariant L2 keeps paths out of renderer-facing types. This returns the
+   * basename, which `open` already answers with for the tab title, so nothing
+   * new crosses — a caller learns what the file is called and not where it is.
+   *
+   * ## Off the lane, for `writeCanonicalImage`'s reason
+   *
+   * It reads one field and changes nothing. Taking the lane would put a
+   * filename read behind whatever command is running, and the value cannot
+   * tear: `path` is set when the record is made and never reassigned.
+   */
+  nameOf(docId: DocId): string | undefined {
+    const record = this.#records.get(docId);
+    return record === undefined ? undefined : basename(record.path);
   }
 
   /** Whether this service currently holds the document. */

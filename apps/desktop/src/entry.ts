@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { app, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
+import { createDestinationPicker } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
@@ -60,6 +61,9 @@ startShell(() =>
     // as a value so that everything opening does with what was picked stays
     // decidable without a runtime.
     createDocumentPicker(),
+    // Its mirror, built here for the same reason and on the line after it, so
+    // the two Electron dialogs this application opens are visible together.
+    createDestinationPicker(),
     // `userData` and not `sessionData` or `temp`: settings outlive every
     // document and every session, and the two other directories are ones the
     // application and the OS respectively are entitled to empty. Resolved here

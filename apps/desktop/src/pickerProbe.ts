@@ -161,6 +161,12 @@ export async function reportPickerProbe(): Promise<void> {
       observed.pathArrived = picked !== null;
       return picked;
     },
+    // THROWS. This probe certifies the OPEN dialog and writes no copy; a save
+    // picker that answered here would put a second dialog in front of a person
+    // who is being asked to certify one.
+    () => {
+      throw new Error('the picker probe certifies opening, so nothing may pick a destination');
+    },
     // EPHEMERAL, for the same reason the canvas harness uses one: a person runs
     // this on their own machine, and a probe that wrote into the real `userData`
     // would leave the application configured by having been measured.

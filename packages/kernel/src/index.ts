@@ -154,6 +154,7 @@ export {
   type SaveWriter,
   type Versioned,
   type WriteTargetVerdict,
+  type CopyTargetVerdict,
 } from './documentService.js';
 export { readDocumentRange } from './documentRanges.js';
 export {
@@ -166,9 +167,11 @@ export { nodeFileSurface, siblingNames } from './fileSurface.js';
 export {
   type SaveDependencies,
   type SaveFileNames,
+  type CopyOutcome,
   type SaveOutcome,
   type WriteTargetCheck,
   saveDocument,
+  writeDocumentCopy,
 } from './savePipeline.js';
 export { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 export {

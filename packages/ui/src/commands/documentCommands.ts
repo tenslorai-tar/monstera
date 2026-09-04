@@ -33,6 +33,7 @@ import {
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
+  SAVE_COPY_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -861,6 +862,59 @@ export function saveCommand(deps: {
       // compile error rather than a branch that renders nothing.
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : answer.value.reason,
+      });
+    },
+  };
+}
+
+/**
+ * Writes a copy of the document to a destination the user picks.
+ *
+ * ## It takes NO dialog of its own, which is the whole shape of the feature
+ *
+ * Every other argument-collecting command in this file opens a `<Dialog>` and
+ * waits. This one does not: the destination comes from the **platform's** save
+ * dialog, which main runs, so the renderer has nothing to collect and nothing
+ * to validate. `document.saveCopy` carries a `DocId` and answers with what
+ * happened.
+ *
+ * That also means the mutation-dialog gate does not apply here and is not being
+ * evaded. The gate exists because a dismissed dialog must dispatch nothing; here
+ * the dismissal happens on main's side of the boundary and comes back as
+ * `cancelled`, so the renderer's job is to render nothing for it rather than to
+ * guard against dispatching.
+ *
+ * ## Cancelled renders NOTHING, and that is a decision
+ *
+ * A person who dismisses a save dialog knows what they did. A toast saying
+ * *cancelled* tells them something they just decided, and the one thing worse
+ * than no feedback is feedback for an action nobody took.
+ *
+ * ## `refused` is the one outcome with something to say
+ *
+ * Another open tab is that file, and writing would lose its unsaved edits. The
+ * user can act on it — close the other tab, or pick elsewhere — which is why it
+ * reaches the problem dialog and a byte count does not.
+ */
+export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.save-copy',
+    title: SAVE_COPY_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 31 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      const answer = await deps.client['document.saveCopy']({ docId: context.docId });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      // TWO SILENT OUTCOMES AND TWO SPOKEN ONES. `copied` needs nothing said
+      // because the file is where the user put it, and `cancelled` needs
+      // nothing said because they are the one who cancelled.
+      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });
     },
   };

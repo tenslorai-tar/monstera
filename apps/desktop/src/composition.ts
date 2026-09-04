@@ -47,6 +47,7 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import {
   DocumentCommands,
+  type PickDestination,
   type DocumentDuplicatesReader,
   type DocumentSessions,
   MissingSessionError,
@@ -211,6 +212,17 @@ export interface EngineHostPlatform {
 export function createShellDependencies(
   appInfo: AppInfo,
   pickDocument: PickDocument,
+  /**
+   * Where a copy goes, as a surface for `pickDocument`'s reason.
+   *
+   * Placed beside it rather than appended, because the two are the same kind of
+   * thing and a reader meeting one should meet the other. That does shift every
+   * later argument by one — the hazard this file's own constructor comment
+   * names — and it is taken here because the types make a mis-slot loud:
+   * `PickDestination` takes a string where the next parameter is a settings
+   * surface, so a transposition is a type error rather than a wrong value.
+   */
+  pickDestination: PickDestination,
   /**
    * Where settings are stored, as a surface rather than a directory.
    *
@@ -414,7 +426,12 @@ export function createShellDependencies(
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return engineHost.duplicates(session);
-  });
+  },
+  // WRITING A COPY, and both members are composed here for `SaveSource`'s
+  // reason: `checkTarget` is the service's, and the picker is a parameter for
+  // the same reason `pickDocument` is — nothing in this file imports Electron,
+  // so the whole graph stays buildable in a plain Node test.
+  { pick: pickDestination, checkTarget: (destination) => documents.checkCopyTarget(destination) });
 
   const openedDocument = engineHost.openedDocument;
 

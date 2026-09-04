@@ -259,6 +259,12 @@ async function main() {
     const { handlers } = composition.createShellDependencies(
       { version: '0.0.0', installChannel: 'development' },
       () => Promise.resolve(document),
+      // THROWS. This harness measures host recovery and writes no copy; a
+      // picker that answered would let a stray call put a file on a developer's
+      // disk while the run reported success.
+      () => {
+        throw new Error('the host-recovery harness writes no copy');
+      },
       settingsModule.createEphemeralSettings(),
       recentModule.createRecentFiles(settingsModule.createEphemeralSettings()),
       platform,

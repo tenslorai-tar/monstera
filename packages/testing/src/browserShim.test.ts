@@ -199,6 +199,7 @@ describe('browser shim', () => {
       'document.readRange',
       'document.recent',
       'document.save',
+      'document.saveCopy',
       'document.searchPage',
       'document.undo',
       'document.viewModel',

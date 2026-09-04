@@ -693,6 +693,51 @@ export const channels = {
   ),
 
   /**
+   * Writes a copy of an open document to a destination the **user** picks.
+   *
+   * ## The request carries a `DocId` and nothing else, for `document.open`'s reason
+   *
+   * A destination is a path, and a path in a renderer-facing type is a compile
+   * error here by design (invariant L2). So this channel does what `open` does
+   * in the other direction: **main picks.** The renderer asks for a copy, main
+   * runs the save dialog, mints nothing the renderer can see, and answers with
+   * a byte count.
+   *
+   * That also settles where the picker's cancel goes. A user dismissing the
+   * dialog is not an error and not a failure — it is `cancelled`, the same
+   * ordinary outcome `document.open` already declares, and for the same reason:
+   * changing your mind is a thing people do.
+   *
+   * ## This is a COPY and not *Save As*, and the name is the difference
+   *
+   * The document does not move. It is still open at its own file, still dirty
+   * if it was dirty, and closing it still prompts. *Save As* — the document now
+   * lives at the new path — moves `openedIdentity`, which is what the
+   * replacement half of the write-target check compares against, so it is a
+   * separate decision with its own reasoning rather than a rename of this one.
+   *
+   * ## `refused` names the other documents, where `document.save` names none
+   *
+   * `document.save`'s refusal carries a reason and not its contents, because
+   * nothing consumed them. Here there is something to say: the user chose this
+   * destination, and *another tab is that file* is a sentence they can act on —
+   * they close it, or pick elsewhere. The count crosses rather than the ids: a
+   * `DocId` is meaningless to a person, and a renderer holding other documents'
+   * ids for a message it renders once is a capability it did not need.
+   */
+  'document.saveCopy': channel(
+    'Writes a copy of an open document to a destination the user picks.',
+    z.object({ docId: docIdSchema }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
    * Reads one byte range of an open document, at a version the caller names.
    *
    * **This is the first document-carrying channel, so it is the one that owes

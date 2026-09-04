@@ -9,6 +9,7 @@ import {
   watermarkPagesCommand,
   headerFooterCommand,
   batesNumberCommand,
+  saveCopyCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -559,6 +560,64 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('SAVE A COPY dispatches with a DocId and nothing else, and says nothing when it worked', async () => {
+    // THE UI HALF. There is no dialog to gate here — the destination comes from
+    // the platform's own save dialog, which main runs — so what this asserts is
+    // the two things the renderer decides: that it sends a `DocId` alone, and
+    // that a successful copy opens nothing.
+    const sent: { id: string; params: unknown }[] = [];
+    const opened: { id: string; props: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      return Promise.resolve(ok({ kind: 'copied', bytes: 2048 }));
+    });
+
+    await saveCopyCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.saveCopy', params: { docId: DOC } }]);
+    // NOTHING OPENED. A toast for a file that landed where the user put it is
+    // noise, and this is the assertion that a later "helpful" dialog would have
+    // to change deliberately.
+    expect(opened).toStrictEqual([]);
+  });
+
+  it('CONTROL: a CANCELLED copy is silent, and a REFUSED one is not', async () => {
+    // The two outcomes that look alike from the outside — nothing was written
+    // either way — and must not be reported alike. Cancelling is the user's own
+    // decision; a refusal is another tab holding the file they chose, which
+    // they can act on. Asserting both in one case is what stops a renderer
+    // treating "nothing was written" as one state.
+    const answers = ['cancelled', 'refused'] as const;
+    const openedFor: Record<string, number> = {};
+
+    for (const kind of answers) {
+      const opened: unknown[] = [];
+      const client = createClient(channels, () =>
+        Promise.resolve(
+          ok(kind === 'cancelled' ? { kind } : { kind, openElsewhere: 1 }),
+        ),
+      );
+      await saveCopyCommand({
+        client,
+        onApplied: () => undefined,
+        ask: (id, props) => {
+          opened.push({ id, props });
+          return Promise.resolve(undefined);
+        },
+      }).run(CONTEXT);
+      openedFor[kind] = opened.length;
+    }
+
+    expect(openedFor).toStrictEqual({ cancelled: 0, refused: 1 });
   });
 
   it('BATES DISPATCHES THE PARTS, not a formatted identifier', async () => {

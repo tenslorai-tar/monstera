@@ -9,7 +9,7 @@ import type {
   SaveWriter,
   WriteTargetVerdict,
 } from './documentService.js';
-import { type SaveDependencies, saveDocument } from './savePipeline.js';
+import { type SaveDependencies, saveDocument, writeDocumentCopy } from './savePipeline.js';
 
 /**
  * §4's save pipeline, and above all **invariant 18**, which words its own
@@ -364,5 +364,117 @@ describe('saveDocument', () => {
     expect(f.calls).toStrictEqual([]);
     expect(files.get(TARGET)).toBe('original');
     expect(document.stamped()).toBeNull();
+  });
+});
+
+const ELSEWHERE = '/elsewhere/report copy.pdf';
+const COPY_NAMES = {
+  temp: '/elsewhere/report copy.pdf.tmp',
+  backup: '/elsewhere/report copy.pdf.bak',
+};
+
+/** The copy's dependencies: the same surface, naming derived from the destination. */
+function copyDeps(surface: AtomicWriteSurface): Pick<SaveDependencies, 'surface' | 'names' | 'wait'> {
+  return { surface, names: () => COPY_NAMES, wait: () => Promise.resolve() };
+}
+
+describe('writeDocumentCopy', () => {
+  it('writes the flushed bytes to the DESTINATION, leaving the original alone', async () => {
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files);
+
+    const outcome = await writeDocumentCopy(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'writable' }),
+      () => Promise.resolve(NEW_BYTES),
+      ELSEWHERE,
+    );
+
+    expect(outcome).toStrictEqual({ kind: 'copied', bytes: NEW_BYTES.byteLength });
+    expect(files.get(ELSEWHERE)).toBe('saved contents');
+    // THE ORIGINAL IS UNTOUCHED, and this is the assertion that separates a copy
+    // from a save. Without it, an implementation that wrote to `context.path`
+    // and ignored the destination entirely would pass the outcome check above.
+    expect(files.get(TARGET)).toBe('original');
+  });
+
+  it('does NOT mark the document saved — it cannot, because it is given no context', async () => {
+    const files: Files = new Map([[TARGET, 'original']]);
+    const f = fake(files);
+    const document = held(4);
+
+    await writeDocumentCopy(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'writable' }),
+      () => Promise.resolve(NEW_BYTES),
+      ELSEWHERE,
+    );
+
+    // A COPY THAT CLEARED THE DIRTY FLAG is invariant 18's loss with a friendly
+    // name: the user writes a copy, sees no prompt on close, and their own file
+    // never receives the work. The `held` fixture is built and deliberately not
+    // passed, which is the case asserting the SIGNATURE rather than the body —
+    // `writeDocumentCopy` takes no `DocumentContext`, so no edit to it can
+    // stamp without changing the signature and this line.
+    expect(document.stamped()).toBeNull();
+  });
+
+  it('REFUSES a contested destination, and refuses BEFORE flushing', async () => {
+    const files: Files = new Map([[TARGET, 'original'], [ELSEWHERE, 'someone else’s work']]);
+    const f = fake(files);
+    const flushes = { count: 0 };
+
+    const outcome = await writeDocumentCopy(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'contested', others: [asDocId('other-tab')] }),
+      () => {
+        flushes.count += 1;
+        return Promise.resolve(NEW_BYTES);
+      },
+      ELSEWHERE,
+    );
+
+    expect(outcome).toStrictEqual({ kind: 'refused', others: [asDocId('other-tab')] });
+    // THE FILE IS UNCHANGED — the other tab's unsaved work is what the refusal
+    // exists to protect, and asserting the outcome alone would pass for an
+    // implementation that wrote first and reported second.
+    expect(files.get(ELSEWHERE)).toBe('someone else’s work');
+    // AND NOTHING WAS FLUSHED. A refused destination does not become writable
+    // for having serialised the document, and the flush is a round trip to the
+    // engine host. This is the DECISION asserted rather than its end state:
+    // the file being unchanged is also what a flush-then-refuse produces.
+    expect(flushes.count).toBe(0);
+    expect(f.calls).toStrictEqual([]);
+  });
+
+  it('reports a write failure and leaves the destination as it was', async () => {
+    const files: Files = new Map([[ELSEWHERE, 'existing']]);
+    const f = fake(files, { step: 'rename', code: 'EPERM' });
+
+    const outcome = await writeDocumentCopy(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'writable' }),
+      () => Promise.resolve(NEW_BYTES),
+      ELSEWHERE,
+    );
+
+    expect(outcome.kind).toBe('write-failed');
+    expect(files.get(ELSEWHERE)).toBe('existing');
+  });
+
+  it('CONTROL: the fake surface really writes, so the refusal cases mean something', async () => {
+    // Every case above that asserts a file is unchanged would pass against a
+    // surface that could not write at all. This is the one that says it can.
+    const files: Files = new Map();
+    const f = fake(files);
+
+    await writeDocumentCopy(
+      copyDeps(f.surface),
+      () => Promise.resolve({ kind: 'writable' }),
+      () => Promise.resolve(NEW_BYTES),
+      ELSEWHERE,
+    );
+
+    expect(files.get(ELSEWHERE)).toBe('saved contents');
   });
 });

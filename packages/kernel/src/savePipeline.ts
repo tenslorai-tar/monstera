@@ -1,7 +1,12 @@
 import type { DocId, DocVersion } from '@monstera/shared';
 
 import { type AtomicWriteFailure, type AtomicWriteSurface, atomicWrite } from './atomicWrite.js';
-import type { DocumentContext, SaveWriter, WriteTargetVerdict } from './documentService.js';
+import type {
+  CopyTargetVerdict,
+  DocumentContext,
+  SaveWriter,
+  WriteTargetVerdict,
+} from './documentService.js';
 import type { ByteImage } from './engineSeam.js';
 
 /**
@@ -171,4 +176,88 @@ export async function saveDocument(
     bytes: bytes.byteLength,
     backedUp: written.value.backedUp,
   };
+}
+
+/**
+ * What writing a copy did.
+ *
+ * {@link SaveOutcome}'s three shapes minus the one that cannot occur:
+ * `refused` carries a {@link CopyTargetVerdict} rather than a
+ * `WriteTargetVerdict`, which is two members instead of five.
+ */
+export type CopyOutcome =
+  /** The bytes are on disk at the chosen destination. */
+  | { readonly kind: 'copied'; readonly bytes: number }
+  /** Another open document reaches the destination. Nothing was written. */
+  | { readonly kind: 'refused'; readonly others: readonly DocId[] }
+  /** The filesystem refused. Nothing at the destination was replaced. */
+  | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
+
+/**
+ * Writes the document's current bytes to a destination the user chose, and
+ * **leaves the document exactly where it was**.
+ *
+ * ## Three things this deliberately does NOT do, each of them a decision
+ *
+ * **It does not stamp `markSaved`.** The document still holds content its own
+ * file does not, so it is still dirty and closing it must still prompt. A copy
+ * that cleared the dirty flag would be invariant 18's loss with a friendly
+ * name: the user writes a copy, sees no prompt on close, and the original file
+ * never receives the work.
+ *
+ * **It does not re-point the document.** Save As, in the sense of *this
+ * document now lives here*, would move `path`, `openedIdentity` and the
+ * `FileHandle` — and `openedIdentity` is what the replacement half of
+ * `checkWriteTarget` compares against, so moving it silently changes what a
+ * later ordinary save is allowed to do. That is a separate unit with its own
+ * reasoning, and conflating the two is how a copy quietly acquires the power to
+ * disarm a guard.
+ *
+ * **It does not invent its own file naming.** The temporary and backup names
+ * come from the same `SaveFileNames` an ordinary save uses, applied to the
+ * destination. Writing a copy over an existing file leaves the `.bak` a save
+ * would leave, because it is the same act with the same hazard; a second
+ * naming rule here would be two opinions about where this application puts its
+ * temporary files (B3a).
+ *
+ * ## The check runs BEFORE the flush, for `saveDocument`'s reason
+ *
+ * A refused destination does not become writable for having serialised the
+ * document first, and the flush is a round trip to the engine host.
+ *
+ * ## No `DocumentContext`, and that absence is the type carrying the decision
+ *
+ * `saveDocument` takes one because it stamps `markSaved` through it, and the
+ * parameter is what proves the stamp happens inside the lane. This function
+ * must not stamp, so it is given nothing that could — B5 over a comment saying
+ * *do not call `markSaved` here*. Its caller still runs it in the lane, for the
+ * flush's sake; what changed is that this function cannot mark a document
+ * clean even by mistake.
+ *
+ * @param deps the filesystem, the file naming and the ladder's wait
+ * @param check answers whether the destination is contested
+ * @param flush produces the document's current bytes
+ * @param destination the path the picker returned
+ */
+export async function writeDocumentCopy(
+  deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
+  check: (destination: string) => Promise<CopyTargetVerdict>,
+  flush: () => Promise<ByteImage>,
+  destination: string,
+): Promise<CopyOutcome> {
+  const verdict = await check(destination);
+  if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
+
+  const bytes = await flush();
+
+  const written = await atomicWrite(
+    deps.surface,
+    destination,
+    bytes,
+    deps.names(destination),
+    deps.wait,
+  );
+  if (!written.ok) return { kind: 'write-failed', failure: written.error };
+
+  return { kind: 'copied', bytes: bytes.byteLength };
 }

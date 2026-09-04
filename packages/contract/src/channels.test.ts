@@ -62,6 +62,10 @@ const handlers: ContractHandlers = {
   'document.execute': () =>
     Promise.resolve(ok({ version: asDocVersion(1), byteLength: 4096, historyDropped: 0 })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
+  // CANCELLED rather than copied, for the recent-files fixture's reason one
+  // entry up: a byte count is the interesting answer, and a fixture that always
+  // returns one cannot show that the dismissal path exists at all.
+  'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     // Echoes the SIZE it was asked for, so the L11 cases below can assert what
     // crossed rather than that something did.

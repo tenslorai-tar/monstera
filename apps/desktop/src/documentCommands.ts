@@ -6,6 +6,7 @@ import type { CommandKind, CommandOfKind } from '@monstera/contract';
 import {
   type ByteImage,
   type CommandBus,
+  DocumentNotOpenError,
   type DocumentService,
   type PageGeometry,
   type Destination,
@@ -14,6 +15,8 @@ import {
   type PageLink,
   type PageText,
   type SaveDependencies,
+  type CopyOutcome,
+  type CopyTargetVerdict,
   type SaveOutcome,
   type SearchOptions,
   type ByteImageAccess,
@@ -22,6 +25,7 @@ import {
   type TextMatch,
   findInPages,
   saveDocument,
+  writeDocumentCopy,
 } from '@monstera/kernel';
 import { type DocId, type DocVersion, type QueryProblem, compileQuery } from '@monstera/shared';
 
@@ -207,6 +211,61 @@ export type DocumentRestore = (docId: DocId, write: SnapshotWrite) => Promise<vo
  * `serialise` and nothing in the law says which bytes win. That is a B4
  * question, answered where this is composed rather than by picking one here.
  */
+/**
+ * What writing a copy needs that a save does not.
+ *
+ * Two members rather than two parameters, for the reason the constructor gives
+ * at the point it takes this. They belong together by subject: one asks the
+ * user where, the other asks this application whether that answer is safe, and
+ * neither is any use without the other.
+ *
+ * `checkTarget` is `DocumentService.checkCopyTarget` bound at the composition
+ * root, for `SaveSource.flush`'s reason — the service is the only thing that
+ * can answer it, and this module names no writer of record.
+ */
+/**
+ * How a destination is chosen — `PickDocument`'s mirror, declared here because
+ * {@link CopySource} is what needs it and `contractHandlers.ts` imports this
+ * module.
+ *
+ * It **takes a suggested filename and returns a path**, which is the one
+ * asymmetry with `PickDocument` and is where the boundary sits: a caller may
+ * name a file because a filename is not a location, and only the answer is a
+ * path. `null` is the user dismissing the dialog — an outcome, not a failure.
+ *
+ * The path never crosses to the renderer. It is consumed by the atomic write
+ * and answered with a byte count, exactly as `PickDocument`'s is consumed by a
+ * `FileHandle` mint and answered with a `DocId`.
+ */
+export type PickDestination = (suggestedName: string) => Promise<string | null>;
+
+/**
+ * The filename a copy is offered under: `report.pdf` becomes `report copy.pdf`.
+ *
+ * **A NAME, never a path**, which is what {@link PickDestination} takes — the
+ * dialog opens where the platform last left the user rather than beside the
+ * original, and this has nothing to give it even if that were wanted.
+ *
+ * The extension is preserved by splitting at the LAST dot, so `a.b.pdf` becomes
+ * `a.b copy.pdf`, and a name with no dot gets the suffix appended whole. A name
+ * that is nothing but an extension — `.pdf` — has no stem to suffix, so its dot
+ * is not treated as a separator and it becomes `.pdf copy`. That is a file
+ * almost nobody has, and the alternative produces ` copy.pdf`, which silently
+ * drops what the user's file was called.
+ */
+export function suggestedCopyName(name: string): string {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return `${name} copy`;
+  return `${name.slice(0, dot)} copy${name.slice(dot)}`;
+}
+
+export interface CopySource {
+  /** Runs the platform's save dialog. See {@link PickDestination}. */
+  readonly pick: PickDestination;
+  /** Whether another open document reaches the chosen path. */
+  readonly checkTarget: (destination: string) => Promise<CopyTargetVerdict>;
+}
+
 export interface SaveSource {
   /** The write-target check and the filesystem the atomic ordering runs on. */
   readonly deps: SaveDependencies;
@@ -489,6 +548,7 @@ export class DocumentCommands {
   readonly #layers: DocumentLayersReader;
   readonly #restore: DocumentRestore;
   readonly #duplicates: DocumentDuplicatesReader;
+  readonly #copy: CopySource;
 
   constructor(
     documents: DocumentService,
@@ -518,6 +578,14 @@ export class DocumentCommands {
     // incompatible, so the trigger has not fired. The options object that
     // removes the class remains owed.
     duplicates: DocumentDuplicatesReader,
+    // ONE PARAMETER FOR TWO DEPENDENCIES, and that is this list's own comment
+    // being acted on rather than restated. Writing a copy needs a picker and a
+    // contested-destination check; appending them separately would make a list
+    // of twelve into fourteen and move the class one step further from the
+    // options object it says is owed. `SaveSource` is the precedent — it
+    // bundles a filesystem and a flush for the same reason — so this follows a
+    // shape already here instead of inventing a second one.
+    copy: CopySource,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -530,6 +598,7 @@ export class DocumentCommands {
     this.#layers = layers;
     this.#restore = restore;
     this.#duplicates = duplicates;
+    this.#copy = copy;
   }
 
   /**
@@ -1007,6 +1076,74 @@ export class DocumentCommands {
       current: () => this.#save.flush(docId, sessions),
       adopt: (write) => this.#restore(docId, write),
     };
+  }
+
+  /**
+   * Writes a copy of the document to a destination the user picks.
+   *
+   * ## THE PICKER RUNS OUTSIDE THE LANE, and that ordering is the decision
+   *
+   * A save dialog is open for as long as a person takes to think, and the lane
+   * is what serialises every operation on this document. Picking inside it
+   * would hold the document hostage to a modal window — no rotate, no undo, no
+   * save, and `MAX_QUEUED` filling behind it — and a user who wandered off
+   * would leave the document frozen with nothing on screen to explain why.
+   *
+   * So the destination is chosen first, and the lane is entered only once there
+   * is work to do. What that costs is a window in which the document can close
+   * or be poisoned while the dialog is up; both are caught inside the lane by
+   * the same guards every other method runs, in the same order, and the answer
+   * is the ordinary refusal rather than a special case.
+   *
+   * ## Cancellation short-circuits before the lane, not inside it
+   *
+   * `undefined` here means the user dismissed the dialog. It is returned
+   * without entering the lane at all, because there is nothing to serialise:
+   * no bytes were read, no version was stamped, and a lane entry that does
+   * nothing is a lane entry that can still queue behind something slow.
+   *
+   * @param docId the open document
+   * @returns what happened, or `undefined` when the user dismissed the picker.
+   * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link
+   *   DocumentPoisonedError}, {@link MissingSessionError}.
+   */
+  async saveCopy(docId: DocId): Promise<CopyOutcome | undefined> {
+    // THE NAME IS READ BEFORE THE LANE and the document may close while the
+    // dialog is up — which is fine, because a filename is all that was taken
+    // and the guards inside the lane below refuse a closed document anyway. A
+    // document this service does not hold has no name to offer, and that is
+    // `DocumentNotOpenError` before a dialog appears rather than after the user
+    // has chosen a file.
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'write a copy');
+
+    const destination = await this.#copy.pick(suggestedCopyName(suggest));
+    if (destination === null) return undefined;
+
+    // THE LANE ENTRY TAKES NO CONTEXT, and that is `writeDocumentCopy`'s own
+    // argument arriving one layer out: a context is what a stamp is made
+    // through, this must not stamp, so it is not given one. The lane is still
+    // entered — the flush must be serialised against every other operation on
+    // this document — and what it cannot do is mark the document clean.
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      // THE SAME FLUSH A SAVE USES, so a copy and a save cannot disagree about
+      // what this document currently is (B3a). `writeDocumentCopy` is handed no
+      // `DocumentContext`, so it cannot stamp the document clean.
+      return await writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        () => this.#save.flush(docId, sessions),
+        destination,
+      );
+    });
+
+    return value;
   }
 
   async save(docId: DocId): Promise<SaveOutcome> {

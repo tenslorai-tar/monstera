@@ -102,6 +102,7 @@ export const BATES_NUMBER_ALL = messageKey('dialog.bates-number.all-pages');
 export const BATES_NUMBER_APPLY = messageKey('dialog.bates-number.apply');
 export const BATES_NUMBER_NOT_A_NUMBER = messageKey('dialog.bates-number.not-a-number');
 export const BATES_NUMBER_COMMAND_TITLE = messageKey('command.bates-number.title');
+export const SAVE_COPY_TITLE = messageKey('command.save-copy.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -393,6 +394,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [FIND_REFUSED]: 'This page could not be searched just now.',
   [UNDO_TITLE]: 'Undo',
   [SAVE_TITLE]: 'Save',
+  // "Save a copy" and NOT "Save as". They are different operations and the
+  // label is the only thing telling the user which one this is: the document
+  // does not move, so a person who picks this and closes the original is still
+  // prompted about unsaved work. Naming it "Save as" would promise a move this
+  // command deliberately does not make.
+  [SAVE_COPY_TITLE]: 'Save a copy…',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure

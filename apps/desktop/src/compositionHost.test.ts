@@ -44,6 +44,11 @@ import { createEphemeralSettings } from './settingsFile.js';
  */
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
 
+/** A destination picker no case here reaches. Throws — see `composition.test.ts`. */
+const noDestination = (): Promise<string | null> => {
+  throw new Error('no case here writes a copy, so nothing may pick a destination');
+};
+
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-composition-host-'));
 
 afterAll(() => {
@@ -201,6 +206,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('sessioned.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -254,6 +260,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('undone.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -328,6 +335,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('malformed.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -379,6 +387,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('uncontained.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -443,6 +452,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('networked.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -485,6 +495,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(aDocument('unreadable.pdf')),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       platform,
@@ -517,6 +528,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -571,6 +583,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers, shutdown } = createShellDependencies(
       appInfo,
       () => Promise.resolve(path),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -653,6 +666,7 @@ describe('the composition root, with an engine host platform', () => {
     const { shutdown } = createShellDependencies(
       appInfo,
       () => Promise.resolve(null),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       spy.platform,
@@ -679,6 +693,7 @@ describe('the composition root, with an engine host platform', () => {
     const { handlers } = createShellDependencies(
       appInfo,
       () => Promise.resolve(paths[next++] ?? null),
+      noDestination,
       createEphemeralSettings(),
       createRecentFiles(createEphemeralSettings()),
       platform,

@@ -351,6 +351,9 @@ startShell(() => {
     () => {
       throw new Error('the shell harness has no picker: it does not exercise opening');
     },
+    () => {
+      throw new Error('the shell harness has no destination picker: it writes no copy');
+    },
     // EPHEMERAL, so a harness run cannot configure the developer's application.
     // Not a throwing surface like the picker beside it: the renderer hydrates
     // from `settings.load` before its first render, so this one IS reached on

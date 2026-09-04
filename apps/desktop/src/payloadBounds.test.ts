@@ -184,6 +184,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   'document.execute': 'needs an engine session',
   'document.undo': 'needs an engine session',
   'document.save': 'needs an engine session',
+  // Needs an engine session for the flush, and a DIALOG besides — its whole
+  // request is a `DocId` and its whole answer is a byte count and three
+  // outcomes, so there is no payload here that could scale with anything.
+  'document.saveCopy': 'needs an engine session and a save dialog',
   'document.searchPage': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',

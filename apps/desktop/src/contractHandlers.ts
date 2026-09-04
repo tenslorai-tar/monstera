@@ -37,6 +37,13 @@ import type { SettingsSurface } from './settingsFile.js';
  */
 export type PickDocument = () => Promise<string | null>;
 
+// `PickDestination` is `PickDocument`'s mirror and lives in
+// `documentCommands.ts`, NOT here, and the asymmetry is the module graph rather
+// than a preference: this file imports `DocumentCommands`, so anything that
+// file needs cannot come from here without a cycle. `PickDocument` is used by
+// the open handler, which is this file; `PickDestination` is used by
+// `CopySource`, which is that one. Each lives with its consumer.
+
 /**
  * What happens the moment a document becomes open, before anything else can.
  *
@@ -135,6 +142,7 @@ export function createContractHandlers(deps: {
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
+    'document.saveCopy': saveCopyHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
@@ -237,6 +245,43 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
       // is rethrown and becomes `internal` with the diagnostic recorded
       // main-side — including `MissingSessionError`, which is a supervisor
       // inconsistency rather than something a user can act on.
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * Writing a copy, and the whole of it is turning four kernel outcomes into four
+ * wire ones.
+ *
+ * The suggested filename is not passed in. `DocumentCommands.saveCopy` derives
+ * it from the service's own record, because that is where the document's name
+ * is; a name round-tripped through this handler would be a filename main
+ * accepted from its own caller for no reason.
+ *
+ * ## `refused` sends a COUNT, not the ids
+ *
+ * The channel's own note: a `DocId` means nothing to a person, and a renderer
+ * holding other documents' ids for a sentence it renders once is a capability
+ * it did not need.
+ */
+function saveCopyHandler(commands: DocumentCommands): ContractHandlers['document.saveCopy'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.saveCopy']>>> => {
+    try {
+      const outcome = await commands.saveCopy(docId);
+      // UNDEFINED IS THE USER DISMISSING THE DIALOG, and it is an outcome. The
+      // kernel returns no value at all for it rather than a fourth member,
+      // because nothing ran — see `DocumentCommands.saveCopy`.
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
