@@ -327,6 +327,68 @@ export const watermarkPagesSchema = z.object({
   fontSize: z.number().positive().max(1000),
 });
 
+/**
+ * The three slots one edge of a page carries.
+ *
+ * Left, centre and right is what every application this one replaces offers,
+ * and it is not a layout system: three fixed positions cannot overlap in a way
+ * the user did not ask for, where free placement can. An **empty string means
+ * the slot is unused** — not a missing key — so the shape is the same whether a
+ * person fills one slot or three, and `exactOptionalPropertyTypes` has nothing
+ * to say about it.
+ */
+const stampSlotsSchema = z
+  .object({
+    left: z.string().max(200),
+    centre: z.string().max(200),
+    right: z.string().max(200),
+  })
+  .strict();
+
+/**
+ * Draw headers and footers on pages.
+ *
+ * ## The page number is a TOKEN, and there are exactly two
+ *
+ * `{n}` is this page's number and `{N}` is the document's total, both 1-based
+ * because they are read by a person rather than indexed by code — which is the
+ * one place in this contract where a 1-based number is right, and it is stated
+ * here so nothing downstream has to guess which frame a header is in.
+ *
+ * Two tokens and no expression language. A template that can compute is a
+ * second place document content is decided, and every version of it grows
+ * conditionals; a person who wants *Page 3 of 12* writes `Page {n} of {N}`, and
+ * a person who wants something a template cannot say is asking for a feature
+ * rather than a longer syntax. An unrecognised `{…}` is left **verbatim**,
+ * because silently deleting text a person typed is the worse failure.
+ *
+ * ## Why headers and footers are ONE command
+ *
+ * They are one operation to a person — the dialog offers both and applying one
+ * without the other is a slot left empty. Two commands would put two entries in
+ * the log for one intent and cost two undos, which is `swapPages`' argument
+ * against being two `movePage`s.
+ */
+export const headerFooterPagesSchema = z.object({
+  kind: z.literal('headerFooterPages'),
+  /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /** The top edge's three slots. All empty means no header. */
+  header: stampSlotsSchema,
+  /** The bottom edge's three slots. All empty means no footer. */
+  footer: stampSlotsSchema,
+  /** Type size in points. */
+  fontSize: z.number().positive().max(1000),
+  /**
+   * How far in from the page's edge the text sits, in points.
+   *
+   * One number rather than four: a header inset differently from its footer is
+   * a layout nobody asks for, and the horizontal inset is the same measurement
+   * turned ninety degrees. Bounded so a margin cannot push the text off a page.
+   */
+  marginPoints: z.number().nonnegative().max(500),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -337,6 +399,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   insertBlankPageSchema,
   cropPagesSchema,
   watermarkPagesSchema,
+  headerFooterPagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

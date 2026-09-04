@@ -127,6 +127,19 @@ const WATERMARK_SPEC = `  watermarkPages: {
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
+const HEADER_FOOTER_SPEC = `  headerFooterPages: {
+    kind: 'headerFooterPages',
+    writer: 'pdf-lib',
+    apply: applyHeaderFooterPages,
+    capture: captureHeaderFooterPages,
+    invert: invertHeaderFooterPages,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -215,6 +228,9 @@ import {
   applyWatermarkPages,
   captureWatermarkPages,
   invertWatermarkPages,
+  applyHeaderFooterPages,
+  captureHeaderFooterPages,
+  invertHeaderFooterPages,
 } from '@monstera/kernel';`;
 
 /**
@@ -570,6 +586,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
 };
 `,
   },
@@ -587,9 +604,9 @@ ${WATERMARK_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `watermarkPages`, `cropPages`, `insertBlankPage`,
-    // `swapPages`, `duplicatePage` and `deletePages` on 2026-09-04, `movePage`
-    // on 2026-09-03, `setLayerVisibility` before.
+    // table has to grow. `headerFooterPages`, `watermarkPages`, `cropPages`,
+    // `insertBlankPage`, `swapPages`, `duplicatePage` and `deletePages` on
+    // 2026-09-04, `movePage` on 2026-09-03, `setLayerVisibility` before.
     //
     // IT FIRED AS DESIGNED on `watermarkPages` and reported TS2739 rather than
     // TS2741 — two properties missing rather than one, because the table had
@@ -597,7 +614,7 @@ ${WATERMARK_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'watermarkPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'headerFooterPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -623,6 +640,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
 };
 `,
   },
@@ -655,6 +673,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -702,6 +721,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
 };
 `,
   },
@@ -732,6 +752,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
 };
 `,
   },
@@ -771,6 +792,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
 };
 `,
   },
@@ -806,6 +828,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
 };
 `,
   },
@@ -1317,13 +1340,13 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
     // since `watermarkPages` (all 2026-09-04).
     //
-    // AND AT NINE MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a change
-    // in the diagnostic rather than in the type. The reason line is now
+    // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
+    // change in the diagnostic rather than in the type. The reason line is now
     //
-    //   '{…} | {…} | {…} | {…} | ... 4 more ... | {…}'
+    //   '{…} | {…} | {…} | {…} | ... 5 more ... | {…}'
     //
-    // — four spelt out, four counted, one more spelt out. So the member count
-    // is `4 + 4 + 1`, and the two numbers a later author has to advance are the
+    // — four spelt out, five counted, one more spelt out. So the member count
+    // is `4 + 5 + 1`, and the two numbers a later author has to advance are the
     // repetition below and the digit inside `... N more ...`; they move
     // together, and only their SUM is the union's size.
     //
@@ -1333,7 +1356,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 4 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 5 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

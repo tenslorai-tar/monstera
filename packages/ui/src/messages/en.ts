@@ -71,6 +71,21 @@ export const WATERMARK_PAGES_NOT_A_NUMBER = messageKey('dialog.watermark-pages.n
 export const WATERMARK_PAGES_OPACITY_RANGE = messageKey('dialog.watermark-pages.opacity-range');
 export const WATERMARK_PAGES_SIZE_RANGE = messageKey('dialog.watermark-pages.size-range');
 export const WATERMARK_PAGES_COMMAND_TITLE = messageKey('command.watermark-pages.title');
+export const HEADER_FOOTER_TITLE = messageKey('dialog.header-footer.title');
+export const HEADER_FOOTER_HEADER = messageKey('dialog.header-footer.header');
+export const HEADER_FOOTER_FOOTER = messageKey('dialog.header-footer.footer');
+export const HEADER_FOOTER_LEFT = messageKey('dialog.header-footer.left');
+export const HEADER_FOOTER_CENTRE = messageKey('dialog.header-footer.centre');
+export const HEADER_FOOTER_RIGHT = messageKey('dialog.header-footer.right');
+export const HEADER_FOOTER_TOKENS = messageKey('dialog.header-footer.tokens');
+export const HEADER_FOOTER_SIZE = messageKey('dialog.header-footer.size');
+export const HEADER_FOOTER_MARGIN = messageKey('dialog.header-footer.margin');
+export const HEADER_FOOTER_THIS = messageKey('dialog.header-footer.this-page');
+export const HEADER_FOOTER_ALL = messageKey('dialog.header-footer.all-pages');
+export const HEADER_FOOTER_APPLY = messageKey('dialog.header-footer.apply');
+export const HEADER_FOOTER_EMPTY = messageKey('dialog.header-footer.empty');
+export const HEADER_FOOTER_NOT_A_NUMBER = messageKey('dialog.header-footer.not-a-number');
+export const HEADER_FOOTER_COMMAND_TITLE = messageKey('command.header-footer.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -434,6 +449,22 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [WATERMARK_PAGES_OPACITY_RANGE]: 'Opacity runs from 0 to 100 per cent.',
   [WATERMARK_PAGES_SIZE_RANGE]: 'Size is in points, above 0 and no more than 1000.',
   [WATERMARK_PAGES_COMMAND_TITLE]: 'Watermark…',
+  [HEADER_FOOTER_TITLE]: 'Headers and footers',
+  [HEADER_FOOTER_HEADER]: 'Header',
+  [HEADER_FOOTER_FOOTER]: 'Footer',
+  [HEADER_FOOTER_LEFT]: 'Left',
+  [HEADER_FOOTER_CENTRE]: 'Centre',
+  [HEADER_FOOTER_RIGHT]: 'Right',
+  [HEADER_FOOTER_TOKENS]: 'Type {n} for the page number and {N} for the page count.',
+  [HEADER_FOOTER_SIZE]: 'Size (points)',
+  [HEADER_FOOTER_MARGIN]: 'Margin (points)',
+  [HEADER_FOOTER_THIS]: 'This page',
+  [HEADER_FOOTER_ALL]: 'All pages',
+  [HEADER_FOOTER_APPLY]: 'Add',
+  [HEADER_FOOTER_EMPTY]: 'Fill in at least one header or footer.',
+  [HEADER_FOOTER_NOT_A_NUMBER]:
+    'Size and margin are numbers of points. Size is at most 1000 and margin at most 500.',
+  [HEADER_FOOTER_COMMAND_TITLE]: 'Headers and footers…',
   [DUPLICATE_PAGES_TITLE]: 'Duplicate pages',
   // WHAT WAS COMPARED, in the user's terms rather than the format's. "Content
   // and resources" would be true and would leave a person unable to tell

@@ -187,6 +187,20 @@ export interface CommandPrior {
    * `apply` consumes as its input image.
    */
   readonly watermarkPages: never;
+  /**
+   * **`never`, for {@link watermarkPages}' reason exactly.**
+   *
+   * The second command routed to a byte-image writer, and the entry above
+   * states the whole argument: drawing appends to a page's content stream, so
+   * restoring the page means restoring the stream, which is document-scaled and
+   * counted by nothing.
+   *
+   * Repeated as its own member rather than shared, because `CommandPrior` is
+   * the table where each command says what its inverse is made of, and a
+   * comment pointing elsewhere is how a later command acquires a prior state by
+   * inheritance rather than by decision.
+   */
+  readonly headerFooterPages: never;
 }
 
 /**

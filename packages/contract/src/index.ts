@@ -63,6 +63,7 @@ export {
   cropPagesSchema,
   deletePagesSchema,
   duplicatePageSchema,
+  headerFooterPagesSchema,
   insertBlankPageSchema,
   movePageSchema,
   rotatePagesSchema,

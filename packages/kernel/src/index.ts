@@ -249,4 +249,10 @@ export {
   captureWatermarkPages,
   invertWatermarkPages,
 } from './pageWatermark.js';
+export {
+  applyHeaderFooterPages,
+  captureHeaderFooterPages,
+  invertHeaderFooterPages,
+  resolveStampTokens,
+} from './pageStamp.js';
 export { type PageScope, pagesOf } from './pageScope.js';

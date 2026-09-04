@@ -9,6 +9,8 @@ import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
 import { DUPLICATE_PAGES_DIALOG_ID } from '../dialogs/duplicatePages.js';
+import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
+import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
@@ -25,6 +27,7 @@ import {
   DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
   FIND_DUPLICATES_COMMAND_TITLE,
+  HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
@@ -610,6 +613,37 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
  * list, and expanding it here would put one integer per page on the wire
  * (invariant L11) and give the kernel a second opinion about what *all* means.
  */
+/**
+ * Draws headers and footers.
+ *
+ * `watermarkPagesCommand`'s shape with a different dialog id and command kind,
+ * and that is the whole of what a second byte-image command costs the UI layer.
+ */
+export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.header-footer',
+    title: HEADER_FOOTER_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 18 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(HEADER_FOOTER_DIALOG_ID, { page: context.page })) as
+        | HeaderFooterAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'headerFooterPages',
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        header: answer.header,
+        footer: answer.footer,
+        fontSize: answer.fontSize,
+        marginPoints: answer.marginPoints,
+      });
+    },
+  };
+}
+
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.watermark-pages',

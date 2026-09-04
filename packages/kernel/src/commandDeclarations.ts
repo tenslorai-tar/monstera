@@ -318,6 +318,25 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  headerFooterPages: {
+    kind: 'headerFooterPages',
+    // §3's matrix at ARCHITECTURE.md:381 names "drawing onto pages (watermark,
+    // headers/footers, Bates, OCR text layer)" for @cantoo/pdf-lib, so this is
+    // the same assignment `watermarkPages` reads, on the next item in the list.
+    writer: 'pdf-lib',
+    // `watermarkPages`' reason unchanged: the prior state of a page that has
+    // been drawn on is its whole content stream. Every command routed to a
+    // byte-image writer is a checkpoint command, and the checkpoint is the
+    // input image the apply already consumes (ADR-0039).
+    invertible: false,
+    undo: 'checkpoint',
+    // Drawing the same slots at the same size onto the same pages writes the
+    // same content stream. The page-number tokens resolve from the document's
+    // own page count and each page's index, so nothing here reads a clock or
+    // mints an identifier — the two things §3a spends this axis on.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

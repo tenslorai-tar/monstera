@@ -5,6 +5,11 @@ import { declaredCommands } from './commandDeclarations.js';
 import type { CommandExecution, RegisteredWriter } from './commandRouting.js';
 import type { Apply, ByteImage, Capture, EngineWriter, Invert } from './engineSeam.js';
 import {
+  applyHeaderFooterPages,
+  captureHeaderFooterPages,
+  invertHeaderFooterPages,
+} from './pageStamp.js';
+import {
   applyWatermarkPages,
   captureWatermarkPages,
   invertWatermarkPages,
@@ -84,6 +89,12 @@ export const pdfLibSpecs = {
     // `invertDeletePages` is: `CommandPrior['watermarkPages']` is `never`, so
     // nothing can build an argument for it.
     invert: invertWatermarkPages,
+  },
+  headerFooterPages: {
+    ...declaredCommands.headerFooterPages,
+    apply: applyHeaderFooterPages,
+    capture: captureHeaderFooterPages,
+    invert: invertHeaderFooterPages,
   },
 };
 

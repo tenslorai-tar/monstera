@@ -17,6 +17,7 @@ import {
   deletePageCommand,
   cropPagesCommand,
   watermarkPagesCommand,
+  headerFooterCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -53,6 +54,7 @@ import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
+import { HEADER_FOOTER_DIALOG } from './dialogs/headerFooter.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -209,6 +211,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         DELETE_PAGES_DIALOG,
         CROP_PAGES_DIALOG,
         WATERMARK_PAGES_DIALOG,
+        HEADER_FOOTER_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
@@ -650,6 +653,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         deletePagesCommand({ client, onApplied: applied, ask }),
         cropPagesCommand({ client, onApplied: applied, ask }),
         watermarkPagesCommand({ client, onApplied: applied, ask }),
+        headerFooterCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),

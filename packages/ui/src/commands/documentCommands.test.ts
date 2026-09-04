@@ -7,6 +7,7 @@ import {
   type Applied,
   cropPagesCommand,
   watermarkPagesCommand,
+  headerFooterCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -517,6 +518,58 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('HEADERS AND FOOTERS DISPATCH ALL SIX SLOTS, with the template text untouched', async () => {
+    // THE UI HALF OF THE PAIR. `pageStamp.test.ts` proves the kernel resolves
+    // `{n}` per page; this proves the control sends the TEMPLATE rather than
+    // something already resolved. A dialog that substituted the page number
+    // itself would send "Page 1 of 3" and every page would say 1 — and the
+    // kernel proof would stay green, because it would be given exactly what it
+    // was asked to draw.
+    const { client, sent } = recording();
+
+    await headerFooterCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () =>
+        Promise.resolve({
+          pages: 'all',
+          header: { left: 'Monstera', centre: '', right: '' },
+          footer: { left: '', centre: 'Page {n} of {N}', right: '' },
+          fontSize: 10,
+          marginPoints: 36,
+        }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'headerFooterPages',
+            pages: 'all',
+            header: { left: 'Monstera', centre: '', right: '' },
+            footer: { left: '', centre: 'Page {n} of {N}', right: '' },
+            fontSize: 10,
+            marginPoints: 36,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED header-and-footer dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await headerFooterCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED watermark dialog dispatches nothing', async () => {
