@@ -5,8 +5,12 @@ import type { CommandOfKind } from '@monstera/contract';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import {
+  applyBatesNumberPages,
   applyHeaderFooterPages,
+  batesIdentifier,
+  captureBatesNumberPages,
   captureHeaderFooterPages,
+  invertBatesNumberPages,
   invertHeaderFooterPages,
   resolveStampTokens,
 } from './pageStamp.js';
@@ -290,6 +294,126 @@ describe('headerFooterPages', () => {
 
   it('invert is unreachable and says so rather than corrupting a document', () => {
     expect(() => invertHeaderFooterPages(new Uint8Array(), undefined as never)).toThrow(
+      /no inverse/u,
+    );
+  });
+});
+
+describe('batesIdentifier', () => {
+  it('zero-pads to the declared width', () => {
+    expect(batesIdentifier({ prefix: 'ABC-', suffix: '', digits: 4 }, 7)).toBe('ABC-0007');
+  });
+
+  it('KEEPS EVERY DIGIT of a number wider than the field', () => {
+    // `digits` is a MINIMUM width, and this is the case that says so. Truncating
+    // would produce a different exhibit under a name that looks right — the one
+    // failure a numbering feature cannot have — and a `slice` implementation
+    // passes the padding case above perfectly.
+    expect(batesIdentifier({ prefix: '', suffix: '', digits: 2 }, 12345)).toBe('12345');
+  });
+
+  it('puts the prefix and suffix either side of the padding, not outside it', () => {
+    // A prefix concatenated AFTER padding gives "0ABC-7"; this asserts the
+    // order, which reading the padded number alone cannot.
+    expect(batesIdentifier({ prefix: 'EX', suffix: '-A', digits: 3 }, 4)).toBe('EX004-A');
+  });
+});
+
+describe('batesNumberPages', () => {
+  const BATES: CommandOfKind<'batesNumberPages'> = {
+    kind: 'batesNumberPages',
+    pages: 'all',
+    prefix: 'ABC-',
+    suffix: '',
+    start: 1,
+    digits: 4,
+    edge: 'footer',
+    slot: 'right',
+    fontSize: 9,
+    marginPoints: 36,
+  };
+
+  it('numbers CONSECUTIVELY ACROSS THE SCOPE, not by page index', async () => {
+    const stamped = await applyBatesNumberPages(await sizedDocument(), {
+      ...BATES,
+      // A GAPPED LIST, and the whole case rests on it. With `pages: 'all'` and
+      // `start: 1` the sequence and the page index agree on every page, so a
+      // whole-document fixture cannot tell a correct implementation from one
+      // that stamps `start + pageIndex`.
+      pages: [2, 0],
+    });
+
+    // The scope's OWN ORDER, so page 2 is first in the sequence. `pagesOf`
+    // preserves a list verbatim, and this is the case that depends on it.
+    expect(await shownOn(stamped, 2)).toStrictEqual(['ABC-0001']);
+    expect(await shownOn(stamped, 0)).toStrictEqual(['ABC-0002']);
+    expect(await shownOn(stamped, 1)).toStrictEqual([]);
+  });
+
+  it('starts the sequence where the command says, not at one', async () => {
+    const stamped = await applyBatesNumberPages(await sizedDocument(), {
+      ...BATES,
+      start: 431,
+    });
+
+    // Resuming where a previous document stopped is the reason `start` exists —
+    // a header carrying `{n}` cannot express it at all.
+    expect(await shownOn(stamped, 0)).toStrictEqual(['ABC-0431']);
+    expect(await shownOn(stamped, 2)).toStrictEqual(['ABC-0433']);
+  });
+
+  it('places the stamp at the edge and slot the command names', async () => {
+    const footer = await applyBatesNumberPages(await sizedDocument(), BATES);
+    const header = await applyBatesNumberPages(await sizedDocument(), {
+      ...BATES,
+      edge: 'header',
+      slot: 'left',
+    });
+
+    const [footerOrigin] = originsOf(await contentOf(footer, 0));
+    const [headerOrigin] = originsOf(await contentOf(header, 0));
+
+    // BOTH COORDINATES, and both commands: a placement that ignored `edge`
+    // would put them at the same height, and one that ignored `slot` at the
+    // same x. Reading one axis of one document separates neither.
+    expect(footerOrigin?.[1]).toBeCloseTo(36, 1);
+    expect(headerOrigin?.[1]).toBeCloseTo(500 - 36, 1);
+    expect(headerOrigin?.[0]).toBeCloseTo(36, 1);
+    expect(footerOrigin?.[0]).toBeGreaterThan(100);
+  });
+
+  it('is reproducible, and preserves the document’s own /ModDate', async () => {
+    const original = await sizedDocument();
+    const once = await applyBatesNumberPages(original, BATES);
+    const twice = await applyBatesNumberPages(original, BATES);
+    expect(Buffer.from(twice)).toStrictEqual(Buffer.from(once));
+
+    const session = await mupdfWriter.open(once);
+    try {
+      const date = await withDocument(session, (document) =>
+        document.getTrailer().get('Info').get('ModDate').asString(),
+      );
+      expect(date).toBe('D:20010102030405Z');
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('refuses a page this document does not have, and changes nothing', async () => {
+    const original = await sizedDocument();
+    await expect(
+      applyBatesNumberPages(original, { ...BATES, pages: [0, 9] }),
+    ).rejects.toThrow(/Page 9 is outside this document, which has 3 page\(s\)/u);
+    expect(await shownOn(original, 0)).toStrictEqual([]);
+  });
+
+  it('capture always refuses, and invert is unreachable', async () => {
+    const captured = await captureBatesNumberPages(await sizedDocument(), BATES);
+    expect(captured.captured).toBe(false);
+    if (captured.captured) throw new Error('capture reported success, which its type forbids');
+    expect(captured.reason).toMatch(/content stream/u);
+
+    expect(() => invertBatesNumberPages(new Uint8Array(), undefined as never)).toThrow(
       /no inverse/u,
     );
   });

@@ -389,6 +389,52 @@ export const headerFooterPagesSchema = z.object({
   marginPoints: z.number().nonnegative().max(500),
 });
 
+/**
+ * Bates numbering — a continuous sequence stamped across the pages named.
+ *
+ * ## Why this is not a header with a `{n}` in it
+ *
+ * `headerFooterPages` resolves `{n}` to the **page's own number**. A Bates
+ * number is the **position in the stamped sequence**, and the two are the same
+ * number only when the scope is every page from the first. Stamp pages 5, 6 and
+ * 9 starting at 1 and Bates gives 1, 2, 3 where a header gives 6, 7, 10 — which
+ * is the whole point of the feature: legal exhibits are numbered consecutively
+ * across a set regardless of where each page sat in its own file.
+ *
+ * `start` exists for the same reason. Numbering resumes where the previous
+ * document stopped, so a person stamps the second file starting at 431 — a
+ * header cannot express that at all.
+ *
+ * ## `digits` is zero-padding, and it is what makes a set sort
+ *
+ * `ABC-0001` and `ABC-0002` sort as text in the order they were stamped;
+ * `ABC-1` and `ABC-10` do not. Padding is therefore part of the identifier
+ * rather than a presentation choice, which is why it crosses rather than being
+ * decided by whatever renders it. A number wider than `digits` is **not
+ * truncated** — an identifier silently losing its leading digit is a different
+ * exhibit — so the field is a minimum width and the kernel says so.
+ */
+export const batesNumberPagesSchema = z.object({
+  kind: z.literal('batesNumberPages'),
+  /** Which pages. Resolved by the kernel, and the sequence follows this order. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /** Text before the number. Empty is ordinary. */
+  prefix: z.string().max(100),
+  /** Text after the number. Empty is ordinary. */
+  suffix: z.string().max(100),
+  /** The number the first stamped page carries. */
+  start: z.number().int().nonnegative().max(999_999_999),
+  /** Minimum digits, zero-padded. A wider number keeps every digit. */
+  digits: z.number().int().min(1).max(12),
+  /** Which corner or edge the stamp sits in. */
+  edge: z.enum(['header', 'footer']),
+  slot: z.enum(['left', 'centre', 'right']),
+  /** Type size in points. */
+  fontSize: z.number().positive().max(1000),
+  /** How far in from the page's edge, in points. */
+  marginPoints: z.number().nonnegative().max(500),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -400,6 +446,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   cropPagesSchema,
   watermarkPagesSchema,
   headerFooterPagesSchema,
+  batesNumberPagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

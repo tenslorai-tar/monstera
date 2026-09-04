@@ -8,6 +8,7 @@ import {
   cropPagesCommand,
   watermarkPagesCommand,
   headerFooterCommand,
+  batesNumberCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -558,6 +559,66 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('BATES DISPATCHES THE PARTS, not a formatted identifier', async () => {
+    // THE UI HALF, and the number to watch is that `prefix`, `start` and
+    // `digits` cross SEPARATELY. The dialog shows a preview built by
+    // concatenating them, and a command that sent the preview string instead
+    // would stamp "ABC-0431" on every page — the sequence would stop being a
+    // sequence, and `pageStamp.test.ts` would stay green because it would be
+    // given exactly what it was asked to draw.
+    const { client, sent } = recording();
+
+    await batesNumberCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () =>
+        Promise.resolve({
+          pages: 'all',
+          prefix: 'ABC-',
+          suffix: '',
+          start: 431,
+          digits: 4,
+          edge: 'footer',
+          slot: 'right',
+          fontSize: 9,
+          marginPoints: 36,
+        }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'batesNumberPages',
+            pages: 'all',
+            prefix: 'ABC-',
+            suffix: '',
+            start: 431,
+            digits: 4,
+            edge: 'footer',
+            slot: 'right',
+            fontSize: 9,
+            marginPoints: 36,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED Bates dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await batesNumberCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED header-and-footer dialog dispatches nothing', async () => {

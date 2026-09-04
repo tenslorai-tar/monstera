@@ -5,8 +5,11 @@ import { declaredCommands } from './commandDeclarations.js';
 import type { CommandExecution, RegisteredWriter } from './commandRouting.js';
 import type { Apply, ByteImage, Capture, EngineWriter, Invert } from './engineSeam.js';
 import {
+  applyBatesNumberPages,
   applyHeaderFooterPages,
+  captureBatesNumberPages,
   captureHeaderFooterPages,
+  invertBatesNumberPages,
   invertHeaderFooterPages,
 } from './pageStamp.js';
 import {
@@ -95,6 +98,12 @@ export const pdfLibSpecs = {
     apply: applyHeaderFooterPages,
     capture: captureHeaderFooterPages,
     invert: invertHeaderFooterPages,
+  },
+  batesNumberPages: {
+    ...declaredCommands.batesNumberPages,
+    apply: applyBatesNumberPages,
+    capture: captureBatesNumberPages,
+    invert: invertBatesNumberPages,
   },
 };
 

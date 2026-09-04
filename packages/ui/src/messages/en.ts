@@ -86,6 +86,22 @@ export const HEADER_FOOTER_APPLY = messageKey('dialog.header-footer.apply');
 export const HEADER_FOOTER_EMPTY = messageKey('dialog.header-footer.empty');
 export const HEADER_FOOTER_NOT_A_NUMBER = messageKey('dialog.header-footer.not-a-number');
 export const HEADER_FOOTER_COMMAND_TITLE = messageKey('command.header-footer.title');
+export const BATES_NUMBER_TITLE = messageKey('dialog.bates-number.title');
+export const BATES_NUMBER_PREFIX = messageKey('dialog.bates-number.prefix');
+export const BATES_NUMBER_SUFFIX = messageKey('dialog.bates-number.suffix');
+export const BATES_NUMBER_START = messageKey('dialog.bates-number.start');
+export const BATES_NUMBER_DIGITS = messageKey('dialog.bates-number.digits');
+export const BATES_NUMBER_PREVIEW = messageKey('dialog.bates-number.preview');
+export const BATES_NUMBER_EDGE_HEADER = messageKey('dialog.bates-number.edge-header');
+export const BATES_NUMBER_EDGE_FOOTER = messageKey('dialog.bates-number.edge-footer');
+export const BATES_NUMBER_SLOT_LEFT = messageKey('dialog.bates-number.slot-left');
+export const BATES_NUMBER_SLOT_CENTRE = messageKey('dialog.bates-number.slot-centre');
+export const BATES_NUMBER_SLOT_RIGHT = messageKey('dialog.bates-number.slot-right');
+export const BATES_NUMBER_THIS = messageKey('dialog.bates-number.this-page');
+export const BATES_NUMBER_ALL = messageKey('dialog.bates-number.all-pages');
+export const BATES_NUMBER_APPLY = messageKey('dialog.bates-number.apply');
+export const BATES_NUMBER_NOT_A_NUMBER = messageKey('dialog.bates-number.not-a-number');
+export const BATES_NUMBER_COMMAND_TITLE = messageKey('command.bates-number.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -465,6 +481,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [HEADER_FOOTER_NOT_A_NUMBER]:
     'Size and margin are numbers of points. Size is at most 1000 and margin at most 500.',
   [HEADER_FOOTER_COMMAND_TITLE]: 'Headers and footers…',
+  [BATES_NUMBER_TITLE]: 'Bates numbering',
+  [BATES_NUMBER_PREFIX]: 'Prefix',
+  [BATES_NUMBER_SUFFIX]: 'Suffix',
+  [BATES_NUMBER_START]: 'Start at',
+  [BATES_NUMBER_DIGITS]: 'Digits',
+  [BATES_NUMBER_PREVIEW]: 'Fill in the fields to see the first number.',
+  [BATES_NUMBER_EDGE_HEADER]: 'Top',
+  [BATES_NUMBER_EDGE_FOOTER]: 'Bottom',
+  [BATES_NUMBER_SLOT_LEFT]: 'Left',
+  [BATES_NUMBER_SLOT_CENTRE]: 'Centre',
+  [BATES_NUMBER_SLOT_RIGHT]: 'Right',
+  [BATES_NUMBER_THIS]: 'This page',
+  [BATES_NUMBER_ALL]: 'All pages',
+  [BATES_NUMBER_APPLY]: 'Number pages',
+  [BATES_NUMBER_NOT_A_NUMBER]:
+    'Start is a whole number and digits is between 1 and 12.',
+  [BATES_NUMBER_COMMAND_TITLE]: 'Bates numbering…',
   [DUPLICATE_PAGES_TITLE]: 'Duplicate pages',
   // WHAT WAS COMPARED, in the user's terms rather than the format's. "Content
   // and resources" would be true and would leave a person unable to tell

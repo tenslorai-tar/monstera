@@ -3,6 +3,8 @@ import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
 import type { z } from 'zod';
 
+import { BATES_NUMBER_DIALOG_ID } from '../dialogs/batesNumber.js';
+import type { BatesNumberAnswer } from '../dialogs/batesNumberResult.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from '../dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG_ID } from '../dialogs/cropPages.js';
 import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
@@ -23,6 +25,7 @@ import {
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
+  BATES_NUMBER_COMMAND_TITLE,
   CROP_PAGES_COMMAND_TITLE,
   DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
@@ -637,6 +640,43 @@ export function headerFooterCommand(deps: DocumentCommandDeps): UiCommand {
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         header: answer.header,
         footer: answer.footer,
+        fontSize: answer.fontSize,
+        marginPoints: answer.marginPoints,
+      });
+    },
+  };
+}
+
+/**
+ * Stamps a Bates sequence.
+ *
+ * The third byte-image command, and the third time this file's answer to one is
+ * a dialog id and a command kind. That is the registry doing its job: adding a
+ * writer of record cost the UI layer nothing, and adding commands to it costs
+ * an entry each.
+ */
+export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.bates-number',
+    title: BATES_NUMBER_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 19 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(BATES_NUMBER_DIALOG_ID, { page: context.page })) as
+        | BatesNumberAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'batesNumberPages',
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        prefix: answer.prefix,
+        suffix: answer.suffix,
+        start: answer.start,
+        digits: answer.digits,
+        edge: answer.edge,
+        slot: answer.slot,
         fontSize: answer.fontSize,
         marginPoints: answer.marginPoints,
       });

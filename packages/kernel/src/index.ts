@@ -250,8 +250,12 @@ export {
   invertWatermarkPages,
 } from './pageWatermark.js';
 export {
+  applyBatesNumberPages,
   applyHeaderFooterPages,
+  batesIdentifier,
+  captureBatesNumberPages,
   captureHeaderFooterPages,
+  invertBatesNumberPages,
   invertHeaderFooterPages,
   resolveStampTokens,
 } from './pageStamp.js';

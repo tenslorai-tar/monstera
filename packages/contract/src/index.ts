@@ -54,6 +54,7 @@ export {
   type Command,
   type CommandKind,
   type CommandOfKind,
+  batesNumberPagesSchema,
   commandSchema,
   // EVERY MEMBER, not just the first. `rotatePagesSchema` was exported alone
   // because one caller wanted one schema; the engine host's channels need the

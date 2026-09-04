@@ -201,6 +201,8 @@ export interface CommandPrior {
    * inheritance rather than by decision.
    */
   readonly headerFooterPages: never;
+  /** **`never`**, for {@link watermarkPages}' reason — this draws onto pages too. */
+  readonly batesNumberPages: never;
 }
 
 /**

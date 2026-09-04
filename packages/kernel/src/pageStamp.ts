@@ -57,6 +57,9 @@ const STAMP_BLACK = rgb(0, 0, 0);
 /** The three horizontal positions one edge carries, in reading order. */
 const SLOTS = ['left', 'centre', 'right'] as const;
 
+/** The two edges a page has, top first. */
+const EDGES = ['header', 'footer'] as const;
+
 type Slot = (typeof SLOTS)[number];
 
 /**
@@ -157,10 +160,8 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
     if (page === undefined) continue;
     const { width, height } = page.getSize();
 
-    for (const [edge, y] of [
-      ['header', height - command.marginPoints],
-      ['footer', command.marginPoints],
-    ] as const) {
+    for (const edge of EDGES) {
+      const y = verticalOrigin(edge, { height, margin: command.marginPoints });
       for (const slot of SLOTS) {
         const template = command[edge][slot];
         if (template.length === 0) continue;
@@ -195,8 +196,14 @@ export const applyHeaderFooterPages: Apply<'pdf-lib', 'headerFooterPages'> = asy
  * font and the size, and a function that took those would be doing two jobs.
  * Centre and right both depend on the measured width, which is the whole reason
  * this cannot be a constant per slot.
+ *
+ * **Exported for `batesNumberPages`, which is the second caller and the one
+ * that made this worth naming.** It is the same question — *where on this page
+ * does an edge-pinned string start* — asked by a command whose text is
+ * generated rather than typed. That is a real shared concern, unlike *draw text
+ * on pages*, which this file's header explains is not one.
  */
-function horizontalOrigin(
+export function horizontalOrigin(
   slot: Slot,
   textWidth: number,
   page: { readonly width: number; readonly margin: number },
@@ -208,3 +215,118 @@ function horizontalOrigin(
   // the page's own centre is what a reader's eye uses.
   return (page.width - textWidth) / 2;
 }
+
+/**
+ * The baseline for an edge, from the page's height and the margin.
+ *
+ * Shared with `batesNumberPages` for {@link horizontalOrigin}'s reason, and it
+ * is the smaller half of the pair: one line, and worth a name only because the
+ * two commands agreeing about which edge is which is a property rather than a
+ * coincidence. A Bates stamp in the footer must land where a footer lands, or a
+ * document carrying both has two different ideas of the bottom margin.
+ */
+export function verticalOrigin(
+  edge: 'header' | 'footer',
+  page: { readonly height: number; readonly margin: number },
+): number {
+  return edge === 'header' ? page.height - page.margin : page.margin;
+}
+
+/**
+ * One Bates identifier: the prefix, the number zero-padded to `digits`, the
+ * suffix.
+ *
+ * **`padStart` and not a slice**, so a number wider than `digits` keeps every
+ * digit. Truncating would produce a *different exhibit* under a name that looks
+ * right, which is the failure mode this feature cannot have — and the reason
+ * the contract calls `digits` a minimum width rather than a width.
+ */
+export function batesIdentifier(
+  command: Pick<CommandOfKind<'batesNumberPages'>, 'prefix' | 'suffix' | 'digits'>,
+  value: number,
+): string {
+  return `${command.prefix}${String(value).padStart(command.digits, '0')}${command.suffix}`;
+}
+
+/**
+ * Capture — which always refuses, exactly as the two above do.
+ */
+export const captureBatesNumberPages: (
+  image: ByteImage,
+  command: CommandOfKind<'batesNumberPages'>,
+) => Promise<CaptureResult<never>> = (_image, _command) =>
+  Promise.resolve({
+    captured: false,
+    reason:
+      'a page that has been drawn on has no recordable prior state: restoring it means ' +
+      'restoring its whole content stream, which is document-scaled and would be counted by ' +
+      'nothing',
+  });
+
+/** Invert — unreachable by the type, present because the table's shape requires it. */
+export const invertBatesNumberPages: Invert<'pdf-lib', 'batesNumberPages'> = (
+  _image,
+  _inverse,
+) => {
+  throw new Error(
+    'batesNumberPages has no inverse and this is unreachable: its prior state is `never`, so ' +
+      'no caller can build an argument for it. Undo restores the checkpoint the bus took.',
+  );
+};
+
+/**
+ * Stamps a continuous Bates sequence across the pages named.
+ *
+ * ## THE SEQUENCE FOLLOWS THE SCOPE, not the page index
+ *
+ * The k-th page in the resolved scope carries `start + k`, so stamping pages 5,
+ * 6 and 9 from 1 gives 1, 2, 3 — which is what the feature is for, and what
+ * separates it from a header carrying `{n}`. An implementation using the page
+ * index would produce 6, 7, 10 and pass every test whose scope is `'all'` from
+ * page 0, which is why the proof's load-bearing case names a gapped list.
+ *
+ * The order is the scope's own, so a caller naming `[9, 5]` numbers 9 first.
+ * `pagesOf` preserves a list verbatim for exactly this kind of reason, and it
+ * is stated there.
+ */
+export const applyBatesNumberPages: Apply<'pdf-lib', 'batesNumberPages'> = async (
+  image,
+  command,
+) => {
+  const document = await PDFDocument.load(image, { updateMetadata: false });
+  const pages = document.getPages();
+  const targets = pagesOf(command.pages, pages.length);
+
+  for (const page of targets) {
+    if (!Number.isInteger(page) || page < 0 || page >= pages.length) {
+      throw new RangeError(
+        `Page ${String(page)} is outside this document, which has ${String(pages.length)} ` +
+          'page(s). Page indices are zero-based.',
+      );
+    }
+  }
+
+  const font = await document.embedFont(StandardFonts.Helvetica);
+
+  for (const [position, index] of targets.entries()) {
+    const page = pages[index];
+    if (page === undefined) continue;
+    const { width, height } = page.getSize();
+
+    // POSITION IN THE SCOPE, not `index`. The two agree for a whole-document
+    // scope starting at page 0, which is every fixture somebody writes first.
+    const text = batesIdentifier(command, command.start + position);
+    page.drawText(text, {
+      x: horizontalOrigin(command.slot, font.widthOfTextAtSize(text, command.fontSize), {
+        width,
+        margin: command.marginPoints,
+      }),
+      y: verticalOrigin(command.edge, { height, margin: command.marginPoints }),
+      size: command.fontSize,
+      font,
+      color: STAMP_BLACK,
+    });
+  }
+
+  return document.save();
+};

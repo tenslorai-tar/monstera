@@ -337,6 +337,24 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  batesNumberPages: {
+    kind: 'batesNumberPages',
+    // §3's matrix at ARCHITECTURE.md:381 names Bates in the same clause as the
+    // watermark and the headers.
+    writer: 'pdf-lib',
+    // Drawn content, so `watermarkPages`' reason unchanged: the prior state is
+    // the page's whole content stream, and the checkpoint is the input image
+    // the apply already consumes (ADR-0039).
+    invertible: false,
+    undo: 'checkpoint',
+    // The sequence is a function of `start` and each page's POSITION in the
+    // resolved scope, so re-running it against the same document writes the
+    // same identifiers. Nothing here reads a clock or a counter that outlives
+    // the call — which is what would make a numbering command `stored-effect`,
+    // and is worth stating because "sequential" sounds like it should be.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

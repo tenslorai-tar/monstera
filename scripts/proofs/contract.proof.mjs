@@ -140,6 +140,19 @@ const HEADER_FOOTER_SPEC = `  headerFooterPages: {
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
+const BATES_SPEC = `  batesNumberPages: {
+    kind: 'batesNumberPages',
+    writer: 'pdf-lib',
+    apply: applyBatesNumberPages,
+    capture: captureBatesNumberPages,
+    invert: invertBatesNumberPages,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -231,6 +244,9 @@ import {
   applyHeaderFooterPages,
   captureHeaderFooterPages,
   invertHeaderFooterPages,
+  applyBatesNumberPages,
+  captureBatesNumberPages,
+  invertBatesNumberPages,
 } from '@monstera/kernel';`;
 
 /**
@@ -587,6 +603,7 @@ ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
+${BATES_SPEC}
 };
 `,
   },
@@ -604,9 +621,10 @@ ${HEADER_FOOTER_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `headerFooterPages`, `watermarkPages`, `cropPages`,
-    // `insertBlankPage`, `swapPages`, `duplicatePage` and `deletePages` on
-    // 2026-09-04, `movePage` on 2026-09-03, `setLayerVisibility` before.
+    // table has to grow. `batesNumberPages`, `headerFooterPages`,
+    // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
+    // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
+    // 2026-09-03, `setLayerVisibility` before.
     //
     // IT FIRED AS DESIGNED on `watermarkPages` and reported TS2739 rather than
     // TS2741 — two properties missing rather than one, because the table had
@@ -614,7 +632,7 @@ ${HEADER_FOOTER_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'headerFooterPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'batesNumberPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -641,6 +659,7 @@ ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
+${HEADER_FOOTER_SPEC}
 };
 `,
   },
@@ -674,6 +693,7 @@ ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
+${BATES_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -722,6 +742,7 @@ ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
+${BATES_SPEC}
 };
 `,
   },
@@ -753,6 +774,7 @@ ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
+${BATES_SPEC}
 };
 `,
   },
@@ -793,6 +815,7 @@ ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
+${BATES_SPEC}
 };
 `,
   },
@@ -829,6 +852,7 @@ ${INSERT_SPEC}
 ${CROP_SPEC}
 ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
+${BATES_SPEC}
 };
 `,
   },
@@ -1343,10 +1367,10 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
     //
-    //   '{…} | {…} | {…} | {…} | ... 5 more ... | {…}'
+    //   '{…} | {…} | {…} | {…} | ... 6 more ... | {…}'
     //
-    // — four spelt out, five counted, one more spelt out. So the member count
-    // is `4 + 5 + 1`, and the two numbers a later author has to advance are the
+    // — four spelt out, six counted, one more spelt out. So the member count
+    // is `4 + 6 + 1`, and the two numbers a later author has to advance are the
     // repetition below and the digit inside `... N more ...`; they move
     // together, and only their SUM is the union's size.
     //
@@ -1356,7 +1380,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 5 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 6 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,
