@@ -596,7 +596,12 @@ export function App({ client, settings }: AppProps): ReactElement {
         openCommand,
         showAboutCommand({ client, show }),
         revealLogCommand({ client }),
-        rotatePageCommand({ client, onApplied: applied, show }),
+        // THREE ROTATIONS, one factory. D2's row is a surface over the command
+        // Stage 0 already declared — `rotatePages` takes the quarter turns, so
+        // 180 and 270 needed no new command and no new contract entry.
+        rotatePageCommand({ client, onApplied: applied, show }, 1),
+        rotatePageCommand({ client, onApplied: applied, show }, 2),
+        rotatePageCommand({ client, onApplied: applied, show }, 3),
         undoCommand({ client, onApplied: applied, show }),
         saveCommand({ client, show }),
         // NO DEPS: it takes the caret to the find bar and searches nothing, so

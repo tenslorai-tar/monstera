@@ -40,6 +40,8 @@ export const HISTORY_TRIMMED_LOST = messageKey('dialog.history-trimmed.lost');
 export const ABOUT_VERSION_LABEL = messageKey('dialog.about.version');
 export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
+export const ROTATE_PAGE_180_TITLE = messageKey('command.rotate-page-180.title');
+export const ROTATE_PAGE_270_TITLE = messageKey('command.rotate-page-270.title');
 export const FIND_TITLE = messageKey('command.find.title');
 export const ZOOM_IN_TITLE = messageKey('command.zoom-in.title');
 export const ZOOM_OUT_TITLE = messageKey('command.zoom-out.title');
@@ -168,7 +170,15 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // "Rotate page" and not "Rotate": the command rotates the page on screen, and
   // a name that promised the document would be a name the behaviour contradicts
   // the moment there is a second page.
+  // THE DEGREES ARE IN THE NAME for two of the three and not the first, and
+  // that is the existing label kept rather than a scheme half-applied: "Rotate
+  // page" has been on the toolbar and in three test cases since Stage 1, and
+  // renaming it to "Rotate page 90°" would be a rename with no reader asking
+  // for it. The two new ones say their angle because without it they are three
+  // controls a person cannot tell apart.
   [ROTATE_PAGE_TITLE]: 'Rotate page',
+  [ROTATE_PAGE_180_TITLE]: 'Rotate page 180°',
+  [ROTATE_PAGE_270_TITLE]: 'Rotate page 270°',
   [FIND_TITLE]: 'Find',
   [ZOOM_IN_TITLE]: 'Zoom in',
   [ZOOM_OUT_TITLE]: 'Zoom out',

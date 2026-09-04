@@ -500,6 +500,33 @@ describe('App', () => {
       expect(asked[0]?.params).toStrictEqual({ docId: DOC, pages: [0] });
     });
 
+    it('THE THREE ROTATIONS SEND THREE DIFFERENT ANGLES, not one control three times', async () => {
+      // D2's rotate row is a surface over the command Stage 0 declared, and the
+      // whole of what a surface can get wrong is the argument. A factory that
+      // ignored its parameter would put three buttons on the toolbar, pass
+      // every existing case, and turn every page 90° — which is the display-only
+      // defect with two extra controls on it.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      for (const name of ['Rotate page', 'Rotate page 180°', 'Rotate page 270°']) {
+        await act(async () => {
+          screen.getByRole('button', { name }).click();
+          await Promise.resolve();
+        });
+      }
+
+      expect(
+        sent
+          .filter((call) => call.id === 'document.execute')
+          .map((call) => (call.params as { command: { quarterTurns: number } }).command.quarterTurns),
+      ).toStrictEqual([1, 2, 3]);
+    });
+
     /**
      * The UI half of SEARCH's wired pair.
      *

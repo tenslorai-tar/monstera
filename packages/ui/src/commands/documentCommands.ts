@@ -1,5 +1,5 @@
 import type { Command, ContractClient } from '@monstera/contract';
-import type { DocId, DocVersion } from '@monstera/shared';
+import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
 import type { z } from 'zod';
 
@@ -10,6 +10,8 @@ import {
   FIND_TITLE,
   FIT_PAGE_TITLE,
   FIT_WIDTH_TITLE,
+  ROTATE_PAGE_180_TITLE,
+  ROTATE_PAGE_270_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
@@ -329,11 +331,37 @@ export function findCommand(): UiCommand {
   };
 }
 
-export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
+/**
+ * How the three rotations differ, as data.
+ *
+ * A factory parameterised by quarter turns rather than three near-identical
+ * functions, which is the shape `zoomCommand` and `fitCommand` already take —
+ * three copies of a dispatch is three places to get the page index wrong, and
+ * this build has shipped that index wrong once.
+ *
+ * **90° keeps the id and the label it has had since Stage 1.** Renaming it to
+ * *Rotate page 90°* for symmetry would rename a control three test cases and a
+ * toolbar already name, with no reader asking for it. The other two carry their
+ * angle because without it they are three controls nobody can tell apart.
+ *
+ * The order values continue the toolbar's existing spacing, so the three sit
+ * together where the single one was.
+ */
+const ROTATIONS = {
+  1: { id: 'document.rotate-page', title: ROTATE_PAGE_TITLE, order: 10 },
+  2: { id: 'document.rotate-page-180', title: ROTATE_PAGE_180_TITLE, order: 11 },
+  3: { id: 'document.rotate-page-270', title: ROTATE_PAGE_270_TITLE, order: 12 },
+} as const satisfies Record<1 | 2 | 3, { id: string; title: MessageKey; order: number }>;
+
+export function rotatePageCommand(
+  deps: DocumentCommandDeps,
+  quarterTurns: 1 | 2 | 3 = 1,
+): UiCommand {
+  const { id, title, order } = ROTATIONS[quarterTurns];
   return {
-    id: 'document.rotate-page',
-    title: ROTATE_PAGE_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 10 }],
+    id,
+    title,
+    placements: [{ surface: 'quick-toolbar', order }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       // BOTH, and neither is redundant. A document with no current page is a
@@ -348,7 +376,7 @@ export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
       await applyDocumentCommand(deps, context.docId, {
         kind: 'rotatePages',
         pages: [context.page],
-        quarterTurns: 1,
+        quarterTurns,
       });
     },
   };
