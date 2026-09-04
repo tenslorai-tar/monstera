@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { I18nProvider } from '@lingui/react';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -137,5 +137,111 @@ describe('Thumbnails', () => {
     );
 
     expect(rasterised).toStrictEqual([]);
+  });
+
+  describe('drag-reorder', () => {
+    /**
+     * Renders a draggable strip, with an accessor that THROWS for a missing
+     * thumbnail rather than the file's `?.` idiom — every case below asserts
+     * that a spy was or was not called, and `undefined?.dispatchEvent()` calls
+     * nothing, which is indistinguishable from the control passing.
+     */
+    function strip(): {
+      readonly at: (index: number) => HTMLButtonElement;
+      readonly move: ReturnType<typeof vi.fn>;
+    } {
+      const move = vi.fn();
+      const { container } = render(
+        <Wrapped>
+          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} onMove={move} />
+        </Wrapped>,
+      );
+      const buttons = [...container.querySelectorAll('button')];
+      return {
+        at: (index) => {
+          const button = buttons[index];
+          if (button === undefined) throw new Error(`the strip has no thumbnail ${String(index)}`);
+          return button;
+        },
+        move,
+      };
+    }
+
+    it('DROPPING ONE PAGE ON ANOTHER dispatches the move, in destination-frame indices', () => {
+      // The UI half of the wired pair. The kernel half proves `movePage`
+      // reorders and survives a save; this proves the control sends exactly
+      // that command with exactly those numbers — and the numbers are the
+      // point, because a strip that sent the drop target's neighbour would look
+      // right on the first drag of a four-page document.
+      const { at, move } = strip();
+
+      fireEvent.dragStart(at(0));
+      fireEvent.drop(at(2));
+
+      expect(move).toHaveBeenCalledWith(0, 2);
+    });
+
+    it('CONTROL: dropping a page on ITSELF dispatches nothing', () => {
+      // `movePage` accepts it and inverts to a no-op, so this is not about
+      // correctness of the command — it is about not putting an undo step in
+      // the log for a reader who changed their mind mid-drag.
+      const { at, move } = strip();
+
+      fireEvent.dragStart(at(1));
+      fireEvent.drop(at(1));
+
+      expect(move).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL: a drop with no drag before it dispatches nothing', () => {
+      // A drop can arrive from outside the strip — a file, another window — and
+      // reordering to a source index the strip never recorded would move a page
+      // the reader never picked up.
+      const { at, move } = strip();
+
+      fireEvent.drop(at(2));
+
+      expect(move).not.toHaveBeenCalled();
+    });
+
+    it('MOVES BY KEYBOARD, because a drag is mouse-only', () => {
+      // B9: a11y is substrate. There is no keyboard sequence that produces
+      // `dragstart`, so a reorder available solely by dragging is a mutation a
+      // keyboard user cannot perform — a defect rather than a gap.
+      const { at, move } = strip();
+
+      fireEvent.keyDown(at(2), { key: 'ArrowUp', altKey: true });
+      expect(move).toHaveBeenCalledWith(2, 1);
+
+      fireEvent.keyDown(at(2), { key: 'ArrowDown', altKey: true });
+      expect(move).toHaveBeenLastCalledWith(2, 3);
+    });
+
+    it('CONTROL: the chord needs Alt, and stops at both ends', () => {
+      // Without the modifier this would hijack the arrows the strip's own focus
+      // movement uses; without the bounds it would dispatch a move to -1, which
+      // the schema refuses and the reader experiences as a control that
+      // sometimes errors.
+      const { at, move } = strip();
+
+      fireEvent.keyDown(at(2), { key: 'ArrowUp' });
+      fireEvent.keyDown(at(0), { key: 'ArrowUp', altKey: true });
+      fireEvent.keyDown(at(3), { key: 'ArrowDown', altKey: true });
+
+      expect(move).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL: a strip with no onMove is NOT draggable', () => {
+      // A draggable control whose drop did nothing is the display-only defect
+      // with a grab cursor on it. The compare pane's second view is the caller
+      // this exists for.
+      const { container } = render(
+        <Wrapped>
+          <Thumbnails view={view()} pageCount={4} current={0} onJump={vi.fn()} />
+        </Wrapped>,
+      );
+
+      expect([...container.querySelectorAll('button')].every((b) => b.draggable)).toBe(false);
+    });
   });
 });

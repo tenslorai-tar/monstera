@@ -29,18 +29,32 @@ import { useVisiblePages } from './useVisiblePages.js';
  * the history records it the same way — there is no second notion of *the
  * reader went somewhere*.
  *
- * ## What is NOT here, and it is in the row rather than in a comment alone
+ * ## Drag-reorder dispatches a COMMAND, which is what took it until Stage 2
  *
- * Drag-reorder. Reordering pages is a Stage 2 command against the document, and
- * a drag that rearranged thumbnails without one would be a sidebar disagreeing
- * with the document it describes — the worst version of a display-only control,
- * because it looks like it worked.
+ * This section used to say drag-reorder was absent because *"a drag that
+ * rearranged thumbnails without a command would be a sidebar disagreeing with
+ * the document it describes"*. That is still the reason it could not land
+ * earlier, and it is now satisfied rather than outstanding: a drop sends
+ * `movePage` through `document.execute`, the version moves, and the strip
+ * re-renders from the document. Nothing here holds an order of its own.
+ *
+ * ## THE KEYBOARD PATH IS NOT AN EXTRA, it is the same feature
+ *
+ * HTML5 drag and drop is mouse-only: there is no keyboard sequence that
+ * produces `dragstart`. A reorder available solely by dragging is a mutation a
+ * keyboard user cannot perform, which B9 makes a defect rather than a gap —
+ * *a11y is substrate, not a feature*. **Alt+ArrowUp/ArrowDown** moves the
+ * focused page by one, dispatching exactly the command a drop dispatches.
+ *
+ * Alt because the bare arrows belong to the strip's own focus movement and
+ * Shift+Arrow is selection; Alt is the modifier no reading gesture claims here.
  */
 export function Thumbnails({
   view,
   pageCount,
   current,
   onJump,
+  onMove,
 }: {
   readonly view: DocumentView | undefined;
   readonly pageCount: number;
@@ -48,9 +62,23 @@ export function Thumbnails({
   readonly current: number;
   /** Takes the reader to a page, recording the jump. */
   readonly onJump: (page: number) => void;
+  /**
+   * Moves a page, zero-based, both indices in the DESTINATION frame.
+   *
+   * Optional so a strip with no document command behind it — the compare pane's
+   * second view, say — renders without one rather than being handed a callback
+   * that must do nothing. Absent means the thumbnails are not draggable at all,
+   * which is the honest rendering of *this strip cannot reorder*: a draggable
+   * control whose drop did nothing is the display-only defect.
+   */
+  readonly onMove?: ((from: number, to: number) => void) | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const { visible, slotRef } = useVisiblePages('50%');
+  // A REF, not state: the source index is read once by the drop that follows,
+  // and re-rendering the whole strip mid-drag would replace the element the
+  // browser is dragging.
+  const dragging = useRef<number | null>(null);
 
   return (
     <nav className="m-thumbnails" aria-label={i18n._(THUMBNAILS_LABEL)}>
@@ -65,8 +93,41 @@ export function Thumbnails({
           aria-label={i18n._(THUMBNAIL_PAGE, { page: pdfjsPageOf(page) })}
           aria-current={page === current ? 'true' : undefined}
           ref={slotRef(page)}
+          draggable={onMove !== undefined}
+          data-thumb-page={String(page)}
           onClick={() => {
             onJump(page);
+          }}
+          onDragStart={() => {
+            dragging.current = page;
+          }}
+          onDragEnd={() => {
+            dragging.current = null;
+          }}
+          // WITHOUT THIS THERE IS NO DROP. The default action of `dragover` is
+          // to refuse the drag, so a handler that does not prevent it produces a
+          // strip that accepts a grab and silently rejects every release.
+          onDragOver={(event) => {
+            if (onMove !== undefined) event.preventDefault();
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            const from = dragging.current;
+            dragging.current = null;
+            // A DROP ON ITSELF IS NOT A COMMAND. `movePage` accepts it and
+            // inverts to a no-op, but dispatching it would put an undo step in
+            // the log for a reader who changed their mind mid-drag.
+            if (from === null || from === page) return;
+            onMove?.(from, page);
+          }}
+          onKeyDown={(event) => {
+            if (onMove === undefined || !event.altKey) return;
+            const to = event.key === 'ArrowUp' ? page - 1 : event.key === 'ArrowDown' ? page + 1 : page;
+            if (to === page || to < 0 || to >= pageCount) return;
+            // The strip owns this chord, so the scroller must not also act on
+            // it — an unprevented Alt+Arrow moves the reader as well as the page.
+            event.preventDefault();
+            onMove(page, to);
           }}
         >
           <ThumbCanvas view={view} page={page} draw={visible.has(page)} />

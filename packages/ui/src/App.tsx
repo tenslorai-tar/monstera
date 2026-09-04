@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import {
+  applyDocumentCommand,
   findCommand,
   fitCommand,
   rotatePageCommand,
@@ -227,6 +228,34 @@ export function App({ client, settings }: AppProps): ReactElement {
       );
     },
     [activeId],
+  );
+
+  /**
+   * Reorders the document, from the thumbnail strip.
+   *
+   * ## Dispatched from a SURFACE rather than the registry, and why that is right
+   *
+   * A registered command's `run` takes the application's state and no
+   * arguments, because a menu, a chord and the palette all invoke it and none
+   * can supply a pair of page indices — the same constraint that makes
+   * `goToCommand` send the caret to a field instead of carrying a number. A
+   * drag carries two indices, so it dispatches directly.
+   *
+   * What it must NOT do is dispatch differently. `applyDocumentCommand` is the
+   * four steps `rotatePageCommand` had inline — report a declared refusal, move
+   * the version only when it moved, raise invariant 18's dialog — and both
+   * callers take them from there rather than each having a copy (B3a).
+   */
+  const movePage = useCallback(
+    (from: number, to: number): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand(
+        { client, onApplied: applied, show },
+        activeId,
+        { kind: 'movePage', from, to },
+      );
+    },
+    [activeId, applied, client, show],
   );
 
   /**
@@ -712,6 +741,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           onPageCount={counted}
           current={currentPage}
           onJump={navigator.jumpTo}
+          onMove={movePage}
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
@@ -927,6 +957,7 @@ function PageCanvas({
   loupe,
   current,
   onJump,
+  onMove,
   rulers,
   showGrid,
   unit,
@@ -950,6 +981,8 @@ function PageCanvas({
   readonly current: number;
   /** Takes the reader to a page, recording the jump — click-to-jump's other half. */
   readonly onJump: (page: number) => void;
+  /** Reorders the document. See the strip's own header for why it is a command. */
+  readonly onMove: (from: number, to: number) => void;
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
@@ -1019,7 +1052,13 @@ function PageCanvas({
     // needs the same parser: a strip that opened its own would parse the
     // document twice and hold two copies of every page it drew.
     <div className="m-document-body">
-      <Thumbnails view={ready} pageCount={ready.document.numPages} current={current} onJump={onJump} />
+      <Thumbnails
+        view={ready}
+        pageCount={ready.document.numPages}
+        current={current}
+        onJump={onJump}
+        onMove={onMove}
+      />
       <PageList
         client={client}
         view={ready}

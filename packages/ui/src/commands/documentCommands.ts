@@ -1,5 +1,5 @@
-import type { ContractClient } from '@monstera/contract';
-import type { DocVersion } from '@monstera/shared';
+import type { Command, ContractClient } from '@monstera/contract';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 import type { z } from 'zod';
 
@@ -144,6 +144,49 @@ function reportProblem(
  */
 export function hasDocument(context: CommandContext): boolean {
   return context.docId !== undefined;
+}
+
+/**
+ * Sends one command and handles every way it can end.
+ *
+ * ## Extracted for a SECOND caller, which is a surface rather than a command
+ *
+ * Drag-reorder dispatches `movePage` from the thumbnail strip — not from the
+ * command registry, because a drag carries two indices and a registered `run`
+ * takes the application's state and no arguments (see `goToCommand`, which
+ * sends the caret to a field for exactly that reason).
+ *
+ * So there is a dispatcher outside the registry, and it must do the same four
+ * things `rotatePageCommand` does or they drift: report a declared failure
+ * rather than swallowing it, tell the caller the version moved ONLY when it
+ * did, and raise invariant 18's dialog when history was shed. A copy would be
+ * correct on the day it was written and wrong the first time one of the four
+ * changed (B3a).
+ *
+ * @returns whether the document moved, for a caller that wants to know
+ */
+export async function applyDocumentCommand(
+  deps: DocumentCommandDeps,
+  docId: DocId,
+  command: Command,
+): Promise<boolean> {
+  const answer = await deps.client['document.execute']({ docId, command });
+
+  // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING — see
+  // `rotatePageCommand`, whose comment this behaviour was extracted from. It is
+  // still REPORTED: a refusal nobody renders is a control that did nothing.
+  if (!answer.ok) {
+    reportProblem(deps, answer.error);
+    return false;
+  }
+  deps.onApplied(answer.value);
+
+  // INVARIANT 18, AFTER `onApplied` and not instead of it, and guarded on a
+  // positive count because the dialog's schema refuses zero.
+  if (answer.value.historyDropped > 0) {
+    deps.show(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+  }
+  return true;
 }
 
 /**
@@ -298,32 +341,15 @@ export function rotatePageCommand(deps: DocumentCommandDeps): UiCommand {
       // 0 by default would be the plausible wrong action `SHOWN_PAGE`'s own
       // history is about.
       if (context.docId === undefined || context.page === undefined) return;
-      const answer = await deps.client['document.execute']({
-        docId: context.docId,
-        command: { kind: 'rotatePages', pages: [context.page], quarterTurns: 1 },
+      // THE FOUR STEPS ARE IN `applyDocumentCommand`, not here — the refusal
+      // report, the version, invariant 18's dialog and their order. They were
+      // written inline in this function and moved out when drag-reorder needed
+      // the same four from a surface rather than a command.
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'rotatePages',
+        pages: [context.page],
+        quarterTurns: 1,
       });
-      // A DECLARED FAILURE IS AN OUTCOME AND CHANGES NOTHING. `document-busy`,
-      // `document-not-open` and `document-poisoned` all leave the document
-      // exactly as it was, so telling the caller the view moved would make it
-      // rebuild for nothing — and a rebuild is a visible reparse. It is still
-      // REPORTED: a refusal nobody renders is a control that did nothing.
-      if (!answer.ok) {
-        reportProblem(deps, answer.error);
-        return;
-      }
-      deps.onApplied(answer.value);
-
-      // INVARIANT 18, AFTER `onApplied` AND NOT INSTEAD OF IT. The command
-      // succeeded and the view must move whether or not history was shed —
-      // reporting the trim first and returning would leave the renderer showing
-      // the pre-rotation page while telling the user about undo.
-      //
-      // Guarded on a positive count rather than opened unconditionally: the
-      // dialog's schema refuses zero, so an unguarded call would be a validation
-      // failure on every ordinary command rather than a modal nobody wanted.
-      if (answer.value.historyDropped > 0) {
-        deps.show(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
-      }
     },
   };
 }
