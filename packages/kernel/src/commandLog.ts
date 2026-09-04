@@ -216,6 +216,12 @@ export interface CommandPrior {
   readonly headerFooterPages: never;
   /** **`never`**, for {@link watermarkPages}' reason — this draws onto pages too. */
   readonly batesNumberPages: never;
+  /**
+   * **`never`**, and this one changes the content stream at its *front* rather
+   * than its end — which makes no difference to the argument: the prior state
+   * is still the whole stream.
+   */
+  readonly setPageBackground: never;
 }
 
 /**

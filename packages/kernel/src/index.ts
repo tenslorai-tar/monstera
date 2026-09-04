@@ -257,6 +257,12 @@ export {
   invertWatermarkPages,
 } from './pageWatermark.js';
 export {
+  BACKGROUND_MARKER,
+  applySetPageBackground,
+  captureSetPageBackground,
+  invertSetPageBackground,
+} from './pageBackground.js';
+export {
   applyBatesNumberPages,
   applyHeaderFooterPages,
   batesIdentifier,

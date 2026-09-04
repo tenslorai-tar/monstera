@@ -11,6 +11,7 @@ import {
   batesNumberCommand,
   saveCopyCommand,
   pageTransitionCommand,
+  pageBackgroundCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -694,6 +695,40 @@ describe('delete pages — the mutation-dialog gate', () => {
             pages: 'all',
             style: 'replace',
             durationSeconds: 0,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('THE BACKGROUND DISPATCHES WITHOUT A DIALOG, and carries a named colour', async () => {
+    // It opens nothing, so the gate does not apply — and the case says so by
+    // asserting that no dialog was opened, rather than leaving the absence to
+    // be inferred from a command list nobody compares.
+    const { client, sent } = recording();
+    const opened: unknown[] = [];
+
+    await pageBackgroundCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([]);
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'setPageBackground',
+            pages: 'all',
+            red: 0.98,
+            green: 0.97,
+            blue: 0.94,
           },
         },
       },

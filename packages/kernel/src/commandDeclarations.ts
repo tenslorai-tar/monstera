@@ -385,6 +385,22 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  setPageBackground: {
+    kind: 'setPageBackground',
+    // Content composition — §3's matrix at ARCHITECTURE.md:381 — and unlike
+    // `setPageTransition` next door this one really does write a content
+    // stream, which is what puts it on the byte-image writer rather than on
+    // MuPDF.
+    writer: 'pdf-lib',
+    // `watermarkPages`' reason: the prior state of a page whose content stream
+    // has been changed is that whole stream.
+    invertible: false,
+    undo: 'checkpoint',
+    // A fill of the page's own box in three given components, with nothing read
+    // from a clock and nothing minted.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

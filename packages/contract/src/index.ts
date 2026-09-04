@@ -69,6 +69,7 @@ export {
   movePageSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
+  setPageBackgroundSchema,
   setPageTransitionSchema,
   swapPagesSchema,
   watermarkPagesSchema,

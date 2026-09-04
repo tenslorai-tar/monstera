@@ -34,6 +34,7 @@ import {
   FIND_DUPLICATES_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
+  PAGE_BACKGROUND_COMMAND_TITLE,
   PAGE_TRANSITION_COMMAND_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_COPY_TITLE,
@@ -718,6 +719,44 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
     },
   };
 }
+
+/**
+ * Fills pages with a background colour.
+ *
+ * No dialog of its own yet: the colour is the one the style controls will own
+ * (Stage 3), so this command carries the neutral page tint every application
+ * offers as its default and the picker arrives with the shared surface. That is
+ * the same reason `watermarkPages` carries no colour — one place decides what a
+ * colour control looks like, rather than four dialogs each inventing one.
+ */
+export function pageBackgroundCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.page-background',
+    title: PAGE_BACKGROUND_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 21 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'setPageBackground',
+        pages: 'all',
+        // THE VALUES ARE NAMED, not spelt at the call site, so the day the
+        // style controls supply a colour there is one thing to replace rather
+        // than three numbers to find.
+        ...DEFAULT_PAGE_BACKGROUND,
+      });
+    },
+  };
+}
+
+/**
+ * The tint a background is filled with until Stage 3's style controls exist.
+ *
+ * A warm off-white, which is what every reader offers as its paper default —
+ * and **not** a design token: §10.2's rule is about components, and this is
+ * content written into a document another application will open.
+ */
+const DEFAULT_PAGE_BACKGROUND = { red: 0.98, green: 0.97, blue: 0.94 } as const;
 
 export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
   return {

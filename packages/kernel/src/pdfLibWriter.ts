@@ -5,6 +5,11 @@ import { declaredCommands } from './commandDeclarations.js';
 import type { CommandExecution, RegisteredWriter } from './commandRouting.js';
 import type { Apply, ByteImage, Capture, EngineWriter, Invert } from './engineSeam.js';
 import {
+  applySetPageBackground,
+  captureSetPageBackground,
+  invertSetPageBackground,
+} from './pageBackground.js';
+import {
   applyBatesNumberPages,
   applyHeaderFooterPages,
   captureBatesNumberPages,
@@ -104,6 +109,12 @@ export const pdfLibSpecs = {
     apply: applyBatesNumberPages,
     capture: captureBatesNumberPages,
     invert: invertBatesNumberPages,
+  },
+  setPageBackground: {
+    ...declaredCommands.setPageBackground,
+    apply: applySetPageBackground,
+    capture: captureSetPageBackground,
+    invert: invertSetPageBackground,
   },
 };
 

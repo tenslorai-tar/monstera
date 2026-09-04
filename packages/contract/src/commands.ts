@@ -483,6 +483,39 @@ export const setPageTransitionSchema = z.object({
   durationSeconds: z.number().min(0).max(60),
 });
 
+/**
+ * Fill pages with a background colour, **behind** their existing content.
+ *
+ * ## *Behind* is the whole feature, and it is not what a drawing API gives you
+ *
+ * pdf-lib's `drawRectangle` appends to a page's content stream, and PDF paints
+ * in stream order — so the obvious implementation covers the document. A
+ * background has to be **prepended**, which is a different operation on the
+ * page's `/Contents` rather than a different call. Stated here because a
+ * command called *background* that quietly paints over the text is the kind of
+ * defect that looks like a rendering bug for a week.
+ *
+ * ## A COLOUR and not an image
+ *
+ * An image background needs a file, which needs a picker, which is a dependency
+ * this build adds separately. Colour is the whole of what this command does,
+ * and the absence is a decision rather than a gap.
+ *
+ * The channel carries three components rather than a hex string: a hex string
+ * is a **presentation** of a colour and would have to be parsed on the far side,
+ * which is a second opinion about what `#0a0` means. Zero to one each, which is
+ * what PDF's own `rg` operator takes.
+ */
+export const setPageBackgroundSchema = z.object({
+  kind: z.literal('setPageBackground'),
+  /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /** The fill, in PDF's own DeviceRGB range. */
+  red: z.number().min(0).max(1),
+  green: z.number().min(0).max(1),
+  blue: z.number().min(0).max(1),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -496,6 +529,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   headerFooterPagesSchema,
   batesNumberPagesSchema,
   setPageTransitionSchema,
+  setPageBackgroundSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

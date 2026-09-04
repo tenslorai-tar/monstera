@@ -116,6 +116,7 @@ export const PAGE_TRANSITION_ALL = messageKey('dialog.page-transition.all-pages'
 export const PAGE_TRANSITION_APPLY = messageKey('dialog.page-transition.apply');
 export const PAGE_TRANSITION_NOT_A_NUMBER = messageKey('dialog.page-transition.not-a-number');
 export const PAGE_TRANSITION_COMMAND_TITLE = messageKey('command.page-transition.title');
+export const PAGE_BACKGROUND_COMMAND_TITLE = messageKey('command.page-background.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -430,6 +431,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [PAGE_TRANSITION_APPLY]: 'Set transition',
   [PAGE_TRANSITION_NOT_A_NUMBER]: 'Duration is a number of seconds, from 0 to 60.',
   [PAGE_TRANSITION_COMMAND_TITLE]: 'Page transition…',
+  // NO ELLIPSIS. The convention this file already follows is that a trailing
+  // "…" promises a dialog, and this command applies immediately.
+  [PAGE_BACKGROUND_COMMAND_TITLE]: 'Add page background',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure
