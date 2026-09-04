@@ -168,12 +168,40 @@ export const duplicatePageSchema = z.object({
   page: z.number().int().nonnegative(),
 });
 
+/**
+ * Exchange two pages.
+ *
+ * ## Not two moves, and not one move
+ *
+ * Two `movePage` commands put an intermediate document in the log and cost the
+ * reader two presses of undo for one intent. One move is a *different*
+ * operation: moving page 0 to index 3 of `0 1 2 3` gives `1 2 3 0`, where
+ * swapping them gives `3 1 2 0`. They coincide only for adjacent pages, which
+ * is exactly the case a reader tries first and the reason this needs its own
+ * kind rather than a clever call site.
+ *
+ * ## `a` and `b` are interchangeable, and that is a property of the operation
+ *
+ * The permutation is symmetric, so the command carries no notion of source and
+ * destination and neither does its inverse — a transposition is its own
+ * inverse. `movePage`'s comment warns that its inverse is *not* the transposed
+ * move; the difference is that nothing else shifts here.
+ */
+export const swapPagesSchema = z.object({
+  kind: z.literal('swapPages'),
+  /** Zero-based index of one page. */
+  a: z.number().int().nonnegative(),
+  /** Zero-based index of the other. */
+  b: z.number().int().nonnegative(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
   movePageSchema,
   deletePagesSchema,
   duplicatePageSchema,
+  swapPagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

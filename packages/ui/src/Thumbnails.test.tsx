@@ -244,4 +244,103 @@ describe('Thumbnails', () => {
       expect([...container.querySelectorAll('button')].every((b) => b.draggable)).toBe(false);
     });
   });
+
+  describe('swap', () => {
+    /** A strip whose current page is 1, so `current` is not the index clicked. */
+    function swappable(): {
+      readonly at: (index: number) => HTMLButtonElement;
+      readonly swap: ReturnType<typeof vi.fn>;
+      readonly jump: ReturnType<typeof vi.fn>;
+    } {
+      const swap = vi.fn();
+      const jump = vi.fn();
+      const { container } = render(
+        <Wrapped>
+          {/* CURRENT IS 1, NOT 0. With the current page at index 0 a handler
+              that sent `(page, page)` or `(0, page)` would pass every case
+              below — the same reason the command fixtures do not sit on the
+              first page. */}
+          <Thumbnails view={view()} pageCount={4} current={1} onJump={jump} onSwap={swap} />
+        </Wrapped>,
+      );
+      const buttons = [...container.querySelectorAll('button')];
+      return {
+        at: (index) => {
+          const button = buttons[index];
+          if (button === undefined) throw new Error(`the strip has no thumbnail ${String(index)}`);
+          return button;
+        },
+        swap,
+        jump,
+      };
+    }
+
+    it('SHIFT+CLICK swaps the clicked page with the one being read', () => {
+      // The UI half of swap's pair; `pageOrder.test.ts` is the kernel half and
+      // says the exchange survives a save. Both arguments are asserted: a
+      // handler that sent the clicked index twice, or the current page twice,
+      // would exchange nothing and look identical from here.
+      const { at, swap, jump } = swappable();
+
+      fireEvent.click(at(3), { shiftKey: true });
+
+      expect(swap).toHaveBeenCalledWith(1, 3);
+      // AND IT DID NOT ALSO JUMP. Shift+click is one gesture with one meaning;
+      // navigating as well would move the reader off the page they were
+      // comparing against, which is the page they just swapped.
+      expect(jump).not.toHaveBeenCalled();
+    });
+
+    it('THE KEYBOARD PATH IS THE SAME HANDLER, because a button click carries the modifier', () => {
+      // B9, and the reason there is no second handler to keep in step:
+      // Shift+Enter on a focused button dispatches a click with `shiftKey` set,
+      // so the keyboard route is not a parallel implementation of this one.
+      const { at, swap } = swappable();
+
+      at(3).dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+
+      expect(swap).toHaveBeenCalledWith(1, 3);
+    });
+
+    it('CONTROL: a plain click still jumps, and swaps nothing', () => {
+      const { at, swap, jump } = swappable();
+
+      fireEvent.click(at(3));
+
+      expect(jump).toHaveBeenCalledWith(3);
+      expect(swap).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL: shift-clicking the CURRENT page dispatches nothing', () => {
+      // `swapPages` accepts it and inverts to a no-op, so this is not about the
+      // command being wrong — it is about not putting an undo step in the log
+      // for a document that did not change.
+      const { at, swap, jump } = swappable();
+
+      fireEvent.click(at(1), { shiftKey: true });
+
+      expect(swap).not.toHaveBeenCalled();
+      // AND IT DID NOT FALL THROUGH TO A JUMP either: the gesture was a swap
+      // that declined itself, not a navigation.
+      expect(jump).not.toHaveBeenCalled();
+    });
+
+    it('CONTROL: a strip with no onSwap treats shift+click as an ordinary click', () => {
+      // The compare pane's second view again. A gesture that silently did
+      // nothing there would be the display-only defect without even a control
+      // to point at.
+      const jump = vi.fn();
+      const { container } = render(
+        <Wrapped>
+          <Thumbnails view={view()} pageCount={4} current={1} onJump={jump} />
+        </Wrapped>,
+      );
+      const third = [...container.querySelectorAll('button')][3];
+      if (third === undefined) throw new Error('the strip has no thumbnail 3');
+
+      fireEvent.click(third, { shiftKey: true });
+
+      expect(jump).toHaveBeenCalledWith(3);
+    });
+  });
 });

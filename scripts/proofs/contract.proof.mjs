@@ -105,6 +105,19 @@ const DELETE_SPEC = `  deletePages: {
     replay: 'reapply-intent',
   },`;
 
+/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
+const SWAP_SPEC = `  swapPages: {
+    kind: 'swapPages',
+    writer: 'mupdf',
+    apply: applySwapPages,
+    capture: captureSwapPages,
+    invert: invertSwapPages,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
 /** Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason. */
 const DUPLICATE_SPEC = `  duplicatePage: {
     kind: 'duplicatePage',
@@ -135,6 +148,9 @@ const SPEC_IMPORTS = `import {
   applyDuplicatePage,
   captureDuplicatePage,
   invertDuplicatePage,
+  applySwapPages,
+  captureSwapPages,
+  invertSwapPages,
 } from '@monstera/kernel/engine';`;
 
 /**
@@ -480,6 +496,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
 };
 `,
   },
@@ -497,9 +514,9 @@ ${DUPLICATE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `duplicatePage` and `deletePages` on 2026-09-04,
-    // `movePage` on 2026-09-03, `setLayerVisibility` before.
-    because: /Property 'duplicatePage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+    // table has to grow. `swapPages`, `duplicatePage` and `deletePages` on
+    // 2026-09-04, `movePage` on 2026-09-03, `setLayerVisibility` before.
+    because: /Property 'swapPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -521,6 +538,7 @@ export const specs: CommandSpecs = {
 ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
+${DUPLICATE_SPEC}
 };
 `,
   },
@@ -549,6 +567,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -592,6 +611,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
 };
 `,
   },
@@ -618,6 +638,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
 };
 `,
   },
@@ -653,6 +674,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
 };
 `,
   },
@@ -684,6 +706,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
 };
 `,
   },
@@ -1187,11 +1210,12 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // the harness's own resolution test refuses.
     // ONE ELIDED MEMBER PER COMMAND KIND, so this pattern widens with the union
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
-    // three since `movePage` (2026-09-03), five since `deletePages` and
-    // `duplicatePage` (2026-09-04). Written out rather than made
-    // repetition-insensitive for the case above's reason: `(\{…\} \| )+` would
-    // match a union of any size, including one this type never had.
-    because: /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\}'/u,
+    // three since `movePage` (2026-09-03), six since `deletePages`,
+    // `duplicatePage` and `swapPages` (2026-09-04). Written out rather than
+    // made repetition-insensitive for the case above's reason: `(\{…\} \| )+`
+    // would match a union of any size, including one this type never had.
+    because:
+      /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,
@@ -1365,6 +1389,37 @@ function elideTypeDumps(text) {
   // The truncation always ends in `...` immediately before the closing quote,
   // which is what makes this matchable without guessing at the content.
   previous = previous.replace(/\{[^{}]*\.\.\.(?=')/gu, DUMP_SENTINEL);
+
+  // A THIRD SHAPE, found 2026-09-04 when the spec table reached six commands:
+  // tsc dropped the closing brace with NO trailing `...` at all, leaving
+  // `Type '{ rotatePages: ␀; … duplicatePage: ␀' is not assignable`. The
+  // balanced pass cannot see it — there is no closing brace — and the pass
+  // above requires the ellipsis, so every property name in it was matchable
+  // again.
+  //
+  // The anchor is the same one that made the previous pass safe: an unclosed
+  // brace run ending at the closing quote of a quoted type. `[^{}]*` cannot
+  // cross into a neighbouring dump, and prose in a tsc diagnostic does not open
+  // a brace it never closes.
+  //
+  // Two truncation shapes in one file is the tell that this list grows with the
+  // COMPILER rather than with the code, which is why the refusal below stays a
+  // refusal: an eliser that degraded quietly on the fourth shape would hand
+  // every matcher printed type text and read exactly like this one working.
+  //
+  // LAZY, and the greedy spelling was written first and measured wrong: with
+  // `*` the run swallowed the closing quote and continued to the LAST quote in
+  // the message, eating `but required in type 'CommandSpecs'` — the anchor the
+  // case under it depends on. A pass that removes too much reads exactly like
+  // one that removes the right amount, because both leave no braces behind.
+  //
+  // Looped for the balanced pass's reason: an outer unclosed run only becomes
+  // brace-free once the inner one has gone.
+  for (;;) {
+    const next = previous.replace(/\{[^{}]*?(?=')/gu, DUMP_SENTINEL);
+    if (next === previous) break;
+    previous = next;
+  }
 
   // Anything still carrying a brace is a dump form neither pass understands,
   // and treating it as evidence is the whole defect. REFUSE rather than

@@ -6,8 +6,12 @@ import { applyRotatePages } from './rotatePages.js';
 import {
   applyDeletePages,
   applyDuplicatePage,
+  applySwapPages,
   captureDuplicatePage,
+  captureSwapPages,
   invertDuplicatePage,
+  invertSwapPages,
+  swapPermutation,
   applyMovePage,
   captureDeletePages,
   captureMovePage,
@@ -293,6 +297,89 @@ describe('captureMovePage and invertMovePage', () => {
       await invertMovePage(session, capture.prior);
 
       expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('swapPermutation and applySwapPages', () => {
+  it('EXCHANGES THE TWO and moves nothing between them, which a move does not', () => {
+    // The fixture that separates swap from move: `0 1 2 3` with 0 and 3.
+    // Swapping gives `3 1 2 0`; moving 0 to index 3 gives `1 2 3 0`. Adjacent
+    // indices make the two identical, which is why these are the far ends.
+    expect(swapPermutation(4, 0, 3)).toStrictEqual([3, 1, 2, 0]);
+    expect(movePermutation(4, 0, 3)).toStrictEqual([1, 2, 3, 0]);
+  });
+
+  it('is symmetric in its two arguments, which is what makes it its own inverse', () => {
+    expect(swapPermutation(4, 3, 0)).toStrictEqual(swapPermutation(4, 0, 3));
+  });
+
+  it('SWAPS THE PAGES, and the saved document says so', async () => {
+    const swapped = await edited(await flatDocument(4), (session) =>
+      applySwapPages(session, { kind: 'swapPages', a: 0, b: 3 }),
+    );
+
+    expect(await widthsOf(swapped)).toStrictEqual([103, 101, 102, 100]);
+  });
+
+  it('IS CORRECT ON A NESTED TREE, and carries the inherited rotation down', async () => {
+    const source = await nestedDocument(4);
+    expect(await rotationsOf(source)).toStrictEqual([90, 90, 0, 0]);
+
+    const swapped = await edited(source, (session) =>
+      applySwapPages(session, { kind: 'swapPages', a: 0, b: 3 }),
+    );
+
+    expect(await widthsOf(swapped)).toStrictEqual([103, 101, 102, 100]);
+    // The rotations travel WITH the pages, not with the slots. A flatten that
+    // dropped the push-down would report [0, 90, 0, 0] here.
+    expect(await rotationsOf(swapped)).toStrictEqual([0, 90, 0, 90]);
+  });
+
+  it('REFUSES an index the document does not have', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        applySwapPages(session, { kind: 'swapPages', a: 0, b: 9 }),
+      ).rejects.toThrow(/outside a document of 3 page/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('captureSwapPages and invertSwapPages', () => {
+  it('A SWAP IS ITS OWN INVERSE, and the original order comes back', async () => {
+    const session = await mupdfWriter.open(await flatDocument(4));
+    try {
+      const command = { kind: 'swapPages', a: 0, b: 3 } as const;
+      const capture = await captureSwapPages(session, command);
+      if (!capture.captured) throw new Error('the capture was refused');
+
+      await applySwapPages(session, command);
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([
+        103, 101, 102, 100,
+      ]);
+
+      await invertSwapPages(session, capture.prior);
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([
+        100, 101, 102, 103,
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a swap OUTSIDE the document is NOT CAPTURED, with a reason', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      const capture = await captureSwapPages(session, { kind: 'swapPages', a: 0, b: 9 });
+
+      expect(capture.captured).toBe(false);
+      if (capture.captured) throw new Error('the capture should have been refused');
+      expect(capture.reason).toMatch(/no prior order to record/u);
     } finally {
       await mupdfWriter.close(session);
     }

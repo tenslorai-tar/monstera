@@ -298,6 +298,85 @@ export const invertDeletePages: Invert<'mupdf', 'deletePages'> = (): Promise<voi
   );
 };
 
+/**
+ * The destination order that exchanging two pages produces.
+ *
+ * Symmetric in `a` and `b`, which is what makes a swap its own inverse — and
+ * the reason that is safe to rely on here where {@link movePermutation}'s
+ * transposition is not: nothing between the two indices shifts.
+ */
+export function swapPermutation(count: number, a: number, b: number): readonly number[] {
+  const order = Array.from({ length: count }, (_unused, index) => index);
+  const first = order[a];
+  const second = order[b];
+  if (first === undefined || second === undefined) {
+    throw new RangeError(`pages ${String(a)} and ${String(b)} are not both in this document`);
+  }
+  order[a] = second;
+  order[b] = first;
+  return order;
+}
+
+/** What a swap needs in order to be undone: the same two indices. */
+export interface PriorPageSwap {
+  readonly a: number;
+  readonly b: number;
+}
+
+/** Records the pair, as validated against this document. */
+export function captureSwapPages(
+  session: MupdfSession,
+  command: CommandOfKind<'swapPages'>,
+): Promise<CaptureResult<PriorPageSwap>> {
+  return withDocument(session, (document) => {
+    const count = document.countPages();
+    if (command.a >= count || command.b >= count) {
+      return {
+        captured: false,
+        reason:
+          `swap ${String(command.a)} ↔ ${String(command.b)} is outside this document, which ` +
+          `has ${String(count)} page(s), so there is no prior order to record`,
+      };
+    }
+    return { captured: true, prior: { a: command.a, b: command.b } };
+  });
+}
+
+/**
+ * Swaps them back — **the same swap**, and here the transposition is the whole
+ * of it.
+ *
+ * `invertMovePage`'s header warns against writing a transposition because a
+ * move's inverse is one only by coincidence. A swap's is not a coincidence:
+ * {@link swapPermutation} is symmetric in its two arguments and moves nothing
+ * else, so applying it twice is the identity. The double-swap case is what
+ * holds that rather than this paragraph.
+ */
+export const invertSwapPages: Invert<'mupdf', 'swapPages'> = (
+  session: MupdfSession,
+  inverse: PriorPageSwap,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    rewriteKids(document, swapPermutation(document.countPages(), inverse.a, inverse.b));
+  });
+
+/** Exchanges two pages. */
+export const applySwapPages: Apply<'mupdf', 'swapPages'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'swapPages'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const count = document.countPages();
+    if (command.a >= count || command.b >= count) {
+      throw new RangeError(
+        `swap ${String(command.a)} ↔ ${String(command.b)} is outside a document of ` +
+          `${String(count)} page(s). The bus validates against the document it captured, so ` +
+          `reaching here means the two disagree.`,
+      );
+    }
+    rewriteKids(document, swapPermutation(count, command.a, command.b));
+  });
+
 /** Where a duplicate's copy landed, which is what its inverse removes. */
 export interface PriorPageCopy {
   /** Zero-based index the copy occupies after the command. */

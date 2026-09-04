@@ -15,7 +15,7 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
 import type { PriorLayerVisibility } from './layers.js';
-import type { PriorPageCopy, PriorPageOrder } from './pageOrder.js';
+import type { PriorPageCopy, PriorPageOrder, PriorPageSwap } from './pageOrder.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -128,6 +128,16 @@ export interface CommandPrior {
    * later version changed.
    */
   readonly duplicatePage: PriorPageCopy;
+  /**
+   * The pair, as validated against the document.
+   *
+   * The only prior state in this table whose inverse is the command itself,
+   * because a transposition is an involution. It is still **captured** rather
+   * than read back off the command at undo time: `movePage` next door records
+   * the same two numbers for the same reason, and a log entry that reached for
+   * `entry.command` to invert would be the one shape §3 forbids.
+   */
+  readonly swapPages: PriorPageSwap;
 }
 
 /**

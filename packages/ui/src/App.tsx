@@ -261,6 +261,26 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Exchanging two pages, from the thumbnail strip's Shift+click.
+   *
+   * `movePage`'s dispatcher one command along, and it goes through
+   * `applyDocumentCommand` for that function's own reason: the refusal report,
+   * the version move and invariant 18's dialog are four steps this must not
+   * have its own copy of.
+   */
+  const swapPages = useCallback(
+    (a: number, b: number): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand(
+        { client, onApplied: applied, show },
+        activeId,
+        { kind: 'swapPages', a, b },
+      );
+    },
+    [activeId, applied, client, show],
+  );
+
+  /**
    * A page the reader asked to be taken to, cleared once the scroller has.
    *
    * ## Why a REQUEST and not just the current page
@@ -755,6 +775,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           current={currentPage}
           onJump={navigator.jumpTo}
           onMove={movePage}
+          onSwap={swapPages}
           loupe={loupe}
           rulers={rulers}
           showGrid={showGrid}
@@ -971,6 +992,7 @@ function PageCanvas({
   current,
   onJump,
   onMove,
+  onSwap,
   rulers,
   showGrid,
   unit,
@@ -996,6 +1018,8 @@ function PageCanvas({
   readonly onJump: (page: number) => void;
   /** Reorders the document. See the strip's own header for why it is a command. */
   readonly onMove: (from: number, to: number) => void;
+  /** Exchanges two pages, from the strip's Shift+click. */
+  readonly onSwap: (a: number, b: number) => void;
   readonly rulers: boolean;
   readonly showGrid: boolean;
   readonly unit: RulerUnit;
@@ -1071,6 +1095,7 @@ function PageCanvas({
         current={current}
         onJump={onJump}
         onMove={onMove}
+        onSwap={onSwap}
       />
       <PageList
         client={client}

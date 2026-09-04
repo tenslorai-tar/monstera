@@ -27,12 +27,17 @@ export {
   invertDeletePages,
   invertDuplicatePage,
   invertMovePage,
+  applySwapPages,
+  captureSwapPages,
+  invertSwapPages,
   keptPermutation,
   movePermutation,
+  swapPermutation,
   remapPageIndex,
   remapPageIndexAfterDelete,
   type PriorPageCopy,
   type PriorPageOrder,
+  type PriorPageSwap,
 } from './pageOrder.js';
 export { localMupdfWriter } from './localEngine.js';
 

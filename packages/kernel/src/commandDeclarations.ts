@@ -240,6 +240,21 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  swapPages: {
+    kind: 'swapPages',
+    // Invariant L6 and `movePage`'s measurement, a third time: the same
+    // `/Kids` rewrite with a symmetric permutation.
+    writer: 'mupdf',
+    // The only command here whose inverse is the command itself, and the one
+    // place a transposition is legitimate: `swapPermutation` is symmetric in
+    // its two arguments and shifts nothing between them, so applying it twice
+    // is the identity. `movePage`'s note two entries up warns against the same
+    // reasoning, because there the property is a coincidence.
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

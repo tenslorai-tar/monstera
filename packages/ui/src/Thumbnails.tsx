@@ -55,6 +55,7 @@ export function Thumbnails({
   current,
   onJump,
   onMove,
+  onSwap,
 }: {
   readonly view: DocumentView | undefined;
   readonly pageCount: number;
@@ -72,6 +73,25 @@ export function Thumbnails({
    * control whose drop did nothing is the display-only defect.
    */
   readonly onMove?: ((from: number, to: number) => void) | undefined;
+  /**
+   * Exchanges two pages, zero-based.
+   *
+   * Optional for `onMove`'s reason, and reached by **Shift+click** on a
+   * thumbnail: *swap this page with the one I am reading*.
+   *
+   * ## Why one gesture covers both modalities
+   *
+   * A `<button>` activated from the keyboard dispatches a click that carries
+   * the modifier state, so Shift+Enter on a focused thumbnail arrives here as a
+   * click with `shiftKey` set. There is no second handler and therefore no
+   * second path to keep in step — which is what the drag/keyboard pair next
+   * door needs `onKeyDown` for, HTML5 drag having no keyboard form at all.
+   *
+   * **Shift and not Ctrl**, and the reason is a platform one rather than taste:
+   * on macOS Ctrl+click *is* a right click, so it raises `contextmenu` and
+   * never reaches a click handler. Shift has no such meaning on a button.
+   */
+  readonly onSwap?: ((a: number, b: number) => void) | undefined;
 }): ReactElement {
   const { i18n } = useLingui();
   const { visible, slotRef } = useVisiblePages('50%');
@@ -95,7 +115,16 @@ export function Thumbnails({
           ref={slotRef(page)}
           draggable={onMove !== undefined}
           data-thumb-page={String(page)}
-          onClick={() => {
+          onClick={(event) => {
+            // SHIFT MEANS SWAP, and a swap with the page already being read is
+            // not a command — `swapPages` accepts it and inverts to a no-op,
+            // but dispatching it would put an undo step in the log for a
+            // reader whose document did not change. Same rule as the drop on
+            // itself below.
+            if (onSwap !== undefined && event.shiftKey) {
+              if (page !== current) onSwap(current, page);
+              return;
+            }
             onJump(page);
           }}
           onDragStart={() => {

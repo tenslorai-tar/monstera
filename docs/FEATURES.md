@@ -95,7 +95,7 @@ planner counting a table of rows as a table of untouched work.
 | Crop | — |
 | Resize pages | — |
 | Replace page | — |
-| Swap pages | — |
+| **Swap pages. Landed 2026-09-04.** Its own kind rather than two `movePage`s, which would put an intermediate document in the log and cost two undos for one intent — and rather than one move, which is a **different operation**: moving 0 to index 3 of `0 1 2 3` gives `1 2 3 0` where swapping gives `3 1 2 0`. They coincide only for adjacent pages, which is the case a reader tries first, so the kernel case uses the far ends and asserts both permutations side by side. **The only command here whose inverse is itself**, and the one place a transposition is legitimate: `swapPermutation` is symmetric and shifts nothing between the two, where `movePage`'s comment warns that its own transposed inverse is a coincidence. The pair is still **captured** rather than read off the command at undo — §3's shape. **Surface: Shift+click a thumbnail** to exchange it with the page being read. One gesture covers both modalities, because a `<button>` activated from the keyboard dispatches a click carrying the modifier — so Shift+Enter reaches the same handler and there is no parallel keyboard path to keep in step. **Shift and not Ctrl** for a platform reason: on macOS Ctrl+click *is* a right click and raises `contextmenu`. Shift-clicking the current page dispatches nothing. **Discoverability is the weak half and it is stated:** a *swap with page N* dialog is the legible form and belongs with Track B's gate. | **done** |
 | Find duplicate pages | — |
 | Deskew and enhance scans | — |
 | Page transitions (`/Trans`) | — |
