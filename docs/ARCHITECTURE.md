@@ -976,49 +976,46 @@ say**.
     and it is the **user's** to take — an application that took it for them
     would be choosing which of two documents' edits to keep.
 
-    **(ii) The mechanism that gets those retained edits back into a document is
-    NOT CHOSEN HERE, deliberately.** Naming one now would fix a design against
-    two seams that do not exist, and this project's rule is that the
-    architecture changes *before* the feature and not underneath it. Two things
-    have to land first, and each names the code site that fires it, so the
-    trigger arrives where someone is already looking rather than in a document
-    nobody opens:
+    **(ii) The mechanism is FORWARD REPLAY BY RE-APPLIED INTENT, chosen
+    2026-09-04 once both of this clause's triggers had fired**
+    ([ADR-0037](DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+    A document whose engine session is gone — a dead host, or a poisoned
+    document the user reopens — is brought back by opening a session on the
+    canonical image and re-applying each applied log entry's command, in order.
+    Every command declared today is `replay: 'reapply-intent'`, and
+    `CommandBus.redo` makes a spec declaring otherwise a **compile** error
+    rather than a silent wrong branch, so the mode this rests on cannot widen
+    unnoticed. Where the applied prefix contains a terminal entry, its
+    checkpoint is a **starting point that shortens the replay** and is never
+    required for correctness: *terminal* means prior state could not be
+    recorded, not that the command is irreproducible.
 
-    - **checkpoint restore** — `CheckpointRestoreNotBuiltError` in
-      `packages/kernel/src/commandBus.ts`. Replaying a log needs something to
-      replay onto, and §4's answer is the nearest checkpoint. The day that class
-      is deleted, this clause is owed a decision.
-    - **`document.close` being declared** — `packages/contract/src/channels.ts`,
-      which declares **ten** channels and no close (counted 2026-09-01). Until it does, *that*
-      route has no caller: nothing in the shipped application can drop a
-      document's record, so a poisoned document's log cannot be lost by a close
-      while the application runs. The route opens the moment a close appears.
+    **The triggers were `CheckpointRestoreNotBuiltError` being deleted and
+    `document.close` being declared, and both have fired.** The first is
+    ADR-0037's own feature commit. The second fired on **2026-09-03**, one
+    commit earlier, and nobody noticed — `packages/contract/src/channels.ts`
+    declares `document.close` at `:545`, while this clause went on saying the
+    table held ten channels and no close. A trigger whose only mechanism is a
+    sentence in a document fires into that document; the reader it was waiting
+    for was the author editing the channel table, and an event-keyed claim
+    belongs on a `docs/FEATURES.md` row where something reads it.
 
-    **THERE IS A SECOND ROUTE AND IT HAS A CALLER TODAY — corrected 2026-09-01.**
-    This clause read *"until it does, the loss path has no caller … that is why
-    this clause is deferrable at all"*, which was one route stated as all of
-    them. `onEngineHostEnded` rebuilds a dead host's sessions in each surviving
-    document's lane ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
-    Decision 9c), and §2's amendment of the same day records that **nothing
-    replays the command log onto a rebuilt session** — so a host death loses
-    every command since the last save, with no `document.close` anywhere in it.
-    Proving that an effect cannot travel by one route is not proving it cannot
-    travel.
+    **What is chosen here is the mechanism, not the schedule.** When replay runs
+    is the supervisor's question — `onEngineHostEnded` rebuilds inside each
+    document's lane today and hands back a session at the last-saved state — and
+    it is owed a `docs/FEATURES.md` row rather than a paragraph here. Until that
+    row lands the exposure below is live, and stating it is what keeps it from
+    reading as closed.
 
-    **What that changes, and what it does not.** The exposure is live, bounded
-    to a host death, and has **no refusal available to it**: `recycle` may
-    refuse a document whose log holds entries because recycling is optional,
-    and a dead host must be rebuilt for. Clause (i) is unaffected — it is a
-    property of a *poisoned* document and binds whatever the route.
-
-    **It stays deferred, on the ground that survives.** *No caller* was never
-    the reason a mechanism could not be chosen; it was the reason nothing was
-    being lost meanwhile, and that comfort is withdrawn rather than the
-    deferral. The mechanism is still unchoosable: §4 declares two replay modes,
-    `reapply-intent` and `stored-effect`, and only the first exists, so naming a
-    restore path now fixes a design against a seam that is not built. The first
-    trigger above — `CheckpointRestoreNotBuiltError` being deleted — is the one
-    that closes it.
+    **The exposure that remains.** A host death loses every command since the
+    last save, bounded to that event, with **no refusal available to it**:
+    `recycle` may refuse a document whose log holds entries because recycling is
+    optional, and a dead host must be rebuilt for. `onEngineHostEnded` rebuilds
+    a dead host's sessions in each surviving document's lane
+    ([ADR-0023](DECISIONS/0023-how-the-contained-engine-host-is-built.md)
+    Decision 9c) and nothing replays the log onto them (§2, corrected
+    2026-09-01). Clause (i) is unaffected — it is a property of a *poisoned*
+    document and binds whatever the route.
 
     One candidate is already excluded rather than merely unchosen: resurrecting
     the poisoned session is not available, because
@@ -1651,6 +1648,7 @@ Every entry names the founding clause it supersedes and links its ADR.
 
 | Date | Amendment | Supersedes | ADR |
 |---|---|---|---|
+| 2026-09-04 | **Invariant 18 clause (ii)'s mechanism is chosen: forward replay by re-applied intent, with a checkpoint as a starting point rather than a requirement.** Both of the clause's triggers had fired. `CheckpointRestoreNotBuiltError`'s two stated reasons were each stale: the session's owner *"is `DocumentService`'s question"* was answered by this log's own 2026-08-28 row — the owner is the supervisor — and the replay §4 describes is **empty for every terminal entry**, because `CommandBus.execute` holds the only `Checkpoint` mint, takes one strictly before `apply`, stores it on the `terminal` variant alone, and `CommandLog.entries` is the applied prefix, so the tail entry's own checkpoint *is* the state undoing it must produce. That property expires as a **compile error** rather than silently: a checkpoint stored anywhere else needs a type change, and every reader of `entry.checkpoint` stops compiling. So undo of a terminal entry needs no replay mode, which is why it is buildable while recovery-from-a-rebuilt-session is not yet built. **The second trigger fired silently on 2026-09-03** — `document.close` was declared at `channels.ts:545` while this clause still counted ten channels and no close — which is why an event-keyed claim now belongs on a `docs/FEATURES.md` row. **Three components, three concerns:** the bus decides *that* a restore happens and *which* checkpoint (it holds the only `CommandWriter` mint and is the log's only reader); `DocumentService` writes the bytes (it owns them); the supervisor grants the destination, opens the new session, closes the old and holds the new. The supervisor receives a **writer, never the bytes**, so ADR-0021's *"the only way anything outside this service can obtain a document's bytes — and it does not obtain them"* keeps its no-exception form. **Rejected: the service selecting the checkpoint off its own log**, tidier and rejected because it makes a second component compute which entry undo is at (B3a, the `git diff --name-status` shape); **handing the supervisor the bytes**, one reference and no measurable cost, rejected because the exception is free to avoid; **the bus opening the session**, which needs a path the kernel may not name and makes the bus per-document, undoing ADR-0009's composition decision; **computing an inverse from the command**, §3's named defect; **making `deletePages` invertible instead**, which is a byte image produced by hand per command and leaves the refusal standing for every Track F command behind it; **dropping the terminal entry**, which makes undo unredoable and gives the cursor two meanings. **The schedule is not chosen and the exposure is stated:** a host death still loses every command since the last save, with no refusal available to it. | Invariant 18 clause (ii)'s *"The mechanism … is NOT CHOSEN HERE, deliberately"* and its two triggers, and its *"declares **ten** channels and no close (counted 2026-09-01)"* | [ADR-0037](DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md) |
 | 2026-09-03 | **The error boundary is the one class component** (§10.5a). React declares `getDerivedStateFromError` on `StaticLifecycle` alone and ships no error-boundary hook — read 2026-09-03 from `node_modules/@types/react/index.d.ts:1225` at `@types/react` 19.2.18, against `react` 19.2.8 — so the feature cannot be built as a function component. Exactly one module, `packages/ui/src/ErrorBoundary.tsx`, may declare a class, confined by `monstera/no-class-components` the way the `any` adapters are confined. **Rejected: `react-error-boundary` 6.1.4**, which does not remove the class but relocates it and adds a production dependency — the i18n row measures one such dependency taking the tree 39 → 114 packages, and it would put the fallback's reset behaviour behind someone else's API at the point this build wants its own guarantee; **`createRoot`'s `onUncaughtError`**, which is a `void` reporting callback and cannot render, so substituting it yields a log line and a blank screen — finding AAAAAA-4 at application scale; **no boundary**, where the same declaration says the entire component tree unmounts; **relaxing B7 generally**, which the rule's own text forbids by name. The recovery guarantee — same document, same page, same zoom — comes from mounting the boundary **below** the state holding those three, not from restoring them. | `BUILD-PROMPT.md` B7, *"React function components only"* | [0036](DECISIONS/0036-the-error-boundary-is-the-one-class-component.md) |
 | 2026-09-02 | **`main` never holds a document's extracted text, and search is a per-page query** (§9.17). The `main` clause named two things — canonical bytes, and no parsing — and a document's extracted text is a third: produced by the engine host, handed back, governed by neither half of the sentence. So the first channel that could break invariant 11 would have settled the question by accident. **Measured** with `scripts/research/textRetention.mjs` against a *text-heavy* document, which is the shape the perf corpus lacks — its 200 MB fixture is one image, and a budget argued against that says nothing about a file that is all words: **3.56× the file size at 40 pages and 3.59× at 200**, the ratio stable across a 5× change and the per-page figure falling as `1/N`. `main` already holds the canonical bytes at 1.00×, so retaining the text takes it to **4.59× against a 1.5× ceiling** — over three times the budget from the text alone, and transient does not help because the budget measures peak. Text is therefore read a page at a time, searched and dropped, with what is resident bounded by the **largest page**; the channel carries a **bounded** match list with truncation reported rather than implied, since an unbounded one is document-scaled by another name. **Rejected: retaining it in `main`** (dead on the arithmetic, and it would have made this very sentence false in a way no check could catch); **extracting the whole document transiently** (fails identically — a peak, not a residency — and reads as the cautious middle); **caching it in the engine host**, whose budget is 3 GB (nearly free, and it makes the host stateful about a *query*, whose invalidation is a second version question beside the one `DocVersion` answers); **a channel returning a page's text for the renderer to search** (moves the residency across the boundary, and puts a second extraction path one step from existing — Part E2's K.0); **an unbounded match list** (document-scaled for a common word). A document-wide search is N round trips, which is the design rather than a cost to reduce: the row specifies *cancellable background indexing*, which needs a per-page grain to cancel at. **Not measured and named as such:** the round-trip latency of that search across a large document. | §9.17's `main` clause, which read *"**`main`** holds canonical bytes and never parses, so exceeding its budget means parsing crept back in"* and named nothing else `main` may hold | [ADR-0035](DECISIONS/0035-extracted-text-is-never-resident-in-main.md) |
 | 2026-09-02 | **The text substrate owns the engine's stext OPTIONS and implements no clustering of its own** (§3.2). Part E2 has one kernel module cluster glyph runs into lines and blocks, tuned against a corpus score with constants that change only with a score in the commit message. Measured on MuPDF 1.28.0 through the new `mz_stext_json` export, against fixtures whose ground truth is a property of the generator rather than of any clusterer — and whose two columns share every baseline, since staggered ones are handled correctly by the broken version and separate nothing. **The engine's lines never merged across the gutter at 268pt or 60pt**, so a line clusterer here would be a second opinion about a question MuPDF answers correctly (B3a). **`FZ_STEXT_SEGMENT` turned row-major reading order into column-major at both widths** and left single-column prose unchanged, so a block clusterer would be a second opinion too. **`FZ_STEXT_TABLE_HUNT` split a prose line in two**, inventing a table, and undid `SEGMENT`'s ordering — so it is off, per-consumer, and owes its own reading to whichever feature turns it on. E2's *purpose* is met and met harder: there is no algorithm for a second consumer to copy, and the K.0 regression it names becomes **a second set of stext options anywhere**. The accuracy score survives with a changed subject — it scores the flag choice against ground truth, which is what a MuPDF upgrade would move and nothing else in the build would notice. **Rejected: implementing the clustering as written** (the authority answers it, and a partial reimplementation is dangerous precisely because it agrees most of the time); **taking MuPDF's lines and clustering blocks ourselves** (reading order is what block grouping is for, and `SEGMENT` already produces it); **`TABLE_HUNT` on globally** (wrong for the common case); **no module at all** (each consumer would choose its own flags, and the flags demonstrably change the answer); **deferring for a real-document corpus** (the question is whether the grouping is usable, and fixtures with known ground truth settle that more sharply than documents whose correct answer nobody knows). | `BUILD-PROMPT.md` Part E2's mechanism — *"Line clustering is implemented exactly **once** … tuned against the fixture corpus with a measurable accuracy score (constants change only with a corpus score in the commit message)"* — and the open half of [ADR-0013](DECISIONS/0013-pdfa-export-and-text-extraction-engines.md), which left *"whether that geometry is sufficient for columns and tables"* unexecuted | [ADR-0034](DECISIONS/0034-the-text-substrate-owns-the-engines-options-not-its-own-clusterer.md) |
