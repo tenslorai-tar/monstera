@@ -19,6 +19,10 @@ import {
   type ReadonlyCommandLog,
 } from './commandLog.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
+// TYPE ONLY, and `import type` rather than an inline specifier: `engineSeam.ts`
+// is types-plus-one-const, and the second spelling would emit
+// `import {} from './engineSeam.js'` — a side-effect import (ADR-0026).
+import type { ByteImage } from './engineSeam.js';
 import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 
 /**
@@ -452,6 +456,48 @@ export interface DocumentContext {
   ): Promise<number>;
 
   /**
+   * Writes bytes a byte-image command produced to a destination the session
+   * supervisor granted, and reports the count
+   * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+   *
+   * {@link writeCheckpoint}'s shape and its reason — the bytes do not pass
+   * through the supervisor — with a different subject. They are two members
+   * rather than one because a checkpoint carries the {@link Checkpoint} brand,
+   * which is what makes accepting one safe without a check, and a command's
+   * output has no brand to offer. Widening `writeCheckpoint`'s parameter to
+   * `ByteImage` to serve both would have thrown that away for every caller.
+   *
+   * @param writer Proof the caller is the command bus.
+   */
+  writeImage(writer: CommandWriter, image: ByteImage, destination: string): Promise<number>;
+
+  /**
+   * Makes `image` this document's canonical image, and reports its length.
+   *
+   * ## Why a byte-image command may do this and a live-session one may not
+   *
+   * A live-session command's effect is in the engine's session and reaching it
+   * would cost a full serialise per command — ADR-0032 measured 2.00× against a
+   * 1.5× ceiling and rejected it. A byte-image `apply` **returns** the new
+   * document, so the bytes are already here and this is a reference
+   * assignment. §2 carries both halves of that.
+   *
+   * ## The ceiling is enforced afterwards, not here, and that is deliberate
+   *
+   * The command has run and the live session has already been rebuilt from
+   * these bytes by the time this is called, so refusing would leave the
+   * document's engine and `main` disagreeing — the two-states failure this
+   * whole path exists to avoid. {@link enforceRetention} runs immediately after
+   * and sheds checkpoints until the document is back inside the ceiling, which
+   * is what that mechanism is for: the new image is accounted for, and what
+   * gives way is history rather than correctness.
+   *
+   * @param writer Proof the caller is the command bus.
+   * @returns The new canonical image's length.
+   */
+  replaceCanonicalImage(writer: CommandWriter, image: ByteImage): number;
+
+  /**
    * A read-only view of the log, for work that needs to ask rather than change.
    *
    * "Is there anything to undo" is a query a lane entry may legitimately make.
@@ -606,8 +652,22 @@ interface DocumentRecord {
    * reports `main` at 1.00x of file size holding one and 2.00x holding two,
    * which breaches ADR-0007's 1.5x on both content shapes. So a second copy
    * anywhere in main is not a matter of taste.
+   *
+   * **Mutable since 2026-09-04, and only through
+   * {@link DocumentContext.replaceCanonicalImage}, inside the lane.** It was
+   * `readonly`, and finding OOOOO-1 is what that produced: the image stayed
+   * what was opened for the life of the document, so a command's effect could
+   * never reach a renderer through bytes. That is still correct for every
+   * live-session writer — a rotation reaches the screen through the view model
+   * (§2) — and wrong for a byte-image one, whose `apply` **returns** the new
+   * document
+   * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+   *
+   * The replacement swaps the **reference** and never writes into the buffer,
+   * which is what keeps an off-lane reader safe — see
+   * {@link DocumentService.writeCanonicalImage}.
    */
-  readonly bytes: Uint8Array;
+  bytes: Uint8Array;
   /** Mutable only through {@link DocumentContext.bumpVersion}, inside the lane. */
   version: DocVersion;
   /**
@@ -1095,9 +1155,18 @@ export class DocumentService {
    * rebuilding a dead host deadlock against the lane entry that is waiting for
    * the host.
    *
-   * The buffer it hands out is safe to read outside the lane because a record's
-   * `bytes` is `readonly` and replaced only by a new record: there is no
-   * mutation for this read to tear.
+   * The buffer it hands out is safe to read outside the lane, and **the reason
+   * changed on 2026-09-04 while the conclusion did not** — which is the shape
+   * worth reading carefully, because a stale half of a compound claim is the
+   * one nobody flags. It used to be that a record's `bytes` is `readonly` and
+   * replaced only by a new record. `replaceCanonicalImage` now replaces it in
+   * place (ADR-0039), so that clause is dead.
+   *
+   * What holds instead: the replacement swaps the **reference** and never
+   * writes into a buffer. This method reads `record.bytes` once, before its
+   * first `await`, so it writes either the old image or the new one and both
+   * are internally consistent. There is still no mutation for this read to
+   * tear, and now there is a reason rather than an absence.
    *
    * @param supervisor Proof the caller is the session supervisor.
    * @param docId The open document.
@@ -1120,8 +1189,13 @@ export class DocumentService {
       // will never exist.
       throw new DocumentNotOpenError(docId, 'write the canonical image');
     }
-    await this.#writeBytes(destination, record.bytes);
-    return record.bytes.byteLength;
+    // READ ONCE, BEFORE THE AWAIT, and that is the mechanism the doc comment
+    // above rests on rather than a stylistic preference: `record.bytes` is
+    // replaceable since ADR-0039, so reading it a second time after the write
+    // could report the length of a different image from the one that landed.
+    const image = record.bytes;
+    await this.#writeBytes(destination, image);
+    return image.byteLength;
   }
 
   /**
@@ -1512,6 +1586,19 @@ export class DocumentService {
           writeCheckpoint: async (_writer, checkpoint, destination) => {
             await this.#writeBytes(destination, checkpoint);
             return checkpoint.byteLength;
+          },
+          // The token is not read, for `commandLog`'s reason. What confines
+          // this one is that a `CommandWriter` cannot be minted outside
+          // `commandBus.ts` — there is no brand on `ByteImage` to lean on, so
+          // the capability is the whole of it.
+          writeImage: async (_writer, image, destination) => {
+            await this.#writeBytes(destination, image);
+            return image.byteLength;
+          },
+          replaceCanonicalImage: (_writer, image) => {
+            requireSoleOwnership(image, record.path);
+            record.bytes = image;
+            return record.bytes.byteLength;
           },
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather

@@ -4,6 +4,7 @@ import type { PDFDocument, PDFObject } from 'mupdf';
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { pagesOf } from './pageScope.js';
 
 /**
  * Cropping — insetting a page's **visible** box, and leaving its media box
@@ -43,22 +44,13 @@ export interface PriorPageCrop {
   readonly prior: PriorCropBox;
 }
 
-/**
- * The pages a scope names, resolved where the page count is already known.
- *
- * `'all'` crosses as two words and becomes a list here, which is what keeps a
- * whole-document crop off invariant L11's payload rule. Exported because the
- * capture and the apply must resolve it **identically** — two readings of what
- * *all* means is the second opinion B3a is about, and they would agree until
- * one of them learnt about a page range.
- */
-export function pagesOf(
-  scope: CommandOfKind<'cropPages'>['pages'],
-  total: number,
-): readonly number[] {
-  if (scope !== 'all') return scope;
-  return Array.from({ length: total }, (_unused, index) => index);
-}
+// `pagesOf` MOVED to `pageScope.ts`, and this note is here because the reason
+// is not visible from either end. It was exported from this file so the capture
+// and the apply would resolve `'all'` identically; the second command to take a
+// scope is `watermarkPages`, which runs in `main`, and importing anything from
+// this file binds the MuPDF native library there (ADR-0026, +40.1 MB). Copying
+// four lines into the watermark is the third opinion B3a's own record says
+// arrives within the hour. See `pageScope.ts`.
 
 /** The page object, refusing an index this document does not have. */
 function pageObject(document: PDFDocument, page: number, total: number): PDFObject {

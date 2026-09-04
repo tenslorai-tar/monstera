@@ -1,6 +1,12 @@
 import type { CommandKind, CommandOfKind } from '@monstera/contract';
 
-import type { Checkpoint, LogEntryFor, LogTrim } from './commandLog.js';
+import type {
+  CaptureResult,
+  Checkpoint,
+  CommandPrior,
+  LogEntryFor,
+  LogTrim,
+} from './commandLog.js';
 // DECLARATIONS, not specs. The bus reads `writer` and `replay` and calls
 // nothing — `apply`, `capture` and `invert` go through the registered writer
 // (ADR-0023 Decision 10). Importing the spec table here would reach
@@ -17,7 +23,11 @@ import {
 // with it the native library this whole change exists to keep out of `main`.
 import type { RegisteredWriter } from './commandSpecs.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
-import type { ByteImage, SessionsByWriter, WriterSession } from './engineSeam.js';
+// A VALUE IMPORT, and the only one in this file that is not the declarations
+// table. `writerShapes` is what decides whether a command's result is a new
+// document, and `engineSeam.ts`'s every other import is `import type`, so the
+// edge costs an importer the object literal and nothing else (ADR-0039).
+import { type ByteImage, type SessionsByWriter, type WriterSession, writerShapes } from './engineSeam.js';
 
 /**
  * The one code path from a command to a log entry (ADR-0009 §4).
@@ -73,6 +83,54 @@ export type WriterRegistry = {
  */
 function asCheckpoint(bytes: ByteImage): Checkpoint {
   return bytes as Checkpoint;
+}
+
+/**
+ * One registered writer, narrowed to the single command kind it is about to
+ * run.
+ *
+ * ## The correlated-union limit, in the third module to meet it
+ *
+ * `commandSpecs.ts` and `pdfLibWriter.ts` each carry a `specFor` with the same
+ * explanation, and this is the same wall from the registry's side:
+ * `this.#writers[spec.writer]` over a generic `K` resolves to the **union** of
+ * every registered writer, whose `apply` parameter is then the intersection of
+ * a `MupdfSession` and a `ByteImage` — `never`, so nothing can be called. The
+ * lookup is correct and the checker cannot see that the index and the session
+ * came from the same `command.kind`.
+ *
+ * It compiled while there was one writer of record, which is why this arrives
+ * with the second one rather than having been needed all along.
+ *
+ * `apply` and `invert` widen to `ByteImage | undefined` here rather than staying
+ * conditional, and that is the point of the type: the bus is the component that
+ * has to handle **both** shapes, and a signature that hid the difference would
+ * push the decision back into a cast at each call. What decides which arrived
+ * is {@link writerShapes}, never the value — see {@link CommandBus.execute}.
+ *
+ * **`undefined` and not `void`**, and the two are not interchangeable here. A
+ * live-session `apply` is declared `Promise<void>`, and awaiting one yields
+ * `undefined` at runtime — so this is the value that actually arrives rather
+ * than a widening. Writing `ByteImage | void` instead is what the first draft
+ * did, and `no-invalid-void-type` refused it for a reason worth keeping: `void`
+ * in a union means *ignore this*, which is exactly the reading that would let
+ * a byte-image writer's result be dropped.
+ */
+interface WriterFor<K extends CommandKind> {
+  serialise(session: WriterSession[WriterOf<K>]): Promise<ByteImage>;
+  apply(
+    session: WriterSession[WriterOf<K>],
+    command: CommandOfKind<K>,
+  ): Promise<ByteImage | undefined>;
+  capture(
+    session: WriterSession[WriterOf<K>],
+    command: CommandOfKind<K>,
+  ): Promise<CaptureResult<CommandPrior[K]>>;
+  invert(
+    session: WriterSession[WriterOf<K>],
+    kind: K,
+    inverse: CommandPrior[K],
+  ): Promise<ByteImage | undefined>;
 }
 
 /**
@@ -148,6 +206,55 @@ export type SnapshotWrite = (destination: string) => Promise<number>;
 export type CheckpointRestore = (write: SnapshotWrite) => Promise<void>;
 
 /**
+ * How the bus obtains and installs a **byte-image** writer's session
+ * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+ *
+ * ## Why a byte-image session is not in `SessionsByWriter`
+ *
+ * A live-session writer's session is a handle the supervisor holds between
+ * commands. A byte-image writer's session **is the document's current bytes**,
+ * which no component holds: `main`'s canonical image is what was opened —
+ * finding OOOOO-1, measured 2026-08-30 — and the live engine's copy is behind a
+ * pipe. So there is nothing for the supervisor to have put in the map, and a
+ * map entry would have had to be refreshed after every live-session command,
+ * which is the per-command serialise ADR-0032 rejected at 2.00×.
+ *
+ * ADR-0039's answer is that such a session is minted for one call and never
+ * stored, which is also what makes *which bytes win* unaskable rather than
+ * answered: a writer that holds nothing between commands cannot hold a
+ * competing opinion about the document.
+ *
+ * ## `current` is the save pipeline's flush, and that is deliberate
+ *
+ * Composed from the same `DocumentFlush` a save uses, so there is one
+ * implementation of *what this document currently is* rather than two (B3a).
+ * The bus calls it **only** when the command it is running routes to a
+ * byte-image writer — `writerShapes` decides, so an ordinary rotate pays
+ * nothing.
+ *
+ * ## `adopt` is `CheckpointRestore`'s mechanism with a different subject
+ *
+ * Both mean *rebuild this document's session from bytes I will write*. Undo
+ * writes a checkpoint; this writes what the command produced. They are separate
+ * members rather than one because the two are wired to the same supervisor call
+ * for different reasons, and collapsing them would make a future change to one
+ * silently change the other.
+ */
+export interface ByteImageAccess {
+  /** The document's current bytes. The live writer's `serialise`. */
+  readonly current: () => Promise<ByteImage>;
+  /**
+   * Installs new document bytes: rebuilds the live session from them and makes
+   * them `main`'s canonical image.
+   *
+   * Takes a {@link SnapshotWrite} for `CheckpointRestore`'s reason — the bytes
+   * go from wherever they are to a granted directory without the supervisor
+   * receiving them.
+   */
+  readonly adopt: (write: SnapshotWrite) => Promise<void>;
+}
+
+/**
  * What one execution did, for a caller that needs to know without reading the
  * log.
  *
@@ -216,6 +323,103 @@ export class CommandBus {
   }
 
   /**
+   * The writer a command routes to, narrowed to that command's kind.
+   *
+   * The refusal is the one three call sites used to make identically. It is
+   * reachable from all of them and for different reasons — `execute` can be
+   * handed a command whose writer has no adapter, and `undo`/`redo` can reach a
+   * log entry that outlived a registration, since ADR-0009 puts the log on the
+   * document's record and the registry on the bus.
+   */
+  #writerFor<K extends CommandKind>(kind: K, writer: WriterOf<K>): WriterFor<K> {
+    const registered = this.#writers[writer];
+    if (registered === undefined) throw new UnregisteredWriterError(kind, writer);
+    // The one assertion, sound by construction: `writer` is `spec.writer` for
+    // this `kind`, so the registry entry is that kind's writer. See
+    // {@link WriterFor}.
+    return registered as WriterFor<K>;
+  }
+
+  /**
+   * The session a command runs against — **minted for a byte-image writer,
+   * looked up for a live-session one**
+   * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+   *
+   * ## Why the two halves are not symmetric
+   *
+   * A live-session writer's session is a handle the supervisor is holding, so
+   * absence is a real state and {@link MissingWriterSessionError} is the honest
+   * answer. A byte-image writer's session is the document's current bytes,
+   * which nobody holds between commands — so there is nothing to be absent, and
+   * asking the supervisor for one would find `undefined` every time.
+   *
+   * ## It branches on the DECLARATION, never on what a session looks like
+   *
+   * `writerShapes` is the one table that says which shape a writer is, and
+   * `WriterShapeOf` is derived from it. The alternative — deciding from the
+   * value, since a `MupdfSession` and a `Uint8Array` are distinguishable — puts
+   * a second opinion about a writer's shape next to the declaration, and the
+   * two would agree until a writer changed shape.
+   */
+  async #sessionFor<K extends CommandKind>(
+    kind: K,
+    writer: WriterOf<K>,
+    sessions: SessionsByWriter,
+    bytes: ByteImageAccess,
+  ): Promise<WriterSession[WriterOf<K>]> {
+    if (writerShapes[writer] === 'byte-image') {
+      // The cast is the same correlation `#writerFor` asserts: `writerShapes`
+      // says this writer's session type IS `ByteImage`, and the checker cannot
+      // carry that through a generic index.
+      return (await bytes.current()) as WriterSession[WriterOf<K>];
+    }
+    const session = sessions[writer];
+    if (session === undefined) throw new MissingWriterSessionError(kind, writer);
+    return session;
+  }
+
+  /**
+   * Installs what a byte-image `apply` produced, and does nothing for a
+   * live-session one.
+   *
+   * ## The order is rebuild first, then replace, and it is invariant 18's
+   *
+   * `adopt` rebuilds the document's engine session from the new bytes and can
+   * fail — a granted directory that cannot be created, an engine that cannot
+   * parse what we just wrote. Replacing `main`'s canonical image first and
+   * rebuilding after would leave a document whose renderer shows content its
+   * engine does not have, which is the two-states failure ADR-0039 exists to
+   * prevent. Replacing second means a failed rebuild costs the command and
+   * nothing else.
+   *
+   * ## An `undefined` here is an adapter defect and says so
+   *
+   * A byte-image writer that returns nothing is the failure mode ADR-0039
+   * rejected inferring the shape from: the command would succeed, the log would
+   * record it, the version would bump, and the bytes would never move. The
+   * declaration says an image was owed, so its absence is named rather than
+   * silently treated as *nothing to install*.
+   */
+  async #install<K extends CommandKind>(
+    kind: K,
+    writer: WriterOf<K>,
+    applied: ByteImage | undefined,
+    context: DocumentContext,
+    bytes: ByteImageAccess,
+  ): Promise<void> {
+    if (writerShapes[writer] !== 'byte-image') return;
+    if (applied === undefined) {
+      throw new Error(
+        `${kind} is routed to ${writer}, which \`writerShapes\` declares a byte-image writer, ` +
+          `so its \`apply\` owes a new document image and returned nothing. The command has run ` +
+          `and its result has been discarded.`,
+      );
+    }
+    await bytes.adopt((destination) => context.writeImage(COMMAND_WRITER, applied, destination));
+    context.replaceCanonicalImage(COMMAND_WRITER, applied);
+  }
+
+  /**
    * Captures, applies, records, bumps — in that order, once.
    *
    * Runs inside the document's lane (§7); the caller supplies the
@@ -223,18 +427,33 @@ export class CommandBus {
    * document has actually changed, so a failed apply leaves the counter alone
    * and the document is not marked dirty for work that did not happen.
    *
-   * @template W
+   * ## The SESSION SET is handed over, and the bus picks
+   *
+   * This took one session until 2026-09-04, resolved by the caller from
+   * `declaredCommands[command.kind].writer`. That was a second reading of the
+   * routing table in a component that has no other reason to hold one, and
+   * `documentCommands.ts`'s own comment on it records that the second command
+   * *"was RIGHT that a second command would break something and WRONG about
+   * where"*.
+   *
+   * It is now `undo`'s shape, for `undo`'s stated reason: *"the session set is
+   * handed over whole and the bus picks … it keeps the which-engine-owns-this
+   * question in the one file that answers it."* That argument never depended on
+   * undo having no command; it applied here too and the asymmetry was
+   * historical. What made it load-bearing is a writer whose session is not in
+   * the set at all — see {@link ByteImageAccess}.
+   *
+   * @template K
    */
   async execute<K extends CommandKind>(
-    session: WriterSession[WriterOf<K>],
+    sessions: SessionsByWriter,
     context: DocumentContext,
     command: CommandOfKind<K>,
+    bytes: ByteImageAccess,
   ): Promise<Executed> {
     const spec: DeclaredCommands[K] = declaredCommands[command.kind];
-    const writer = this.#writers[spec.writer];
-    if (writer === undefined) {
-      throw new UnregisteredWriterError(command.kind, spec.writer);
-    }
+    const writer = this.#writerFor(command.kind, spec.writer);
+    const session = await this.#sessionFor(command.kind, spec.writer, sessions, bytes);
 
     // Capture BEFORE apply. Not for tidiness: once `apply` has written, the
     // prior own-state is gone from the document and no later read recovers it.
@@ -263,7 +482,13 @@ export class CommandBus {
           reason: captured.reason,
         };
 
-    await writer.apply(session, command);
+    const applied = await writer.apply(session, command);
+
+    // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
+    // applying rather than something a caller does afterwards — and it happens
+    // BEFORE the entry is recorded, for the reason the next comment gives about
+    // work that threw. A rebuild that fails must leave no log entry behind.
+    await this.#install(command.kind, spec.writer, applied, context, bytes);
 
     // Recorded and counted only after the document actually changed. An entry
     // for work that threw is worse than no entry — undo would reverse a change
@@ -335,6 +560,7 @@ export class CommandBus {
     sessions: SessionsByWriter,
     context: DocumentContext,
     restore: CheckpointRestore,
+    bytes: ByteImageAccess,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
     const entry = log.entries.at(-1);
@@ -358,39 +584,27 @@ export class CommandBus {
     }
 
     const spec = declaredCommands[entry.command.kind];
-    const writer = this.#writers[spec.writer];
-    if (writer === undefined) {
-      // The same refusal `execute` gives, and it is reachable independently: a
-      // log can outlive the registration that produced it, since ADR-0009 puts
-      // the log on the document's record and the registry on the bus. Undo
-      // through a writer that is no longer registered would otherwise be a
-      // property access on `undefined` at the moment a user asked to undo.
-      throw new UnregisteredWriterError(entry.command.kind, spec.writer);
-    }
-
-    // THE SESSION IS PICKED HERE, because here is where the writer is known.
-    // The caller cannot pick it: finding the writer means reading the log, and
-    // reading the log needs `COMMAND_WRITER`, which is module-private. This
-    // used to take one session and cast it, which put the type's guarantee on
-    // the caller having guessed right.
-    const session = sessions[spec.writer];
-    if (session === undefined) {
-      // The same shape `MissingSessionError` names one layer up, reachable
-      // independently: a document can hold a session for the writer that opened
-      // it and not for the one its last command routed to.
-      throw new MissingWriterSessionError(entry.command.kind, spec.writer);
-    }
+    // THE WRITER AND THE SESSION ARE BOTH PICKED HERE, because here is where the
+    // writer is known. The caller cannot pick either: finding the writer means
+    // reading the log, and reading the log needs `COMMAND_WRITER`, which is
+    // module-private. This used to take one session and cast it, which put the
+    // type's guarantee on the caller having guessed right.
+    const writer = this.#writerFor(entry.command.kind, spec.writer);
+    const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, bytes);
 
     // Through the writer, for `execute`'s reason. The kind travels as its own
     // argument because a recorded inverse does not carry one — see
     // `CommandExecution.invert`.
-    //
-    // NO CAST. There was one here, and lint now reports it as unnecessary,
-    // which is the type change of 2026-08-28 confirming itself: picking the
-    // session out of the set at the point the writer is known produces the
-    // right type, where taking one session and asserting it was the type's
-    // guarantee being delegated to whoever called.
-    await writer.invert(session, entry.command.kind, entry.inverse);
+    const inverted = await writer.invert(session, entry.command.kind, entry.inverse);
+    // A BYTE-IMAGE WRITER'S INVERSE PRODUCES A DOCUMENT TOO, and this line has
+    // no caller today: every command routed to a byte-image writer is
+    // non-invertible, so a `pdf-lib` entry is always `terminal` and returns
+    // above. It is here rather than omitted because the branch is reachable by
+    // the TYPE — `CommandPrior` could gain a recordable prior state for a
+    // byte-image command tomorrow — and the failure it would otherwise produce
+    // is the silent one: an undo that runs, bumps the version and discards the
+    // document it built.
+    await this.#install(entry.command.kind, spec.writer, inverted, context, bytes);
 
     log.undo();
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
@@ -414,6 +628,7 @@ export class CommandBus {
   async redo(
     sessions: SessionsByWriter,
     context: DocumentContext,
+    bytes: ByteImageAccess,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
     const entry = log.peekRedo();
@@ -439,20 +654,19 @@ export class CommandBus {
     const replay: 'reapply-intent' = spec.replay;
     void replay;
 
-    const writer = this.#writers[spec.writer];
-    if (writer === undefined) {
-      throw new UnregisteredWriterError(entry.command.kind, spec.writer);
-    }
-
     // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
     // the caller could not have chosen a session for it.
-    const session = sessions[spec.writer];
-    if (session === undefined) {
-      throw new MissingWriterSessionError(entry.command.kind, spec.writer);
-    }
+    const writer = this.#writerFor(entry.command.kind, spec.writer);
+    const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, bytes);
 
-    // No cast, for `undo`'s reason.
-    await writer.apply(session, entry.command);
+    const applied = await writer.apply(session, entry.command);
+    // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
+    // `replay: 'reapply-intent'` above has just been checked to mean — and the
+    // document it produces has to be installed exactly as `execute` installs
+    // it. The session it ran against was minted from the document's current
+    // bytes a few lines up, so this is the same round trip and not a second
+    // mechanism.
+    await this.#install(entry.command.kind, spec.writer, applied, context, bytes);
 
     log.redo();
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };

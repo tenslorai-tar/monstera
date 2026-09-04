@@ -44,6 +44,7 @@ export {
   type ReadonlyCommandLog,
 } from './commandLog.js';
 export {
+  type ByteImageAccess,
   type CheckpointRestore,
   CommandBus,
   type Executed,
@@ -233,3 +234,19 @@ export type { Layer, PriorLayerVisibility } from './layers.js';
 // is a plain object and a consumer naming it must not pull MuPDF in.
 export type { DuplicatePageGroup } from './pageDuplicates.js';
 export { type SearchOptions, type TextMatch, findInPages, lineOf } from './textSearch.js';
+// A VALUE, from this barrel, and it is the first adapter that may be
+// ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+// The rule this file states about `mupdfWriter` — *every value whose module
+// graph binds a native library lives behind `@monstera/kernel/engine`* — is
+// satisfied rather than excepted: `pdfLibWriter.ts` imports `@cantoo/pdf-lib`,
+// which is pure JavaScript, and nothing on its path reaches MuPDF or PDFium.
+//
+// So the check to run before adding anything beside this is the same one:
+// follow the new module's imports and confirm none of them binds native code.
+export { localPdfLibWriter, pdfLibWriter } from './pdfLibWriter.js';
+export {
+  applyWatermarkPages,
+  captureWatermarkPages,
+  invertWatermarkPages,
+} from './pageWatermark.js';
+export { type PageScope, pagesOf } from './pageScope.js';

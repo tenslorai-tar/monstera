@@ -7,16 +7,12 @@ import {
   type WriterOfRecord,
   declaredCommands,
 } from './commandDeclarations.js';
-import type {
-  Apply,
-  ByteImage,
-  Capture,
-  EngineWriter,
-  Invert,
-  MupdfSession,
-  WriterSession,
-  WriterShapeOf,
-} from './engineSeam.js';
+// FOUR SPECIFIERS FEWER since the routing types moved: `ByteImage`,
+// `EngineWriter`, `WriterSession` and `WriterShapeOf` were named only by
+// `CommandExecution` and `RegisteredWriter`, which now live in
+// `commandRouting.ts`. Their removal is what says the move was clean rather
+// than a re-export with the old file still doing the work.
+import type { Apply, Capture, Invert, MupdfSession } from './engineSeam.js';
 import {
   applySetLayerVisibility,
   captureSetLayerVisibility,
@@ -40,6 +36,8 @@ import {
   invertInsertBlankPage,
 } from './pageOrder.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
+import type { CommandExecution } from './commandRouting.js';
+import { pdfLibSpecs } from './pdfLibWriter.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
 /**
@@ -204,6 +202,16 @@ const declared = {
     capture: captureCropPages,
     invert: invertCropPages,
   },
+  // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
+  // — one declaration, and this table is the view that makes the set of them
+  // exhaustive over `CommandKind` (ADR-0039). It is imported rather than
+  // restated because a copy here would be a second declaration, which is the
+  // one thing this table must not become.
+  //
+  // The edge runs THIS way and cannot run the other. `pdfLibWriter.ts` is
+  // importable from `main`, and this file is not: it reaches `rotatePages.ts` →
+  // `mupdfWriter.ts` → the native library.
+  ...pdfLibSpecs,
 } satisfies CommandSpecs;
 
 /** The table as declared, with each writer's literal type intact. */
@@ -226,118 +234,23 @@ export const commandSpecs: CommandSpecs = declared;
 export const declaredSpecs: DeclaredSpecs = declared;
 
 /**
- * The command kinds routed to one writer of record.
+ * `KindsRoutedTo`, `CommandExecution` and `RegisteredWriter` **moved to
+ * `commandRouting.ts`** and are re-exported here so no importer had to change.
  *
- * Derived from the table rather than listed beside it, so a command re-routed
- * to a different writer moves in exactly one place. The distributed conditional
- * is what makes it a union of kinds rather than `never`.
+ * They are types about routing and this file is a table of implementations; the
+ * split is ADR-0026's, one layer along. What forced it is the second writer of
+ * record: `pdfLibWriter.ts` runs in `main` and needs `CommandExecution` to say
+ * what it is, and taking it from this file — which imports `rotatePages.ts` →
+ * `mupdfWriter.ts` — would have been `commandSpecs → pdfLibWriter →
+ * commandSpecs`, a cycle `import-x/no-cycle` fails the build for at any depth.
+ *
+ * `export type { … } from`, NOT `export { type … } from`. The second spelling
+ * keeps the statement and emits `export {} from './commandRouting.js'`, which
+ * is a side-effect import — harmless from a types-only module and exactly the
+ * habit ADR-0026 was written about, so it is spelt the way that stays right
+ * when the module it names stops being types-only.
  */
-export type KindsRoutedTo<W extends WriterOfRecord> = {
-  [K in CommandKind]: WriterOf<K> extends W ? K : never;
-}[CommandKind];
-
-/**
- * How a command is executed **against a writer**, rather than by the bus
- * itself (ADR-0023 Decision 10).
- *
- * ## Why this exists at all
- *
- * `CommandBus` used to call `spec.apply(session, command)` directly. That works
- * for exactly as long as the session is in this process. `rotatePages.ts` calls
- * `withDocument(session, work)` whose `work` is a **synchronous**
- * `(document: mupdf.PDFDocument) => T`, and a synchronous callback holding a
- * live native handle cannot be made an RPC — so the moment the session lives in
- * an engine host, a bus that calls the spec has nothing to call it against.
- *
- * Moving the *call* here leaves the *declaration* where it was: `declared`
- * above is still the one place a command's `apply`, `capture` and `invert` are
- * named, and ADR-0009 §6's binding of a spec's `apply` to its declared writer's
- * session type is untouched. A remote implementation sends the command and the
- * host's own local implementation performs the same lookup against its live
- * session — one implementation per command, executed where the session is,
- * rather than two opinions about what a command means (B3a).
- *
- * ## What did NOT move
- *
- * ADR-0009 §4's one code path. The bus still captures before it applies, still
- * decides what the entry will be, and still holds the only `Checkpoint` mint.
- * This interface is *how* a call reaches a session, never *when*.
- *
- * @template W the writer of record. Every member is bound to the kinds routed
- *   to it, so a `pdf-lib` command cannot be executed through the MuPDF writer.
- */
-export interface CommandExecution<W extends WriterOfRecord> {
-  /**
-   * Runs the declared `apply` for `command.kind`.
-   *
-   * The shape asymmetry is {@link Apply}'s, restated at the writer because a
-   * byte-image writer produces a new image where a live-session writer mutates
-   * in place and returns nothing.
-   */
-  apply<K extends KindsRoutedTo<W>>(
-    session: WriterSession[W],
-    command: CommandOfKind<K>,
-  ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
-
-  /** Runs the declared `capture` for `command.kind`, before any apply. */
-  capture<K extends KindsRoutedTo<W>>(
-    session: WriterSession[W],
-    command: CommandOfKind<K>,
-  ): Promise<CaptureResult<CommandPrior[K]>>;
-
-  /**
-   * Runs the declared `invert` for `kind`.
-   *
-   * Takes the kind explicitly, and that asymmetry with {@link apply} is real
-   * rather than an oversight: a command carries its own `kind` and a recorded
-   * inverse does not, so the kind has to travel separately — over a pipe as
-   * much as across this call.
-   */
-  invert<K extends KindsRoutedTo<W>>(
-    session: WriterSession[W],
-    kind: K,
-    inverse: CommandPrior[K],
-  ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
-}
-
-/**
- * One writer of record, **as `CommandBus` actually calls it**: run a command
- * against a session, and produce that session's bytes for a checkpoint.
- *
- * The two halves are declared separately because they answer to different
- * documents — {@link EngineWriter} is ADR-0009 §8's seam, {@link
- * CommandExecution} is ADR-0023 Decision 10's — and intersected here because a
- * registration missing either half is a writer the bus cannot use.
- *
- * ## Why this is `Pick<…, 'serialise'>` and not the whole of `EngineWriter`
- *
- * It was the whole of it, and the excess is what made the one writer that has
- * to be remote unregistrable
- * ([ADR-0030](../../../docs/DECISIONS/0030-a-remote-writer-does-not-open-from-an-image.md)
- * Decision 1). `open(image)` takes the document's bytes; the route the engine
- * host opens through takes a **path**, decided twice in ADR-0023 (Decisions 10
- * and 14). So the intersection demanded a member no remote writer can honour —
- * and demanded it for nothing, because the bus never calls it.
- *
- * The bus calls `capture`, `apply`, `invert` and — on the terminal branch,
- * when prior state cannot be recorded — `serialise`. That is this type.
- *
- * `open` and `close` did not move anywhere: they are still `EngineWriter`'s,
- * still right for a byte-image writer whose `TSession` *is* the image, and
- * still the supervisor's business for a live-session one. What changed is that
- * a **registration** stopped requiring a session's whole life from a component
- * that only runs commands against one.
- *
- * Declared in this file rather than beside the registry that holds it, so
- * `commandBus.ts` imports from here and nothing imports back: the routing table
- * is what binds a command to a writer, so the type of a usable writer is a
- * statement about routing.
- */
-export type RegisteredWriter<W extends WriterOfRecord> = Pick<
-  EngineWriter<WriterSession[W]>,
-  'serialise'
-> &
-  CommandExecution<W>;
+export type { CommandExecution, KindsRoutedTo, RegisteredWriter } from './commandRouting.js';
 
 /**
  * Executing MuPDF commands **in this process**.

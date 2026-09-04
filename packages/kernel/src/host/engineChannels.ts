@@ -1,7 +1,19 @@
-import { type CommandKind, commandSchema, channel } from '@monstera/contract';
+import {
+  type CommandKind,
+  channel,
+  cropPagesSchema,
+  deletePagesSchema,
+  duplicatePageSchema,
+  insertBlankPageSchema,
+  movePageSchema,
+  rotatePagesSchema,
+  setLayerVisibilitySchema,
+  swapPagesSchema,
+} from '@monstera/contract';
 import { z } from 'zod';
 
 import type { CommandPrior } from '../commandLog.js';
+import type { KindsRoutedTo } from '../commandRouting.js';
 import { PROBE_CODE_MAX_CHARS, PROBE_CODE_PATTERN } from './containment.js';
 
 /**
@@ -373,6 +385,83 @@ const captureResultSchema = z.discriminatedUnion('captured', [
 const inverseSchema = capturedPriorSchema;
 
 /**
+ * The commands this host may be asked to run — **the MuPDF-routed ones, and
+ * they are derived rather than listed**
+ * ([ADR-0039](../../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+ *
+ * ## Why the whole `commandSchema` stopped being right
+ *
+ * These two channels carried it while every command routed to MuPDF. With a
+ * second writer of record, a `watermarkPages` arriving here would be a
+ * well-formed command handed to `localMupdfExecution`, which would look up its
+ * spec — the table holds every kind — and call pdf-lib's `apply` with a
+ * **MuPDF session handle** as the document's bytes. That is not a crash at the
+ * boundary; it is a native library handed a pointer where a byte array was
+ * expected, inside the process invariant 25 assumes is hostile.
+ *
+ * The compiler found it: `CommandExecution<'mupdf'>` binds `K` to
+ * `KindsRoutedTo<'mupdf'>`, so the handler stopped accepting the channel's own
+ * payload. Narrowing the schema is what makes the two agree, rather than a cast
+ * that would have made the error go away and the hazard stay.
+ *
+ * ## Derived, and this is the direction where derivation is right
+ *
+ * 4c's rule: derive from a set when the failure you fear makes that set
+ * **bigger**. It does here — the danger is a command routed elsewhere being
+ * accepted, which is a member arriving. A hand-kept list would have to be
+ * edited by whoever adds the ninth command, and forgetting is the failure that
+ * reopens exactly this hole.
+ *
+ * The filter reads `declaredCommands`, which is the routing table itself, so
+ * this cannot disagree with what `CommandExecution` will accept.
+ */
+const mupdfCommandSchema = z.discriminatedUnion('kind', [
+  rotatePagesSchema,
+  setLayerVisibilitySchema,
+  movePageSchema,
+  deletePagesSchema,
+  duplicatePageSchema,
+  swapPagesSchema,
+  insertBlankPageSchema,
+  cropPagesSchema,
+]);
+
+/**
+ * The list above is **exactly** `KindsRoutedTo<'mupdf'>`, checked in both
+ * directions at compile time.
+ *
+ * ## Why a list and not a filter over `commandSchema.options`
+ *
+ * The derived version was written first and it needed two type assertions: zod
+ * cannot see that a filtered `.options` is still non-empty and still
+ * discriminated, and — the half that actually mattered — the filtered array's
+ * element type stays the **whole** union, so the schema parsed correctly and
+ * inferred a payload including commands the handler cannot run. A derivation
+ * whose narrowing has to be re-stated by a cast is not a derivation; it is a
+ * list with a cast in front of it.
+ *
+ * Written out, the inference is exact and there is no assertion anywhere. What
+ * a list gives up is 4c's growth direction — nothing makes you add the ninth
+ * MuPDF command here — and that is what this check buys back, more cheaply than
+ * the filter did: an omission fails `Covers`, an extra fails `Excludes`, and
+ * both are compile errors at the line rather than a refusal at runtime.
+ *
+ * `Covers` and `Excludes` are separate on purpose. One conditional checking
+ * `A extends B ? B extends A ? …` would report a single failure and leave a
+ * reader to work out which way round it went; two named aliases say whether a
+ * kind is missing from this channel or present in it and routed elsewhere,
+ * which are opposite repairs.
+ *
+ * A mutual `extends` constraint on one generic — `<A extends B, B extends A>` —
+ * was the first spelling and TypeScript rejects it as a circular constraint.
+ */
+type Covers<Whole, Listed extends Whole> = Listed;
+type Excludes<Listed, Whole extends Listed> = Whole;
+type ChannelKind = z.infer<typeof mupdfCommandSchema>['kind'];
+export type MupdfChannelCoversEveryRoutedKind = Covers<ChannelKind, KindsRoutedTo<'mupdf'>>;
+export type MupdfChannelExcludesEveryOtherKind = Excludes<ChannelKind, KindsRoutedTo<'mupdf'>>;
+
+/**
  * How long a handed path may be.
  *
  * Bounded because every field on this wire is, not because a long path is the
@@ -729,15 +818,15 @@ export const engineChannels = {
   ),
 
   'engine/apply': channel(
-    'Applies one command to a session this host holds.',
-    z.object({ session: sessionSchema, command: commandSchema }).strict(),
+    'Applies one MuPDF-routed command to a session this host holds.',
+    z.object({ session: sessionSchema, command: mupdfCommandSchema }).strict(),
     z.object({}).strict(),
     ['no-such-session'],
   ),
 
   'engine/capture': channel(
-    'Reads prior state for one command, before it is applied.',
-    z.object({ session: sessionSchema, command: commandSchema }).strict(),
+    'Reads prior state for one MuPDF-routed command, before it is applied.',
+    z.object({ session: sessionSchema, command: mupdfCommandSchema }).strict(),
     captureResultSchema,
     ['no-such-session'],
   ),

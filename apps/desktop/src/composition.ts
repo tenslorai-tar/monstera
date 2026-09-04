@@ -26,6 +26,7 @@ import {
   classifyContainment,
   createRemoteSessions,
   engineChannels,
+  localPdfLibWriter,
   nodeFileSurface,
   parsePageText,
   remoteMupdfGeometry,
@@ -598,6 +599,20 @@ function engineSessionOpener(
       invert: (session, kind, inverse) => liveWriter().invert(session, kind, inverse),
       serialise: (session) => liveWriter().serialise(session),
     },
+    // REGISTERED DIRECTLY, with no late binding and no holder, because there is
+    // no host to wait for
+    // ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+    // The `mupdf` entry above is written the way it is because its writer does
+    // not exist until a host does; this one is pure JavaScript operating on
+    // bytes, so it is complete at composition and there is nothing for a
+    // `live()` to be `null` about.
+    //
+    // Importing it here is what invariant 20 permits and forbids in one line:
+    // `@monstera/kernel`'s barrel may not export a value whose module graph
+    // binds native code, and `localPdfLibWriter` binds none. `localMupdfWriter`
+    // is behind `@monstera/kernel/engine` for exactly that reason, and this
+    // file must never name it.
+    'pdf-lib': localPdfLibWriter,
   };
 
   /**

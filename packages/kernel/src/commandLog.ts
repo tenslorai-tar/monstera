@@ -164,6 +164,29 @@ export interface CommandPrior {
    * inset from a box the page never had.
    */
   readonly cropPages: readonly PriorPageCrop[];
+  /**
+   * **`never`, for `deletePages`' reason arriving from the opposite side.**
+   *
+   * A delete's prior state is unrecordable because it is the page and
+   * everything the page reaches. A watermark's is unrecordable because it is
+   * the page's **whole content stream** — drawing appends to it, and restoring
+   * the page means restoring the stream it had, which is document-scaled and
+   * has the same effect on `retainedBytes` that entry describes: a log that
+   * reports a figure smaller than what the process holds, trimmed against a
+   * number wrong in the direction nobody notices.
+   *
+   * So every command routed to a byte-image writer is a checkpoint command, and
+   * `never` is what makes it structural: `CaptureResult<never>` has no
+   * constructible `{ captured: true }` member, so `captureWatermarkPages`
+   * cannot report success even by mistake, and `LogEntryFor<'watermarkPages'>`
+   * has no `invertible` member to build.
+   *
+   * **The checkpoint costs nothing beyond what this command already does**
+   * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)):
+   * the bytes the bus serialises for the checkpoint are the same bytes the
+   * `apply` consumes as its input image.
+   */
+  readonly watermarkPages: never;
 }
 
 /**

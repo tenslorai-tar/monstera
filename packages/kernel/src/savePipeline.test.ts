@@ -75,6 +75,16 @@ function held(version: number): Held {
       writeCheckpoint: (): never => {
         throw new Error('saving does not write a checkpoint');
       },
+      // Same treatment again, and for a save it is the sharper claim of the
+      // three: a save READS the document's current bytes and must never change
+      // what `main` holds. A quiet stub here would let a pipeline that
+      // installed its own output pass every case in this file.
+      writeImage: (): never => {
+        throw new Error('saving does not write a command image');
+      },
+      replaceCanonicalImage: (): never => {
+        throw new Error('saving does not replace the canonical image');
+      },
       bumpVersion: (_writer: CommandWriter): DocVersion => at,
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,

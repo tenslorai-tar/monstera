@@ -1,4 +1,4 @@
-import type { ClientApi, CommandOfKind } from '@monstera/contract';
+import type { ClientApi, Command, CommandOfKind } from '@monstera/contract';
 
 import type { CommandExecution, KindsRoutedTo } from '../commandSpecs.js';
 import type { CaptureResult, CommandPrior } from '../commandLog.js';
@@ -347,10 +347,18 @@ export function remoteMupdfExecution(
       // that answered the wrong one produces prior state of the wrong shape,
       // and the inverse built from it would restore something that was never
       // captured.
-      if (answer.value.kind !== command.kind) {
+      // WIDENED TO READ ITS OWN TAG, and the reason arrived with the second
+      // writer of record. `CommandOfKind<K>` is `Extract<Command, { kind: K }>`;
+      // while `KindsRoutedTo<'mupdf'>` was every kind, the checker resolved that
+      // far enough to expose `kind`, and now that it is a proper subset the
+      // conditional stays deferred and the property is unreadable. Nothing about
+      // the value changed — every `Command` carries a `kind` — so this restates
+      // the constraint rather than escaping it.
+      const { kind } = command as Command;
+      if (answer.value.kind !== kind) {
         throw new Error(
           `engine/capture answered prior state tagged "${answer.value.kind}" for a ` +
-            `"${command.kind}" command. The peer answered a different question, and prior state ` +
+            `"${kind}" command. The peer answered a different question, and prior state ` +
             `of the wrong shape would build an inverse that restores something nobody captured.`,
         );
       }

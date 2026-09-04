@@ -273,6 +273,60 @@ export const cropPagesSchema = z.object({
     .strict(),
 });
 
+/**
+ * Draw a text watermark across pages.
+ *
+ * **The first command routed to a byte-image writer**
+ * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)),
+ * and the first whose effect is *content* rather than a page transform — which
+ * is the trigger ADR-0032 wrote against its own rejection of the byte refresh.
+ *
+ * ## Everything here is bounded, because a command is not a document
+ *
+ * `text` carries a maximum for invariant L11's reason and not for a parser's:
+ * a renderer that could send an unbounded string could make one command's
+ * payload scale with anything it liked. 200 characters is a watermark; a novel
+ * is a different feature.
+ *
+ * `pages` is the scope union `cropPages` introduced, for the same reason it was
+ * introduced — watermarking every page is the ordinary use, and a list for it
+ * is one integer per page.
+ *
+ * ## What is deliberately absent
+ *
+ * **Colour**, and it is a decision rather than an omission. A watermark is
+ * drawn at an opacity, in the one grey the kernel picks, so nothing about this
+ * command can express a colour the document does not already have a meaning
+ * for. Making it configurable is a second field here and a control in the
+ * dialog, and it arrives with the style controls Stage 3 builds — where every
+ * other colour-bearing surface will already have had to answer the same
+ * question once.
+ *
+ * **A position.** The watermark is centred on each page's own visible box, so
+ * a mixed-size document watermarks correctly with no per-page geometry
+ * crossing. An offset here would be a renderer-supplied position, which
+ * invariant L3's branding exists to stop travelling as a bare pair of numbers.
+ */
+export const watermarkPagesSchema = z.object({
+  kind: z.literal('watermarkPages'),
+  /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /** The text drawn. Bounded — see this schema's own note on L11. */
+  text: z.string().min(1).max(200),
+  /** Fill opacity, 0 (invisible) to 1 (opaque). */
+  opacity: z.number().min(0).max(1),
+  /**
+   * Counter-clockwise rotation in degrees, about the text's own centre.
+   *
+   * A plain `number` bounded to one full turn rather than a branded angle:
+   * this is a rotation *within* the page's own space and never a coordinate,
+   * so there is no origin for L3's branding to protect.
+   */
+  rotationDegrees: z.number().min(-360).max(360),
+  /** Type size in points. Bounded above so one command cannot ask for a page-sized glyph run. */
+  fontSize: z.number().positive().max(1000),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -282,6 +336,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   swapPagesSchema,
   insertBlankPageSchema,
   cropPagesSchema,
+  watermarkPagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

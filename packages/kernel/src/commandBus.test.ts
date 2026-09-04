@@ -5,6 +5,7 @@ import type { Command, CommandOfKind } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
+  type ByteImageAccess,
   type CheckpointRestore,
   CommandBus,
   type SnapshotWrite,
@@ -109,6 +110,16 @@ function contextStub(): DocumentContext & {
       written.push({ destination, bytes: checkpoint });
       return Promise.resolve(checkpoint.byteLength);
     },
+    // BOTH THROW, for `noByteImageExpected`'s reason. Every command in this
+    // file routes to MuPDF, so a bus that installed a byte image on a
+    // live-session command would be doing something no case here asks for —
+    // and a stub that quietly recorded the call would let it.
+    writeImage(_writer: CommandWriter, _image: ByteImage, _destination: string): Promise<number> {
+      throw new Error('no case here runs a byte-image command, so nothing may write an image');
+    },
+    replaceCanonicalImage(_writer: CommandWriter, _image: ByteImage): number {
+      throw new Error('no case here runs a byte-image command, so nothing may replace the image');
+    },
     written: () => written,
     trims: () => trims,
     log,
@@ -177,6 +188,27 @@ function restoreStub(): {
  */
 const noRestoreExpected: CheckpointRestore = () => {
   throw new Error('this case undoes an invertible entry and must not reach a restore');
+};
+
+/**
+ * The byte-image access for the cases that never reach one — every command in
+ * this file, all of which route to MuPDF.
+ *
+ * **Both members throw**, for `noRestoreExpected`'s reason and it is the
+ * sharper one here. A `current` that quietly returned some bytes would let a
+ * bus that minted a byte-image session on **every** command pass every case in
+ * this file, while paying a full serialise per rotate — the exact cost ADR-0032
+ * rejected, arriving invisibly. The throw is what makes
+ * `CommandBus.#sessionFor`'s branch on `writerShapes` load-bearing rather than
+ * decorative: delete the branch and this file goes red immediately.
+ */
+const noByteImageExpected: ByteImageAccess = {
+  current: () => {
+    throw new Error('this case runs a live-session command and must not mint a byte image');
+  },
+  adopt: () => {
+    throw new Error('this case runs a live-session command and must not install a byte image');
+  },
 };
 
 /** A session whose page 0 carries a `/Rotate` that is a name, not an integer. */
@@ -303,7 +335,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      const { entry, version } = await bus.execute(session, context, rotateFirst);
+      const { entry, version } = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
       expect(entry.kind).toBe('invertible');
       expect(entry).toMatchObject({ inverse: [{ page: 0, prior: { present: false } }] });
@@ -320,7 +352,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await malformedSession();
     const context = contextStub();
     try {
-      const { entry } = await bus.execute(session, context, rotateFirst);
+      const { entry } = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
       expect(entry.kind).toBe('terminal');
       expect(entry).toMatchObject({ reason: /non-numeric \/Rotate/u });
@@ -374,8 +406,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const session = await malformedSession();
       const context = contextStub();
       try {
-        const first = await bus.execute(session, context, rotateFirst);
-        const second = await bus.execute(session, context, rotateFirst);
+        const first = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+        const second = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
         // Without this the shedding case below is satisfied by a bus that
         // discards every checkpoint it takes, which passes a "the log shrank"
@@ -394,7 +426,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const session = await malformedSession();
       const context = contextStub();
       try {
-        const first = await bus.execute(session, context, rotateFirst);
+        const first = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
 
         // THE CEILING IS SET FROM WHAT WAS MEASURED, not chosen: one checkpoint
@@ -402,7 +434,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         // separating anything the day the fixture changes size.
         context.ceiling(first.entry.checkpoint.byteLength);
 
-        const second = await bus.execute(session, context, rotateFirst);
+        const second = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
         expect(second.trimmed.droppedEntries).toBe(1);
         expect(second.trimmed.droppedBytes).toBe(first.entry.checkpoint.byteLength);
@@ -421,13 +453,13 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const session = await malformedSession();
       const context = contextStub();
       try {
-        const first = await bus.execute(session, context, rotateFirst);
+        const first = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
-        await bus.execute(session, context, rotateFirst);
+        await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         expect(context.mutableLog.entries).toHaveLength(2);
 
         context.ceiling(first.entry.checkpoint.byteLength);
-        await bus.execute(session, context, rotateFirst);
+        await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
         // TWO went, not one: a terminal entry is terminal for not being
         // invertible, so undo cannot step over the second checkpoint either
@@ -447,9 +479,9 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const session = await malformedSession();
       const context = contextStub();
       try {
-        await bus.execute(session, context, rotateFirst);
-        await bus.execute(session, context, rotateFirst);
-        await bus.execute(session, context, rotateFirst);
+        await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+        await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+        await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
         // ASSERT THE CALL, not the state. Three commands under an ample ceiling
         // leave a log that looks identical whether retention was enforced three
@@ -483,12 +515,12 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         // The malformed `/Rotate` makes the FIRST command terminal and repairs
         // itself, so the second is invertible — which is the only shape that
         // can put an entry in the redo tail today.
-        const first = await bus.execute(session, context, rotateFirst);
+        const first = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         if (first.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
-        const second = await bus.execute(session, context, rotateFirst);
+        const second = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         expect(second.entry.kind).toBe('invertible');
 
-        await bus.undo({ mupdf: session }, context, noRestoreExpected);
+        await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
         expect(context.mutableLog.canRedo).toBe(true);
 
         context.mutableLog.trimTo(0);
@@ -524,15 +556,15 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       const context = contextStub();
       const supervisor = restoreStub();
       try {
-        const first = await bus.execute(session, context, rotateFirst);
-        const second = await bus.execute(session, context, rotateFirst);
+        const first = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+        const second = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
         if (first.entry.kind !== 'terminal' || second.entry.kind !== 'terminal') {
           throw new Error('expected two terminal entries');
         }
 
         // THE UNDO IS WHAT PUTS A CHECKPOINT IN THE TAIL, and it is the step
         // that could not be taken before the restore existed.
-        await bus.undo({ mupdf: session }, context, supervisor.restore);
+        await bus.undo({ mupdf: session }, context, supervisor.restore, noByteImageExpected);
         expect(context.mutableLog.redoDepth).toBe(1);
         expect(context.mutableLog.entries).toHaveLength(1);
 
@@ -568,7 +600,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await malformedSession();
     try {
-      const { entry } = await bus.execute(session, contextStub(), rotateFirst);
+      const { entry } = await bus.execute({ mupdf: session }, contextStub(), rotateFirst, noByteImageExpected);
       if (entry.kind !== 'terminal') throw new Error('expected a terminal entry');
 
       // Not "a checkpoint exists" — that passes for an empty buffer taken at
@@ -586,7 +618,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(flat);
     try {
-      const { entry } = await bus.execute(session, contextStub(), rotateFirst);
+      const { entry } = await bus.execute({ mupdf: session }, contextStub(), rotateFirst, noByteImageExpected);
       // Without this, "the bus checkpoints when capture fails" is satisfied by a
       // bus that checkpoints unconditionally — which is the memory behaviour
       // §4 rejected, wearing a passing test.
@@ -601,7 +633,9 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      await expect(bus.execute(session, context, rotateFirst)).rejects.toThrow(
+      await expect(
+        bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected),
+      ).rejects.toThrow(
         UnregisteredWriterError,
       );
       const untouched = await withDocument(session, (document) =>
@@ -621,7 +655,9 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     const outOfRange: Command = { kind: 'rotatePages', pages: [0, 99], quarterTurns: 1 };
     try {
-      await expect(bus.execute(session, context, outOfRange)).rejects.toThrow(
+      await expect(
+        bus.execute({ mupdf: session }, context, outOfRange, noByteImageExpected),
+      ).rejects.toThrow(
         /outside this document/u,
       );
       // An entry for work that did not happen is worse than no entry: undo
@@ -650,7 +686,9 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await malformedSession();
     const context = contextStub();
     try {
-      await expect(bus.execute(session, context, rotateFirst)).rejects.toThrow(
+      await expect(
+        bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected),
+      ).rejects.toThrow(
         /refused to serialise/u,
       );
       expect(context.log.entries).toStrictEqual([]);
@@ -671,12 +709,12 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await inheritingSession(90);
     const context = contextStub();
     try {
-      await bus.execute(session, context, rotateFirst);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
       // Apply wrote to the leaf, so the page now declares 180 and no longer
       // tracks its branch.
       expect(await ownRotation(session, 0)).toBe(180);
 
-      const undone = await bus.undo({ mupdf: session }, context, noRestoreExpected);
+      const undone = await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
 
       // THE ASSERTION §3 EXISTS FOR, and it is STRUCTURAL. Restoring the value
       // that was showing — writing 90 back — renders identically and leaves the
@@ -697,8 +735,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await inheritingSession(90);
     const context = contextStub();
     try {
-      await bus.execute(session, context, rotateFirst);
-      await bus.undo({ mupdf: session }, context, noRestoreExpected);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
 
       // The point of the control: the effective rotation after a correct undo
       // and after the WRONG one are identical. A test comparing rendered output
@@ -722,11 +760,16 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         document.loadPage(0).getObject().put('Rotate', 45);
         document.loadPage(1).getObject().put('Rotate', -90);
       });
-      await bus.execute(session, context, { kind: 'rotatePages', pages: [0, 1], quarterTurns: 1 });
+      await bus.execute(
+        { mupdf: session },
+        context,
+        { kind: 'rotatePages', pages: [0, 1], quarterTurns: 1 },
+        noByteImageExpected,
+      );
       expect(await ownRotation(session, 0)).toBe(180);
       expect(await ownRotation(session, 1)).toBe(0);
 
-      await bus.undo({ mupdf: session }, context, noRestoreExpected);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
 
       // Forward NORMALISES; the inverse restores VERBATIM. If prior state were
       // typed as a quarter turn these would come back as 90 and 270 — silently
@@ -744,8 +787,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await inheritingSession(90);
     const context = contextStub();
     try {
-      await bus.execute(session, context, rotateFirst);
-      await bus.undo({ mupdf: session }, context, noRestoreExpected);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
       const written = await mupdfWriter.serialise(session);
 
       // pdf-lib resolves inheritance the way a reader does, so this asserts the
@@ -764,11 +807,11 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await inheritingSession(90);
     const context = contextStub();
     try {
-      await bus.execute(session, context, rotateFirst);
-      await bus.undo({ mupdf: session }, context, noRestoreExpected);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
       expect(context.log.redoDepth).toBe(1);
 
-      await bus.redo({ mupdf: session },context);
+      await bus.redo({ mupdf: session }, context, noByteImageExpected);
 
       expect(await ownRotation(session, 0)).toBe(180);
       expect(context.log.redoDepth).toBe(0);
@@ -803,11 +846,11 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     const supervisor = restoreStub();
     try {
-      const executed = await bus.execute(session, context, rotateFirst);
+      const executed = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
       if (executed.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
       expect(await ownRotation(session, 0)).toBe(90);
 
-      const undone = await bus.undo({ mupdf: session }, context, supervisor.restore);
+      const undone = await bus.undo({ mupdf: session }, context, supervisor.restore, noByteImageExpected);
 
       expect(supervisor.calls()).toHaveLength(1);
       // THE BYTES, compared against the entry's own checkpoint rather than
@@ -851,16 +894,18 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     try {
       const before = await mupdfWriter.serialise(session);
 
-      const executed = await bus.execute(session, context, {
-        kind: 'deletePages',
-        pages: [1],
-      });
+      const executed = await bus.execute(
+        { mupdf: session },
+        context,
+        { kind: 'deletePages', pages: [1] },
+        noByteImageExpected,
+      );
       expect(executed.entry.kind).toBe('terminal');
       // The document really lost a page — without this the case passes for a
       // command that recorded a checkpoint and applied nothing.
       expect(await withDocument(session, (document) => document.countPages())).toBe(2);
 
-      await bus.undo({ mupdf: session }, context, supervisor.restore);
+      await bus.undo({ mupdf: session }, context, supervisor.restore, noByteImageExpected);
 
       expect(context.written()).toHaveLength(1);
       expect(context.written()[0]?.bytes).toStrictEqual(before);
@@ -883,12 +928,17 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await malformedSession();
     const context = contextStub();
     try {
-      await bus.execute(session, context, rotateFirst);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
       await expect(
-        bus.undo({ mupdf: session }, context, () => {
-          throw new Error('the host would not rebuild');
-        }),
+        bus.undo(
+          { mupdf: session },
+          context,
+          () => {
+            throw new Error('the host would not rebuild');
+          },
+          noByteImageExpected,
+        ),
       ).rejects.toThrow(/would not rebuild/u);
 
       expect(context.log.entries).toHaveLength(1);
@@ -904,9 +954,14 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const session = await mupdfWriter.open(flat);
     try {
       expect(
-        await bus.undo({ mupdf: session }, contextStub(), noRestoreExpected),
+        await bus.undo(
+          { mupdf: session },
+          contextStub(),
+          noRestoreExpected,
+          noByteImageExpected,
+        ),
       ).toBeUndefined();
-      expect(await bus.redo({ mupdf: session },contextStub())).toBeUndefined();
+      expect(await bus.redo({ mupdf: session }, contextStub(), noByteImageExpected)).toBeUndefined();
     } finally {
       await mupdfWriter.close(session);
     }
@@ -922,12 +977,12 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     // assertions below would be meaningless.
     const context = contextStub();
     try {
-      await bus.execute(session, context, rotateFirst);
-      await bus.execute(session, context, rotateFirst);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
       context.mutableLog.undo();
       expect(context.log.redoDepth).toBe(1);
 
-      await bus.execute(session, context, rotateFirst);
+      await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
       expect(context.log.redoDepth).toBe(0);
       expect(context.log.entries).toHaveLength(2);
     } finally {
@@ -941,8 +996,8 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const first = contextStub();
     const second = contextStub();
     try {
-      await bus.execute(session, first, rotateFirst);
-      await bus.execute(session, second, rotateFirst);
+      await bus.execute({ mupdf: session }, first, rotateFirst, noByteImageExpected);
+      await bus.execute({ mupdf: session }, second, rotateFirst, noByteImageExpected);
 
       // The reason the log is on the record rather than on an application-wide
       // bus. A shared log would report two entries on both and let undo on one
@@ -951,7 +1006,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       expect(first.log.entries).toHaveLength(1);
       expect(second.log.entries).toHaveLength(1);
 
-      await bus.undo({ mupdf: session }, first, noRestoreExpected);
+      await bus.undo({ mupdf: session }, first, noRestoreExpected, noByteImageExpected);
       expect(first.log.canUndo).toBe(false);
       expect(second.log.canUndo).toBe(true);
     } finally {
@@ -998,7 +1053,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      const { entry } = await bus.execute(session, context, rotateFirst);
+      const { entry } = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
       // The registry's apply received the command.
       expect(applied).toStrictEqual([rotateFirst]);
@@ -1027,7 +1082,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      const { entry } = await bus.execute(session, context, rotateFirst);
+      const { entry } = await bus.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
       // `flat`'s declared capture succeeds, so a bus calling the spec would
       // record an INVERTIBLE entry here. The reason string is one only the
@@ -1061,10 +1116,10 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       // Two buses over one context, which the bus being stateless is what makes
       // legal: the log lives on the record, so the setup and the act can use
       // different registries.
-      await real.execute(session, context, rotateFirst);
+      await real.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
       expect(await rotationOf(session)).toBe(90);
 
-      await substituted.undo({ mupdf: session }, context, noRestoreExpected);
+      await substituted.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
 
       // A recorded inverse carries no kind, so `invert` takes one — the
       // asymmetry with `apply` that `CommandExecution` states.
@@ -1094,11 +1149,11 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      await real.execute(session, context, rotateFirst);
-      await real.undo({ mupdf: session }, context, noRestoreExpected);
+      await real.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await real.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
       expect(await rotationOf(session)).toBeNull();
 
-      await substituted.redo({ mupdf: session }, context);
+      await substituted.redo({ mupdf: session }, context, noByteImageExpected);
 
       expect(applied).toStrictEqual([rotateFirst]);
       // The declared apply did not also run: it would have written 90 back.
@@ -1115,7 +1170,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      await real.execute(session, context, rotateFirst);
+      await real.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
 
       // Reachable independently of `execute`'s refusal: ADR-0009 puts the log
       // on the document's record and the registry on the bus, so a log can
@@ -1123,7 +1178,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       // property access on `undefined`, which is a TypeError rather than a
       // named refusal — so the error CLASS is what separates the two.
       await expect(
-        empty.undo({ mupdf: session }, context, noRestoreExpected),
+        empty.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected),
       ).rejects.toThrow(UnregisteredWriterError);
 
       // And nothing moved.
@@ -1141,10 +1196,12 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const session = await mupdfWriter.open(flat);
     const context = contextStub();
     try {
-      await real.execute(session, context, rotateFirst);
-      await real.undo({ mupdf: session }, context, noRestoreExpected);
+      await real.execute({ mupdf: session }, context, rotateFirst, noByteImageExpected);
+      await real.undo({ mupdf: session }, context, noRestoreExpected, noByteImageExpected);
 
-      await expect(empty.redo({ mupdf: session }, context)).rejects.toThrow(UnregisteredWriterError);
+      await expect(
+        empty.redo({ mupdf: session }, context, noByteImageExpected),
+      ).rejects.toThrow(UnregisteredWriterError);
 
       expect(await rotationOf(session)).toBeNull();
       expect(context.log.canRedo).toBe(true);

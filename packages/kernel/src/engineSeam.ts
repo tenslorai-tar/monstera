@@ -129,13 +129,45 @@ export type SessionsByWriter = {
   readonly [W in keyof WriterSession]?: WriterSession[W];
 };
 
-/** Which shape each writer of record is. */
-export interface WriterShapeOf {
-  readonly mupdf: 'live-session';
-  readonly pdfium: 'live-session';
-  readonly 'pdf-lib': 'byte-image';
-  readonly signpdf: 'byte-image';
-}
+/**
+ * Which shape each writer of record is — **the value, from which the type is
+ * derived** ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+ *
+ * ## Why a value, when this was an interface
+ *
+ * `CommandBus.execute` has to branch: a byte-image `apply` **returns** the new
+ * document and a live-session one returns nothing, so what the bus does with
+ * the result differs by writer. The shape was expressible only in the type
+ * system, and a type cannot be read at the moment a decision is made.
+ *
+ * The rejected alternative is the one that needs no table — branch on
+ * `applied !== undefined`. That infers a writer's shape from what an adapter
+ * happened to return, so an adapter that forgets its `return` becomes a
+ * document that silently stops updating: the command succeeds, the log records
+ * it, the version bumps, and the bytes never move. Reading the declaration
+ * makes that a `TypeError` at the writer rather than a wrong document.
+ *
+ * ## One declaration, so the two cannot disagree
+ *
+ * `WriterShapeOf` is `typeof this`, not a sibling interface checked against it
+ * with `satisfies`. A `satisfies` pair is two declarations that a checker keeps
+ * equal, which is the shape B3 spends its time on; deriving the type leaves
+ * exactly one place a writer's shape is stated.
+ *
+ * This module is the right home because it is where the shape asymmetry is
+ * defined ({@link Apply}, {@link Invert}) and because it is **import-free at
+ * runtime** — every import in this file is `import type`, so a value here costs
+ * an importer nothing but the object literal.
+ */
+export const writerShapes = {
+  mupdf: 'live-session',
+  pdfium: 'live-session',
+  'pdf-lib': 'byte-image',
+  signpdf: 'byte-image',
+} as const satisfies Readonly<Record<keyof WriterSession, WriterShape>>;
+
+/** Which shape each writer of record is. Derived — see {@link writerShapes}. */
+export type WriterShapeOf = typeof writerShapes;
 
 /**
  * Session lifecycle, shared by both shapes.

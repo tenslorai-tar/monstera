@@ -16,6 +16,7 @@ import {
   fitCommand,
   deletePageCommand,
   cropPagesCommand,
+  watermarkPagesCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -51,6 +52,7 @@ import { showAboutCommand } from './commands/showAbout.js';
 import { ABOUT_DIALOG } from './dialogs/about.js';
 import { COMMAND_PROBLEM_DIALOG, COMMAND_PROBLEM_DIALOG_ID } from './dialogs/commandProblem.js';
 import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
+import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -206,6 +208,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         HISTORY_TRIMMED_DIALOG,
         DELETE_PAGES_DIALOG,
         CROP_PAGES_DIALOG,
+        WATERMARK_PAGES_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
@@ -646,6 +649,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // whole of the mutation-dialog gate (ADR-0038).
         deletePagesCommand({ client, onApplied: applied, ask }),
         cropPagesCommand({ client, onApplied: applied, ask }),
+        watermarkPagesCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),

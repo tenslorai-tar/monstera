@@ -105,7 +105,28 @@ const DELETE_SPEC = `  deletePages: {
     replay: 'reapply-intent',
   },`;
 
-/** Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason. */
+/**
+ * Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason.
+ *
+ * THE FIRST FIXTURE HERE THAT IS NOT A MupdfSession WRITER, and every field
+ * differs from its neighbours for a reason the table checks: the writer is
+ * pdf-lib, so its apply must take a byte image and return one, and declaring
+ * mupdf here would not compile. That is the point of including it rather than
+ * reusing a MuPDF spec with a different name.
+ */
+const WATERMARK_SPEC = `  watermarkPages: {
+    kind: 'watermarkPages',
+    writer: 'pdf-lib',
+    apply: applyWatermarkPages,
+    capture: captureWatermarkPages,
+    invert: invertWatermarkPages,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -183,7 +204,18 @@ const SPEC_IMPORTS = `import {
   applyCropPages,
   captureCropPages,
   invertCropPages,
-} from '@monstera/kernel/engine';`;
+} from '@monstera/kernel/engine';
+// A SECOND IMPORT LINE, and the module it names is the finding rather than an
+// inconvenience: watermarkPages routes to a byte-image writer that runs in
+// main, so its three functions are on the BARREL and not behind the /engine
+// subpath (ADR-0039). That subpath holds what binds a native library, and
+// nothing routed to pdf-lib may be there -- so this line failing to resolve
+// would mean somebody had moved them into it.
+import {
+  applyWatermarkPages,
+  captureWatermarkPages,
+  invertWatermarkPages,
+} from '@monstera/kernel';`;
 
 /**
  * One probe.
@@ -537,6 +569,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
 };
 `,
   },
@@ -554,11 +587,17 @@ ${CROP_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `cropPages`, `insertBlankPage`, `swapPages`,
-    // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
-    // 2026-09-03, `setLayerVisibility` before.
+    // table has to grow. `watermarkPages`, `cropPages`, `insertBlankPage`,
+    // `swapPages`, `duplicatePage` and `deletePages` on 2026-09-04, `movePage`
+    // on 2026-09-03, `setLayerVisibility` before.
+    //
+    // IT FIRED AS DESIGNED on `watermarkPages` and reported TS2739 rather than
+    // TS2741 — two properties missing rather than one, because the table had
+    // not yet grown by the previous kind either. That is the case doing its
+    // job: the wrong code is what says *a kind was added and nobody filled the
+    // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'cropPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'watermarkPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -583,6 +622,7 @@ ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
+${CROP_SPEC}
 };
 `,
   },
@@ -614,6 +654,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -660,6 +701,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
 };
 `,
   },
@@ -689,6 +731,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
 };
 `,
   },
@@ -727,6 +770,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
 };
 `,
   },
@@ -761,6 +805,7 @@ ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
 ${INSERT_SPEC}
 ${CROP_SPEC}
+${WATERMARK_SPEC}
 };
 `,
   },
@@ -952,13 +997,17 @@ import type { ByteImage, CommandExecution } from '@monstera/kernel';
 // PRODUCE a new one. Capture is the same shape for both kinds, because
 // capture only ever reads.
 export const execution: CommandExecution<'pdf-lib'> = {
-  // The DISCRIMINANT, not a per-kind field. CommandOfKind<K> for an
-  // uninstantiated K is the correlated-union limit: no member of the
-  // distributed union carries every member's fields, so only the discriminant
-  // is reachable here. This read the rotation's own pages while one command
-  // kind existed, which compiled for the same reason it now does not.
-  apply: (image, command) =>
-    Promise.resolve(command.kind === 'rotatePages' ? new Uint8Array(image) : image),
+  // THE COMMAND IS NOT READ AT ALL, and the history is the interesting part.
+  // This read the rotation's own pages while one command kind existed, then
+  // narrowed to the DISCRIMINANT when a second kind arrived, and now reads
+  // nothing: KindsRoutedTo<'pdf-lib'> became a proper SUBSET of CommandKind on
+  // 2026-09-04, so CommandOfKind<K> stays a deferred conditional and even
+  // command.kind is unreachable without widening it back to Command.
+  //
+  // Each step is the correlated-union limit tightening as the type gets more
+  // precise, and none of them weakens this case: what it proves is that a
+  // byte-image apply CONSUMES an image and PRODUCES one, with no assertion.
+  apply: (image, _command) => Promise.resolve(new Uint8Array(image)),
   capture: (_image, _command) => Promise.resolve({ captured: false, reason: 'none' }),
   invert: (image, _kind, _inverse) => Promise.resolve(new Uint8Array(image)),
 };
@@ -1265,18 +1314,26 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // ONE ELIDED MEMBER PER COMMAND KIND, so this pattern widens with the union
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
     // three since `movePage` (2026-09-03), eight since `deletePages`,
-    // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`
-    // (2026-09-04).
+    // `duplicatePage`, `swapPages`, `insertBlankPage` and `cropPages`, nine
+    // since `watermarkPages` (all 2026-09-04).
     //
-    // A COUNTED REPETITION, `{7}`, and it is not the repetition-insensitive
-    // spelling this comment used to warn against. `(\{…\} \| )+` matches a
-    // union of ANY size, including one this type never had; `{7}` matches
-    // exactly eight members and nothing else, so the case still fails the day a
-    // command is added and still has to be edited. What it drops is eight
-    // hand-written copies of the same four characters, which had started to be
-    // the thing a reader checked instead of the count.
+    // AND AT NINE MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a change
+    // in the diagnostic rather than in the type. The reason line is now
+    //
+    //   '{…} | {…} | {…} | {…} | ... 4 more ... | {…}'
+    //
+    // — four spelt out, four counted, one more spelt out. So the member count
+    // is `4 + 4 + 1`, and the two numbers a later author has to advance are the
+    // repetition below and the digit inside `... N more ...`; they move
+    // together, and only their SUM is the union's size.
+    //
+    // STILL A COUNTED REPETITION, for the reason this comment has always given:
+    // `(\{…\} \| )+` matches a union of ANY size, including one this type never
+    // had. Counting both parts keeps the case failing the day a command is
+    // added, which is the whole of its value — it is a reminder with a
+    // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){7}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 4 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

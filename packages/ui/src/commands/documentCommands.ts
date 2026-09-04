@@ -12,6 +12,8 @@ import { DUPLICATE_PAGES_DIALOG_ID } from '../dialogs/duplicatePages.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
+import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
+import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
 import {
   FIND_TITLE,
   FIT_PAGE_TITLE,
@@ -27,6 +29,7 @@ import {
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
+  WATERMARK_PAGES_COMMAND_TITLE,
   ZOOM_IN_TITLE,
   ZOOM_OUT_TITLE,
 } from '../messages/en.js';
@@ -582,6 +585,51 @@ export function cropPagesCommand(deps: DocumentCommandDeps): UiCommand {
         kind: 'cropPages',
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         margins: answer.margins,
+      });
+    },
+  };
+}
+
+/**
+ * Draws a text watermark across pages — **the first command in this file whose
+ * writer of record is not MuPDF**
+ * ([ADR-0039](../../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+ *
+ * ## Nothing here knows that, and that is the registry working
+ *
+ * This function is `cropPagesCommand` with a different dialog id and a
+ * different command kind. Which engine draws, where its session comes from, and
+ * what becomes of the bytes it produces are all decided by the command's
+ * declaration and the bus — so a byte-image writer arriving cost the UI layer
+ * one entry, which is what *a feature is finished when it is registered* means
+ * when it is true rather than aspirational.
+ *
+ * ## The scope is passed through, not expanded
+ *
+ * `cropPagesCommand`'s rule and its reason: the dialog answers `'all'` or a
+ * list, and expanding it here would put one integer per page on the wire
+ * (invariant L11) and give the kernel a second opinion about what *all* means.
+ */
+export function watermarkPagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.watermark-pages',
+    title: WATERMARK_PAGES_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 17 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(WATERMARK_PAGES_DIALOG_ID, { page: context.page })) as
+        | WatermarkPagesAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'watermarkPages',
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        text: answer.text,
+        opacity: answer.opacity,
+        rotationDegrees: answer.rotationDegrees,
+        fontSize: answer.fontSize,
       });
     },
   };

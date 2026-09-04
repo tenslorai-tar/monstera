@@ -6,6 +6,7 @@ import type { CommandContext } from '../registries/commands.js';
 import {
   type Applied,
   cropPagesCommand,
+  watermarkPagesCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -475,6 +476,62 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('WATERMARK DISPATCHES EXACTLY WHAT THE DIALOG ANSWERED, including the opacity fraction', async () => {
+    // THE UI HALF OF THE WIRED PAIR, and the number to watch is the opacity.
+    // The dialog collects a PERCENTAGE and the command carries a FRACTION, so
+    // this is the boundary where a unit changes — the wired pair's stated blind
+    // spot. `pageWatermark.test.ts` proves the kernel draws at the opacity it
+    // is given, and this proves the control sends the one the person chose; the
+    // conversion lives in one named function in the body so the two halves
+    // cannot hold different numbers without that function changing.
+    const { client, sent } = recording();
+
+    await watermarkPagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () =>
+        Promise.resolve({
+          pages: 'all',
+          text: 'DRAFT',
+          opacity: 0.3,
+          rotationDegrees: 45,
+          fontSize: 48,
+        }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'watermarkPages',
+            pages: 'all',
+            text: 'DRAFT',
+            opacity: 0.3,
+            rotationDegrees: 45,
+            fontSize: 48,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED watermark dialog dispatches nothing', async () => {
+    // The gate again, and it is asserted per command rather than once: the
+    // guard is a line in each `run`, so a command written without it passes
+    // every case that only exercises its neighbour.
+    const { client, sent } = recording();
+
+    await watermarkPagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('THE DUPLICATE FINDER READS FIRST, then deletes the pages the dialog chose', async () => {

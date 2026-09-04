@@ -55,7 +55,20 @@ export {
   type CommandKind,
   type CommandOfKind,
   commandSchema,
+  // EVERY MEMBER, not just the first. `rotatePagesSchema` was exported alone
+  // because one caller wanted one schema; the engine host's channels need the
+  // MuPDF-routed subset as a union of its own, and a subset cannot be built
+  // from a union whose members are unreachable
+  // ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+  cropPagesSchema,
+  deletePagesSchema,
+  duplicatePageSchema,
+  insertBlankPageSchema,
+  movePageSchema,
   rotatePagesSchema,
+  setLayerVisibilitySchema,
+  swapPagesSchema,
+  watermarkPagesSchema,
 } from './commands.js';
 export {
   docIdSchema,

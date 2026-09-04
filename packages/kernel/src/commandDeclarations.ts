@@ -288,6 +288,36 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  watermarkPages: {
+    kind: 'watermarkPages',
+    // THE FIRST COMMAND THAT IS NOT `mupdf`, and the writer is not a choice
+    // made here: §3's matrix at ARCHITECTURE.md:381 assigns "drawing onto pages
+    // (watermark, headers/footers, Bates, OCR text layer)" to @cantoo/pdf-lib
+    // by name. What ADR-0039 settles is how a byte-image writer's session is
+    // obtained and what becomes of its result, not which engine draws.
+    writer: 'pdf-lib',
+    // NOT INVERTIBLE, and the reason is the same one `deletePages` gives from
+    // the other direction: the prior state of a page that has been drawn on is
+    // its whole content stream, which cannot ride in a serialisable inverse.
+    // §4 reserves checkpoints for the exception and this is one — the entry
+    // records `terminal` and undo restores the bytes (ADR-0037).
+    //
+    // The checkpoint is not an extra cost here. It IS the input image: a
+    // byte-image `apply` consumes the document's current bytes, and the
+    // serialise that produces them is the one the bus already performs for
+    // every terminal entry (ADR-0039).
+    invertible: false,
+    undo: 'checkpoint',
+    // Drawing the same text at the same size and opacity onto the same pages
+    // writes the same content stream. Nothing here mints an identifier, reads a
+    // clock or asks an engine whose version could move — which is the list §3a
+    // names, and each of those is what makes a command `stored-effect`.
+    //
+    // pdf-lib embeds a standard-14 font by name rather than subsetting a file,
+    // so there is no font program whose bytes could differ between runs.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

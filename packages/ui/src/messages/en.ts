@@ -58,6 +58,19 @@ export const CROP_PAGES_APPLY = messageKey('dialog.crop-pages.apply');
 export const CROP_PAGES_NOT_A_NUMBER = messageKey('dialog.crop-pages.not-a-number');
 export const CROP_PAGES_NEGATIVE = messageKey('dialog.crop-pages.negative');
 export const CROP_PAGES_COMMAND_TITLE = messageKey('command.crop-pages.title');
+export const WATERMARK_PAGES_TITLE = messageKey('dialog.watermark-pages.title');
+export const WATERMARK_PAGES_TEXT = messageKey('dialog.watermark-pages.text');
+export const WATERMARK_PAGES_OPACITY = messageKey('dialog.watermark-pages.opacity');
+export const WATERMARK_PAGES_ROTATION = messageKey('dialog.watermark-pages.rotation');
+export const WATERMARK_PAGES_SIZE = messageKey('dialog.watermark-pages.size');
+export const WATERMARK_PAGES_THIS = messageKey('dialog.watermark-pages.this-page');
+export const WATERMARK_PAGES_ALL = messageKey('dialog.watermark-pages.all-pages');
+export const WATERMARK_PAGES_APPLY = messageKey('dialog.watermark-pages.apply');
+export const WATERMARK_PAGES_NO_TEXT = messageKey('dialog.watermark-pages.no-text');
+export const WATERMARK_PAGES_NOT_A_NUMBER = messageKey('dialog.watermark-pages.not-a-number');
+export const WATERMARK_PAGES_OPACITY_RANGE = messageKey('dialog.watermark-pages.opacity-range');
+export const WATERMARK_PAGES_SIZE_RANGE = messageKey('dialog.watermark-pages.size-range');
+export const WATERMARK_PAGES_COMMAND_TITLE = messageKey('command.watermark-pages.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -407,6 +420,20 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // margin is growing the page — a different operation.
   [CROP_PAGES_NEGATIVE]: 'A margin cannot be negative. Cropping only takes away.',
   [CROP_PAGES_COMMAND_TITLE]: 'Crop pages…',
+  [WATERMARK_PAGES_TITLE]: 'Watermark',
+  [WATERMARK_PAGES_TEXT]: 'Text',
+  [WATERMARK_PAGES_OPACITY]: 'Opacity (%)',
+  [WATERMARK_PAGES_ROTATION]: 'Angle (degrees)',
+  [WATERMARK_PAGES_SIZE]: 'Size (points)',
+  [WATERMARK_PAGES_THIS]: 'This page',
+  [WATERMARK_PAGES_ALL]: 'All pages',
+  [WATERMARK_PAGES_APPLY]: 'Add watermark',
+  [WATERMARK_PAGES_NO_TEXT]: 'A watermark needs some text.',
+  [WATERMARK_PAGES_NOT_A_NUMBER]:
+    'Opacity, angle and size are numbers. Leave one empty to use its default.',
+  [WATERMARK_PAGES_OPACITY_RANGE]: 'Opacity runs from 0 to 100 per cent.',
+  [WATERMARK_PAGES_SIZE_RANGE]: 'Size is in points, above 0 and no more than 1000.',
+  [WATERMARK_PAGES_COMMAND_TITLE]: 'Watermark…',
   [DUPLICATE_PAGES_TITLE]: 'Duplicate pages',
   // WHAT WAS COMPARED, in the user's terms rather than the format's. "Content
   // and resources" would be true and would leave a person unable to tell

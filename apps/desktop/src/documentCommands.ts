@@ -6,7 +6,6 @@ import type { CommandKind, CommandOfKind } from '@monstera/contract';
 import {
   type ByteImage,
   type CommandBus,
-  type DeclaredCommands,
   type DocumentService,
   type PageGeometry,
   type Destination,
@@ -17,10 +16,10 @@ import {
   type SaveDependencies,
   type SaveOutcome,
   type SearchOptions,
+  type ByteImageAccess,
   type SessionsByWriter,
   type SnapshotWrite,
   type TextMatch,
-  declaredCommands,
   findInPages,
   saveDocument,
 } from '@monstera/kernel';
@@ -804,28 +803,37 @@ export class DocumentCommands {
     docId: DocId,
     command: CommandOfKind<K>,
   ): Promise<Applied> {
-    // NO NARROWING NEEDED HERE, AND THE GUARD PREDICTED ONE. Written as an
-    // assertion first, on the guard's own reasoning; lint reported it as
-    // changing nothing, which is the checker saying `declaredCommands` indexed
-    // by a generic `K` resolves fine when every member agrees on the field
-    // being read. Both commands route to `mupdf`, so `spec.writer` is one
-    // literal either way.
+    // THE ROUTING TABLE IS NO LONGER READ HERE, and the note that used to stand
+    // in its place is worth keeping because it was half right. It read: *the
+    // guard was RIGHT that a second command would break something and WRONG
+    // about where.* A second **writer of record** arrived on 2026-09-04 and
+    // broke it here after all — `declaredCommands[command.kind].writer` stopped
+    // resolving to one literal, so indexing the session set with it stopped
+    // type-checking.
     //
-    // Recorded because the guard was RIGHT that a second command would break
-    // something and WRONG about where: it fired here and the breakage was in
-    // five other places. A trigger sited where somebody expects the problem
-    // catches the moment, not the location.
-    const spec: DeclaredCommands[K] = declaredCommands[command.kind];
-
+    // The repair is not a narrowing. This module had no business resolving a
+    // session by writer at all: `undo` next door hands the whole set over and
+    // says why — *"it keeps the which-engine-owns-this question in the one file
+    // that answers it"* — and that argument never depended on undo lacking a
+    // command. `execute` now does the same, so the only routing table in this
+    // process is the bus's (B3a).
     const { version, value: byteLength } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
       if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
 
       const sessions = this.#engine.sessions(docId);
-      const session = sessions?.[spec.writer];
-      if (session === undefined) throw new MissingSessionError(docId, spec.writer);
+      // A DOCUMENT WITH NO SESSIONS AT ALL is still this module's refusal to
+      // make: the supervisor knows nothing about it, which is a different state
+      // from *this writer has no session*, and only the bus can tell the second
+      // one apart from a byte-image writer that never has a stored session.
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      const { trimmed } = await this.#bus.execute<K>(session, context, command);
+      const { trimmed } = await this.#bus.execute<K>(
+        sessions,
+        context,
+        command,
+        this.#byteImage(docId, sessions),
+      );
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
       // length the renderer needs is the new one. Reading it outside the lane
@@ -894,8 +902,12 @@ export class DocumentCommands {
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
       stepped.yes =
-        (await this.#bus.undo(sessions, context, (write) => this.#restore(docId, write))) !==
-        undefined;
+        (await this.#bus.undo(
+          sessions,
+          context,
+          (write) => this.#restore(docId, write),
+          this.#byteImage(docId, sessions),
+        )) !== undefined;
       return context.byteLength;
     });
 
@@ -966,6 +978,37 @@ export class DocumentCommands {
    *   DocumentPoisonedError}, {@link MissingSessionError}, and anything the
    *   engine throws.
    */
+  /**
+   * How the bus obtains and installs a byte-image writer's session for this
+   * document
+   * ([ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)).
+   *
+   * ## Both halves are functions this module already holds
+   *
+   * `current` is the **save's own flush** — the one implementation of *what
+   * this document currently is*, so a watermark and a save cannot end up with
+   * two answers (B3a). `adopt` is the **checkpoint restore**, whose whole
+   * parameterisation is *which bytes*, and which already rebuilds a document's
+   * session from a file main wrote.
+   *
+   * So nothing is built here. What this method does is name the pair, which is
+   * what stops the bus reaching for two unrelated dependencies and stops this
+   * module deciding when either runs.
+   *
+   * ## Built per call, and cheap because it is lazy
+   *
+   * The bus calls neither member unless the command it is running routes to a
+   * byte-image writer, so an ordinary rotate constructs two closures and
+   * invokes nothing. Making it a field would need the sessions, which are
+   * resolved inside the lane per call — see `execute`'s note on why.
+   */
+  #byteImage(docId: DocId, sessions: DocumentSessions): ByteImageAccess {
+    return {
+      current: () => this.#save.flush(docId, sessions),
+      adopt: (write) => this.#restore(docId, write),
+    };
+  }
+
   async save(docId: DocId): Promise<SaveOutcome> {
     const { value } = await this.#documents.run(docId, async (context) => {
       const failures = this.#engine.poisoned(docId);
