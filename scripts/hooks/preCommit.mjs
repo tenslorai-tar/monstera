@@ -215,12 +215,22 @@ async function main() {
   // ordinary work.
   //
   // The counterweight is real and measured. `check:stackowner` builds a
-  // TypeScript Program per project: 21.2 s, 20.5 s, 21.5 s over three runs,
-  // against 1.0 s for the emitted-template scan and 0.7 s for the file guard.
-  // Twenty seconds on every commit is how a hook becomes something people
-  // bypass, and `--no-verify` on this repository is a Rule 0 violation with a
-  // permanent public consequence. Making the gate painful raises the odds of
-  // the one action the project most forbids.
+  // TypeScript Program per project: **38.3 s, 35.9 s, 34.9 s over three runs,
+  // read 2026-09-04 from `time npm run check:stackowner` on the development
+  // machine** — against 4.6 s for the emitted-template scan the same day.
+  //
+  // THE FIGURE HERE WAS 21.2/20.5/21.5 s AND IS NOW STALE BY 1.7x. It is
+  // replaced rather than annotated because a comment carries the number, the
+  // date and where it was read, and two undated sets side by side answer
+  // neither question. What did NOT change is the pin, the case count or this
+  // gate; the growth is the repository's, which is what a per-project Program
+  // build tracks.
+  //
+  // The argument is **strengthened**, not weakened. Thirty-five seconds on
+  // every commit is further past the point where a hook becomes something
+  // people bypass, and `--no-verify` on this repository is a Rule 0 violation
+  // with a permanent public consequence. Making the gate painful raises the
+  // odds of the one action the project most forbids.
   //
   // So it runs on the commits that can INTRODUCE the defect, and the trigger is
   // read from the INDEX: a new Error-stack read requires the token in a staged

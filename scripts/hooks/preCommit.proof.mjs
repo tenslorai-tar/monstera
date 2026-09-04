@@ -16,6 +16,43 @@
  * Each runs against a throwaway repository, driving the real hook module.
  *
  * Usage: node scripts/hooks/preCommit.proof.mjs
+ *
+ * ## WHY THIS TAKES TEN MINUTES, measured 2026-09-04 so it is not re-derived
+ *
+ * `npm run local` bounds a script at 10 minutes and seals the sweep
+ * `failed (1 timed out)` on this file, while `npm run proof:guards` exits 0 on
+ * its own. Both are true and the composition is this, timed against a faithful
+ * throwaway repository with one staged file:
+ *
+ * | phase | cost |
+ * |---|---|
+ * | one whole hook invocation | **~9.2 s** |
+ * | — of which: startup, file guard, emitted templates | 1.3 s |
+ * | — of which: document rules | 1.5 s |
+ * | — of which: test anchors | 0.6 s |
+ * | — of which: **the secret scan** | **~5.8 s** |
+ * | 33 cases, hook only | ~305 s |
+ * | the rest: 33 x makeRepo (init, 3 configs, 4 copies, a commit) and teardown | ~290 s |
+ *
+ * **The secret scan is the single largest item and almost none of it is
+ * scanning.** gitleaks reports `scanned ~55 bytes in 481ms`; `resolveGitleaks()`
+ * is **1 ms**; a bare `gitleaks version` spawn is **0.7 s**. So roughly 4.6 s
+ * per invocation is gitleaks' own start-up-to-scan work on a 21.5 MB binary,
+ * outside this repository and not something a fixture can change.
+ *
+ * ## Two things it is NOT, each eliminated by measurement rather than argument
+ *
+ * - **Not the stack-ownership gate.** Its trigger is `/\bstack\b/` over staged
+ *   source blobs, and **2 of the 33 cases** stage one. The gating in
+ *   `preCommit.mjs` is doing exactly what it was written to do.
+ * - **Not the deleted `npm_execpath`.** Timed both ways: 8.9/9.3/8.9 s with it
+ *   deleted against 8.9/10.0/9.0 s with it set. The branch that correction
+ *   forces is not the expensive one.
+ *
+ * **What made it 630 s when the 2026-09-03 run log records 183 s is NOT
+ * established.** The gitleaks pin has never moved (`git log -L` on
+ * `GITLEAKS_VERSION`), and this file had the same 33 cases at its last touch.
+ * Nothing in the tree accounts for the change, so no cause is claimed.
  */
 
 import { spawnSync } from 'node:child_process';

@@ -194,3 +194,67 @@ and after — which is the honest description of a field whose purpose arrives
 with the refresh that does not exist yet."* That sentence is now false for a
 byte-image command and stays true for a live-session one, and it is corrected in
 the same commit as the code rather than left to a sweep.
+
+---
+
+## Correction, 2026-09-04 — the cost argument's reason was backwards, and its scope is narrower than its sentence
+
+The decisions above stand. **Question 3's stated reason does not**, and it was
+found by review asking what keeps *"which every content command is"* true.
+
+### What this document said
+
+> **The input side is a cost this repository already pays, on this exact
+> path.** `CommandBus.execute` calls `writer.serialise(session)` for **every**
+> entry that records as `terminal` … The input image and the checkpoint are the
+> **same bytes**.
+
+The two bytes really are the same array. The **dependency runs the other way**,
+read from the code rather than from the sentence:
+
+- `CommandBus.#sessionFor` obtains a byte-image writer's session by calling
+  `ByteImageAccess.current()` — a full serialise of the live engine session —
+  and does so for **every** byte-image command, before `capture` has run and
+  therefore before anything knows whether the entry will be terminal.
+- `pdfLibWriter.serialise` is the **identity** (`pdfLibWriter.ts:70`). So
+  `asCheckpoint(await writer.serialise(session))` hands back the array
+  `#sessionFor` already produced.
+
+So it is not that the input is free because a checkpoint was owed. **It is that
+the checkpoint is free because the input was already produced.** Same
+conclusion, opposite mechanism — and the difference matters, because the
+original wording makes the cost sound conditional on the checkpoint when the
+serialise is unconditional.
+
+### What that changes, and what it does not
+
+**Unchanged:** the refresh of `main`'s canonical image still costs a reference
+assignment, because a byte-image `apply` returns its image. Every rejected
+alternative stands. `rotatePages` still pays nothing.
+
+**Narrowed:** *"none per command on a path that already performs one"* is true
+for a **non-invertible** byte-image command, where the serialise doubles as the
+checkpoint the bus was going to take. An **invertible** one takes no checkpoint,
+so its serialise is a cost its live-session equivalent does not pay. That case
+does not exist today and this document did not cover it.
+
+### Why the type does not forbid it, and what does
+
+The obvious repair is to make `writer: 'pdf-lib'` sit only on a non-invertible
+declaration — the union already discriminates, so it would compile-error. **It
+would also be wrong.** §3's matrix assigns *"Form fields: create"* to
+`@cantoo/pdf-lib` as *"the one concern MuPDF has no API for"*, and creating a
+field is plausibly invertible: its prior state is *the field did not exist*,
+which is small and serialisable. A compile error would forbid a Stage 4 command
+this architecture already anticipates.
+
+So the fact is **true today and is not a rule**, and it is held by a case rather
+than a type: `commandDeclarations.test.ts` derives the byte-image kinds from
+`writerShapes` and requires each to be non-invertible, with a failure message
+that says the declaration is legitimate and this document is what needs
+amending. Derived rather than listed, because the failure feared is a member
+**arriving** (checklist 4c's direction test).
+
+**Not measured, and named as such:** what that serialise actually costs in
+wall-clock on a large document. The bound is unchanged — one whole image
+transiently in main, which ADR-0021 already prices.

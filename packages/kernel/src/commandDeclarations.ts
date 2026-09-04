@@ -308,7 +308,16 @@ const declarations = {
     // every terminal entry (ADR-0039).
     invertible: false,
     undo: 'checkpoint',
-    // Drawing the same text at the same size and opacity onto the same pages
+    // AND THAT `false` IS WHAT ADR-0039'S COST ARGUMENT RESTS ON, which the ADR
+    // originally stated backwards. The serialise is paid by
+    // `CommandBus.#sessionFor` for every byte-image command; the checkpoint is
+    // free because `pdfLibWriter.serialise` is the identity on an image already
+    // in hand. So a non-invertible byte-image command pays nothing the bus was
+    // not going to pay, and an invertible one would.
+    //
+    // `commandDeclarations.test.ts` is the trigger, not this comment.
+    // Deliberately NOT a type constraint: §3's matrix assigns form-field
+    // creation to pdf-lib, and that is plausibly invertible.
     // writes the same content stream. Nothing here mints an identifier, reads a
     // clock or asks an engine whose version could move — which is the list §3a
     // names, and each of those is what makes a command `stored-effect`.
