@@ -58,6 +58,31 @@
  * check that needed to read it*, and the two are hard to tell apart from
  * outside, because both make the file stop being reported.
  *
+ * ## THAT SENTENCE SWEPT ONCE, 2026-09-04, WITH ITS RESULT
+ *
+ * Asked of everything that already hides a path — because *none found* is the
+ * reassuring answer and needed a control rather than a glance.
+ *
+ * - **tsconfig `exclude`:** none exists. `grep '"exclude"'` across every
+ *   `tsconfig*.json` returns nothing, the two added on 2026-09-03 having been
+ *   reverted.
+ * - **ESLint's per-rule `ignores`** (the `.test.ts` globs and their siblings)
+ *   scope RULES rather than hide files, and each proof asserts it deliberately —
+ *   *"the same offender in a .test.tsx is not reported, and that scope is
+ *   deliberate"*. `globalIgnores` holds `native/**` and one HTML file; nothing
+ *   is meant to lint either, and `native/`'s comment says the compiler is its
+ *   only check.
+ * - **`.gitignore`:** every hidden path a check reads — `dist/`, `.tools/`,
+ *   `.probe/`, `.cache/`, the built `.dll` — is reached **by path** rather than
+ *   by enumeration, so hiding it from git changes nothing about the reader.
+ *
+ * The one real instance is these three probe names, and it already carries the
+ * compensation: both proofs construct ESLint with `ignore: false`, which is the
+ * control for this exact hazard and is exercised on every run. The gap was never
+ * ESLint — it was `tsc`, which honours no ignore file and needed the sweep.
+ *
+ * So: swept, one instance, compensated. Re-ask it of any new ignore entry.
+ *
  * ## WHY THIS CLASS IS INVISIBLE, which is the part worth carrying
  *
  * `git status` cannot show it. The earlier fix for the ESLint half added these

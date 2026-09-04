@@ -10,6 +10,7 @@ the fact is not a baseline, it is a rationalisation.
 | 0 — walking skeleton | 15 working days | **18 days worked** (2026-08-16 → 2026-09-02) | **1.20× — continue** |
 | 1 — viewer core | 10 working days | **2 days worked** (2026-09-02 → 2026-09-03), 52 commits | **0.20× — continue** |
 | 2 — page management | **2 working days** (owner, 2026-09-03) | in progress (started 2026-09-03, Stage 1's last day) | — |
+| 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | not started | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
 writing and is one of *continue*, *cut scope*, or *halt and reassess with the
@@ -117,6 +118,23 @@ in reach. Two days is a number a single hard defect can spend.
 *continue*, *cut scope*, or *halt and reassess with the user*. Never a revised
 estimate: an estimate rewritten to match the actual is the abort condition
 deleted, which is the failure the gate exists to prevent.
+
+### Stage 3's baseline: 3 working days
+
+**Owner's decision, 2026-09-04, taken before the stage begins** — the same order
+that makes Stage 2's a baseline. Owner-set and **not derived**: D3 carries
+twenty-three rows against D2's twenty-four and gets one more day, which no
+formula produces.
+
+**The trigger is nine days.** Same reading as Stage 2's: a number a stage can
+actually reach, unlike the 45 and 30 that made the gate a formality twice.
+
+**The owner's target is one to two days, and that is NOT the baseline.** Written
+down because the two are easy to conflate and only one of them the gate
+measures: a target is what the owner is aiming at, a baseline is what the
+trajectory gate compares the actual against. Measuring against the target would
+arm a decision at three days, which is inside the range the owner considers
+ordinary — an abort condition that fires on success.
 
 ---
 
@@ -813,6 +831,74 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-04 — Correction: `3320f33` blamed a cache for a run that never happened
+
+`3320f33`'s message ends:
+
+> `npm run typecheck` passed over a test file calling `applyMovePage` with three
+> arguments, and `proof:contract` caught it. Re-running typecheck on the same
+> content reddens, so it was `tsc --build` incremental staleness rather than a
+> gap in the config — a green typecheck immediately after adding a file may not
+> have read it.
+
+**Both halves of that are wrong, and the second is worse than the first.**
+
+### The experiment, which refutes the stated cause
+
+The material facts first: `package.json:23` is
+`tsc --build --pretty && tsc -p tsconfig.scripts.json --pretty`,
+`packages/kernel/tsconfig.json` includes `src/**/*` so `.test.ts` files are
+genuinely in the program, and `packages/kernel/tsconfig.tsbuildinfo` exists and
+is what `--build` consults.
+
+Hypothesis: `tsc --build` decides whether to re-check a project from that
+buildinfo, so a file added after it was written is not seen as an input change
+and the project is skipped.
+
+Three readings, each from a run:
+
+| what was tried | exit |
+|---|---|
+| a new source file carrying a type error, buildinfo fresh | **2** |
+| identical content, `tsconfig.tsbuildinfo` deleted | **2** |
+| a new source file AND a new test calling it with one argument too many, added together, buildinfo fresh — the original's shape | **2** |
+
+**The verdict does not change when the cache is removed, so the cache is not the
+cause.** Every arrangement is caught immediately.
+
+### What actually happened, which is the part worth carrying
+
+There was no green typecheck over that file. Reconstructing the order: the last
+`npm run typecheck` before `proof:contract` ran **while `pageOrder.test.ts` did
+not yet exist** — it was the run that cleared the `CommandPrior` errors. The
+file was written after it, exercised with `vitest` (which does not typecheck),
+mutated twice, and then handed straight to `proof:contract`.
+
+So I took a green reading from **before** the change and reported it as a
+reading from after, then explained the difference with a mechanism. The
+"re-running reddens" that seemed to confirm staleness is just the first run that
+ever saw the file.
+
+That is [`measured-across-an-event`](../CLAUDE.md) inverted: not a before/after
+pair spanning an event, but a **before** reading cited as an **after** one. The
+tell was available and I did not use it — *what command produced this green, and
+what was on disk when it ran?*
+
+### What is NOT recorded here
+
+Not *staleness*. A symptom recorded as a cause is a thing this project has paid
+for by name, and the correction for one wrong mechanism must not be a second
+wrong mechanism written more confidently. `tsc --build`'s incremental behaviour
+is not implicated by any reading taken here.
+
+Nothing was changed in the sweep or the gate, because there is no defect in
+either: the gate reads what it is pointed at, and it was pointed at a tree that
+did not contain the file. **The discipline is the fix** — a green is evidence
+about the tree at the moment it ran, and the moment has to be established rather
+than assumed.
 
 ---
 

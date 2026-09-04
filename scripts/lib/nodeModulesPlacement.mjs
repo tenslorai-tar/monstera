@@ -60,6 +60,33 @@
  * surveyed. It becomes a defect the first time a step is found misplaced for
  * one of those reasons.
  *
+ * ## THE SPAWN GAP, COUNTED RATHER THAN LEFT OPEN (2026-09-04)
+ *
+ * Fact 1 above is a closure over **static imports**. A script that spawns
+ * another as a child process needs whatever that child needs, and nothing in
+ * the text of `spawnSync(process.execPath, [somePath])` says what that is — so
+ * this check is structurally blind to it. It was found the way such things are:
+ * `probeLeftovers.proof.mjs` was registered on Guards, spawns
+ * `electronImports.proof.mjs`, which imports `eslint`, and Guards installs
+ * nothing. Both legs went red and this check had passed.
+ *
+ * Making the walk follow spawns means resolving an arbitrary argv to a script
+ * path and recurring — a reachability walk, the instrument class this project
+ * has found blind four times, whose *found nothing* is the reassuring answer.
+ * So the class was **counted instead**, which is a grep and a read:
+ *
+ * - `grep -l 'spawnSync' scripts/proofs/*.mjs` → **19** proofs spawn something.
+ * - Of their targets, **three** need `node_modules`:
+ *   `rendererPolicy.proof.mjs` → `scripts/build/preload.mjs` (imports `vite`);
+ *   `testResolution.proof.mjs` → `npx`; and `probeLeftovers.proof.mjs` →
+ *   `electronImports.proof.mjs` (imports `eslint`).
+ * - All three are in `ci.yml`, which installs. The remaining sixteen spawn
+ *   node-and-local-only targets or fixture scripts they write themselves.
+ *
+ * A finite list placed correctly, rather than an open class. It goes stale the
+ * moment a proof gains a spawn, which is why the counting command is written
+ * here rather than the number alone.
+ *
  * Usage: node scripts/lib/nodeModulesPlacement.mjs
  */
 
