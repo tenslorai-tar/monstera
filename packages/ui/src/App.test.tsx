@@ -592,6 +592,34 @@ describe('App', () => {
       expect(sent.filter((call) => call.id === 'document.execute')).toHaveLength(0);
     });
 
+    it('THE INSERT-BLANK CONTROL SENDS at ONE PAST the page on screen', async () => {
+      // The UI half of insert blank's pair; `pageOrder.test.ts` says the page
+      // lands there and takes its neighbour's geometry.
+      //
+      // `at: 1` from a document showing page 0 — and the +1 is the assertion,
+      // because a command sending `at: context.page` inserts BEFORE the page
+      // being read and moves it out from under the reader, which looks like a
+      // scroll rather than a bug.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Insert blank page' }).click();
+        await Promise.resolve();
+      });
+
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        command: { kind: 'insertBlankPage', at: 1 },
+      });
+    });
+
     it('THE DUPLICATE CONTROL SENDS duplicatePage FOR THE PAGE ON SCREEN', async () => {
       // The UI half of duplicate's pair; `pageOrder.test.ts` is the kernel half
       // and says the copy lands after the source and is a separate page object.

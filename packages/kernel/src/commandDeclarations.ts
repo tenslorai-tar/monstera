@@ -255,6 +255,22 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  insertBlankPage: {
+    kind: 'insertBlankPage',
+    // Invariant L6 and the same `/Kids` rewrite. MuPDF's `addPage` +
+    // `insertPage` would build the page AND put it in the tree, which is a
+    // second writer for `/Kids` — the thing `pageOrder.ts` routes every
+    // operation through one function to avoid (B3).
+    writer: 'mupdf',
+    // `duplicatePage`'s shape: the inverse removes the page the command added,
+    // and the capture stores the index rather than re-deriving it.
+    invertible: true,
+    undo: 'inverse',
+    // The page's geometry is read off a neighbour that does not move, so
+    // re-running against the same document builds the same page.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

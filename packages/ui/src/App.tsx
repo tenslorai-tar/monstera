@@ -17,6 +17,7 @@ import {
   deletePageCommand,
   deletePagesCommand,
   duplicatePageCommand,
+  insertBlankPageCommand,
   rotatePageCommand,
   saveCommand,
   undoCommand,
@@ -631,6 +632,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
+        insertBlankPageCommand({ client, onApplied: applied, ask }),
         duplicatePageCommand({ client, onApplied: applied, ask }),
         deletePageCommand({ client, onApplied: applied, ask }),
         // THE FIRST COMMAND WHOSE ARGUMENTS COME FROM A DIALOG. Its `run`

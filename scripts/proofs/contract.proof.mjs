@@ -105,6 +105,19 @@ const DELETE_SPEC = `  deletePages: {
     replay: 'reapply-intent',
   },`;
 
+/** Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason. */
+const INSERT_SPEC = `  insertBlankPage: {
+    kind: 'insertBlankPage',
+    writer: 'mupdf',
+    apply: applyInsertBlankPage,
+    capture: captureInsertBlankPage,
+    invert: invertInsertBlankPage,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const SWAP_SPEC = `  swapPages: {
     kind: 'swapPages',
@@ -151,6 +164,9 @@ const SPEC_IMPORTS = `import {
   applySwapPages,
   captureSwapPages,
   invertSwapPages,
+  applyInsertBlankPage,
+  captureInsertBlankPage,
+  invertInsertBlankPage,
 } from '@monstera/kernel/engine';`;
 
 /**
@@ -497,6 +513,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
 };
 `,
   },
@@ -514,9 +531,11 @@ ${SWAP_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `swapPages`, `duplicatePage` and `deletePages` on
-    // 2026-09-04, `movePage` on 2026-09-03, `setLayerVisibility` before.
-    because: /Property 'swapPages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+    // table has to grow. `insertBlankPage`, `swapPages`, `duplicatePage` and
+    // `deletePages` on 2026-09-04, `movePage` on 2026-09-03,
+    // `setLayerVisibility` before.
+    because:
+      /Property 'insertBlankPage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -539,6 +558,7 @@ ${LAYER_SPEC}
 ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
+${SWAP_SPEC}
 };
 `,
   },
@@ -568,6 +588,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -612,6 +633,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
 };
 `,
   },
@@ -639,6 +661,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
 };
 `,
   },
@@ -675,6 +698,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
 };
 `,
   },
@@ -707,6 +731,7 @@ ${MOVE_SPEC}
 ${DELETE_SPEC}
 ${DUPLICATE_SPEC}
 ${SWAP_SPEC}
+${INSERT_SPEC}
 };
 `,
   },
@@ -1210,12 +1235,13 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // the harness's own resolution test refuses.
     // ONE ELIDED MEMBER PER COMMAND KIND, so this pattern widens with the union
     // — two while `rotatePages` and `setLayerVisibility` were the whole of it,
-    // three since `movePage` (2026-09-03), six since `deletePages`,
-    // `duplicatePage` and `swapPages` (2026-09-04). Written out rather than
-    // made repetition-insensitive for the case above's reason: `(\{…\} \| )+`
-    // would match a union of any size, including one this type never had.
+    // three since `movePage` (2026-09-03), seven since `deletePages`,
+    // `duplicatePage`, `swapPages` and `insertBlankPage` (2026-09-04). Written
+    // out rather than made repetition-insensitive for the case above's reason:
+    // `(\{…\} \| )+` would match a union of any size, including one this type
+    // never had.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\} \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

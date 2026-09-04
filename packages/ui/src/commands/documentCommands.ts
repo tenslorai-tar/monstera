@@ -17,6 +17,7 @@ import {
   DELETE_PAGE_TITLE,
   DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
+  INSERT_BLANK_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
@@ -392,6 +393,36 @@ export function rotatePageCommand(
         kind: 'rotatePages',
         pages: [context.page],
         quarterTurns,
+      });
+    },
+  };
+}
+
+/**
+ * Puts an empty page after the one on screen.
+ *
+ * **After, not before**, and it is the same placement `duplicatePageCommand`
+ * uses for the same reason: a reader on page 7 who asks for a blank page is
+ * adding to what they have just read, and an insertion *before* moves the page
+ * they are looking at out from under them.
+ *
+ * `context.page + 1` is the only arithmetic any of these commands does, and it
+ * is safe for a stated reason rather than an obvious one: `at` is in the
+ * DESTINATION frame — `at: pageCount` appends — so the index one past the
+ * current page is always legal, including on the last page. Every other bound
+ * in `pageOrder.ts` refuses `count`, and this one must not.
+ */
+export function insertBlankPageCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.insert-blank-page',
+    title: INSERT_BLANK_PAGE_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 12 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'insertBlankPage',
+        at: context.page + 1,
       });
     },
   };

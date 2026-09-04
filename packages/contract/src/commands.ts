@@ -195,6 +195,32 @@ export const swapPagesSchema = z.object({
   b: z.number().int().nonnegative(),
 });
 
+/**
+ * Insert an empty page.
+ *
+ * ## No size on the wire, and that is a decision rather than a gap
+ *
+ * The new page takes the geometry of the page it follows — its `/MediaBox`,
+ * `/CropBox` and `/Rotate` — which is what every application this one replaces
+ * defaults to and the only default that cannot be wrong for a document of one
+ * size. A width and a height here would be a **renderer-supplied geometry**,
+ * and the renderer's coordinate spaces are branded precisely so a bare pair of
+ * numbers cannot travel as a page box (invariant L3).
+ *
+ * Choosing a *different* size — A4 into a Letter document — is a separate
+ * feature with a dialog, and it arrives as a second field on this command
+ * rather than as a second command. Stated so the absence reads as a decision.
+ *
+ * `at` is where the new page ends up, so `at: 0` puts it first and
+ * `at: pageCount` appends. That is the destination frame `movePage`'s own `to`
+ * uses, and stating it here is what keeps the two from disagreeing.
+ */
+export const insertBlankPageSchema = z.object({
+  kind: z.literal('insertBlankPage'),
+  /** Zero-based index the new page occupies afterwards. */
+  at: z.number().int().nonnegative(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -202,6 +228,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   deletePagesSchema,
   duplicatePageSchema,
   swapPagesSchema,
+  insertBlankPageSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

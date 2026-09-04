@@ -15,7 +15,12 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
 import type { PriorLayerVisibility } from './layers.js';
-import type { PriorPageCopy, PriorPageOrder, PriorPageSwap } from './pageOrder.js';
+import type {
+  PriorPageCopy,
+  PriorPageInsert,
+  PriorPageOrder,
+  PriorPageSwap,
+} from './pageOrder.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -138,6 +143,16 @@ export interface CommandPrior {
    * `entry.command` to invert would be the one shape §3 forbids.
    */
   readonly swapPages: PriorPageSwap;
+  /**
+   * Where the blank page landed.
+   *
+   * {@link PriorPageCopy}'s shape and its reason: the page the inverse removes
+   * did not exist before the command, so there is no prior state on the
+   * document to read — what the capture adds is validation, and an index the
+   * command's own bound accepts *one past the end* where every other command in
+   * this table refuses it.
+   */
+  readonly insertBlankPage: PriorPageInsert;
 }
 
 /**

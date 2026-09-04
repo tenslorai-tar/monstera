@@ -481,6 +481,128 @@ export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
     ]);
   });
 
+/** Where an insert put its page, which is what its inverse removes. */
+export interface PriorPageInsert {
+  /** Zero-based index the new page occupies after the command. */
+  readonly at: number;
+}
+
+/**
+ * Records where the blank page will land, and refuses an index past the end.
+ *
+ * **`at === count` is legal**, unlike every other command's bound in this file:
+ * appending is inserting at the index one past the last page, and a `>=` check
+ * copied from `applyMovePage` would refuse the most ordinary use of this
+ * command. The off-by-one is stated because the two bounds sit ten lines apart
+ * and look the same.
+ */
+export function captureInsertBlankPage(
+  session: MupdfSession,
+  command: CommandOfKind<'insertBlankPage'>,
+): Promise<CaptureResult<PriorPageInsert>> {
+  return withDocument(session, (document) => {
+    const count = document.countPages();
+    if (command.at > count) {
+      return {
+        captured: false,
+        reason:
+          `index ${String(command.at)} is past the end of a document with ` +
+          `${String(count)} page(s), so there is nowhere to insert`,
+      };
+    }
+    return { captured: true, prior: { at: command.at } };
+  });
+}
+
+/** Removes the page the insert added. */
+export const invertInsertBlankPage: Invert<'mupdf', 'insertBlankPage'> = (
+  session: MupdfSession,
+  inverse: PriorPageInsert,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    rewriteKids(document, keptPermutation(document.countPages(), [inverse.at]));
+  });
+
+/**
+ * Inserts an empty page, sized like the one it follows.
+ *
+ * ## The geometry comes from a NEIGHBOUR, and which one is the whole question
+ *
+ * The page *before* the insertion point, or — inserting at the front — the one
+ * that will follow. A constant default would be A4 or Letter, and either is
+ * wrong for the other's documents; the neighbour is right for every document of
+ * one size, which is nearly all of them.
+ *
+ * `getInheritable` rather than `get`, because a page in a nested tree may
+ * declare no box of its own and the value that matters is what it **resolves
+ * to**. Reading `get` here would size the new page from the root's box and
+ * produce a page that is a different shape from the one beside it, with the
+ * count and the order correct.
+ *
+ * ## An empty document is refused rather than defaulted
+ *
+ * There is no neighbour to size against, and picking a constant at that one
+ * moment would put the arbitrary default back in through the door this
+ * function's whole design closes. It is unreachable today — `deletePages`
+ * refuses to empty a document — and it is a refusal rather than an assumption
+ * so that the day something else can produce one, this says so.
+ */
+export const applyInsertBlankPage: Apply<'mupdf', 'insertBlankPage'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'insertBlankPage'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const count = document.countPages();
+    if (command.at > count) {
+      throw new RangeError(
+        `index ${String(command.at)} is past the end of a document with ${String(count)} ` +
+          `page(s). The bus validates against the document it captured, so reaching here means ` +
+          `the two disagree.`,
+      );
+    }
+    if (count === 0) {
+      throw new RangeError('a blank page has no neighbour to take its size from');
+    }
+
+    // THE PUSH-DOWN FIRST, for `applyDuplicatePage`'s reason: the neighbour's
+    // box has to be readable off the leaf, and `leaves` is what the rewrite
+    // below is built from either way.
+    const leaves = leavesWithInheritables(document);
+    const neighbour = leaves[command.at === 0 ? 0 : command.at - 1];
+    if (neighbour === undefined) throw new RangeError('the neighbour page vanished');
+
+    const blank = document.addObject(
+      buildBlankPage(document, neighbour.get('MediaBox'), neighbour.get('Rotate')),
+    );
+    setKids(document, [
+      ...leaves.slice(0, command.at),
+      blank,
+      ...leaves.slice(command.at),
+    ]);
+  });
+
+/**
+ * A page dictionary with nothing on it.
+ *
+ * Built by hand rather than through MuPDF's `addPage`, and the reason is
+ * {@link setKids}: `addPage` returns a page that is not yet in the tree and
+ * `insertPage` would put it there, which is a **second writer for `/Kids`** —
+ * the thing every operation in this file goes through one function to avoid
+ * (B3). What is needed here is the dictionary; the tree is `setKids`'.
+ *
+ * `/Contents` is omitted rather than written as an empty stream. A page with no
+ * content stream is what the format says an empty page is, and an empty stream
+ * is an object every later operation has to carry for nothing.
+ */
+function buildBlankPage(document: PDFDocument, box: PDFObject, rotate: PDFObject): PDFObject {
+  const page = document.newDictionary();
+  page.put('Type', document.newName('Page'));
+  page.put('MediaBox', box);
+  if (!rotate.isNull()) page.put('Rotate', rotate);
+  page.put('Resources', document.newDictionary());
+  return page;
+}
+
 /**
  * Removes pages.
  *

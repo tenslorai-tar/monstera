@@ -1,12 +1,15 @@
 import { PDFArray, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
-import { mupdfWriter } from './mupdfWriter.js';
+import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import { applyRotatePages } from './rotatePages.js';
 import {
   applyDeletePages,
   applyDuplicatePage,
+  applyInsertBlankPage,
   applySwapPages,
+  captureInsertBlankPage,
+  invertInsertBlankPage,
   captureDuplicatePage,
   captureSwapPages,
   invertDuplicatePage,
@@ -108,6 +111,32 @@ async function nestedDocument(pages: number): Promise<Uint8Array> {
   }
 
   return document.save({ useObjectStreams: false });
+}
+
+/**
+ * The same pages, each carrying a drawn rectangle so it has a `/Contents`.
+ *
+ * **{@link flatDocument}'s pages have none**, which the insert-blank cases
+ * found: `addPage` writes no content stream for a page nothing is drawn on, so
+ * *this page is empty* and *this is one of the fixture's pages* were the same
+ * observation and the assertion separated nothing. Its own control is what
+ * caught it, which is the shape that case exists in.
+ */
+async function drawnDocument(pages: number): Promise<Uint8Array> {
+  const document = await PDFDocument.load(await flatDocument(pages));
+  for (const page of document.getPages()) page.drawRectangle({ x: 1, y: 1, width: 5, height: 5 });
+  return document.save({ useObjectStreams: false });
+}
+
+/** Whether each page of a live session declares a `/Contents`. */
+function contentsOf(session: Parameters<typeof applyMovePage>[0]): Promise<boolean[]> {
+  return withDocument(session, (document) => {
+    const present: boolean[] = [];
+    for (let page = 0; page < document.countPages(); page += 1) {
+      present.push(!document.findPage(page).get('Contents').isNull());
+    }
+    return present;
+  });
 }
 
 /** The page widths of a saved document, in tree order, read with pdf-lib. */
@@ -380,6 +409,125 @@ describe('captureSwapPages and invertSwapPages', () => {
       expect(capture.captured).toBe(false);
       if (capture.captured) throw new Error('the capture should have been refused');
       expect(capture.reason).toMatch(/no prior order to record/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('applyInsertBlankPage', () => {
+  it('INSERTS AT THE INDEX GIVEN, in the destination frame', async () => {
+    const grown = await edited(await flatDocument(3), (session) =>
+      applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1 }),
+    );
+
+    // The new page takes page 0's width, so the widths say both where it went
+    // AND which neighbour sized it. A blank page of some constant size would
+    // read [100, 595, 101, 102] here — a plausible document, and the wrong one.
+    expect(await widthsOf(grown)).toStrictEqual([100, 100, 101, 102]);
+  });
+
+  it('APPENDS at one past the last page, which every other bound here refuses', async () => {
+    // `at === count`. `applyMovePage`'s `>=` sits ten lines away and looks the
+    // same; copied here it would refuse the most ordinary use of this command.
+    const grown = await edited(await flatDocument(3), (session) =>
+      applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 3 }),
+    );
+
+    expect(await widthsOf(grown)).toStrictEqual([100, 101, 102, 102]);
+  });
+
+  it('takes the FOLLOWING page when inserted at the front, there being no page before', async () => {
+    const grown = await edited(await flatDocument(3), (session) =>
+      applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 0 }),
+    );
+
+    expect(await widthsOf(grown)).toStrictEqual([100, 100, 101, 102]);
+  });
+
+  it('TAKES THE NEIGHBOUR’S RESOLVED GEOMETRY, not the one it declares', async () => {
+    // A page in a nested tree may declare no box of its own. Reading `get`
+    // rather than `getInheritable` sizes the new page from the root and
+    // produces a page a different shape from the one beside it, with the count
+    // and the order both correct. The rotation travels for the same reason.
+    const grown = await edited(await nestedDocument(4), (session) =>
+      applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1 }),
+    );
+
+    expect(await widthsOf(grown)).toStrictEqual([100, 100, 101, 102, 103]);
+    expect(await rotationsOf(grown)).toStrictEqual([90, 90, 90, 0, 0]);
+  });
+
+  it('THE NEW PAGE IS EMPTY, which its width alone does not say', async () => {
+    // A duplicate of the neighbour has the same width and the same rotation and
+    // is a different command. `/Contents` is what separates them.
+    const session = await mupdfWriter.open(await drawnDocument(3));
+    try {
+      await applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 1 });
+
+      // THE WHOLE VECTOR, so the control rides with the assertion: page 1 has
+      // no content and every other page does. Asserting page 1 alone would
+      // pass against `flatDocument`, whose pages have no `/Contents` either —
+      // which is what the first version of this case did, and what its own
+      // control caught.
+      expect(await contentsOf(session)).toStrictEqual([true, false, true, true]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('REFUSES an index past the end', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        applyInsertBlankPage(session, { kind: 'insertBlankPage', at: 4 }),
+      ).rejects.toThrow(/past the end of a document with 3 page/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('captureInsertBlankPage and invertInsertBlankPage', () => {
+  it('THE INVERSE REMOVES THE INSERTED PAGE, and the original comes back', async () => {
+    const session = await mupdfWriter.open(await drawnDocument(3));
+    try {
+      const command = { kind: 'insertBlankPage', at: 1 } as const;
+      const capture = await captureInsertBlankPage(session, command);
+      if (!capture.captured) throw new Error('the capture was refused');
+      expect(capture.prior).toStrictEqual({ at: 1 });
+
+      await applyInsertBlankPage(session, command);
+      await invertInsertBlankPage(session, capture.prior);
+
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
+      // AND IT REMOVED THE BLANK ONE, not its twin. The inserted page takes
+      // page 0's width, so the widths above pass for an inverse that removed
+      // the wrong one of the two; only the content separates them.
+      expect(await contentsOf(session)).toStrictEqual([true, true, true]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('an insert PAST THE END is NOT CAPTURED, with a reason', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      const capture = await captureInsertBlankPage(session, { kind: 'insertBlankPage', at: 4 });
+
+      expect(capture.captured).toBe(false);
+      if (capture.captured) throw new Error('the capture should have been refused');
+      expect(capture.reason).toMatch(/nowhere to insert/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: an append IS captured, so the bound is not simply refusing the end', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      const capture = await captureInsertBlankPage(session, { kind: 'insertBlankPage', at: 3 });
+      expect(capture.captured).toBe(true);
     } finally {
       await mupdfWriter.close(session);
     }

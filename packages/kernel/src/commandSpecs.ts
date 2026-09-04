@@ -35,6 +35,9 @@ import {
   applySwapPages,
   captureSwapPages,
   invertSwapPages,
+  applyInsertBlankPage,
+  captureInsertBlankPage,
+  invertInsertBlankPage,
 } from './pageOrder.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
 
@@ -187,6 +190,12 @@ const declared = {
     apply: applySwapPages,
     capture: captureSwapPages,
     invert: invertSwapPages,
+  },
+  insertBlankPage: {
+    ...declaredCommands.insertBlankPage,
+    apply: applyInsertBlankPage,
+    capture: captureInsertBlankPage,
+    invert: invertInsertBlankPage,
   },
 } satisfies CommandSpecs;
 

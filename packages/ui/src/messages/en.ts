@@ -52,6 +52,7 @@ export const ABOUT_CHANNEL_LABEL = messageKey('dialog.about.channel');
 export const ROTATE_PAGE_TITLE = messageKey('command.rotate-page.title');
 export const ROTATE_PAGE_180_TITLE = messageKey('command.rotate-page-180.title');
 export const ROTATE_PAGE_270_TITLE = messageKey('command.rotate-page-270.title');
+export const INSERT_BLANK_PAGE_TITLE = messageKey('command.insert-blank-page.title');
 export const DUPLICATE_PAGE_TITLE = messageKey('command.duplicate-page.title');
 export const DELETE_PAGE_TITLE = messageKey('command.delete-page.title');
 export const FIND_TITLE = messageKey('command.find.title');
@@ -190,6 +191,9 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ROTATE_PAGE_TITLE]: 'Rotate page',
   [ROTATE_PAGE_180_TITLE]: 'Rotate page 180°',
   [ROTATE_PAGE_270_TITLE]: 'Rotate page 270°',
+  // "Blank page" rather than "Insert page": what a person is adding is the
+  // noun, and *insert* alone leaves them asking what.
+  [INSERT_BLANK_PAGE_TITLE]: 'Insert blank page',
   [DUPLICATE_PAGE_TITLE]: 'Duplicate page',
   // NAMES WHAT GOES, not the verb alone. *Delete* beside three *Rotate page*
   // controls reads as a mode rather than an action on the page being looked at,
