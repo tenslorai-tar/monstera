@@ -39,6 +39,7 @@ export {
   type PriorPageOrder,
   type PriorPageSwap,
 } from './pageOrder.js';
+export { extractPages } from './pageExtract.js';
 export { localMupdfWriter } from './localEngine.js';
 
 /**

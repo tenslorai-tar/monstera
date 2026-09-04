@@ -92,6 +92,23 @@ export function withDocument<T>(
   return promised(() => work(documentFor(session)));
 }
 
+/**
+ * A blank PDF, for an operation whose output is a document that did not exist.
+ *
+ * **Not a session**, and that distinction is the whole reason this is here
+ * rather than beside `open`. A `MupdfSession` is a document the kernel owns and
+ * an adapter must close; this is a transient the caller serialises and drops
+ * within one call. Minting a session for it would put an entry in the
+ * provenance map that nothing ever closes.
+ *
+ * Exported so `pageExtract.ts` can build one without a second
+ * `import * as mupdf` — every value import of the binding in this package is a
+ * place invariant 20 has to be argued about, and one is enough.
+ */
+export function newDocument(): mupdf.PDFDocument {
+  return new mupdf.PDFDocument();
+}
+
 export const mupdfWriter: EngineWriter<MupdfSession> = {
   /**
    * Parses `image` into a session.
