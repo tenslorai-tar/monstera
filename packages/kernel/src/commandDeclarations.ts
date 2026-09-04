@@ -222,6 +222,24 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  duplicatePage: {
+    kind: 'duplicatePage',
+    // Invariant L6 again, and the copy is MuPDF's own `graftObject` rather than
+    // a dictionary walk written here — measured 2026-09-04: a new indirect
+    // object, dictionaries that diverge, and a shared `/Contents`.
+    writer: 'mupdf',
+    // The inverse removes the page the copy occupies, and the capture stores
+    // that index rather than re-deriving it from *"after the source"*. The
+    // placement is a rule the contract states and could change; a re-deriving
+    // inverse would then remove the wrong page for every entry already logged.
+    invertible: true,
+    undo: 'inverse',
+    // A graft of the same source into the same document produces the same tree.
+    // The copy's object NUMBER is not part of what the document says, and a
+    // full-rewrite save renumbers everything anyway (ADR-0008).
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

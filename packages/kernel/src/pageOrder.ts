@@ -119,11 +119,11 @@ function deref(object: PDFObject): PDFObject {
  * page-tree cache — without which `loadPage` still answers the old order and
  * the change appears not to have happened.
  */
-function rewriteKids(document: PDFDocument, permutation: readonly number[]): void {
+function leavesWithInheritables(document: PDFDocument): PDFObject[] {
   const leaves: PDFObject[] = [];
-  // OVER THE DOCUMENT'S PAGES, not over `permutation.length`, and the two are
-  // the same number only for a permutation. `leaves` is indexed by SOURCE, so
-  // a keep-set shorter than the document — every delete — would otherwise stop
+  // OVER THE DOCUMENT'S PAGES, not over the caller's list, and the two are the
+  // same length only for a permutation. `leaves` is indexed by SOURCE, so a
+  // keep-set shorter than the document — every delete — would otherwise stop
   // collecting before it reached the sources it keeps: deleting page 1 of five
   // asks for `leaves[4]` out of an array of four. Found by the first delete
   // case, which is the shape a move could never produce.
@@ -138,28 +138,44 @@ function rewriteKids(document: PDFDocument, permutation: readonly number[]): voi
     }
     leaves.push(page);
   }
+  return leaves;
+}
 
+/**
+ * Makes `leaves` the document's pages, in order, in place.
+ *
+ * Separated from {@link rewriteKids} because a duplicate's new order contains a
+ * leaf that is **not** one of the document's own — an index-based permutation
+ * cannot name it. Every page operation ends here, which is what keeps the
+ * flatten, the `/Count` and the reparenting in one place (B3a).
+ */
+function setKids(document: PDFDocument, leaves: readonly PDFObject[]): void {
   const root = deref(document.getTrailer().get('Root', 'Pages'));
   const kids = document.newArray();
-  for (const source of permutation) {
-    const leaf = leaves[source];
-    if (leaf === undefined) throw new RangeError(`page ${String(source)} is not in this document`);
-    kids.push(leaf);
-  }
+  for (const leaf of leaves) kids.push(leaf);
 
   root.put('Kids', kids);
-  root.put('Count', permutation.length);
+  root.put('Count', leaves.length);
   // REPARENTS WHAT IT KEPT, not every leaf it read. For a move the two sets are
   // the same — a permutation names every page — and for a delete they are not:
   // a removed leaf given a `/Parent` pointing at the root is a page that claims
   // to be in a tree whose `/Kids` does not list it, which is the inconsistent
   // half of a page tree that some readers repair by trusting `/Parent`.
-  for (const source of permutation) {
-    const leaf = leaves[source];
-    if (leaf !== undefined) leaf.put('Parent', root);
-  }
+  for (const leaf of leaves) leaf.put('Parent', root);
 
   document.setPageTreeCache(true);
+}
+
+function rewriteKids(document: PDFDocument, permutation: readonly number[]): void {
+  const leaves = leavesWithInheritables(document);
+  setKids(
+    document,
+    permutation.map((source) => {
+      const leaf = leaves[source];
+      if (leaf === undefined) throw new RangeError(`page ${String(source)} is not in this document`);
+      return leaf;
+    }),
+  );
 }
 
 /**
@@ -281,6 +297,110 @@ export const invertDeletePages: Invert<'mupdf', 'deletePages'> = (): Promise<voi
     'a deleted page has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
   );
 };
+
+/** Where a duplicate's copy landed, which is what its inverse removes. */
+export interface PriorPageCopy {
+  /** Zero-based index the copy occupies after the command. */
+  readonly at: number;
+}
+
+/**
+ * Records where the copy will land, and validates the source page.
+ *
+ * The destination is computed HERE and stored, rather than re-derived by the
+ * inverse from *"immediately after the source"*. The rule is a placement
+ * decision the contract states and a later version may change; an inverse that
+ * re-derived it would then remove the wrong page for every entry already in a
+ * log — silently, and only for documents open across the change.
+ */
+export function captureDuplicatePage(
+  session: MupdfSession,
+  command: CommandOfKind<'duplicatePage'>,
+): Promise<CaptureResult<PriorPageCopy>> {
+  return withDocument(session, (document) => {
+    const count = document.countPages();
+    if (command.page >= count) {
+      return {
+        captured: false,
+        reason:
+          `page ${String(command.page)} is outside this document, which has ` +
+          `${String(count)} page(s), so there is nothing to copy`,
+      };
+    }
+    return { captured: true, prior: { at: command.page + 1 } };
+  });
+}
+
+/** Removes the page the duplicate added. */
+export const invertDuplicatePage: Invert<'mupdf', 'duplicatePage'> = (
+  session: MupdfSession,
+  inverse: PriorPageCopy,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const count = document.countPages();
+    rewriteKids(document, keptPermutation(count, [inverse.at]));
+  });
+
+/**
+ * Copies one page, placing the copy immediately after it.
+ *
+ * ## MuPDF's own graft is the copy, and that is measured rather than assumed
+ *
+ * `graftObject` within a single document was probed on 2026-09-04 against a
+ * three-page fixture: it returns a **new indirect object** (4 → 7), the two
+ * dictionaries diverge independently — `/Rotate 90` written on the copy left
+ * the source's absent — and `/Contents` comes back as the **same** indirect
+ * object, so duplicating a page does not duplicate its bytes.
+ *
+ * Writing a dictionary walk here instead would be a second opinion about what
+ * copying a PDF object means, and it would agree with MuPDF's on the keys
+ * somebody thought of (B3a).
+ *
+ * ## The shared content stream is a PROPERTY, with a trigger
+ *
+ * Two pages referencing one `/Contents` is what every application this one
+ * replaces produces, and it is why a duplicate costs nothing. It stops being
+ * harmless the day content becomes editable: D4's text editing must copy the
+ * stream before writing to one of them, or an edit lands on both. That belongs
+ * to the feature that can first observe it, and its row carries the trigger —
+ * stated here so it is not rediscovered as a bug.
+ */
+export const applyDuplicatePage: Apply<'mupdf', 'duplicatePage'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'duplicatePage'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const count = document.countPages();
+    if (command.page >= count) {
+      throw new RangeError(
+        `page ${String(command.page)} is outside a document of ${String(count)} page(s). The ` +
+          `bus validates against the document it captured, so reaching here means the two ` +
+          `disagree.`,
+      );
+    }
+
+    // THE INHERITABLES ARE PUSHED DOWN BEFORE THE GRAFT, which is the ordering
+    // that matters: a leaf still inheriting its `/MediaBox` from an
+    // intermediate node grafts without one, and the copy would then take the
+    // ROOT's box — a landscape page duplicated as a portrait one, with the
+    // order and the page count both correct.
+    const leaves = leavesWithInheritables(document);
+    const source = leaves[command.page];
+    if (source === undefined) throw new RangeError(`page ${String(command.page)} vanished`);
+
+    // GRAFTED FROM THE PUSHED-DOWN LEAF. `leavesWithInheritables` mutates the
+    // page objects in place, so this line and `graftObject(findPage(page))` are
+    // the same object once it has run — measured, and the reason the ordering
+    // above is the whole of what makes the copy correct rather than this
+    // expression. Moving the graft above that call reddens the nested case with
+    // `[90, 0, 90, 0, 0]`: the copy resolves its rotation against the root.
+    const copy = document.graftObject(source);
+    setKids(document, [
+      ...leaves.slice(0, command.page + 1),
+      copy,
+      ...leaves.slice(command.page + 1),
+    ]);
+  });
 
 /**
  * Removes pages.

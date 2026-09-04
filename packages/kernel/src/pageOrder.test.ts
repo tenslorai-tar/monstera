@@ -2,8 +2,12 @@ import { PDFArray, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
 import { mupdfWriter } from './mupdfWriter.js';
+import { applyRotatePages } from './rotatePages.js';
 import {
   applyDeletePages,
+  applyDuplicatePage,
+  captureDuplicatePage,
+  invertDuplicatePage,
   applyMovePage,
   captureDeletePages,
   captureMovePage,
@@ -289,6 +293,130 @@ describe('captureMovePage and invertMovePage', () => {
       await invertMovePage(session, capture.prior);
 
       expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([100, 101, 102]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('applyDuplicatePage', () => {
+  it('PUTS THE COPY AFTER THE SOURCE, and the saved document has one more page', async () => {
+    const copied = await edited(await flatDocument(3), (session) =>
+      applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 }),
+    );
+
+    // 100 twice, and the SECOND 100 is what separates a duplicate from a
+    // command that merely lengthened the document: a copy appended at the end
+    // would read [100, 101, 102, 100].
+    expect(await widthsOf(copied)).toStrictEqual([100, 100, 101, 102]);
+  });
+
+  it('THE COPY IS A SEPARATE PAGE OBJECT, which sharing the leaf would not be', async () => {
+    // Pushing the same leaf into `/Kids` twice also produces four pages of the
+    // right widths, and it is a different document: one page object listed
+    // twice, so rotating one rotates both. The rotation is applied through the
+    // engine after the duplicate and read back after a save, which is where the
+    // difference becomes observable.
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 });
+      await applyRotatePages(session, { kind: 'rotatePages', pages: [1], quarterTurns: 1 });
+
+      expect(await rotationsOf(await mupdfWriter.serialise(session))).toStrictEqual([
+        0, 90, 0, 0,
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CARRIES THE INHERITED GEOMETRY, which a graft before the push-down does not', async () => {
+    // The nested hazard, one command along. Page 0 inherits `/Rotate 90` from
+    // an intermediate node; grafted before the push-down the copy carries no
+    // rotation of its own and resolves against the ROOT instead — an upright
+    // page beside a landscape one, with the count and the order both correct.
+    const copied = await edited(await nestedDocument(4), (session) =>
+      applyDuplicatePage(session, { kind: 'duplicatePage', page: 0 }),
+    );
+
+    expect(await widthsOf(copied)).toStrictEqual([100, 100, 101, 102, 103]);
+    expect(await rotationsOf(copied)).toStrictEqual([90, 90, 90, 0, 0]);
+  });
+
+  it('REFUSES a page the document does not have', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await expect(
+        applyDuplicatePage(session, { kind: 'duplicatePage', page: 9 }),
+      ).rejects.toThrow(/outside a document of 3 page/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+});
+
+describe('captureDuplicatePage and invertDuplicatePage', () => {
+  it('THE INVERSE REMOVES THE COPY, and the original order comes back', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      const command = { kind: 'duplicatePage', page: 1 } as const;
+      const capture = await captureDuplicatePage(session, command);
+      if (!capture.captured) throw new Error('the capture was refused');
+      // THE STORED DESTINATION, asserted rather than assumed: the inverse reads
+      // this and a wrong value here removes the wrong page.
+      expect(capture.prior).toStrictEqual({ at: 2 });
+
+      await applyDuplicatePage(session, command);
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([
+        100, 101, 101, 102,
+      ]);
+
+      await invertDuplicatePage(session, capture.prior);
+      expect(await widthsOf(await mupdfWriter.serialise(session))).toStrictEqual([
+        100, 101, 102,
+      ]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('the inverse removes the COPY and not the source, which the widths cannot show', async () => {
+    // Both pages are 101 wide, so the widths above are satisfied by an inverse
+    // that removed the wrong one of the two. Rotating the SOURCE before the
+    // duplicate makes them distinguishable: a correct inverse leaves the
+    // rotation standing at index 1.
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      await applyRotatePages(session, { kind: 'rotatePages', pages: [1], quarterTurns: 1 });
+      const command = { kind: 'duplicatePage', page: 1 } as const;
+      const capture = await captureDuplicatePage(session, command);
+      if (!capture.captured) throw new Error('the capture was refused');
+
+      await applyDuplicatePage(session, command);
+      // The copy carries the rotation too, so this alone separates nothing —
+      // it is here to say the fixture reached the state the assertion needs.
+      expect(await rotationsOf(await mupdfWriter.serialise(session))).toStrictEqual([
+        0, 90, 90, 0,
+      ]);
+
+      // Now diverge them, so removing the wrong page is visible.
+      await applyRotatePages(session, { kind: 'rotatePages', pages: [2], quarterTurns: 1 });
+      await invertDuplicatePage(session, capture.prior);
+
+      expect(await rotationsOf(await mupdfWriter.serialise(session))).toStrictEqual([0, 90, 0]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('a duplicate of a page OUTSIDE the document is NOT CAPTURED, with a reason', async () => {
+    const session = await mupdfWriter.open(await flatDocument(3));
+    try {
+      const capture = await captureDuplicatePage(session, { kind: 'duplicatePage', page: 9 });
+
+      expect(capture.captured).toBe(false);
+      if (capture.captured) throw new Error('the capture should have been refused');
+      expect(capture.reason).toMatch(/nothing to copy/u);
     } finally {
       await mupdfWriter.close(session);
     }

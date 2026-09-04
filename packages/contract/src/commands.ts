@@ -148,11 +148,32 @@ export const deletePagesSchema = z.object({
   pages: z.array(z.number().int().nonnegative()).min(1),
 });
 
+/**
+ * Duplicate one page, placing the copy immediately after it.
+ *
+ * ## The destination is not a parameter, and that is a decision
+ *
+ * *Duplicate and put it somewhere* is two operations, and this build already
+ * has the second: `movePage`. A `to` here would let one command express a
+ * duplicate-and-move whose undo is a single step, which is a different feature
+ * — and one whose inverse has to know which of the two halves to reverse.
+ *
+ * The copy lands **after** the source because that is where every application
+ * this one replaces puts it, and because the alternative — after the last
+ * page — makes the result invisible on a long document.
+ */
+export const duplicatePageSchema = z.object({
+  kind: z.literal('duplicatePage'),
+  /** Zero-based index of the page to copy. */
+  page: z.number().int().nonnegative(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
   movePageSchema,
   deletePagesSchema,
+  duplicatePageSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

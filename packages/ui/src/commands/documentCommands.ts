@@ -13,6 +13,7 @@ import {
   ROTATE_PAGE_180_TITLE,
   ROTATE_PAGE_270_TITLE,
   DELETE_PAGE_TITLE,
+  DUPLICATE_PAGE_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
@@ -384,6 +385,31 @@ export function rotatePageCommand(
 }
 
 /**
+ * Copies the page on screen, placing the copy immediately after it.
+ *
+ * The same three lines `deletePageCommand` is, and that is the whole shape of a
+ * page command once the registry exists — which is what *registered, not wired*
+ * means. It sits before delete in the toolbar because a person reaches for it
+ * far more often, and because putting the destructive control last is one fewer
+ * neighbour for a misclick.
+ */
+export function duplicatePageCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.duplicate-page',
+    title: DUPLICATE_PAGE_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 13 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'duplicatePage',
+        page: context.page,
+      });
+    },
+  };
+}
+
+/**
  * Removes the page on screen.
  *
  * ## The page comes from the context, exactly as a rotation's does
@@ -414,7 +440,7 @@ export function deletePageCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.delete-page',
     title: DELETE_PAGE_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 13 }],
+    placements: [{ surface: 'quick-toolbar', order: 14 }],
     when: hasDocument,
     run: async (context): Promise<void> => {
       if (context.docId === undefined || context.page === undefined) return;

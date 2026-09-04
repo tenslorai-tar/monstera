@@ -15,7 +15,7 @@ import type { Brand } from '@monstera/shared';
 // Same mechanism as the Electron download one file over, with a different bill.
 import type { ByteImage } from './engineSeam.js';
 import type { PriorLayerVisibility } from './layers.js';
-import type { PriorPageOrder } from './pageOrder.js';
+import type { PriorPageCopy, PriorPageOrder } from './pageOrder.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -117,6 +117,17 @@ export interface CommandPrior {
    * anywhere for it, and none is needed.
    */
   readonly deletePages: never;
+  /**
+   * Where the copy landed.
+   *
+   * `movePage`'s shape rather than `rotatePages`': there is no prior state on
+   * the document to read, because the page the inverse removes did not exist
+   * before the command. What the capture adds over the command is
+   * **validation** — an index this document actually has — and the destination
+   * the kernel chose, so an inverse cannot be built from a placement rule a
+   * later version changed.
+   */
+  readonly duplicatePage: PriorPageCopy;
 }
 
 /**

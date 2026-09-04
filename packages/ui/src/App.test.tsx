@@ -527,6 +527,33 @@ describe('App', () => {
       ).toStrictEqual([1, 2, 3]);
     });
 
+    it('THE DUPLICATE CONTROL SENDS duplicatePage FOR THE PAGE ON SCREEN', async () => {
+      // The UI half of duplicate's pair; `pageOrder.test.ts` is the kernel half
+      // and says the copy lands after the source and is a separate page object.
+      //
+      // The two page commands sit next to each other in the toolbar and carry
+      // the same argument, so each case asserts the KIND as well as the index —
+      // a control wired to its neighbour dispatches just as correctly.
+      const { client, sent } = answeringClient({
+        ...OPEN_DOCUMENT_ANSWERS,
+        'document.execute': { version: asDocVersion(2), byteLength: 2048, historyDropped: 0 },
+      });
+      render(<App client={client} settings={freshSettings()} />);
+      await withDocumentOpen();
+
+      await act(async () => {
+        screen.getByRole('button', { name: 'Duplicate page' }).click();
+        await Promise.resolve();
+      });
+
+      const executed = sent.filter((call) => call.id === 'document.execute');
+      expect(executed).toHaveLength(1);
+      expect(executed[0]?.params).toStrictEqual({
+        docId: DOC,
+        command: { kind: 'duplicatePage', page: 0 },
+      });
+    });
+
     it('THE DELETE CONTROL SENDS deletePages FOR THE PAGE ON SCREEN', async () => {
       // The UI half of delete's wired pair. The kernel half is
       // `pageOrder.test.ts`, which reads a saved document back with pdf-lib and

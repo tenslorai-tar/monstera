@@ -24,10 +24,13 @@ import {
 } from './layers.js';
 import {
   applyDeletePages,
+  applyDuplicatePage,
   applyMovePage,
   captureDeletePages,
+  captureDuplicatePage,
   captureMovePage,
   invertDeletePages,
+  invertDuplicatePage,
   invertMovePage,
 } from './pageOrder.js';
 import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotatePages.js';
@@ -169,6 +172,12 @@ const declared = {
     // `invertDeletePages` — `CommandPrior['deletePages']` is `never`, so
     // nothing can build an argument for it.
     invert: invertDeletePages,
+  },
+  duplicatePage: {
+    ...declaredCommands.duplicatePage,
+    apply: applyDuplicatePage,
+    capture: captureDuplicatePage,
+    invert: invertDuplicatePage,
   },
 } satisfies CommandSpecs;
 

@@ -15,6 +15,7 @@ import {
   findCommand,
   fitCommand,
   deletePageCommand,
+  duplicatePageCommand,
   rotatePageCommand,
   saveCommand,
   undoCommand,
@@ -607,6 +608,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // three above it. What is different is invisible here and deliberately
         // so: its log entry is terminal, and undoing it restores the checkpoint
         // the bus took rather than an inverse (ADR-0037).
+        duplicatePageCommand({ client, onApplied: applied, show }),
         deletePageCommand({ client, onApplied: applied, show }),
         undoCommand({ client, onApplied: applied, show }),
         saveCommand({ client, show }),
