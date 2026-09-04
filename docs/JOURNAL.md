@@ -136,6 +136,48 @@ trajectory gate compares the actual against. Measuring against the target would
 arm a decision at three days, which is inside the range the owner considers
 ordinary — an abort condition that fires on success.
 
+### Stage 2's trajectory gate — INTERIM, 2026-09-04. Not armed.
+
+**2 days against a 2-day baseline — 1.00×, trigger 6 days. The gate has not
+armed and the verdict is continue.**
+
+Counted the way Stage 1 was, with the command named so nobody re-derives it:
+
+```
+git log --format=%ad --date=short 3320f33~1..HEAD | sort -u
+```
+
+returns **2026-09-03** and **2026-09-04**. `3320f33` — *"Track A opens with
+movePage"* — is the first Stage 2 commit; `b759f55` before it is the commit that
+closed Stage 1 and opened this stage, so it belongs to neither and the range
+starts after it.
+
+**INTERIM, and the word is load-bearing: Stage 2 is not closed.** 13 of 24 D2
+rows are done and 1 is `partly`, so 10 are not started. A gate reading taken at
+the end of a stage measures the stage; this one measures the stage so far, and
+its only use is to say whether the trigger is in reach before the remaining work
+is planned. Stage 1's own reading was recorded interim first and became final
+when the last thing standing in its way resolved, which is the shape being
+copied.
+
+**The stage will pass its baseline and that is not the gate.** 1.00× with ten
+rows outstanding means the actual will exceed two days; the gate is armed by
+**six**, and a reading of 3.00× is what would demand the three options in
+writing. Recorded plainly because *over the baseline* and *the gate has armed*
+are different statements and only the second requires a decision — and because
+the temptation the gate exists to resist is exactly the one available here:
+revising a two-day baseline that is about to be exceeded. It is not revised.
+
+**What the days actually bought, since a day count says nothing about content.**
+Both days carry a stage's worth of work rather than a schedule anybody kept: day
+one opened Track A, and day two closed nine rows, took two B4 amendments
+([ADR-0037](DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md),
+[ADR-0039](DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)),
+wrote a third ([ADR-0040](DECISIONS/0040-a-command-names-a-second-document-by-docid.md)),
+and paid occurrence 8 of the escape rule. The figure is the count of distinct
+dates carrying a commit, which is the measure Stage 0 and Stage 1 both used and
+is the reason it must not be compared against anybody's hours.
+
 ---
 
 ## Where the build stands
