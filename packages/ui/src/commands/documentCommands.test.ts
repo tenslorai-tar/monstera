@@ -10,6 +10,7 @@ import {
   headerFooterCommand,
   batesNumberCommand,
   saveCopyCommand,
+  pageTransitionCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -666,6 +667,51 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('A TRANSITION DISPATCHES THE STYLE THE DIALOG ANSWERED, including "none"', async () => {
+    // THE UI HALF, and `replace` is the value to watch. It reads as *do
+    // nothing* and is in fact a change — it writes a transition meaning no
+    // visible effect — so a control that treated it as a dismissal, or that
+    // sent nothing for it, would leave a user unable to turn an existing
+    // transition off. `pageTransition.test.ts` proves the kernel writes /S /R
+    // for it; this proves the control sends it rather than swallowing it.
+    const { client, sent } = recording();
+
+    await pageTransitionCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve({ pages: 'all', style: 'replace', durationSeconds: 0 }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'setPageTransition',
+            pages: 'all',
+            style: 'replace',
+            durationSeconds: 0,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED transition dialog dispatches nothing', async () => {
+    // The gate, asserted per command: the guard is a line in each `run`, so a
+    // command written without it passes every case that exercises a neighbour.
+    const { client, sent } = recording();
+
+    await pageTransitionCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED Bates dialog dispatches nothing', async () => {

@@ -103,6 +103,19 @@ export const BATES_NUMBER_APPLY = messageKey('dialog.bates-number.apply');
 export const BATES_NUMBER_NOT_A_NUMBER = messageKey('dialog.bates-number.not-a-number');
 export const BATES_NUMBER_COMMAND_TITLE = messageKey('command.bates-number.title');
 export const SAVE_COPY_TITLE = messageKey('command.save-copy.title');
+export const PAGE_TRANSITION_TITLE = messageKey('dialog.page-transition.title');
+export const PAGE_TRANSITION_REPLACE = messageKey('dialog.page-transition.replace');
+export const PAGE_TRANSITION_DISSOLVE = messageKey('dialog.page-transition.dissolve');
+export const PAGE_TRANSITION_FADE = messageKey('dialog.page-transition.fade');
+export const PAGE_TRANSITION_BOX = messageKey('dialog.page-transition.box');
+export const PAGE_TRANSITION_BLINDS = messageKey('dialog.page-transition.blinds');
+export const PAGE_TRANSITION_REPLACE_NOTE = messageKey('dialog.page-transition.replace-note');
+export const PAGE_TRANSITION_DURATION = messageKey('dialog.page-transition.duration');
+export const PAGE_TRANSITION_THIS = messageKey('dialog.page-transition.this-page');
+export const PAGE_TRANSITION_ALL = messageKey('dialog.page-transition.all-pages');
+export const PAGE_TRANSITION_APPLY = messageKey('dialog.page-transition.apply');
+export const PAGE_TRANSITION_NOT_A_NUMBER = messageKey('dialog.page-transition.not-a-number');
+export const PAGE_TRANSITION_COMMAND_TITLE = messageKey('command.page-transition.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -400,6 +413,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // prompted about unsaved work. Naming it "Save as" would promise a move this
   // command deliberately does not make.
   [SAVE_COPY_TITLE]: 'Save a copy…',
+  [PAGE_TRANSITION_TITLE]: 'Page transition',
+  [PAGE_TRANSITION_REPLACE]: 'None',
+  [PAGE_TRANSITION_DISSOLVE]: 'Dissolve',
+  [PAGE_TRANSITION_FADE]: 'Fade',
+  [PAGE_TRANSITION_BOX]: 'Box',
+  [PAGE_TRANSITION_BLINDS]: 'Blinds',
+  // Says what NONE does, because it is the option that reads as "leave it
+  // alone" and is in fact a change: it writes a transition meaning no visible
+  // effect, which is how a reader turns an existing one off.
+  [PAGE_TRANSITION_REPLACE_NOTE]:
+    'None sets the page to change with no visible effect. Transitions show in full-screen reading.',
+  [PAGE_TRANSITION_DURATION]: 'Duration (seconds)',
+  [PAGE_TRANSITION_THIS]: 'This page',
+  [PAGE_TRANSITION_ALL]: 'All pages',
+  [PAGE_TRANSITION_APPLY]: 'Set transition',
+  [PAGE_TRANSITION_NOT_A_NUMBER]: 'Duration is a number of seconds, from 0 to 60.',
+  [PAGE_TRANSITION_COMMAND_TITLE]: 'Page transition…',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure

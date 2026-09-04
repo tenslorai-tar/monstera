@@ -20,6 +20,7 @@ import {
   headerFooterCommand,
   batesNumberCommand,
   saveCopyCommand,
+  pageTransitionCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -58,6 +59,7 @@ import { CROP_PAGES_DIALOG } from './dialogs/cropPages.js';
 import { WATERMARK_PAGES_DIALOG } from './dialogs/watermarkPages.js';
 import { HEADER_FOOTER_DIALOG } from './dialogs/headerFooter.js';
 import { BATES_NUMBER_DIALOG } from './dialogs/batesNumber.js';
+import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -216,6 +218,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         WATERMARK_PAGES_DIALOG,
         HEADER_FOOTER_DIALOG,
         BATES_NUMBER_DIALOG,
+        PAGE_TRANSITION_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
@@ -659,6 +662,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         watermarkPagesCommand({ client, onApplied: applied, ask }),
         headerFooterCommand({ client, onApplied: applied, ask }),
         batesNumberCommand({ client, onApplied: applied, ask }),
+        pageTransitionCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),

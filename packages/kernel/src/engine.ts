@@ -49,6 +49,11 @@ export {
   invertCropPages,
   type PriorPageCrop,
 } from './pageCrop.js';
+export {
+  applySetPageTransition,
+  captureSetPageTransition,
+  invertSetPageTransition,
+} from './pageTransition.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export { localMupdfWriter } from './localEngine.js';

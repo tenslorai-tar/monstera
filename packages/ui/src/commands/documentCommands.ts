@@ -15,6 +15,8 @@ import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
+import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
+import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
@@ -32,6 +34,7 @@ import {
   FIND_DUPLICATES_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
+  PAGE_TRANSITION_COMMAND_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_COPY_TITLE,
   SAVE_TITLE,
@@ -680,6 +683,37 @@ export function batesNumberCommand(deps: DocumentCommandDeps): UiCommand {
         slot: answer.slot,
         fontSize: answer.fontSize,
         marginPoints: answer.marginPoints,
+      });
+    },
+  };
+}
+
+/**
+ * Sets a presentation transition on pages.
+ *
+ * The fourth argument-collecting command in this file and the first routed to
+ * **MuPDF** rather than to pdf-lib — which this function cannot tell and does
+ * not need to. Which engine writes a command is its declaration's business, and
+ * the registry is what makes that true rather than a convention.
+ */
+export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.page-transition',
+    title: PAGE_TRANSITION_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 20 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(PAGE_TRANSITION_DIALOG_ID, { page: context.page })) as
+        | PageTransitionAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'setPageTransition',
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        style: answer.style,
+        durationSeconds: answer.durationSeconds,
       });
     },
   };

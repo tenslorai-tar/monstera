@@ -435,6 +435,54 @@ export const batesNumberPagesSchema = z.object({
   marginPoints: z.number().nonnegative().max(500),
 });
 
+/**
+ * Set a page's presentation transition (`/Trans`).
+ *
+ * ## Routed to MuPDF, and that is a CLASSIFICATION rather than a preference
+ *
+ * `/Trans` is an entry in the **page dictionary**, so this is a page attribute
+ * written in place — `cropPages`' shape exactly, and `rotatePages`' before it.
+ * It is not content composition and does not go to `@cantoo/pdf-lib`: nothing
+ * is drawn, no content stream is touched, and §3's matrix routes page-tree and
+ * page-attribute work to MuPDF. Grouping it with the watermark because both are
+ * *presentation* would be grouping by what a feature is called rather than by
+ * what it writes.
+ *
+ * That classification is what makes it **invertible**, which the drawing
+ * commands are not: a page's prior `/Trans` is one small dictionary, and
+ * absence is a value — a page that declared no transition must come back
+ * declaring none, exactly as `cropPages` restores an absent `/CropBox`.
+ *
+ * ## The style list is PDF 32000-1's, minus the ones needing a second axis
+ *
+ * Table 161 defines thirteen styles, and six of them are only meaningful
+ * alongside `/Dm`, `/M` or `/Di` — a wipe with no direction, a split with no
+ * dimension. Shipping those without their axes would offer a control that
+ * cannot express what the user picked, so the set here is the styles that are
+ * complete on their own. The remainder arrive with the axes they need, as a
+ * widened enum and three optional fields, rather than as a second command.
+ *
+ * `replace` is `/S /R`, the PDF's own name for *no transition*, and it is how a
+ * user turns one off without a second command. It is spelt out rather than
+ * expressed as absence, because *set every page to no transition* and *leave
+ * every page as it was* are different intents and a scope with no style could
+ * not tell them apart.
+ */
+export const setPageTransitionSchema = z.object({
+  kind: z.literal('setPageTransition'),
+  /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /** The transition style, as PDF 32000-1 Table 161 names it. */
+  style: z.enum(['replace', 'dissolve', 'fade', 'box', 'blinds']),
+  /**
+   * How long it runs, in seconds.
+   *
+   * Bounded above so one command cannot set a transition a reader has to sit
+   * through, and below by zero because `/D 0` is a legal instantaneous change.
+   */
+  durationSeconds: z.number().min(0).max(60),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -447,6 +495,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   watermarkPagesSchema,
   headerFooterPagesSchema,
   batesNumberPagesSchema,
+  setPageTransitionSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

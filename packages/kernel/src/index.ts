@@ -30,6 +30,10 @@ export type {
 // LAST remaining edge after the declaration split, and it was a plain value
 // export rather than a spelling problem (ADR-0026).
 export type { PriorPageRotation, PriorRotation } from './rotatePages.js';
+// THE TYPE ONLY, for `rotatePages`' reason: `pageTransition.ts` imports
+// `mupdfWriter.ts`, so a value export here would bind the native library in
+// every importer of this barrel. The prior-state shape is erased.
+export type { PriorPageTransition, PriorTransition } from './pageTransition.js';
 // The TYPE only, for the same reason and by the same spelling: `readPageGeometry`
 // reaches `mupdfWriter.ts`, so it is on `@monstera/kernel/engine`. The shape is
 // what main, the host and the contract all name, and it is erased.

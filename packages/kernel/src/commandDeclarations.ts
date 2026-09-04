@@ -364,6 +364,27 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  setPageTransition: {
+    kind: 'setPageTransition',
+    // A PAGE ATTRIBUTE WRITTEN IN PLACE, exactly as `cropPages` writes
+    // `/CropBox` and `rotatePages` writes `/Rotate`. Invariant L6's argument
+    // for MuPDF applies unchanged, and nothing here is drawn — so this is not
+    // content composition and does not route to pdf-lib, however much
+    // *transitions* sounds like presentation.
+    writer: 'mupdf',
+    // ADR-0009 §3 on a third key, and the same shape both siblings have:
+    // **absence is a value**. A page that declared no `/Trans` must come back
+    // declaring none, because a page carrying `/S /R` and a page carrying
+    // nothing are different documents even though a reader sees the same
+    // thing — the first says *replace*, the second says the producer never
+    // considered it.
+    invertible: true,
+    undo: 'inverse',
+    // Writing two dictionary entries from the command's own two fields, with
+    // nothing read from a clock or minted.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

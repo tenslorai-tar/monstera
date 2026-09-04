@@ -22,6 +22,7 @@ import type {
   PriorPageSwap,
 } from './pageOrder.js';
 import type { PriorPageCrop } from './pageCrop.js';
+import type { PriorPageTransition } from './pageTransition.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
 /**
@@ -164,6 +165,18 @@ export interface CommandPrior {
    * inset from a box the page never had.
    */
   readonly cropPages: readonly PriorPageCrop[];
+  /**
+   * Each page's own `/Trans`, read before the command ran.
+   *
+   * {@link cropPages}' shape on a third key and for §3's same reason: **absence
+   * is a value**. A page that declared no transition must come back declaring
+   * none — and here the distinction is sharper than it is for a crop box,
+   * because `/S /R` (*replace*, meaning no visible transition) and no `/Trans`
+   * at all render identically. Restoring the first where the second was leaves
+   * a document that says the producer chose *no transition* when the producer
+   * never considered it, and the next reader of that dictionary cannot tell.
+   */
+  readonly setPageTransition: readonly PriorPageTransition[];
   /**
    * **`never`, for `deletePages`' reason arriving from the opposite side.**
    *

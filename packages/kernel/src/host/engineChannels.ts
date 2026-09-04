@@ -2,6 +2,7 @@ import {
   type CommandKind,
   channel,
   cropPagesSchema,
+  setPageTransitionSchema,
   deletePagesSchema,
   duplicatePageSchema,
   insertBlankPageSchema,
@@ -424,6 +425,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   swapPagesSchema,
   insertBlankPageSchema,
   cropPagesSchema,
+  setPageTransitionSchema,
 ]);
 
 /**

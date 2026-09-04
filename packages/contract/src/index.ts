@@ -69,6 +69,7 @@ export {
   movePageSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
+  setPageTransitionSchema,
   swapPagesSchema,
   watermarkPagesSchema,
 } from './commands.js';
