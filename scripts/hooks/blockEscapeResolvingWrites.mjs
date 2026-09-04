@@ -48,7 +48,8 @@
  * | heredoc → file, either operand order | quoted or not | redirect | heredoc-to-file rule |
  * | here-string `<<<` | expands unless quoted | redirect | here-string rule |
  * | `$'…'` ANSI-C quoting | `\n`, `\t`, `\x41`, octal | anywhere it appears | ANSI-C rule |
- * | quoted heredoc `<<'EOF'` to stdin | **nothing** | — | deliberately allowed |
+ * | quoted heredoc `<<'EOF'` to an **interpreter**'s stdin | the interpreter does | any write it performs | interpreter-heredoc rule |
+ * | quoted heredoc `<<'EOF'` to any other stdin | **nothing** | — | deliberately allowed |
  * | `>` from a byte-faithful producer (`git show`, `cat`) | nothing | redirect | deliberately allowed |
  *
  * ### PowerShell
@@ -82,6 +83,15 @@
  *     expansion at all inside one, so `git commit -F - <<'EOF'` is byte-faithful.
  *     An UNQUOTED heredoc is rejected everywhere, because that is occurrence 1 —
  *     backticks swallowing a package name.
+ *
+ *     **This allowance was one clause too wide until 2026-09-04, and the missing
+ *     clause is the CONSUMER.** *No shell expansion* is a fact about the shell;
+ *     *byte-faithful* is a fact about `git commit`, which takes the bytes as
+ *     data. Hand the same bytes to `python` and the interpreter resolves the
+ *     escapes in its own string literals — `python -c` by another route, through
+ *     the door this paragraph held open. Occurrence 8 went through it, in a
+ *     session where the guard was demonstrably live. A heredoc feeding an
+ *     interpreter is now rejected; one feeding anything else still is not.
  *   - A plain `>` redirect from a producer that does not resolve escapes, such
  *     as `git show HEAD:file > out`. Only redirects fed by `echo`, `printf`,
  *     `awk` or a heredoc are rejected.
@@ -438,6 +448,41 @@ export const SHELL_RULES = /** @type {readonly Rule[]} */ ([
     instead: 'write the script to a file and run it by path',
   },
   {
+    // AN INTERPRETER READING A HEREDOC, which is the inline-script rules above
+    // arriving through the one construct this guard deliberately allows.
+    //
+    // OCCURRENCE 8, 2026-09-04, and the first that went through a hole rather
+    // than past a rule: `python - <<'PY'` rewrote twenty call sites in a test
+    // file, and one of its replacement strings spelt `\n`, which Python
+    // resolved. The guard was live in that session — it denied a `sed -i` and a
+    // `node -e` minutes either side — and this passed.
+    //
+    // The header's allowance is a COMPOUND CLAIM with one clause that stopped
+    // being enough: *"POSIX performs no expansion inside a quoted heredoc, so
+    // `git commit -F - <<'EOF'` is byte-faithful."* Both halves are true. What
+    // they do not cover is the CONSUMER: no shell expansion happens, and then
+    // the bytes are handed to an interpreter that resolves escapes in its own
+    // string literals. `git commit` consumes them as data; `python` executes
+    // them. So the rule keys on the command word, not on the heredoc.
+    //
+    // Narrow to interpreters on purpose. `git commit -F - <<'EOF'` is how this
+    // repository writes every commit message, and a rule broad enough to catch
+    // it is a rule someone turns off.
+    // NO `probe`, like every other interpreter rule and unlike every
+    // redirect rule. The generated properties assert that a descriptor redirect
+    // is allowed — `plain 2> errors.log` — which is right for a rule that fires
+    // only when content reaches a file, and wrong for this one: an interpreter
+    // resolves escapes and writes files whatever its stderr is doing. The cases
+    // this rule owes are hand-written in the proof beside the other interpreter
+    // ones.
+    pattern: /\b(?:node|python3?|py|perl|ruby|php|bash|sh|zsh)\b[^;&|]*<</,
+    what: 'an interpreter reading a script from a heredoc',
+    instead:
+      'write the script to a file with the Write tool and run it by path. A quoted heredoc stops ' +
+      'the SHELL expanding anything; it does not stop the interpreter on the other end resolving ' +
+      '\\n inside its own string literals — occurrence 8.',
+  },
+  {
     pattern: /\bsed\s+(?:-[a-zA-Z]*i|--in-place)/,
     what: 'sed in-place editing',
     instead:
@@ -778,10 +823,12 @@ async function main() {
     `Blocked: this command writes a file through ${violation.what}, which resolves escape ` +
       `sequences on the way past.\n\n` +
       `Instead: ${violation.instead}\n\n` +
-      `This is a standing rule in CLAUDE.md and it has been broken six times. The rule used to ` +
+      `This is a standing rule in CLAUDE.md and it has been broken eight times. The rule used to ` +
       `be the only defence for the classes guardFiles.mjs cannot see — a swallowed word, a real ` +
-      `newline, an octal escape — and five of those six happened while it said so. There is no ` +
-      `override: an escape hatch here would be a workaround with a config flag on it.`,
+      `newline, an octal escape — and five of the first six happened while it said so. The ` +
+      `eighth, 2026-09-04, went through a HOLE in this guard rather than past the rule: a quoted ` +
+      `heredoc feeding an interpreter. There is no override — an escape hatch here would be a ` +
+      `workaround with a config flag on it.`,
   );
 }
 

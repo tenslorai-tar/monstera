@@ -6,7 +6,6 @@ import {
   PROBLEM_BUSY,
   PROBLEM_INTERNAL,
   PROBLEM_NOT_OPEN,
-  PROBLEM_NO_CHECKPOINT,
   PROBLEM_POISONED,
   PROBLEM_REFERENCE_LABEL,
 } from '../messages/en.js';
@@ -16,7 +15,6 @@ export type CommandProblem =
   | { readonly code: 'document-not-open' }
   | { readonly code: 'document-busy' }
   | { readonly code: 'document-poisoned' }
-  | { readonly code: 'checkpoint-restore-not-built' }
   | { readonly code: 'internal'; readonly incident: string };
 
 /**
@@ -31,7 +29,6 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'document-not-open': PROBLEM_NOT_OPEN,
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,
-  'checkpoint-restore-not-built': PROBLEM_NO_CHECKPOINT,
   internal: PROBLEM_INTERNAL,
 };
 

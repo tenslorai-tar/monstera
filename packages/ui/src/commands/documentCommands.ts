@@ -405,10 +405,6 @@ export function undoCommand(deps: DocumentCommandDeps): UiCommand {
       if (context.docId === undefined) return;
       const answer = await deps.client['document.undo']({ docId: context.docId });
       if (!answer.ok) {
-        // `checkpoint-restore-not-built` reaches a user here and nowhere else.
-        // It is a fact about this build rather than about their document, and
-        // §4's answer to it is the checkpoint restore invariant 18 clause (ii)
-        // defers — so until that lands, saying so is the whole of the response.
         reportProblem(deps, answer.error);
         return;
       }

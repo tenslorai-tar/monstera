@@ -12,7 +12,12 @@ import {
 } from '@monstera/shared';
 
 import type { CapabilityRegistry } from './capabilityRegistry.js';
-import { CommandLog, type LogTrim, type ReadonlyCommandLog } from './commandLog.js';
+import {
+  type Checkpoint,
+  CommandLog,
+  type LogTrim,
+  type ReadonlyCommandLog,
+} from './commandLog.js';
 import { type FileIdentity, isSameDocument, readFileIdentity } from './documentIdentity.js';
 import { type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 
@@ -408,6 +413,43 @@ export interface DocumentContext {
    * recorded, which is the only moment the log grows — and never *how much*.
    */
   enforceRetention(writer: CommandWriter): LogTrim;
+
+  /**
+   * Writes a checkpoint this document's log holds to a destination the session
+   * supervisor granted, and reports the byte count
+   * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+   *
+   * ## The bytes do not pass through the supervisor, and that is the point
+   *
+   * {@link DocumentService.writeCanonicalImage} has the same shape for the same
+   * reason: *"the only way anything outside this service can obtain a document's
+   * bytes — and it does not obtain them"*. Undo of a terminal entry has to put a
+   * checkpoint where a contained engine host can read it, and the supervisor is
+   * what grants that directory — so it supplies a **destination** and receives a
+   * count, exactly as it does at open.
+   *
+   * ## Why the service does not choose WHICH checkpoint
+   *
+   * It could: the log is on its own record, and reading `entries.at(-1)` here
+   * would spare the caller a parameter. That is a **second opinion about which
+   * entry undo is at** (B3a), and the two would agree right up until they did
+   * not. The bus holds the applied cursor's meaning, so the bus names the
+   * checkpoint and this writes it.
+   *
+   * The {@link Checkpoint} brand is what makes that safe to accept without a
+   * check: the only mint is module-private to `commandBus.ts`, so nothing else
+   * can produce an argument for this parameter.
+   *
+   * @param writer Proof the caller is the command bus. See {@link CommandWriter}.
+   * @param checkpoint The bytes to write, from a terminal log entry.
+   * @param destination Where they go. The supervisor granted it.
+   * @returns The number of bytes written.
+   */
+  writeCheckpoint(
+    writer: CommandWriter,
+    checkpoint: Checkpoint,
+    destination: string,
+  ): Promise<number>;
 
   /**
    * A read-only view of the log, for work that needs to ask rather than change.
@@ -1464,6 +1506,13 @@ export class DocumentService {
                   (this.residentDocumentBytes() - record.log.retainedBytes()),
               ),
             ),
+          // The token is not read, for `commandLog`'s reason. What confines
+          // this is the `Checkpoint` brand on the second parameter: the only
+          // mint is module-private to `commandBus.ts`.
+          writeCheckpoint: async (_writer, checkpoint, destination) => {
+            await this.#writeBytes(destination, checkpoint);
+            return checkpoint.byteLength;
+          },
           log: record.log,
           // A GETTER, so it answers about the image the document has NOW rather
           // than the one it had when this entry started. A command rewrites the

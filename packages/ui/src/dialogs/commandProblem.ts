@@ -55,7 +55,6 @@ export const COMMAND_PROBLEM_DIALOG = declareDialog({
     z.object({ code: z.literal('document-not-open') }).strict(),
     z.object({ code: z.literal('document-busy') }).strict(),
     z.object({ code: z.literal('document-poisoned') }).strict(),
-    z.object({ code: z.literal('checkpoint-restore-not-built') }).strict(),
     z.object({ code: z.literal('internal'), incident: z.string().min(1) }).strict(),
   ]),
   component: lazy(() => import('./CommandProblemBody.js')),

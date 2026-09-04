@@ -17,6 +17,7 @@ import {
   type SaveOutcome,
   type SearchOptions,
   type SessionsByWriter,
+  type SnapshotWrite,
   type TextMatch,
   declaredCommands,
   findInPages,
@@ -157,6 +158,28 @@ export interface EngineSessionSource {
    */
   readonly poisoned: (docId: DocId) => number | undefined;
 }
+
+/**
+ * Rebuilds one document's engine sessions from a checkpoint, inside its lane.
+ *
+ * ## Why this is composed here and NOT on {@link EngineSessionSource}
+ *
+ * `SaveSource`'s reason, one method along, and the same composition order
+ * refuses it: `EngineSessions` is built **before** the engine host exists, so
+ * it cannot be handed anything that opens a session at construction. What it
+ * *does* own is `recycle` — release this document's sessions, then reopen them,
+ * keeping its entry and therefore its failure count — and a restore is exactly
+ * that operation with the bytes coming from a checkpoint rather than from the
+ * canonical image. So this is composed at the root where the host's opener and
+ * the supervisor are both in scope, and it reuses `recycle` rather than adding
+ * a second way to swap a document's session (B3a).
+ *
+ * The bytes do not travel through it. `CommandBus` hands over a
+ * {@link SnapshotWrite}, which puts the checkpoint straight from
+ * `DocumentService`'s record into the granted directory
+ * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+ */
+export type DocumentRestore = (docId: DocId, write: SnapshotWrite) => Promise<void>;
 
 /**
  * What a save needs that the engine session source does not provide.
@@ -444,6 +467,7 @@ export class DocumentCommands {
   readonly #pageLinks: DocumentPageLinksReader;
   readonly #destinations: DocumentDestinationsReader;
   readonly #layers: DocumentLayersReader;
+  readonly #restore: DocumentRestore;
 
   constructor(
     documents: DocumentService,
@@ -455,6 +479,15 @@ export class DocumentCommands {
     pageLinks: DocumentPageLinksReader,
     destinations: DocumentDestinationsReader,
     layers: DocumentLayersReader,
+    // APPENDED rather than placed beside `engine`, which is where it belongs by
+    // subject. Inserting a parameter into a positional list of nine shifts eight
+    // arguments at every call site, and this build has already shipped one such
+    // shift: a `recent` parameter added fourth, into which a harness passed a
+    // `platform`, through a `Promise<any>` that erased the signature. The
+    // signature here is distinct — `(DocId, SnapshotWrite)` against every
+    // reader's `(DocId, DocumentSessions, …)` — so a mis-slot is a type error
+    // either way; appending is what keeps the *other* eight from moving.
+    restore: DocumentRestore,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -465,6 +498,7 @@ export class DocumentCommands {
     this.#pageLinks = pageLinks;
     this.#destinations = destinations;
     this.#layers = layers;
+    this.#restore = restore;
   }
 
   /**
@@ -775,9 +809,17 @@ export class DocumentCommands {
    * @returns the version the lane stamped, or `undefined` when the log had
    *   nothing left. **Not an error**: an empty log is where every document
    *   starts and where undoing to the beginning ends.
+   * ## A terminal entry is restored, and the sessions read below go stale
+   *
+   * `CommandBus.undo` reaches for {@link DocumentRestore} when the entry it is
+   * reversing carries a checkpoint, and the supervisor's `recycle` then replaces
+   * this document's sessions. The set read a few lines down is the one that was
+   * just released. Nothing here touches it afterwards, and the next call reads
+   * again — which is why this stays a get-or-miss lookup per call rather than a
+   * field.
+   *
    * @throws `DocumentNotOpenError`, `DocumentBusyError`, {@link
-   *   DocumentPoisonedError}, {@link MissingSessionError}, and
-   *   `CheckpointRestoreNotBuiltError` for a terminal entry.
+   *   DocumentPoisonedError}, {@link MissingSessionError}.
    */
   async undo(docId: DocId): Promise<Applied | undefined> {
     // HELD ON AN OBJECT rather than in a `let`, which is the idiom
@@ -793,7 +835,9 @@ export class DocumentCommands {
       const sessions = this.#engine.sessions(docId);
       if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
 
-      stepped.yes = (await this.#bus.undo(sessions, context)) !== undefined;
+      stepped.yes =
+        (await this.#bus.undo(sessions, context, (write) => this.#restore(docId, write))) !==
+        undefined;
       return context.byteLength;
     });
 

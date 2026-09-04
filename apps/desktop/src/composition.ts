@@ -20,6 +20,7 @@ import {
   type ProbeTarget,
   type RemoteMupdfWriter,
   type SessionAreaSurface,
+  type SnapshotWrite,
   type WriterRegistry,
   classifyContainment,
   createRemoteSessions,
@@ -57,7 +58,8 @@ import {
   EngineSessions,
   onDocumentOpened,
   onEngineHostEnded,
-  openEngineSession,
+  canonicalImageWrite,
+  openEngineSessionFrom,
 } from './engineSessions.js';
 import type { ContainerSid, UserSid } from './hostDacl.js';
 import {
@@ -380,7 +382,16 @@ export function createShellDependencies(
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return engineHost.layers(session);
-  });
+  },
+  // THE CHECKPOINT RESTORE, and it is `recycle` with a different source of
+  // bytes rather than a new operation. `EngineSessions.recycle` already
+  // releases a document's sessions and opens them again while KEEPING its
+  // entry — so the failure count and the poisoned state survive a restore,
+  // which is what would go wrong first if this swapped the sessions itself.
+  //
+  // Composed here for the flush's reason: the supervisor and the host's opener
+  // are both in scope on this line and nowhere else.
+  (docId, write) => engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)));
 
   const openedDocument = engineHost.openedDocument;
 
@@ -493,6 +504,16 @@ function engineSessionOpener(
    * the factory can only travel this way.
    */
   readonly rebuildSessions: (docId: DocId) => Promise<DocumentSessions>;
+  /**
+   * The same build, from bytes the caller writes rather than from the canonical
+   * image — undo of a terminal entry, which restores that entry's checkpoint
+   * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+   *
+   * It is `rebuildSessions` with one argument different, deliberately: a second
+   * function that opened a session its own way is the shape B3a is about, and
+   * this one would diverge on the granted pair's lifetime first.
+   */
+  readonly restoreSessions: (docId: DocId, write: SnapshotWrite) => Promise<DocumentSessions>;
 } {
   /** The live host, or the attempt to build one. Cleared when it ends. */
   let host: Promise<EngineHostConnection> | null = null;
@@ -765,7 +786,10 @@ function engineSessionOpener(
       throw error;
     }));
 
-  const create = async (docId: DocId): Promise<DocumentSessions> => {
+  const buildSessions = async (
+    docId: DocId,
+    write: SnapshotWrite,
+  ): Promise<DocumentSessions> => {
     const live = await ensure();
     if (platform === null) throw new Error('unreachable: a host exists without a platform');
 
@@ -830,7 +854,7 @@ function engineSessionOpener(
       });
     };
 
-    const { session } = await openEngineSession(documents, docId, areas, open);
+    const { session } = await openEngineSessionFrom(write, areas, open);
 
     // THE PAIR'S LIFETIME ENDS WITH THE DOCUMENT, and until this it did not.
     // `live()` rather than the captured `writer`: a host rebuilt between the
@@ -859,6 +883,17 @@ function engineSessionOpener(
 
     return { mupdf: session };
   };
+
+  /**
+   * One document's sessions from the canonical image — open, reopen, recycle.
+   *
+   * The write is built here rather than inside {@link buildSessions} because
+   * that function's whole parameterisation is *which bytes*: a restore hands it
+   * a checkpoint's writer instead, and the two paths are then the same code with
+   * one argument different rather than two ways to build a session.
+   */
+  const create = (docId: DocId): Promise<DocumentSessions> =>
+    buildSessions(docId, canonicalImageWrite(documents, docId));
 
   const openedDocument = (docId: DocId): void => {
     void onDocumentOpened(sessions, docId, {
@@ -910,6 +945,7 @@ function engineSessionOpener(
     layers: readLayersThroughHost,
     closeHost,
     rebuildSessions: create,
+    restoreSessions: buildSessions,
   };
 }
 

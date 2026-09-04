@@ -120,24 +120,32 @@ export class MissingWriterSessionError extends Error {
 }
 
 /**
- * Undo reached a terminal entry, whose reversal is a checkpoint restore.
+ * How a checkpoint reaches a destination the session supervisor granted.
  *
- * Named rather than attempted. §4's answer — restore the nearest checkpoint and
- * replay forward minus the undone command — means **opening a new session from
- * those bytes**, and who then owns the old session is `DocumentService`'s
- * question, not this bus's. Returning a wrong document quietly would be the
- * worse half of that choice.
+ * The bus closes over the checkpoint and the document's context, so the
+ * supervisor never receives bytes — it receives this, calls it with a path
+ * inside the pair it just created, and gets a count back. Identical in shape to
+ * what `openEngineSession` does with the canonical image at open, which is the
+ * point: a restore is not a second way to build a session.
  */
-export class CheckpointRestoreNotBuiltError extends Error {
-  override readonly name = 'CheckpointRestoreNotBuiltError';
+export type SnapshotWrite = (destination: string) => Promise<number>;
 
-  constructor(kind: string, reason: string) {
-    super(
-      `Undoing ${kind} needs a checkpoint restore, which is not built. The entry is terminal ` +
-        `because prior state could not be recorded: ${reason}. Nothing was changed.`,
-    );
-  }
-}
+/**
+ * How the session supervisor rebuilds a document's sessions from a checkpoint
+ * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+ *
+ * Implementing this means: create a granted directory pair, call `write` with a
+ * path inside it, open the engine on that path, close the session the document
+ * had, and hold the new one. All five are the supervisor's — the engine
+ * session's owner is the supervisor and not `DocumentService`
+ * (`docs/ARCHITECTURE.md`'s amendment log, 2026-08-28).
+ *
+ * Returns nothing, deliberately. The bus has no use for the new session on this
+ * path — there is nothing to invert — and a return value would invite it to
+ * start holding one, which is how a bus that holds no per-document state
+ * acquires some.
+ */
+export type CheckpointRestore = (write: SnapshotWrite) => Promise<void>;
 
 /**
  * What one execution did, for a caller that needs to know without reading the
@@ -296,23 +304,57 @@ export class CommandBus {
    * the conservative direction — `dirty` fails towards prompting rather than
    * towards losing work.
    *
+   * ## A terminal entry is restored, and NOTHING is replayed
+   *
+   * §4 says undo *"restores the nearest checkpoint and replays forward minus
+   * the undone command"*, which describes a log carrying **periodic**
+   * checkpoints. This one does not carry any: {@link CommandBus.execute} holds
+   * the only mint, takes a checkpoint strictly before `apply`, and stores it on
+   * the entry for that command alone. `entries` is the applied prefix, so the
+   * entry below is the last applied one and its checkpoint is the document's
+   * bytes after entries `0 … n−1` and before this one — exactly the state
+   * undoing it must produce. The replay set is empty, for every terminal entry,
+   * always ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+   *
+   * **That argument expires as a compile error rather than silently.**
+   * `checkpoint` is a member of the `terminal` variant alone, so a checkpoint
+   * stored anywhere else — a periodic one, at the head of a window — needs a
+   * type change, and this line stops compiling with it. A mechanism may rest on
+   * a property only when its falsification is loud.
+   *
+   * `sessions` is **not read** on the restore path and is stale afterwards: the
+   * supervisor has replaced the session this was called with. Nothing here
+   * touches it, and the caller re-reads on its next call.
+   *
+   * @param restore How the supervisor rebuilds from a checkpoint. Required, not
+   *   optional — an optional one is a caller that keeps the old refusal by
+   *   passing nothing.
    * @template W
    */
   async undo(
     sessions: SessionsByWriter,
     context: DocumentContext,
+    restore: CheckpointRestore,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
     const entry = log.entries.at(-1);
     if (entry === undefined) return undefined;
 
     if (entry.kind === 'terminal') {
-      // Refused rather than half-done. §4's answer is to restore the nearest
-      // checkpoint and replay forward, and restoring means opening a NEW
-      // session from those bytes — which is a question about who owns the
-      // session, not about this bus. Named, so the gap is a message rather
-      // than a wrong document.
-      throw new CheckpointRestoreNotBuiltError(entry.command.kind, entry.reason);
+      // THE BYTES DO NOT PASS THROUGH THE SUPERVISOR. It receives a writer and
+      // grants a destination; the service moves the checkpoint from the record
+      // to that path. That is `writeCanonicalImage`'s property at open, kept
+      // without an exception on the undo path.
+      //
+      // BEFORE the cursor moves, deliberately: a restore that throws must leave
+      // the log exactly where it was, or the document and the log disagree
+      // about which commands are applied — and the disagreement is silent.
+      await restore((destination) =>
+        context.writeCheckpoint(COMMAND_WRITER, entry.checkpoint, destination),
+      );
+
+      log.undo();
+      return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };
     }
 
     const spec = declaredCommands[entry.command.kind];

@@ -1,7 +1,6 @@
 import type { ChannelResult, ContractHandlers } from '@monstera/contract';
 import {
   type CapabilityRegistry,
-  CheckpointRestoreNotBuiltError,
   DocumentBusyError,
   DocumentNotOpenError,
   type DocumentService,
@@ -280,9 +279,10 @@ function refusalReason(
  * end of undoing indistinguishable from one.
  *
  * Everything that IS a failure travels the way `document.execute`'s does:
- * thrown by class, matched by `wrapHandler`, and a terminal entry becomes
- * `checkpoint-restore-not-built` rather than an `internal` naming a gap the
- * user cannot act on.
+ * thrown by class and matched by `wrapHandler`. A **terminal** entry is no
+ * longer among them — it is restored from its own checkpoint and answers
+ * `undone` like any other
+ * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
  */
 /**
  * Reads the view model, and refuses in exactly the cases a command refuses.
@@ -295,8 +295,6 @@ function refusalReason(
  * one. So `document-poisoned` reaches the renderer here for the same reason it
  * reaches it for a rotate.
  *
- * No `checkpoint-restore-not-built`: that is a fact about undo, and a channel
- * declaring a code its handler cannot produce is a state nothing can reach.
  */
 function viewModelHandler(commands: DocumentCommands): ContractHandlers['document.viewModel'] {
   return async ({
@@ -483,13 +481,6 @@ function undoHandler(commands: DocumentCommands): ContractHandlers['document.und
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
-      // NAMED RATHER THAN INTERNAL, because the user's next move differs: this
-      // says *this particular step cannot be reversed yet*, which is a fact
-      // about the build rather than an inconsistency they triggered. §4's
-      // answer is a checkpoint restore, which needs the save pipeline.
-      if (thrown instanceof CheckpointRestoreNotBuiltError) {
-        return err({ code: 'checkpoint-restore-not-built' });
-      }
       throw thrown;
     }
   };

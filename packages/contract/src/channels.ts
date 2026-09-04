@@ -600,11 +600,14 @@ export const channels = {
    * ordinary end of undoing indistinguishable from a defect, and the renderer's
    * answer to it — leave the button alone — is not the answer to a defect.
    *
-   * A **terminal** entry is different and is a declared failure:
-   * `checkpoint-restore-not-built`. §4's answer there is to restore the nearest
-   * checkpoint and replay forward, which needs the save pipeline, so the honest
-   * response is a code naming what is missing rather than a silent no-op that
-   * leaves the user's document one operation ahead of what they asked for.
+   * A **terminal** entry used to be a declared failure here,
+   * `checkpoint-restore-not-built`, and is now an ordinary `undone`: the bus
+   * restores that entry's own checkpoint through the session supervisor
+   * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+   * The code is **removed rather than left declared**, because a code nothing
+   * can mint is a branch the renderer must handle, a message a translator must
+   * translate, and a dialog case a reader takes as evidence the state is
+   * reachable.
    */
   'document.undo': channel(
     'Steps one entry back in an open document’s command log.',
@@ -624,12 +627,7 @@ export const channels = {
       // rebind. A version here would invite a caller to reopen for no reason.
       z.object({ kind: z.literal('nothing-to-undo') }),
     ]),
-    [
-      'document-not-open',
-      'document-busy',
-      'document-poisoned',
-      'checkpoint-restore-not-built',
-    ],
+    ['document-not-open', 'document-busy', 'document-poisoned'],
   ),
   /**
    * Save, and every part of its shape is invariant 18 or ADR-0009 §9.

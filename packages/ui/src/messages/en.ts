@@ -142,7 +142,6 @@ export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
-export const PROBLEM_NO_CHECKPOINT = messageKey('dialog.command-problem.no-checkpoint');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
 
@@ -352,7 +351,6 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to close the window — which is the one action that loses them.
   [PROBLEM_POISONED]:
     'Monstera can no longer work on this document. Your changes are still open and unsaved — save them somewhere else, or close and reopen the file to start again.',
-  [PROBLEM_NO_CHECKPOINT]: 'This step cannot be undone in this version.',
   [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.

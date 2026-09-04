@@ -69,6 +69,12 @@ function held(version: number): Held {
       enforceRetention: (): never => {
         throw new Error('saving does not enforce retention');
       },
+      // Same treatment and the same reason one line up: a save never restores a
+      // checkpoint, so this stub is unreachable and says so rather than
+      // answering a plausible zero.
+      writeCheckpoint: (): never => {
+        throw new Error('saving does not write a checkpoint');
+      },
       bumpVersion: (_writer: CommandWriter): DocVersion => at,
       commandLog: (_writer: CommandWriter): CommandLog => log,
       log,

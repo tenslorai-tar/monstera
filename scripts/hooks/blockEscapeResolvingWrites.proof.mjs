@@ -295,6 +295,48 @@ mustAllow(
 );
 mustAllow('a heredoc whose own line duplicates a descriptor', "cat <<'EOF' 2>&1\nx\nEOF");
 mustAllow('a heredoc whose own line closes a descriptor', "cat <<'EOF' 2>&-\nx\nEOF");
+
+// ---------------------------------------------------------------------------
+// OCCURRENCE 8, 2026-09-04: an interpreter reading a heredoc.
+//
+// The first occurrence to go through a HOLE rather than past a rule. The guard
+// was live in that session — it denied a `sed -i` minutes later — and
+// `python - <<'PY'` rewrote a test file, resolving a `\n` in one of its
+// replacement strings.
+//
+// The pairing is what this block is about, and it is why the allow cases sit
+// beside the deny ones rather than in the section above: the SAME construct is
+// legal for `git commit -F -` and illegal for `python -`, so a rule that keys on
+// the heredoc separates nothing. Only the command word does.
+// ---------------------------------------------------------------------------
+mustBlock('python reading a script from a quoted heredoc', "python - <<'PY'\nprint(1)\nPY");
+mustBlock('python3 reading a heredoc with no dash', "python3 <<'PY'\nprint(1)\nPY");
+mustBlock('node reading a script from a heredoc', "node - <<'JS'\nconsole.log(1)\nJS");
+mustBlock('perl reading a script from a heredoc', "perl <<'PL'\nprint 1;\nPL");
+mustBlock('ruby reading a script from a heredoc', "ruby <<'RB'\nputs 1\nRB");
+mustBlock('bash reading a script from a heredoc', "bash <<'SH'\nprintf 'a\\nb' > f\nSH");
+mustBlock('an interpreter heredoc after a separator', "true && python - <<'PY'\nprint(1)\nPY");
+mustBlock(
+  // A descriptor redirect does not make it safe. This is the case the generated
+  // properties would have got backwards, which is why this rule declares no
+  // probe: they assert `2> errors.log` is allowed, and it is not here — the
+  // interpreter writes files whatever its stderr is doing.
+  'an interpreter heredoc whose stderr goes to a file',
+  "python - <<'PY' 2> errors.log\nprint(1)\nPY",
+);
+
+// The CONTROL for all of the above, and it is the load-bearing case: a rule
+// broad enough to catch the interpreters and also `git commit -F -` would break
+// the way this repository writes every commit message, and a guard that blocks
+// that is a guard someone turns off. `git` is not an interpreter.
+mustAllow('git reading a commit message from a heredoc', "git commit -F - <<'EOF'\nSubject\nEOF");
+mustAllow('cat reading a heredoc with no redirect', "cat <<'EOF'\nx\nEOF");
+mustAllow(
+  // `node --version` sits three separators from the heredoc, which belongs to
+  // `git`. The rule excludes `;`, `&` and `|` for exactly this.
+  'a node invocation separated from a later git heredoc',
+  "node --version && git commit -F - <<'EOF'\nSubject\nEOF",
+);
 mustAllow('echo sending stderr to stdout', 'echo hello 2>&1');
 mustAllow('echo sending stderr to stdout, then piped', 'echo hello 2>&1 | grep h');
 mustAllow('awk sending stderr to stdout', "awk '{print}' input.txt 2>&1");

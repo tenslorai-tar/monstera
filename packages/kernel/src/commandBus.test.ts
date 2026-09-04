@@ -5,11 +5,18 @@ import type { Command, CommandOfKind } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
-  CheckpointRestoreNotBuiltError,
+  type CheckpointRestore,
   CommandBus,
+  type SnapshotWrite,
   UnregisteredWriterError,
 } from './commandBus.js';
-import { CommandLog, type LogEntry, type LogEntryFor, type LogTrim } from './commandLog.js';
+import {
+  type Checkpoint,
+  CommandLog,
+  type LogEntry,
+  type LogEntryFor,
+  type LogTrim,
+} from './commandLog.js';
 import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
@@ -49,12 +56,15 @@ function contextStub(): DocumentContext & {
   readonly ceiling: (bytes: number) => void;
   /** The same log, reachable without minting a capability inside a test. */
   readonly mutableLog: CommandLog;
+  /** Every checkpoint write the bus asked for, in order. */
+  readonly written: () => readonly { readonly destination: string; readonly bytes: Checkpoint }[];
 } {
   let version = asDocVersion(1);
   let bumps = 0;
   let trims = 0;
   let ceiling = Number.MAX_SAFE_INTEGER;
   const log = new CommandLog();
+  const written: { destination: string; bytes: Checkpoint }[] = [];
   return {
     mutableLog: log,
     docId: 'stub' as DocumentContext['docId'],
@@ -86,6 +96,20 @@ function contextStub(): DocumentContext & {
     ceiling: (bytes: number): void => {
       ceiling = bytes;
     },
+    // RECORDED RATHER THAN WRITTEN. The service's half of a restore is one line
+    // — put these bytes at that path — and what the bus has to get right is
+    // WHICH bytes, so the recorder keeps them for a case to compare against the
+    // entry's own checkpoint. Writing to a temporary directory would measure the
+    // filesystem and prove nothing about the choice.
+    writeCheckpoint(
+      _writer: CommandWriter,
+      checkpoint: Checkpoint,
+      destination: string,
+    ): Promise<number> {
+      written.push({ destination, bytes: checkpoint });
+      return Promise.resolve(checkpoint.byteLength);
+    },
+    written: () => written,
     trims: () => trims,
     log,
     markSaved(): DocVersion {
@@ -120,6 +144,40 @@ function ownRotation(session: MupdfSession, page: number): Promise<number | null
     return own.isNull() ? null : own.asNumber();
   });
 }
+
+/**
+ * A stand-in for the session supervisor's restore, which **calls the writer**.
+ *
+ * A stub that recorded the call and never called `write` would pass any
+ * assertion about *a restore happened* while proving nothing about which bytes
+ * the bus chose — and the bytes are the whole decision. This one behaves like
+ * the real supervisor: it grants a destination, calls the writer with it, and
+ * keeps what came back.
+ */
+function restoreStub(): {
+  readonly restore: CheckpointRestore;
+  readonly calls: () => readonly { readonly destination: string; readonly bytes: number }[];
+} {
+  const calls: { destination: string; bytes: number }[] = [];
+  return {
+    restore: async (write: SnapshotWrite): Promise<void> => {
+      const destination = `granted-pair-${String(calls.length)}/snapshot`;
+      calls.push({ destination, bytes: await write(destination) });
+    },
+    calls: () => calls,
+  };
+}
+
+/**
+ * A restore for the cases that never reach one — every invertible undo.
+ *
+ * It **throws**, rather than resolving quietly. A no-op here would let a bus
+ * that restored on every undo pass every case in this file, which is the
+ * mutation those cases exist to catch.
+ */
+const noRestoreExpected: CheckpointRestore = () => {
+  throw new Error('this case undoes an invertible entry and must not reach a restore');
+};
 
 /** A session whose page 0 carries a `/Rotate` that is a name, not an integer. */
 async function malformedSession(): Promise<MupdfSession> {
@@ -430,7 +488,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
         const second = await bus.execute(session, context, rotateFirst);
         expect(second.entry.kind).toBe('invertible');
 
-        await bus.undo({ mupdf: session }, context);
+        await bus.undo({ mupdf: session }, context, noRestoreExpected);
         expect(context.mutableLog.canRedo).toBe(true);
 
         context.mutableLog.trimTo(0);
@@ -445,19 +503,46 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       }
     });
 
-    it('CONTROL: undoing a terminal entry is what makes the tail rule unreachable today', async () => {
+    /**
+     * The other half of the tail rule, **unreachable until 2026-09-04**.
+     *
+     * A checkpoint reaches the redo tail only by undoing a terminal entry, and
+     * `undo` used to refuse exactly that — so this branch was kept as a correct
+     * unbuilt one for JJJ-1's reason, with a control asserting the refusal.
+     * ADR-0037 built the restore, the state is now ordinary, and the branch
+     * therefore owes a case rather than a comment.
+     *
+     * **The mutation this separates:** a front-first shedding walk. It empties
+     * the byte figure just as well, and it does it by discarding the applied
+     * history the user is standing on while keeping speculative entries behind
+     * them. Both assertions below are needed — `canRedo` alone passes for a walk
+     * that shed nothing at all.
+     */
+    it('sheds a checkpoint-bearing REDO tail before it touches applied history', async () => {
       const bus = alwaysCheckpointing();
       const session = await malformedSession();
       const context = contextStub();
+      const supervisor = restoreStub();
       try {
-        await bus.execute(session, context, rotateFirst);
+        const first = await bus.execute(session, context, rotateFirst);
+        const second = await bus.execute(session, context, rotateFirst);
+        if (first.entry.kind !== 'terminal' || second.entry.kind !== 'terminal') {
+          throw new Error('expected two terminal entries');
+        }
 
-        // Stated as a case rather than as a comment, because it is the reason
-        // the sibling above covers only half the rule — and the day clause (ii)
-        // lands this case goes red, which is where somebody will be reading.
-        await expect(bus.undo({ mupdf: session }, context)).rejects.toThrow(
-          /checkpoint restore/iu,
-        );
+        // THE UNDO IS WHAT PUTS A CHECKPOINT IN THE TAIL, and it is the step
+        // that could not be taken before the restore existed.
+        await bus.undo({ mupdf: session }, context, supervisor.restore);
+        expect(context.mutableLog.redoDepth).toBe(1);
+        expect(context.mutableLog.entries).toHaveLength(1);
+
+        // FROM WHAT WAS MEASURED, not chosen: room for exactly the applied
+        // entry's checkpoint, so one of the two has to go and only one.
+        context.mutableLog.trimTo(first.entry.checkpoint.byteLength);
+
+        expect(context.mutableLog.canRedo).toBe(false);
+        expect(context.mutableLog.entries).toHaveLength(1);
+        expect(context.mutableLog.retainedBytes()).toBe(first.entry.checkpoint.byteLength);
       } finally {
         await mupdfWriter.close(session);
       }
@@ -591,7 +676,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       // tracks its branch.
       expect(await ownRotation(session, 0)).toBe(180);
 
-      const undone = await bus.undo({ mupdf: session },context);
+      const undone = await bus.undo({ mupdf: session }, context, noRestoreExpected);
 
       // THE ASSERTION §3 EXISTS FOR, and it is STRUCTURAL. Restoring the value
       // that was showing — writing 90 back — renders identically and leaves the
@@ -613,7 +698,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      await bus.undo({ mupdf: session },context);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected);
 
       // The point of the control: the effective rotation after a correct undo
       // and after the WRONG one are identical. A test comparing rendered output
@@ -641,7 +726,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       expect(await ownRotation(session, 0)).toBe(180);
       expect(await ownRotation(session, 1)).toBe(0);
 
-      await bus.undo({ mupdf: session },context);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected);
 
       // Forward NORMALISES; the inverse restores VERBATIM. If prior state were
       // typed as a quarter turn these would come back as 90 and 270 — silently
@@ -660,7 +745,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      await bus.undo({ mupdf: session },context);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected);
       const written = await mupdfWriter.serialise(session);
 
       // pdf-lib resolves inheritance the way a reader does, so this asserts the
@@ -680,7 +765,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      await bus.undo({ mupdf: session },context);
+      await bus.undo({ mupdf: session }, context, noRestoreExpected);
       expect(context.log.redoDepth).toBe(1);
 
       await bus.redo({ mupdf: session },context);
@@ -695,22 +780,79 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     }
   });
 
-  it('CONTROL: undoing a TERMINAL entry is refused by name, and changes nothing', async () => {
+  /**
+   * Undo of a terminal entry, and the assertion is on **the call**, not on the
+   * state.
+   *
+   * The state a correct restore leaves behind, in this file, is the state an
+   * absent restore leaves behind: the bus never touches the session on this
+   * path — the supervisor swaps it — so `ownRotation` reads 90 either way. A
+   * case asserting the document afterwards would pass with the whole mechanism
+   * deleted, which is the shape `docs/JOURNAL.md` names as *a decision asserted
+   * by its end state*.
+   *
+   * So what is asserted is what the bus **chose**: it handed the supervisor a
+   * writer, and that writer produced exactly this entry's checkpoint. Three
+   * mutations redden it and nothing else does — restoring the wrong entry's
+   * checkpoint, restoring without calling the writer, and reverting to the old
+   * refusal.
+   */
+  it('undoing a TERMINAL entry restores THAT entry’s checkpoint through the supervisor', async () => {
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await malformedSession();
+    const context = contextStub();
+    const supervisor = restoreStub();
+    try {
+      const executed = await bus.execute(session, context, rotateFirst);
+      if (executed.entry.kind !== 'terminal') throw new Error('expected a terminal entry');
+      expect(await ownRotation(session, 0)).toBe(90);
+
+      const undone = await bus.undo({ mupdf: session }, context, supervisor.restore);
+
+      expect(supervisor.calls()).toHaveLength(1);
+      // THE BYTES, compared against the entry's own checkpoint rather than
+      // against a length. A bus that restored a different entry's checkpoint
+      // would satisfy a byte-count assertion whenever the two happened to
+      // serialise to the same size, which for two rotations of one fixture is
+      // exactly what happens.
+      expect(context.written()).toHaveLength(1);
+      expect(context.written()[0]?.bytes).toStrictEqual(executed.entry.checkpoint);
+      expect(context.written()[0]?.destination).toBe(supervisor.calls()[0]?.destination);
+
+      // The cursor stepped exactly once and the version moved, which is what
+      // separates a restore from a refusal that happened to leave things alone.
+      expect(undone?.entry.kind).toBe('terminal');
+      expect(context.log.entries).toHaveLength(0);
+      expect(context.log.canRedo).toBe(true);
+      expect(context.bumps()).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  /**
+   * The restore's failure is the log's failure too.
+   *
+   * A supervisor that cannot rebuild leaves the document holding the session it
+   * had, so a cursor that stepped anyway would put the log and the document in
+   * different states — silently, and in the direction where undo appears to
+   * have worked.
+   */
+  it('CONTROL: a restore that throws leaves the cursor and the version alone', async () => {
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await malformedSession();
     const context = contextStub();
     try {
       await bus.execute(session, context, rotateFirst);
-      expect(await ownRotation(session, 0)).toBe(90);
 
-      await expect(bus.undo({ mupdf: session },context)).rejects.toThrow(CheckpointRestoreNotBuiltError);
+      await expect(
+        bus.undo({ mupdf: session }, context, () => {
+          throw new Error('the host would not rebuild');
+        }),
+      ).rejects.toThrow(/would not rebuild/u);
 
-      // Refused rather than half-done: the cursor has not moved and the
-      // document is untouched. A checkpoint restore opens a NEW session from
-      // those bytes, which is a question about session ownership rather than
-      // about this bus.
       expect(context.log.entries).toHaveLength(1);
-      expect(await ownRotation(session, 0)).toBe(90);
+      expect(context.log.canRedo).toBe(false);
       expect(context.bumps()).toBe(1);
     } finally {
       await mupdfWriter.close(session);
@@ -721,7 +863,9 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
     const bus = new CommandBus({ mupdf: localMupdfWriter });
     const session = await mupdfWriter.open(flat);
     try {
-      expect(await bus.undo({ mupdf: session },contextStub())).toBeUndefined();
+      expect(
+        await bus.undo({ mupdf: session }, contextStub(), noRestoreExpected),
+      ).toBeUndefined();
       expect(await bus.redo({ mupdf: session },contextStub())).toBeUndefined();
     } finally {
       await mupdfWriter.close(session);
@@ -767,7 +911,7 @@ describe('CommandBus — capture, then checkpoint if it must, then apply', () =>
       expect(first.log.entries).toHaveLength(1);
       expect(second.log.entries).toHaveLength(1);
 
-      await bus.undo({ mupdf: session },first);
+      await bus.undo({ mupdf: session }, first, noRestoreExpected);
       expect(first.log.canUndo).toBe(false);
       expect(second.log.canUndo).toBe(true);
     } finally {
@@ -880,7 +1024,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       await real.execute(session, context, rotateFirst);
       expect(await rotationOf(session)).toBe(90);
 
-      await substituted.undo({ mupdf: session }, context);
+      await substituted.undo({ mupdf: session }, context, noRestoreExpected);
 
       // A recorded inverse carries no kind, so `invert` takes one — the
       // asymmetry with `apply` that `CommandExecution` states.
@@ -911,7 +1055,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const context = contextStub();
     try {
       await real.execute(session, context, rotateFirst);
-      await real.undo({ mupdf: session }, context);
+      await real.undo({ mupdf: session }, context, noRestoreExpected);
       expect(await rotationOf(session)).toBeNull();
 
       await substituted.redo({ mupdf: session }, context);
@@ -938,7 +1082,9 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
       // outlive the registration that produced it. Without the guard this is a
       // property access on `undefined`, which is a TypeError rather than a
       // named refusal — so the error CLASS is what separates the two.
-      await expect(empty.undo({ mupdf: session }, context)).rejects.toThrow(UnregisteredWriterError);
+      await expect(
+        empty.undo({ mupdf: session }, context, noRestoreExpected),
+      ).rejects.toThrow(UnregisteredWriterError);
 
       // And nothing moved.
       expect(await rotationOf(session)).toBe(90);
@@ -956,7 +1102,7 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     const context = contextStub();
     try {
       await real.execute(session, context, rotateFirst);
-      await real.undo({ mupdf: session }, context);
+      await real.undo({ mupdf: session }, context, noRestoreExpected);
 
       await expect(empty.redo({ mupdf: session }, context)).rejects.toThrow(UnregisteredWriterError);
 

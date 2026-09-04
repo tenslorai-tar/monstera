@@ -467,7 +467,7 @@ These were given directly and bind every agent on this project.
   `python -c`. Use the file-editing tools. This rule used to say "prose or
   documentation", and that scoping was wrong: the mechanism is that *the tool
   rewrites the bytes on the way past*, which has nothing to do with what the
-  file contains. It has now happened **seven times**. The first five:
+  file contains. It has now happened **eight times**. The first five:
 
   1. backticks swallowed a package name;
   2. `\a` and `\b` became BEL and BACKSPACE, and the text rendered as though the
@@ -492,6 +492,28 @@ These were given directly and bind every agent on this project.
   seven caused real harm and one did not, which tells you the mechanism fires
   whether or not the outcome happens to matter, and that judging by outcome is
   how you conclude a habit is safe.
+
+  **AN EIGHTH, ON 2026-09-04, AND IT IS THE FIRST TO GO THROUGH A HOLE IN THE
+  MECHANISM RATHER THAN PAST THE RULE.** `python - <<'PY'` rewrote twenty call
+  sites in a test file; one replacement string spelt `\n` and Python resolved
+  it. The guard was demonstrably **live** in that session — it denied a `sed -i`
+  and a `node -e` either side of it — and this passed, because the guard's own
+  header deliberately allowed *"a quoted heredoc feeding a command's stdin"* on
+  the ground that POSIX expands nothing inside one.
+
+  That allowance is **a compound claim with one clause that stopped being
+  enough**, which is item 7's own shape arriving inside a mechanism. *No shell
+  expansion* is a fact about the shell and it is still true. *Byte-faithful* is a
+  fact about `git commit -F -`, which takes the bytes as data. Hand the same
+  bytes to an interpreter and it resolves the escapes in its own string
+  literals — `python -c` by another route, through the door the allowance held
+  open. The live clause vouched for the dead one beside it.
+
+  The rule now keys on the **consumer**, not on the heredoc: an interpreter
+  reading one is denied, `git commit -F -` is not, and the control case is the
+  commit heredoc, because a rule broad enough to catch both is a rule someone
+  turns off. Verified by running the exact occurrence-8 command afterwards and
+  being denied, which is the self-certifying direction.
 
   **Mechanism, not intention.** Two mechanisms now, and the second exists
   because the first sentence of this paragraph used to end differently.

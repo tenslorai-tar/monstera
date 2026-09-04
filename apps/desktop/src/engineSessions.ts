@@ -18,6 +18,7 @@ import type {
   EngineSupervisor,
   HostTermination,
   MupdfSession,
+  SnapshotWrite,
 } from '@monstera/kernel';
 import type { DocId } from '@monstera/shared';
 
@@ -132,15 +133,51 @@ export async function openEngineSession(
   areas: SessionAreaOwner,
   open: EngineOpenFromPath,
 ): Promise<{ readonly session: MupdfSession; readonly snapshotBytes: number }> {
+  return openEngineSessionFrom(canonicalImageWrite(documents, docId), areas, open);
+}
+
+/**
+ * The same, from bytes the caller names rather than from the canonical image.
+ *
+ * ## Why the parameter is a WRITER and not a buffer
+ *
+ * `openEngineSession` above never holds the document, and this must not either.
+ * A checkpoint restore has to put a *different* image in the granted directory —
+ * the bytes of a terminal log entry — and those live on `DocumentService`'s
+ * record, in the command log. `CommandBus` closes over
+ * `DocumentContext.writeCheckpoint`, so the bytes go from the record to the disk
+ * and this module still never sees one
+ * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)).
+ *
+ * Every failure removes the pair, for the reason `openEngineSession`'s header
+ * gives: a caller that receives an error never closes a session, so nothing else
+ * would.
+ */
+export async function openEngineSessionFrom(
+  write: SnapshotWrite,
+  areas: SessionAreaOwner,
+  open: EngineOpenFromPath,
+): Promise<{ readonly session: MupdfSession; readonly snapshotBytes: number }> {
   const { snapshotPath } = await areas.create();
   try {
-    const snapshotBytes = await documents.writeCanonicalImage(SUPERVISOR, docId, snapshotPath);
+    const snapshotBytes = await write(snapshotPath);
     const session = await open(snapshotPath);
     return { session, snapshotBytes };
   } catch (error) {
     await areas.remove();
     throw error;
   }
+}
+
+/**
+ * Writing one document's canonical image, as a {@link SnapshotWrite}.
+ *
+ * Exists so that {@link SUPERVISOR} stays module-private while both openers take
+ * the same parameter. A composition root building this arrow itself would need
+ * the capability, and a capability exported for convenience is a capability.
+ */
+export function canonicalImageWrite(documents: DocumentService, docId: DocId): SnapshotWrite {
+  return (destination) => documents.writeCanonicalImage(SUPERVISOR, docId, destination);
 }
 
 /**

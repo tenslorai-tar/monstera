@@ -5,13 +5,13 @@
       "event": "PreToolUse",
       "outcome": "fired",
       "certifies": "detection",
-      "exercise": "node -e \"console.log('hook test')\"",
+      "exercise": "an interpreter reading a quoted heredoc, occurrence 8's own command, denied 2026-09-04",
       "evidence": "The hook produced its own output. Nothing that failed to load it can do that.",
-      "recordedAt": "2026-08-29T06:04:25.740Z",
+      "recordedAt": "2026-09-04T06:08:21.890Z",
       "sessionStartedAt": "2026-08-28T12:07:52.861Z",
-      "inputsLastChangedAt": "2026-08-29T03:23:10+02:00",
+      "inputsLastChangedAt": "2026-08-29T08:09:36+02:00",
       "verdict": {
-        "digest": "89f7688a0137e9bc3e6444504e4745208b46ee214401ad0e3acee7e45b1d70cf",
+        "digest": "b97696bd51c619da91e9df4c683f98a0f8f571f26992b77aeb6066cdd205c1ce",
         "inputs": [
           {
             "name": "file:.claude/settings.json",
@@ -19,7 +19,7 @@
           },
           {
             "name": "file:scripts/hooks/blockEscapeResolvingWrites.mjs",
-            "digest": "c24d7de654d74b06ef129d898175c3398bfeb31fecbdbec0f56ada77882e7681"
+            "digest": "e808e13d793f61c03f88788e5e09012a1eb373ffb6484fea24eeaf5b3afd2e6c"
           }
         ]
       }

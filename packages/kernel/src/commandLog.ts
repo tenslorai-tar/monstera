@@ -258,15 +258,22 @@ export class CommandLog implements ReadonlyCommandLog {
    * front-first walk destroys the history the user is standing on while holding
    * speculative entries behind them.
    *
-   * **That ordering is UNREACHABLE through the bus today, and the branch is kept
-   * anyway.** A redo tail can only hold a checkpoint if undo stepped over a
-   * terminal entry, and `CommandBus.undo` throws
-   * `CheckpointRestoreNotBuiltError` for exactly that — invariant 18 clause (ii)
-   * is deferred. So no case here can produce the state this half handles.
-   * Deleting it would be correct for today's tree and would produce the wrong
-   * order the day clause (ii) lands, silently, in a file nobody would be
-   * reading. What *is* reachable and is covered is the guard above it: a
-   * checkpoint-free tail must survive untouched.
+   * **That ordering was UNREACHABLE through the bus and became reachable on
+   * 2026-09-04**, which is the day this half stopped being documentation and
+   * started being a mechanism. A redo tail can only hold a checkpoint if undo
+   * stepped over a terminal entry, and `CommandBus.undo` used to refuse exactly
+   * that. It now restores the entry's checkpoint and steps the cursor
+   * ([ADR-0037](../../../docs/DECISIONS/0037-checkpoint-restore-and-the-replay-that-is-not-needed.md)),
+   * so a terminal entry sitting in the redo tail is an ordinary state and a
+   * trim that walked front-first would now discard applied history while
+   * holding it.
+   *
+   * It was kept while unreachable on the argument that deleting it would be
+   * correct for that tree and wrong the day clause (ii) landed, silently, in a
+   * file nobody would be reading. That day arrived, and what changed with it is
+   * the **obligation**: a branch nothing can reach owes no case, and this one
+   * now owes one. `commandBus.test.ts` carries it, in the retention block —
+   * this log's cases live there because reaching the state needs a bus.
    *
    * ## Invariant 18: this must never be silent
    *

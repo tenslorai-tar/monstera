@@ -44,9 +44,10 @@ export {
   type ReadonlyCommandLog,
 } from './commandLog.js';
 export {
-  CheckpointRestoreNotBuiltError,
+  type CheckpointRestore,
   CommandBus,
   type Executed,
+  type SnapshotWrite,
   type Undone,
   MissingWriterSessionError,
   UnregisteredWriterError,
