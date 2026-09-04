@@ -902,6 +902,227 @@ than assumed.
 
 ---
 
+## 2026-09-04 — Stage audit: `c00bab4..2f87e45` — a refusal whose two stated reasons were both stale, and a mutation that proved nothing because an earlier line had already made the change
+
+Range: **22 commits, 98 files.** 9 proofs added, 19 modified, 0 removed; 14
+source files added, 41 changed, 0 removed — from `npm run audit:scope`, which
+reported *"Fires at 51 commits (29 more) or 101 files (3 more)"*. Taken at a
+**track boundary** rather than under the gate: D2's Track A and Track B both
+closed here, and the next feature would have crossed the file threshold
+mid-track.
+
+The range is Stage 1's close-out and the first two tracks of Stage 2: the error
+boundary, multi-document tabs, compare, rotate 180/270, checkpoint restore,
+delete, duplicate, swap, and the mutation-dialog gate. Two B4 amendments landed
+in their own commits (ADR-0037, ADR-0038).
+
+### DDDDDD-1. A refusal named two reasons and both had stopped being true
+
+`CheckpointRestoreNotBuiltError` blocked every non-invertible command, and its
+comment gave two grounds:
+
+| the stated reason | what was actually true |
+|---|---|
+| *"who then owns the old session is `DocumentService`'s question"* | answered on **2026-08-28** by this document's own amendment log — the owner is the supervisor |
+| §4's *"restore the nearest checkpoint and replay forward"* needs a replay | the replay set is **empty for every terminal entry**, always |
+
+The second is the transferable half. `execute` holds the only `Checkpoint` mint,
+takes one strictly before `apply`, and stores it on the entry for *that*
+command; `CommandLog.entries` is the applied prefix, so undo is
+last-applied-first and the tail entry's own checkpoint **is** the state undoing
+it must produce. §4's sentence describes a log with **periodic** checkpoints,
+which this one does not have.
+
+**Neither half could be found by reading `commandBus.ts`.** The first needed the
+amendment log; the second needed three facts from two other files. What made the
+comment survive is that it was *plausible in place* — this is the
+justification-beside-a-settled-decision shape, and the conclusion did not
+survive either.
+
+The property the fix now rests on expires as a **compile error**: `checkpoint`
+is a member of the `terminal` variant alone, so a checkpoint stored anywhere
+else needs a type change and every reader of `entry.checkpoint` stops compiling.
+
+### DDDDDD-2. Occurrence 8 of the escape rule went through a HOLE, not past the rule
+
+`python - <<'PY'` rewrote twenty call sites in a test file and resolved a `\n`
+in one of its replacement strings. **The guard was live in that session** — it
+denied a `sed -i` minutes later and a `node -e` minutes before.
+
+Its header deliberately allowed *"a quoted heredoc feeding a command's stdin"*
+because POSIX expands nothing inside one. That is a **compound claim with one
+clause that stopped being enough**: *no shell expansion* is a fact about the
+shell and still true; *byte-faithful* is a fact about `git commit -F -`, which
+takes the bytes as data. Hand them to an interpreter and it resolves the escapes
+in its own string literals.
+
+The rule now keys on the **command word**, and the control is the commit
+heredoc, because a rule broad enough to catch both is one somebody turns off.
+Verified by running the offending command again and being denied — the
+self-certifying direction.
+
+**This is the first occurrence to arrive through the mechanism rather than
+despite it**, and it is why the guard's own denial text now carries the count
+and the reason.
+
+### DDDDDD-3. A mutation that proved nothing, because an earlier line had already made the change
+
+Duplicate's correctness rests on pushing inheritable attributes down **before**
+grafting the page. The obvious mutation — graft `document.findPage(page)`
+instead of the collected leaf — left every case green.
+
+It is not a mutation. `leavesWithInheritables` mutates the page objects **in
+place**, so once it has run the two expressions are the same object. The real
+mutation is moving the graft *above* that call, and it reddens the nested case
+with `[90, 0, 90, 0, 0]`: the copy resolves its rotation against the root and
+lands upright between two rotated pages, with the count and order both correct.
+
+**The tell was the green, and the rule is the memory's:** a guard that survives
+its own mutation is telling you where its failure lives. Recorded at the call
+site, because a reader simplifying that line would be right today for a reason
+they would not assume.
+
+### DDDDDD-4. Two seams were found by the compiler, not by review
+
+Both in the dialog amendment, and both are cases of the type saying something
+true that the design had not:
+
+- **`resolve` validated inside a state updater.** React runs an updater during
+  render, so a body answering with a refused value unmounted the tree instead of
+  rejecting the opener's promise. The failure path for a value crossing out has
+  to reach the same place the value would. Found by the case that answers
+  wrongly on purpose.
+- **`DialogAnswering` is contravariant in its result**, so `(r: never) => void`
+  is not assignable to `(r: unknown) => void` and every informational entry
+  stopped fitting the registry the moment one entry declared a result. The
+  compiler was right: a component taking `never` genuinely cannot receive an
+  arbitrary value. `RegisteredDialog` erases both schema types, which is safe
+  for the reason `mount` exists at all — the registry never touches `component`.
+
+### DDDDDD-5. TaskStop killed the shell and not the process tree
+
+A long `npm run local` was stopped mid-run. The wrapper died; the sweep did not.
+It kept planting boundary probes into `packages/*/src/`, which is why a
+`typecheck` reported `TS5055` in one package and then a parse error in a
+different one minutes later — two symptoms of one live process.
+
+**A cache was blamed first.** Deleting `packages/shared/tsconfig.tsbuildinfo`
+and re-running produced a *different* error, which is what refuted the
+hypothesis rather than confirming it — and the correct diagnosis came from
+`tasklist`, where the sweep's own PID was still there. The log file name carries
+that PID, which is what made it identifiable.
+
+Two things follow. `git status` is **blind by construction** here, because the
+probe names are gitignored. And an interrupted sweep leaves a tree that later
+readings are measured against — so the reading after a kill is about a tree
+nobody wrote.
+
+### 1. Root cause or workaround
+
+Six fixes, all naming a mechanism: the leaf
+collection bounded by the caller's list rather than the document (found by the
+first delete, the shape a permutation cannot produce); the escape guard's
+consumer clause; the type-dump eliser's third truncation shape; the updater
+validation; the registry's erasure; and the greedy-to-lazy correction inside the
+eliser fix itself. **No repair in this range can regenerate**, and none is an
+override standing in for coverage.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes were reached deliberately: a nested page
+tree for every page command, a keep-set shorter than the document, a
+non-adjacent index pair for delete, the document's far ends for swap, and a
+dialog that answers against one that cannot. **What was NOT reached and is
+stated rather than implied: none of the three new commands has run through the
+contained engine host.** Every kernel case uses the in-process adapter. That is
+the same gap `rotatePages` had and it is not new here, but three commands now
+sit behind it.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Two, both stated.**
+The terminal-entry CONTROL that asserted a *refusal* is gone, replaced by a
+restore case plus a control asserting the cursor does not move when the restore
+throws. The property is the same and the trigger is different. **And the type-dump
+eliser got WIDER**, which makes the resolution test's exclusion half quieter by
+construction: more elided text is fewer property names for a `notBecause` to
+catch. The compensating control is real and fired in this range — every
+`because` anchored on prose outside a dump goes red when the eliser removes too
+much, which is exactly how the greedy spelling was caught.
+
+### 3. Would CI have caught it?
+
+**GREEN at `2f87e45`, the range's own head: `CI=success, Guards=success`**, read
+from `npm run board -- --once` rather than from the workflow file. So the answer
+below is about a run that happened, not about steps that exist.
+Every proof this range touches is an unconditional step on both matrix legs, and
+the range's own checks — `proof:contract`, `check:docs`, `proof:escapeguard`,
+`check:emittedtemplates` — all run there. **Two exceptions, both structural:**
+`check:testanchors` is pre-commit only, because CI checks out `HEAD` and both
+sides of its comparison would be one blob; and `proof:escapeguard`'s
+*liveness* — whether the hook is loaded in an agent session — lives in the
+agent's own hook table and no subprocess can see it. The second was answered by
+running the offending command, not by a check.
+
+**And the other way round: is there a defect THIS MACHINE cannot see?** The
+graft probe ran against the in-process MuPDF binding. The contained host uses
+the same shim through a different route, and no case in this range exercises it.
+
+### 4. Are the proofs non-vacuous?
+
+Nine mutations run, and every one reddened a named case
+except the duplicate one recorded above as DDDDDD-3 — restoring without calling
+the writer, moving the cursor before the restore, disabling the tail-first shed,
+a keep-set removing only the first index, a control wired to `rotatePages`, half
+a swap, the graft sharing the leaf, the graft before the push-down, and a gate
+dispatching a fallback page.
+
+### 4a. Has every instrument passed a resolution test?
+
+Four new ones. `pageRanges.ts` is the one that needed it most and has it: its
+fixtures avoid page 1 and the document's own last page, so *converted from
+1-based* and *did not convert*, and *bounded inclusively* and *bounded
+exclusively*, are each separated by a case rather than coinciding.
+`testCaseCounts.mjs` distinguishes a file that lost a case from one that gained
+one and from one that was merely edited — three cases, all present.
+
+### 4b. Is the instrument a SEARCH? Then it needs a positive control
+
+Two are. `probeLeftovers.mjs` walks a tree for files that may not be there, and
+`testCaseCounts.mjs` matches `it`/`test` calls in text — both answer *"found
+nothing"* for every way they can be broken, and both carry a positive control
+**at the point of use** rather than only in a proof, because each gets run by
+hand on the day someone needs an answer. `noClassComponents.mjs` is the third
+shape — a lint rule — and has a planted offender beside a planted innocent.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+No roster in this range derives its count from the set it polices. The one new
+`createRoster` call, in `testAnchors.proof.mjs`, declares a literal.
+
+### 5. Executed, or asserted?
+
+Executed: `graftObject`'s same-document semantics
+(new object 4 → 7, dictionaries diverging, `/Contents` shared); the escape
+guard's denial of occurrence 8's own command; every mutation above. Asserted and
+named as such: that the three new commands behave identically through the
+contained host.
+
+### 6. Did architecture change BEFORE the feature, or underneath it?
+
+Before, twice, each in its own commit. ADR-0038 was reached the honest way — the
+feature could not be registered into the seam, so the seam was amended first.
+
+### 7. Do the documents still match the code?
+
+Every row updated in its feature's own commit. The
+cross-document sweep NNN-4 asks for was run on both relationships this range
+stated: *"lazy component, props schema"* (4 matches — the founding record, which
+is immutable and superseded by the amendment row; §7; the amendment; the ADR)
+and *"no second place where a feature is wired"* (3 matches, all still true).
+
+---
+
 ## 2026-09-03 — Stage audit: `87540a5..c00bab4` — a bound that truncated where its two siblings refuse, and a comment that described a case nobody had written
 
 Range: **17 commits, 94 files.** 9 proofs added, 22 modified, 0 removed; 10
