@@ -77,7 +77,9 @@ import { fileURLToPath } from 'node:url';
 
 import { createRoster } from '../lib/passRoster.mjs';
 import { retention, runLogState } from '../lib/runLog.mjs';
+import { failureLineOf } from '../lib/failureLine.mjs';
 import { classifySpawn } from '../lib/spawnOutcome.mjs';
+import { orderSteps } from '../lib/stepOrder.mjs';
 import { SCANNING_PROOFS } from '../lib/scanningProofs.mjs';
 import { PARTIAL_MARKER, UNVERIFIABLE_MARKER } from '../lib/unverifiable.mjs';
 
@@ -86,7 +88,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
-const roster = createRoster(failures, { cases: 62 });
+const roster = createRoster(failures, { cases: 74 });
 
 /**
  * Records, and prints nothing — `roster.format` emits the case list at the end.
@@ -1836,6 +1838,141 @@ try {
       `the last line was "${lastLine(failing.output)}". A seal line that says "ok" whatever ` +
         `happened is the display-only defect living inside the mechanism that reports ` +
         `it.\n${failing.output.slice(-700)}`,
+    );
+  }
+
+  /**
+   * The failure line the harness prints beside a failed step.
+   *
+   * ## Against CONSTRUCTED output, not against a run
+   *
+   * A case that spawned a real failing proof and asserted the row is non-empty
+   * would pass for a great many wrong selections, and would have passed for the
+   * one this replaces: `/\b(FAIL|Error|error)\b/` found a line in plenty of
+   * outputs, just never the one that said what failed. The input has to be
+   * output whose correct answer is known, which means writing it here.
+   *
+   * ## Both real spellings, because keying on one is how a third arrives
+   *
+   * 61 files print `N failure(s):` and 25 print `N case(s) FAILED:`. A reader
+   * that recognised the first would be right about most of the corpus and
+   * silent about the rest — which is the failure being fixed, one wording along.
+   */
+  {
+    const rosterStyle =
+      'some noise first\n\nWorkflow pin proof — 2 failure(s):\n\n' +
+      '  - actions/checkout is pinned to a tag, not a sha\n' +
+      '    and the tag moved on 2026-01-01\n\n  - a second one\n';
+    check(
+      'the failure line carries the summary AND the first failure, roster spelling',
+      failureLineOf(rosterStyle) ===
+        'Workflow pin proof — 2 failure(s): actions/checkout is pinned to a tag, not a sha',
+      `got "${failureLineOf(rosterStyle)}". Neither half is enough alone: the summary names ` +
+        `no failure and the entry does not say which proof is speaking.`,
+    );
+
+    const failedStyle = '\n4 checkLocal case(s) FAILED:\n\n  - the seal state was "ok"\n';
+    check(
+      'and it reads the OTHER spelling, which keying on the first would miss',
+      failureLineOf(failedStyle) === '4 checkLocal case(s) FAILED: the seal state was "ok"',
+      `got "${failureLineOf(failedStyle)}". 25 files print this wording, and "FAILED" does not ` +
+        `match \\bFAIL\\b — so it was invisible to the old matcher twice over.`,
+    );
+
+    check(
+      'the entry is cut to ONE line, so a paragraph does not land in a summary table',
+      !failureLineOf(rosterStyle).includes('the tag moved'),
+      `got "${failureLineOf(rosterStyle)}", which carries the entry's continuation.`,
+    );
+
+    const thrown = 'Building...\nError: Cannot find module foo\n    at x (y.js:1:1)\n';
+    check(
+      'a THROW is still found, which is all the old matcher could ever see',
+      failureLineOf(thrown) === 'Error: Cannot find module foo',
+      `got "${failureLineOf(thrown)}". An uncaught exception prints no summary and no entries, ` +
+        `so it is the other real way a step fails.`,
+    );
+
+    const silent = 'compiling\ntsc exited nonzero\n';
+    check(
+      'output with neither shape answers with its LAST line rather than nothing',
+      failureLineOf(silent) === '(no summary line; the run ended with) tsc exited nonzero',
+      `got "${failureLineOf(silent)}". "(no diagnostic line found)" is a sentence about the ` +
+        `matcher; the last line is a sentence about the step.`,
+    );
+
+    check(
+      'and printing NOTHING is its own state, distinct from printing something unreadable',
+      failureLineOf('') === '(the step failed and printed nothing at all)',
+      `got "${failureLineOf('')}". Collapsing the two is what cost a session: only \`bytes\` ` +
+        `separated them, and nobody reading a printed row sees \`bytes\`.`,
+    );
+
+    // THE CONTROL FOR THE WHOLE GROUP, and its direction is the point. Every
+    // case above asserts that a line comes back, and a function returning a
+    // constant non-empty string satisfies all six. This one requires the
+    // selection to CHANGE with the input, on two outputs that differ only in
+    // the failure they report.
+    const other = 'Prose sweep proof — 1 failure(s):\n\n  - the phrase was not found\n';
+    check(
+      'CONTROL: two different failing outputs do not produce the same line',
+      failureLineOf(rosterStyle) !== failureLineOf(other),
+      `both answered "${failureLineOf(other)}". A selector that always says the same thing ` +
+        `passes every case above and reports nothing about any run.`,
+    );
+  }
+
+  /**
+   * The ordering the cost sort has no concept of.
+   *
+   * Driven against `orderSteps` directly rather than through a fixture sweep,
+   * for `failureLineOf`'s reason: a run whose steps came out in *some* order
+   * passes for every ordering there is, including the one being fixed.
+   *
+   * The consumer named here is a real one — `ARTEFACT_EDGES` declares
+   * `proof:canvaspixels` — because a made-up name would test a lookup that
+   * cannot fire against the actual table.
+   */
+  {
+    const before = ['proof:canvaspixels', 'lint', 'build', 'typecheck'];
+    const after = orderSteps(before);
+    check(
+      'a proof that reads a built artefact is moved after the step that builds it',
+      after.indexOf('proof:canvaspixels') > after.indexOf('build'),
+      `got ${JSON.stringify(after)}. Measured 2026-09-05, the real sweep ran this proof at ` +
+        `position 28 and \`build\` at 117.`,
+    );
+
+    check(
+      'and everything else keeps the order the cost sort gave it',
+      // STABILITY IS THE PROPERTY THAT MAKES THIS SAFE, and asserting only the
+      // move above is satisfied by a sort that rearranges the whole roster —
+      // which would silently throw away cheapest-first.
+      after.filter((step) => step !== 'proof:canvaspixels').join() === 'lint,build,typecheck',
+      `got ${JSON.stringify(after)}. A general topological sort is free to move steps the
+        constraint says nothing about, and cheapest-first is what makes a failing run die early.`,
+    );
+
+    check(
+      'CONTROL: with nothing to order, the roster comes back untouched',
+      orderSteps(['lint', 'typecheck', 'test']).join() === 'lint,typecheck,test',
+      `a reorder of steps with no declared dependency is a reorder nobody asked for.`,
+    );
+
+    check(
+      'CONTROL: without the producing step selected, the consumer is not held back',
+      orderSteps(['proof:canvaspixels', 'lint']).join() === 'proof:canvaspixels,lint',
+      `a single-proof run must not wait for a step this run is not going to execute — the ` +
+        `constraint is between two steps, so one of them absent makes it vacuous.`,
+    );
+
+    check(
+      'every step goes in exactly once, whatever the constraint decides',
+      // A REORDER THAT DROPS A STEP is a check that silently did not run, which
+      // is worse than one that ran too early — so the count is asserted rather
+      // than assumed from the loop being correct.
+      after.length === before.length && new Set(after).size === before.length,
+      `got ${JSON.stringify(after)} from ${JSON.stringify(before)}.`,
     );
   }
 } finally {

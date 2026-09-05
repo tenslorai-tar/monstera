@@ -96,11 +96,13 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { affectedProofs, affectedProofsReport } from './lib/affectedProofs.mjs';
+import { failureLineOf } from './lib/failureLine.mjs';
 import { uncommittedPaths } from './lib/gitScope.mjs';
 import { binaryMap, resolveScript } from './lib/npmScriptSteps.mjs';
 import { retention, runLogName } from './lib/runLog.mjs';
 import { ciVerifiers, verifiersNotRunByCi } from './lib/ciVerifiers.mjs';
 import { classifySpawn } from './lib/spawnOutcome.mjs';
+import { orderSteps } from './lib/stepOrder.mjs';
 import { SCANNING_PROOFS, rosterMiscount } from './lib/scanningProofs.mjs';
 import { treeMovedSince, witnessTree } from './lib/treeWitness.mjs';
 import { PARTIAL_MARKER, UNVERIFIABLE_MARKER } from './lib/unverifiable.mjs';
@@ -677,7 +679,7 @@ function costBucket(name) {
   return cost.seconds >= BUDGET_SECONDS ? 2 : 0;
 }
 
-const selected = [...filtered].sort((a, b) => {
+const byCost = [...filtered].sort((a, b) => {
   const left = costBucket(a);
   const right = costBucket(b);
   if (left !== right) return left - right;
@@ -685,6 +687,15 @@ const selected = [...filtered].sort((a, b) => {
   if (left === 1) return a.localeCompare(b);
   return (known[a]?.seconds ?? 0) - (known[b]?.seconds ?? 0);
 });
+
+// THEN THE ONE ORDERING THAT IS NOT ABOUT COST. Cheapest-first is right for
+// dying early and says nothing about a step that reads what another writes:
+// measured on 2026-09-05, `proof:rendererpolicy` ran at position 16 and
+// `proof:canvaspixels` at 28, with `build` at 117. `stepOrder.mjs` derives the
+// constraint from `ARTEFACT_EDGES` rather than from a hand-placed step, and it
+// is stable, so the cost order survives everywhere the constraint does not
+// bite.
+const selected = orderSteps(byCost);
 
 process.stdout.write(
   `${String(selected.length)} of ${String(derived.length)} script(s) the workflows run, ` +
@@ -982,11 +993,12 @@ for (const name of selected) {
   if (outcome.exit !== 0) {
     failed.push(name);
     const output = `${run.stdout ?? ''}${run.stderr ?? ''}`;
-    const firstProblem =
-      output
-        .split('\n')
-        .find((line) => /\b(FAIL|Error|error)\b/u.test(line))
-        ?.trim() ?? '(no diagnostic line found)';
+    // THE SELECTION IS `failureLine.mjs`', and it moved there because this line
+    // was a second opinion about a format sixty proofs already own. It matched
+    // FAIL, Error or error; a failed CASE prints a roster header and its
+    // entries, and none of those words appears in one. So the diagnostic only
+    // ever surfaced throws — measured, with the count, in that module's header.
+    const firstProblem = failureLineOf(output);
     // The row that would have answered AAAA-23. `bytes` separates a script that
     // printed nothing at all from one whose output simply carried no matching
     // line — a spawn that never started against a guard that refused quietly,
