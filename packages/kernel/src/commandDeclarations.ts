@@ -487,6 +487,27 @@ const declarations = {
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
   },
+  insertImagePage: {
+    kind: 'insertImagePage',
+    // §3's matrix at ARCHITECTURE.md:381 names *image-to-PDF* on the
+    // content-composition row. pdf-lib embeds JPEG and PNG directly; MuPDF
+    // would need a decoder and an encoder this build does not have.
+    writer: 'pdf-lib',
+    // `deletePages`' argument arriving from the opposite side: an insert's
+    // inverse is a delete, and a delete's prior state is the page and
+    // everything it reaches. `CommandPrior` types it `never`.
+    invertible: false,
+    undo: 'checkpoint',
+    // The image and the index are both in the command, so re-running it against
+    // the same document writes the same bytes. Nothing is read from a clock and
+    // nothing is minted.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second DOCUMENT. It carries an image, which is not one — the
+    // axis counts open documents whose sessions the apply is handed, and this
+    // one's picture arrives in its own payload.
+    sources: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

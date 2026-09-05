@@ -47,7 +47,9 @@ import {
 import { type AppInfo, type PickDocument, createContractHandlers } from './contractHandlers.js';
 import {
   DocumentCommands,
+  type ImageSource,
   type PickDestination,
+  type PickImage,
   type DocumentDuplicatesReader,
   type DocumentSessions,
   MissingSessionError,
@@ -250,6 +252,24 @@ export interface ShellComposition {
   readonly pickDocument: PickDocument;
   /** Where a copy goes. Electron's save dialog, in the shipped build. */
   readonly pickDestination: PickDestination;
+  /**
+   * Which image becomes a page. Electron's open dialog, narrowed.
+   *
+   * **THE FIRST SURFACE ADDED SINCE THIS BECAME AN OBJECT**, and the point of
+   * the change is what its diff does *not* contain: `pickerProbe.ts` is
+   * untouched, so `docs/picker-probe.json` and the observation it certifies are
+   * unmoved. Three earlier additions each cost a person a click at a dialog.
+   */
+  readonly pickImage: PickImage;
+  /**
+   * The bytes at a path, bounded before they are read.
+   *
+   * A surface and not `node:fs`, for `settings`' reason: this file may not ask
+   * the filesystem anything, and the bound is what makes the difference between
+   * a refused outcome and a main process loading a 4 GB file a user picked by
+   * mistake.
+   */
+  readonly readImage: ImageSource['read'];
   /** Where settings are stored. Required — see the note above. */
   readonly settings: SettingsSurface;
   /** The recent-files list. Required for `settings`' reason. */
@@ -276,6 +296,8 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     appInfo,
     pickDocument,
     pickDestination,
+    pickImage,
+    readImage,
     settings,
     recent,
     enginePlatform = null,
@@ -449,7 +471,11 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // reason: `checkTarget` is the service's, and the picker is a parameter for
   // the same reason `pickDocument` is — nothing in this file imports Electron,
   // so the whole graph stays buildable in a plain Node test.
-  { pick: pickDestination, checkTarget: (destination) => documents.checkCopyTarget(destination) });
+  { pick: pickDestination, checkTarget: (destination) => documents.checkCopyTarget(destination) },
+  // INSERTING AN IMAGE, and both members are parameters for the copy's reason:
+  // the picker needs Electron and the read needs Node's filesystem, and this
+  // file imports neither.
+  { pick: pickImage, read: readImage });
 
   const openedDocument = engineHost.openedDocument;
 

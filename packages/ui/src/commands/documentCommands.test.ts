@@ -13,6 +13,7 @@ import {
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
+  insertImageCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -396,13 +397,24 @@ describe('delete pages — the mutation-dialog gate', () => {
    * The recorder is the point: `shown` says the dialog opened and `sent` says
    * whether a command followed it, and only the second separates the two cases.
    */
-  function recording(): {
+  /**
+   * A client that records what was sent and answers.
+   *
+   * `answers` overrides the reply for named channels; everything else gets the
+   * `document.execute` shape, which is what almost every case here dispatches.
+   * **Per channel and not a single override**, because a command that sent the
+   * wrong channel would otherwise receive the right answer and pass — the
+   * default has to be wrong for a channel it was not written for.
+   */
+  function recording(answers: Readonly<Record<string, unknown>> = {}): {
     readonly client: ContractClient;
     readonly sent: { id: string; params: unknown }[];
   } {
     const sent: { id: string; params: unknown }[] = [];
     const client = createClient(channels, (id, params) => {
       sent.push({ id, params });
+      const answer = answers[id];
+      if (answer !== undefined) return Promise.resolve(ok(answer));
       return Promise.resolve(
         ok({ version: asDocVersion(2), byteLength: 2048, historyDropped: 0 }),
       );
@@ -797,6 +809,103 @@ describe('delete pages — the mutation-dialog gate', () => {
             heightPoints: 792,
           },
         },
+      },
+    ]);
+  });
+
+  it('AN IMAGE INSERT SENDS TWO NUMBERS AND NO BYTES, at the page AFTER the one being read', async () => {
+    // THE UI HALF, and what it watches is the payload's shape as much as its
+    // values: this command physically cannot send an image, because
+    // `applyDocumentCommand` takes `RenderableCommand` and the union omits
+    // `insertImagePage`. What it CAN get wrong is the index, and `CONTEXT.page`
+    // is 3 so a literal 0 fails here rather than reading as green.
+    //
+    // `at: 4` and not 3: a person on page 3 inserting a picture means *after
+    // this one*, and inserting at 3 pushes the page they are looking at down.
+    const { client, sent } = recording({
+      'document.insertImage': {
+        kind: 'inserted',
+        version: asDocVersion(2),
+        byteLength: 4096,
+        historyDropped: 0,
+      },
+    });
+    const applied: unknown[] = [];
+
+    await insertImageCommand({
+      client,
+      onApplied: (a) => applied.push(a),
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.insertImage', params: { docId: DOC, at: 4 } }]);
+    // AND THE VIEW WAS REBUILT, with both scalars. A version reported without a
+    // byte length rebinds the transport to the previous image's length, which is
+    // a range past the end of the new document.
+    expect(applied).toStrictEqual([{ version: 2, byteLength: 4096 }]);
+  });
+
+  it('CONTROL: a DISMISSED image picker reports nothing and rebuilds nothing', async () => {
+    // The user closed the dialog, so there is nothing to tell them. This is the
+    // one of the three non-success outcomes that must stay silent, and the two
+    // cases below are the ones that must not.
+    const { client } = recording({ 'document.insertImage': { kind: 'cancelled' } });
+    const applied: unknown[] = [];
+    const opened: unknown[] = [];
+
+    await insertImageCommand({
+      client,
+      onApplied: (a) => applied.push(a),
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(applied).toStrictEqual([]);
+    expect(opened).toStrictEqual([]);
+  });
+
+  it('REPORTS an unreadable file, because a control that ran and did nothing is the display-only sin', async () => {
+    const { client } = recording({ 'document.insertImage': { kind: 'unreadable' } });
+    const opened: unknown[] = [];
+
+    await insertImageCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      { id: 'dialog.insert-image-problem', props: { reason: 'unreadable' } },
+    ]);
+  });
+
+  it('REPORTS a file past the bound, and carries the limit so the sentence can say a number', async () => {
+    // The limit travels from main rather than being restated here: *too large*
+    // with no number is something a person cannot act on, and a constant copied
+    // into the renderer is a second declaration of a bound main owns.
+    const { client } = recording({
+      'document.insertImage': { kind: 'too-large', limitBytes: 67_108_864 },
+    });
+    const opened: unknown[] = [];
+
+    await insertImageCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.insert-image-problem',
+        props: { reason: 'too-large', limitBytes: 67_108_864 },
       },
     ]);
   });

@@ -241,6 +241,22 @@ export interface CommandPrior {
    * after a save, while *the middle of the array* does not move.
    */
   readonly resizePages: readonly PriorPageResize[];
+  /**
+   * **`never`**, and this one earns it from the other direction than its
+   * neighbours.
+   *
+   * Every other `never` here is a command that DRAWS, whose prior state is the
+   * page's whole content stream. This one adds a page, and its prior state is
+   * *the document without that page* — which is `deletePages`' entry read
+   * backwards: undoing an insert is a delete, and a delete's prior state is the
+   * page and everything it reaches.
+   *
+   * Written out rather than pointed at a neighbour, because this table is where
+   * each command says what its inverse is made of, and a comment saying *see
+   * above* is how a later command acquires a prior state by inheritance instead
+   * of by decision.
+   */
+  readonly insertImagePage: never;
 }
 
 /**

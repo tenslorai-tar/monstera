@@ -211,6 +211,27 @@ const RESIZE_SPEC = `  resizePages: {
     sources: 'none',
   },`;
 
+/**
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason.
+ *
+ * **The only spec here whose command the renderer cannot send.** Its schema is
+ * in `commandSchema` because `CommandKind` derives from that union, and it is
+ * absent from `renderableCommandSchema` because it carries an image main reads
+ * from a picked file.
+ */
+const INSERT_IMAGE_SPEC = `  insertImagePage: {
+    kind: 'insertImagePage',
+    writer: 'pdf-lib',
+    apply: applyInsertImagePage,
+    capture: captureInsertImagePage,
+    invert: invertInsertImagePage,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -312,6 +333,9 @@ import {
   applyHeaderFooterPages,
   captureHeaderFooterPages,
   invertHeaderFooterPages,
+  applyInsertImagePage,
+  captureInsertImagePage,
+  invertInsertImagePage,
   applyBatesNumberPages,
   captureBatesNumberPages,
   invertBatesNumberPages,
@@ -366,6 +390,7 @@ export const handlers: ContractHandlers = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'saved' as const, version: asDocVersion(1) })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -421,6 +446,7 @@ export const handlers: ContractHandlers = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(end - begin) })),
   'document.viewModel': () =>
@@ -551,6 +577,7 @@ export const shim: ContractClient = {
   'document.undo': () => Promise.resolve(ok({ kind: 'nothing-to-undo' as const })),
   'document.save': () => Promise.resolve(ok({ kind: 'write-failed' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
+  'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': () =>
     Promise.resolve(ok({ kind: 'bytes' as const, bytes: new Uint8Array(0) })),
   'document.viewModel': () =>
@@ -682,6 +709,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${INSERT_IMAGE_SPEC}
 };
 `,
   },
@@ -699,7 +727,7 @@ ${RESIZE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `resizePages`, `setPageBackground` and
+    // table has to grow. `insertImagePage`, `resizePages`, `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
     // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
     // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
@@ -711,7 +739,7 @@ ${RESIZE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'resizePages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'insertImagePage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -743,6 +771,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
 };
 `,
   },
@@ -839,6 +868,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${INSERT_IMAGE_SPEC}
 };
 `,
   },
@@ -875,6 +905,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${INSERT_IMAGE_SPEC}
 };
 `,
   },
@@ -920,6 +951,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${INSERT_IMAGE_SPEC}
 };
 `,
   },
@@ -961,6 +993,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${INSERT_IMAGE_SPEC}
 };
 `,
   },
@@ -1621,7 +1654,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
     //
-    //   '{…} | {…} | {…} | {…} | ... 9 more ... | {…}'
+    //   '{…} | {…} | {…} | {…} | ... 10 more ... | {…}'
     //
     // — four spelt out, eight counted, one more spelt out. So the member count
     // is `4 + 8 + 1`, and the two numbers a later author has to advance are the
@@ -1634,7 +1667,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 9 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 10 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

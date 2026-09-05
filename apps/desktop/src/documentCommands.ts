@@ -1,4 +1,4 @@
-import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import { type CommandKind, type CommandOfKind, MAX_IMAGE_BYTES } from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
 // which invariant 20 forbids by name and §9.17's budget is argued against
@@ -240,6 +240,19 @@ export type DocumentRestore = (docId: DocId, write: SnapshotWrite) => Promise<vo
 export type PickDestination = (suggestedName: string) => Promise<string | null>;
 
 /**
+ * Which image becomes a page.
+ *
+ * `PickDocument`'s shape rather than `PickDestination`'s: nothing is suggested,
+ * because a picker for a file that already exists has nothing to name. The
+ * answer is a path this process reads and never sends anywhere — the renderer
+ * asked for *an image at page 3* and is told a version, exactly as opening
+ * answers with a `DocId`.
+ *
+ * `null` is the user dismissing the dialog: an outcome, not a failure.
+ */
+export type PickImage = () => Promise<string | null>;
+
+/**
  * The filename a copy is offered under: `report.pdf` becomes `report copy.pdf`.
  *
  * **A NAME, never a path**, which is what {@link PickDestination} takes — the
@@ -265,6 +278,57 @@ export interface CopySource {
   /** Whether another open document reaches the chosen path. */
   readonly checkTarget: (destination: string) => Promise<CopyTargetVerdict>;
 }
+
+/**
+ * What inserting an image needs, bundled for {@link CopySource}'s reason.
+ *
+ * One parameter for two dependencies, because the composition root's own
+ * comment says a list of twelve becoming fourteen moves it further from the
+ * options object it owes — and `ShellComposition` now IS that object, which
+ * makes bundling a choice about this surface rather than a workaround for a
+ * parameter list.
+ */
+/** What {@link DocumentCommands.insertImage} answers. */
+export type InsertImageOutcome =
+  | ({ readonly kind: 'inserted' } & Applied)
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'unreadable' }
+  | { readonly kind: 'too-large'; readonly limitBytes: number };
+
+/**
+ * Which decoder an extension routes to, or `null` for one this build has none for.
+ *
+ * Lower-cased because a user's filesystem does not care and Windows does not
+ * either; `.JPG` is the same picture. The suffix is read from the path rather
+ * than the bytes for the reason `insertImage` states: this is routing, and the
+ * decoder is the validation.
+ */
+function imageMediaType(path: string): 'image/jpeg' | 'image/png' | null {
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  return null;
+}
+
+export interface ImageSource {
+  /** Runs the platform's open dialog, narrowed to images. See {@link PickImage}. */
+  readonly pick: PickImage;
+  /**
+   * The bytes at a path, and how big they are, **without reading them first**.
+   *
+   * Two answers from one call because the size decides whether the read
+   * happens: a picked file past the bound is refused as a decided outcome, and
+   * refusing it *after* loading it into memory would be a bound that costs
+   * exactly what it exists to avoid.
+   */
+  readonly read: (path: string) => Promise<ImageRead>;
+}
+
+/** What {@link ImageSource.read} answers. */
+export type ImageRead =
+  | { readonly kind: 'read'; readonly bytes: Uint8Array }
+  | { readonly kind: 'too-large'; readonly byteLength: number }
+  | { readonly kind: 'unreadable' };
 
 export interface SaveSource {
   /** The write-target check and the filesystem the atomic ordering runs on. */
@@ -549,6 +613,7 @@ export class DocumentCommands {
   readonly #restore: DocumentRestore;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
+  readonly #image: ImageSource;
 
   constructor(
     documents: DocumentService,
@@ -586,6 +651,11 @@ export class DocumentCommands {
     // bundles a filesystem and a flush for the same reason — so this follows a
     // shape already here instead of inventing a second one.
     copy: CopySource,
+    // THE THIRTEENTH POSITIONAL PARAMETER, and it is bundled for the reason one
+    // line up. The options object this list has owed since CCCCCC-3 now exists
+    // one layer out — `ShellComposition` — and the same move here is its own
+    // unit rather than a change smuggled into a feature.
+    image: ImageSource,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -599,6 +669,7 @@ export class DocumentCommands {
     this.#restore = restore;
     this.#duplicates = duplicates;
     this.#copy = copy;
+    this.#image = image;
   }
 
   /**
@@ -1144,6 +1215,73 @@ export class DocumentCommands {
     });
 
     return value;
+  }
+
+  /**
+   * Inserts an image as a new page, from a file the user picks.
+   *
+   * ## THE PICKER RUNS BEFORE THE LANE, exactly as `saveCopy`'s does
+   *
+   * A dialog can be up for as long as a person takes, and holding a document's
+   * lane for that would block every other operation on it — including the ones
+   * a user reaches for while deciding. The document may close while the dialog
+   * is up, and that is fine: `execute` refuses a closed document, so the
+   * outcome is the same refusal it would have been before the dialog appeared.
+   *
+   * ## The bytes exist in this process and cross nothing
+   *
+   * The renderer asked with two numbers. Main picks, reads, and mints the
+   * command here — so the image is in exactly one process, and
+   * `renderableCommandSchema` makes the alternative unrepresentable rather than
+   * merely unused.
+   *
+   * ## The media type comes from the EXTENSION, and that is routing not validation
+   *
+   * It chooses which pdf-lib decoder runs. Whether the bytes are what the
+   * extension claims is decided by that decoder failing, which arrives here as
+   * a thrown error and leaves as `unreadable` — `documentPicker.ts`' rule that
+   * a filter is a hint to a human, applied one layer along.
+   */
+  async insertImage(docId: DocId, at: number): Promise<InsertImageOutcome> {
+    // READ BEFORE THE DIALOG, so a document that is not open is refused before
+    // a person is asked to choose a file — `saveCopy`'s ordering and its reason.
+    if (this.#documents.nameOf(docId) === undefined) {
+      throw new DocumentNotOpenError(docId, 'insert an image');
+    }
+
+    const picked = await this.#image.pick();
+    if (picked === null) return { kind: 'cancelled' };
+
+    const mediaType = imageMediaType(picked);
+    // AN EXTENSION THIS BUILD HAS NO DECODER FOR IS `unreadable`, decided before
+    // the read rather than after: the filter is a hint, so a user may reach here
+    // with a `.gif`, and loading it to discover that costs the memory the bound
+    // above exists to refuse.
+    if (mediaType === null) return { kind: 'unreadable' };
+
+    const read = await this.#image.read(picked);
+    if (read.kind === 'too-large') return { kind: 'too-large', limitBytes: MAX_IMAGE_BYTES };
+    if (read.kind === 'unreadable') return { kind: 'unreadable' };
+
+    try {
+      const applied = await this.execute(docId, {
+        kind: 'insertImagePage',
+        at,
+        bytes: read.bytes,
+        mediaType,
+      });
+      return { kind: 'inserted', ...applied };
+    } catch (error) {
+      // A DECODER REFUSING IS AN OUTCOME, and only that one. Every other failure
+      // — a poisoned document, a missing session — is a class the handler
+      // already turns into a declared code, so widening this catch would turn
+      // those into `unreadable` and tell the user their picture was the problem.
+      if (error instanceof DocumentPoisonedError || error instanceof MissingSessionError) {
+        throw error;
+      }
+      if (error instanceof DocumentNotOpenError) throw error;
+      return { kind: 'unreadable' };
+    }
   }
 
   async save(docId: DocId): Promise<SaveOutcome> {

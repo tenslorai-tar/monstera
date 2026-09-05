@@ -2,7 +2,7 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
-import { commandSchema } from './commands.js';
+import { renderableCommandSchema } from './commands.js';
 import { docIdSchema, docVersionSchema, fileHandleSchema } from './schemas.js';
 
 /**
@@ -570,7 +570,11 @@ export const channels = {
 
   'document.execute': channel(
     'Applies one command to an open document, returning the version it produced.',
-    z.object({ docId: docIdSchema, command: commandSchema }),
+    // THE RENDERABLE SUBSET, not the whole union. `insertImagePage` carries an
+    // image main reads from a picked file, so the one channel a renderer could
+    // put a command on refuses it at the boundary — the capability is
+    // unrepresentable rather than merely unused. See `commands.ts`.
+    z.object({ docId: docIdSchema, command: renderableCommandSchema }),
     z.object({
       version: docVersionSchema,
       byteLength: z.number().int().nonnegative(),
@@ -733,6 +737,48 @@ export const channels = {
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Inserts an image as a new page, from a file the user picks.
+   *
+   * ## THE ASK CARRIES NO BYTES, and that is the whole reason this is a channel
+   *
+   * A renderer that could send an image would be a renderer holding one, and a
+   * multi-megabyte IPC message per insert. It sends **two numbers**: which
+   * document, and where the page goes. Main opens the picker, reads the file,
+   * and mints `insertImagePage` straight into the bus — so the bytes exist in
+   * exactly one process and cross nothing.
+   *
+   * `document.execute` cannot carry that command either: its params take
+   * `renderableCommandSchema`, which is the command union with this one member
+   * removed, so the capability is unrepresentable rather than merely unused.
+   *
+   * ## The outcomes are `saveCopy`'s, for the same reason
+   *
+   * A picker a user dismisses is not a failure, so `cancelled` is a declared
+   * outcome rather than an error — the same shape and the same argument as the
+   * destination picker beside it. `unreadable` is separate from `cancelled`
+   * because a file that cannot be decoded is something the user must be told
+   * about, where a dismissal is something they did.
+   */
+  'document.insertImage': channel(
+    'Inserts an image as a new page, from a file the user picks.',
+    z.object({ docId: docIdSchema, at: z.number().int().nonnegative() }),
+    z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('inserted'),
+        version: docVersionSchema,
+        byteLength: z.number().int().nonnegative(),
+        historyDropped: z.number().int().nonnegative(),
+      }),
+      z.object({ kind: z.literal('cancelled') }),
+      /** The file was picked and is not an image this build can decode. */
+      z.object({ kind: z.literal('unreadable') }),
+      /** Past {@link MAX_IMAGE_BYTES} — refused before it is read into memory. */
+      z.object({ kind: z.literal('too-large'), limitBytes: z.number().int().positive() }),
     ]),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

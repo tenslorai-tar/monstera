@@ -192,6 +192,7 @@ describe('browser shim', () => {
       'document.destinations',
       'document.duplicatePages',
       'document.execute',
+      'document.insertImage',
       'document.layers',
       'document.open',
       'document.openRecent',

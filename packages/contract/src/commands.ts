@@ -559,6 +559,80 @@ export const resizePagesSchema = z.object({
   heightPoints: z.number().gt(0).max(14_400),
 });
 
+/**
+ * The largest image this build will make a page from.
+ *
+ * Sixty-four megabytes, which is far past any scan or photograph and far short
+ * of a number that could matter beside `ADR-0021`'s document ceiling. The bound
+ * exists because the bytes are read from a file a person chose, and a file
+ * picker is a place a user can hand this application a 4 GB video by mistake —
+ * refusing it by size is a decided outcome where reading it is a main process
+ * that stops responding.
+ */
+export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Insert an image as a new page.
+ *
+ * ## THE BYTES ARE HERE AND THE RENDERER NEVER SENDS THEM
+ *
+ * This file's own header states its subject as *"every mutation **the renderer
+ * can ask for**"* and its rule as *"commands are **intent**, not payload …
+ * any design where the bytes crossing scale with document size per operation is
+ * wrong"*. Both survive, and the second is the one worth reading precisely: an
+ * image's bytes scale with the **image**, not with the document, so a 40 MB
+ * photograph costs the same whether the file has two pages or twenty thousand.
+ * The image *is* the intent here, exactly as the text is `watermarkPages`'.
+ *
+ * What would be wrong is the renderer holding them. It does not:
+ * `document.insertImage` takes `{ docId, at }` and nothing else, a picker runs
+ * in **main** as `destinationPicker.ts`' sibling, main reads the file, and main
+ * mints this command straight into the bus. **Nothing multi-megabyte crosses
+ * IPC in either direction.**
+ *
+ * ## And `document.execute` cannot carry it, by construction
+ *
+ * The schema has to be in `commandSchema` — `CommandKind` is derived from that
+ * union, so a kind outside it has no declaration, no spec, no log entry and no
+ * undo. But `document.execute`'s params take {@link renderableCommandSchema},
+ * which is this union with this member removed. So the one channel a renderer
+ * could put a command on refuses this one at the boundary, and the capability
+ * is unrepresentable rather than merely unused (B5).
+ *
+ * That split has a worked precedent in `engineChannels.ts`' `mupdfCommandSchema`
+ * — the same union narrowed to what may cross to the engine host — and the same
+ * reasoning as this file's *"inverses are deliberately absent … they stay
+ * kernel-only"*: a schema is placed by **who may hold it**
+ * ([ADR-0023](../../../docs/DECISIONS/0023-the-engine-host-is-contained.md)
+ * Decision 11).
+ */
+export const insertImagePageSchema = z.object({
+  kind: z.literal('insertImagePage'),
+  /** Zero-based index the new page occupies afterwards, as `insertBlankPage`. */
+  at: z.number().int().nonnegative(),
+  /**
+   * The image itself.
+   *
+   * `instanceof` rather than a base64 string, because this never crosses a
+   * boundary that would need encoding and a string would cost a third more
+   * memory to express the same bytes.
+   */
+  bytes: z.custom<Uint8Array>(
+    (value) => value instanceof Uint8Array && value.byteLength <= MAX_IMAGE_BYTES,
+    { message: 'not an image this build will make a page from, or larger than the bound' },
+  ),
+  /**
+   * Which decoder to use.
+   *
+   * A declared value rather than sniffed here, because `@cantoo/pdf-lib` offers
+   * `embedJpg` and `embedPng` as two different calls and the choice is the
+   * caller's. Main reads it from the file it opened, where the extension the
+   * user picked is known — and the decoder refusing is what validates it, not
+   * this field, for `documentPicker.ts`' reason about filters being a hint.
+   */
+  mediaType: z.enum(['image/jpeg', 'image/png']),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -574,7 +648,71 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setPageTransitionSchema,
   setPageBackgroundSchema,
   resizePagesSchema,
+  insertImagePageSchema,
 ]);
+
+/**
+ * The commands a **renderer** may put on `document.execute`.
+ *
+ * `commandSchema` with `insertImagePage` removed, and that is the only
+ * difference. Every other kind is intent a renderer can express in a few
+ * numbers; that one carries an image, which main reads from a file the user
+ * picked and mints directly into the bus.
+ *
+ * ## Written out, for `mupdfCommandSchema`'s reason
+ *
+ * A filter over `commandSchema.options` is the obvious spelling and it needs
+ * two type assertions: zod cannot see that a filtered array is still non-empty
+ * and still discriminated, and — the half that matters — the filtered array's
+ * element type stays the **whole** union, so the schema would parse correctly
+ * while inferring a payload that still includes the member it removed. A
+ * derivation whose narrowing has to be restated by a cast is a list with a cast
+ * in front of it.
+ *
+ * Listed, the inference is exact and there is no assertion anywhere. What that
+ * costs is a member added here and not there, which is the failure a
+ * **compile-time exhaustiveness check** below catches rather than a reviewer.
+ */
+export const renderableCommandSchema = z.discriminatedUnion('kind', [
+  rotatePagesSchema,
+  setLayerVisibilitySchema,
+  movePageSchema,
+  deletePagesSchema,
+  duplicatePageSchema,
+  swapPagesSchema,
+  insertBlankPageSchema,
+  cropPagesSchema,
+  watermarkPagesSchema,
+  headerFooterPagesSchema,
+  batesNumberPagesSchema,
+  setPageTransitionSchema,
+  setPageBackgroundSchema,
+  resizePagesSchema,
+]);
+
+/** A command a renderer may send. */
+export type RenderableCommand = z.infer<typeof renderableCommandSchema>;
+
+/**
+ * Which kinds a renderer may **not** send, checked in both directions.
+ *
+ * The list above is exactly `commandSchema`'s members minus the ones named
+ * here, and this pair of assignments is what says so at compile time:
+ *
+ * - a kind added to `commandSchema` and forgotten here makes the first line
+ *   fail, because the leftover would not be assignable to the named set;
+ * - a kind named here that is not actually absent makes the second fail.
+ *
+ * Without them the two unions drift silently in the direction that matters —
+ * a new command quietly becoming unreachable from the renderer, which reads at
+ * every call site as a control that does nothing.
+ */
+type WithheldFromRenderer = 'insertImagePage';
+type LeftOver = Exclude<Command['kind'], RenderableCommand['kind']>;
+const _withheldIsExactlyThat: LeftOver extends WithheldFromRenderer ? true : never = true;
+const _andNothingElseIsWithheld: WithheldFromRenderer extends LeftOver ? true : never = true;
+void _withheldIsExactlyThat;
+void _andNothingElseIsWithheld;
 
 export type Command = z.infer<typeof commandSchema>;
 export type CommandKind = Command['kind'];

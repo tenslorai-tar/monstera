@@ -132,6 +132,10 @@ export const RESIZE_PAGES_ALL = messageKey('dialog.resize-pages.all-pages');
 export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
 export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
 export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
+export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
+export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
+export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
+export const INSERT_IMAGE_TOO_LARGE = messageKey('dialog.insert-image-problem.too-large');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -466,6 +470,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESIZE_PAGES_APPLY]: 'Resize',
   [RESIZE_PAGES_NOT_A_SIZE]: 'Width and height are numbers of points, above 0 and up to 14400.',
   [RESIZE_PAGES_COMMAND_TITLE]: 'Resize pages…',
+  [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
+  [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
+  [INSERT_IMAGE_UNREADABLE]:
+    'The file you chose is not a JPEG or PNG this app can read. Your document has not changed.',
+  [INSERT_IMAGE_TOO_LARGE]:
+    'That image is larger than {megabytes} MB, which is the most this app will make a page from. ' +
+    'Your document has not changed.',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure

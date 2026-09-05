@@ -1,4 +1,4 @@
-import type { Command, ContractClient } from '@monstera/contract';
+import type { ContractClient, RenderableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 
 import type { z } from 'zod';
@@ -15,6 +15,7 @@ import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
+import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
@@ -36,6 +37,7 @@ import {
   FIND_DUPLICATES_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
+  INSERT_IMAGE_COMMAND_TITLE,
   PAGE_BACKGROUND_COMMAND_TITLE,
   RESIZE_PAGES_COMMAND_TITLE,
   PAGE_TRANSITION_COMMAND_TITLE,
@@ -209,7 +211,12 @@ export function hasDocument(context: CommandContext): boolean {
 export async function applyDocumentCommand(
   deps: DocumentCommandDeps,
   docId: DocId,
-  command: Command,
+  // `RenderableCommand` AND NOT `Command`, which is the narrower of the two and
+  // the one this side may hold: `insertImagePage` carries an image main reads
+  // from a picked file, and it is absent from this union so a UI command cannot
+  // be written that sends one. The type is the mechanism — no runtime check
+  // here refuses it, because none can be reached.
+  command: RenderableCommand,
 ): Promise<boolean> {
   const answer = await deps.client['document.execute']({ docId, command });
 
@@ -749,6 +756,74 @@ export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
         widthPoints: answer.widthPoints,
         heightPoints: answer.heightPoints,
       });
+    },
+  };
+}
+
+/**
+ * Inserts an image as a new page, after the page being read.
+ *
+ * ## IT SENDS TWO NUMBERS AND OPENS NO DIALOG OF ITS OWN
+ *
+ * The picker is Electron's and runs in **main**, so this command's whole job is
+ * to say which document and where. It cannot send an image even by mistake:
+ * `applyDocumentCommand` takes `RenderableCommand`, which is the command union
+ * with `insertImagePage` removed, so a UI command that tried would not compile.
+ *
+ * That is why this goes through its own channel rather than
+ * `document.execute` — the same shape `saveCopyCommand` uses, and for the same
+ * reason: what happens here is *ask main to run a dialog and tell me what it
+ * did*, which is not a command the renderer could have built.
+ *
+ * ## AFTER the page being read, not at it
+ *
+ * `context.page + 1`, because a person on page 3 inserting a picture means
+ * *after this one* — inserting at 3 would push the page they are looking at
+ * down and leave them staring at the new one, which reads as the wrong page
+ * having been replaced.
+ */
+export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.insert-image',
+    title: INSERT_IMAGE_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 23 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+
+      const answer = await deps.client['document.insertImage']({
+        docId: context.docId,
+        at: context.page + 1,
+      });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+
+      // A DISMISSAL CHANGES NOTHING AND IS NOT REPORTED. The other two
+      // non-success outcomes ARE: a user who picked a file and got nothing
+      // needs to know which of the two happened, and silence there is the
+      // display-only failure wearing a different hat.
+      if (answer.value.kind === 'cancelled') return;
+      if (answer.value.kind === 'unreadable') {
+        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, { reason: 'unreadable' as const });
+        return;
+      }
+      if (answer.value.kind === 'too-large') {
+        void deps.ask(INSERT_IMAGE_PROBLEM_DIALOG_ID, {
+          reason: 'too-large' as const,
+          limitBytes: answer.value.limitBytes,
+        });
+        return;
+      }
+
+      deps.onApplied({ version: answer.value.version, byteLength: answer.value.byteLength });
+
+      // INVARIANT 18, after `onApplied` and guarded on a positive count for
+      // `applyDocumentCommand`'s reason: the dialog's schema refuses zero.
+      if (answer.value.historyDropped > 0) {
+        void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
+      }
     },
   };
 }

@@ -74,6 +74,17 @@ export function harnessSurfaces(
     pickDestination: () => {
       throw new Error(`${harness} writes no copy, so nothing may pick a destination`);
     },
+    // ADDED 2026-09-05, AND THIS LINE IS THE MECHANISM WORKING. `pickImage` is
+    // the first surface the shell has gained since composition became an
+    // object, and it reached every harness through this file: `pickerProbe.ts`
+    // is byte-identical, so the human-driven record it carries survived a change
+    // to the composition root for the first time in four attempts.
+    pickImage: () => {
+      throw new Error(`${harness} inserts no image, so nothing may pick one`);
+    },
+    readImage: () => {
+      throw new Error(`${harness} inserts no image, so nothing may read one`);
+    },
     settings: createEphemeralSettings(),
     recent: createRecentFiles(createEphemeralSettings()),
     // NULL, which is the state every unit test and every non-Windows run is in:

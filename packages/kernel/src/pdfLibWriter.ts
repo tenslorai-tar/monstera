@@ -10,6 +10,11 @@ import {
   invertSetPageBackground,
 } from './pageBackground.js';
 import {
+  applyInsertImagePage,
+  captureInsertImagePage,
+  invertInsertImagePage,
+} from './pageImage.js';
+import {
   applyBatesNumberPages,
   applyHeaderFooterPages,
   captureBatesNumberPages,
@@ -115,6 +120,12 @@ export const pdfLibSpecs = {
     apply: applySetPageBackground,
     capture: captureSetPageBackground,
     invert: invertSetPageBackground,
+  },
+  insertImagePage: {
+    ...declaredCommands.insertImagePage,
+    apply: applyInsertImagePage,
+    capture: captureInsertImagePage,
+    invert: invertInsertImagePage,
   },
 };
 

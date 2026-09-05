@@ -3,6 +3,7 @@ import {
   type ContractClient,
   type ContractHandlers,
   type Incident,
+  MAX_IMAGE_BYTES,
   channels,
   createClient,
   wrapHandlers,
@@ -208,6 +209,14 @@ export interface BrowserShimOptions {
    * is the one it meets unless a case says otherwise.
    */
   readonly copyDestination?: number | 'write-failed' | { readonly openElsewhere: number };
+  /**
+   * What the image picker answers, for `document.insertImage`.
+   *
+   * Undefined is a **dismissal**, for `copyDestination`'s reason: the outcome a
+   * case gets by saying nothing is the one that changes no document, so a case
+   * about something else cannot silently insert a page.
+   */
+  readonly insertedImage?: 'unreadable' | 'too-large' | { readonly byteLength: number };
   /**
    * The bytes each document is readable as, by id.
    *
@@ -617,6 +626,36 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * reason: a shim that copied by default would let a case asserting *the
      * status bar says copied* pass without ever choosing that outcome.
      */
+    /**
+     * The image insert, with the same outcome discipline as the copy below.
+     *
+     * A success **bumps the version**, because this one really does change the
+     * document — where a copy leaves it untouched. A shim that answered
+     * `inserted` without bumping would let a case assert *the page count went
+     * up* against a renderer that never rebuilt its view.
+     */
+    'document.insertImage': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.insertedImage;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'unreadable') return Promise.resolve(ok({ kind: 'unreadable' as const }));
+      if (chosen === 'too-large') {
+        return Promise.resolve(ok({ kind: 'too-large' as const, limitBytes: MAX_IMAGE_BYTES }));
+      }
+      const version = asDocVersion(current + 1);
+      versions.set(docId, version);
+      return Promise.resolve(
+        ok({
+          kind: 'inserted' as const,
+          version,
+          byteLength: chosen.byteLength,
+          historyDropped: 0,
+        }),
+      );
+    },
     'document.saveCopy': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));

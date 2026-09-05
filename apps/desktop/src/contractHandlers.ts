@@ -143,6 +143,7 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
+    'document.insertImage': insertImageHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
     'document.viewModel': viewModelHandler(deps.commands),
     'document.searchPage': searchPageHandler(deps.commands),
@@ -268,6 +269,43 @@ function saveHandler(commands: DocumentCommands): ContractHandlers['document.sav
  * holding other documents' ids for a sentence it renders once is a capability
  * it did not need.
  */
+/**
+ * Inserting an image, and the four outcomes it can answer with.
+ *
+ * `saveCopyHandler`'s shape. The kernel's outcome union and the wire's are the
+ * same four here, and each member is still rebuilt field by field rather than
+ * passed through — the comment below `saveCopyHandler` states why: two types
+ * that happen to agree today are not one type, and passing the object through
+ * would put a fifth kernel member on a wire that declares four the day one is
+ * added.
+ */
+function insertImageHandler(commands: DocumentCommands): ContractHandlers['document.insertImage'] {
+  return async ({
+    docId,
+    at,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.insertImage']>>> => {
+    try {
+      const outcome = await commands.insertImage(docId, at);
+      if (outcome.kind === 'cancelled') return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'unreadable') return ok({ kind: 'unreadable' } as const);
+      if (outcome.kind === 'too-large') {
+        return ok({ kind: 'too-large', limitBytes: outcome.limitBytes } as const);
+      }
+      return ok({
+        kind: 'inserted',
+        version: outcome.version,
+        byteLength: outcome.byteLength,
+        historyDropped: outcome.historyDropped,
+      } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
 function saveCopyHandler(commands: DocumentCommands): ContractHandlers['document.saveCopy'] {
   return async ({
     docId,

@@ -188,6 +188,7 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // request is a `DocId` and its whole answer is a byte count and three
   // outcomes, so there is no payload here that could scale with anything.
   'document.saveCopy': 'needs an engine session and a save dialog',
+  'document.insertImage': 'needs an engine session and an image picker',
   'document.searchPage': 'needs an engine session',
   'document.viewModel': 'needs an engine session',
   'document.pageLinks': 'needs an engine session',

@@ -1,10 +1,13 @@
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { MAX_IMAGE_BYTES } from '@monstera/contract';
 import { app, shell } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDestinationPicker } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
+import { createImagePicker } from './imagePicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
 import { createJsonFile, createSettingsFile } from './settingsFile.js';
@@ -69,6 +72,31 @@ startShell(() =>
     // Its mirror, built here for the same reason and on the line after it, so
     // the Electron dialogs this application opens are visible together.
     pickDestination: createDestinationPicker(),
+    // The third dialog, beside the two above so all of them are visible
+    // together — and the first surface added since composition became an
+    // object, which is why `pickerProbe.ts` is absent from this commit.
+    pickImage: createImagePicker(),
+    // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
+    // function here rather than a `readFile` at the call site: `stat` costs
+    // nothing and a 4 GB file a user picked by mistake is refused as a decided
+    // outcome instead of being loaded to find out.
+    //
+    // `readImage` is where Node's filesystem enters, for the same reason the
+    // pickers are where Electron does: `composition.ts` imports neither.
+    readImage: async (path: string) => {
+      try {
+        const { size } = await stat(path);
+        if (size > MAX_IMAGE_BYTES) return { kind: 'too-large' as const, byteLength: size };
+        return { kind: 'read' as const, bytes: new Uint8Array(await readFile(path)) };
+      } catch {
+        // A FILE THAT VANISHED OR CANNOT BE OPENED reads as unreadable, which is
+        // what the user sees either way. The distinction between *deleted since
+        // you picked it* and *permission denied* is one this build cannot act on
+        // differently, so inventing two outcomes would be two sentences for one
+        // situation.
+        return { kind: 'unreadable' as const };
+      }
+    },
     // `userData` and not `sessionData` or `temp`: settings outlive every
     // document and every session, and the two other directories are ones the
     // application and the OS respectively are entitled to empty. Resolved here

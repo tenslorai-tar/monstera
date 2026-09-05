@@ -264,6 +264,14 @@ export {
   captureSetPageBackground,
   invertSetPageBackground,
 } from './pageBackground.js';
+// ON THE BARREL and not the `/engine` subpath, for `watermarkPages`' reason:
+// this routes to a byte-image writer that runs in main, and nothing routed to
+// pdf-lib may sit behind the subpath that binds the native library (ADR-0039).
+export {
+  applyInsertImagePage,
+  captureInsertImagePage,
+  invertInsertImagePage,
+} from './pageImage.js';
 export {
   applyBatesNumberPages,
   applyHeaderFooterPages,

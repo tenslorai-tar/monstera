@@ -23,6 +23,7 @@ import {
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
+  insertImageCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -63,6 +64,7 @@ import { HEADER_FOOTER_DIALOG } from './dialogs/headerFooter.js';
 import { BATES_NUMBER_DIALOG } from './dialogs/batesNumber.js';
 import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
 import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
+import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -223,6 +225,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         BATES_NUMBER_DIALOG,
         PAGE_TRANSITION_DIALOG,
         RESIZE_PAGES_DIALOG,
+        INSERT_IMAGE_PROBLEM_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
@@ -669,6 +672,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         pageTransitionCommand({ client, onApplied: applied, ask }),
         pageBackgroundCommand({ client, onApplied: applied, ask }),
         resizePagesCommand({ client, onApplied: applied, ask }),
+        insertImageCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
         saveCommand({ client, ask }),
