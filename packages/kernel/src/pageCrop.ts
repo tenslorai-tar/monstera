@@ -1,9 +1,11 @@
 import type { CommandOfKind } from '@monstera/contract';
+import type { Box } from '@monstera/shared';
 import type { PDFDocument, PDFObject } from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
 import { withDocument } from './mupdfWriter.js';
+import { boxOf, displayedBox } from './pageBoxes.js';
 import { pagesOf } from './pageScope.js';
 
 /**
@@ -31,6 +33,21 @@ import { pagesOf } from './pageScope.js';
  * type to make an error disappear"* shape one layer down: the user asked for
  * something impossible and the honest answer says so, per page, naming the one
  * that could not take it.
+ *
+ * ## What the box IS moved to `pageBoxes.ts`, and it changed on the way
+ *
+ * The inset is taken from what the page displays, and that rule now has one
+ * home because a second caller arrived — the annotation writer places a
+ * rectangle inside the same region. It is not a pure move: the version that
+ * lived here did **not** clip the crop box to the media box, which PDF
+ * 32000-1 §14.11.2 requires and MuPDF's own page transform does. Measured
+ * 2026-09-05; the divergence is invisible on every document whose crop box sits
+ * inside its media box, and twenty units on one where it does not.
+ *
+ * What that changes here: a page with an oversized or partly overlapping crop
+ * box is now inset from the region a reader can actually see. A page whose two
+ * boxes do not overlap at all has no visible region, so it is refused rather
+ * than cropped from a frame the document does not have.
  */
 
 /** A page's own `/CropBox` before the command ran (ADR-0009 §3). */
@@ -64,58 +81,23 @@ function pageObject(document: PDFDocument, page: number, total: number): PDFObje
 }
 
 /**
- * The four numbers of a box object, or `null` if it is not one.
- *
- * A malformed box is a **capture refusal** rather than a throw, for the reason
- * ADR-0009's 2026-08-19 decision gives: *this document cannot have its prior
- * state recorded* is an outcome the bus answers with a checkpoint, where *this
- * command is illegal* is a caller error. A `/CropBox` that is a name rather
- * than an array is the first, and the fixture that produces one is the same
- * shape `rotatePages` uses for a malformed `/Rotate`.
- */
-function boxOf(object: PDFObject): readonly number[] | null {
-  if (!object.isArray() || object.length !== 4) return null;
-  const numbers: number[] = [];
-  for (let index = 0; index < 4; index += 1) {
-    const entry = object.get(index);
-    if (!entry.isNumber()) return null;
-    numbers.push(entry.asNumber());
-  }
-  return numbers;
-}
-
-/**
- * The box a page displays: its own `/CropBox`, or the media box it falls back
- * to.
- *
- * `getInheritable` for both, because either may come from an ancestor `/Pages`
- * node — and what the inset is taken from has to be what the reader is looking
- * at, not what the leaf happens to declare.
- */
-function displayedBox(object: PDFObject): readonly number[] | null {
-  const crop = object.getInheritable('CropBox');
-  if (!crop.isNull()) return boxOf(crop);
-  return boxOf(object.getInheritable('MediaBox'));
-}
-
-/**
  * Insets a box, or reports that the margins leave nothing.
  *
- * The box's corners are **not ordered** by the format — a `/MediaBox` may be
- * written `[0 792 612 0]` — so the edges are taken as min and max rather than
- * as first and second. Reading them positionally inverts the crop on such a
- * page, and the page still renders, which is the failure that would not
- * announce itself.
+ * The corners arrive **ordered**, because `displayedBox` normalises them — the
+ * format specifies a rectangle by any two diagonally opposite corners, so a
+ * `/MediaBox` may be written `[0 792 612 0]`, and reading such a box
+ * positionally inverts the crop while the page still renders. That
+ * normalisation used to live here and moved with the rest of the box rule; the
+ * property it protects is unchanged and is asserted by the reversed-box case.
  */
 function inset(
-  box: readonly number[],
+  box: Box,
   margins: CommandOfKind<'cropPages'>['margins'],
 ): readonly number[] | null {
-  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = box;
-  const left = Math.min(x0, x1) + margins.left;
-  const right = Math.max(x0, x1) - margins.right;
-  const bottom = Math.min(y0, y1) + margins.bottom;
-  const top = Math.max(y0, y1) - margins.top;
+  const left = box.x0 + margins.left;
+  const right = box.x1 - margins.right;
+  const bottom = box.y0 + margins.bottom;
+  const top = box.y1 - margins.top;
   if (right <= left || top <= bottom) return null;
   return [left, bottom, right, top];
 }
@@ -217,15 +199,15 @@ export const applyCropPages: Apply<'mupdf', 'cropPages'> = (
       const box = displayedBox(object);
       if (box === null) {
         throw new RangeError(
-          `page ${String(page)} has no readable box to crop from — neither a /CropBox nor a ` +
-            `/MediaBox of four numbers`,
+          `page ${String(page)} displays no region to crop from — it has no /MediaBox of four ` +
+            `numbers, or its /CropBox and /MediaBox do not overlap`,
         );
       }
       const cropped = inset(box, command.margins);
       if (cropped === null) {
         throw new RangeError(
           `those margins leave page ${String(page)} with no visible area. Its box is ` +
-            `${box.join(', ')}.`,
+            `${[box.x0, box.y0, box.x1, box.y1].join(', ')}.`,
         );
       }
       return { object, cropped };
