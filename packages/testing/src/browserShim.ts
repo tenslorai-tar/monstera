@@ -656,6 +656,24 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
         }),
       );
     },
+    // THE SAME `copyDestination` OPTION as the copy below, deliberately: both
+    // channels run the same destination path in production, so a shim that gave
+    // them separate switches would let a case configure one and exercise the
+    // other. The pages are ignored here — what a browser-shim case can assert
+    // about an extract is which channel the control reached, and with what
+    // arguments; whether those pages become a document is the kernel's case.
+    'document.extract': ({ docId }) => {
+      if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
+      if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));
+
+      const chosen = options.copyDestination;
+      if (chosen === undefined) return Promise.resolve(ok({ kind: 'cancelled' as const }));
+      if (chosen === 'write-failed') return Promise.resolve(ok({ kind: 'write-failed' as const }));
+      if (typeof chosen === 'object') {
+        return Promise.resolve(ok({ kind: 'refused' as const, openElsewhere: chosen.openElsewhere }));
+      }
+      return Promise.resolve(ok({ kind: 'copied' as const, bytes: chosen }));
+    },
     'document.saveCopy': ({ docId }) => {
       if (options.busy?.has(docId) === true) return Promise.resolve(err({ code: 'document-busy' }));
       if (!versions.has(docId)) return Promise.resolve(err({ code: 'document-not-open' }));

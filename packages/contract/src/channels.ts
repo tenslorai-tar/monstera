@@ -136,6 +136,22 @@ export const MAX_LINK_URI_LENGTH = 2048;
  */
 export const MAX_DESTINATIONS = 4096;
 
+/**
+ * How many page indices an extract may name.
+ *
+ * A **request** bound rather than an answer bound, which is what separates it
+ * from every other number here: those cap what a hostile document can make main
+ * send to the renderer, and this caps what the renderer can ask main to do.
+ * Extracting every page of a long document is an ordinary request, so it is
+ * document-shaped rather than a small guard — what it refuses is a list that
+ * could not have come from a page count.
+ *
+ * The kernel bounds it again against the document itself, where the count is
+ * known. Two bounds because they answer different questions: *could this have
+ * come from a document* and *did it come from THIS one*.
+ */
+export const MAX_EXTRACT_PAGES = 4096;
+
 export const MAX_DESTINATION_TITLE_LENGTH = 512;
 
 /**
@@ -761,6 +777,47 @@ export const channels = {
    * `DocId` is meaningless to a person, and a renderer holding other documents'
    * ids for a message it renders once is a capability it did not need.
    */
+  /**
+   * Writes the named pages to a new document at a destination the user picks.
+   *
+   * ## The SECOND CALLER of the destination path, and it carries no bytes
+   *
+   * `document.saveCopy`'s shape and its argument, on a subset of the pages: the
+   * renderer sends which document and which pages, and main picks the
+   * destination, builds the extract in the engine host and writes it. So the
+   * extracted document exists in exactly one process and crosses nothing — the
+   * same property `document.insertImage` has in the other direction.
+   *
+   * ## The outcomes are `saveCopy`'s, because it is the same write
+   *
+   * A dismissed picker is a declared outcome rather than an error; `refused`
+   * carries how many other documents reach the chosen path; `write-failed` is
+   * the atomic write's. They are identical because the destination half is
+   * literally the same function — `writeDocumentCopy`, handed a different
+   * flush.
+   */
+  'document.extract': channel(
+    'Writes the named pages to a new document at a destination the user picks.',
+    z.object({
+      docId: docIdSchema,
+      /**
+       * Zero-based indices, in the order they should appear.
+       *
+       * Bounded by {@link MAX_EXTRACT_PAGES} because this crosses from the
+       * renderer, and by the document itself in the kernel — a page this
+       * document does not have is refused there, where the count is known.
+       */
+      pages: z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.saveCopy': channel(
     'Writes a copy of an open document to a destination the user picks.',
     z.object({ docId: docIdSchema }),

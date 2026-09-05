@@ -12,6 +12,7 @@ import {
   DocumentService,
   EngineOpenFailed,
   type HostDestinationsReader,
+  type HostExtract,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -475,7 +476,17 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // INSERTING AN IMAGE, and both members are parameters for the copy's reason:
   // the picker needs Electron and the read needs Node's filesystem, and this
   // file imports neither.
-  { pick: pickImage, read: readImage });
+  { pick: pickImage, read: readImage },
+  // THE EXTRACT, composed like every reader above it: resolve the session, then
+  // hand it to whichever host is live. What differs is that it produces a
+  // SECOND document's bytes rather than answering a question about this one,
+  // and that those bytes are built in the host because `extractPages` reaches
+  // MuPDF (invariant 20).
+  (docId, sessions, pages) => {
+    const session = sessions.mupdf;
+    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+    return engineHost.extract(session, pages);
+  });
 
   const openedDocument = engineHost.openedDocument;
 
@@ -579,6 +590,15 @@ function engineSessionOpener(
   readonly layers: HostLayersReader;
   /** The document's duplicate pages, from whichever host is live. */
   readonly duplicates: DuplicateReport;
+  /**
+   * A NEW document's bytes, built from named pages by whichever host is live.
+   *
+   * Not a read of this document, unlike every neighbour above — it produces a
+   * second document. It is on this surface anyway because it answers the same
+   * *whichever host is live* question they do, and because the alternative is a
+   * second path from main to the host holding a session (B3a).
+   */
+  readonly extract: HostExtract;
   /** Ends the shared host on the way out of the application. */
   readonly closeHost: () => Promise<void>;
   /**
@@ -779,6 +799,25 @@ function engineSessionOpener(
       );
     }
     return duplicates(session);
+  };
+
+  /**
+   * The extract's half of the same registration. See {@link pageText}.
+   *
+   * It reads `writer` rather than a variable of its own, because `extract` is
+   * on `RemoteMupdfWriter` — the same object `serialise` and `close` come from,
+   * and for the same reason: all three need the granted areas, and a second
+   * factory would reach them from a second place.
+   */
+  const extractThroughHost: HostExtract = (session, pages) => {
+    if (writer === null) {
+      throw new Error(
+        'An extract reached the engine with no host writer registered. A session was resolved ' +
+          'for this document, so one was issued by a host — the supervisor and the host ' +
+          'connection have diverged.',
+      );
+    }
+    return writer.extract(session, pages);
   };
 
   /**
@@ -1059,6 +1098,7 @@ function engineSessionOpener(
     destinations: readDestinationsThroughHost,
     layers: readLayersThroughHost,
     duplicates: readDuplicatesThroughHost,
+    extract: extractThroughHost,
     closeHost,
     rebuildSessions: create,
     restoreSessions: buildSessions,

@@ -188,6 +188,15 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // request is a `DocId` and its whole answer is a byte count and three
   // outcomes, so there is no payload here that could scale with anything.
   'document.saveCopy': 'needs an engine session and a save dialog',
+  // `saveCopy`'s answer exactly — a byte count and three outcomes — and a
+  // REQUEST that is the one thing here worth a second look: it carries a page
+  // list, which is the only channel input that grows with the document. It is
+  // bounded by `MAX_EXTRACT_PAGES` and it is an index per page rather than a
+  // page per page, so a 4,000-page extract asks in kilobytes and answers with a
+  // number. L11 is about payloads that scale with document SIZE, and this one
+  // scales with page COUNT — which is the distinction `deletePages` already
+  // makes as intent rather than payload.
+  'document.extract': 'needs an engine session and a save dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   'document.searchPage': 'needs an engine session',
   'document.viewModel': 'needs an engine session',

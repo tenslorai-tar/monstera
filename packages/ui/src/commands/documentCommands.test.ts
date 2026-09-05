@@ -13,6 +13,7 @@ import {
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
+  extractPagesCommand,
   insertFromPdfCommand,
   insertImageCommand,
   mergeDocumentCommand,
@@ -1091,6 +1092,78 @@ describe('delete pages — the mutation-dialog gate', () => {
     const { client, sent } = recording();
 
     await replacePageCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('extract sends the parsed range to the destination channel', async () => {
+    const { client, sent } = recording({
+      'document.extract': { kind: 'copied', bytes: 8192 },
+    });
+    const opened: unknown[] = [];
+
+    await extractPagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve({ pages: [0, 4, 5] });
+      },
+    }).run(CONTEXT);
+
+    // THE BOUND GOES IN, so the dialog can refuse a page this document lacks.
+    expect(opened).toStrictEqual([{ id: 'dialog.extract-pages', props: { pageCount: 10 } }]);
+    // AND THE PAGES COME OUT UNCHANGED — no arithmetic in the command, because
+    // `parsePageRanges` already converted from what the reader typed.
+    expect(sent).toStrictEqual([
+      { id: 'document.extract', params: { docId: DOC, pages: [0, 4, 5] } },
+    ]);
+  });
+
+  it('extract reports a contested destination, and says nothing when it worked', async () => {
+    // TWO CASES IN ONE, because the pair is the point: a `copied` that opened a
+    // dialog would be a success reported as a problem, and a `refused` that
+    // opened none would be the display-only failure.
+    const quiet = recording({ 'document.extract': { kind: 'copied', bytes: 1 } });
+    const quietDialogs: unknown[] = [];
+    await extractPagesCommand({
+      client: quiet.client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        quietDialogs.push({ id, props });
+        return Promise.resolve({ pages: [0] });
+      },
+    }).run(CONTEXT);
+    expect(quietDialogs.map((entry) => (entry as { id: string }).id)).toStrictEqual([
+      'dialog.extract-pages',
+    ]);
+
+    const refused = recording({
+      'document.extract': { kind: 'refused', openElsewhere: 2 },
+    });
+    const spoken: unknown[] = [];
+    await extractPagesCommand({
+      client: refused.client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        spoken.push({ id, props });
+        return Promise.resolve({ pages: [0] });
+      },
+    }).run(CONTEXT);
+    expect(spoken).toStrictEqual([
+      { id: 'dialog.extract-pages', props: { pageCount: 10 } },
+      { id: 'dialog.save-problem', props: { outcome: 'contested' } },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED extract dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await extractPagesCommand({
       client,
       onApplied: () => undefined,
       ask: () => Promise.resolve(undefined),

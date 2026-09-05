@@ -212,6 +212,22 @@ const engineLayerSchema = z
  */
 export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
 
+/**
+ * How many page indices an extract may name.
+ *
+ * {@link ENGINE_DUPLICATE_PAGES_MAX}'s number for a different reason, stated
+ * rather than shared: that one bounds an ANSWER a hostile host produces, and
+ * this bounds a REQUEST main sends it. Extracting every page of a large
+ * document is an ordinary thing to ask, so the bound is the document-shaped one
+ * rather than a small guard — what it refuses is a list that could not have
+ * come from a page count.
+ *
+ * Not an import of the other constant: two bounds that happen to agree are not
+ * one bound, and tying them would make a change to either silently move the
+ * other.
+ */
+export const ENGINE_EXTRACT_PAGES_MAX = 4096;
+
 /** One group of identical pages, as it crosses from the host. */
 const engineDuplicateGroupSchema = z
   .object({
@@ -591,6 +607,24 @@ export const engineChannels = {
     ['no-such-session', 'serialise-failed'],
   ),
 
+  'engine/extract': channel(
+    'Writes a NEW document made of the named pages into the output directory.',
+    z
+      .object({
+        session: sessionSchema,
+        /** Zero-based indices in the session's document, in the order asked. */
+        pages: z.array(z.number().int().nonnegative()).min(1).max(ENGINE_EXTRACT_PAGES_MAX),
+        into: outputNameSchema,
+      })
+      .strict(),
+    // A COUNT, for `engine/serialise`'s reason: main knows where it asked for
+    // the bytes and cannot know how many arrived, and comparing that against
+    // the file it reads separates "the host wrote nothing" from "the read found
+    // nothing" — otherwise the same empty buffer.
+    z.object({ bytes: z.number().int().nonnegative() }).strict(),
+    ['no-such-session', 'extract-failed'],
+  ),
+
   'engine/close': channel(
     'Releases the session’s native resources.',
     z.object({ session: sessionSchema }).strict(),
@@ -891,4 +925,13 @@ export type EngineChannels = typeof engineChannels;
  * the runaway Decision 9a bounds. Distinguishable codes are what let the
  * supervisor decline to count them.
  */
-export type EngineFailureCode = 'no-such-session' | 'open-failed' | 'serialise-failed';
+export type EngineFailureCode =
+  | 'no-such-session'
+  | 'open-failed'
+  | 'serialise-failed'
+  // THE DOCUMENT'S FAULT, joining the two above for their reason. An extract
+  // whose page list the document cannot satisfy, or a graft the engine refuses,
+  // is a statement about that document — and it must not reach the supervisor
+  // as evidence the host is unhealthy, because a rebuild-and-retry loop driven
+  // by a request that will never succeed is the runaway Decision 9a bounds.
+  | 'extract-failed';

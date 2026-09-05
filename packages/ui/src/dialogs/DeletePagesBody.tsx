@@ -4,14 +4,12 @@ import { useState } from 'react';
 
 import {
   DELETE_PAGES_APPLY,
-  DELETE_PAGES_BACKWARDS,
   DELETE_PAGES_EMPTY,
   DELETE_PAGES_EVERYTHING,
   DELETE_PAGES_HINT,
   DELETE_PAGES_LABEL,
-  DELETE_PAGES_NOT_A_NUMBER,
-  DELETE_PAGES_OUT_OF_RANGE,
 } from '../messages/en.js';
+import { renderRangeProblem } from './pageRangeProblem.js';
 import { parsePageRanges } from '../pageRanges.js';
 import type { DeletePagesAnswer } from './deletePagesResult.js';
 import { Button } from '../primitives/Button.js';
@@ -66,7 +64,9 @@ export default function DeletePagesBody({
         onValueChange={setText}
       />
       <p className="m-delete-pages__problem" role="status">
-        {everything ? _(DELETE_PAGES_EVERYTHING) : renderProblem(parsed, text, _)}
+        {everything
+          ? _(DELETE_PAGES_EVERYTHING)
+          : renderRangeProblem(parsed, text, _, DELETE_PAGES_EMPTY)}
       </p>
       <Button
         label={DELETE_PAGES_APPLY}
@@ -91,38 +91,3 @@ export default function DeletePagesBody({
   );
 }
 
-/**
- * The sentence for a failed parse, or nothing while the field is untouched.
- *
- * **Empty text is not a complaint.** A dialog that opens already telling the
- * user they got it wrong is a dialog that reads as broken; the apply control is
- * disabled either way, which is the honest statement that nothing is ready yet.
- *
- * **Each sentence names the offending part**, which is what a message
- * describing the class cannot do: *"that is not a page range"* leaves a person
- * re-reading a whole expression to find which comma-separated piece was wrong.
- *
- * @param translate `useLingui`'s resolver, handed in rather than called here —
- *   a hook needs a component, and this is a function of its arguments.
- */
-function renderProblem(
-  parsed: ReturnType<typeof parsePageRanges>,
-  text: string,
-  translate: ReturnType<typeof useLingui>['_'],
-): string {
-  if (parsed.ok || text.trim().length === 0) return '';
-  const problem = parsed.error;
-  switch (problem.kind) {
-    case 'empty':
-      return translate(DELETE_PAGES_EMPTY);
-    case 'backwards':
-      return translate(DELETE_PAGES_BACKWARDS, { part: problem.part });
-    case 'out-of-range':
-      return translate(DELETE_PAGES_OUT_OF_RANGE, {
-        part: problem.part,
-        pageCount: problem.pageCount,
-      });
-    case 'not-a-number':
-      return translate(DELETE_PAGES_NOT_A_NUMBER, { part: problem.part });
-  }
-}

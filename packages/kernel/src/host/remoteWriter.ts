@@ -58,7 +58,8 @@ import {
  * the statement — routing and lifetime are two different jobs and this is the
  * one object that holds both.
  */
-export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> & Pick<RemoteMupdfLifecycle, 'close'>;
+export type RemoteMupdfWriter = RegisteredWriter<'mupdf'> &
+  Pick<RemoteMupdfLifecycle, 'close' | 'extract'>;
 
 export function remoteMupdfWriter(
   client: ClientApi<EngineChannels>,
@@ -76,6 +77,14 @@ export function remoteMupdfWriter(
   // registry's type is a statement about ROUTING — which writer runs a command —
   // and a session's lifetime is not a routing question. The composition root
   // takes it from here and registers it as the document's teardown.
-  const { serialise, close } = remoteMupdfLifecycle(client, sessions, areas);
-  return { serialise, close, ...remoteMupdfExecution(client, sessions) };
+  // `extract` JOINS THEM for the reason the comment above gives about `close`,
+  // arriving at the same conclusion from the other direction: it is neither
+  // routing nor lifetime, it is a THIRD job — producing a second document's
+  // bytes — and it is here because it needs the same `client`, `sessions` and
+  // granted `areas` the other two do. Widening this return is what keeps those
+  // three in one place; a separate factory would need the area surface again,
+  // and the granted directory reachable from two places is the one thing the
+  // pair-leak comment above was about.
+  const { serialise, close, extract } = remoteMupdfLifecycle(client, sessions, areas);
+  return { serialise, close, extract, ...remoteMupdfExecution(client, sessions) };
 }

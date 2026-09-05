@@ -107,6 +107,7 @@ export {
   type HostFilesystem,
   type HostDestinationsReader,
   type HostDuplicatesReader,
+  type HostExtract,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,

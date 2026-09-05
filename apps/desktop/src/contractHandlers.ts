@@ -142,6 +142,7 @@ export function createContractHandlers(deps: {
     'document.execute': executeCommandHandler(deps.commands),
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
+    'document.extract': extractHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
@@ -301,6 +302,42 @@ function insertImageHandler(commands: DocumentCommands): ContractHandlers['docum
       if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
       if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The extract's handler.
+ *
+ * `saveCopyHandler`'s body with one call changed, and written out rather than
+ * shared with it: the two map the SAME kernel outcome to the same wire members,
+ * and a helper over both would be a single point at which a future divergence —
+ * an extract-only refusal, say — becomes a change to the copy path too. Four
+ * lines of agreement is cheaper than one shared function that must not
+ * diverge.
+ */
+function extractHandler(commands: DocumentCommands): ContractHandlers['document.extract'] {
+  return async ({
+    docId,
+    pages,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.extract']>>> => {
+    try {
+      const outcome = await commands.extract(docId, pages);
+      // UNDEFINED IS THE USER DISMISSING THE DIALOG, exactly as it is next door.
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'copied') return ok({ kind: 'copied', bytes: outcome.bytes } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // A RangeError from the kernel — a page this document does not have —
+      // falls through to `internal` with its diagnostic kept main-side, which
+      // is right: the renderer bounds the list against the page count it holds,
+      // so reaching here means the two disagree, and that is a defect rather
+      // than something to tell the user about.
       throw thrown;
     }
   };

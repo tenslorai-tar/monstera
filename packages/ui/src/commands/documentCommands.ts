@@ -17,6 +17,8 @@ import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
+import { EXTRACT_PAGES_DIALOG_ID } from '../dialogs/extractPages.js';
+import type { ExtractPagesAnswer } from '../dialogs/extractPagesResult.js';
 import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
 import type { InsertFromPdfAnswer } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
@@ -46,6 +48,7 @@ import {
   GENERATE_TOC_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
+  EXTRACT_PAGES_COMMAND_TITLE,
   INSERT_FROM_PDF_COMMAND_TITLE,
   INSERT_IMAGE_COMMAND_TITLE,
   MERGE_DOCUMENT_COMMAND_TITLE,
@@ -1310,6 +1313,52 @@ export function saveCommand(deps: {
  * user can act on it — close the other tab, or pick elsewhere — which is why it
  * reaches the problem dialog and a byte count does not.
  */
+/**
+ * Writes chosen pages to a new PDF at a destination the user picks.
+ *
+ * ## `saveCopyCommand`'s shape with a range collected first
+ *
+ * The channel is the same destination path — main picks, builds and writes, and
+ * nothing crosses — so the outcomes are `saveCopy`'s and are handled the same
+ * way: `copied` and `cancelled` say nothing, and the two failures open the save
+ * problem dialog.
+ *
+ * The dialog runs BEFORE the channel call, which puts two dialogs in sequence
+ * for one action — a range, then main's file picker. That is the honest
+ * ordering: main cannot offer a destination for a set of pages nobody has named
+ * yet, and asking for the file first would mean a dismissal of the second
+ * dialog discarded a choice the user had already made.
+ */
+export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.extract-pages',
+    title: EXTRACT_PAGES_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 27 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.pageCount === undefined) return;
+
+      const chosen = (await deps.ask(EXTRACT_PAGES_DIALOG_ID, {
+        pageCount: context.pageCount,
+      })) as ExtractPagesAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.extract']({
+        docId: context.docId,
+        pages: chosen.pages,
+      });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
 export function saveCopyCommand(deps: DocumentCommandDeps): UiCommand {
   return {
     id: 'document.save-copy',

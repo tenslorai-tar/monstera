@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { type ClientApi, createClient, type Incident, wrapHandlers } from '@monstera/contract';
 
 import { localMupdfExecution } from '../commandSpecs.js';
+import { extractPages } from '../pageExtract.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter } from '../mupdfWriter.js';
 import { type EngineChannels, engineChannels } from './engineChannels.js';
@@ -219,6 +220,11 @@ function joined(
       () => {
         throw new Error('the lifecycle half must not look for duplicates');
       },
+      // THE REAL ONE, unlike its neighbours, because `extract` IS part of what
+      // this file drives now — the round trip through the granted area is the
+      // same four steps `serialise` takes, and a stub would make the case about
+      // the stub.
+      extractPages,
     ),
     (incident) => incidents.push(incident),
   );
@@ -415,6 +421,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         () => {
           throw new Error('the byte-size case must not look for duplicates');
+        },
+        () => {
+          throw new Error('the byte-size case must not build a document');
         },
       ),
       () => undefined,

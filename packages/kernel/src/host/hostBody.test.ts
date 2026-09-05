@@ -136,6 +136,9 @@ function start(stream: HostByteStream) {
       duplicates: () => {
         throw new Error('no case here looks for duplicates');
       },
+      extract: () => {
+        throw new Error('no case here builds a document');
+      },
       tokens: () => new Uint8Array(TOKEN_BYTES).fill(7),
       incidents: () => undefined,
       maxInFlight: 4,

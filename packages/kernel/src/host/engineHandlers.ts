@@ -1,7 +1,7 @@
 import type { Handlers } from '@monstera/contract';
 
 import type { CommandExecution } from '../commandSpecs.js';
-import type { EngineWriter, MupdfSession } from '../engineSeam.js';
+import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
@@ -70,6 +70,23 @@ export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer
 export type HostDuplicatesReader = (
   session: MupdfSession,
 ) => Promise<readonly DuplicatePageGroup[]>;
+
+/**
+ * Builds a NEW document from the named pages. Injected for the readers' reason.
+ *
+ * **It is not a reader**, and the name says so: every neighbour above answers a
+ * question about the session's document, and this produces a second document's
+ * bytes. It sits with them because it has the same shape and the same
+ * injection reason — a handler proof must be able to drive the channel without
+ * a parsed document — not because it belongs to the same family.
+ *
+ * `extractPages` in the host. It runs THERE rather than in main because it
+ * reaches MuPDF, which invariant 20 keeps out of `main` (ADR-0026).
+ */
+export type HostExtract = (
+  session: MupdfSession,
+  pages: readonly number[],
+) => Promise<ByteImage>;
 
 /**
  * The engine host's side of Decision 10: it looks the spec up and calls it
@@ -168,6 +185,7 @@ export function createEngineHandlers(
   destinations: HostDestinationsReader,
   layers: HostLayersReader,
   duplicates: HostDuplicatesReader,
+  extract: HostExtract,
 ): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
@@ -254,6 +272,26 @@ export function createEngineHandlers(
         return { ok: true, value: { bytes: written } };
       } catch (error) {
         return failed('serialise-failed', error);
+      }
+    },
+
+    'engine/extract': async ({ session, pages, into }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      try {
+        // THE EXTRACT RUNS HERE, which is the whole reason this channel exists:
+        // `extractPages` reaches MuPDF, and invariant 20 keeps native engine
+        // code out of `main`. The bytes it produces never cross the pipe —
+        // they go into the granted output directory, exactly as a serialise's
+        // do, and main reads the file.
+        const bytes = await extract(held.session, pages);
+        const written = await files.writeOutput(held.outputDirectory, into, bytes);
+        return { ok: true, value: { bytes: written } };
+      } catch (error) {
+        // THE DOCUMENT'S FAULT rather than the host's. A page list this
+        // document cannot satisfy comes back as a distinguishable code so the
+        // supervisor declines to count it as a host death.
+        return failed('extract-failed', error);
       }
     },
 

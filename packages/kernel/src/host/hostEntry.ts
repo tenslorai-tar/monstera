@@ -10,6 +10,7 @@ import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
+import { extractPages } from '../pageExtract.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
 import { cryptoBytes } from '../token.js';
@@ -133,6 +134,9 @@ startEngineHost(
     destinations: readDestinations,
     layers: readLayers,
     duplicates: findDuplicatePages,
+    // RUNS HERE, which is the whole reason `engine/extract` is a channel:
+    // `extractPages` reaches MuPDF, and invariant 20 keeps that out of `main`.
+    extract: extractPages,
     tokens: cryptoBytes,
     // Where a handler's thrown diagnostic goes. Never the pipe: main gets
     // `internal` and an id, and the text stays on this side — which is the

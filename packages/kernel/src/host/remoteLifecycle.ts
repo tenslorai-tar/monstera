@@ -63,6 +63,24 @@ export class EngineSerialiseFailed extends Error {
   }
 }
 
+/**
+ * The host refused to build a document from the pages it was given.
+ *
+ * Its own class rather than {@link EngineSerialiseFailed}, and for the reason
+ * that class exists at all: the two are distinguishable failures of two
+ * operations, and a caller that could not tell them apart would report *this
+ * document cannot be written* for a page list the document never had. Both are
+ * the DOCUMENT's failure rather than the host's, which is what keeps a
+ * rebuild-and-retry loop from following.
+ */
+export class EngineExtractFailed extends Error {
+  override readonly name = 'EngineExtractFailed';
+
+  constructor(detail: string) {
+    super(`The engine host could not extract the named pages: ${detail}.`);
+  }
+}
+
 /** The host wrote a different number of bytes than the file main read back. */
 export class EngineSerialiseMismatch extends Error {
   override readonly name = 'EngineSerialiseMismatch';
@@ -127,6 +145,21 @@ export interface SessionAreaSurface {
 export interface RemoteMupdfLifecycle {
   /** The canonical bytes for the session's current state. */
   readonly serialise: (session: MupdfSession) => Promise<ByteImage>;
+  /**
+   * The bytes of a NEW document made of the named pages.
+   *
+   * **Not lifecycle**, and it sits here anyway because the machinery is
+   * `serialise`'s exactly: mint an output name, ask the host, read the file
+   * back out of the granted area, and refuse a count that disagrees with what
+   * arrived. A second module would be a second copy of that four-step dance
+   * (B3a), and the alternative — reaching into `areas` from somewhere else —
+   * is the one thing that would make the granted directory reachable from two
+   * places.
+   *
+   * The source document is not modified; this produces a second document's
+   * bytes and hands them to main, which writes them where the user chose.
+   */
+  readonly extract: (session: MupdfSession, pages: readonly number[]) => Promise<ByteImage>;
   /** Ends the session on the host and removes its granted pair. */
   readonly close: (session: MupdfSession) => Promise<void>;
 }
@@ -154,6 +187,29 @@ export function remoteMupdfLifecycle(
       if (!answer.ok) throw new EngineSerialiseFailed(answer.error.code);
 
       const bytes = await areas.takeOutput(area, into);
+      if (bytes.length !== answer.value.bytes) {
+        throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
+      }
+      return bytes;
+    },
+
+    extract: async (session, pages) => {
+      const area = sessions.areaFor(session);
+      const into = areas.mintName();
+      const answer = await client['engine/extract']({
+        session: sessions.handleFor(session),
+        // COPIED OUT OF A READONLY ARRAY, because the channel's schema infers a
+        // mutable one and handing over the caller's array would be this side's
+        // guarantee stated and not held.
+        pages: [...pages],
+        into,
+      });
+      if (!answer.ok) throw new EngineExtractFailed(answer.error.code);
+
+      const bytes = await areas.takeOutput(area, into);
+      // THE SAME MISMATCH CHECK `serialise` MAKES, and it is not ceremony: the
+      // host answers a count and main reads a file, so "the host wrote nothing"
+      // and "the read found nothing" are otherwise the same empty buffer.
       if (bytes.length !== answer.value.bytes) {
         throw new EngineSerialiseMismatch(answer.value.bytes, bytes.length);
       }

@@ -272,9 +272,34 @@ export type PickImage = () => Promise<string | null>;
  * drops what the user's file was called.
  */
 export function suggestedCopyName(name: string): string {
+  return suffixed(name, 'copy');
+}
+
+/**
+ * The name an extract's picker opens with.
+ *
+ * *pages* rather than *copy*, because the two files are different things and a
+ * destination folder holding both would otherwise offer no way to tell them
+ * apart. It shares {@link suffixed} with the copy above rather than repeating
+ * the extension arithmetic — the rule *"insert before the last dot, and append
+ * when there is no extension"* is one rule, and the second caller is what makes
+ * writing it twice a second opinion (B3a).
+ */
+export function suggestedExtractName(name: string): string {
+  return suffixed(name, 'pages');
+}
+
+/**
+ * `<stem> <word><ext>`, or `<name> <word>` when there is no extension.
+ *
+ * `dot <= 0` rather than `dot === -1`, so a dotfile — a name whose only dot is
+ * at index 0 — is treated as having no extension. Splitting it would produce a
+ * file whose whole name is an extension.
+ */
+function suffixed(name: string, word: string): string {
   const dot = name.lastIndexOf('.');
-  if (dot <= 0) return `${name} copy`;
-  return `${name.slice(0, dot)} copy${name.slice(dot)}`;
+  if (dot <= 0) return `${name} ${word}`;
+  return `${name.slice(0, dot)} ${word}${name.slice(dot)}`;
 }
 
 export interface CopySource {
@@ -536,6 +561,20 @@ export interface DocumentDestinations {
   readonly destinations: readonly Destination[];
 }
 
+/**
+ * Builds a NEW document from the named pages, through whichever host is live.
+ *
+ * Injected for {@link DocumentPageText}'s reason and shaped like the readers
+ * beside it, and it is **not** a read: it produces a second document's bytes
+ * rather than answering a question about this one. Named accordingly so the
+ * next person adding to this list does not assume the family is uniform.
+ */
+export type DocumentExtractReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+  pages: readonly number[],
+) => Promise<ByteImage>;
+
 /** Reads the document's layers. Injected for {@link DocumentPageText}'s reason. */
 export type DocumentLayersReader = (
   docId: DocId,
@@ -619,6 +658,7 @@ export class DocumentCommands {
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
+  readonly #extract: DocumentExtractReader;
 
   constructor(
     documents: DocumentService,
@@ -661,6 +701,15 @@ export class DocumentCommands {
     // one layer out — `ShellComposition` — and the same move here is its own
     // unit rather than a change smuggled into a feature.
     image: ImageSource,
+    // THE FOURTEENTH, and the count is now the finding rather than a footnote.
+    // CCCCCC-3's trigger is *the day two readers answer the same shape*, and it
+    // still has not fired — this one's `(docId, sessions, pages) => ByteImage`
+    // is distinct from all five. What HAS happened is that the same commit
+    // added a twelfth positional parameter to `createEngineHandlers` and had to
+    // edit seven test call sites to do it, which is the churn `ShellComposition`
+    // was built to end one layer out. The options object is owed here and in
+    // `createEngineHandlers`, as its own unit.
+    extract: DocumentExtractReader,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -675,6 +724,7 @@ export class DocumentCommands {
     this.#duplicates = duplicates;
     this.#copy = copy;
     this.#image = image;
+    this.#extract = extract;
   }
 
   /**
@@ -1283,6 +1333,63 @@ export class DocumentCommands {
         this.#save.deps,
         this.#copy.checkTarget,
         () => this.#save.flush(docId, sessions),
+        destination,
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * Writes the named pages to a NEW document at a destination the user picks.
+   *
+   * ## The SECOND CALLER of the destination path, and that is the whole design
+   *
+   * `saveCopy`'s shape line for line: read the name before the lane, pick
+   * outside it, then enter the lane and hand `writeDocumentCopy` a flush. What
+   * differs is one argument — the flush produces the EXTRACT's bytes instead of
+   * the document's — and that is exactly what that function's `flush` parameter
+   * is for. No new write path, no second atomic-write ordering, no second
+   * opinion about what a contested destination is.
+   *
+   * ## The extracted bytes are built in the HOST and never in main
+   *
+   * `extractPages` reaches MuPDF, which invariant 20 keeps out of `main`
+   * (ADR-0026). So `engine/extract` builds them there and writes them into the
+   * granted output directory, and main reads that file — the same round trip a
+   * serialise makes. What crosses the pipe is a page list and a count.
+   *
+   * ## It does NOT stamp the document clean, and it does not re-point it
+   *
+   * `writeDocumentCopy` cannot: it is given no `DocumentContext`, which is B5
+   * over a comment. An extract leaves the source exactly as it was — still
+   * dirty if it was dirty, still at its own path — because the pages were
+   * copied out rather than moved.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   * reason: a document this service does not hold has no name to offer.
+   */
+  async extract(docId: DocId, pages: readonly number[]): Promise<CopyOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'extract pages');
+
+    const destination = await this.#copy.pick(suggestedExtractName(suggest));
+    if (destination === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeDocumentCopy(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        // THE ONE DIFFERENCE FROM `saveCopy`. Everything downstream — the
+        // contested-destination check, the temporary and backup naming, the
+        // atomic write — is the same code on the same terms.
+        () => this.#extract(docId, sessions, pages),
         destination,
       );
     });

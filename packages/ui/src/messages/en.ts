@@ -149,6 +149,11 @@ export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
 export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
 export const REPLACE_PAGE_WHICH = messageKey('dialog.replace-page.which');
 export const REPLACE_PAGE_APPLY = messageKey('dialog.replace-page.apply');
+export const EXTRACT_PAGES_COMMAND_TITLE = messageKey('command.extract-pages.title');
+export const EXTRACT_PAGES_TITLE = messageKey('dialog.extract-pages.title');
+export const EXTRACT_PAGES_LABEL = messageKey('dialog.extract-pages.label');
+export const EXTRACT_PAGES_EMPTY = messageKey('dialog.extract-pages.empty');
+export const EXTRACT_PAGES_APPLY = messageKey('dialog.extract-pages.apply');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -514,6 +519,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to check it is the page they mean before pressing.
   [REPLACE_PAGE_WHICH]: 'Page {page} will be removed and replaced.',
   [REPLACE_PAGE_APPLY]: 'Replace page',
+  [EXTRACT_PAGES_COMMAND_TITLE]: 'Extract pages…',
+  [EXTRACT_PAGES_TITLE]: 'Extract pages',
+  [EXTRACT_PAGES_LABEL]: 'Pages to extract',
+  // SAYS WHAT HAPPENS TO THE OPEN DOCUMENT, because the obvious worry about a
+  // control called *extract* is whether it removes them. It does not.
+  [EXTRACT_PAGES_EMPTY]:
+    'Type the pages to extract, for example 1-3, 5. This document is not changed.',
+  [EXTRACT_PAGES_APPLY]: 'Extract to a new PDF',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:

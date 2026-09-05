@@ -65,6 +65,7 @@ const handlers: ContractHandlers = {
   // CANCELLED rather than copied, for the recent-files fixture's reason one
   // entry up: a byte count is the interesting answer, and a fixture that always
   // returns one cannot show that the dismissal path exists at all.
+  'document.extract': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.saveCopy': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.insertImage': () => Promise.resolve(ok({ kind: 'cancelled' as const })),
   'document.readRange': ({ begin, end }) =>

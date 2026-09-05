@@ -6,6 +6,7 @@ import { type CommandOfKind, createClient, type Incident, wrapHandlers } from '@
 import { localMupdfExecution } from '../commandSpecs.js';
 import type { ByteImage, MupdfSession } from '../engineSeam.js';
 import { mupdfWriter, withDocument } from '../mupdfWriter.js';
+import { extractPages } from '../pageExtract.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
@@ -144,6 +145,7 @@ async function joined(): Promise<{
       readDestinations,
       readLayers,
       findDuplicatePages,
+      extractPages,
     ),
     (incident) => incidents.push(incident),
   );
@@ -402,6 +404,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         () => {
           throw new Error('unused');
         },
+        () => {
+          throw new Error('unused');
+        },
       ),
       (incident) => incidents.push(incident),
     );
@@ -478,6 +483,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         () => {
           throw new Error('the rotation-refusal case must not look for duplicates');
+        },
+        () => {
+          throw new Error('the rotation-refusal case must not build a document');
         },
       ),
       (incident) => incidents.push(incident),
