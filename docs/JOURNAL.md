@@ -876,6 +876,221 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-05 — Stage audit: `38ded2e..814c717` — a design that did not survive the renderer, and a blocker that dissolved on one grep
+
+Range: **17 commits, 98 files.** 4 proofs added, 20 modified, 0 removed; 31
+source files added, 36 changed, 0 removed — from `npm run audit:scope`, which
+reported *"Within one batch. An audit is not yet owed. Fires at 51 commits (34
+more) or 101 files (3 more)."*
+
+**The gate fired on the commit being written, not on HEAD**, which is the
+documented asymmetry: `check:docs` measures the range against HEAD, so the
+commit that crosses is invisible to it. The split commit takes the range to 104
+files; the hook blocked it and this entry is the response.
+
+The range is D2's whole remaining surface: the `reads` axis and generate-TOC,
+the axis-composition fix, merge's kernel half and then its surface, insert-from
+PDF, replace page, and extract's surface.
+
+### 1. Root cause or workaround
+
+Eleven corrections, all root, and three are worth reading because the root was
+not where I first said it was.
+
+**The merge blocker was not real.** I stopped merge at the kernel boundary and
+reported that opening the source as a tab would put a second document-opening
+path in the renderer. The reviewing seat quoted ADR-0040 back: that flow is
+Decision 2, **accepted**, and the phrase I used to refuse it is from the ADR's
+*rejected* alternatives, where it argues against a command carrying a PATH. I
+had cited the rejection at the thing it was rejecting in favour of. The
+correction is `235e72a` and the root cause is a reading error, not a design
+gap — recorded here because *a block that dissolves on one grep* is a pattern
+this project has now paid for twice.
+
+**Insert-from-PDF was built as its own command kind and backed out inside the
+same commit.** The L11 argument for a separate kind was sound — a page list is
+something merge cannot express without a payload that scales with the source —
+and it does not survive the renderer: bounding a page range needs the SOURCE's
+page count, and `OpenDocument` carries none for an unfocused tab. Without the
+page list it is `mergeDocument` with a different `at`, so the schema,
+declaration, `CommandPrior` entry, spec, host-channel member and `/engine`
+export were all removed again. Not a workaround: the abandoned design is in the
+row with its concrete blocker, so the next author starts from the gap.
+
+**`Apply` dropped a parameter and no check could have seen it.** The two
+ADR-0040 axes did not compose — `sources: 'one'` ended the conditional, so a
+command declaring both lost its outline. That is the combination the ADR itself
+uses to justify keeping the axes separate, so the type contradicted the document
+that introduced it. Unreachable from every declaration, therefore invisible to
+the compiler and to every existing proof. Found by building the second axis's
+first caller (`b8a4a26`).
+
+### 2. Verified against the easy shape only?
+
+**The hard shape is where merge's whole design was decided**, and this is the
+range's strongest finding.
+
+`graftPage` versus `graftObject` + a `/Kids` push, measured against a nested
+source whose leaves inherit `/Rotate 90` from an intermediate node:
+
+| route | copy's `/Rotate` | copy's `/Parent` |
+|---|---|---|
+| `graftObject` + push | absent from the leaf | `6 0 R` — a grafted copy of the source's intermediate node |
+| `graftPage` | `90`, on the leaf | `1 0 R` — the target's own root |
+
+The target's real root is `1 0 R` in both. **Both documents render
+identically**: pdf-lib reads the rotation as 90 for each, because inheritance
+walks the wrong chain to the right answer. Against a FLAT source the two agree
+completely, so the easy fixture decides nothing.
+
+`deletePage` was checked the same way rather than trusted, because the same
+library's `rearrangePages` was measured dropping `/AcroForm` for the identity
+permutation (ADR-0006): a case asserts a catalog entry survives a replace.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, twice, and both are strengthenings.**
+
+`parsePageRanges` is now the flattening of `parsePageGroups` rather than a
+parse of its own. The syntax and its four refusals have one implementation, and
+what was an assertion about one function is now an assertion about the shared
+one — so the split's grouping cannot disagree with a delete's set about `5-3`.
+
+`renderRangeProblem` moved three of four page-range sentences out of
+`DeletePagesBody`. Coverage did not move: the same cases exercise the same
+strings through one function. What changed is that a fourth caller cannot write
+a fourth wording.
+
+**And one reduction, stated rather than spent.** `pageStamp.test.ts` lost 44
+lines and `pageWatermark.test.ts` lost 65 when `shownText.ts` was extracted.
+Case counts are **identical across the range** — 24 and 12 at both ends,
+counted with `git show 38ded2e:<file> | grep -c` against the same grep at HEAD —
+and the only deleted line matching an assertion word is a comment. The
+deletions are the helper bodies, which now have one home.
+
+### 3. Would CI have caught it?
+
+**Answered from runs, not from the workflow file.** Every commit in this range
+was pushed and read: `npm run board` reported GREEN at `df9436a`, `6b77a60`,
+`7bc05b5` and `238cf2f` (the last two verified independently by the reviewing
+seat as Guards 656 / CI 649). The proofs this range reaches — `proof:contract`,
+`proof:canvaspixels`, `proof:rendererpolicy` — are unconditional steps on both
+matrix legs.
+
+**And the other way round: is there a defect this machine cannot see?**
+`proof:perfbudget`'s three `mupdf-host-real` lines are still not measured here,
+and the board remains the only mechanism for that role. Unchanged by this range
+and flagged rather than assumed closed.
+
+### 4. Are the proofs non-vacuous?
+
+**The load-bearing mutation of the range**: `graftPage` was replaced with
+`graftObject` + a `/Kids` push and `pageMerge.test.ts` re-run. **Eleven of
+thirteen cases stayed green**, including `carries an inherited /Rotate onto the
+merged page` — the one that looks like it would catch a broken graft. Only the
+parent-chain case and the ordering case went red, and the ordering one only
+because that mutation also appends.
+
+So *page count, order, sizes and rotations do not separate the two
+implementations* is measured rather than argued, and the assertion that does is
+named in `contract.proof.mjs`' *LIMIT: sources ONE* allow case — which until
+this range named *"the row's own kernel proof"* while no row declared the axis.
+An allowance vouched for by something unwritten, closed.
+
+`THE TWO AXES COMPOSE` was verified the same way: `Apply` was reverted to its
+pre-fix shape and the case went red with *"Target signature provides too few
+arguments. Expected 4 or more, but got 2"*. The mutation is the pre-fix type
+itself, which cannot be vacuous.
+
+**A fixture that separated nothing, caught and replaced.**
+`PDFDocument.create()` reports zero pages and **writes one on save** — measured,
+0 before and 1 after a round trip, 595 wide, MuPDF agreeing. So an "empty
+source" fixture was a one-page A4 document and the case asserted a no-op while
+merging a page. It failed loudly only because the widths happened to differ; had
+they matched it would have read as coverage of a branch nothing reached. A
+zero-page source turns out to be unreachable in this build — `applyDeletePages`
+refuses to empty a document — so the case now asserts that refusal, which is the
+thing that makes the branch unreachable.
+
+### 4a. Has every instrument passed a resolution test?
+
+**Three probes, all run before anything was built on them, and one inverted the
+design.** The graft comparison above is the resolution test: two routes, one
+fixture that distinguishes them, and a third probe confirming the mechanism —
+`/Parent` = `6 0 R` against the target's `1 0 R`, with the phantom node carrying
+`/Rotate 90` and two kids.
+
+The probes ran from `.cache` (gitignored) and were removed after, so no commit
+carries them. That is a deliberate trade and it has a cost: the measurement
+survives only in the row and this entry. Both state the numbers.
+
+### 4b. Is any instrument a SEARCH needing a positive control?
+
+**One, and it is `parentsAgreeWithKids` in `pageMerge.test.ts`** — a tree walk
+whose reassuring answer is *every page agrees*. It carries its own control: a
+case builds a leaf whose `/Parent` names a node that does not list it and
+asserts the walk reports `[true, false]`. Without it the function might only
+ever return `true`, which is exactly the shape a structural check takes when it
+cannot see.
+
+### 4c. Does any check derive its extent from the set it governs?
+
+**`CommandReads` is now derived from `PreRead`'s keys, and the direction is the
+safe one.** The failure feared is a member arriving unhandled — the set getting
+BIGGER — so deriving tracks it perfectly: a new readable value widens the axis,
+becomes a compile error at every access-object implementer, and cannot be
+declared without saying what it resolves to.
+
+The two new payload bounds are hand-kept and that is deliberate:
+`MAX_EXTRACT_PAGES` and `MAX_SPLIT_PARTS` are **request** bounds rather than
+answer bounds, so they cap what a renderer may ask rather than what a hostile
+document may produce, and there is no set to derive them from.
+
+### 5. Executed, or asserted?
+
+**Executed:** the graft comparison and its parent-chain mechanism; `deletePage`
+preserving a catalog entry; `PDFDocument.create()` writing a page on save;
+`applyDeletePages` refusing to empty a document; the `graftPage` mutation and
+its 11-of-13 result; the `Apply` revert; 1459 tests across 108 files; 49
+contract cases; `check:docs` 11 of 11; four board reads.
+
+**Asserted and named as such:** that `document.extract`'s bytes never enter
+`main` — argued from the call graph (`extractPages` runs in the host, the file
+is read back) and not measured with an allocation probe. And the remap of
+`/Names` and `/Outlines` for a destination naming a dropped page, which the
+extract row has carried as unmeasured since 2026-09-04 and still does.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+**Before, and it had already happened.** ADR-0040 and its 2026-09-05 extension
+landed in `8666010` and `b3493a3`/`df9436a` — the axes were built ahead of every
+row that uses them, which is why merge, insert-from-PDF and replace-page were
+registrations rather than amendments.
+
+The one type change in this range, `b8a4a26`, is **not** an amendment: it makes
+`Apply` express what the ADR already says, on the ADR's own worked example.
+
+### 7. Do the documents still match the code?
+
+**One false claim found and fixed, one found and still open.**
+
+Fixed: the extract row said it sat behind *"a destination path this build
+lacks"*, which stopped being true when `697c0e4` landed `document.saveCopy`. A
+live specification blocking itself on a mechanism that already existed, for a
+day. This is NNN-4's shape — no range changed both the sentence and the code
+that refuted it — and it was found by the reviewing seat rather than by a sweep.
+
+Still open: `packages/contract/src/channels.ts` says `Destination` *"is an alias
+of this rather than a sibling"*, and `destinations.ts` says the alias was
+attempted and backed out. Two documents disagreeing about one relationship. It
+is item 6 of the standing list and is **not** closed by this range.
+
+**The cross-document sweep NNN-4 mandates** was run for the one relationship
+this range states — *which module owns the destination path* — and
+`document.saveCopy`, `writeDocumentCopy` and the two rows now agree.
+
+---
+
 ## 2026-09-05 — Stage audit: `2f87e45..38ded2e` — a signature that weighs one of its two costs, and a copy whose safety argument covers one direction
 
 Range: **18 commits, 98 files.** 8 proofs added, 18 modified, 0 removed; 31
