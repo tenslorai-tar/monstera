@@ -292,8 +292,9 @@ export interface PreRead {
    *
    * Named as the **contract's** `OutlineEntry` rather than the kernel's
    * `Destination`, because this shape crosses to the renderer as well and the
-   * contract is where a crossing shape is declared. The two are structurally
-   * identical, which is recorded at `destinations.ts`' declaration.
+   * contract is where a crossing shape is declared. `Destination` is now an
+   * alias of it, so the two names are one type and neither can drift from the
+   * other.
    */
   readonly outline: readonly OutlineEntry[];
 }

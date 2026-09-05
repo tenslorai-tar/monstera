@@ -177,8 +177,16 @@ export const MAX_DESTINATION_TITLE_LENGTH = 512;
  * only thing that saw it. ADR-0040's 2026-09-05 extension gives a command's
  * `apply` the outline as pre-read data, so the **kernel seam** names this shape
  * too — and a second inline copy there would be two declarations of one thing,
- * which is what B3 spends its time on. `destinations.ts`' `Destination` is an
- * alias of this rather than a sibling.
+ * which is what B3 spends its time on. `@monstera/kernel`'s `Destination` is
+ * this type, `Readonly`-wrapped, rather than a sibling: the kernel reads a
+ * document and fills this shape, so the schema is the end that declares it.
+ *
+ * That sentence stated a relationship this file could not produce for a day —
+ * `Destination` was a hand-written interface restating these three fields, and
+ * the alias landed 2026-09-05 in its own commit. Recorded because the false
+ * half was in the CONTRACT: a reader here believed there was one declaration
+ * while the reader in `destinations.ts` was told there were two, which is the
+ * cross-document shape NNN-4 names and no link check can see.
  */
 export const outlineEntrySchema = z.object({
   title: z.string().max(MAX_DESTINATION_TITLE_LENGTH),

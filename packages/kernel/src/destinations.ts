@@ -1,3 +1,4 @@
+import type { OutlineEntry } from '@monstera/contract';
 import type * as mupdf from 'mupdf';
 
 import type { MupdfSession } from './engineSeam.js';
@@ -31,46 +32,51 @@ import { withDocument } from './mupdfWriter.js';
  * build overruling the author.
  */
 
-/** One entry in the document's outline. */
 /**
- * ONE SHAPE, DECLARED TWICE, and this note is the record of it rather than a
- * fix.
+ * One entry in the document's outline — the CONTRACT's shape, named here.
  *
- * `@monstera/contract`'s `outlineEntrySchema` declares the same three fields —
- * it has to, because this shape crosses the wire — and since ADR-0040's
- * 2026-09-05 extension the kernel seam names it too, as what a command's
- * `apply` is handed. The three are structurally identical, so they are mutually
- * assignable and nothing converts; what is missing is a check that they stay
- * so.
+ * ## One declaration, not two that agree
  *
- * Aliasing this to the contract's type was attempted 2026-09-05 and backed out:
- * it reaches four other modules whose inference depends on this being an
- * `interface` with these exact optional-vs-nullable spellings, and a
- * consolidation that changes four unrelated files is its own unit rather than a
- * step inside a feature. **Owed:** the alias, in its own commit.
+ * This was an `interface` restating `@monstera/contract`'s `outlineEntrySchema`
+ * field for field, and its own note said so: three fields declared twice,
+ * structurally identical, with nothing checking they stayed so. Nothing could
+ * have. Two identical declarations are mutually assignable and indistinguishable
+ * to every type-level test there is, so the drift a check would look for is
+ * invisible until a field is added to one of them — which is the moment the
+ * check was supposed to be for.
+ *
+ * So this is an **alias**, and the class is closed by shape rather than by a
+ * guard: with one declaration, disagreeing is unrepresentable (B5). A field
+ * added to the schema arrives here; a field removed from it is a compile error
+ * at whichever reader wanted it.
+ *
+ * The contract is the right end to own it because this shape **crosses the
+ * wire** — `document.destinations` answers with it, and ADR-0040's 2026-09-05
+ * extension hands it to a command's `apply` as pre-read data. A schema is where
+ * a crossing shape is declared; this module reads a document and fills it.
+ *
+ * `Readonly` rather than the bare alias, because that is what the four modules
+ * naming this type were written against, and a modifier that quietly leaves is
+ * a loosening nobody asked for. It costs nothing: TypeScript ignores property
+ * `readonly` when it decides assignability, so the two spellings interchange
+ * freely and this one refuses a write.
+ *
+ * **The reason this was backed out of a feature commit did not hold, and that
+ * is recorded here rather than dropped.** The note said the alias reaches four
+ * modules *"whose inference depends on this being an `interface` with these
+ * exact optional-vs-nullable spellings"*. Measured 2026-09-05 by writing it
+ * both ways: `npm run typecheck` is clean for `Readonly<OutlineEntry>` **and**
+ * for the bare `OutlineEntry`, so no module's inference depended on either the
+ * declaration form or the modifiers. What actually blocked the mechanical edit
+ * was a NAME COLLISION inside this one file — the MuPDF tree node below was
+ * also called `OutlineEntry` — which is a rename, not four files. The size of
+ * the change was estimated from the number of modules that name the type, and
+ * naming a type is not depending on how it is declared.
+ *
+ * Why `page` is nullable rather than optional, and why `null` is a real state
+ * rather than a failure, is at the contract's `outlineEntrySchema`.
  */
-export interface Destination {
-  /** What the author called it. */
-  readonly title: string;
-  /**
-   * The page it goes to, zero-based, or `null` when it resolves to none.
-   *
-   * **`null` is a real state, not a failure.** An outline may carry an entry
-   * pointing at an external URI, or at a destination the document does not
-   * define — and both are things a reader should see rather than have silently
-   * dropped, because a gap in a table of contents is more confusing than an
-   * entry that cannot be followed.
-   *
-   * **`null` and not an absent property**, because this shape crosses a
-   * boundary as JSON and JSON cannot carry `undefined`. An optional property
-   * would mean the wire spelling and this one differ, with a conversion nobody
-   * would remember at each end; a value that travels is one spelling
-   * throughout.
-   */
-  readonly page: number | null;
-  /** How deep in the outline it sits. The top level is 0. */
-  readonly depth: number;
-}
+export type Destination = Readonly<OutlineEntry>;
 
 /**
  * How deep the reader walks.
@@ -108,11 +114,17 @@ const MAX_ENTRIES = 4096;
  * The optionality mirrors the package's own: `title` and `page` are declared
  * optional there, and treating either as guaranteed is how a reader ends up
  * with `undefined` in a string.
+ *
+ * **Named for the package it describes**, not for what this module answers
+ * with. It was `OutlineEntry` while `Destination` was a local interface; the
+ * two now differ only in that one is MuPDF's tree node and the other is the
+ * wire's flattened row, and a file where those share a name is one where the
+ * wrong import reads correctly.
  */
-interface OutlineEntry {
+interface MupdfOutlineItem {
   readonly title?: string | undefined;
   readonly page?: number | undefined;
-  readonly down?: readonly OutlineEntry[] | undefined;
+  readonly down?: readonly MupdfOutlineItem[] | undefined;
 }
 
 /** Reads the document's outline, flattened. */
@@ -128,7 +140,7 @@ function flatten(document: mupdf.PDFDocument): readonly Destination[] {
   if (outline === null) return [];
 
   const found: Destination[] = [];
-  const walk = (items: readonly OutlineEntry[], depth: number): void => {
+  const walk = (items: readonly MupdfOutlineItem[], depth: number): void => {
     if (depth > MAX_DEPTH) return;
     for (const item of items) {
       if (found.length >= MAX_ENTRIES) return;
