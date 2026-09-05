@@ -14,6 +14,7 @@ import {
   pageBackgroundCommand,
   resizePagesCommand,
   insertImageCommand,
+  mergeDocumentCommand,
   generateTocCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
@@ -56,6 +57,15 @@ const CONTEXT: CommandContext = {
   // step on: a document of exactly four pages would let a command that clamped
   // to the end look identical to one that used the page it was given.
   pageCount: 10,
+  // THREE DOCUMENTS AND THE TARGET IS NOT FIRST, both deliberate. A list of two
+  // would let a command that took `openDocuments[0]` pass, and a list whose
+  // first entry is the target would let one that took `[1]` pass — so the
+  // fixture separates *filtered the target out* from *skipped the first entry*.
+  openDocuments: [
+    { docId: asDocId('doc-0'), version: asDocVersion(1), byteLength: 10, name: 'Before' },
+    { docId: DOC, version: asDocVersion(1), byteLength: 20, name: 'This one' },
+    { docId: asDocId('doc-2'), version: asDocVersion(1), byteLength: 30, name: 'After' },
+  ],
 };
 
 /** The context with no document, for the `when` cases. */
@@ -66,6 +76,7 @@ const NO_DOCUMENT: CommandContext = {
   dirty: false,
   page: undefined,
   pageCount: undefined,
+  openDocuments: [],
 };
 
 /**
@@ -909,6 +920,92 @@ describe('delete pages — the mutation-dialog gate', () => {
         props: { reason: 'too-large', limitBytes: 67_108_864 },
       },
     ]);
+  });
+
+  /**
+   * Merge's UI half of the wired-tools pair.
+   *
+   * The kernel half is `pageMerge.test.ts`, which asserts the target really
+   * contains the source's pages and that every merged page's `/Parent` is the
+   * node listing it. This half asserts the control dispatches `mergeDocument`
+   * with **the id the reader chose** — neither test can see the other's value,
+   * which is the blind spot CLAUDE.md names, so the id is what both sides hold.
+   */
+  it('dispatches mergeDocument with the CHOSEN id, appended at the target’s length', async () => {
+    const { client, sent } = recording();
+    const opened: unknown[] = [];
+
+    await mergeDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve({ source: 'doc-2' });
+      },
+    }).run(CONTEXT);
+
+    // THE TARGET IS FILTERED OUT AND THE OTHERS KEEP THEIR ORDER. `CONTEXT`
+    // puts the target SECOND of three, so a command that sliced rather than
+    // filtered would produce a different list here.
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.merge-document',
+        props: {
+          choices: [
+            { docId: 'doc-0', name: 'Before' },
+            { docId: 'doc-2', name: 'After' },
+          ],
+        },
+      },
+    ]);
+    // `at: 10` is `CONTEXT.pageCount`, which is what *append* means — and it is
+    // not `page + 1`, the shape every other insert command uses. A merge that
+    // reused that arithmetic would land the source's pages in the middle.
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-2', at: 10 } },
+      },
+    ]);
+  });
+
+  it('opens the nothing-to-merge dialog when no other document is open', async () => {
+    const { client, sent } = recording();
+    const opened: unknown[] = [];
+
+    await mergeDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+      // ONLY THE TARGET IS OPEN, which is the state a reader is in when they
+      // first reach for merge. The command exists — `when` is `hasDocument` —
+      // so this is what teaches them ADR-0040 Decision 2's flow.
+      // ONLY THE TARGET IS OPEN, filtered from the fixture rather than
+      // rebuilt, so this list cannot drift from the one above.
+    }).run({
+      ...CONTEXT,
+      openDocuments: CONTEXT.openDocuments.filter((document) => document.docId === DOC),
+    });
+
+    expect(opened).toStrictEqual([{ id: 'dialog.merge-document-none', props: {} }]);
+    // AND NOTHING WAS DISPATCHED. Without this the case passes for a command
+    // that opens the message and merges anyway.
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('CONTROL: a DISMISSED merge dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await mergeDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED resize dialog dispatches nothing', async () => {

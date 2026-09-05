@@ -13,6 +13,7 @@ const context: CommandContext = {
   dirty: false,
   page: undefined,
   pageCount: undefined,
+  openDocuments: [],
 };
 
 function command(id: string, over: Partial<UiCommand> = {}): UiCommand {

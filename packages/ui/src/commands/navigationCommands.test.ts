@@ -20,6 +20,7 @@ function contextAt(page: number, pageCount: number): CommandContext {
     dirty: false,
     page,
     pageCount,
+    openDocuments: [],
   };
 }
 
@@ -78,6 +79,7 @@ describe('pageMoveCommand', () => {
       dirty: false,
       page: undefined,
       pageCount: undefined,
+      openDocuments: [],
     };
     const navigator = recording();
     expect(pageMoveCommand('next', { navigator }).when?.(noDocument)).toBe(false);

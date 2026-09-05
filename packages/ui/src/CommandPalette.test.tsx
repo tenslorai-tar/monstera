@@ -25,6 +25,7 @@ const CONTEXT: CommandContext = {
   dirty: false,
   page: 0,
   pageCount: 3,
+  openDocuments: [],
 };
 
 const NO_DOCUMENT: CommandContext = {
@@ -34,6 +35,7 @@ const NO_DOCUMENT: CommandContext = {
   dirty: false,
   page: undefined,
   pageCount: undefined,
+  openDocuments: [],
 };
 
 function command(id: string, title: UiCommand['title'], extra: Partial<UiCommand> = {}): UiCommand {

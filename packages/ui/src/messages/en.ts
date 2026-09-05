@@ -132,6 +132,12 @@ export const RESIZE_PAGES_ALL = messageKey('dialog.resize-pages.all-pages');
 export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
 export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
 export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
+export const MERGE_DOCUMENT_COMMAND_TITLE = messageKey('command.merge-document.title');
+export const MERGE_DOCUMENT_TITLE = messageKey('dialog.merge-document.title');
+export const MERGE_DOCUMENT_LABEL = messageKey('dialog.merge-document.label');
+export const MERGE_DOCUMENT_APPLY = messageKey('dialog.merge-document.apply');
+export const MERGE_DOCUMENT_NONE_TITLE = messageKey('dialog.merge-document-none.title');
+export const MERGE_DOCUMENT_NONE_BODY = messageKey('dialog.merge-document-none.body');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -473,6 +479,17 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [RESIZE_PAGES_APPLY]: 'Resize',
   [RESIZE_PAGES_NOT_A_SIZE]: 'Width and height are numbers of points, above 0 and up to 14400.',
   [RESIZE_PAGES_COMMAND_TITLE]: 'Resize pages…',
+  [MERGE_DOCUMENT_COMMAND_TITLE]: 'Merge a document…',
+  [MERGE_DOCUMENT_TITLE]: 'Merge a document',
+  [MERGE_DOCUMENT_LABEL]: 'Document to merge in',
+  [MERGE_DOCUMENT_APPLY]: 'Merge',
+  [MERGE_DOCUMENT_NONE_TITLE]: 'Nothing to merge',
+  // NAMES THE ACTION THAT FIXES IT, because ADR-0040 Decision 2 makes opening
+  // the other document the step a reader has to take — and a message that only
+  // reported the absence would leave them looking for a merge control that
+  // takes a file.
+  [MERGE_DOCUMENT_NONE_BODY]:
+    'Merging copies pages from another open document. Open the document you want to merge in, then try again.',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:

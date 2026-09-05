@@ -25,6 +25,7 @@ import {
   resizePagesCommand,
   generateTocCommand,
   insertImageCommand,
+  mergeDocumentCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -67,6 +68,8 @@ import { PAGE_TRANSITION_DIALOG } from './dialogs/pageTransition.js';
 import { RESIZE_PAGES_DIALOG } from './dialogs/resizePages.js';
 import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
+import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
+import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -229,6 +232,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         RESIZE_PAGES_DIALOG,
         INSERT_IMAGE_PROBLEM_DIALOG,
         GENERATE_TOC_PROBLEM_DIALOG,
+        MERGE_DOCUMENT_DIALOG,
+        MERGE_DOCUMENT_NONE_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
@@ -676,6 +681,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         pageBackgroundCommand({ client, onApplied: applied, ask }),
         resizePagesCommand({ client, onApplied: applied, ask }),
         insertImageCommand({ client, onApplied: applied, ask }),
+        mergeDocumentCommand({ client, onApplied: applied, ask }),
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),
@@ -724,8 +730,13 @@ export function App({ client, settings }: AppProps): ReactElement {
       // scroller takes it from there: the view model needs an engine session
       // and this number must exist wherever PDF.js can read the file.
       pageCount: open === undefined ? undefined : pageCount,
+      // THE SAME `tabs` THE COMPARE PICKER TAKES, not a second list. ADR-0040's
+      // commands name a second document by `DocId` and the shell is what holds
+      // the ids; a command reading them from anywhere else would be the second
+      // answer `pageCount`'s note above is about.
+      openDocuments: tabs,
     }),
-    [currentPage, open, pageCount],
+    [currentPage, open, pageCount, tabs],
   );
 
   useShortcuts(registry, context);

@@ -21,6 +21,7 @@ const context: CommandContext = {
   dirty: false,
   page: 0,
   pageCount: 1,
+  openDocuments: [],
 };
 
 const ANY_TITLE = messageKey('command.any.label');

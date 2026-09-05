@@ -22,6 +22,7 @@ const context: CommandContext = {
   dirty: false,
   page: 0,
   pageCount: 1,
+  openDocuments: [],
 };
 
 // The title is a CONSTANT rather than derived from the id, and that is not
@@ -104,6 +105,7 @@ describe('CommandRegistry', () => {
       dirty: true,
       page: undefined,
       pageCount: undefined,
+      openDocuments: [],
     };
     registry.available(other);
 

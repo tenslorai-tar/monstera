@@ -1,5 +1,6 @@
 import { type DocId, type DocVersion, type MessageKey, isDottedName } from '@monstera/shared';
 
+import type { ComparableDocument } from '../ComparePane.js';
 import type { Placement } from './placement.js';
 
 /**
@@ -73,6 +74,31 @@ export interface CommandContext {
    * already holds.
    */
   readonly pageCount: number | undefined;
+  /**
+   * Every open document, as a command that names a second one has to name it.
+   *
+   * ## Here for `pageCount`'s reason, on a different question
+   *
+   * ADR-0040's commands name a second document by `DocId`, and the renderer
+   * already holds the ids — tabs are keyed by them. A command that fetched the
+   * list itself would be *a second answer to a question the shell already
+   * holds*, which is the sentence `pageCount` is here for.
+   *
+   * **`ComparableDocument`, not a new shape.** `ComparePane` already declares
+   * *"One open document, as the picker needs to name it"* and already receives
+   * `others={tabs}`; a second declaration of the same four fields would be the
+   * duplicate B3 spends its time on.
+   *
+   * **Includes the focused document**, deliberately, exactly as `ComparePane`'s
+   * `others` does — the caller filters. A list that pre-excluded it would make
+   * *this document* unnameable for any command that legitimately wants it, and
+   * every consumer would then need to know whether the filtering had already
+   * happened.
+   *
+   * Empty on the start screen rather than `undefined`: there is nothing to
+   * merge into, and an empty list says that without a second absent state.
+   */
+  readonly openDocuments: readonly ComparableDocument[];
 }
 
 /**
