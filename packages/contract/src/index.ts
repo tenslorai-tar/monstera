@@ -27,6 +27,11 @@ export {
   // this file's comment and nothing else, which is what the audit of
   // `87540a5..HEAD` found it to be.
   MAX_RECENT_ENTRIES,
+  // NAMED BECAUSE THE KERNEL SEAM NOW READS IT TOO. ADR-0040's extension hands
+  // a command's apply the outline as pre-read data, so this shape has a reader
+  // that is not a channel; a second declaration there would be two of one thing.
+  type OutlineEntry,
+  outlineEntrySchema,
   channelIds,
   channels,
 } from './channels.js';

@@ -65,6 +65,7 @@ const LAYER_SPEC = `  setLayerVisibility: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -85,6 +86,7 @@ const MOVE_SPEC = `  movePage: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -106,6 +108,7 @@ const DELETE_SPEC = `  deletePages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -128,6 +131,7 @@ const WATERMARK_SPEC = `  watermarkPages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -142,6 +146,7 @@ const HEADER_FOOTER_SPEC = `  headerFooterPages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -156,6 +161,7 @@ const BATES_SPEC = `  batesNumberPages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -176,6 +182,7 @@ const BACKGROUND_SPEC = `  setPageBackground: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 const TRANSITION_SPEC = `  setPageTransition: {
@@ -189,6 +196,7 @@ const TRANSITION_SPEC = `  setPageTransition: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -209,6 +217,7 @@ const RESIZE_SPEC = `  resizePages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /**
@@ -230,6 +239,7 @@ const INSERT_IMAGE_SPEC = `  insertImagePage: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 const CROP_SPEC = `  cropPages: {
@@ -243,6 +253,7 @@ const CROP_SPEC = `  cropPages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -257,6 +268,7 @@ const INSERT_SPEC = `  insertBlankPage: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -271,6 +283,7 @@ const SWAP_SPEC = `  swapPages: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /** Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -285,6 +298,7 @@ const DUPLICATE_SPEC = `  duplicatePage: {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },`;
 
 /** What a command-table fixture imports: three per command kind. */
@@ -695,6 +709,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -758,6 +773,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -796,6 +812,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -821,6 +838,7 @@ ${RESIZE_SPEC}
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 };
 `,
@@ -854,6 +872,7 @@ export const specs: CommandSpecs = {
     // first -- which was the sources axis the moment ADR-0040 landed, and the
     // case would then have gone on passing while proving something else.
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -891,6 +910,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -937,6 +957,7 @@ export const specs: CommandSpecs = {
     reproducible: false,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -979,6 +1000,7 @@ export const specs: CommandSpecs = {
     reproducible: true,
     replay: 'reapply-intent',
     sources: 'none',
+    reads: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -1017,6 +1039,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   reproducible: false,
   replay: 'stored-effect',
   sources: 'none',
+  reads: 'none',
 };
 `,
   },
@@ -1063,6 +1086,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
   sources: 'one',
+  reads: 'none',
   apply: (
     _target: MupdfSession,
     _command: CommandOfKind<'rotatePages'>,
@@ -1102,6 +1126,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
   sources: 'one',
+  reads: 'none',
   apply: applyRotatePages,
   capture: captureRotatePages,
   invert: invertRotatePages,
@@ -1126,7 +1151,9 @@ export const spec: CommandSpec<'rotatePages'> = {
     // `ByteImage` against `MupdfSession`, and both would match a bare
     // "property 'apply' is incompatible" pattern. The proof's own cross-product
     // check reported exactly that collision when these were first written.
-    because: /Target signature provides too few arguments\. Expected 3 or more, but got 2/u,
+    // Anchored on the parameter this case adds, for the reads case's reason:
+    // both produce the same arity message and only the third parameter differs.
+    because: /_source: MupdfSession\) => Promise<void>/u,
     notBecause: null,
     source: `
 import type { CommandOfKind } from '@monstera/contract';
@@ -1136,6 +1163,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   kind: 'rotatePages',
   writer: 'mupdf',
   sources: 'none',
+  reads: 'none',
   apply: (
     _target: MupdfSession,
     _command: CommandOfKind<'rotatePages'>,
@@ -1145,6 +1173,72 @@ export const spec: CommandSpec<'rotatePages'> = {
   invert: invertRotatePages,
   invertible: true,
   undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'A READS-OUTLINE SPEC TAKES THE OUTLINE, on a BYTE-IMAGE writer, and that compiles',
+    expect: 'allow',
+    // ADR-0040's 2026-09-05 extension, in the direction that must succeed —
+    // and deliberately on a byte-image writer, which is where the extension is
+    // needed: that shape's apply is `(image, command)` with no session, so a
+    // pdf-lib TOC could not reach an outline at all without this.
+    source: `
+import type { ByteImage, CommandSpec } from '@monstera/kernel';
+import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
+export const spec: CommandSpec<'watermarkPages'> = {
+  kind: 'watermarkPages',
+  writer: 'pdf-lib',
+  sources: 'none',
+  reads: 'outline',
+  apply: (
+    image: ByteImage,
+    _command: CommandOfKind<'watermarkPages'>,
+    _outline: readonly OutlineEntry[],
+  ) => Promise.resolve(new Uint8Array(image)),
+  capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
+  invert: (image: ByteImage) => Promise.resolve(image),
+  invertible: false,
+  undo: 'checkpoint',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'but a spec declaring reads NONE may not supply an apply that takes one',
+    expect: 'reject',
+    code: 'TS2322',
+    // The half the type system holds, and the same asymmetry the sources axis
+    // has: an apply that IGNORES the outline satisfies a `reads: 'outline'`
+    // spec, because a function may ignore arguments. What it cannot do is
+    // demand one nobody passes.
+    //
+    // Anchored on the PARAMETER this case adds, not on the arity message: the
+    // sources case above produces the identical *"too few arguments"* line, and
+    // the proof's cross-product check reported the collision the moment both
+    // existed. What separates them is which third parameter was supplied.
+    because: /_outline: readonly OutlineEntry\[\]\) => Promise<Uint8Array/u,
+    notBecause: null,
+    source: `
+import type { ByteImage, CommandSpec } from '@monstera/kernel';
+import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
+export const spec: CommandSpec<'watermarkPages'> = {
+  kind: 'watermarkPages',
+  writer: 'pdf-lib',
+  sources: 'none',
+  reads: 'none',
+  apply: (
+    image: ByteImage,
+    _command: CommandOfKind<'watermarkPages'>,
+    _outline: readonly OutlineEntry[],
+  ) => Promise.resolve(new Uint8Array(image)),
+  capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
+  invert: (image: ByteImage) => Promise.resolve(image),
+  invertible: false,
+  undo: 'checkpoint',
   reproducible: true,
   replay: 'reapply-intent',
 };
@@ -1172,6 +1266,7 @@ export const spec: CommandSpec<'watermarkPages'> = {
   kind: 'watermarkPages',
   writer: 'pdf-lib',
   sources: 'one',
+  reads: 'none',
   apply: (image: ByteImage) => Promise.resolve(new Uint8Array(image)),
   capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
   invert: (image: ByteImage) => Promise.resolve(image),
@@ -1230,6 +1325,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   reproducible: true,
   replay: 'reapply-intent',
   sources: 'none',
+  reads: 'none',
 };
 `,
   },
@@ -1253,6 +1349,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   reproducible: true,
   replay: 'reapply-intent',
   sources: 'none',
+  reads: 'none',
 };
 `,
   },
@@ -1602,6 +1699,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   reproducible: true,
   replay: 'reapply-intent',
   sources: 'none',
+  reads: 'none',
 };
 `,
   },

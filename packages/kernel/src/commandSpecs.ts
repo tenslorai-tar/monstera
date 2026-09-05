@@ -12,7 +12,14 @@ import {
 // `CommandExecution` and `RegisteredWriter`, which now live in
 // `commandRouting.ts`. Their removal is what says the move was clean rather
 // than a re-export with the old file still doing the work.
-import type { Apply, Capture, CommandSources, Invert, MupdfSession } from './engineSeam.js';
+import type {
+  Apply,
+  Capture,
+  CommandReads,
+  CommandSources,
+  Invert,
+  MupdfSession,
+} from './engineSeam.js';
 import {
   applySetLayerVisibility,
   captureSetLayerVisibility,
@@ -102,12 +109,15 @@ import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotat
 export type WriterBinding<K extends CommandKind> = {
   readonly [W in WriterOfRecord]: {
     readonly [S in CommandSources]: {
-      readonly writer: W;
-      readonly sources: S;
-      readonly apply: Apply<W, K, S>;
-      readonly capture: Capture<W, K>;
-      readonly invert: Invert<W, K>;
-    };
+      readonly [R in CommandReads]: {
+        readonly writer: W;
+        readonly sources: S;
+        readonly reads: R;
+        readonly apply: Apply<W, K, S, R>;
+        readonly capture: Capture<W, K>;
+        readonly invert: Invert<W, K>;
+      };
+    }[CommandReads];
   }[CommandSources];
 }[WriterOfRecord];
 

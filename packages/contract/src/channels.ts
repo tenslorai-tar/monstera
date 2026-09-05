@@ -135,7 +135,39 @@ export const MAX_LINK_URI_LENGTH = 2048;
  * bound is wrong, and the fix is a measurement of what that document carries.
  */
 export const MAX_DESTINATIONS = 4096;
+
 export const MAX_DESTINATION_TITLE_LENGTH = 512;
+
+/**
+ * One entry in a document's outline, flattened.
+ *
+ * ## Named, because it now has TWO readers and one of them is not a channel
+ *
+ * It was inline in `document.destinations`' result while the renderer was the
+ * only thing that saw it. ADR-0040's 2026-09-05 extension gives a command's
+ * `apply` the outline as pre-read data, so the **kernel seam** names this shape
+ * too — and a second inline copy there would be two declarations of one thing,
+ * which is what B3 spends its time on. `destinations.ts`' `Destination` is an
+ * alias of this rather than a sibling.
+ */
+export const outlineEntrySchema = z.object({
+  title: z.string().max(MAX_DESTINATION_TITLE_LENGTH),
+  /**
+   * Zero-based, or `null` when the entry resolves to no page.
+   *
+   * **`null` is a real state**: an outline may point at an external URI or at a
+   * destination the document does not define, and both should reach a reader
+   * rather than be dropped — a gap in a table of contents is more confusing
+   * than an entry that cannot be followed. Nullable rather than optional
+   * because JSON cannot carry `undefined`, so one spelling travels end to end.
+   */
+  page: z.number().int().nonnegative().nullable(),
+  /** How deep in the outline it sits. The top level is 0. */
+  depth: z.number().int().nonnegative(),
+});
+
+/** One outline entry. See {@link outlineEntrySchema}. */
+export type OutlineEntry = z.infer<typeof outlineEntrySchema>;
 
 /**
  * How many layers may reach the renderer, and how long a name may be.
@@ -1172,27 +1204,7 @@ export const channels = {
     z.object({ docId: docIdSchema }),
     z.object({
       version: docVersionSchema,
-      destinations: z
-        .array(
-          z.object({
-            title: z.string().max(MAX_DESTINATION_TITLE_LENGTH),
-            /**
-             * Zero-based, or `null` when the entry resolves to no page.
-             *
-             * **`null` is a real state**: an outline may point at an external
-             * URI or at a destination the document does not define, and both
-             * should reach a reader rather than be dropped — a gap in a table
-             * of contents is more confusing than an entry that cannot be
-             * followed. Nullable rather than optional because JSON cannot
-             * carry `undefined`, so one spelling travels end to end.
-             */
-            page: z.number().int().nonnegative().nullable(),
-            /** How deep in the outline it sits. The top level is 0. */
-            depth: z.number().int().nonnegative(),
-          }),
-        )
-        .max(MAX_DESTINATIONS)
-        .readonly(),
+      destinations: z.array(outlineEntrySchema).max(MAX_DESTINATIONS).readonly(),
     }),
     ['document-not-open', 'document-busy', 'document-poisoned'],
   ),

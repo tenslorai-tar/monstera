@@ -32,6 +32,23 @@ import { withDocument } from './mupdfWriter.js';
  */
 
 /** One entry in the document's outline. */
+/**
+ * ONE SHAPE, DECLARED TWICE, and this note is the record of it rather than a
+ * fix.
+ *
+ * `@monstera/contract`'s `outlineEntrySchema` declares the same three fields —
+ * it has to, because this shape crosses the wire — and since ADR-0040's
+ * 2026-09-05 extension the kernel seam names it too, as what a command's
+ * `apply` is handed. The three are structurally identical, so they are mutually
+ * assignable and nothing converts; what is missing is a check that they stay
+ * so.
+ *
+ * Aliasing this to the contract's type was attempted 2026-09-05 and backed out:
+ * it reaches four other modules whose inference depends on this being an
+ * `interface` with these exact optional-vs-nullable spellings, and a
+ * consolidation that changes four unrelated files is its own unit rather than a
+ * step inside a feature. **Owed:** the alias, in its own commit.
+ */
 export interface Destination {
   /** What the author called it. */
   readonly title: string;

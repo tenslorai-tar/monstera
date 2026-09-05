@@ -1,6 +1,6 @@
 import type { CommandKind } from '@monstera/contract';
 
-import type { CommandSources, WriterSession } from './engineSeam.js';
+import type { CommandReads, CommandSources, WriterSession } from './engineSeam.js';
 
 /**
  * What every command **is** — and nothing about how it is performed
@@ -98,6 +98,19 @@ export interface SourceRouting {
 }
 
 /**
+ * Does this command need a value read through another engine?
+ *
+ * ADR-0040's 2026-09-05 extension, and {@link SourceRouting}'s sibling rather
+ * than a widening of it: that axis counts **documents**, this one names
+ * **pre-read data**, and they combine independently. Declared on every command
+ * for the same reason — an axis defaulted to `'none'` is a choice nobody makes
+ * and nobody reads.
+ */
+export interface ReadRouting {
+  readonly reads: CommandReads;
+}
+
+/**
  * Can this be undone, and what does undoing it cost?
  *
  * The consequence is part of the declaration because §4 spends it: a log entry
@@ -138,6 +151,7 @@ export type CommandDeclaration<K extends CommandKind> = {
   readonly kind: K;
 } & WriterRouting &
   SourceRouting &
+  ReadRouting &
   Invertibility &
   Reproducibility;
 
@@ -181,6 +195,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   setLayerVisibility: {
     kind: 'setLayerVisibility',
@@ -206,6 +223,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   movePage: {
     kind: 'movePage',
@@ -231,6 +251,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   deletePages: {
     kind: 'deletePages',
@@ -255,6 +278,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   duplicatePage: {
     kind: 'duplicatePage',
@@ -276,6 +302,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   swapPages: {
     kind: 'swapPages',
@@ -294,6 +323,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   insertBlankPage: {
     kind: 'insertBlankPage',
@@ -313,6 +345,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   cropPages: {
     kind: 'cropPages',
@@ -333,6 +368,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   watermarkPages: {
     kind: 'watermarkPages',
@@ -375,6 +413,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   headerFooterPages: {
     kind: 'headerFooterPages',
@@ -397,6 +438,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   batesNumberPages: {
     kind: 'batesNumberPages',
@@ -418,6 +462,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   setPageTransition: {
     kind: 'setPageTransition',
@@ -442,6 +489,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   setPageBackground: {
     kind: 'setPageBackground',
@@ -461,6 +511,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   resizePages: {
     kind: 'resizePages',
@@ -486,6 +539,9 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
   insertImagePage: {
     kind: 'insertImagePage',
@@ -507,6 +563,9 @@ const declarations = {
     // axis counts open documents whose sessions the apply is handed, and this
     // one's picture arrives in its own payload.
     sources: 'none',
+    // Needs nothing read through another engine; its `apply` takes what the
+    // command carries and nothing else.
+    reads: 'none',
   },
 } satisfies CommandDeclarations;
 

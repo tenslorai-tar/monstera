@@ -1,4 +1,4 @@
-import type { CommandKind, CommandOfKind } from '@monstera/contract';
+import type { CommandKind, CommandOfKind, OutlineEntry } from '@monstera/contract';
 import type { Brand } from '@monstera/shared';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
@@ -243,6 +243,30 @@ export type Capture<W extends keyof WriterSession, K extends CommandKind> = (
 export type CommandSources = 'none' | 'one';
 
 /**
+ * What a command's apply is handed that it could not read for itself.
+ *
+ * ADR-0040's 2026-09-05 extension. Decision 3 established the shape — *the bus
+ * resolves what an apply needs and hands it in* — and named one instance, a
+ * second document's sessions. This is the second: a value read through a
+ * **different engine** than the one doing the writing.
+ *
+ * `generateToc` is what asked for it. §3's matrix puts TOC generation on
+ * `@cantoo/pdf-lib` and outline reading on MuPDF, and a byte-image `Apply` is
+ * `(image, command)` with **no session** — so a pdf-lib TOC would have to walk
+ * `/Outlines` itself, which is a second opinion about a question
+ * `destinations.ts`' `readDestinations` owns (B3a). It would agree with that
+ * module for every ordinary outline and differ on the ones that matter: a
+ * cycle, a destination resolved through the name tree, an entry with no
+ * reachable page.
+ *
+ * **A separate axis from {@link CommandSources}, not a widening of it.** They
+ * answer *which documents* and *what pre-read data*, they combine independently
+ * — a merge that regenerated the target's TOC would be both — and folding them
+ * would make `sources: 'outline'` read as a document called outline.
+ */
+export type CommandReads = 'none' | 'outline';
+
+/**
  * How a command mutates its writer's session.
  *
  * Conditional on the writer's shape and on {@link CommandSources}, and the two
@@ -265,17 +289,30 @@ export type Apply<
   W extends keyof WriterSession,
   K extends CommandKind,
   S extends CommandSources = 'none',
+  R extends CommandReads = 'none',
 > = WriterShapeOf[W] extends 'byte-image'
   ? S extends 'one'
     ? never
-    : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
+    : R extends 'outline'
+      ? (
+          image: WriterSession[W],
+          command: CommandOfKind<K>,
+          outline: readonly OutlineEntry[],
+        ) => Promise<ByteImage>
+      : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
   : S extends 'one'
     ? (
         session: WriterSession[W],
         command: CommandOfKind<K>,
         source: WriterSession[W],
       ) => Promise<void>
-    : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
+    : R extends 'outline'
+      ? (
+          session: WriterSession[W],
+          command: CommandOfKind<K>,
+          outline: readonly OutlineEntry[],
+        ) => Promise<void>
+      : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
 
 /**
  * How a command is **undone** — the same shape asymmetry as {@link Apply}, and
