@@ -1041,7 +1041,187 @@ something else, which is the section's own account of how the class arrives.
 Counted from this session's transcript rather than recalled, per the standing
 correction to that figure.
 
----
+### 1. Root cause or workaround
+
+**No workarounds in the range.** The one repair that could have been one is
+`destinationPicker.ts`' removal of an `undefined` check on `filePath`: Electron
+types it `string`, so the branch could not run and lint said so. Deleting a
+check that cannot fire is the root fix — a check that cannot fire reads as
+coverage of a case nobody has. The dismissal route that remains, an empty
+string, is now the only one and is named as such.
+
+Nothing here regenerates, no override stands in for coverage, and no check was
+loosened except `perfBudget.proof.mjs`, which is item 2a's answer rather than
+this one's.
+
+### 2. Verified against the easy shape only?
+
+The hard shapes this range's page commands owe are **a nested page tree, an
+inherited attribute, a non-zero `/CropBox` origin, an unordered box, and a
+rotated page**. Crop covers the unordered box and inherited fallback; resize
+covers the origin term and the quarter turn, each with a control in the same
+document. `pageTransition` covers a `/Trans` written by a *different* producer,
+carrying `/Dm` and `/M` this command never writes.
+
+**One easy shape is still the only one tested**, and it is stated rather than
+closed: every fixture in `pageBackground.test.ts` and `pageResize.test.ts` is
+built by pdf-lib, which writes `/Contents` as an **array**. The bare-reference
+case exists only because `pageResize.test.ts` collapses it by hand. No fixture
+in this repository has a nested `/Pages` tree with content, so the
+content-stream commands have never met one.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+**Yes, once, and it is declared in the diff that made it** —
+`perfBudget.proof.mjs`, described above. A margin of ±4 MB around a measured
+baseline became 1 MB and 32 GB, which gives up boundary precision that was never
+real (the two sides were different measurements) and gains a self-consistency
+assertion that is stronger where it applies. The reduction is a **statement**,
+not a slip, which is what this item asks for.
+
+The second half is the one this entry adds: on this runner the changed cases are
+**not applicable for `mupdf-host-real`**, the role whose spread motivated the
+change. So the repair is verified here for three roles and on CI for the fourth.
+
+### 3. Would CI have caught it?
+
+**Computed, not answered from the workflow file.** `affectedProofs.mjs` over the
+98 changed files names 9 proofs of 99 examined; all 9 were run at `38ded2e` and
+all 9 are green — the figures are quoted above. Every one resolves to a step on
+both matrix legs.
+
+The uncovered half is named: `proof:perfbudget`'s `mupdf-host-real` cases are
+**not applicable on this machine**, so for that role the board is the only
+mechanism and this machine cannot see a regression in it.
+
+### 4. Are the proofs non-vacuous?
+
+Three mutations were run against the range's newest command and each reddened
+**only its own cases**: removing the content transform reddens 8 of 16 in
+`pageResize.test.ts`; making the inverse always write an array reddens the
+bare-reference case alone; removing the rotation swap reddens the quarter-turn
+case alone.
+
+**One matcher was caught being vacuous while being written**, and it is the
+useful half: the obvious assertion for *this page carries a transform* is that a
+stream contains `cm`, and pdf-lib's own `drawRectangle` emits **four** `cm`
+operators before it draws anything. That matcher reports a transform on every
+page in the fixture, including the ones the command was told not to touch. It
+was replaced by one keyed on the five-decimal spelling the module's own
+formatter produces, and no marker is exported for it — the module says why, so
+the next reader does not add one.
+
+### 4a. Has every instrument passed a resolution test?
+
+**No instrument was added in this range**, and that is the honest answer rather
+than a pass. The 31 new source files are commands, dialogs and two research
+scripts; none measures anything a decision turns on.
+
+**The first one was attempted and withdrawn the same day.** A projection-profile
+skew detector for the deskew row was built, resolution-tested **before** it
+measured anything real, and **failed its own test twice** — the first design
+scored every angle under 0.52° identically, because rounding a rotated
+coordinate to a whole row discards the sub-pixel displacement the measurement is
+made of; the second, binning at four bins per pixel, peaked at 0° for **every**
+input including pages drawn at 3°, because at 0° the mapping is the identity and
+all ink lands on bin boundaries. Interpolating the accumulation did not move
+that peak, which leaves the fixture's device-space geometry as the remaining
+unknown. It is **not committed**: this item's whole point is that an instrument
+that has not separated two known-different inputs has not measured anything, and
+the deskew command cannot be written until this one does.
+
+### 4b. Is the instrument a SEARCH? Then it needs a positive control
+
+**`findDuplicatePages` is the range's one search**, and every control it has is
+in its proof: a resolution test (two pages differing by one coordinate are not
+duplicates), a positive control finding a duplicate the fixture is known to
+contain, an unreadable-page case, and both negative controls.
+
+This item also says to put the control **in the instrument**, and that is
+**correctly not done here**. Its reason is that an instrument gets run by hand
+on the day someone needs an answer, and this is a product feature reached
+through a registered command — never run by hand. Recorded so the next audit
+does not file it as a missing control.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+**One derivation added, in the correct direction.**
+`commandDeclarations.test.ts` iterates `declaredCommands`, and the failure feared
+is a command **arriving** wrongly declared, which makes the set bigger. Its
+`CONTROL: it declares both writer shapes` is the independent anchor a shrink
+would have to touch separately.
+
+The engine host's `mupdfCommandSchema` is the other one and it is the same
+direction — the danger is a command routed elsewhere being accepted, which is a
+member arriving. It is written out as a list rather than filtered, and the file
+records why: a filtered `.options` needs two type assertions, and a derivation
+whose narrowing has to be restated by a cast is a list with a cast in front of
+it.
+
+### 5. Executed, or asserted?
+
+**Executed:** MuPDF's `addStream` yielding an array-holdable indirect object,
+and operators arriving in written order — both run in a throwaway probe before
+`pageResize.ts` was written, because `rearrangePages` is this project's standing
+evidence that a MuPDF type declaration is not behaviour. Also executed: the
+background fill's actual operator text, which is why its origin goes through the
+formatter; and page rasterisation to grey with a readable stride, which is what
+made the deskew instrument worth attempting at all.
+
+**Asserted and not executed:** that `resizePages`' inverse survives a
+**save-and-reopen**. The prior state is positional precisely so that MuPDF's
+renumbering on write cannot invalidate it, and no case in this range closes and
+reopens a document between the apply and the inverse. The claim is sound by
+construction — an array index is not an object number — and it is untested.
+
+### 6. Did architecture change BEFORE the feature, or underneath it?
+
+**Before, in its own commit, both times.** ADR-0039 (a byte-image writer
+round-trips the live session) landed before the pdf-lib-routed commands that
+need it; ADR-0040 (a command names a second document by `DocId`) landed with
+**nothing built on it**, which is ADR-0026's lesson applied to itself.
+
+Nothing in the range bent a seam in place. The one row that would have —
+**generate TOC from bookmarks** — was checked and **not built**: a byte-image
+`Apply` receives an image and a command and no session, so a pdf-lib-routed TOC
+would have to read `/Outlines` itself, and `destinations.ts` already owns that
+question through MuPDF. That is a second opinion (B3a) and therefore a B4, not a
+feature.
+
+### 7. Do the documents still match the code?
+
+**`docs/FEATURES.md`** gained rows for every command landed and each is under
+the length target. **`docs/ARCHITECTURE.md`** needed no amendment: `:382`
+already named resize on the page-tree row, which is what decided its writer.
+
+**One cross-document relationship is stated in this range and swept**: ADR-0039's
+reason was corrected on 2026-09-04 (it had been recorded backwards), and the
+sweep for other statements of it found the FEATURES rows and the declaration
+table already consistent.
+
+**The stale claim this item found is EEEEEE-2 above** — `watermarkPagesResult.ts`
+explains why a dialog may restate a command's bounds, three modules in this range
+inherit the explanation by name, and it covers one of the two directions. It is a
+comment that was true when written and became a **specification** the moment it
+was cited, which is this item at document scale inside a source file.
+
+### Correction, 2026-09-05: this entry shipped without its checklist, and the check that would have said so was run against the wrong tree
+
+The eleven answers above were added after the commit that first recorded this
+audit, because `check:docs` was run **before `git add`** — and it reads the
+**index**. With nothing staged it validated `HEAD`'s documents, where the newest
+audit was the previous range's, complete with its own eleven items. It printed
+*"11 document consistency checks passed"* and could not have failed: the entry it
+was asked about was not the entry being written.
+
+The pre-commit hook runs a subset that does not include this rule, so the commit
+went out and `main` was red until the next one.
+
+**The transferable half is not "remember to stage first".** It is that a green
+reading has a *subject*, and this one's subject was silently the previous
+commit — the same shape as a search whose input set is empty. The question that
+separates them is one line: *what would this check have printed if my change did
+not exist?* Here, the same thing.
 
 ## 2026-09-04 — Correction: `3320f33` blamed a cache for a run that never happened
 
