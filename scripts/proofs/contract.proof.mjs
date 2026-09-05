@@ -1173,6 +1173,52 @@ export const spec: CommandSpec<'rotatePages'> = {
 `,
   },
   {
+    name: 'THE TWO AXES COMPOSE: sources ONE and reads OUTLINE give a four-parameter apply',
+    expect: 'allow',
+    // THE CASE THAT WOULD HAVE FAILED BEFORE 2026-09-05, which is what makes it
+    // worth its place rather than a restatement of its two neighbours.
+    //
+    // `Apply` used to end its conditional at `S extends 'one'`, so a spec
+    // declaring BOTH axes resolved to the three-parameter source shape and the
+    // outline was silently dropped. A four-parameter apply was then not
+    // assignable — too many arguments — and this case rejected.
+    //
+    // Nothing in the tree was wrong, because no command declared both. That is
+    // exactly why the case exists: the defect was unreachable from every
+    // declaration and produced no diagnostic anywhere, so no check could have
+    // found it and no mutation of an existing proof would have gone red. It was
+    // found by building the `reads` axis's first caller and reading what
+    // `sources` would hand it.
+    //
+    // ADR-0040's extension names this combination by name — *"a merge that
+    // regenerated the target's TOC would be both"* — as its reason for keeping
+    // the axes separate. So the type contradicted the document that introduced
+    // it, and this is the case that stops that recurring silently.
+    source: `
+import type { CommandOfKind, OutlineEntry } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'one',
+  reads: 'outline',
+  apply: (
+    _session: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _source: MupdfSession,
+    _outline: readonly OutlineEntry[],
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
     name: 'but a spec declaring sources NONE may not supply a two-session apply',
     expect: 'reject',
     code: 'TS2322',

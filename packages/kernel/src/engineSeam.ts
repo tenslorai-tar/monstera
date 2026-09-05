@@ -328,6 +328,27 @@ export type PreReadValue = PreRead[keyof PreRead];
  *   transposition is a type error only where the two sessions differ in type —
  *   they do not, both being `MupdfSession` — which is why the bus passes them
  *   positionally from a map keyed by `DocId` rather than by role.
+ *
+ * ## THE TWO AXES COMPOSE, and they did not until 2026-09-05
+ *
+ * `sources: 'one'` used to end the conditional, so a command declaring **both**
+ * got the source and silently lost the outline — the `reads` branch was
+ * unreachable underneath it. That is exactly the combination ADR-0040's
+ * extension names as the reason the axes are separate: *"a merge that
+ * regenerated the target's TOC would be both"*. The type contradicted the
+ * document that introduced it.
+ *
+ * Nothing was wrong in the tree, because no command declared both — which is
+ * why it is worth stating how it was found rather than only that it was fixed.
+ * It was not found by a check and could not have been: every declaration
+ * type-checks, and a dropped parameter on a combination nobody has written
+ * produces no error anywhere. It was found by **building the second axis's
+ * first caller** and reading what the first axis would hand it.
+ *
+ * The order is `(session, command, source, outline)`, so each parameter's
+ * position is fixed by its axis rather than by which combination is in play —
+ * an ordering that varied would make a two-axis apply's signature depend on
+ * something the author has to remember.
  */
 export type Apply<
   W extends keyof WriterSession,
@@ -345,11 +366,18 @@ export type Apply<
         ) => Promise<ByteImage>
       : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
   : S extends 'one'
-    ? (
-        session: WriterSession[W],
-        command: CommandOfKind<K>,
-        source: WriterSession[W],
-      ) => Promise<void>
+    ? R extends 'outline'
+      ? (
+          session: WriterSession[W],
+          command: CommandOfKind<K>,
+          source: WriterSession[W],
+          outline: PreRead['outline'],
+        ) => Promise<void>
+      : (
+          session: WriterSession[W],
+          command: CommandOfKind<K>,
+          source: WriterSession[W],
+        ) => Promise<void>
     : R extends 'outline'
       ? (
           session: WriterSession[W],
