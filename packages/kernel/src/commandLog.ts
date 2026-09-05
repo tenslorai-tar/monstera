@@ -22,6 +22,7 @@ import type {
   PriorPageSwap,
 } from './pageOrder.js';
 import type { PriorPageCrop } from './pageCrop.js';
+import type { PriorPageResize } from './pageResize.js';
 import type { PriorPageTransition } from './pageTransition.js';
 import type { PriorPageRotation } from './rotatePages.js';
 
@@ -222,6 +223,24 @@ export interface CommandPrior {
    * is still the whole stream.
    */
   readonly setPageBackground: never;
+  /**
+   * Each page's own boxes and the **shape** of its `/Contents`, read before the
+   * command ran.
+   *
+   * **The one member on this table that touches a content stream and is not
+   * `never`**, which is worth stating here because every neighbour above says
+   * the opposite and a reader takes a table's pattern as its rule. The pattern
+   * is not the rule; the rule is `watermarkPages`' premise — *drawing appends
+   * to the stream, so the prior state is the stream* — and `resizePages`
+   * appends to no stream. It leaves the page's own streams in place and
+   * referenced, and rewrites `/Contents` around them, so what its inverse needs
+   * is where they sit in the array rather than what they contain.
+   *
+   * Recorded positionally and never by object number: MuPDF renumbers when it
+   * garbage-collects on write, so a prior naming object 8 names something else
+   * after a save, while *the middle of the array* does not move.
+   */
+  readonly resizePages: readonly PriorPageResize[];
 }
 
 /**

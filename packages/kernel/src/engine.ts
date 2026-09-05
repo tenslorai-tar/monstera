@@ -54,6 +54,7 @@ export {
   captureSetPageTransition,
   invertSetPageTransition,
 } from './pageTransition.js';
+export { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export { localMupdfWriter } from './localEngine.js';

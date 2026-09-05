@@ -67,6 +67,7 @@ export {
   headerFooterPagesSchema,
   insertBlankPageSchema,
   movePageSchema,
+  resizePagesSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
   setPageBackgroundSchema,

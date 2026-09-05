@@ -516,6 +516,49 @@ export const setPageBackgroundSchema = z.object({
   blue: z.number().min(0).max(1),
 });
 
+/**
+ * Resize pages to a target box, scaling their content to fit.
+ *
+ * ## Scaling the CONTENT is what makes this a resize rather than a crop
+ *
+ * Changing `/MediaBox` alone leaves the content at its old size in a bigger or
+ * smaller frame — which is cropping or matting, and this build already has
+ * `cropPages` for the first. A resize prepends a scale transform to the page's
+ * content and moves the boxes together, so the page looks the same and measures
+ * differently. Stated on the wire because the two are easy to confuse and only
+ * one of them is what a person means by *resize*.
+ *
+ * ## IT MOVES THE CROPBOX, WHICH EVERY COORDINATE CONVERSION READS
+ *
+ * `PageTransform` converts between the branded spaces by reading a page's
+ * `/CropBox` origin and size (invariant L3). This command changes both, so a
+ * transform built before it is stale afterwards — the same staleness
+ * `DocVersion` already governs for the renderer, arriving on geometry rather
+ * than on bytes. The view model is what carries the new size to the renderer.
+ *
+ * ## The target is a SIZE, and the fit is uniform
+ *
+ * Width and height in points, and the scale is `min(w/W, h/H)` applied to both
+ * axes — a non-uniform fit distorts the page, which no application offers
+ * because no user wants it. The remainder is centred, so a Letter page fitted
+ * to A4 sits in the middle of it rather than in a corner.
+ */
+export const resizePagesSchema = z.object({
+  kind: z.literal('resizePages'),
+  /** Which pages. `'all'` is resolved by the kernel, which holds the count. */
+  pages: z.union([z.literal('all'), z.array(z.number().int().nonnegative()).min(1)]),
+  /**
+   * The target box in points.
+   *
+   * Bounded by PDF 32000-1's own limit: a page edge may not exceed 14,400 user
+   * space units (200 inches), so the bound is the format's rather than one
+   * chosen here. The lower bound is exclusive because a zero-width page is not
+   * a page.
+   */
+  widthPoints: z.number().gt(0).max(14_400),
+  heightPoints: z.number().gt(0).max(14_400),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -530,6 +573,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   batesNumberPagesSchema,
   setPageTransitionSchema,
   setPageBackgroundSchema,
+  resizePagesSchema,
 ]);
 
 export type Command = z.infer<typeof commandSchema>;

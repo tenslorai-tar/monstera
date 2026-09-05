@@ -34,6 +34,8 @@ export type { PriorPageRotation, PriorRotation } from './rotatePages.js';
 // `mupdfWriter.ts`, so a value export here would bind the native library in
 // every importer of this barrel. The prior-state shape is erased.
 export type { PriorPageTransition, PriorTransition } from './pageTransition.js';
+// The TYPES only, for the same reason: `pageResize.ts` imports `mupdfWriter.ts`.
+export type { PriorBox, PriorContents, PriorPageResize } from './pageResize.js';
 // The TYPE only, for the same reason and by the same spelling: `readPageGeometry`
 // reaches `mupdfWriter.ts`, so it is on `@monstera/kernel/engine`. The shape is
 // what main, the host and the contract all name, and it is erased.

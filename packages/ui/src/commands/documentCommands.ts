@@ -17,6 +17,8 @@ import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
+import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
+import type { ResizePagesAnswer } from '../dialogs/resizePagesResult.js';
 import { SAVE_PROBLEM_DIALOG_ID } from '../dialogs/saveProblem.js';
 import { WATERMARK_PAGES_DIALOG_ID } from '../dialogs/watermarkPages.js';
 import type { WatermarkPagesAnswer } from '../dialogs/watermarkPagesResult.js';
@@ -35,6 +37,7 @@ import {
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
   PAGE_BACKGROUND_COMMAND_TITLE,
+  RESIZE_PAGES_COMMAND_TITLE,
   PAGE_TRANSITION_COMMAND_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_COPY_TITLE,
@@ -715,6 +718,36 @@ export function pageTransitionCommand(deps: DocumentCommandDeps): UiCommand {
         pages: answer.pages === 'all' ? 'all' : [...answer.pages],
         style: answer.style,
         durationSeconds: answer.durationSeconds,
+      });
+    },
+  };
+}
+
+/**
+ * Resizes pages to a target size, scaling their content to fit.
+ *
+ * **The dialog answers the command** (ADR-0038): its result is the two numbers
+ * and the scope the command carries, and nothing here recomputes a size from
+ * something the dialog also had.
+ */
+export function resizePagesCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.resize-pages',
+    title: RESIZE_PAGES_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 22 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+      const answer = (await deps.ask(RESIZE_PAGES_DIALOG_ID, { page: context.page })) as
+        | ResizePagesAnswer
+        | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'resizePages',
+        pages: answer.pages === 'all' ? 'all' : [...answer.pages],
+        widthPoints: answer.widthPoints,
+        heightPoints: answer.heightPoints,
       });
     },
   };

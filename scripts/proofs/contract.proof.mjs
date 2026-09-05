@@ -152,15 +152,13 @@ const BATES_SPEC = `  batesNumberPages: {
     replay: 'reapply-intent',
   },`;
 
-/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 /**
  * Filler, kept separate for {@link MOVE_SPEC}'s reason.
  *
- * A MuPDF spec, and the one below it is a pdf-lib one — so this fixture set
+ * A pdf-lib spec, and the two below it are MuPDF ones — so this fixture set
  * carries both writer shapes, which is what stops a table that lost the
  * conditional from compiling here.
  */
-/** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
 const BACKGROUND_SPEC = `  setPageBackground: {
     kind: 'setPageBackground',
     writer: 'pdf-lib',
@@ -179,6 +177,25 @@ const TRANSITION_SPEC = `  setPageTransition: {
     apply: applySetPageTransition,
     capture: captureSetPageTransition,
     invert: invertSetPageTransition,
+    invertible: true,
+    undo: 'inverse',
+    reproducible: true,
+    replay: 'reapply-intent',
+  },`;
+
+/**
+ * Filler, kept separate for {@link MOVE_SPEC}'s reason.
+ *
+ * **The one spec here that is invertible AND writes a content stream**, which
+ * is the pair every other fixture keeps apart — so a table shape that tied the
+ * two together would fail on this member alone.
+ */
+const RESIZE_SPEC = `  resizePages: {
+    kind: 'resizePages',
+    writer: 'mupdf',
+    apply: applyResizePages,
+    capture: captureResizePages,
+    invert: invertResizePages,
     invertible: true,
     undo: 'inverse',
     reproducible: true,
@@ -265,6 +282,9 @@ const SPEC_IMPORTS = `import {
   applySetPageTransition,
   captureSetPageTransition,
   invertSetPageTransition,
+  applyResizePages,
+  captureResizePages,
+  invertResizePages,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -647,6 +667,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
 };
 `,
   },
@@ -664,8 +685,8 @@ ${BACKGROUND_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `setPageBackground` and `setPageTransition` on
-    // 2026-09-05; `batesNumberPages`, `headerFooterPages`,
+    // table has to grow. `resizePages`, `setPageBackground` and
+    // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
     // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
     // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
     // 2026-09-03, `setLayerVisibility` before.
@@ -676,7 +697,7 @@ ${BACKGROUND_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'setPageBackground' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'resizePages' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -706,6 +727,7 @@ ${WATERMARK_SPEC}
 ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
+${BACKGROUND_SPEC}
 };
 `,
   },
@@ -742,6 +764,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
   notDeclared: {
     kind: 'notDeclared',
     writer: 'mupdf',
@@ -793,6 +816,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
 };
 `,
   },
@@ -827,6 +851,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
 };
 `,
   },
@@ -870,6 +895,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
 };
 `,
   },
@@ -909,6 +935,7 @@ ${HEADER_FOOTER_SPEC}
 ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
+${RESIZE_SPEC}
 };
 `,
   },
@@ -1423,7 +1450,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // AND PAST EIGHT MEMBERS TYPESCRIPT ITSELF STARTS ELIDING, which is a
     // change in the diagnostic rather than in the type. The reason line is now
     //
-    //   '{…} | {…} | {…} | {…} | ... 8 more ... | {…}'
+    //   '{…} | {…} | {…} | {…} | ... 9 more ... | {…}'
     //
     // — four spelt out, eight counted, one more spelt out. So the member count
     // is `4 + 8 + 1`, and the two numbers a later author has to advance are the
@@ -1436,7 +1463,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 8 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 9 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

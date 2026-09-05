@@ -2,6 +2,7 @@ import { PDFArray, PDFDocument, PDFName, PDFRawStream } from '@cantoo/pdf-lib';
 import type { CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult } from './commandLog.js';
+import { COORDINATE_DECIMALS, contentNumber } from './contentNumbers.js';
 import type { Apply, ByteImage, Invert } from './engineSeam.js';
 import { pagesOf } from './pageScope.js';
 
@@ -124,16 +125,16 @@ export const applySetPageBackground: Apply<'pdf-lib', 'setPageBackground'> = asy
 };
 
 /**
- * A number as PDF content-stream text.
+ * A coordinate or colour component as content-stream text.
  *
- * **Fixed notation, never exponential.** `String(0.0000001)` is `1e-7`, which a
- * PDF content stream does not define — a page size or a colour component small
- * enough to trigger it would produce a stream no reader can parse, and the
- * failure would be a blank page rather than an error. Three decimals is finer
- * than a device pixel at any zoom this application offers.
+ * **The no-exponential rule and its reason now live in `contentNumbers.ts`**,
+ * which is where they were moved when `pageResize.ts` needed them: a rule
+ * spelt out at two call sites is one the third caller re-derives (B3a), and
+ * the two callers want different precision, so the shared thing is the
+ * guarantee and the digits are the argument.
  */
 function fixed(value: number): string {
-  return value.toFixed(3);
+  return contentNumber(value, COORDINATE_DECIMALS);
 }
 
 /** Exported for the proof, which asserts the operator text a page carries. */

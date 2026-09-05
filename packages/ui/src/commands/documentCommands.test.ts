@@ -12,6 +12,7 @@ import {
   saveCopyCommand,
   pageTransitionCommand,
   pageBackgroundCommand,
+  resizePagesCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -733,6 +734,83 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('A RESIZE CARRIES THE CONTEXT’S PAGE INTO BOTH the dialog and the scope', async () => {
+    // THE UI HALF, and the number is what it exists to watch. The wired-tools
+    // rule's blind spot is a boundary where a unit changes, and this command
+    // crosses one twice: the dialog is told which page is being read, and the
+    // answer's *this page* scope comes back as an index the kernel resolves.
+    // `CONTEXT.page` is 3 deliberately, so a command sending a literal 0 — the
+    // defect the rotate shipped with — fails here rather than reading as green.
+    const { client, sent } = recording();
+    const opened: unknown[] = [];
+
+    await resizePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve({ pages: [3], widthPoints: 595, heightPoints: 842 });
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([{ id: 'dialog.resize-pages', props: { page: 3 } }]);
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'resizePages',
+            pages: [3],
+            widthPoints: 595,
+            heightPoints: 842,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('a resize dispatches the ALL scope as the literal, not as a list of every page', async () => {
+    // The two scopes are different values on the wire, and `'all'` is resolved
+    // by the kernel because it holds the count. A command that expanded it here
+    // would need a page count the renderer does not have, and would send a
+    // payload that scales with the document against invariant L11.
+    const { client, sent } = recording();
+
+    await resizePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve({ pages: 'all', widthPoints: 612, heightPoints: 792 }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: {
+          docId: DOC,
+          command: {
+            kind: 'resizePages',
+            pages: 'all',
+            widthPoints: 612,
+            heightPoints: 792,
+          },
+        },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED resize dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await resizePagesCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED transition dialog dispatches nothing', async () => {

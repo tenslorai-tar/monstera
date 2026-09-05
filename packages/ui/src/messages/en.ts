@@ -117,6 +117,21 @@ export const PAGE_TRANSITION_APPLY = messageKey('dialog.page-transition.apply');
 export const PAGE_TRANSITION_NOT_A_NUMBER = messageKey('dialog.page-transition.not-a-number');
 export const PAGE_TRANSITION_COMMAND_TITLE = messageKey('command.page-transition.title');
 export const PAGE_BACKGROUND_COMMAND_TITLE = messageKey('command.page-background.title');
+export const RESIZE_PAGES_TITLE = messageKey('dialog.resize-pages.title');
+export const RESIZE_PAGES_A3 = messageKey('dialog.resize-pages.a3');
+export const RESIZE_PAGES_A4 = messageKey('dialog.resize-pages.a4');
+export const RESIZE_PAGES_A5 = messageKey('dialog.resize-pages.a5');
+export const RESIZE_PAGES_LETTER = messageKey('dialog.resize-pages.letter');
+export const RESIZE_PAGES_LEGAL = messageKey('dialog.resize-pages.legal');
+export const RESIZE_PAGES_TABLOID = messageKey('dialog.resize-pages.tabloid');
+export const RESIZE_PAGES_WIDTH = messageKey('dialog.resize-pages.width');
+export const RESIZE_PAGES_HEIGHT = messageKey('dialog.resize-pages.height');
+export const RESIZE_PAGES_UNIFORM_NOTE = messageKey('dialog.resize-pages.uniform-note');
+export const RESIZE_PAGES_THIS = messageKey('dialog.resize-pages.this-page');
+export const RESIZE_PAGES_ALL = messageKey('dialog.resize-pages.all-pages');
+export const RESIZE_PAGES_APPLY = messageKey('dialog.resize-pages.apply');
+export const RESIZE_PAGES_NOT_A_SIZE = messageKey('dialog.resize-pages.not-a-size');
+export const RESIZE_PAGES_COMMAND_TITLE = messageKey('command.resize-pages.title');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -434,6 +449,23 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // NO ELLIPSIS. The convention this file already follows is that a trailing
   // "…" promises a dialog, and this command applies immediately.
   [PAGE_BACKGROUND_COMMAND_TITLE]: 'Add page background',
+  [RESIZE_PAGES_TITLE]: 'Resize pages',
+  [RESIZE_PAGES_A3]: 'A3',
+  [RESIZE_PAGES_A4]: 'A4',
+  [RESIZE_PAGES_A5]: 'A5',
+  [RESIZE_PAGES_LETTER]: 'Letter',
+  [RESIZE_PAGES_LEGAL]: 'Legal',
+  [RESIZE_PAGES_TABLOID]: 'Tabloid',
+  [RESIZE_PAGES_WIDTH]: 'Width (points)',
+  [RESIZE_PAGES_HEIGHT]: 'Height (points)',
+  [RESIZE_PAGES_UNIFORM_NOTE]:
+    'Content is scaled to fit and centred, keeping its proportions. A page that is turned takes ' +
+    'the size you asked for as you see it.',
+  [RESIZE_PAGES_THIS]: 'This page',
+  [RESIZE_PAGES_ALL]: 'All pages',
+  [RESIZE_PAGES_APPLY]: 'Resize',
+  [RESIZE_PAGES_NOT_A_SIZE]: 'Width and height are numbers of points, above 0 and up to 14400.',
+  [RESIZE_PAGES_COMMAND_TITLE]: 'Resize pages…',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure

@@ -401,6 +401,28 @@ const declarations = {
     reproducible: true,
     replay: 'reapply-intent',
   },
+  resizePages: {
+    kind: 'resizePages',
+    // `docs/ARCHITECTURE.md:382` names resize on the page-tree-ops row. It
+    // touches a content stream, which every pdf-lib command here also does —
+    // and the row below is *drawing onto pages*, where this draws nothing: the
+    // stream it adds changes the coordinate system the existing marks are read
+    // in and puts no marks of its own on the page.
+    writer: 'mupdf',
+    // THE ONLY CONTENT-STREAM COMMAND HERE THAT IS INVERTIBLE, and the reason
+    // is that it appends to no stream. It adds two and rewrites `/Contents` to
+    // `[transform, ...original, restore]`, so the originals are untouched and
+    // the prior state is the array's shape — two numbers and a boolean per
+    // page, whatever the document weighs. `watermarkPages`' argument for a
+    // checkpoint is *drawing appends to the stream, so the prior state is the
+    // stream*; the premise is false here, so the conclusion does not follow.
+    invertible: true,
+    undo: 'inverse',
+    // A scale and a translation computed from the page's own box and the
+    // command's two numbers, with nothing read from a clock and nothing minted.
+    reproducible: true,
+    replay: 'reapply-intent',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */
