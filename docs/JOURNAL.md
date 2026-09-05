@@ -876,6 +876,173 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-05 — Stage audit: `2f87e45..38ded2e` — a signature that weighs one of its two costs, and a copy whose safety argument covers one direction
+
+Range: **18 commits, 98 files.** 8 proofs added, 18 modified, 0 removed; 31
+source files added, 33 changed, 0 removed — from `npm run audit:scope`, which
+reported *"Within one batch. An audit is not yet owed. Fires at 51 commits (33
+more) or 101 files (3 more)."*
+
+**The audit is owed anyway, and the disagreement is the two instruments working
+as designed.** `audit:scope` measures the range against HEAD; the pre-commit
+gate measures it against the range **plus the commit being written**, and the
+resize commit that triggered this brought the range to **104 files**. The gate
+says why in its own message: at the moment of the crossing commit, HEAD is still
+the parent, so a check reading HEAD cannot see the crossing and the board would
+go red one push after the fact. Both numbers are right about different
+questions.
+
+The range is D2's page-attribute and content-composition work: crop, watermark,
+headers and footers, Bates numbering, extract, duplicate detection, save-copy
+and its destination path, page transitions and background — plus ADR-0039's
+byte-image writer split and ADR-0040's second-document amendment.
+
+### The load-bearing column, read
+
+**18 modified proofs, and the deletions are where a loosened check hides.** Six
+carried any:
+
+| proof | deletions | what they were |
+|---|---|---|
+| `commandBus.test.ts` | 65 | `bus.undo(session, …)` → `bus.undo({ mupdf: session }, …)`, ADR-0040's resolved map |
+| `contract.proof.mjs` | 71 (55 invisible in the range diff) | the missing-kind regex and the union-continuation numbers advancing once per command, which that file's own comment says must happen |
+| `apps/desktop/src/documentCommands.test.ts` | 36 (18 invisible) | constructor arity, twice |
+| `pageOrder.test.ts`, `savePipeline.test.ts` | 1 each | an import line gaining a name |
+| `perfBudget.proof.mjs` | 9 | **a declared reduction — below** |
+
+`perfBudget.proof.mjs` is the only one that changed a check's meaning, and it
+**states that it is a reduction** in the diff rather than leaving it to be
+found. Its two baseline mutations were `floor(measured) − 4` and
+`ceil(measured) + 4` MB, which set a budget from one measurement and compared it
+against a *different* measurement the gate takes moments later; `mupdf-host`'s
+spread is 2.9 MB over thirty readings, so a 4 MB margin was a coin toss wearing
+a number. They are now 1 MB and 32 GB, and what replaces the lost boundary
+precision is a **self-consistency** assertion — the verdict is held against the
+gate's own two numbers in the same run, where no second measurement can
+disagree. That is item 2a satisfied in the commit that made the change, which is
+the whole ask.
+
+### Item 3, computed rather than answered from the workflow file
+
+`scripts/lib/affectedProofs.mjs` over the range's 98 changed files names **9**
+proofs of 99 examined. All nine were run, on this machine, at `38ded2e`:
+
+```
+proof:guards 10 · proof:hookintegrity 14 · proof:hookprobe 42
+proof:rendererpolicy 20 · proof:preload 10 · proof:auditscope 64
+proof:contract 40 · proof:perfbudget 30 passed, 3 not applicable
+proof:canvaspixels 10, drew 500990 of 500990 pixels (100.00%) at 595x842
+  in 1006ms; blank control 0
+```
+
+`proof:rendererpolicy` **refused on its first run** — `refuseStaleBuild`,
+because the tree had been stashed after the build it reads. That is the check
+being right: it compares the shipped renderer's policy against the law, and a
+build older than the source cannot speak for the source. It passed after a
+rebuild, which is recorded because *a refusal is self-certifying and a pass is
+not*.
+
+**And `proof:perfbudget`'s three not-applicable lines are the whole point of the
+reduction above**, which is why this reading is quoted rather than summed:
+
+```
+  --  mupdf-host-real: a baseline below its fixed cost — NOT MEASURED on this runner
+  --  mupdf-host-real: a baseline just above it — NOT MEASURED on this runner
+  --  mupdf-host-real: an absolute below its peak — NOT MEASURED on this runner
+```
+
+The margin was widened **because `mupdf-host-real`'s spread exceeded it**, and
+`mupdf-host-real` is the one role this machine does not measure. So the change
+is verified here for `main`, `main-service` and `mupdf-host`, and for the role it
+was made for it is verified **only on CI**. A green total of 30 reads as
+coverage of all four; the not-applicable lines are what say otherwise, and they
+are the lines nobody sums.
+
+### EEEEEE-1. The composition root's parameter list weighs one of its two costs
+
+`composition.ts:215` justifies placing `pickDestination` beside `pickDocument`
+rather than appending it, and the justification is sound as far as it goes:
+
+> *"That does shift every later argument by one … and it is taken here because
+> the types make a mis-slot loud."*
+
+True, and it is about **transposition**. The other cost is written nowhere at
+that site: `apps/desktop/src/pickerProbe.ts` calls `createShellDependencies`
+positionally, and `pickerProbe.ts` is **digested by `docs/picker-probe.json`**.
+So any change to this signature expires a human-driven observation and costs the
+owner a click at a dialog. That has now happened **twice in a week**, both times
+with `documentPicker.ts` — the actual subject of the record — byte-identical.
+
+This is the compound-claim shape at a **signature** rather than in a comment:
+the live clause vouches for a clause nobody wrote. And `documentCommands.ts`'
+own eleven-parameter list has the same gap from the other side — finding
+CCCCCC-3 records that an options object is owed and names its trigger as *the
+day two of these readers answer the same shape*, which is a **transposition**
+trigger. The expiry cost can never fire it, so the cost that has actually been
+paid twice is watched by nothing at either site.
+
+The design that removes both is the same one: **compose through an options
+object**, which does not change a caller's bytes when a dependency is added.
+Recorded here rather than built, because it is a composition-root change and
+this range is feature work; what is new is that the deferral now has the expiry
+cost written beside the transposition one.
+
+### EEEEEE-2. "The copy cannot drift silently" covers one direction, and the other one is anticipated
+
+`watermarkPagesResult.ts` explains why a dialog result schema may restate a
+command schema's bounds, and three modules in this range inherit the argument by
+name (`headerFooterResult`, `batesNumberResult`, `pageTransitionResult`):
+
+> *"A bound loosened here produces a value `resolve` accepts and the boundary
+> refuses … loud, and at the moment of the mistake."*
+
+That is correct for **loosening**. Tightening is silent: a dialog copy narrower
+than the command's schema means the user cannot reach a value the command would
+accept, with no throw and nothing on screen. The sentence handles this by
+asserting loosening is *"the direction that matters"* — and for a numeric bound
+that is arguable.
+
+**For an enum it is the wrong way round, and the change is already anticipated.**
+`pageTransitionResult.ts` restates five style literals, and the transitions
+FEATURES row ends *"Owed: the six styles needing an axis"*. A sixth style added
+to `setPageTransitionSchema` and not here does not throw — the dialog simply
+never offers it, and every test passes.
+
+Not repaired in this range, and the reason is that the repair is a **design
+question rather than an edit**: `packages/ui` may not import the kernel, the
+contract's schema describes a command where these describe a dialog answer, and
+the two are permitted to diverge on purpose. What is wrong is the *sentence*,
+which reads as covering the class. Its correction belongs with whatever mechanism
+holds the two enums together — the same shape `MAX_RECENT_ENTRIES` already
+solved by exporting the constant so a case can compare the two.
+
+### Checked and found correct, recorded so the next audit does not re-file it
+
+**`findDuplicatePages` is a search, and every control it has is in its proof.**
+Item 4b says to put the control *in the instrument*, and the reason it gives is
+that the instrument gets run by hand on the day someone needs an answer. This
+one is a **product feature reached through a command**, never run by hand, so
+the proof-side controls are complete rather than half of a pair:
+`pageDuplicates.test.ts` carries a resolution test (two pages differing by one
+coordinate are not duplicates), a positive control that finds a duplicate the
+fixture is known to contain, an unreadable-page case, and both negative controls.
+
+**`commandDeclarations.test.ts` derives its extent from `declaredCommands`**,
+which is 4c's correct direction: the failure feared is a command arriving
+wrongly declared, and that makes the set bigger. Its `CONTROL: it declares both
+writer shapes` is the anchor that a shrink would have to touch separately.
+
+### The escape guard fired three times in this session
+
+`sed -i` inside a read-only command, `node -e "1"` as a throwaway probe, and
+`python3 -c "pass"` as a capability check. None was needed for the work in
+hand — each was a reflex reached for while composing a shell line about
+something else, which is the section's own account of how the class arrives.
+Counted from this session's transcript rather than recalled, per the standing
+correction to that figure.
+
+---
+
 ## 2026-09-04 — Correction: `3320f33` blamed a cache for a run that never happened
 
 `3320f33`'s message ends:
