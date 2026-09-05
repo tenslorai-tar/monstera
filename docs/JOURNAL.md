@@ -9,7 +9,7 @@ the fact is not a baseline, it is a rationalisation.
 |---|---|---|---|
 | 0 — walking skeleton | 15 working days | **18 days worked** (2026-08-16 → 2026-09-02) | **1.20× — continue** |
 | 1 — viewer core | 10 working days | **2 days worked** (2026-09-02 → 2026-09-03), 52 commits | **0.20× — continue** |
-| 2 — page management | **2 working days** (owner, 2026-09-03) | in progress (started 2026-09-03, Stage 1's last day) | — |
+| 2 — page management | **2 working days** (owner, 2026-09-03) | **3 days worked** (2026-09-03 → 2026-09-05), 50 commits | **1.50× — continue** |
 | 3 — annotation platform, then tools | **3 working days** (owner, 2026-09-04) | not started | — |
 
 **The gate:** exceeding an estimate by **3×** arms a decision, which is taken in
@@ -873,6 +873,81 @@ shim source, not just an upstream version. The packaging test that proved
 typed lint over TypeScript 7 without it, and the fully-stable Vite 7 chain
 (ADR-0004) · the supplied composite logo used as-is (ADR-0002) · Base UI plus
 cherry-picked Zag machines, Lingui, zustand (ADR-0005).
+
+---
+
+## 2026-09-05 — Stage 2 closes: 3 days against a 2-day baseline, 1.50×, continue
+
+**24 of D2's 26 rows are done. The other two are out of the stage**, and that is
+the first thing to check when a stage closes over anything at `—`:
+
+- **Deskew** — attempted 2026-09-05 and withdrawn, deferred to **Stage 6** with
+  both failed readings on the row and the open question named (the fixture's
+  device-space geometry, unmeasured). Not skipped: unsolved, with the evidence.
+- **Enhance scans** — deferred to **Stage 6**, unattempted, split from deskew so
+  neither inherits the other's status.
+
+Both carry triggers. A stage does not close over a row nobody decided about, and
+these two were decided.
+
+### The figures, and the command each came from
+
+**3 working days**, 2026-09-03 → 2026-09-05, from
+
+```
+git log --format=%ad --date=short 3320f33~1..HEAD | sort -u
+```
+
+which returns exactly `2026-09-03`, `2026-09-04`, `2026-09-05`. **50 commits**,
+from `git log --oneline 3320f33~1..HEAD | wc -l`.
+
+**The stage ends at its LAST COMMIT, not when its last row first passed.** Both
+of this project's earlier miscounts understated the actual by stopping at the
+moment a thing worked rather than the moment it was recorded, so the figure is
+pushed the unflattering way: 2026-09-05 is counted in full even though the day
+also carries Stage 2's audit and this entry.
+
+### The verdict
+
+**1.50× against the owner's 2-day baseline. The gate arms at 3× — six days — and
+is not armed. Continue.**
+
+**The baseline is not revised to meet the actual**, which is the whole point of
+recording one in advance: a baseline moved after the fact is a rationalisation,
+and Part G says so. Two days was the owner's estimate on 2026-09-03 and it
+stands as written.
+
+Worth stating plainly because the number is flattering in the wrong direction:
+Stage 1 came in at 0.20× and Stage 2 at 1.50×, and the difference is not that
+this stage went badly. Stage 1 inherited a walking skeleton that had already
+paid for the seam, the registry, the dialog primitive and the save pipeline.
+Stage 2 spent its overrun on things that were **architecture** rather than
+features — ADR-0040 and its extension, two seam axes, a byte-image writer's
+second and third commands — and every one of those is now spent for Stage 3.
+
+### What Stage 2 actually established, beyond the rows
+
+- **ADR-0009's command model, exercised by fourteen kinds** across two writers
+  of record, with both §3a axes declared per command and neither defaulted.
+- **ADR-0039's byte-image writer**, from one command to five.
+- **ADR-0040's two axes**, `sources` and `reads`, each with a first caller —
+  and the composition defect between them found by building the second.
+- **The destination path**, now with three callers: copy, extract and split.
+- **The remap contract**, moved to `shared` and called by the back-stack, which
+  is `BUILD-PROMPT.md:691`'s *"remap invariants proven"* half that Stage 2 could
+  reach. The annotation half stays in D3, where it belongs.
+
+### What is NOT closed, and is carried forward rather than quietly dropped
+
+- The `outlineEntrySchema` / `Destination` alias: the contract says one is an
+  alias of the other and `destinations.ts` says the alias was backed out. Two
+  documents disagreeing about one relationship, found in this range's audit.
+- `document.extract`'s `/Names` and `/Outlines` remap for a destination naming a
+  dropped page — unmeasured, on the row since 2026-09-04.
+- `DocumentCommands` at fifteen positional parameters and `createEngineHandlers`
+  at twelve. The options-object move `ShellComposition` already made.
+- `proof:guards` at 622.64s to SIGTERM, with the pre-commit hook slowdown.
+- `proof:perfbudget`'s three `mupdf-host-real` lines, unmeasurable here.
 
 ---
 

@@ -34,7 +34,7 @@ planner counting a table of rows as a table of untouched work.
 |---|---|---|
 | 0 | Walking skeleton — the architecture, whole | **done** |
 | 1 | Viewer core (D1) | **done** (2026-09-03) — 22 of 24 rows, including all three `BUILD-PROMPT.md:686` names; `cmaps/` partly with a CJK trigger, drag-reorder deferred to Stage 2. Trajectory gate **0.20× — continue** |
-| 2 | Page management (D2) | **wip** — baseline **2 working days** (owner, 2026-09-03) |
+| 2 | Page management (D2) | **done** (2026-09-05) — 24 of 26 rows; the other two, deskew and enhance-scans, are deferred to Stage 6 with triggers rather than skipped. 3 days worked against a **2-day** baseline (owner, 2026-09-03), 50 commits. Trajectory gate **1.50× — continue**; the baseline is not revised |
 | 3 | Annotation platform, then tools (D3) | — |
 | 4 | Forms (D5) | — |
 | **1.0** | **Minimum Shippable release — Stages 0–4** | — |
