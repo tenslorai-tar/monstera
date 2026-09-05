@@ -219,9 +219,62 @@ export type Capture<W extends keyof WriterSession, K extends CommandKind> = (
   command: CommandOfKind<K>,
 ) => Promise<CaptureResult<CommandPrior[K]>>;
 
-export type Apply<W extends keyof WriterSession, K extends CommandKind> =
-  WriterShapeOf[W] extends 'byte-image'
-    ? (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
+/**
+ * How many OTHER documents a command's apply is given sessions for
+ * ([ADR-0040](../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)
+ * Decision 4).
+ *
+ * `'none' | 'one'` and not a count. Nothing in D2 merges three documents at
+ * once, and a list would make *how many* a runtime question at every call site
+ * for a capability nothing asks for. The day a command needs two sources this
+ * widens, and the widening is a **compile error at every `apply`** — which is
+ * the direction that fails safe.
+ *
+ * It lives here rather than beside the declarations for a module-graph reason
+ * that is worth stating, because the ADR's *"`Apply` is conditional on it
+ * exactly as it is already conditional on the writer's shape"* reads as though
+ * it could be: `commandDeclarations.ts` imports `WriterSession` from this file,
+ * so this file cannot import the declarations back. {@link Apply} therefore
+ * takes the axis as a **third type parameter**, and `commandSpecs.ts` — which
+ * sees both — is where it is bound to what a command declared. That is exactly
+ * how `W` already works, so the mechanism is the existing one rather than a new
+ * one.
+ */
+export type CommandSources = 'none' | 'one';
+
+/**
+ * How a command mutates its writer's session.
+ *
+ * Conditional on the writer's shape and on {@link CommandSources}, and the two
+ * conditions are not independent:
+ *
+ * - **byte-image + `'one'` is `never`**, so the combination cannot be written
+ *   at all. A byte-image writer consumes an image and produces one; there is no
+ *   session to hand it a second of, and a spec claiming both would have to
+ *   supply an `apply` of type `never`, which nothing satisfies. B5 rather than a
+ *   comment saying *don't do this* — ADR-0040's three rows are all MuPDF's, and
+ *   the day one is not, this is a deliberate type change rather than an
+ *   accident.
+ * - **live-session + `'one'`** takes the source's session as a third argument
+ *   it cannot be called without. The target is still the first parameter, so a
+ *   transposition is a type error only where the two sessions differ in type —
+ *   they do not, both being `MupdfSession` — which is why the bus passes them
+ *   positionally from a map keyed by `DocId` rather than by role.
+ */
+export type Apply<
+  W extends keyof WriterSession,
+  K extends CommandKind,
+  S extends CommandSources = 'none',
+> = WriterShapeOf[W] extends 'byte-image'
+  ? S extends 'one'
+    ? never
+    : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
+  : S extends 'one'
+    ? (
+        session: WriterSession[W],
+        command: CommandOfKind<K>,
+        source: WriterSession[W],
+      ) => Promise<void>
     : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
 
 /**

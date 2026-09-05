@@ -12,7 +12,7 @@ import {
 // `CommandExecution` and `RegisteredWriter`, which now live in
 // `commandRouting.ts`. Their removal is what says the move was clean rather
 // than a re-export with the old file still doing the work.
-import type { Apply, Capture, Invert, MupdfSession } from './engineSeam.js';
+import type { Apply, Capture, CommandSources, Invert, MupdfSession } from './engineSeam.js';
 import {
   applySetLayerVisibility,
   captureSetLayerVisibility,
@@ -83,14 +83,32 @@ import { applyRotatePages, captureRotatePages, invertRotatePages } from './rotat
  * and the `Apply` derived from it. Choosing the `writer` therefore chooses the
  * `apply` signature, including which **shape** it has — a byte-image writer's
  * `apply` returns bytes, a live-session writer's returns void (§8).
+ *
+ * ## A CROSS PRODUCT since ADR-0040, and this is where its axis is bound
+ *
+ * The union now runs over writers **and** {@link CommandSources}, so choosing
+ * both `writer` and `sources` chooses the `apply` — a `sources: 'one'` command
+ * must supply an apply taking a second session, and a `'none'` one must not.
+ *
+ * This file is where that binding can happen and `engineSeam.ts` is not:
+ * `commandDeclarations.ts` imports `WriterSession` from the seam, so the seam
+ * cannot import the declarations back to read what a command declared. `Apply`
+ * therefore takes the axis as a type parameter and this table supplies it, from
+ * the spread declaration — exactly how `W` has always been bound.
+ *
+ * **The byte-image × `'one'` member is `never`-typed by `Apply` itself**, so it
+ * is not a combination this table refuses; it is one that cannot be written.
  */
 export type WriterBinding<K extends CommandKind> = {
   readonly [W in WriterOfRecord]: {
-    readonly writer: W;
-    readonly apply: Apply<W, K>;
-    readonly capture: Capture<W, K>;
-    readonly invert: Invert<W, K>;
-  };
+    readonly [S in CommandSources]: {
+      readonly writer: W;
+      readonly sources: S;
+      readonly apply: Apply<W, K, S>;
+      readonly capture: Capture<W, K>;
+      readonly invert: Invert<W, K>;
+    };
+  }[CommandSources];
 }[WriterOfRecord];
 
 /**

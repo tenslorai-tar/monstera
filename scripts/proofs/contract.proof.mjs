@@ -64,6 +64,7 @@ const LAYER_SPEC = `  setLayerVisibility: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /**
@@ -83,6 +84,7 @@ const MOVE_SPEC = `  movePage: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /**
@@ -103,6 +105,7 @@ const DELETE_SPEC = `  deletePages: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /**
@@ -124,6 +127,7 @@ const WATERMARK_SPEC = `  watermarkPages: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -137,6 +141,7 @@ const HEADER_FOOTER_SPEC = `  headerFooterPages: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -150,6 +155,7 @@ const BATES_SPEC = `  batesNumberPages: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /**
@@ -169,6 +175,7 @@ const BACKGROUND_SPEC = `  setPageBackground: {
     undo: 'checkpoint',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 const TRANSITION_SPEC = `  setPageTransition: {
@@ -181,6 +188,7 @@ const TRANSITION_SPEC = `  setPageTransition: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /**
@@ -200,6 +208,7 @@ const RESIZE_SPEC = `  resizePages: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 const CROP_SPEC = `  cropPages: {
@@ -212,6 +221,7 @@ const CROP_SPEC = `  cropPages: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -225,6 +235,7 @@ const INSERT_SPEC = `  insertBlankPage: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /** Filler, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -238,6 +249,7 @@ const SWAP_SPEC = `  swapPages: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /** Filler for the newest kind, kept separate for {@link MOVE_SPEC}'s reason. */
@@ -251,6 +263,7 @@ const DUPLICATE_SPEC = `  duplicatePage: {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },`;
 
 /** What a command-table fixture imports: three per command kind. */
@@ -654,6 +667,7 @@ export const specs: CommandSpecs = {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -715,6 +729,7 @@ export const specs: CommandSpecs = {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -751,6 +766,7 @@ export const specs: CommandSpecs = {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -775,6 +791,7 @@ ${RESIZE_SPEC}
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 };
 `,
@@ -803,6 +820,11 @@ export const specs: CommandSpecs = {
     invert: invertRotatePages,
     invertible: true,
     undo: 'inverse',
+    // PRESENT, so the omission this case names is the ONLY one. Without it the
+    // spec is missing two axes and TypeScript reports whichever it reaches
+    // first -- which was the sources axis the moment ADR-0040 landed, and the
+    // case would then have gone on passing while proving something else.
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -838,6 +860,7 @@ export const specs: CommandSpecs = {
     invert: invertRotatePages,
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -882,6 +905,7 @@ export const specs: CommandSpecs = {
     undo: 'inverse',
     reproducible: false,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -922,6 +946,7 @@ export const specs: CommandSpecs = {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    sources: 'none',
   },
 ${LAYER_SPEC}
 ${MOVE_SPEC}
@@ -958,6 +983,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   undo: 'checkpoint',
   reproducible: false,
   replay: 'stored-effect',
+  sources: 'none',
 };
 `,
   },
@@ -990,6 +1016,140 @@ export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns:
 `,
   },
   {
+    name: 'A SOURCES-ONE SPEC TAKES A SECOND SESSION, and that compiles',
+    expect: 'allow',
+    // ADR-0040 Decision 4's whole claim, in the direction that must SUCCEED.
+    // Every other case here is a refusal, and a refusal-only set is satisfied
+    // by an axis that rejects everything — the shape audit item 4's negative
+    // probes are about. This is the one that says the capability exists.
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'one',
+  apply: (
+    _target: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _source: MupdfSession,
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'LIMIT: sources ONE does not force the apply to ACCEPT a source, and that is TypeScript',
+    expect: 'allow',
+    // THE AXIS BINDS IN ONE DIRECTION ONLY, and this case exists so the next
+    // reader does not assume the other. A two-parameter function is assignable
+    // to a three-parameter signature — TypeScript permits a handler that
+    // ignores arguments it was passed — so a spec may declare `sources: 'one'`
+    // and supply an apply that never looks at the source. It compiles, here,
+    // deliberately recorded rather than asserted away.
+    //
+    // What that costs: a merge whose apply ignored its second document would
+    // type-check. What catches it instead is the row's own kernel proof, which
+    // asserts the target contains the source's pages — a document effect, which
+    // is where the wired-tools rule already puts the burden. Stating the limit
+    // is what stops someone reading the declaration as a guarantee it is not.
+    //
+    // The reverse direction IS a compile error and the case below is it, so the
+    // pair says exactly which half the type system holds.
+    source: `
+import type { CommandSpec } from '@monstera/kernel';
+import { applyRotatePages, captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'one',
+  apply: applyRotatePages,
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'but a spec declaring sources NONE may not supply a two-session apply',
+    expect: 'reject',
+    code: 'TS2322',
+    // THE HALF THE TYPE SYSTEM DOES HOLD. Without it, every command could
+    // quietly acquire a second session parameter and `sources: 'none'` would
+    // stop meaning anything — an extra parameter is what a three-argument
+    // function has and a two-argument signature does not.
+    //
+    // Anchored on the SUPPLIED type carrying `source:`, which is what separates
+    // this from the writer-mismatch case below: that one's diagnostic is about
+    // `ByteImage` against `MupdfSession`, and both would match a bare
+    // "property 'apply' is incompatible" pattern. The proof's own cross-product
+    // check reported exactly that collision when these were first written.
+    because: /Target signature provides too few arguments\. Expected 3 or more, but got 2/u,
+    notBecause: null,
+    source: `
+import type { CommandOfKind } from '@monstera/contract';
+import type { CommandSpec, MupdfSession } from '@monstera/kernel';
+import { captureRotatePages, invertRotatePages } from '@monstera/kernel/engine';
+export const spec: CommandSpec<'rotatePages'> = {
+  kind: 'rotatePages',
+  writer: 'mupdf',
+  sources: 'none',
+  apply: (
+    _target: MupdfSession,
+    _command: CommandOfKind<'rotatePages'>,
+    _source: MupdfSession,
+  ) => Promise.resolve(),
+  capture: captureRotatePages,
+  invert: invertRotatePages,
+  invertible: true,
+  undo: 'inverse',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'A BYTE-IMAGE WRITER CANNOT NAME A SECOND DOCUMENT, because its apply is never',
+    expect: 'reject',
+    code: 'TS2322',
+    // B5 rather than a comment. A byte-image writer consumes an image and
+    // produces one; there is no session to hand it a second of, so `Apply`
+    // resolves that combination to `never` and nothing satisfies it. The
+    // alternative — permitting the pair and stating in prose that nobody
+    // should write it — is the shape this project's own record says gets
+    // written anyway.
+    //
+    // Anchored on `never` rather than on the property name, because the
+    // property name is what the two cases above are anchored on and a matcher
+    // that accepts a neighbour's diagnostic distinguishes nothing.
+    because: /Type '\(image: ByteImage[^']*' is not assignable to type 'never'/u,
+    notBecause: null,
+    source: `
+import type { ByteImage, CommandSpec } from '@monstera/kernel';
+export const spec: CommandSpec<'watermarkPages'> = {
+  kind: 'watermarkPages',
+  writer: 'pdf-lib',
+  sources: 'one',
+  apply: (image: ByteImage) => Promise.resolve(new Uint8Array(image)),
+  capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
+  invert: (image: ByteImage) => Promise.resolve(image),
+  invertible: false,
+  undo: 'checkpoint',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
     name: 'a spec may not declare one writer and supply the apply of ANOTHER',
     expect: 'reject',
     code: 'TS2322',
@@ -1003,7 +1163,15 @@ export const command: Command = { kind: 'rotatePages', pages: [0], quarterTurns:
     // identical for the capture case below, and the cross-product check caught
     // exactly that when both were first written: one matcher accepting the
     // other's diagnostic means neither verdict distinguishes them.
-    because: /Types of property 'apply' are incompatible/u,
+    //
+    // TIGHTENED 2026-09-05, by the same check. ADR-0040's byte-image × sources
+    // case also produces *"Types of property 'apply' are incompatible"* — its
+    // deeper line is `not assignable to type 'never'` — so the property name
+    // alone stopped separating this from it. The pattern now carries the
+    // session mismatch as well, which the capture case below cannot produce
+    // because its incompatible property is `capture`.
+    because:
+      /Types of property 'apply' are incompatible[\s\S]*Type 'ByteImage' is not assignable to type 'MupdfSession'/u,
     // None, and the reason is worth stating rather than leaving as a bare null.
     // The name you would expect to be confusable is the DECLARED writer,
     // `pdf-lib` — and it does not appear at all, because it is a value whose
@@ -1028,6 +1196,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   undo: 'inverse',
   reproducible: true,
   replay: 'reapply-intent',
+  sources: 'none',
 };
 `,
   },
@@ -1050,6 +1219,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   undo: 'inverse',
   reproducible: true,
   replay: 'reapply-intent',
+  sources: 'none',
 };
 `,
   },
@@ -1398,6 +1568,7 @@ export const spec: CommandSpec<'rotatePages'> = {
   undo: 'inverse',
   reproducible: true,
   replay: 'reapply-intent',
+  sources: 'none',
 };
 `,
   },

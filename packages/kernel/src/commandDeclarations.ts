@@ -1,6 +1,6 @@
 import type { CommandKind } from '@monstera/contract';
 
-import type { WriterSession } from './engineSeam.js';
+import type { CommandSources, WriterSession } from './engineSeam.js';
 
 /**
  * What every command **is** — and nothing about how it is performed
@@ -77,6 +77,27 @@ export type WriterRouting = {
 }[WriterOfRecord];
 
 /**
+ * Does this command name a second document?
+ *
+ * [ADR-0040](../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)
+ * Decision 4, and it is a **declaration rather than an inference from the
+ * payload**. A command whose params happen to contain a `DocId` is not the same
+ * statement as a command that needs a second session, and reading one off the
+ * other is the partial reimplementation of a rule something else owns that B3a
+ * is about: the payload is the contract's, the session requirement is the
+ * seam's.
+ *
+ * Every command declares it, including the twelve that answer `'none'`. A field
+ * defaulted to `'none'` would be a choice nobody makes and nobody reads, and
+ * the point of this table is that each axis is answered once per command where
+ * a reviewer meets it — the same argument {@link Invertibility} makes about a
+ * consequence travelling with its choice.
+ */
+export interface SourceRouting {
+  readonly sources: CommandSources;
+}
+
+/**
  * Can this be undone, and what does undoing it cost?
  *
  * The consequence is part of the declaration because §4 spends it: a log entry
@@ -116,6 +137,7 @@ export type Reproducibility =
 export type CommandDeclaration<K extends CommandKind> = {
   readonly kind: K;
 } & WriterRouting &
+  SourceRouting &
   Invertibility &
   Reproducibility;
 
@@ -156,6 +178,9 @@ const declarations = {
     // bytes, so the log stores intent.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   setLayerVisibility: {
     kind: 'setLayerVisibility',
@@ -178,6 +203,9 @@ const declarations = {
     // bytes, so the log stores intent.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   movePage: {
     kind: 'movePage',
@@ -200,6 +228,9 @@ const declarations = {
     // document produces the same tree, so the log stores intent.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   deletePages: {
     kind: 'deletePages',
@@ -221,6 +252,9 @@ const declarations = {
     // (§3a) and this is the first command in the build where they differ.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   duplicatePage: {
     kind: 'duplicatePage',
@@ -239,6 +273,9 @@ const declarations = {
     // full-rewrite save renumbers everything anyway (ADR-0008).
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   swapPages: {
     kind: 'swapPages',
@@ -254,6 +291,9 @@ const declarations = {
     undo: 'inverse',
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   insertBlankPage: {
     kind: 'insertBlankPage',
@@ -270,6 +310,9 @@ const declarations = {
     // re-running against the same document builds the same page.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   cropPages: {
     kind: 'cropPages',
@@ -287,6 +330,9 @@ const declarations = {
     // against the same document writes the same numbers.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   watermarkPages: {
     kind: 'watermarkPages',
@@ -326,6 +372,9 @@ const declarations = {
     // so there is no font program whose bytes could differ between runs.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   headerFooterPages: {
     kind: 'headerFooterPages',
@@ -345,6 +394,9 @@ const declarations = {
     // mints an identifier — the two things §3a spends this axis on.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   batesNumberPages: {
     kind: 'batesNumberPages',
@@ -363,6 +415,9 @@ const declarations = {
     // and is worth stating because "sequential" sounds like it should be.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   setPageTransition: {
     kind: 'setPageTransition',
@@ -384,6 +439,9 @@ const declarations = {
     // nothing read from a clock or minted.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   setPageBackground: {
     kind: 'setPageBackground',
@@ -400,6 +458,9 @@ const declarations = {
     // from a clock and nothing minted.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
   resizePages: {
     kind: 'resizePages',
@@ -422,6 +483,9 @@ const declarations = {
     // command's two numbers, with nothing read from a clock and nothing minted.
     reproducible: true,
     replay: 'reapply-intent',
+    // Names no second document, so its `apply` takes one session and is
+    // unmoved by ADR-0040's axis existing.
+    sources: 'none',
   },
 } satisfies CommandDeclarations;
 

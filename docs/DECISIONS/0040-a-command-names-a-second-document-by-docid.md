@@ -249,3 +249,45 @@ on MuPDF because `/Trans` is a page attribute rather than because it was easier.
   the widening is a compile error at every `apply`, which is the direction that
   fails safe.
 - **Nothing is built on it**, and that remains true of this whole document.
+
+---
+
+## Correction, 2026-09-05 — Decision 4's axis IS now built, and one half of it does not bind
+
+Both statements above that *nothing is built on this* were true when written and
+are now false for **Decision 4's `sources` axis**, which landed the same day.
+Appended rather than edited, because what was believed at the time is the record.
+
+What exists: `CommandSources` in `engineSeam.ts`, `Apply<W, K, S>` conditional
+on it, `SourceRouting` on every `CommandDeclaration`, and the cross-product
+`WriterBinding` in `commandSpecs.ts` that binds a spec's `apply` to both axes.
+Every one of the fourteen commands declares `sources: 'none'`; **no command
+declares `'one'` yet**, so nothing routes through the new signature and the three
+rows the ADR names are still unbuilt. Decision 3's bus parameter is also unbuilt,
+and the `reads` axis from the 2026-09-05 extension is unbuilt.
+
+**And the claim that `Apply` is conditional on it *exactly as it is on the
+writer's shape* was too strong in two ways, both found by building it.**
+
+1. **It needed a third type parameter, not a lookup.** `commandDeclarations.ts`
+   imports `WriterSession` from `engineSeam.ts`, so the seam cannot import the
+   declarations back to read what a command declared. `Apply` takes the axis as
+   a parameter and `commandSpecs.ts` binds it — which is how `W` already worked,
+   so the shape was available; the ADR simply described a lookup that the module
+   graph forbids.
+2. **THE AXIS BINDS IN ONE DIRECTION ONLY.** A spec declaring `sources: 'none'`
+   cannot supply a three-parameter apply — TypeScript refuses it, *"Target
+   signature provides too few arguments"*. A spec declaring `'one'` **can**
+   supply a two-parameter apply, because a function that ignores arguments is
+   assignable to a signature that passes them. So declaring a source does not
+   oblige the apply to look at one, and a merge whose apply silently ignored its
+   second document would type-check.
+
+   This is recorded rather than worked around: the guard against that is the
+   row's own kernel proof asserting the target contains the source's pages,
+   which is where the wired-tools rule already puts the burden. `contract.proof.mjs`
+   carries the limit as an **`allow`** case, so the asymmetry is a fact the proof
+   states rather than an assumption a reader makes.
+
+The byte-image × `'one'` combination is genuinely unrepresentable: `Apply`
+resolves it to `never`, and a fourth case proves nothing satisfies it.
