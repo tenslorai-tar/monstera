@@ -147,3 +147,105 @@ channels and send a new document's worth of bytes back. Every byte of two
 documents crosses twice, PDF.js becomes a source of truth (§3.2 forbids it), and
 the result is assembled by the one component that is not allowed to hold document
 state.
+
+---
+
+## Extension, 2026-09-05 — an apply may also need a value READ through another engine, and the bus resolves that too
+
+**Status: accepted, and still nothing is built.** This extends Decisions 3 and 4
+rather than replacing them, and it is written here rather than as ADR-0041
+because it changes no decision above: it names a **second instance of the shape
+Decision 3 already established**.
+
+### What asked for it
+
+**Generate TOC from bookmarks.** `docs/ARCHITECTURE.md:381` puts *"new document
+generation (markdown/CSV/**TOC**/image-to-PDF)"* on the content-composition row,
+so the page is `@cantoo/pdf-lib`'s to write. The row above it puts
+*"Metadata, **outline/bookmarks**"* on MuPDF, as writer **and** as reader for the
+view model — and `packages/kernel/src/destinations.ts`'s `readDestinations` is
+the module that answers *what are this document's bookmarks*, through a MuPDF
+session, with the cycle bound and the depth flattening that question needs.
+
+A byte-image `Apply` is `(image, command) => Promise<ByteImage>`. **It has no
+session.** So a pdf-lib TOC apply would have to walk `/Outlines` itself — a
+**second opinion** about a question one module already owns (B3a), and one that
+would agree with `readDestinations` for every ordinary outline and differ on the
+ones that matter: a cycle, an entry whose destination resolves through the name
+tree, an entry with no reachable page.
+
+### The path did not already exist, checked rather than assumed
+
+`grep -rn "sources:" --include=*.ts packages/` returns nothing on 2026-09-05.
+Decision 4's axis is declared in this document and in `docs/ARCHITECTURE.md`'s
+amendment log, and in no code — *"Nothing is built on it"* is still true. So this
+is not registration into an existing seam; it is a small widening of one that has
+yet to be built, and it is written before the building rather than discovered
+during it.
+
+### Extension decision — `reads` sits BESIDE `sources`, and `'outline'` is its first member
+
+```
+sources: 'none' | 'one'      // WHICH DOCUMENTS the apply is given sessions for
+reads:   'none' | 'outline'  // WHAT PRE-READ DATA it is given
+```
+
+`Apply` is conditional on both, exactly as Decision 4 makes it conditional on
+`sources`, so every command declaring `'none'` for both keeps the signature it
+has today.
+
+**Two axes and not one widened axis**, because they answer different questions
+and combine independently: a merge is `sources: 'one', reads: 'none'`; a TOC is
+`sources: 'none', reads: 'outline'`; a merge that regenerates the target's TOC
+is both. Folding them would make `sources: 'outline'` read as *a document called
+outline* — a discriminant carrying two unrelated meanings, which is what B5 says
+to make unrepresentable rather than explain.
+
+**`readDestinations` stays the one reader, and the bus does not learn to read.**
+`documentCommands.ts` resolves the entries exactly as Decision 3 has it resolve
+sessions — through the module that owns the question — and hands them over. A bus
+that read an outline would be the document index arriving by a third route.
+
+**Resolved at APPLY time, in the same lane entry as the write.** A table of
+contents is almost entirely page numbers, so an outline read when the dialog
+opened is one taken before whatever the user did next. Reading it inside the lane
+is what makes the numbers describe the document actually being written, and it
+costs nothing extra: the lane entry already holds the MuPDF session.
+
+### Rejected — the entries travel in the command payload
+
+The tempting one, and it is tempting because it is already the established
+pattern: ADR-0038 has the dialog answer the command, and the renderer **already
+holds the outline** — `DestinationsPanel` renders it from `document.destinations`,
+which is `readDestinations`, so it would not even be a second opinion.
+
+Rejected on **staleness**, which is the axis that decides it. The renderer's copy
+was read at some earlier `DocVersion`; between that read and the apply the user
+may have deleted pages, and a TOC built from the snapshot states page numbers for
+a document that no longer has them. The failure is silent and looks like a
+correct TOC. Refusing on a stale `DocVersion` would close it and would make a
+routine sequence — open the panel, delete a page, generate — a refusal the user
+has to understand.
+
+Secondarily, an outline scales with the document. The constant is small beside a
+200 MB merge, and it is the same shape L11 names.
+
+### Rejected — route the TOC command to MuPDF instead
+
+It would put the read and the write in one session and need no extension at all.
+Rejected because it classifies by convenience: §3's matrix assigns text
+composition onto a page to `@cantoo/pdf-lib`, and moving one command off that row
+because its input is awkward is how a matrix stops being evidence. The same
+argument was made and taken the other way for `setPageTransition`, which stayed
+on MuPDF because `/Trans` is a page attribute rather than because it was easier.
+
+### What this extension does NOT do
+
+- **It does not decide anything about the TOC itself** — where the page goes,
+  whether it replaces an existing one, how deep it nests, whether its entries are
+  links. Those are the row's, and none of them needs a seam.
+- **It does not widen `reads` speculatively.** `'outline'` is the one member
+  anything asks for. A second — page text, an annotation list — widens it, and
+  the widening is a compile error at every `apply`, which is the direction that
+  fails safe.
+- **Nothing is built on it**, and that remains true of this whole document.
