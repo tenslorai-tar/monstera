@@ -136,6 +136,9 @@ export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
 export const INSERT_IMAGE_TOO_LARGE = messageKey('dialog.insert-image-problem.too-large');
+export const GENERATE_TOC_COMMAND_TITLE = messageKey('command.generate-toc.title');
+export const GENERATE_TOC_PROBLEM_TITLE = messageKey('dialog.generate-toc-problem.title');
+export const GENERATE_TOC_NO_OUTLINE = messageKey('dialog.generate-toc-problem.no-outline');
 export const DUPLICATE_PAGES_TITLE = messageKey('dialog.duplicate-pages.title');
 export const DUPLICATE_PAGES_COMPARED = messageKey('dialog.duplicate-pages.compared');
 export const DUPLICATE_PAGES_NONE = messageKey('dialog.duplicate-pages.none');
@@ -477,6 +480,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_IMAGE_TOO_LARGE]:
     'That image is larger than {megabytes} MB, which is the most this app will make a page from. ' +
     'Your document has not changed.',
+  [GENERATE_TOC_COMMAND_TITLE]: 'Table of contents',
+  [GENERATE_TOC_PROBLEM_TITLE]: 'There is nothing to tabulate',
+  // NAMES WHAT IS MISSING AND WHERE IT COMES FROM. "No bookmarks" alone reads
+  // as a failure of the app; a person who has never met the word needs to know
+  // it is something the document either carries or does not.
+  [GENERATE_TOC_NO_OUTLINE]:
+    'This document has no bookmarks, so there are no headings to build a table of contents ' +
+    'from. Your document has not changed.',
   [DOCUMENT_TOOLS_LABEL]: 'Document tools',
   // "Not saved" and never "Save failed". Invariant 18's whole subject is that
   // the work survives a save that did not happen, and a title naming a failure

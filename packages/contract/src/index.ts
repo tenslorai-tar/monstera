@@ -69,6 +69,7 @@ export {
   cropPagesSchema,
   deletePagesSchema,
   duplicatePageSchema,
+  generateTocSchema,
   headerFooterPagesSchema,
   insertBlankPageSchema,
   MAX_IMAGE_BYTES,

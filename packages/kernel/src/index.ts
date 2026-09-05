@@ -51,8 +51,10 @@ export {
 } from './commandLog.js';
 export {
   type ByteImageAccess,
+  type PreReadAccess,
   type CheckpointRestore,
   CommandBus,
+  type CommandInputs,
   type Executed,
   type SnapshotWrite,
   type Undone,
@@ -272,6 +274,18 @@ export {
   captureInsertImagePage,
   invertInsertImagePage,
 } from './pageImage.js';
+// ON THE BARREL for `insertImagePage`'s reason two lines up, and the import
+// check it names holds: `pageToc.ts` imports `@cantoo/pdf-lib` and the contract,
+// and nothing on that path reaches MuPDF or PDFium.
+export {
+  applyGenerateToc,
+  captureGenerateToc,
+  fit,
+  invertGenerateToc,
+  rowsPerPage,
+  shownPageNumber,
+  tocPageCount,
+} from './pageToc.js';
 export {
   applyBatesNumberPages,
   applyHeaderFooterPages,

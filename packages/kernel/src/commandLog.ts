@@ -257,6 +257,18 @@ export interface CommandPrior {
    * of by decision.
    */
   readonly insertImagePage: never;
+  /**
+   * **`never`**, for {@link insertImagePage}' reason on a variable number of
+   * pages.
+   *
+   * The count is what makes it worth its own entry rather than a pointer: a
+   * table of contents may take one page or six, so *the document without the
+   * pages this command added* is not a fixed shape the way an insert's is. That
+   * changes nothing about the conclusion — a delete's prior state is the pages
+   * and everything they reach either way — and it is written out because this
+   * table is where each command says what its inverse is made of.
+   */
+  readonly generateToc: never;
 }
 
 /**

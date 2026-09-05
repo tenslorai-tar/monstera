@@ -14,6 +14,7 @@ import {
   pageBackgroundCommand,
   resizePagesCommand,
   insertImageCommand,
+  generateTocCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
   rotatePageCommand,
@@ -1072,5 +1073,112 @@ describe('delete pages — the mutation-dialog gate', () => {
 
     expect(opened).toStrictEqual([]);
     expect(sent).toStrictEqual([]);
+  });
+});
+
+describe('generate table of contents', () => {
+  /**
+   * A client answering both channels this command uses, recording every ask.
+   *
+   * Two channels rather than one, and that is what makes the cases below
+   * separable: the command's whole decision is *read the outline, then dispatch
+   * or refuse*, so a fixture that answered only `document.execute` could not
+   * tell the two paths apart.
+   */
+  function recording(destinations: readonly unknown[]): {
+    readonly client: ContractClient;
+    readonly sent: { id: string; params: unknown }[];
+  } {
+    const sent: { id: string; params: unknown }[] = [];
+    const client = createClient(channels, (id, params) => {
+      sent.push({ id, params });
+      if (id === 'document.destinations') {
+        return Promise.resolve(ok({ version: asDocVersion(1), destinations }));
+      }
+      return Promise.resolve(
+        ok({ version: asDocVersion(2), byteLength: 8192, historyDropped: 0 }),
+      );
+    });
+    return { client, sent };
+  }
+
+  const ONE_ENTRY = [{ title: 'Chapter one', page: 2, depth: 0 }];
+
+  it('reads the outline, then dispatches generateToc at the FRONT', async () => {
+    const { client, sent } = recording(ONE_ENTRY);
+    const record = recorder();
+
+    await generateTocCommand({
+      client,
+      onApplied: record.onApplied,
+      ask: record.ask,
+    }).run(CONTEXT);
+
+    // BOTH CALLS AND THEIR ORDER. The read has to precede the dispatch, because
+    // its whole job is to decide whether there is one — and `at: 0` rather than
+    // `CONTEXT.page + 1`, which is what every other insert here sends and would
+    // put a table of contents in the middle of the document.
+    expect(sent).toStrictEqual([
+      { id: 'document.destinations', params: { docId: DOC } },
+      { id: 'document.execute', params: { docId: DOC, command: { kind: 'generateToc', at: 0 } } },
+    ]);
+    expect(record.applied).toStrictEqual([
+      { version: 2, byteLength: 8192, historyDropped: 0 },
+    ]);
+    expect(record.shown).toStrictEqual([]);
+  });
+
+  it('CONTROL: an EMPTY outline is refused in the renderer, and nothing is sent', async () => {
+    // The separating case. A command that dispatched regardless would produce a
+    // blank page and pass every assertion in the case above, so what is asserted
+    // here is the call that was NOT made.
+    const { client, sent } = recording([]);
+    const record = recorder();
+
+    await generateTocCommand({
+      client,
+      onApplied: record.onApplied,
+      ask: record.ask,
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([{ id: 'document.destinations', params: { docId: DOC } }]);
+    // AND THE USER WAS TOLD. Returning quietly is the display-only failure —
+    // a control that ran and appeared to do nothing.
+    expect(record.shown).toStrictEqual([
+      { id: 'dialog.generate-toc-problem', props: { reason: 'no-outline' } },
+    ]);
+    expect(record.applied).toStrictEqual([]);
+  });
+
+  it('reports a refused outline read rather than swallowing it', async () => {
+    const record = recorder();
+
+    await generateTocCommand({
+      client: clientFailing('document-busy'),
+      onApplied: record.onApplied,
+      ask: record.ask,
+    }).run(CONTEXT);
+
+    // THE COMMAND-PROBLEM DIALOG, not this command's own: the channel refused,
+    // which is a failure code, where an empty outline is a fact about the
+    // document. `generateTocProblem.ts` states that distinction.
+    expect(record.shown).toStrictEqual([
+      { id: 'dialog.command-problem', props: { code: 'document-busy' } },
+    ]);
+    expect(record.applied).toStrictEqual([]);
+  });
+
+  it('CONTROL: with no document nothing is read and nothing is sent', async () => {
+    const { client, sent } = recording(ONE_ENTRY);
+    const record = recorder();
+
+    await generateTocCommand({
+      client,
+      onApplied: record.onApplied,
+      ask: record.ask,
+    }).run(NO_DOCUMENT);
+
+    expect(sent).toStrictEqual([]);
+    expect(record.shown).toStrictEqual([]);
   });
 });

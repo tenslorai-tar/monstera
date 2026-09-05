@@ -3,7 +3,13 @@ import type { Command, CommandKind, CommandOfKind } from '@monstera/contract';
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import { declaredCommands } from './commandDeclarations.js';
 import type { CommandExecution, RegisteredWriter } from './commandRouting.js';
-import type { Apply, ByteImage, Capture, EngineWriter, Invert } from './engineSeam.js';
+import type {
+  ByteImage,
+  Capture,
+  EngineWriter,
+  Invert,
+  PreReadValue,
+} from './engineSeam.js';
 import {
   applySetPageBackground,
   captureSetPageBackground,
@@ -14,6 +20,7 @@ import {
   captureInsertImagePage,
   invertInsertImagePage,
 } from './pageImage.js';
+import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from './pageToc.js';
 import {
   applyBatesNumberPages,
   applyHeaderFooterPages,
@@ -127,10 +134,46 @@ export const pdfLibSpecs = {
     capture: captureInsertImagePage,
     invert: invertInsertImagePage,
   },
+  generateToc: {
+    ...declaredCommands.generateToc,
+    // THE FIRST THREE-PARAMETER APPLY IN THE TREE. The spread carries
+    // `reads: 'outline'`, and `WriterBinding` resolves this entry's `apply` to
+    // the signature that takes an outline — so a two-parameter body here would
+    // still compile (ADR-0040's correction records the bivariance) and one
+    // taking a source would not.
+    apply: applyGenerateToc,
+    capture: captureGenerateToc,
+    invert: invertGenerateToc,
+  },
 };
 
 /** The kinds this writer routes, as a runtime set for {@link specFor}. */
 type PdfLibKind = keyof typeof pdfLibSpecs;
+
+/**
+ * One pdf-lib `apply` **as this writer calls it**, rather than as its spec
+ * declares it.
+ *
+ * The difference is the third parameter's optionality, and it is the seam's
+ * asymmetry rather than a looser copy of it. A spec declares `reads: 'outline'`
+ * and gets a three-parameter `Apply`; a spec declaring `'none'` gets a
+ * two-parameter one. This writer dispatches over **both** without knowing
+ * which, because `specFor` looks up by a kind the checker cannot correlate with
+ * the argument — so the one signature that covers the table is the one where
+ * the third parameter may be absent.
+ *
+ * That is sound in the direction it is used: a two-parameter implementation is
+ * assignable to this and ignores what it is passed, and a three-parameter one
+ * is called with what the bus resolved for it. It is **not** a guard, and
+ * nothing here pretends otherwise — the type cannot tell that `generateToc`'s
+ * apply always receives its outline. `pageToc.test.ts` is what asserts that,
+ * which is where the wired-tools rule already puts the burden.
+ */
+type PdfLibApply<K extends CommandKind> = (
+  image: ByteImage,
+  command: CommandOfKind<K>,
+  reads?: PreReadValue,
+) => Promise<ByteImage>;
 
 /**
  * One pdf-lib spec, narrowed to the command it was declared for.
@@ -186,8 +229,41 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
   // METHOD SYNTAX, so `K` is in scope for the assertion — an arrow would put
   // the cast at `CommandKind`, the whole union, which widens `capture`'s prior
   // state to a union too and stops it being assignable to `CommandPrior[K]`.
-  apply<K extends CommandKind>(image: ByteImage, command: CommandOfKind<K>): Promise<ByteImage> {
-    return (specFor(command).apply as Apply<'pdf-lib', K>)(image, command);
+  // THE ONE EXECUTION THAT FORWARDS `reads`, and it is the only one that has
+  // to: `reads: 'outline'` is declared by `generateToc`, which routes here, and
+  // ADR-0040's extension says why it must be pdf-lib's — §3's matrix puts TOC
+  // generation on the content-composition row and outline reading on MuPDF's.
+  //
+  // The cast names the three-parameter instantiation rather than the default
+  // one, so the call site passes what the bus resolved. It is not a claim that
+  // every pdf-lib command reads an outline: an apply that ignores the argument
+  // is assignable to a signature that passes it, which is the bivariance
+  // ADR-0040's correction records — so the four `reads: 'none'` commands here
+  // are called with `undefined` and never look.
+  apply<K extends CommandKind>(
+    image: ByteImage,
+    command: CommandOfKind<K>,
+    reads?: PreReadValue,
+  ): Promise<ByteImage> {
+    // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, and that spelling is the
+    // whole of this line's design rather than a convenience.
+    //
+    // `Apply<'pdf-lib', K, 'none', 'outline'>` — the three-parameter
+    // instantiation — is what the value actually is for `generateToc`, and
+    // calling it needs `reads` narrowed from `PreReadValue | undefined` to
+    // `PreReadValue`. Both spellings of that narrowing are banned here and both
+    // bans are right: `as PreRead['outline']` is
+    // `non-nullable-type-assertion-style` and `reads!` is
+    // `no-non-null-assertion`. A guard would be worse than either — it would
+    // turn a state the declaration table makes unreachable into a runtime
+    // refusal, which is a check that cannot fail wearing a green tick.
+    //
+    // So the writer's view of an apply is *may be handed pre-read data*, which
+    // is true of all five specs here and is exactly what `CommandExecution`
+    // already says. The obligation to supply it stays where the knowledge is:
+    // the bus reads `spec.reads` and resolves precisely when the declaration
+    // says to.
+    return (specFor(command).apply as PdfLibApply<K>)(image, command, reads);
   },
   capture<K extends CommandKind>(
     image: ByteImage,

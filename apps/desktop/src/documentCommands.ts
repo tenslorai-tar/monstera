@@ -19,7 +19,7 @@ import {
   type CopyTargetVerdict,
   type SaveOutcome,
   type SearchOptions,
-  type ByteImageAccess,
+  type CommandInputs,
   type SessionsByWriter,
   type SnapshotWrite,
   type TextMatch,
@@ -1142,10 +1142,28 @@ export class DocumentCommands {
    * invokes nothing. Making it a field would need the sessions, which are
    * resolved inside the lane per call — see `execute`'s note on why.
    */
-  #byteImage(docId: DocId, sessions: DocumentSessions): ByteImageAccess {
+  /**
+   * ## `outline` is ADR-0040's extension, and the reader is `destinations`'
+   *
+   * `#destinations` is `readDestinations` — the module that owns *what are this
+   * document's bookmarks*. The alternative that ADR rejects is a pdf-lib apply
+   * walking `/Outlines` for itself, which would agree with this reader on every
+   * ordinary outline and differ on a cycle, a name-tree destination, or an
+   * entry with no reachable page (B3a).
+   *
+   * It is here rather than in a second accessor object for the reason
+   * `CommandInputs` gives: a fifth positional parameter would have edited every
+   * call site of `execute` for a value almost none of them may use, and again
+   * for the next resolver. **The declaration is not read on this side** —
+   * `execute`'s note records why the routing table left this module, and
+   * reading `reads` here could not serve `redo` anyway, since a redo has no
+   * command until the bus has read the log.
+   */
+  #byteImage(docId: DocId, sessions: DocumentSessions): CommandInputs {
     return {
       current: () => this.#save.flush(docId, sessions),
       adopt: (write) => this.#restore(docId, write),
+      outline: () => this.#destinations(docId, sessions),
     };
   }
 

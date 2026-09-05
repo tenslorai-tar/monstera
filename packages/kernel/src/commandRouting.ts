@@ -2,7 +2,13 @@ import type { CommandKind, CommandOfKind } from '@monstera/contract';
 
 import type { CaptureResult, CommandPrior } from './commandLog.js';
 import type { WriterOf, WriterOfRecord } from './commandDeclarations.js';
-import type { ByteImage, EngineWriter, WriterSession, WriterShapeOf } from './engineSeam.js';
+import type {
+  ByteImage,
+  EngineWriter,
+  PreReadValue,
+  WriterSession,
+  WriterShapeOf,
+} from './engineSeam.js';
 
 /**
  * **How a command reaches a writer** — the types, with no table and no
@@ -91,10 +97,31 @@ export interface CommandExecution<W extends WriterOfRecord> {
    * The shape asymmetry is `Apply`'s, restated at the writer because a
    * byte-image writer produces a new image where a live-session writer mutates
    * in place and returns nothing.
+   *
+   * ## `reads` is OPTIONAL here and required by the `Apply` it reaches
+   *
+   * ADR-0040's 2026-09-05 extension: a command declaring `reads: 'outline'`
+   * has a three-parameter `Apply`, and the bus resolves the value before
+   * calling. This interface cannot say *which* commands those are — `K` is the
+   * kinds routed to `W`, not one kind — so the parameter is optional and the
+   * obligation to supply it lives at the one place that knows: the bus reads
+   * `spec.reads` and resolves exactly when the declaration says to.
+   *
+   * **The optionality is what makes this a one-line change rather than four.**
+   * A function that ignores a parameter is assignable to a signature that
+   * passes one, so `remoteMupdfExecution`, the host's dispatch and
+   * `composition.ts`' live writer keep compiling untouched — the same
+   * bivariance ADR-0040's correction records as the `sources` axis's limit,
+   * here working for us rather than against us.
+   *
+   * It is also why this parameter is **not** a guard. Nothing stops a writer
+   * dropping it; what makes a TOC's numbers right is `pageToc.test.ts`, which
+   * is where the wired-tools rule already puts the burden.
    */
   apply<K extends KindsRoutedTo<W>>(
     session: WriterSession[W],
     command: CommandOfKind<K>,
+    reads?: PreReadValue,
   ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
 
   /** Runs the declared `capture` for `command.kind`, before any apply. */

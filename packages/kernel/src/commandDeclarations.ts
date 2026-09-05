@@ -567,6 +567,40 @@ const declarations = {
     // command carries and nothing else.
     reads: 'none',
   },
+  generateToc: {
+    kind: 'generateToc',
+    // §3's matrix at ARCHITECTURE.md:381 names "new document generation
+    // (markdown/CSV/TOC/image-to-PDF)" on the content-composition row. Routing
+    // it to MuPDF instead would put the read and the write in one session and
+    // need no `reads` axis at all — rejected in ADR-0040's extension, because
+    // moving one command off that row for convenience is how a matrix stops
+    // being evidence.
+    writer: 'pdf-lib',
+    // `insertImagePage`'s argument: this adds pages, and the prior state of a
+    // document that gained pages is the document without them — which is
+    // `deletePages`' entry read backwards. `CommandPrior` types it `never`.
+    invertible: false,
+    undo: 'checkpoint',
+    // The outline is read from the document at apply time and the layout is a
+    // function of it, so re-running against the same document writes the same
+    // page. Nothing is read from a clock and nothing is minted — and the
+    // re-read is what makes this `reapply-intent` rather than `stored-effect`:
+    // a redo after an undo that moved pages must state the numbers the document
+    // has THEN, not the ones it had when the command first ran.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document. Everything it composes comes from the one it
+    // is writing into.
+    sources: 'none',
+    // THE FIRST COMMAND TO DECLARE THIS, and the axis was built ahead of it
+    // (ADR-0040's 2026-09-05 extension). A byte-image `apply` has no session,
+    // so a pdf-lib TOC would have to walk `/Outlines` itself — a second opinion
+    // about a question `destinations.ts` owns (B3a), agreeing with it on every
+    // ordinary outline and differing on the ones that matter: a cycle, a
+    // destination resolved through the name tree, an entry with no reachable
+    // page.
+    reads: 'outline',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

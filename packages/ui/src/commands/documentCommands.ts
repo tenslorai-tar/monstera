@@ -11,6 +11,7 @@ import type { CropPagesAnswer } from '../dialogs/cropPagesResult.js';
 import { DELETE_PAGES_DIALOG_ID } from '../dialogs/deletePages.js';
 import type { DeletePagesAnswer } from '../dialogs/deletePagesResult.js';
 import { DUPLICATE_PAGES_DIALOG_ID } from '../dialogs/duplicatePages.js';
+import { GENERATE_TOC_PROBLEM_DIALOG_ID } from '../dialogs/generateTocProblem.js';
 import { HEADER_FOOTER_DIALOG_ID } from '../dialogs/headerFooter.js';
 import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
@@ -35,6 +36,7 @@ import {
   DELETE_PAGES_COMMAND_TITLE,
   DUPLICATE_PAGE_TITLE,
   FIND_DUPLICATES_COMMAND_TITLE,
+  GENERATE_TOC_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
   INSERT_IMAGE_COMMAND_TITLE,
@@ -824,6 +826,56 @@ export function insertImageCommand(deps: DocumentCommandDeps): UiCommand {
       if (answer.value.historyDropped > 0) {
         void deps.ask(HISTORY_TRIMMED_DIALOG_ID, { dropped: answer.value.historyDropped });
       }
+    },
+  };
+}
+
+/**
+ * Builds a table of contents from the document's bookmarks, at the front.
+ *
+ * ## IT READS THE OUTLINE FIRST, and that read is the refusal
+ *
+ * A document with no bookmarks has no table of contents, and generating a blank
+ * page for it is a control that appears to work — the wired-tools rule's own
+ * failure. So this asks `document.destinations` before dispatching and opens
+ * {@link GENERATE_TOC_PROBLEM_DIALOG_ID} when the answer is empty.
+ *
+ * **The entries themselves are not sent.** The command carries one index; main
+ * re-reads the outline inside the document's lane at apply time (ADR-0040's
+ * 2026-09-05 extension). This read decides whether to *offer* the operation,
+ * and the one it decides against is a state, not a version — so nothing here
+ * depends on the copy still being current. The narrow window where the outline
+ * is emptied in between is closed on the other side, by a throw.
+ *
+ * ## At the FRONT, and that is where it goes until a dialog says otherwise
+ *
+ * `at: 0`, which is where a table of contents is in every document that has
+ * one. `insertBlankPageCommand`'s *after the page being read* is the right rule
+ * for a page a person is adding to what they are reading, and the wrong one
+ * here: a table of contents in the middle of a document is not a placement
+ * anybody chose. `pageBackgroundCommand` carries the same shape of decision —
+ * a named default now, a control later.
+ */
+export function generateTocCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.generate-toc',
+    title: GENERATE_TOC_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 24 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined) return;
+
+      const outline = await deps.client['document.destinations']({ docId: context.docId });
+      if (!outline.ok) {
+        reportProblem(deps, outline.error);
+        return;
+      }
+      if (outline.value.destinations.length === 0) {
+        void deps.ask(GENERATE_TOC_PROBLEM_DIALOG_ID, { reason: 'no-outline' as const });
+        return;
+      }
+
+      await applyDocumentCommand(deps, context.docId, { kind: 'generateToc', at: 0 });
     },
   };
 }

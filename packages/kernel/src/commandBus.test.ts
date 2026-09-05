@@ -5,7 +5,7 @@ import type { Command, CommandOfKind } from '@monstera/contract';
 import { type DocVersion, asDocVersion } from '@monstera/shared';
 
 import {
-  type ByteImageAccess,
+  type CommandInputs,
   type CheckpointRestore,
   CommandBus,
   type SnapshotWrite,
@@ -22,6 +22,8 @@ import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { localPdfLibWriter } from './pdfLibWriter.js';
+import { shownOn } from './shownText.js';
 
 /**
  * The log and the one path from a command to an entry (ADR-0009 §4).
@@ -49,8 +51,10 @@ beforeAll(async () => {
  * One context stands for one document, so two contexts are two logs, which is
  * the property the decision exists to make structural.
  */
-function contextStub(): DocumentContext & {
+function contextStub(acceptsImages = false): DocumentContext & {
   readonly bumps: () => number;
+  /** Every image the bus installed, in order. Empty unless `acceptsImages`. */
+  readonly images: () => readonly ByteImage[];
   /** How many times the bus asked for retention to be enforced. */
   readonly trims: () => number;
   /** Lowers the stand-in for the service's document-bytes ceiling. */
@@ -66,6 +70,7 @@ function contextStub(): DocumentContext & {
   let ceiling = Number.MAX_SAFE_INTEGER;
   const log = new CommandLog();
   const written: { destination: string; bytes: Checkpoint }[] = [];
+  const images: ByteImage[] = [];
   return {
     mutableLog: log,
     docId: 'stub' as DocumentContext['docId'],
@@ -110,16 +115,29 @@ function contextStub(): DocumentContext & {
       written.push({ destination, bytes: checkpoint });
       return Promise.resolve(checkpoint.byteLength);
     },
-    // BOTH THROW, for `noByteImageExpected`'s reason. Every command in this
-    // file routes to MuPDF, so a bus that installed a byte image on a
-    // live-session command would be doing something no case here asks for —
-    // and a stub that quietly recorded the call would let it.
-    writeImage(_writer: CommandWriter, _image: ByteImage, _destination: string): Promise<number> {
-      throw new Error('no case here runs a byte-image command, so nothing may write an image');
+    // BOTH THROW BY DEFAULT, for `noByteImageExpected`'s reason. Almost every
+    // command in this file routes to MuPDF, so a bus that installed a byte
+    // image on a live-session command would be doing something no such case
+    // asks for — and a stub that quietly recorded the call would let it.
+    //
+    // `acceptsImages` is opt-in per case rather than the default for exactly
+    // that reason: the throw is the assertion for thirty-odd cases, and a stub
+    // that recorded for all of them would delete it.
+    writeImage(_writer: CommandWriter, image: ByteImage, _destination: string): Promise<number> {
+      if (!acceptsImages) {
+        throw new Error('this case runs a live-session command, so nothing may write an image');
+      }
+      images.push(image);
+      return Promise.resolve(image.byteLength);
     },
-    replaceCanonicalImage(_writer: CommandWriter, _image: ByteImage): number {
-      throw new Error('no case here runs a byte-image command, so nothing may replace the image');
+    replaceCanonicalImage(_writer: CommandWriter, image: ByteImage): number {
+      if (!acceptsImages) {
+        throw new Error('this case runs a live-session command, so nothing may replace the image');
+      }
+      images.push(image);
+      return image.byteLength;
     },
+    images: () => images,
     written: () => written,
     trims: () => trims,
     log,
@@ -202,12 +220,21 @@ const noRestoreExpected: CheckpointRestore = () => {
  * `CommandBus.#sessionFor`'s branch on `writerShapes` load-bearing rather than
  * decorative: delete the branch and this file goes red immediately.
  */
-const noByteImageExpected: ByteImageAccess = {
+const noByteImageExpected: CommandInputs = {
   current: () => {
     throw new Error('this case runs a live-session command and must not mint a byte image');
   },
   adopt: () => {
     throw new Error('this case runs a live-session command and must not install a byte image');
+  },
+  // ALL THREE THROW, and the third for the same argument one axis along: every
+  // command in this file declares `reads: 'none'`, so an outline read here
+  // would be the bus resolving pre-read data for a command that did not ask for
+  // one — which `CommandBus.#preReadFor`'s `'none'` branch is what prevents.
+  // Delete that branch and this file goes red, where a member returning `[]`
+  // would let it pass.
+  outline: () => {
+    throw new Error('this case runs a command declaring reads: none and must not read an outline');
   },
 };
 
@@ -1208,5 +1235,113 @@ describe('CommandBus — execution goes through the registered writer (ADR-0023 
     } finally {
       await mupdfWriter.close(session);
     }
+  });
+});
+
+/**
+ * The `reads` axis, executed — ADR-0040's 2026-09-05 extension.
+ *
+ * ## What is under test is a DECISION, so the assertions are about CALLS
+ *
+ * The bus resolves pre-read data exactly when the command's declaration asks
+ * for it. The tempting assertion is *the table of contents came out right*, and
+ * it separates nothing on its own: a bus that resolved an outline for **every**
+ * command produces the same correct table, and pays a MuPDF outline walk per
+ * rotate for ever. So each case here counts calls to `outline`, which is the
+ * observable a wrong decision changes and the finished document is not.
+ *
+ * That is CLAUDE.md's *assert the call that was or was not made*, and the
+ * control below is the half that makes it a separation rather than a claim.
+ */
+describe('CommandBus and the reads axis', () => {
+  /**
+   * A recording {@link CommandInputs} over a real document.
+   *
+   * `current` answers with the bytes a byte-image writer's session is, and
+   * `outline` counts its callers. Neither throws, which is deliberate and the
+   * opposite of `noByteImageExpected`'s choice: here the question is *how many
+   * times*, and a throw answers only *at all*.
+   */
+  function recordingInputs(image: ByteImage): CommandInputs & {
+    readonly outlineCalls: () => number;
+    readonly installed: () => readonly ByteImage[];
+  } {
+    let outlineCalls = 0;
+    const installed: ByteImage[] = [];
+    return {
+      current: () => Promise.resolve(image),
+      adopt: async (write) => {
+        await write('granted/toc');
+      },
+      outline: () => {
+        outlineCalls += 1;
+        return Promise.resolve([
+          { title: 'Front matter', page: 0, depth: 0 },
+          { title: 'Chapter two', page: 2, depth: 0 },
+        ]);
+      },
+      outlineCalls: () => outlineCalls,
+      installed: () => installed,
+    };
+  }
+
+  it('resolves the outline for a command that declares it, exactly once', async () => {
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs = recordingInputs(flat);
+
+    await bus.execute({}, context, { kind: 'generateToc', at: 0 }, inputs);
+
+    expect(inputs.outlineCalls()).toBe(1);
+    // AND THE VALUE REACHED THE APPLY, which the count alone does not say: a
+    // bus that resolved the outline and then called `apply(session, command)`
+    // would count one and write a table of nothing. The installed image is
+    // asserted through the same decoder the row's own proof uses.
+    const [image] = context.images();
+    expect(image).toBeDefined();
+    // Page 0 is now the table. `Front matter` sat on page 0 and the table takes
+    // one page, so it prints as 2 — the shift the row is about, observed
+    // through the bus rather than through a direct call.
+    expect(await shownOn(image ?? flat, 0)).toStrictEqual([
+      'Front matter',
+      '2',
+      'Chapter two',
+      '4',
+    ]);
+  });
+
+  it('CONTROL: a command declaring reads NONE never reaches the resolver', async () => {
+    // The separating case. Same inputs object, same bus, a command whose
+    // declaration says `reads: 'none'` — so an implementation that resolved
+    // unconditionally passes the case above and fails this one. Without it the
+    // conditional in `#preReadFor` is unproven, and deleting it would leave
+    // every assertion above green.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    const inputs = recordingInputs(flat);
+    try {
+      await bus.execute({ mupdf: session }, context, rotateFirst, inputs);
+      expect(inputs.outlineCalls()).toBe(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('RE-RESOLVES on redo rather than replaying the entry’s copy', async () => {
+    // `replay: 'reapply-intent'` means the log stores the command and not its
+    // effect, so a redo must read the outline the document has NOW. Asserted as
+    // a second call rather than as a matching document, because a bus that
+    // cached the first answer produces the identical table here and the wrong
+    // one after an intervening edit.
+    const bus = new CommandBus({ 'pdf-lib': localPdfLibWriter });
+    const context = contextStub(true);
+    const inputs = recordingInputs(flat);
+
+    await bus.execute({}, context, { kind: 'generateToc', at: 0 }, inputs);
+    await bus.undo({}, context, () => Promise.resolve(), inputs);
+    await bus.redo({}, context, inputs);
+
+    expect(inputs.outlineCalls()).toBe(2);
   });
 });

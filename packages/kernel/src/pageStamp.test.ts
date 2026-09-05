@@ -4,6 +4,12 @@ import { describe, expect, it } from 'vitest';
 import type { CommandOfKind } from '@monstera/contract';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+// THE DECODER IS SHARED, not copied. This file carried a verbatim copy of
+// `pageWatermark.test.ts`' three helpers until 2026-09-05, when a third caller
+// made the duplication the finding rather than the copies (B3a). Its own
+// positive control — *the decoder reads a string the fixture really shows* —
+// stays here, because what is known-present is a property of this fixture.
+import { contentOf, shownOn } from './shownText.js';
 import {
   applyBatesNumberPages,
   applyHeaderFooterPages,
@@ -50,50 +56,6 @@ const STAMP: CommandOfKind<'headerFooterPages'> = {
   fontSize: 10,
   marginPoints: 36,
 };
-
-/** One page's content-stream text, read with MuPDF. */
-async function contentOf(bytes: Uint8Array, page: number): Promise<string> {
-  const session = await mupdfWriter.open(bytes);
-  try {
-    return await withDocument(session, (document) => {
-      const contents = document.findPage(page).get('Contents');
-      if (contents.isNull()) return '';
-      const streams = contents.isArray()
-        ? Array.from({ length: contents.length }, (_unused, index) => contents.get(index))
-        : [contents];
-      return streams
-        .filter((stream) => stream.isStream())
-        .map((stream) => new TextDecoder().decode(stream.readStream().asUint8Array()))
-        .join('\n');
-    });
-  } finally {
-    await mupdfWriter.close(session);
-  }
-}
-
-/**
- * The strings a content stream actually shows, decoded.
- *
- * pdf-lib emits text as a hex string, so a substring search for `Page 1 of 3`
- * is false for a page that carries it — measured while writing
- * `pageWatermark.test.ts`, and the reason that file decodes too.
- */
-function shownStringsOf(content: string): readonly string[] {
-  const shown: string[] = [];
-  for (const [, hex] of content.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/gu)) {
-    const pairs = (hex ?? '').match(/../gu) ?? [];
-    shown.push(pairs.map((pair) => String.fromCharCode(Number.parseInt(pair, 16))).join(''));
-  }
-  for (const [, literal] of content.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*Tj/gu)) {
-    shown.push(literal ?? '');
-  }
-  return shown;
-}
-
-/** The strings one page shows. */
-async function shownOn(bytes: Uint8Array, page: number): Promise<readonly string[]> {
-  return shownStringsOf(await contentOf(bytes, page));
-}
 
 /** Every `Tm` origin in a page's content stream, as `[x, y]` pairs. */
 function originsOf(content: string): readonly (readonly [number, number])[] {

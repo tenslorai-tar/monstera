@@ -27,7 +27,15 @@ import type { CommandWriter, DocumentContext } from './documentService.js';
 // table. `writerShapes` is what decides whether a command's result is a new
 // document, and `engineSeam.ts`'s every other import is `import type`, so the
 // edge costs an importer the object literal and nothing else (ADR-0039).
-import { type ByteImage, type SessionsByWriter, type WriterSession, writerShapes } from './engineSeam.js';
+import {
+  type ByteImage,
+  type CommandReads,
+  type PreRead,
+  type PreReadValue,
+  type SessionsByWriter,
+  type WriterSession,
+  writerShapes,
+} from './engineSeam.js';
 
 /**
  * The one code path from a command to a log entry (ADR-0009 §4).
@@ -121,6 +129,12 @@ interface WriterFor<K extends CommandKind> {
   apply(
     session: WriterSession[WriterOf<K>],
     command: CommandOfKind<K>,
+    // OPTIONAL, mirroring `CommandExecution.apply` — this type is the narrowed
+    // view of the same member and cannot be narrower than it. What the bus is
+    // obliged to pass is decided by `spec.reads` at the call site, not here:
+    // `K` is generic in this interface, so the declaration a command made is
+    // not available to the signature.
+    reads?: PreReadValue,
   ): Promise<ByteImage | undefined>;
   capture(
     session: WriterSession[WriterOf<K>],
@@ -253,6 +267,73 @@ export interface ByteImageAccess {
    */
   readonly adopt: (write: SnapshotWrite) => Promise<void>;
 }
+
+/**
+ * How the bus obtains what a command's `apply` needs and cannot read for
+ * itself (ADR-0040's 2026-09-05 extension).
+ *
+ * ## Why an accessor and not a resolved value
+ *
+ * {@link ByteImageAccess}' shape, for {@link ByteImageAccess}' reason. The bus
+ * calls a member **only** when the command it is running declares it —
+ * `spec.reads` decides, so an ordinary rotate pays nothing — and that
+ * conditional is only available on this side: `redo` has no command until it
+ * has read the log, so a caller resolving eagerly would read an outline for
+ * every redo of every kind.
+ *
+ * ## It keeps `readDestinations` the one reader, and the bus does not learn to
+ * read
+ *
+ * The ADR's constraint, and it is what the indirection buys. `documentCommands`
+ * supplies a member that calls the module owning *what are this document's
+ * bookmarks*; this file decides **whether** to call it, from the declaration it
+ * already reads for the writer. A bus that walked `/Outlines` itself would be
+ * the second opinion B3a is about.
+ *
+ * ## The members are the axis, so a new one cannot arrive unsupplied
+ *
+ * One member per non-`'none'` member of `CommandReads`, and `#preReadFor`
+ * indexes this object with the declared value rather than switching on it. A
+ * member added to `PreRead` therefore widens `CommandReads`, and this interface
+ * stops being satisfied by every implementer until they supply it — which is
+ * the direction that fails safe, against a `switch` whose new arm nothing asks
+ * for.
+ */
+export interface PreReadAccess {
+  /** The document's outline, flattened. `readDestinations`, in the lane. */
+  readonly outline: () => Promise<PreRead['outline']>;
+}
+
+/**
+ * Everything the bus may ask a caller to resolve about the document it is
+ * running against.
+ *
+ * ## Two interfaces, intersected — `RegisteredWriter`'s shape and its reason
+ *
+ * {@link ByteImageAccess} answers to ADR-0039 and {@link PreReadAccess} to
+ * ADR-0040's extension, so they are **declared separately** where their
+ * arguments live, and intersected here because a caller missing either half is
+ * a caller `execute` cannot serve. That is exactly what `commandRouting.ts`
+ * says about `RegisteredWriter`: *"declared separately because they answer to
+ * different documents … and intersected here because a registration missing
+ * either half is a writer the bus cannot use."*
+ *
+ * ## It is one PARAMETER because the alternative churns every call site
+ *
+ * `execute` took `(sessions, context, command, bytes)` and the outline would
+ * have made it five, editing 34 cases for a value 33 of them must never use —
+ * and six more the next time an axis member arrives. A positional list forces
+ * every caller to change when any resolver is added; a named bag does not.
+ * Measured on `createShellDependencies` two commits ago, where the same shape
+ * had been expiring a human-recorded probe once per feature.
+ *
+ * **`undo` deliberately keeps the narrower parameter.** It calls `invert`,
+ * which takes no pre-read (`Invert` is given prior state and nothing else), so
+ * widening it would hand a method access it has no way to use. Structural
+ * typing means the caller passes the same object either way — the difference is
+ * only what each method's signature admits it may reach for.
+ */
+export type CommandInputs = ByteImageAccess & PreReadAccess;
 
 /**
  * What one execution did, for a caller that needs to know without reading the
@@ -420,6 +501,32 @@ export class CommandBus {
   }
 
   /**
+   * What a command's `apply` is handed beyond its session and itself
+   * (ADR-0040's 2026-09-05 extension).
+   *
+   * ## It INDEXES the access object with the declared value
+   *
+   * `access[reads]()` rather than `if (reads === 'outline')`. The axis's
+   * members and {@link PreReadAccess}' members are the same names by
+   * construction — `CommandReads` is derived from `PreRead`'s keys — so a
+   * member added to the axis is a compile error at the access object and needs
+   * no arm here. A `switch` would be the second routing place `commandSpecs.ts`
+   * refuses for the same reason, one axis along.
+   *
+   * ## Resolved at APPLY time, inside the lane
+   *
+   * The ADR's constraint, and it is the whole reason this is a call rather than
+   * a parameter the caller filled in: a table of contents is almost entirely
+   * page numbers, so an outline read when a dialog opened is one taken before
+   * whatever the user did next. Read here, it describes the document actually
+   * being written.
+   */
+  async #preReadFor(reads: CommandReads, access: PreReadAccess): Promise<PreReadValue | undefined> {
+    if (reads === 'none') return undefined;
+    return access[reads]();
+  }
+
+  /**
    * Captures, applies, records, bumps — in that order, once.
    *
    * Runs inside the document's lane (§7); the caller supplies the
@@ -449,11 +556,11 @@ export class CommandBus {
     sessions: SessionsByWriter,
     context: DocumentContext,
     command: CommandOfKind<K>,
-    bytes: ByteImageAccess,
+    inputs: CommandInputs,
   ): Promise<Executed> {
     const spec: DeclaredCommands[K] = declaredCommands[command.kind];
     const writer = this.#writerFor(command.kind, spec.writer);
-    const session = await this.#sessionFor(command.kind, spec.writer, sessions, bytes);
+    const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
 
     // Capture BEFORE apply. Not for tidiness: once `apply` has written, the
     // prior own-state is gone from the document and no later read recovers it.
@@ -482,13 +589,19 @@ export class CommandBus {
           reason: captured.reason,
         };
 
-    const applied = await writer.apply(session, command);
+    // RESOLVED AFTER THE CAPTURE AND THE CHECKPOINT, and before the apply. The
+    // ordering is not arbitrary: the checkpoint above is the document as it
+    // stands, and an outline read after `apply` would describe the document the
+    // command produced rather than the one whose pages it is numbering.
+    const preRead = await this.#preReadFor(spec.reads, inputs);
+
+    const applied = await writer.apply(session, command, preRead);
 
     // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
     // applying rather than something a caller does afterwards — and it happens
     // BEFORE the entry is recorded, for the reason the next comment gives about
     // work that threw. A rebuild that fails must leave no log entry behind.
-    await this.#install(command.kind, spec.writer, applied, context, bytes);
+    await this.#install(command.kind, spec.writer, applied, context, inputs);
 
     // Recorded and counted only after the document actually changed. An entry
     // for work that threw is worse than no entry — undo would reverse a change
@@ -628,7 +741,7 @@ export class CommandBus {
   async redo(
     sessions: SessionsByWriter,
     context: DocumentContext,
-    bytes: ByteImageAccess,
+    inputs: CommandInputs,
   ): Promise<Undone | undefined> {
     const log = context.commandLog(COMMAND_WRITER);
     const entry = log.peekRedo();
@@ -657,16 +770,25 @@ export class CommandBus {
     // PICKED HERE, for `undo`'s reason: the writer comes from the log entry, so
     // the caller could not have chosen a session for it.
     const writer = this.#writerFor(entry.command.kind, spec.writer);
-    const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, bytes);
+    const session = await this.#sessionFor(entry.command.kind, spec.writer, sessions, inputs);
 
-    const applied = await writer.apply(session, entry.command);
+    // RE-RESOLVED, never taken from the log entry, and that is what
+    // `replay: 'reapply-intent'` above has just been checked to mean. The entry
+    // stores the command's INTENT; the outline is state the document holds, and
+    // storing the copy read at execute time would make a redo re-state page
+    // numbers the undo in between may have moved. A command whose pre-read data
+    // must be preserved verbatim is a `stored-effect` command, and this line
+    // stops compiling for it at the assignment above.
+    const preRead = await this.#preReadFor(spec.reads, inputs);
+
+    const applied = await writer.apply(session, entry.command, preRead);
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the
     // document it produces has to be installed exactly as `execute` installs
     // it. The session it ran against was minted from the document's current
     // bytes a few lines up, so this is the same round trip and not a second
     // mechanism.
-    await this.#install(entry.command.kind, spec.writer, applied, context, bytes);
+    await this.#install(entry.command.kind, spec.writer, applied, context, inputs);
 
     log.redo();
     return { entry, trimmed: NO_TRIM, version: context.bumpVersion(COMMAND_WRITER) };

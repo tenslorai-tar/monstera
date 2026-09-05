@@ -633,6 +633,54 @@ export const insertImagePageSchema = z.object({
   mediaType: z.enum(['image/jpeg', 'image/png']),
 });
 
+/**
+ * Build a table of contents page from the document's own outline.
+ *
+ * ## The COMMAND carries an index and nothing else
+ *
+ * Not the entries. `@monstera/kernel`'s `readDestinations` is what answers
+ * *what are this document's bookmarks*, and ADR-0040's 2026-09-05 extension
+ * has the bus hand its answer to the `apply` at apply time — so the outline
+ * never crosses this boundary in either direction for this command.
+ *
+ * The rejected alternative was to put the entries in the payload, which is
+ * tempting because the renderer already holds them: `DestinationsPanel` renders
+ * `document.destinations`, which is the same reader. It is rejected on
+ * **staleness** — that copy was read at an earlier `DocVersion`, and a table of
+ * contents is almost entirely page numbers, so a page deleted in between gives
+ * a TOC that is wrong and looks right. Secondarily it is the shape L11 names:
+ * an outline scales with the document.
+ *
+ * ## The generated pages SHIFT the pages they point at, and the numbers account
+ * for it
+ *
+ * A TOC inserted at the front pushes every page down by however many pages it
+ * takes. So the entries' own indices — read against the document as it stands —
+ * are not the numbers to print, and a TOC that printed them would be off by
+ * exactly its own length for every entry after it. That arithmetic is the
+ * kernel's, because only the kernel knows how many pages the layout took.
+ *
+ * ## No heading, and that is a decision with a trigger rather than an omission
+ *
+ * A heading would be synthesised text in a human language written into the
+ * user's document, and this build has no answer yet for which language document
+ * content takes — the interface locale, the document's own `/Lang`, or a choice
+ * the user makes. Writing `Contents` would answer that by accident, in English,
+ * for everyone. The entries themselves are the author's own words and carry no
+ * such question. The heading arrives with this command's first dialog, which is
+ * where a component can resolve a message and the user can overrule it.
+ */
+export const generateTocSchema = z.object({
+  kind: z.literal('generateToc'),
+  /**
+   * Zero-based index the first generated page occupies afterwards.
+   *
+   * `insertBlankPage`'s spelling and its bound: `at` is in the destination
+   * frame, so `at: pageCount` appends and the kernel clamps to the count.
+   */
+  at: z.number().int().nonnegative(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -649,6 +697,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   setPageBackgroundSchema,
   resizePagesSchema,
   insertImagePageSchema,
+  generateTocSchema,
 ]);
 
 /**
@@ -688,6 +737,12 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   setPageTransitionSchema,
   setPageBackgroundSchema,
   resizePagesSchema,
+  // RENDERABLE, and worth stating because the neighbour above is not. This
+  // carries one integer; what makes it unusual is where its DATA comes from,
+  // and that is resolved main-side at apply time rather than sent. The test for
+  // this union is whether a renderer can express the intent in a few numbers,
+  // never whether the operation is simple.
+  generateTocSchema,
 ]);
 
 /** A command a renderer may send. */

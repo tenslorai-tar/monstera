@@ -263,8 +263,52 @@ export type CommandSources = 'none' | 'one';
  * answer *which documents* and *what pre-read data*, they combine independently
  * — a merge that regenerated the target's TOC would be both — and folding them
  * would make `sources: 'outline'` read as a document called outline.
+ *
+ * **Derived from {@link PreRead} rather than listed beside it**, so the axis's
+ * members and the values they name have one declaration. A member added there
+ * widens this, becomes a compile error at every implementation of
+ * {@link CommandBus}' access object, and cannot be declared without saying what
+ * it resolves to — where a hand-kept union would accept a member nothing can
+ * supply.
  */
-export type CommandReads = 'none' | 'outline';
+export type CommandReads = 'none' | keyof PreRead;
+
+/**
+ * What each member of {@link CommandReads} names, other than `'none'`.
+ *
+ * One member per readable value, and the member's **name is the axis's
+ * member** — `reads: 'outline'` means *hand me `PreRead['outline']`*. That is
+ * what lets the bus resolve a command's pre-read data by indexing rather than
+ * by a `switch`, which would be the second routing place §6 spends the mapped
+ * types on.
+ *
+ * `'none'` is deliberately not a member. A command reading nothing is handed
+ * nothing, and a `none: undefined` entry here would be a value somebody could
+ * ask for.
+ */
+export interface PreRead {
+  /**
+   * The document's outline, flattened — `destinations.ts`' `readDestinations`.
+   *
+   * Named as the **contract's** `OutlineEntry` rather than the kernel's
+   * `Destination`, because this shape crosses to the renderer as well and the
+   * contract is where a crossing shape is declared. The two are structurally
+   * identical, which is recorded at `destinations.ts`' declaration.
+   */
+  readonly outline: readonly OutlineEntry[];
+}
+
+/**
+ * Any pre-read value, as a caller that does not know the command's kind sees
+ * it.
+ *
+ * A union over {@link PreRead}'s members rather than a widening to `unknown`:
+ * the bus resolves one of these without knowing which, and an `unknown` here
+ * would let it hand an `apply` something no axis member names. Today there is
+ * one member, so this is `readonly OutlineEntry[]` — and a second member
+ * widens it here and nowhere else.
+ */
+export type PreReadValue = PreRead[keyof PreRead];
 
 /**
  * How a command mutates its writer's session.
@@ -297,7 +341,7 @@ export type Apply<
       ? (
           image: WriterSession[W],
           command: CommandOfKind<K>,
-          outline: readonly OutlineEntry[],
+          outline: PreRead['outline'],
         ) => Promise<ByteImage>
       : (image: WriterSession[W], command: CommandOfKind<K>) => Promise<ByteImage>
   : S extends 'one'
@@ -310,7 +354,7 @@ export type Apply<
       ? (
           session: WriterSession[W],
           command: CommandOfKind<K>,
-          outline: readonly OutlineEntry[],
+          outline: PreRead['outline'],
         ) => Promise<void>
       : (session: WriterSession[W], command: CommandOfKind<K>) => Promise<void>;
 

@@ -4,6 +4,12 @@ import { describe, expect, it } from 'vitest';
 import type { CommandOfKind } from '@monstera/contract';
 
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+// THE DECODER MOVED, and this file wrote it. `pageStamp.test.ts` had copied it
+// verbatim and a third caller was about to; the copies were the finding rather
+// than either copy (B3a). Its own positive control — *the decoder reads a
+// string this fixture really shows* — stays here, because what is known-present
+// is a property of the fixture and not of the decoder.
+import { contentOf, shownOn } from './shownText.js';
 import {
   applyWatermarkPages,
   captureWatermarkPages,
@@ -77,71 +83,6 @@ const DRAFT: CommandOfKind<'watermarkPages'> = {
   rotationDegrees: 45,
   fontSize: 36,
 };
-
-/**
- * One page's content-stream text, read with MuPDF.
- *
- * A page that has never been drawn on carries **no `/Contents` at all** — read
- * from the fixture, not assumed — so absence answers with the empty string
- * rather than throwing. `isStream()` is checked per entry for the same reason
- * `pageDuplicates.ts` checks it: `/Contents` is one stream or an array of them,
- * and pdf-lib appends rather than replacing, so the drawn text lands in a
- * stream that is not the first.
- */
-async function contentOf(bytes: Uint8Array, page: number): Promise<string> {
-  const session = await mupdfWriter.open(bytes);
-  try {
-    return await withDocument(session, (document) => {
-      // `isNull()` ALONE. MuPDF's `get` answers with a null object rather than
-      // `undefined` for a key a dictionary does not have, so an `=== undefined`
-      // beside this is a branch the type says cannot run — and lint says so.
-      const contents = document.findPage(page).get('Contents');
-      if (contents.isNull()) return '';
-      const streams = contents.isArray()
-        ? Array.from({ length: contents.length }, (_unused, index) => contents.get(index))
-        : [contents];
-      return streams
-        .filter((stream) => stream.isStream())
-        .map((stream) => new TextDecoder().decode(stream.readStream().asUint8Array()))
-        .join('\n');
-    });
-  } finally {
-    await mupdfWriter.close(session);
-  }
-}
-
-/**
- * The strings a content stream actually **shows**, decoded.
- *
- * ## Why not a substring search for `DRAFT`
- *
- * Measured against the real output: pdf-lib emits the text as a **hex string**,
- * `<4452414654> Tj`, so `content.includes('DRAFT')` is false for a page that
- * carries the watermark and would have been false for every implementation.
- * A test asserting the absence of a string a correct implementation never
- * writes is the reassuring answer in its most convincing form — it fails now
- * and would have passed as a `not.toContain`.
- *
- * Decoding is also the stronger assertion. A substring search cannot tell a
- * drawn `DRAFT` from the letters appearing in a font name or a resource key;
- * this reads what the page shows.
- */
-function shownStringsOf(content: string): readonly string[] {
-  const shown: string[] = [];
-  for (const [, hex] of content.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/gu)) {
-    const pairs = (hex ?? '').match(/../gu) ?? [];
-    shown.push(pairs.map((pair) => String.fromCharCode(Number.parseInt(pair, 16))).join(''));
-  }
-  for (const [, literal] of content.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*Tj/gu)) {
-    shown.push(literal ?? '');
-  }
-  return shown;
-}
-
-/** The strings one page of a document shows. */
-async function shownOn(bytes: Uint8Array, page: number): Promise<readonly string[]> {
-  return shownStringsOf(await contentOf(bytes, page));
-}
 
 /** Which of ADR-0006's four catalog entries a document carries, read with MuPDF. */
 async function catalogEntriesOf(bytes: Uint8Array): Promise<readonly string[]> {

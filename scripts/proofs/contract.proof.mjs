@@ -242,6 +242,31 @@ const INSERT_IMAGE_SPEC = `  insertImagePage: {
     reads: 'none',
   },`;
 
+/**
+ * The first spec declaring `reads: 'outline'`, kept separate for
+ * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
+ * which is now this one.
+ *
+ * **Its `apply` takes three parameters**, and that is what makes this filler
+ * worth more than bookkeeping: `WriterBinding` resolves the entry's `apply`
+ * from the spread declaration's `writer` AND its `reads`, so a table that
+ * accepted `applyGenerateToc` beside `reads: 'none'` would mean the axis binds
+ * nothing. The reject case below asserts exactly that.
+ */
+const TOC_SPEC = `  generateToc: {
+    kind: 'generateToc',
+    writer: 'pdf-lib',
+    apply: applyGenerateToc,
+    capture: captureGenerateToc,
+    invert: invertGenerateToc,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'outline',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -356,6 +381,9 @@ import {
   applySetPageBackground,
   captureSetPageBackground,
   invertSetPageBackground,
+  applyGenerateToc,
+  captureGenerateToc,
+  invertGenerateToc,
 } from '@monstera/kernel';`;
 
 /**
@@ -725,6 +753,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
+${TOC_SPEC}
 };
 `,
   },
@@ -742,7 +771,8 @@ ${INSERT_IMAGE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `insertImagePage`, `resizePages`, `setPageBackground` and
+    // table has to grow. `generateToc`, `insertImagePage`, `resizePages`,
+    // `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
     // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
     // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
@@ -754,7 +784,7 @@ ${INSERT_IMAGE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'insertImagePage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'generateToc' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -788,6 +818,7 @@ ${BATES_SPEC}
 ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
+${INSERT_IMAGE_SPEC}
 };
 `,
   },
@@ -888,6 +919,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
+${TOC_SPEC}
 };
 `,
   },
@@ -926,6 +958,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
+${TOC_SPEC}
 };
 `,
   },
@@ -973,6 +1006,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
+${TOC_SPEC}
 };
 `,
   },
@@ -1016,6 +1050,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
+${TOC_SPEC}
 };
 `,
   },
@@ -1237,6 +1272,74 @@ export const spec: CommandSpec<'watermarkPages'> = {
   ) => Promise.resolve(new Uint8Array(image)),
   capture: () => Promise.resolve({ captured: false, reason: 'stub' }),
   invert: (image: ByteImage) => Promise.resolve(image),
+  invertible: false,
+  undo: 'checkpoint',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'THE SHIPPED generateToc apply really takes an outline, so reads NONE refuses it',
+    expect: 'reject',
+    code: 'TS2322',
+    // THE TWO CASES ABOVE USE STUBS, and that is the gap this closes. They
+    // prove the TYPE binds the axis; they say nothing about whether any shipped
+    // apply uses it. An `applyGenerateToc` rewritten to walk `/Outlines` for
+    // itself — the second opinion ADR-0040's extension exists to prevent —
+    // would be two-parameter, would satisfy `reads: 'outline'` by the same
+    // bivariance the sources limit records, and would leave both stub cases
+    // green.
+    //
+    // So this names the real function and asserts it CANNOT sit beside
+    // `reads: 'none'`.
+    //
+    // ANCHORED ON THE SPEC TYPE, not on the parameter. Anchoring on `outline:`
+    // was tried first and the proof's own cross-product check refused it within
+    // the minute: the stub case above spells the parameter `_outline`, which
+    // CONTAINS `outline`, so one matcher accepted the other's diagnostic and
+    // neither verdict distinguished them. `CommandSpec<"generateToc">` is text
+    // only this case's diagnostic carries — and the harness elides the
+    // parameter's type to `{…}` anyway, so the parameter was never going to be
+    // the discriminating half.
+    because: /Type '\{…\}' is not assignable to type 'CommandSpec<"generateToc">'/u,
+    notBecause: /_outline/u,
+    source: `
+import type { CommandSpec } from '@monstera/kernel';
+import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from '@monstera/kernel';
+export const spec: CommandSpec<'generateToc'> = {
+  kind: 'generateToc',
+  writer: 'pdf-lib',
+  sources: 'none',
+  reads: 'none',
+  apply: applyGenerateToc,
+  capture: captureGenerateToc,
+  invert: invertGenerateToc,
+  invertible: false,
+  undo: 'checkpoint',
+  reproducible: true,
+  replay: 'reapply-intent',
+};
+`,
+  },
+  {
+    name: 'CONTROL: the same shipped apply compiles beside the reads it declares',
+    expect: 'allow',
+    // The control for the case above, and it is the one that separates *the
+    // axis refuses this apply* from *this apply does not typecheck anywhere*.
+    // Without it a broken `applyGenerateToc` would satisfy the rejection for
+    // the wrong reason and read as coverage.
+    source: `
+import type { CommandSpec } from '@monstera/kernel';
+import { applyGenerateToc, captureGenerateToc, invertGenerateToc } from '@monstera/kernel';
+export const spec: CommandSpec<'generateToc'> = {
+  kind: 'generateToc',
+  writer: 'pdf-lib',
+  sources: 'none',
+  reads: 'outline',
+  apply: applyGenerateToc,
+  capture: captureGenerateToc,
+  invert: invertGenerateToc,
   invertible: false,
   undo: 'checkpoint',
   reproducible: true,
@@ -1765,7 +1868,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 10 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 11 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,
