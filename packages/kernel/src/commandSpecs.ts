@@ -42,6 +42,11 @@ import {
   captureInsertBlankPage,
   invertInsertBlankPage,
 } from './pageOrder.js';
+import {
+  applyAddAnnotation,
+  captureAddAnnotation,
+  invertAddAnnotation,
+} from './pageAnnotations.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
   applyMergeDocument,
@@ -272,6 +277,14 @@ const declared = {
     apply: applyReplacePage,
     capture: captureReplacePage,
     invert: invertReplacePage,
+  },
+  addAnnotation: {
+    ...declaredCommands.addAnnotation,
+    apply: applyAddAnnotation,
+    capture: captureAddAnnotation,
+    // UNREACHABLE BY THE TYPE and required by this table's shape, for
+    // `invertDeletePages`' reason.
+    invert: invertAddAnnotation,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

@@ -56,9 +56,18 @@ export {
 } from './frame.js';
 export { type Incident, IncidentLog, type IncidentSink } from './incident.js';
 export {
+  type AnnotationColour,
+  type AnnotationDraft,
+  type AnnotationRect,
   type Command,
   type CommandKind,
   type CommandOfKind,
+  MAX_ANNOTATION_BORDER,
+  MAX_PAGE_COORDINATE,
+  addAnnotationSchema,
+  annotationColourSchema,
+  annotationDraftSchema,
+  annotationRectSchema,
   batesNumberPagesSchema,
   commandSchema,
   // EVERY MEMBER, not just the first. `rotatePagesSchema` was exported alone

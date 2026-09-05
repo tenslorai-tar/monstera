@@ -1,0 +1,361 @@
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFNumber,
+  PDFRef,
+  PDFString,
+} from '@cantoo/pdf-lib';
+import type { AnnotationDraft, CommandOfKind } from '@monstera/contract';
+import { describe, expect, it } from 'vitest';
+
+import type { MupdfSession } from './engineSeam.js';
+import { mupdfWriter } from './mupdfWriter.js';
+import { applyAddAnnotation, captureAddAnnotation } from './pageAnnotations.js';
+
+/**
+ * Adding an annotation, read back through a DIFFERENT library than the one that
+ * wrote it.
+ *
+ * ## The whole file exists because `getRect` agrees with `setRect`
+ *
+ * MuPDF's annotation API round-trips its own numbers exactly, in whatever space
+ * the caller believed they were in. So a case that writes a rectangle and reads
+ * it back with `getRect` passes whether or not the conversion this module
+ * performs is the right one — it is the same value, returned. Measured
+ * 2026-09-05: `setRect([10, 20, 110, 70])` on a `/MediaBox [0 0 200 300]` page
+ * stores `/Rect [9.5 229.5 110.5 280.5]`, and `getRect` answers
+ * `[10, 20, 110, 70]`.
+ *
+ * Every placement case here therefore reads the **stored dictionary** with
+ * pdf-lib and computes the rectangle from `/Rect` and `/RD`, which is the
+ * format's own definition rather than either library's opinion.
+ *
+ * ## Three fixtures, because the easy one cannot separate anything
+ *
+ * An upright page whose box starts at the origin makes *flip y* and *translate
+ * by the crop origin* and *turn by /Rotate* all invisible or identical. So the
+ * placement cases run on a rotated page and a cropped one as well, and each is
+ * a different term of the transform:
+ *
+ * | fixture | what a wrong implementation still passes |
+ * |---|---|
+ * | upright, origin 0 | nothing — a missing y-flip already shows |
+ * | `/Rotate 90` | everything except the rotation term |
+ * | `/CropBox` origin 50,100 | everything except the translation term |
+ */
+
+const MEDIA: readonly [number, number] = [200, 300];
+
+/** `/RD` describes the inset from `/Rect` to the annotation's real boundary. */
+interface StoredAnnotation {
+  readonly subtype: string;
+  /** `/Rect` inset by `/RD`, which is where the shape actually is. */
+  readonly bounds: readonly [number, number, number, number];
+  readonly colour: readonly number[] | null;
+  readonly borderWidth: number | null;
+  readonly hasAppearance: boolean;
+  readonly keys: readonly string[];
+}
+
+/** One page of {@link MEDIA}, with whatever `/CropBox` and `/Rotate` are asked for. */
+async function fixture({
+  crop,
+  rotate,
+  foreign,
+}: {
+  readonly crop?: readonly number[];
+  readonly rotate?: number;
+  readonly foreign?: boolean;
+} = {}): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const page = document.addPage([...MEDIA]);
+  if (crop !== undefined) {
+    const box = PDFArray.withContext(document.context);
+    for (const value of crop) box.push(PDFNumber.of(value));
+    page.node.set(PDFName.of('CropBox'), box);
+  }
+  if (rotate !== undefined) page.node.set(PDFName.of('Rotate'), PDFNumber.of(rotate));
+  if (foreign === true) {
+    // AN ANNOTATION THIS BUILD DID NOT AUTHOR, carrying keys it never writes.
+    // `/T` and `/Contents` are a person's name and note; `/Sound` is nonsense on
+    // a Square and is here precisely because nothing in this codebase would ever
+    // produce it, so a key that survives cannot have been re-written by us.
+    const other = document.context.obj({});
+    other.set(PDFName.of('Type'), PDFName.of('Annot'));
+    other.set(PDFName.of('Subtype'), PDFName.of('Square'));
+    const rect = PDFArray.withContext(document.context);
+    for (const value of [5, 5, 25, 25]) rect.push(PDFNumber.of(value));
+    other.set(PDFName.of('Rect'), rect);
+    other.set(PDFName.of('T'), PDFString.of('Someone Else'));
+    other.set(PDFName.of('Contents'), PDFString.of('written by another application'));
+    other.set(PDFName.of('Sound'), PDFName.of('NotARealKeyForASquare'));
+    const ref = document.context.register(other);
+    const annots = PDFArray.withContext(document.context);
+    annots.push(ref);
+    page.node.set(PDFName.of('Annots'), annots);
+  }
+  return document.save({ useObjectStreams: false });
+}
+
+/** Every annotation on page 0, read with pdf-lib. */
+async function readBack(bytes: Uint8Array): Promise<readonly StoredAnnotation[]> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const page = document.getPages()[0];
+  if (page === undefined) throw new Error('the fixture lost its page');
+  const annots = page.node.lookup(PDFName.of('Annots'));
+  if (!(annots instanceof PDFArray)) return [];
+
+  // `lookup(key, Type)` THROWS when the key is absent rather than answering
+  // `undefined`, so every optional key here is read untyped and narrowed. The
+  // foreign fixture is what says so: it carries no `/RD` and no `/BS`, which is
+  // exactly what an annotation another producer wrote looks like.
+  const numbers = (dict: PDFDict, key: string): readonly number[] | null => {
+    const array = dict.lookup(PDFName.of(key));
+    if (!(array instanceof PDFArray)) return null;
+    return array.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : NaN));
+  };
+
+  return annots.asArray().map((entry) => {
+    const dict = entry instanceof PDFRef ? document.context.lookup(entry, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('an /Annots entry is not a dictionary');
+    const rect = numbers(dict, 'Rect') ?? [0, 0, 0, 0];
+    // `/RD` is optional and absent means no inset.
+    const inset = numbers(dict, 'RD') ?? [0, 0, 0, 0];
+    const border = dict.lookup(PDFName.of('BS'));
+    const width = border instanceof PDFDict ? border.lookup(PDFName.of('W')) : undefined;
+    const subtype = dict.lookup(PDFName.of('Subtype'));
+    return {
+      // `asString()` on a `PDFName` includes the leading slash, which is the
+      // name as the file spells it.
+      subtype: subtype instanceof PDFName ? subtype.asString() : '',
+      bounds: [
+        (rect[0] ?? 0) + (inset[0] ?? 0),
+        (rect[1] ?? 0) + (inset[1] ?? 0),
+        (rect[2] ?? 0) - (inset[2] ?? 0),
+        (rect[3] ?? 0) - (inset[3] ?? 0),
+      ],
+      colour: numbers(dict, 'C'),
+      borderWidth: width instanceof PDFNumber ? width.asNumber() : null,
+      hasAppearance: dict.lookup(PDFName.of('AP')) !== undefined,
+      keys: dict.keys().map((key) => key.asString()),
+    };
+  });
+}
+
+const SQUARE: AnnotationDraft = {
+  type: 'square',
+  rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+  colour: [1, 0, 0],
+  borderWidth: 2,
+};
+
+function command(
+  overrides: Partial<CommandOfKind<'addAnnotation'>> = {},
+): CommandOfKind<'addAnnotation'> {
+  return { kind: 'addAnnotation', page: 0, annotation: SQUARE, ...overrides };
+}
+
+/** Applies the command to a fixture and returns the resulting bytes. */
+async function drawnOn(
+  bytes: Uint8Array,
+  given: CommandOfKind<'addAnnotation'> = command(),
+): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    await applyAddAnnotation(session, given);
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+/** Runs `work` against an open session, closing it whatever happens. */
+async function onSession<T>(
+  bytes: Uint8Array,
+  work: (session: MupdfSession) => Promise<T>,
+): Promise<T> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    return await work(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('applyAddAnnotation places the rectangle in PDF user space', () => {
+  it('writes the rectangle the command named, on an upright page', async () => {
+    const [stored, ...rest] = await readBack(await drawnOn(await fixture()));
+    expect(rest).toHaveLength(0);
+    expect(stored?.subtype).toBe('/Square');
+    // The command's own numbers, unchanged: `/Rect` is PDF user space and so is
+    // the command. An implementation that handed the rectangle straight to
+    // MuPDF would store the y values flipped about 300.
+    expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('writes the same user-space rectangle on a page turned 90 degrees', async () => {
+    // THE ROTATION TERM. The page displays turned, so the frame MuPDF places
+    // annotations in is turned too — and the stored `/Rect` must come back to
+    // the same user-space numbers, because that is what makes the rectangle
+    // land where the reader drew it and stay there if the page is turned again.
+    const [stored] = await readBack(await drawnOn(await fixture({ rotate: 90 })));
+    expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('writes the same user-space rectangle on a page with a crop-box origin', async () => {
+    // THE TRANSLATION TERM. The visible region starts at 50,100, so a
+    // conversion that ignored the origin is out by exactly that.
+    const [stored] = await readBack(
+      await drawnOn(await fixture({ crop: [50, 100, 150, 250] }), {
+        kind: 'addAnnotation',
+        page: 0,
+        annotation: { ...SQUARE, rect: { x0: 60, y0: 110, x1: 140, y1: 160 } },
+      }),
+    );
+    expect(stored?.bounds).toStrictEqual([60, 110, 140, 160]);
+  });
+
+  it('writes the same rectangle when the drag ran backwards', async () => {
+    // The command is not required to arrive ordered — a drag runs whichever way
+    // the pointer went — so this is the same rectangle named by its other
+    // diagonal.
+    const [stored] = await readBack(
+      await drawnOn(await fixture(), {
+        kind: 'addAnnotation',
+        page: 0,
+        annotation: { ...SQUARE, rect: { x0: 110, y0: 70, x1: 10, y1: 20 } },
+      }),
+    );
+    expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('writes the colour and the border width, and gives it an appearance stream', async () => {
+    const [stored] = await readBack(await drawnOn(await fixture()));
+    expect(stored?.colour).toStrictEqual([1, 0, 0]);
+    expect(stored?.borderWidth).toBe(2);
+    // Without `/AP` every viewer is free to draw the annotation its own way or
+    // not at all. MuPDF's own renderer would draw it regardless, so a proof
+    // that rasterised through MuPDF could not see this missing.
+    expect(stored?.hasAppearance).toBe(true);
+  });
+
+  it('survives a save and a reopen through the engine', async () => {
+    // The round trip the wired-tools rule asks for: the effect is in the bytes,
+    // not in a live session's state.
+    const once = await drawnOn(await fixture());
+    const reopened = await onSession(once, (session) => mupdfWriter.serialise(session));
+    const [stored] = await readBack(reopened);
+    expect(stored?.subtype).toBe('/Square');
+    expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('produces byte-identical output on two runs, which is what reproducible means', async () => {
+    // The declaration says `reproducible: true`, and the hazard is a date:
+    // annotation dictionaries commonly carry `/M` and `/CreationDate`, which
+    // would put a clock in the effect and make the claim false. A version that
+    // starts stamping one turns this red rather than changing the meaning of
+    // the log entry silently.
+    const bytes = await fixture();
+    const first = await drawnOn(bytes);
+    const second = await drawnOn(bytes);
+    expect(Buffer.from(first).equals(Buffer.from(second))).toBe(true);
+  });
+});
+
+describe('applyAddAnnotation leaves other annotations alone', () => {
+  it('keeps every key of an annotation this build did not author', async () => {
+    // INVARIANT L5's WEAKER HALF, asserted for the first time on a write path.
+    // This is *the foreign annotation survives with its keys* — not the
+    // byte-identity `docs/ARCHITECTURE.md`:534 says is still assumed, and not a
+    // `srcRef` scheme, which does not exist yet. What it does rule out is the
+    // failure that would matter here: adding an annotation rewriting the array
+    // it joins.
+    const stored = await readBack(await drawnOn(await fixture({ foreign: true })));
+    expect(stored).toHaveLength(2);
+    // Keys are spelt as the file spells them, slash included, which is also
+    // what keeps `/T` from matching `/Type`.
+    const other = stored.find((entry) => entry.keys.includes('/T'));
+    expect(other?.keys).toEqual(
+      expect.arrayContaining(['/Type', '/Subtype', '/Rect', '/T', '/Contents', '/Sound']),
+    );
+    expect(other?.bounds).toStrictEqual([5, 5, 25, 25]);
+  });
+
+  it('adds to the existing array rather than replacing it', async () => {
+    const stored = await readBack(await drawnOn(await fixture({ foreign: true })));
+    expect(stored.map((entry) => entry.subtype)).toStrictEqual(['/Square', '/Square']);
+    // The one we wrote is the one with an appearance stream; the foreign one
+    // was authored without. That is what tells the two apart without relying on
+    // their order.
+    expect(stored.filter((entry) => entry.hasAppearance)).toHaveLength(1);
+  });
+});
+
+describe('applyAddAnnotation refuses rather than guessing', () => {
+  it('refuses a page index this document does not have', async () => {
+    await expect(drawnOn(await fixture(), command({ page: 4 }))).rejects.toThrow(/outside this/u);
+  });
+
+  it('refuses a rectangle with no area', async () => {
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({ annotation: { ...SQUARE, rect: { x0: 10, y0: 20, x1: 10, y1: 70 } } }),
+      ),
+    ).rejects.toThrow(/no area/u);
+  });
+
+  it('refuses a rectangle entirely off the page', async () => {
+    // An annotation nothing can see is the display-only defect at document
+    // scale: it is in the file, it is selectable by nothing, and no assertion
+    // about the document's structure would notice.
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({ annotation: { ...SQUARE, rect: { x0: 400, y0: 400, x1: 500, y1: 500 } } }),
+      ),
+    ).rejects.toThrow(/entirely outside/u);
+  });
+
+  it('accepts a rectangle that only overlaps the page', async () => {
+    // THE CONTROL for the case above. A guard spelt "refuse anything not
+    // wholly inside the page" passes that case and refuses this one, which is
+    // an ordinary drag that ran past the edge.
+    const [stored] = await readBack(
+      await drawnOn(
+        await fixture(),
+        command({ annotation: { ...SQUARE, rect: { x0: -50, y0: -50, x1: 50, y1: 50 } } }),
+      ),
+    );
+    expect(stored?.bounds).toStrictEqual([-50, -50, 50, 50]);
+  });
+
+  it('refuses a page whose crop box and media box do not overlap', async () => {
+    await expect(
+      drawnOn(await fixture({ crop: [400, 500, 600, 700] }), command()),
+    ).rejects.toThrow(/displays no region/u);
+  });
+});
+
+describe('captureAddAnnotation', () => {
+  it('refuses, naming the handle rather than the operation', async () => {
+    const result = await onSession(await fixture(), (session) =>
+      captureAddAnnotation(session, command()),
+    );
+    expect(result.captured).toBe(false);
+    if (result.captured) throw new Error('unreachable: the capture asserted false above');
+    expect(result.reason).toMatch(/handle/u);
+  });
+
+  it('still throws for a page index this document does not have', async () => {
+    // A capture refusal is *this document cannot have its prior state
+    // recorded*, which the bus answers with a checkpoint. An out-of-range page
+    // is a caller error, and converting it into a checkpoint would take a
+    // checkpoint of a command that was never going to apply.
+    await expect(
+      onSession(await fixture(), (session) => captureAddAnnotation(session, command({ page: 9 }))),
+    ).rejects.toThrow(/outside this/u);
+  });
+});

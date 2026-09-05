@@ -756,6 +756,160 @@ export const replacePageSchema = z.object({
   at: z.number().int().nonnegative(),
 });
 
+/**
+ * The largest coordinate an annotation may name, in PDF units.
+ *
+ * The format's own limit, not one invented here: PDF 32000-1 Annex C.2 puts the
+ * maximum page dimension at **14,400 units** — 200 inches — so a coordinate past
+ * this cannot lie on any conforming page. It bounds the payload for invariant
+ * L11's reason rather than a parser's: a renderer that could send an
+ * unbounded number could make one command's payload say anything.
+ *
+ * Symmetric about zero because a `/MediaBox` may have a negative origin, so a
+ * legal page can put content at a negative coordinate.
+ */
+export const MAX_PAGE_COORDINATE = 14400;
+
+/**
+ * The widest border an annotation may carry, in points.
+ *
+ * Two inches. Not a format limit — the format states none — so it is a
+ * statement about what the value means: a border wider than this is not a
+ * border, and the number is here rather than at a call site so a reader can
+ * disagree with it in one place.
+ */
+export const MAX_ANNOTATION_BORDER = 144;
+
+/**
+ * A rectangle an annotation occupies, in **PDF user space**.
+ *
+ * ## The space is the whole of what this type declares
+ *
+ * These four numbers are the page's own coordinate system — y **up**, origin at
+ * the page's visible box as the document defines it. That is not where either
+ * end of this command naturally works: the overlay measures a drag in CSS
+ * pixels down from the top of a rendered page, and MuPDF's annotation API takes
+ * the page's *displayed* space, which is y-down and turned by `/Rotate`.
+ *
+ * So both ends convert, and this schema is the one place that says what they
+ * convert **to**. The wired-tools rule names exactly this hazard: two halves
+ * either side of a boundary, each correct in its own frame, with the unit
+ * change living in a literal at a call site. Page indices paid for it once;
+ * this is the coordinate space the same rule anticipated.
+ *
+ * Why user space and not either of the two frames that touch it: it is the
+ * frame the **document** is written in, so a stored rectangle keeps its meaning
+ * when the page is rotated, when the zoom changes, and when a page op moves the
+ * page. The other two both vary with something that is not the document.
+ *
+ * ## Not normalised here
+ *
+ * A drag runs in whichever direction the pointer went, and requiring
+ * `x0 <= x1` at the boundary would mean the renderer normalises and the kernel
+ * trusts it. The kernel normalises, where it is already resolving the page.
+ */
+export const annotationRectSchema = z
+  .object({
+    x0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    y0: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    x1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    y1: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+  })
+  .strict();
+
+/** A rectangle in PDF user space. See {@link annotationRectSchema}. */
+export type AnnotationRect = z.infer<typeof annotationRectSchema>;
+
+/**
+ * A colour an annotation is drawn in, as the three components `/C` holds.
+ *
+ * A tuple rather than a hex string, because that is what the format stores and
+ * what MuPDF's `setColor` takes — a string here would be parsed at both ends,
+ * which is two opinions about a notation neither of them owns. Components run
+ * 0 to 1, as PDF's DeviceRGB does, not 0 to 255.
+ *
+ * A document value rather than chrome, so it is exempt from the design-token
+ * rule by that rule's own words (`docs/ARCHITECTURE.md` §10.2 names *a
+ * user-chosen annotation color* as genuinely dynamic).
+ */
+export const annotationColourSchema = z.tuple([
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+]);
+
+/** An annotation's colour. See {@link annotationColourSchema}. */
+export type AnnotationColour = z.infer<typeof annotationColourSchema>;
+
+/**
+ * What one annotation the user just drew IS.
+ *
+ * ## A union inside ONE command, and not a command per tool
+ *
+ * Stage 3 lands about twenty drawing tools. A command kind each would be twenty
+ * passes through the registration tax — schema, both declaration axes, the spec
+ * table, the host channel's union, the renderer's, a dispatch test — for
+ * twenty operations that differ in the shape they draw and in nothing else.
+ * `docs/ARCHITECTURE.md` §7 already says so from the other side: the registry
+ * row is *Annotation types*, whose entry carries a *kernel writer mapping*,
+ * which is a mapping precisely because the command is one.
+ *
+ * Discriminated on `type` with one member today. A one-member union reads as
+ * over-engineering only until the second arrives, and the alternative — an
+ * inline object now, a union later — is a schema change that reaches every
+ * caller rather than a member added to a list.
+ */
+export const annotationDraftSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      /** `/Subtype /Square`, which is what a rectangle annotation is. */
+      type: z.literal('square'),
+      /** Where it sits, in PDF user space. See {@link annotationRectSchema}. */
+      rect: annotationRectSchema,
+      /** The stroke colour. */
+      colour: annotationColourSchema,
+      /**
+       * The stroke width in points. Zero is legal and means a hairline.
+       *
+       * No interior colour, so the shape is an outline. A fill is a second
+       * colour and a control to choose it, which arrives with the style
+       * controls rather than as a field nothing can set.
+       */
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict(),
+]);
+
+/** One annotation, as the tool that drew it describes it. */
+export type AnnotationDraft = z.infer<typeof annotationDraftSchema>;
+
+/**
+ * Add one annotation to one page.
+ *
+ * §3's matrix at `docs/ARCHITECTURE.md`:386 puts *Annotations (all types),
+ * appearance streams* on MuPDF, so this is written through the structural
+ * writer of record rather than composed into the content stream. That is a
+ * classification and not a preference: an annotation is an object in
+ * `/Annots` with its own appearance stream, which is what makes it selectable,
+ * editable and erasable later; drawing the same rectangle into `/Contents`
+ * would produce a document that looks identical and has no annotation in it.
+ *
+ * ## One page, and one annotation
+ *
+ * A tool commits one shape at the end of one drag, so a command carrying a list
+ * would have exactly one member at every call site this stage builds. The
+ * multi-page form Stage 3 does name — *stamps: multi-page apply* — repeats an
+ * annotation across a scope, which is a different intent with a different undo,
+ * and it takes the scope union `cropPages` introduced rather than widening this.
+ */
+export const addAnnotationSchema = z.object({
+  kind: z.literal('addAnnotation'),
+  /** Zero-based index of the page it goes on. */
+  page: z.number().int().nonnegative(),
+  /** What was drawn. */
+  annotation: annotationDraftSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -775,6 +929,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   generateTocSchema,
   mergeDocumentSchema,
   replacePageSchema,
+  addAnnotationSchema,
 ]);
 
 /**
@@ -826,6 +981,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // the source's BYTES, and nothing here can express those.
   mergeDocumentSchema,
   replacePageSchema,
+  // RENDERABLE, and it is the union's own test rather than an exception: the
+  // intent is a page index and a rectangle in the page's own space, which is
+  // six numbers whatever the document weighs. The picture the user is pointing
+  // at never crosses, in either direction.
+  addAnnotationSchema,
 ]);
 
 /** A command a renderer may send. */

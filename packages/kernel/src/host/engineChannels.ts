@@ -1,5 +1,6 @@
 import {
   type CommandKind,
+  addAnnotationSchema,
   channel,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -448,6 +449,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   resizePagesSchema,
   mergeDocumentSchema,
   replacePageSchema,
+  addAnnotationSchema,
 ]);
 
 /**

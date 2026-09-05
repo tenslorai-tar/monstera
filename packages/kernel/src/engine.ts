@@ -67,6 +67,11 @@ export {
   invertMergeDocument,
   invertReplacePage,
 } from './pageMerge.js';
+export {
+  applyAddAnnotation,
+  captureAddAnnotation,
+  invertAddAnnotation,
+} from './pageAnnotations.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export { localMupdfWriter } from './localEngine.js';

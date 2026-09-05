@@ -651,6 +651,39 @@ const declarations = {
     // Nothing read through another engine.
     reads: 'none',
   },
+  addAnnotation: {
+    kind: 'addAnnotation',
+    // `docs/ARCHITECTURE.md:386` puts "Annotations (all types), appearance
+    // streams" on MuPDF. That is a CLASSIFICATION, not a preference: an
+    // annotation is an object in `/Annots` carrying its own appearance stream,
+    // which is what makes it selectable and erasable later. Drawing the same
+    // rectangle into `/Contents` through the byte-image writer would produce a
+    // document that renders identically and has no annotation in it — the
+    // `setPageTransition` row's argument, on the other side of the matrix.
+    writer: 'mupdf',
+    // `commandLog.ts`' entry says why, and it is the one `never` there that is
+    // a *not yet*: the operation that removes an annotation exists, and the
+    // handle naming WHICH one does not. An inverse spelt "the last annotation
+    // on the page" would depend on the log's ordering rather than on captured
+    // state.
+    invertible: false,
+    undo: 'checkpoint',
+    // MEASURED rather than reasoned, because the obvious guess is wrong.
+    // Annotation dictionaries commonly carry `/M` and `/CreationDate`, which
+    // would put a clock in the effect and force `stored-effect` — the
+    // watermark's `/ModDate` hazard one layer down. MuPDF 1.28.0 writes
+    // neither: two runs of the same command against the same bytes produced
+    // byte-identical documents (2026-09-05), and a case holds that so a version
+    // that starts stamping a date is a red build rather than a silent change of
+    // meaning.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document. The rectangle is in its own payload.
+    sources: 'none',
+    // Reads nothing through another engine. The page's boxes and rotation come
+    // from the session this apply is already holding.
+    reads: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

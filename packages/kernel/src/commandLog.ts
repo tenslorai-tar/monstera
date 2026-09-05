@@ -294,6 +294,32 @@ export interface CommandPrior {
    * that half of it could be recorded.
    */
   readonly replacePage: never;
+  /**
+   * **`never`**, and this one is a genuine *not yet* rather than a structural
+   * impossibility — which is why it says so here instead of reading like its
+   * neighbours.
+   *
+   * The prior state of a page that gained an annotation is the page without it,
+   * and the operation that removes one is well defined: MuPDF's
+   * `deleteAnnotation` takes the annotation. What is missing is the **handle** —
+   * an inverse has to name *which* annotation to remove, and this command's
+   * effect is an object MuPDF mints, whose identity is not in the payload and
+   * whose object number a save may renumber (`movePage`'s entry says the same
+   * about recording positions by object number).
+   *
+   * *The last annotation on the page* would work today, because undo is
+   * last-in-first-out and nothing else has touched the page in between. It is
+   * still the wrong shape: it is an inverse that depends on the log's ordering
+   * rather than on state it captured, so it stops being correct the moment
+   * anything can add an annotation other than through this command — which the
+   * eraser and the select tool both will.
+   *
+   * So a checkpoint, and the handle is the eraser's problem to solve properly.
+   * Stated as owed rather than left to be rediscovered: the first tool that
+   * needs to name an existing annotation is what supplies the identity this
+   * entry would need.
+   */
+  readonly addAnnotation: never;
 }
 
 /**
