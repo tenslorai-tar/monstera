@@ -876,6 +876,104 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-06 — Stage 3 opens: the annotation platform, built with its first tool
+
+The `docs/FEATURES.md` platform row points here for the history it no longer
+carries, and for what the row's own existence was about.
+
+### Why the row existed, and why it is the fourth of its kind
+
+It was added 2026-09-04, as a **clause of this stage's definition with no row**.
+`BUILD-PROMPT.md:693-695` reads *"**Geometry adapters + tool controllers**; then
+all D3 tools land as registrations. Persistence + `srcRef` proofs."* The twenty
+tool rows were the *"then"*; nothing carried the *"first"*. A planner reading
+that table saw twenty tools and no platform, which is exactly the shape that
+gets a platform retrofitted underneath features already built.
+
+**Fourth occurrence**, after save, render and the remap contract, and the reason
+it keeps happening is on the remap row: *a missing row is indistinguishable from
+a stage that does not need one*, so no check can see it.
+
+### Built WITH its first tool, and the first caller earned its keep immediately
+
+The seam could have shipped alone — `docs/ARCHITECTURE.md` §7 already declares
+both registries, so this was registration rather than a B4. It was not, because
+a tool-controller seam with no tool driving it is the unproven-seam shape, and
+this project's own record says the first real caller is what finds the gap.
+
+It found one within the hour. **MuPDF's `PDFAnnotation.setRect` does not take
+PDF user space**, and nothing in its declaration says so — measured on
+`/MediaBox [0 0 200 300]`, `setRect([10, 20, 110, 70])` stores
+`/Rect [9.5 229.5 110.5 280.5]`. The space is the page's *displayed* frame: y
+down, after `/Rotate`, origin at the visible box.
+
+What makes that dangerous rather than merely surprising is that `getRect`
+answers what `setRect` was given. MuPDF's own API round-trips its numbers in
+whatever space the caller believed they were in, so a case that writes with one
+and reads with the other passes either way — the wired-tools rule's blind spot,
+in the exact shape it predicted: *a coordinate space, next time.*
+
+### Two measurements the build now rests on
+
+**Our transform IS MuPDF's.** `toViewport` at scale 1, built from the page's
+displayed box and its effective rotation, was compared against
+`PDFPage.getTransform()` — MuPDF's own `pdf_page_transform` — on four probe
+points across four rotations, cropped and uncropped. Twenty-four conversions,
+all equal. So the kernel converts through invariant L3's one converter rather
+than through a second affine implementation, and `pageBoxes.test.ts` holds the
+equality with a control that requires the *unclipped* box to disagree.
+
+**The page's visible box was being computed wrongly**, and the same comparison
+is what found it. `pageCrop.ts`' private `displayedBox` returned the crop box as
+written; PDF 32000-1 §14.11.2 clips it to the media box, and MuPDF does. Twenty
+and thirty units apart on the two fixtures that show it, invisible on every
+well-formed document. Fixed in its own commit, `fc92920`, with the rule moved to
+`pageBoxes.ts` and two clipping cases, because *"if not contained, use the media
+box"* passes one of them and answers the whole page for the other.
+
+An empty intersection is `null` here and `[0 0 612 792]` in MuPDF — a
+rasteriser must draw something, and a writer must not invent a frame. PDF.js
+falls back to the *media* box for the same page, so refusing is what keeps the
+viewer and the writer from disagreeing about where the user pointed.
+
+### What was decided, and what was deliberately not built
+
+**One registry, whose entry carries a controller.** The row left open *"whether
+a controller is a registry of its own or a field on the existing tool
+registry"*. There was no existing tool registry, so the real question was
+whether a tool is anything besides its controller. It is not.
+
+**Three of the four lifecycle members.** §6 names begin/update/commit/cancel.
+The gesture is a value the overlay holds, so cancelling is dropping it, and a
+`cancel` on the interface would be an empty body in all twenty tools — the
+display-only sin at interface scale. It arrives with the first tool that holds a
+resource across a gesture.
+
+**The annotation-types registry was not built.** §7's other row is geometry
+adapter, renderer and kernel writer mapping, and all three read *existing*
+annotations. Nothing reads `/Annots` in the renderer yet, so its members would
+have had no callers. Trigger: the annotations panel or the select tool.
+
+**One command with a union inside it**, not a kind per tool. Twenty kinds would
+be twenty passes through the registration tax for operations that differ only in
+the shape drawn — and §7 says the same from the other side, since *Annotation
+types* carries a *writer mapping*, which is a mapping because the command is one.
+
+### Owed, and named so it is not rediscovered
+
+- **`srcRef`.** The row stays open. What is asserted now is the weaker half, for
+  the first time on a write path: a foreign annotation on the same page keeps
+  every key it arrived with. Byte-identity is still assumed (§4).
+- **An inverse.** `addAnnotation` is `undo: 'checkpoint'` because removing an
+  annotation needs a **handle** naming which one, and the command mints an
+  object whose identity is not in its payload. *The last annotation on the page*
+  would work today and would depend on the log's ordering rather than on
+  captured state. The eraser is what supplies the identity.
+- **Colour and width.** Constants in `rectangleTool.ts` until the style-controls
+  row owns them — the shape the watermark, background and header rows took.
+
+---
+
 ## 2026-09-05 — Stage 2 closes: 3 days against a 2-day baseline, 1.50×, continue
 
 **24 of D2's 26 rows are done. The other two are out of the stage**, and that is

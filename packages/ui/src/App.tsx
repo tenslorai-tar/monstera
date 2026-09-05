@@ -1,4 +1,4 @@
-import type { ContractClient } from '@monstera/contract';
+import type { ContractClient, RenderableCommand } from '@monstera/contract';
 import type { DocId, DocVersion } from '@monstera/shared';
 import {
   useCallback,
@@ -86,7 +86,10 @@ import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
+import { rectangleTool } from './annotations/rectangleTool.js';
+import { rectangleToolCommand } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
+import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
 import { DialogHost, useDialogHost } from './surfaces/DialogHost.js';
 import {
@@ -110,7 +113,7 @@ import type { RulerUnit } from './rulerGeometry.js';
 import { useSetting } from './useSetting.js';
 import type { SettingsStore } from './settingsStore.js';
 import { FIRST_PAGE } from './pageNumbering.js';
-import { PageList } from './PageList.js';
+import { PageList, type PageListProps } from './PageList.js';
 import { QuickToolbar } from './surfaces/QuickToolbar.js';
 import { dispatchChord, shortcutsFor } from './surfaces/shortcuts.js';
 import { RecentFiles } from './RecentFiles.js';
@@ -635,6 +638,33 @@ export function App({ client, settings }: AppProps): ReactElement {
     setPalette(false);
   }, []);
 
+  /**
+   * The drawing tool selected, by id, or `undefined` for none.
+   *
+   * ## App-shell state, and NOT a setting
+   *
+   * `palette`'s argument on the placement: §6 keeps shell state out of a
+   * document's store, and a tool that switched off when a tab did would be a
+   * mode with a lifetime it has no reason to have — a reader annotating two
+   * documents is annotating, not annotating one of them.
+   *
+   * It is not a **setting** either, and that is the sharper half. A setting
+   * survives a restart, which is right for *show rulers* and wrong here: the
+   * application would open in drawing mode, where the first click on a page
+   * leaves a rectangle nobody asked for. A tool is a mode a person is in for as
+   * long as they are drawing, which is exactly what React state expresses.
+   *
+   * ## An id, resolved once, rather than the tool
+   *
+   * The command registry can only carry a string — its `run(context)` takes the
+   * application's state and no arguments — so an id is what a command can set.
+   * The registry resolves it to the tool here, once, and the scroller is handed
+   * the tool itself so nothing below this point knows a registry exists.
+   */
+  const [toolId, setToolId] = useState<string | undefined>(undefined);
+  const readTool = useCallback(() => toolId, [toolId]);
+  const tools = useMemo(() => new ToolRegistry([rectangleTool]), []);
+
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
   const unit = useSetting(settings, RULER_UNIT_SETTING);
@@ -725,6 +755,10 @@ export function App({ client, settings }: AppProps): ReactElement {
         zoomCommand('out', { onZoom: changeZoom }),
         fitCommand('width', { onZoom: changeZoom }),
         fitCommand('page', { onZoom: changeZoom }),
+        // STAGE 3's FIRST TOOL, registered in both registries under one id.
+        // What this command does is select; what the drag does is
+        // `registries/tools.ts`' business, and the shared id is the join.
+        rectangleToolCommand({ activeTool: readTool, onSelect: setToolId }),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
@@ -739,8 +773,37 @@ export function App({ client, settings }: AppProps): ReactElement {
         historyCommand('forward', { navigator }),
         goToCommand(),
       ]),
-    [applied, ask, changeZoom, client, navigator, openCommand, openPalette, settings],
+    [applied, ask, changeZoom, client, navigator, openCommand, openPalette, readTool, settings],
   );
+
+  /**
+   * What the scroller needs to let a reader draw: the active tool, and where a
+   * finished gesture's command goes.
+   *
+   * ## The THIRD caller of `applyDocumentCommand`, and it is a surface
+   *
+   * `movePage`'s note names the shape: a drag carries values a registered
+   * `run(context)` cannot, so it dispatches outside the registry — and it must
+   * do the same four things, or the two drift. An overlay is the same case with
+   * a rectangle instead of two indices.
+   *
+   * ## `undefined` whenever there is nothing to draw on
+   *
+   * No tool selected, or no document focused, and no overlay is mounted at all.
+   * The second half matters as much as the first: a tool left active while the
+   * reader closes every tab would otherwise reach for a `docId` that is gone.
+   */
+  const drawing = useMemo(() => {
+    const tool = tools.get(toolId);
+    if (tool === undefined || open === undefined) return undefined;
+    const docId = open.docId;
+    return {
+      tool,
+      onCommand: (command: RenderableCommand): void => {
+        void applyDocumentCommand({ client, onApplied: applied, ask }, docId, command);
+      },
+    };
+  }, [applied, ask, client, open, toolId, tools]);
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not
@@ -876,6 +939,7 @@ export function App({ client, settings }: AppProps): ReactElement {
           // surface. `others` is every open document, including this one —
           // *this document* is a choice a reader returns to, not an absence.
           compare={tabs.find((tab) => tab.docId === compareId)}
+          drawing={drawing}
           others={tabs}
           onCompare={setCompareId}
         />
@@ -1096,6 +1160,7 @@ function PageCanvas({
   compare,
   others,
   onCompare,
+  drawing,
 }: {
   readonly client: ContractClient;
   readonly document: OpenDocument;
@@ -1129,6 +1194,8 @@ function PageCanvas({
   /** Every open document, as the compare picker's choices. */
   readonly others: readonly OpenDocument[];
   readonly onCompare: (docId: DocId | undefined) => void;
+  /** The active tool and where its commands go. Both panes take it. */
+  readonly drawing: PageListProps['drawing'];
 }): ReactElement {
   const moved = useCallback(
     (next: { readonly version: DocVersion; readonly byteLength: number }) => {
@@ -1225,6 +1292,7 @@ function PageCanvas({
         rulers={rulers}
         showGrid={showGrid}
         unit={unit}
+        drawing={drawing}
       />
       {/* THE SECOND VIEWPORT, over the SAME parser.
           One document, two scrollers: a pane that opened its own view would
@@ -1294,6 +1362,12 @@ function PageCanvas({
               showGrid={showGrid}
               unit={unit}
               label={SPLIT_SECOND_LABEL}
+              // BOTH PANES DRAW, and they are the same document — so an
+              // annotation made in one appears in the other on the next render,
+              // which is what one document in two viewports means. A pane that
+              // could not draw would be a surface where a selected tool
+              // silently does nothing.
+              drawing={drawing}
             />
           ) : null}
         </div>

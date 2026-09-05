@@ -37,6 +37,29 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 export interface RasterisedPage {
   readonly width: number;
   readonly height: number;
+  /**
+   * The page's visible box in PDF user space, as `[x0, y0, x1, y1]`.
+   *
+   * **Reported rather than computed by the caller**, and it is the same B3a
+   * argument the note above makes about the viewport: `page.view` is PDF.js'
+   * answer to *what region does this page display*, with the `/MediaBox`,
+   * `/CropBox` and their intersection already applied. An overlay that read the
+   * boxes itself would be a second opinion agreeing on every ordinary document.
+   *
+   * It comes out of here rather than from a second `getPage` because this
+   * function has already parsed the page, and a caller asking again would be
+   * asking a question whose answer it was standing next to.
+   */
+  readonly crop: readonly [number, number, number, number];
+  /**
+   * The rotation this page was actually drawn at, in degrees.
+   *
+   * The caller's `rotation` when it supplied one and the page's own `/Rotate`
+   * when it did not — which is the point: an overlay placing a shape has to use
+   * the rotation the bitmap underneath it was drawn at, and *what the caller
+   * passed* is not that whenever the caller passed nothing.
+   */
+  readonly rotation: number;
 }
 
 /**
@@ -74,5 +97,14 @@ export async function renderPage(
   }
 
   await page.render({ canvas, canvasContext: context, viewport }).promise;
-  return { width: canvas.width, height: canvas.height };
+  const [x0 = 0, y0 = 0, x1 = 0, y1 = 0] = page.view;
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    crop: [x0, y0, x1, y1],
+    // THE VIEWPORT'S, not the parameter's. They differ exactly when the caller
+    // passed nothing and PDF.js fell back to the page's own `/Rotate`, which is
+    // the case an overlay must not get wrong.
+    rotation: viewport.rotation,
+  };
 }

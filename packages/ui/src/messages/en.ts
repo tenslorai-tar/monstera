@@ -195,6 +195,8 @@ export const SPLIT_VIEW_TITLE = messageKey('setting.viewing.split.title');
 export const SPLIT_SECOND_LABEL = messageKey('surface.split.second-label');
 export const RULERS_TITLE = messageKey('setting.viewing.rulers.title');
 export const GRID_TITLE = messageKey('setting.viewing.grid.title');
+export const RECTANGLE_TOOL_TITLE = messageKey('command.annotate-rectangle.title');
+export const ANNOTATION_SURFACE_LABEL = messageKey('surface.annotation.label');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
 export const VERTICAL_RULER_LABEL = messageKey('surface.ruler.vertical.label');
@@ -342,6 +344,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [SPLIT_SECOND_LABEL]: 'Second view of this document',
   [RULERS_TITLE]: 'Show rulers',
   [GRID_TITLE]: 'Show grid',
+  [RECTANGLE_TOOL_TITLE]: 'Rectangle',
+  // NAMES THE PAGE, because a scroller shows several and each carries its own
+  // drawing surface. Two surfaces with the same accessible name are two a
+  // screen-reader user cannot tell apart, which is `SPLIT_SECOND_LABEL`'s
+  // argument on a list rather than a pair.
+  [ANNOTATION_SURFACE_LABEL]: 'Draw on page {page}',
   [RULER_UNIT_TITLE]: 'Ruler unit',
   [HORIZONTAL_RULER_LABEL]: 'Horizontal ruler',
   [VERTICAL_RULER_LABEL]: 'Vertical ruler',

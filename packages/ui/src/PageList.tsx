@@ -1,9 +1,12 @@
 import { useLingui } from '@lingui/react';
-import type { ContractClient } from '@monstera/contract';
+import type { ContractClient, RenderableCommand } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { AnnotationOverlay } from './AnnotationOverlay.js';
+import { ANNOTATION_SURFACE_LABEL } from './messages/en.js';
+import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
 import { FIRST_PAGE, pdfjsPageOf } from './pageNumbering.js';
 import { renderPage } from './renderPage.js';
@@ -152,6 +155,30 @@ export interface PageListProps {
    * with the document in it, which is the first label here to carry one.
    */
   readonly labelValues?: Readonly<Record<string, string | number>> | undefined;
+  /**
+   * The drawing tool a reader has selected and where its commands go, or
+   * `undefined` when nothing is being drawn.
+   *
+   * **One prop for the pair**, so a tool with nowhere to send its command is
+   * unrepresentable rather than avoided by discipline (B5): two optional props
+   * have three legal combinations and only two of them mean anything, and the
+   * meaningless one is a control that draws a rectangle into nothing.
+   *
+   * **The tool itself and not its id**, so this component never consults a
+   * registry: resolving an id here would make the scroller a second place that
+   * knows tools exist, where its whole job is to give each page a surface for
+   * whichever one is active.
+   *
+   * `undefined` mounts no overlay element at all rather than an inert one —
+   * `AnnotationOverlay`'s note says why a transparent element over every page
+   * is worse than none.
+   */
+  readonly drawing?:
+    | {
+        readonly tool: UiTool;
+        readonly onCommand: (command: RenderableCommand) => void;
+      }
+    | undefined;
 }
 
 /**
@@ -181,6 +208,18 @@ interface Measured {
   readonly height: number;
   /** `devicePixelRatio × zoom` at the moment this bitmap was rasterised. */
   readonly drawnAt: number;
+  /**
+   * The page's visible box in PDF user space, and the rotation it was drawn at.
+   *
+   * **Carried with the bitmap rather than fetched**, because the annotation
+   * overlay needs the frame the bitmap under it was drawn in, and any other
+   * source is a frame that may have moved: a second `getPage` answers about the
+   * page as it is now, and this slot may still be showing the previous render
+   * while a zoom settles. `renderPage` reports both because it has just parsed
+   * the page.
+   */
+  readonly crop: readonly [number, number, number, number];
+  readonly rotation: number;
 }
 
 /**
@@ -214,6 +253,7 @@ export function PageList({
   label,
   labelValues,
   startAt,
+  drawing,
 }: PageListProps): ReactElement {
   const { i18n } = useLingui();
   // THE SHARED MECHANISM, not a copy. The thumbnail sidebar asks the same
@@ -618,6 +658,12 @@ export function PageList({
           zoom={shown}
           renderZoom={renderZoom}
           onMeasured={measured}
+          // THE SLOT'S OWN MEASUREMENT, not the inherited estimate: an overlay
+          // placed over a page using a neighbour's box would put every
+          // rectangle in the wrong frame. `lastKnownBefore` above is a size
+          // estimate for layout, which is a different tolerance from a
+          // coordinate system.
+          drawing={sizes.has(page) ? drawing : undefined}
         />
       ))}
     </div>
@@ -659,6 +705,7 @@ function PageSlot({
   zoom,
   renderZoom,
   onMeasured,
+  drawing,
 }: {
   readonly page: number;
   readonly ref: (element: HTMLElement | null) => void;
@@ -669,7 +716,9 @@ function PageSlot({
   readonly zoom: number;
   readonly renderZoom: number;
   readonly onMeasured: (page: number, measured: Measured) => void;
+  readonly drawing: PageListProps['drawing'];
 }): ReactElement {
+  const { i18n } = useLingui();
   const canvas = useRef<HTMLCanvasElement>(null);
 
   /**
@@ -714,7 +763,13 @@ function PageSlot({
         rotation,
       );
       if (cancelled) return;
-      onMeasured(page, { width: drawn.width, height: drawn.height, drawnAt: scale });
+      onMeasured(page, {
+        width: drawn.width,
+        height: drawn.height,
+        drawnAt: scale,
+        crop: drawn.crop,
+        rotation: drawn.rotation,
+      });
     };
 
     void drawPage().catch(() => {
@@ -756,6 +811,25 @@ function PageSlot({
           style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
         />
       ) : null}
+      {drawing === undefined || size === undefined ? null : (
+        <AnnotationOverlay
+          geometry={{
+            // THE BOX AND THE ROTATION THE BITMAP WAS DRAWN WITH, and the
+            // CURRENT zoom. That pairing is deliberate: the overlay is laid out
+            // over what the browser is painting, which during a settling zoom
+            // is a stale bitmap stretched to the new scale. Taking `drawnAt`
+            // here instead would place rectangles in the frame of the last
+            // rasterisation rather than the one on screen.
+            crop: size.crop,
+            rotation: size.rotation,
+            zoom,
+          }}
+          label={i18n._(ANNOTATION_SURFACE_LABEL, { page: pdfjsPageOf(page) })}
+          onCommand={drawing.onCommand}
+          page={page}
+          tool={drawing.tool}
+        />
+      )}
     </div>
   );
 }

@@ -683,6 +683,15 @@ body {
 .m-page-slot {
   flex-shrink: 0;
   background: var(--surface2);
+  /*
+   * THE OVERLAY'S CONTAINING BLOCK. The annotation surface is absolutely
+   * positioned at inset 0, and its client rectangle is what every pointer
+   * position is measured from — so a slot that were not positioned would send
+   * the overlay to the nearest ancestor that is, which is the scroller, and
+   * every rectangle would be off by the scroll offset. Positioned here rather
+   * than asserted anywhere.
+   */
+  position: relative;
 
   /*
    * A SLOT IS NEVER ZERO-SIZED, and this is the fix for a deadlock rather than a
@@ -940,4 +949,47 @@ body {
 .m-find-match.is-active {
   background: var(--surface2);
   border-inline-start: 2px solid var(--accent);
+}
+
+/*
+ * The annotation drawing surface, laid out exactly over the page's canvas.
+ *
+ * `inset: 0` against the slot, which is the same box the canvas is sized to —
+ * so the surface's client rectangle IS the page on screen, which is what makes
+ * a pointer position a page coordinate with no offset arithmetic anywhere.
+ *
+ * `crosshair` because a rectangle is drawn from a corner and an arrow points at
+ * a spot rather than at a point. It is also the only thing on screen that says
+ * the page has stopped being a thing you read and started being a thing you
+ * draw on.
+ *
+ * MOUNTED ONLY WHILE A TOOL IS ACTIVE, so nothing here has to defeat itself
+ * with `pointer-events: none` — an element over the page that passed everything
+ * through would be a thing that can go wrong silently.
+ */
+.m-annotation-overlay {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  cursor: crosshair;
+  /* The focus ring is the surface's own; it is focusable so Escape reaches it. */
+  outline-offset: -2px;
+}
+
+/*
+ * The rectangle a drag is currently describing.
+ *
+ * CHROME, NOT THE DOCUMENT, which is why this is a token and the annotation's
+ * own colour is not: nothing here is written to the file. The fill is what
+ * makes a thin outline visible over dense text, and it is soft enough that the
+ * page is still readable underneath while the drag is being placed.
+ */
+.m-annotation-preview {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1;
+  /* SCALES WITH NOTHING. A preview outline is a screen affordance, so it stays
+     one pixel at every zoom, unlike the border the annotation will carry. */
+  vector-effect: non-scaling-stroke;
 }

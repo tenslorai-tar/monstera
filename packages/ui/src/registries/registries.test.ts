@@ -14,6 +14,7 @@ import {
   declareDialog,
 } from './dialogs.js';
 import { SettingsRegistry, type SettingDefinition } from './settings.js';
+import { ToolRegistry, type UiTool } from './tools.js';
 
 const context: CommandContext = {
   docId: asDocId('00000000-0000-4000-8000-000000000001'),
@@ -223,5 +224,44 @@ describe('SettingsRegistry', () => {
     // exists, and the symptom would be a setting that never changes.
     const registry = new SettingsRegistry([setting()]);
     expect(() => registry.read('general.absent', 'dark')).toThrow(/"general\.absent"/u);
+  });
+});
+
+describe('ToolRegistry', () => {
+  const tool = (id: string): UiTool => ({
+    id,
+    controller: {
+      begin: (at) => ({ from: at, to: at }),
+      update: (gesture, at) => ({ from: gesture.from, to: at }),
+      commit: () => undefined,
+      preview: () => undefined,
+    },
+  });
+
+  it('refuses two tools claiming one id, and names the id', () => {
+    // A tool's id is also its command's, so one silently replacing the other
+    // leaves a control that selects the wrong tool — the ADR-0029 Decision 3
+    // failure with a pointer on the end of it.
+    expect(() => new ToolRegistry([tool('annotate.rectangle'), tool('annotate.rectangle')])).toThrow(
+      /"annotate\.rectangle"/u,
+    );
+  });
+
+  it('answers undefined for no tool at all, which is what NOT drawing is', () => {
+    // The overlay is mounted on a tool and not on a boolean, so *no tool* has
+    // to be a value this can return rather than a second state a caller keeps.
+    const registry = new ToolRegistry([tool('annotate.rectangle')]);
+    expect(registry.get(undefined)).toBeUndefined();
+  });
+
+  it('answers undefined for an id nobody registered', () => {
+    // NOT a throw, unlike `SettingsRegistry.read`, and the difference is what
+    // the caller can do about it: a missing setting is a caller and a registry
+    // disagreeing at startup, where an unknown tool id is state a person's
+    // session can hold across a build that removed a tool. Answering
+    // `undefined` puts them back to reading; throwing takes the surface down.
+    const registry = new ToolRegistry([tool('annotate.rectangle')]);
+    expect(registry.get('annotate.gone')).toBeUndefined();
+    expect(registry.size).toBe(1);
   });
 });

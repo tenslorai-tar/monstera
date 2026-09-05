@@ -13,10 +13,21 @@ import { renderPage } from './renderPage.js';
  * up as. The pixels are `proof:rendererpolicy`'s job, against real Chromium.
  */
 
+/**
+ * The visible box every fake page reports, unless a case asks for another.
+ *
+ * A NON-ZERO ORIGIN, deliberately: `[0, 0, w, h]` is what a page whose crop box
+ * is its media box reports, and it is also what an implementation that made the
+ * box up from the viewport would report. This one could not have been derived
+ * from anything else in the fixture.
+ */
+const VIEW: readonly [number, number, number, number] = [12, 24, 312, 424];
+
 /** A document whose page reports a viewport and records the canvas it was given. */
 function documentWithViewport(
   width: number,
   height: number,
+  view: readonly number[] = VIEW,
 ): {
   readonly document: PDFDocumentProxy;
   /** The canvas dimensions at the moment `render` was called. */
@@ -27,9 +38,15 @@ function documentWithViewport(
   const sizeAtRender: { width: number; height: number }[] = [];
   const asked: Record<string, unknown>[] = [];
   const page = {
+    view,
     getViewport: (options: Record<string, unknown>) => {
       asked.push(options);
-      return { width, height };
+      // THE VIEWPORT REPORTS ITS OWN ROTATION, which is what PDF.js does and
+      // what makes `rotation` in the result different from the parameter: with
+      // no parameter the viewport carries the page's own `/Rotate`, and that is
+      // the number an overlay has to use. The fake answers 270 for the
+      // no-parameter case so the two can be told apart.
+      return { width, height, rotation: options['rotation'] ?? 270 };
     },
     render: ({ canvas }: { canvas: HTMLCanvasElement }) => {
       sizeAtRender.push({ width: canvas.width, height: canvas.height });
@@ -79,7 +96,8 @@ describe('renderPage', () => {
 
     const raster = await renderPage(document, 1, canvas, 1);
 
-    expect(raster).toStrictEqual({ width: 301, height: 401 });
+    expect(raster.width).toBe(301);
+    expect(raster.height).toBe(401);
   });
 
   it('CONTROL: a whole-number viewport is not rounded up past itself', async () => {
@@ -91,7 +109,59 @@ describe('renderPage', () => {
 
     const raster = await renderPage(document, 1, canvas, 1);
 
-    expect(raster).toStrictEqual({ width: 300, height: 400 });
+    expect(raster.width).toBe(300);
+    expect(raster.height).toBe(400);
+  });
+
+  it("reports the page's own visible box, which the overlay's frame comes from", async () => {
+    // `page.view` is PDF.js' answer to *what region does this page display*,
+    // with `/MediaBox`, `/CropBox` and their intersection already applied
+    // (B3a). It comes out of here because this function has just parsed the
+    // page — a caller asking again would be asking a question it was standing
+    // next to, and would get the page as it is NOW rather than as this bitmap
+    // was drawn.
+    const { document } = documentWithViewport(300, 400);
+
+    const raster = await renderPage(document, 1, canvasWithContext(), 1);
+
+    expect(raster.crop).toStrictEqual([12, 24, 312, 424]);
+  });
+
+  it('reports a short or malformed view box as zeroes rather than throwing', async () => {
+    // `page.view` is typed `number[]`, so a parser answering with fewer than
+    // four is expressible. Zeroes give a degenerate box, which `pageTransform`
+    // turns into a zero-sized viewport and the kernel refuses — a throw here
+    // would take the PAGE down instead, and a page that will not draw is worse
+    // than one that cannot be annotated.
+    const { document } = documentWithViewport(300, 400, [5]);
+
+    const raster = await renderPage(document, 1, canvasWithContext(), 1);
+
+    expect(raster.crop).toStrictEqual([5, 0, 0, 0]);
+  });
+
+  it("reports the VIEWPORT's rotation, not the caller's, so a page with no model is right", async () => {
+    // THE SEPARATOR. When the caller passes nothing, PDF.js falls back to the
+    // page's own `/Rotate` — so an implementation reporting the parameter would
+    // answer `undefined` or `0` for a page that is on its side, and an overlay
+    // would place every rectangle a quarter turn out. The fake's viewport
+    // answers 270 when asked for no rotation, which nothing else in this call
+    // could have produced.
+    const { document } = documentWithViewport(300, 400);
+
+    const raster = await renderPage(document, 1, canvasWithContext(), 1);
+
+    expect(raster.rotation).toBe(270);
+  });
+
+  it('CONTROL: and it is the caller\'s rotation when the caller gave one', async () => {
+    // Without this, the case above passes for an implementation that always
+    // reports 270, or one that ignores the parameter entirely.
+    const { document } = documentWithViewport(300, 400);
+
+    const raster = await renderPage(document, 1, canvasWithContext(), 1, 90);
+
+    expect(raster.rotation).toBe(90);
   });
 
   it('passes the view model rotation to the viewport, so the KERNEL decides which way up', async () => {
