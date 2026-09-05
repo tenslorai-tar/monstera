@@ -22,6 +22,8 @@ import type { InsertFromPdfAnswer } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
 import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
 import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
+import { REPLACE_PAGE_DIALOG_ID } from '../dialogs/replacePage.js';
+import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
 import { RESIZE_PAGES_DIALOG_ID } from '../dialogs/resizePages.js';
@@ -48,6 +50,7 @@ import {
   INSERT_IMAGE_COMMAND_TITLE,
   MERGE_DOCUMENT_COMMAND_TITLE,
   PAGE_BACKGROUND_COMMAND_TITLE,
+  REPLACE_PAGE_COMMAND_TITLE,
   RESIZE_PAGES_COMMAND_TITLE,
   PAGE_TRANSITION_COMMAND_TITLE,
   ROTATE_PAGE_TITLE,
@@ -1003,6 +1006,56 @@ export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
         // `pageNumbering.ts`' rule — a command that subtracted one here would be
         // the second place that arithmetic lives.
         at: answer.at,
+      });
+    },
+  };
+}
+
+/**
+ * Replaces the page on screen with another open document's pages.
+ *
+ * ## Its OWN command kind, where insert-from-PDF is a second surface
+ *
+ * The distinction is what the operation does rather than what it is called: a
+ * replace **destroys a page**, and merge does not. Composing it from
+ * `deletePages` plus `mergeDocument` would put two entries in the log, so one
+ * action would take two undos and the document could rest between them with a
+ * page gone and nothing in its place.
+ *
+ * ## The page is `context.page`, not a field
+ *
+ * `duplicatePageCommand`'s position — *the page on screen* is what a toolbar
+ * control means. The dialog states which page rather than asking, because a
+ * control that destroys a page must let the reader check it is the right one.
+ */
+export function replacePageCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.replace-page',
+    title: REPLACE_PAGE_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 26 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.page === undefined) return;
+
+      const choices = context.openDocuments
+        .filter((document) => document.docId !== context.docId)
+        .map((document) => ({ docId: document.docId, name: document.name }));
+
+      if (choices.length === 0) {
+        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
+        return;
+      }
+
+      const answer = (await deps.ask(REPLACE_PAGE_DIALOG_ID, {
+        choices,
+        page: context.page,
+      })) as ReplacePageAnswer | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'replacePage',
+        source: answer.source as DocId,
+        at: context.page,
       });
     },
   };

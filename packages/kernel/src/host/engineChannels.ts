@@ -8,6 +8,7 @@ import {
   insertBlankPageSchema,
   mergeDocumentSchema,
   movePageSchema,
+  replacePageSchema,
   resizePagesSchema,
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -430,6 +431,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   setPageTransitionSchema,
   resizePagesSchema,
   mergeDocumentSchema,
+  replacePageSchema,
 ]);
 
 /**

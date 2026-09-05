@@ -144,6 +144,11 @@ export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
 export const INSERT_FROM_PDF_POSITION = messageKey('dialog.insert-from-pdf.position');
 export const INSERT_FROM_PDF_RANGE = messageKey('dialog.insert-from-pdf.range');
 export const INSERT_FROM_PDF_APPLY = messageKey('dialog.insert-from-pdf.apply');
+export const REPLACE_PAGE_COMMAND_TITLE = messageKey('command.replace-page.title');
+export const REPLACE_PAGE_TITLE = messageKey('dialog.replace-page.title');
+export const REPLACE_PAGE_LABEL = messageKey('dialog.replace-page.label');
+export const REPLACE_PAGE_WHICH = messageKey('dialog.replace-page.which');
+export const REPLACE_PAGE_APPLY = messageKey('dialog.replace-page.apply');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -502,6 +507,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [INSERT_FROM_PDF_POSITION]: 'Insert before page',
   [INSERT_FROM_PDF_RANGE]: 'Between 1 and {last}, where {last} puts it at the end.',
   [INSERT_FROM_PDF_APPLY]: 'Insert',
+  [REPLACE_PAGE_COMMAND_TITLE]: 'Replace page…',
+  [REPLACE_PAGE_TITLE]: 'Replace page',
+  [REPLACE_PAGE_LABEL]: 'Replace it with',
+  // NAMES THE PAGE, because this control destroys one and a reader must be able
+  // to check it is the page they mean before pressing.
+  [REPLACE_PAGE_WHICH]: 'Page {page} will be removed and replaced.',
+  [REPLACE_PAGE_APPLY]: 'Replace page',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:

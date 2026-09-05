@@ -282,6 +282,18 @@ export interface CommandPrior {
    * reasonably wonder whether undo has to reach two documents. It does not.
    */
   readonly mergeDocument: never;
+  /**
+   * **`never`**, and this is the first entry to earn it from BOTH directions at
+   * once.
+   *
+   * Every other `never` here is a command that draws, one that adds pages, or
+   * one that removes them. This does two of those: the prior state is the
+   * replaced page's object graph — `deletePages`' argument — **and** the
+   * absence of the pages that arrived, which is `insertImagePage`'s. Either
+   * alone would be enough; naming both is what stops a later reader concluding
+   * that half of it could be recorded.
+   */
+  readonly replacePage: never;
 }
 
 /**

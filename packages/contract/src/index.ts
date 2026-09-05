@@ -78,6 +78,7 @@ export {
   mergeDocumentSchema,
   movePageSchema,
   renderableCommandSchema,
+  replacePageSchema,
   sourceIdsOf,
   resizePagesSchema,
   rotatePagesSchema,

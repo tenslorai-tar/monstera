@@ -59,7 +59,14 @@ export { applyResizePages, captureResizePages, invertResizePages } from './pageR
 // the split is ADR-0039's: this routes to MuPDF, so importing it binds the
 // native library and it must not be reachable from `main` (ADR-0026,
 // invariant 20).
-export { applyMergeDocument, captureMergeDocument, invertMergeDocument } from './pageMerge.js';
+export {
+  applyMergeDocument,
+  applyReplacePage,
+  captureMergeDocument,
+  captureReplacePage,
+  invertMergeDocument,
+  invertReplacePage,
+} from './pageMerge.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export { localMupdfWriter } from './localEngine.js';

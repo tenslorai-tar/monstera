@@ -16,6 +16,7 @@ import {
   insertFromPdfCommand,
   insertImageCommand,
   mergeDocumentCommand,
+  replacePageCommand,
   generateTocCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
@@ -1046,6 +1047,56 @@ describe('delete pages — the mutation-dialog gate', () => {
         },
       },
     ]);
+  });
+
+  it('replace-page sends replacePage for the page on screen', async () => {
+    const { client, sent } = recording();
+    const opened: unknown[] = [];
+
+    await replacePageCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve({ source: 'doc-2' });
+      },
+    }).run(CONTEXT);
+
+    // THE DIALOG IS TOLD WHICH PAGE, because it destroys one and the reader has
+    // to be able to check it before pressing.
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.replace-page',
+        props: {
+          choices: [
+            { docId: 'doc-0', name: 'Before' },
+            { docId: 'doc-2', name: 'After' },
+          ],
+          page: 3,
+        },
+      },
+    ]);
+    // `at: 3` is `CONTEXT.page` — the page on screen, zero-based, unconverted.
+    // A command that sent `page + 1` would replace the page after the one the
+    // dialog just named, which the dialog's own sentence would not reveal.
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: { docId: DOC, command: { kind: 'replacePage', source: 'doc-2', at: 3 } },
+      },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED replace dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await replacePageCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED merge dialog dispatches nothing', async () => {

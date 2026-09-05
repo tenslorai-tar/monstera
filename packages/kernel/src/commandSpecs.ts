@@ -43,7 +43,14 @@ import {
   invertInsertBlankPage,
 } from './pageOrder.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
-import { applyMergeDocument, captureMergeDocument, invertMergeDocument } from './pageMerge.js';
+import {
+  applyMergeDocument,
+  applyReplacePage,
+  captureMergeDocument,
+  captureReplacePage,
+  invertMergeDocument,
+  invertReplacePage,
+} from './pageMerge.js';
 import { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 import {
   applySetPageTransition,
@@ -259,6 +266,12 @@ const declared = {
     apply: applyMergeDocument,
     capture: captureMergeDocument,
     invert: invertMergeDocument,
+  },
+  replacePage: {
+    ...declaredCommands.replacePage,
+    apply: applyReplacePage,
+    capture: captureReplacePage,
+    invert: invertReplacePage,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

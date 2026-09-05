@@ -632,6 +632,25 @@ const declarations = {
     // everything this composes is in the two page trees it already holds.
     reads: 'none',
   },
+  replacePage: {
+    kind: 'replacePage',
+    // `docs/ARCHITECTURE.md:372`'s page-tree row, and this one touches both
+    // halves of it — a delete and an insert.
+    writer: 'mupdf',
+    // `deletePages`' argument and `mergeDocument`'s in one command: the prior
+    // state is the replaced page's object graph AND the absence of what
+    // arrived. Neither has a serialisable form.
+    invertible: false,
+    undo: 'checkpoint',
+    // The same source into the same target at the same index produces the same
+    // tree. Nothing is read from a clock and nothing is minted.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // ADR-0040's axis, second command to declare it.
+    sources: 'one',
+    // Nothing read through another engine.
+    reads: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

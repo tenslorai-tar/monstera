@@ -2,7 +2,12 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber } from '@cantoo/pdf-
 import { describe, expect, it } from 'vitest';
 
 import { applyDeletePages } from './pageOrder.js';
-import { applyMergeDocument, captureMergeDocument, invertMergeDocument } from './pageMerge.js';
+import {
+  applyMergeDocument,
+  applyReplacePage,
+  captureMergeDocument,
+  invertMergeDocument,
+} from './pageMerge.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
 import type { MupdfSession } from './engineSeam.js';
 
@@ -283,6 +288,87 @@ describe('mergeDocument', () => {
 
     const reread = await PDFDocument.load(bytes);
     expect(reread.catalog.get(PDFName.of('Marker'))?.toString()).toBe('4242');
+  });
+
+  it('replace swaps one page for every page of the source', async () => {
+    const target = await mupdfWriter.open(await flatDocument([100, 110, 120]));
+    const source = await mupdfWriter.open(await flatDocument([200, 210]));
+    try {
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 1 }, source);
+      const bytes = await mupdfWriter.serialise(target);
+      // Page 110 is gone and the source's two are in its place.
+      expect(await widthsOf(bytes)).toEqual([100, 200, 210, 120]);
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(source);
+    }
+  });
+
+  it('replace deletes the page that MOVED, not the index it was given', async () => {
+    // THE CASE THAT SEPARATES the insert-then-delete order from a wrong one.
+    // Inserting first shifts the replaced page by the number of pages added, so
+    // deleting `command.at` afterwards removes one of the NEW pages and leaves
+    // the old one — a document of the right length with the wrong contents,
+    // which every count assertion passes.
+    const target = await mupdfWriter.open(await flatDocument([100, 110, 120]));
+    const source = await mupdfWriter.open(await flatDocument([200, 210]));
+    try {
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 0 }, source);
+      const bytes = await mupdfWriter.serialise(target);
+      // Deleting `at` instead would give [210, 110, 120] — same length.
+      expect(await widthsOf(bytes)).toEqual([200, 210, 110, 120]);
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(source);
+    }
+  });
+
+  it('replace refuses a page the document does not have', async () => {
+    // AND IT DOES NOT CLAMP, unlike every insert here. A replace names a page
+    // that EXISTS; clamping would silently replace the last page for a caller
+    // who asked for one past it.
+    const target = await mupdfWriter.open(await flatDocument([100]));
+    const source = await mupdfWriter.open(await flatDocument([200]));
+    try {
+      await expect(
+        applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 1 }, source),
+      ).rejects.toThrow(/outside this document/u);
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(source);
+    }
+  });
+
+  it('replace keeps every merged page’s parent chain correct', async () => {
+    const target = await mupdfWriter.open(await flatDocument([100, 110]));
+    const source = await mupdfWriter.open(await nestedSource([200, 210, 220]));
+    try {
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 0 }, source);
+      const bytes = await mupdfWriter.serialise(target);
+      expect(await parentsAgreeWithKids(bytes)).toEqual([true, true, true, true]);
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(source);
+    }
+  });
+
+  it('replace preserves a catalog entry, which is what rearrangePages does not', async () => {
+    // `deletePage` IS A DECLARATION UNTIL IT IS RUN. ADR-0006 measured
+    // `rearrangePages` dropping /AcroForm even for the identity permutation,
+    // which is why invariant L6 exists — and both calls live in the same
+    // library. This is the evidence that this one is not that one.
+    const document = await PDFDocument.load(await flatDocument([100, 110]));
+    document.catalog.set(PDFName.of('Marker'), PDFNumber.of(4242));
+    const target = await mupdfWriter.open(await document.save({ useObjectStreams: false }));
+    const source = await mupdfWriter.open(await flatDocument([200]));
+    try {
+      await applyReplacePage(target, { kind: 'replacePage', source: asDocId('s'), at: 0 }, source);
+      const reread = await PDFDocument.load(await mupdfWriter.serialise(target));
+      expect(reread.catalog.get(PDFName.of('Marker'))?.toString()).toBe('4242');
+    } finally {
+      await mupdfWriter.close(target);
+      await mupdfWriter.close(source);
+    }
   });
 
   it('capture always refuses, and says why', async () => {

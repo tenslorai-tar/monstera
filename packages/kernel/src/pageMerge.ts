@@ -121,6 +121,52 @@ export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
   });
 
 /**
+ * Replaces one target page with every page of `source`.
+ *
+ * ## INSERT FIRST, THEN DELETE, and the order is the whole of it
+ *
+ * Deleting first would leave a one-page document holding **no pages** between
+ * the two calls — a state `pageOrder.ts` refuses outright because it is not a
+ * PDF a reader can open, reached here through a different door. Inserting
+ * first means the document is never shorter than it started.
+ *
+ * The consequence is that the page being replaced has MOVED by the time it is
+ * deleted: it sits at `at + pages`, because `pages` new pages were placed in
+ * front of it. Computing that index from the count rather than re-finding the
+ * page is what keeps the two halves in step.
+ *
+ * ## MuPDF's own `deletePage`, for `graftPage`'s reason
+ *
+ * This command is delegated to the authority end to end rather than half of it,
+ * and `pageMerge.test.ts` asserts the target's catalog entries survive — the
+ * check `rearrangePages` fails and the reason invariant L6 exists. A
+ * declaration is not behaviour, so the assertion is the evidence.
+ */
+export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'replacePage'>,
+  source: MupdfSession,
+): Promise<void> =>
+  withDocuments(session, source, (target, from) => {
+    const count = target.countPages();
+    if (command.at >= count) {
+      throw new RangeError(
+        `Page ${String(command.at)} is outside this document, which has ${String(count)} ` +
+          'page(s). Page indices are zero-based. A replace names a page that EXISTS, unlike an ' +
+          'insert, whose index may be one past the end.',
+      );
+    }
+
+    const pages = from.countPages();
+    for (let page = 0; page < pages; page += 1) {
+      target.graftPage(command.at + page, from, page);
+    }
+    // SHIFTED BY WHAT WAS JUST INSERTED. See the module note: the replaced page
+    // is no longer at `command.at`.
+    target.deletePage(command.at + pages);
+  });
+
+/**
  * Reports that prior state cannot be recorded, always.
  *
  * `insertImagePage`'s shape and its reason, with one addition worth stating:
@@ -155,6 +201,31 @@ export const captureMergeDocument = (): Promise<CaptureResult<never>> =>
 export const invertMergeDocument: Invert<'mupdf', 'mergeDocument'> = (): Promise<void> => {
   throw new Error(
     'mergeDocument has no inverse and this is unreachable: its prior state is `never`, so no ' +
+      'caller can build an argument for it. Undo restores the checkpoint the bus took.',
+  );
+};
+
+/**
+ * Reports that prior state cannot be recorded, always.
+ *
+ * Written out rather than aliased to {@link captureMergeDocument}: the reason
+ * travels into the log entry, and a merge's sentence recorded against a replace
+ * names the wrong operation to whoever audits it later. The substance differs
+ * too — this one destroys a page as well as adding some.
+ */
+export const captureReplacePage = (): Promise<CaptureResult<never>> =>
+  Promise.resolve({
+    captured: false,
+    reason:
+      'replacing a page has no recordable prior state: the page that was there is an object and ' +
+      'everything it reaches, which is document-scaled and has no serialisable form. The ' +
+      'checkpoint is of the target; the source is not modified',
+  });
+
+/** Unreachable, for {@link invertMergeDocument}'s reason. */
+export const invertReplacePage: Invert<'mupdf', 'replacePage'> = (): Promise<void> => {
+  throw new Error(
+    'replacePage has no inverse and this is unreachable: its prior state is `never`, so no ' +
       'caller can build an argument for it. Undo restores the checkpoint the bus took.',
   );
 };

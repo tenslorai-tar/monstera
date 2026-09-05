@@ -722,6 +722,40 @@ export const mergeDocumentSchema = z.object({
   at: z.number().int().nonnegative(),
 });
 
+/**
+ * Replace one page with another open document's pages.
+ *
+ * ## Why this is a COMMAND and not two commands
+ *
+ * It is a delete and an insert at one index, and composing it from
+ * `deletePages` plus `mergeDocument` would produce **two log entries** — so one
+ * user action would take two undos, and a document could rest in the state
+ * between them, which is a page missing and nothing put back. One intent is one
+ * entry (ADR-0009 §4).
+ *
+ * ## Its inverse is the target's checkpoint, like every other cross-document
+ * command
+ *
+ * Not a new shape. The prior state is the replaced page and everything it
+ * reaches, plus the absence of what arrived — `deletePages`' argument and
+ * `mergeDocument`'s in one command. `CommandPrior` types it `never` and the bus
+ * checkpoints the target.
+ *
+ * ## The WHOLE source replaces one page
+ *
+ * A source of three pages replacing page 4 leaves a document one page shorter
+ * plus three, which is what *replace with this document* means. Choosing which
+ * of the source's pages to use is the same capability *insert selected pages*
+ * is owed, and blocked on the same missing page count.
+ */
+export const replacePageSchema = z.object({
+  kind: z.literal('replacePage'),
+  /** The open document whose pages take the replaced page's place. */
+  source: docIdSchema,
+  /** Zero-based index of the TARGET page being replaced. */
+  at: z.number().int().nonnegative(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -740,6 +774,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   insertImagePageSchema,
   generateTocSchema,
   mergeDocumentSchema,
+  replacePageSchema,
 ]);
 
 /**
@@ -790,6 +825,7 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // ids and an index however large the documents are. What must not cross is
   // the source's BYTES, and nothing here can express those.
   mergeDocumentSchema,
+  replacePageSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -866,7 +902,9 @@ export function sourceIdsOf(command: Command): readonly DocId[] {
   // Listing all sixteen arms to satisfy the rule would be a list nobody reads
   // and fifteen of whose arms are the same line. The `if` says the same thing
   // and the type check below is what keeps the name honest.
-  if (command.kind === 'mergeDocument') return [command.source];
+  if (command.kind === 'mergeDocument' || command.kind === 'replacePage') {
+    return [command.source];
+  }
   return NO_SOURCES;
 }
 
@@ -893,6 +931,6 @@ const NO_SOURCES: readonly DocId[] = Object.freeze([]);
  * the switch matches a list two lines up, which is a derived count agreeing
  * with itself (4c). The load-bearing half is in the kernel.
  */
-type NamesASecondDocument = 'mergeDocument';
+type NamesASecondDocument = 'mergeDocument' | 'replacePage';
 const _switchCoversExactlyThose: NamesASecondDocument extends CommandKind ? true : never = true;
 void _switchCoversExactlyThose;

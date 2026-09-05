@@ -294,6 +294,25 @@ const MERGE_SPEC = `  mergeDocument: {
     reads: 'none',
   },`;
 
+/**
+ * The second spec declaring `sources: 'one'`, kept separate for
+ * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
+ * which is now this one.
+ */
+const REPLACE_SPEC = `  replacePage: {
+    kind: 'replacePage',
+    writer: 'mupdf',
+    apply: applyReplacePage,
+    capture: captureReplacePage,
+    invert: invertReplacePage,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'one',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -388,6 +407,9 @@ const SPEC_IMPORTS = `import {
   applyMergeDocument,
   captureMergeDocument,
   invertMergeDocument,
+  applyReplacePage,
+  captureReplacePage,
+  invertReplacePage,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -785,6 +807,7 @@ ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
+${REPLACE_SPEC}
 };
 `,
   },
@@ -802,7 +825,7 @@ ${MERGE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `mergeDocument`, `generateToc`, `insertImagePage`,
+    // table has to grow. `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
     // `resizePages`, `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
     // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
@@ -815,7 +838,7 @@ ${MERGE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'mergeDocument' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'replacePage' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -851,6 +874,7 @@ ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
+${MERGE_SPEC}
 };
 `,
   },
@@ -953,6 +977,7 @@ ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
+${REPLACE_SPEC}
 };
 `,
   },
@@ -993,6 +1018,7 @@ ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
+${REPLACE_SPEC}
 };
 `,
   },
@@ -1042,6 +1068,7 @@ ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
+${REPLACE_SPEC}
 };
 `,
   },
@@ -1087,6 +1114,7 @@ ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
 ${MERGE_SPEC}
+${REPLACE_SPEC}
 };
 `,
   },
@@ -1962,7 +1990,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 12 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 13 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

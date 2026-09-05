@@ -27,6 +27,7 @@ import {
   insertImageCommand,
   insertFromPdfCommand,
   mergeDocumentCommand,
+  replacePageCommand,
   deletePagesCommand,
   duplicatePageCommand,
   findDuplicatePagesCommand,
@@ -71,6 +72,7 @@ import { GENERATE_TOC_PROBLEM_DIALOG } from './dialogs/generateTocProblem.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG } from './dialogs/insertImageProblem.js';
 import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
+import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
@@ -237,6 +239,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         MERGE_DOCUMENT_DIALOG,
         MERGE_DOCUMENT_NONE_DIALOG,
         INSERT_FROM_PDF_DIALOG,
+        REPLACE_PAGE_DIALOG,
         DUPLICATE_PAGES_DIALOG,
         SETTINGS_PROBLEM_DIALOG,
       ]),
@@ -686,6 +689,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         insertImageCommand({ client, onApplied: applied, ask }),
         mergeDocumentCommand({ client, onApplied: applied, ask }),
         insertFromPdfCommand({ client, onApplied: applied, ask }),
+        replacePageCommand({ client, onApplied: applied, ask }),
         generateTocCommand({ client, onApplied: applied, ask }),
         findDuplicatePagesCommand({ client, onApplied: applied, ask }),
         undoCommand({ client, onApplied: applied, ask }),

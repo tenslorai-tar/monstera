@@ -1,6 +1,6 @@
 import { useLingui } from '@lingui/react';
 import type { ReactElement } from 'react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 
 import {
   INSERT_FROM_PDF_APPLY,
@@ -8,6 +8,7 @@ import {
   INSERT_FROM_PDF_POSITION,
   INSERT_FROM_PDF_RANGE,
 } from '../messages/en.js';
+import { type DocumentChoice, DocumentChoiceSelect } from './DocumentChoice.js';
 import type { InsertFromPdfAnswer } from './insertFromPdfResult.js';
 import { Button } from '../primitives/Button.js';
 import { Input } from '../primitives/Input.js';
@@ -27,11 +28,6 @@ import type { DialogAnswering } from '../registries/dialogs.js';
  * the field at `pageCount` would make *put it at the end* unexpressible, which
  * is the off-by-one every insert in this build has a note about.
  *
- * ## A native `<select>`, for `MergeDocumentBody`'s reason
- *
- * Invariant 27: Base UI's `SelectPopup` injects a `<style>` element and §9.27's
- * pinned CSP admits no inline style.
- *
  * A default export because `declareDialog` takes a `lazy()` component.
  */
 export default function InsertFromPdfBody({
@@ -39,11 +35,10 @@ export default function InsertFromPdfBody({
   pageCount,
   resolve,
 }: {
-  readonly choices: readonly { readonly docId: string; readonly name: string }[];
+  readonly choices: readonly DocumentChoice[];
   readonly pageCount: number;
 } & DialogAnswering<InsertFromPdfAnswer>): ReactElement {
   const { _ } = useLingui();
-  const pickerId = useId();
   const [source, setSource] = useState(choices[0]?.docId ?? '');
   // DEFAULTS TO THE END, which is what a reader most often means and what makes
   // this dialog's relationship to merge visible: the same command, with the
@@ -60,28 +55,14 @@ export default function InsertFromPdfBody({
 
   return (
     <div className="m-insert-from-pdf">
-      <label className="m-insert-from-pdf__pick" htmlFor={pickerId}>
-        {_(INSERT_FROM_PDF_LABEL)}
-        <select
-          id={pickerId}
-          data-insert-pick="true"
-          value={source}
-          onChange={(event) => {
-            setSource(event.target.value);
-          }}
-        >
-          {choices.map((choice) => (
-            <option key={choice.docId} value={choice.docId}>
-              {choice.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <Input
-        label={INSERT_FROM_PDF_POSITION}
-        value={position}
-        onValueChange={setPosition}
+      <DocumentChoiceSelect
+        label={INSERT_FROM_PDF_LABEL}
+        choices={choices}
+        value={source}
+        onChange={setSource}
+        marker="insert-from-pdf"
       />
+      <Input label={INSERT_FROM_PDF_POSITION} value={position} onValueChange={setPosition} />
       <p className="m-insert-from-pdf__hint" role="status">
         {_(INSERT_FROM_PDF_RANGE, { last: pageCount + 1 })}
       </p>
