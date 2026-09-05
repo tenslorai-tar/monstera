@@ -51,8 +51,8 @@ import { startShell } from './main.js';
  * order.
  */
 startShell(() =>
-  createShellDependencies(
-    {
+  createShellDependencies({
+    appInfo: {
       version: app.getVersion(),
       installChannel: 'development',
     },
@@ -60,27 +60,34 @@ startShell(() =>
     // may hold both Electron and the graph. `composition.ts` takes the picker
     // as a value so that everything opening does with what was picked stays
     // decidable without a runtime.
-    createDocumentPicker(),
+    //
+    // THIS IS THE FILE A NEW SURFACE LANDS IN, and it is deliberately not a
+    // digested one: `ShellComposition` names its fields so that adding one is
+    // an edit here, in `composition.ts` and in `harnessComposition.ts` — never
+    // in `pickerProbe.ts`, whose bytes certify what a person saw.
+    pickDocument: createDocumentPicker(),
     // Its mirror, built here for the same reason and on the line after it, so
-    // the two Electron dialogs this application opens are visible together.
-    createDestinationPicker(),
+    // the Electron dialogs this application opens are visible together.
+    pickDestination: createDestinationPicker(),
     // `userData` and not `sessionData` or `temp`: settings outlive every
     // document and every session, and the two other directories are ones the
     // application and the OS respectively are entitled to empty. Resolved here
     // because only this file may ask Electron where the user's data lives.
-    createSettingsFile(app.getPath('userData')),
+    settings: createSettingsFile(app.getPath('userData')),
     // The recent list, beside the settings and in its own document. Not IN the
     // settings file, and that is invariant L2 rather than tidiness:
     // `settings.load` hands the renderer everything that file holds, so a path
     // stored there would be a path in the renderer with nothing having decided
     // to send it.
-    createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
+    recent: createRecentFiles(createJsonFile(app.getPath('userData'), RECENT_FILE)),
     // Same trade, one layer along. The platform's own module may not import
     // Electron either, so *where the app may write* — which is Electron's
     // question and nobody else's — is resolved here and handed down. Under
     // `sessionData` rather than `temp`: a directory the OS may empty underneath
     // a live host is not one to hand a granted DACL to.
-    createEngineHostPlatform(join(app.getPath('sessionData'), 'engine-sessions')),
+    enginePlatform: createEngineHostPlatform(
+      join(app.getPath('sessionData'), 'engine-sessions'),
+    ),
     // WHERE A DIAGNOSTIC GOES WHEN NOBODY IS WATCHING STDERR, which is every
     // packaged run: a Store application has no terminal attached, so until this
     // existed every failure this repository takes care to describe went to a
@@ -95,9 +102,9 @@ startShell(() =>
     // Its answer is an error STRING — empty on success — which is the shape
     // `RevealDirectory`'s boolean is derived from here, at the only boundary
     // entitled to know what Electron's convention is.
-    createShellLog(app.getPath('userData'), async (directory) => {
+    log: createShellLog(app.getPath('userData'), async (directory) => {
       const problem = await shell.openPath(directory);
       return problem === '';
     }),
-  ),
+  }),
 );

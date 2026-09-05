@@ -209,60 +209,78 @@ export interface EngineHostPlatform {
  * its case executes against a `DocId` that was never opened, so it cannot reach
  * the state its own header called unreachable.
  */
-export function createShellDependencies(
-  appInfo: AppInfo,
-  pickDocument: PickDocument,
+/**
+ * Everything the shell is composed from, **by name**.
+ *
+ * ## A LIST OF NAMES BECAUSE A LIST OF POSITIONS HAD TWO COSTS AND PAID ONE
+ *
+ * This was seven positional parameters, and the comment that used to sit on
+ * `pickDestination` justified inserting it in the middle of them: the types
+ * make a mis-slot loud, so shifting every later argument is safe. **That was
+ * true and it was half the account** (finding EEEEEE-1). The other half is that
+ * `apps/desktop/src/pickerProbe.ts` composes through this function and is
+ * **digested by `docs/picker-probe.json`**, so every change to this parameter
+ * list rewrote a file whose bytes certify a human-driven observation — and
+ * expired it. Three times, each time with `documentPicker.ts` — the thing
+ * actually being observed — byte-identical, and the third time it stopped a
+ * feature rather than costing a click.
+ *
+ * The digest is right and is not narrowed: a probe that stopped driving the
+ * real dialog would genuinely invalidate what a person saw. What was wrong is
+ * that **adding a dependency was an edit to the observer**. Named fields plus
+ * `harnessComposition.ts`'s shared refusal set make it an edit to neither: a
+ * new surface is added here, to the production entry, and to that one shared
+ * object, and every harness that spreads it is unchanged.
+ *
+ * ## The required/optional split is unchanged, and it is B5 rather than taste
+ *
+ * `settings` and `recent` are **required** because a default in memory would
+ * make *this build does not persist* and *this build forgets what you opened*
+ * the states a caller gets by saying nothing — invisible in every test, obvious
+ * only to a user. `log` and `enginePlatform` are optional because their absent
+ * case is a real destination and a real platform state respectively.
+ *
+ * Each surface is a **function or an object, never a path or a `dialog`**:
+ * `app.getPath('userData')` is Electron's answer, and this file may not ask
+ * Electron anything.
+ */
+export interface ShellComposition {
+  readonly appInfo: AppInfo;
+  /** Which document to open. Electron's open dialog, in the shipped build. */
+  readonly pickDocument: PickDocument;
+  /** Where a copy goes. Electron's save dialog, in the shipped build. */
+  readonly pickDestination: PickDestination;
+  /** Where settings are stored. Required — see the note above. */
+  readonly settings: SettingsSurface;
+  /** The recent-files list. Required for `settings`' reason. */
+  readonly recent: RecentFiles;
   /**
-   * Where a copy goes, as a surface for `pickDocument`'s reason.
+   * The Win32 surfaces the engine host is created through, or `null`.
    *
-   * Placed beside it rather than appended, because the two are the same kind of
-   * thing and a reader meeting one should meet the other. That does shift every
-   * later argument by one — the hazard this file's own constructor comment
-   * names — and it is taken here because the types make a mis-slot loud:
-   * `PickDestination` takes a string where the next parameter is a settings
-   * surface, so a transposition is a type error rather than a wrong value.
+   * `null` wherever they do not exist — every unit test, every non-Windows run —
+   * and a document opened there is poisoned rather than left sessionless.
    */
-  pickDestination: PickDestination,
+  readonly enginePlatform?: EngineHostPlatform | null;
   /**
-   * Where settings are stored, as a surface rather than a directory.
-   *
-   * REQUIRED, and deliberately not defaulted to something in memory. A default
-   * would make *this build does not persist* the state a caller gets by saying
-   * nothing, and the failure it produces — preferences that reset every launch —
-   * is invisible in every test and obvious only to a user. B5: the choice is
-   * made visible at each call site instead of explained in a paragraph nobody
-   * has to read.
-   *
-   * The parameter is a surface and not a path for the reason `pickDocument` is a
-   * function and not `dialog`: `app.getPath('userData')` is Electron's answer,
-   * and this file may not ask Electron anything.
+   * Where diagnostics go. Optional, and this is the one surface where that is
+   * right: the absent case is `stderr`, a real destination that every test and
+   * every harness already reads. Required, it would make `createShellLog` run
+   * in unit tests and write a rotating log into somebody's temporary directory
+   * on every `document.open` case.
    */
-  settings: SettingsSurface,
-  /**
-   * The recent-files list, as a surface for `settings`' reason.
-   *
-   * REQUIRED for the same argument, one axis over: a default in memory would
-   * make *this build forgets what you opened* the state a caller gets by saying
-   * nothing — and it would also make the clean-exit marker always report a
-   * clean previous run, which is a crash-recovery offer that never fires while
-   * every test passes.
-   */
-  recent: RecentFiles,
-  enginePlatform: EngineHostPlatform | null = null,
-  /**
-   * Where diagnostics go, as a surface rather than a directory — the same trade
-   * `settings` takes one line up, for the same reason.
-   *
-   * DEFAULTED, and this is the one place in this signature where a default is
-   * right. `settings` is required because *this build does not persist* would be
-   * what a caller gets by saying nothing, and that failure is invisible in every
-   * test. Here the default is `stderr`, which is a real destination and the one
-   * every test and every harness already reads. A required parameter would make
-   * `createShellLog` run in unit tests, which would write a rotating log into
-   * somebody's temporary directory on every `document.open` case.
-   */
-  log: ShellLog | null = null,
-): ShellDependencies {
+  readonly log?: ShellLog | null;
+}
+
+export function createShellDependencies(composition: ShellComposition): ShellDependencies {
+  const {
+    appInfo,
+    pickDocument,
+    pickDestination,
+    settings,
+    recent,
+    enginePlatform = null,
+    log = null,
+  } = composition;
   const capabilities = new CapabilityRegistry();
 
   // Built before the service because the service **registers** it, not after

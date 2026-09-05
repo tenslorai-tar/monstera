@@ -14,8 +14,7 @@ import {
   hostHarness,
 } from './engineHostFake.js';
 import type { DirectoryCreationSurface, DirectoryPath } from './sessionDirectories.js';
-import { createRecentFiles } from './recentFiles.js';
-import { createEphemeralSettings } from './settingsFile.js';
+import { harnessSurfaces } from './harnessComposition.js';
 
 /**
  * The composition root WITH an engine host platform — finding KKKK-7.
@@ -44,10 +43,8 @@ import { createEphemeralSettings } from './settingsFile.js';
  */
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
 
-/** A destination picker no case here reaches. Throws — see `composition.test.ts`. */
-const noDestination = (): Promise<string | null> => {
-  throw new Error('no case here writes a copy, so nothing may pick a destination');
-};
+// The destination picker and the ephemeral stores come from
+// `harnessComposition.ts` — see `composition.test.ts`.
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-composition-host-'));
 
@@ -203,14 +200,12 @@ const ENGINE: FakePeer = (channel) => {
 describe('the composition root, with an engine host platform', () => {
   it('creates a host, verifies containment, opens a session, and ROTATES through it', async () => {
     const spy = platformAnswering(ENGINE);
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(aDocument('sessioned.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(aDocument('sessioned.pdf')),
+      enginePlatform: spy.platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -257,14 +252,12 @@ describe('the composition root, with an engine host platform', () => {
 
   it('undoes through the host, and answers nothing-to-undo when the log is spent', async () => {
     const spy = platformAnswering(ENGINE);
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(aDocument('undone.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(aDocument('undone.pdf')),
+      enginePlatform: spy.platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -332,14 +325,12 @@ describe('the composition root, with an engine host platform', () => {
       return ENGINE(channel, params);
     });
 
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(aDocument('malformed.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(aDocument('malformed.pdf')),
+      enginePlatform: spy.platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -384,14 +375,12 @@ describe('the composition root, with an engine host platform', () => {
           ? SESSION
           : null,
     );
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(aDocument('uncontained.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(aDocument('uncontained.pdf')),
+      enginePlatform: spy.platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -449,14 +438,12 @@ describe('the composition root, with an engine host platform', () => {
           ? SESSION
           : null,
     );
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(aDocument('networked.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(aDocument('networked.pdf')),
+      enginePlatform: spy.platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -492,14 +479,12 @@ describe('the composition root, with an engine host platform', () => {
       ...spy.platform,
       probe: { ...spy.platform.probe, negative: { path: empty, origin: 'app-created' } },
     };
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(aDocument('unreadable.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      platform,
-    );
+      pickDocument: () => Promise.resolve(aDocument('unreadable.pdf')),
+      enginePlatform: platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('the document did not open');
@@ -525,14 +510,12 @@ describe('the composition root, with an engine host platform', () => {
           ? { ok: true, value: { session: `ab0${String(next)}` } }
           : ENGINE(channel, null),
     );
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(paths[next++] ?? null),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(paths[next++] ?? null),
+      enginePlatform: spy.platform,
+    });
 
     const first = await handlers['document.open']({});
     const second = await handlers['document.open']({});
@@ -580,14 +563,12 @@ describe('the composition root, with an engine host platform', () => {
           : ENGINE(channel, null),
     );
     const path = aDocument('quitting.pdf');
-    const { handlers, shutdown } = createShellDependencies(
+    const { handlers, shutdown } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(path),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(path),
+      enginePlatform: spy.platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (!opened.ok || opened.value.kind !== 'opened') throw new Error('it did not open');
@@ -663,14 +644,12 @@ describe('the composition root, with an engine host platform', () => {
    */
   it('CONTROL: shutdown with no host built terminates nothing', async () => {
     const spy = platformAnswering((channel) => ENGINE(channel, null));
-    const { shutdown } = createShellDependencies(
+    const { shutdown } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(null),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      spy.platform,
-    );
+      pickDocument: () => Promise.resolve(null),
+      enginePlatform: spy.platform,
+    });
 
     await shutdown();
 
@@ -690,14 +669,12 @@ describe('the composition root, with an engine host platform', () => {
     };
     const paths = [aDocument('a.pdf'), aDocument('b.pdf')];
     let next = 0;
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition-host test'),
       appInfo,
-      () => Promise.resolve(paths[next++] ?? null),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-      platform,
-    );
+      pickDocument: () => Promise.resolve(paths[next++] ?? null),
+      enginePlatform: platform,
+    });
 
     const first = await handlers['document.open']({});
     const second = await handlers['document.open']({});

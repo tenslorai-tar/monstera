@@ -3,8 +3,7 @@ import { join } from 'node:path';
 import { app, ipcMain, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
-import { createRecentFiles } from './recentFiles.js';
-import { createEphemeralSettings } from './settingsFile.js';
+import { harnessSurfaces } from './harnessComposition.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 import { registerContractHandlers } from './registerHandlers.js';
 
@@ -446,28 +445,15 @@ export async function reportCanvasPixels(
   // before registering, because the sender check needs a real `WebContents` id
   // to compare against; reproducing that order matters, since a harness that
   // registered first would be exercising a configuration the product never runs.
-  const deps = createShellDependencies(
-    { version: app.getVersion(), installChannel: 'development' },
+  const deps = createShellDependencies({
+    ...harnessSurfaces('the canvas harness'),
+    appInfo: { version: app.getVersion(), installChannel: 'development' },
     // THE ONE SUBSTITUTION, and it is a function returning a path because that
     // is exactly what `PickDocument` is. Nothing downstream can tell this from
     // `createDocumentPicker()` — which is the point of the seam, and the reason
     // the dialog is the only thing this proof does not reach.
-    () => Promise.resolve(fixture),
-    // NEVER CALLED, and it throws rather than answering: this harness renders a
-    // document and writes no copy, so a picker that returned a plausible path
-    // would let a copy land on a developer's disk if anything ever reached it.
-    () => {
-      throw new Error('the canvas harness writes no copy, so nothing may pick a destination');
-    },
-    // EPHEMERAL, because this proof runs on a developer's machine and on CI, and
-    // a harness that wrote into the real `userData` would leave the application
-    // configured by a test run.
-    createEphemeralSettings(),
-    // Ephemeral for the same reason: a harness that recorded into the real
-    // recent list would put its fixtures in the user's start screen.
-    createRecentFiles(createEphemeralSettings()),
-    null,
-  );
+    pickDocument: () => Promise.resolve(fixture),
+  });
   const window = createMainWindow(session.defaultSession, deps.failures);
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 

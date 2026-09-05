@@ -223,10 +223,8 @@ async function main() {
   const composition = await built('apps/desktop/dist/composition.js');
   /** @type {typeof import('../../apps/desktop/src/engineHostPlatform.js')} */
   const platformModule = await built('apps/desktop/dist/engineHostPlatform.js');
-  /** @type {typeof import('../../apps/desktop/src/settingsFile.js')} */
-  const settingsModule = await built('apps/desktop/dist/settingsFile.js');
-  /** @type {typeof import('../../apps/desktop/src/recentFiles.js')} */
-  const recentModule = await built('apps/desktop/dist/recentFiles.js');
+  /** @type {typeof import('../../apps/desktop/src/harnessComposition.js')} */
+  const harnessModule = await built('apps/desktop/dist/harnessComposition.js');
   const { buildLargeFixture } = await built('scripts/perf/largeFixture.mjs');
 
   const scratch = mkdtempSync(join(tmpdir(), 'monstera-host-recovery-'));
@@ -252,23 +250,16 @@ async function main() {
       );
     }
 
-    // EPHEMERAL FOR BOTH SURFACES, and the recent list gets its own rather
-    // than sharing the settings one: they are two documents on disk in the
-    // product, and a harness that merged them would be exercising a shape
-    // nothing ships.
-    const { handlers } = composition.createShellDependencies(
-      { version: '0.0.0', installChannel: 'development' },
-      () => Promise.resolve(document),
-      // THROWS. This harness measures host recovery and writes no copy; a
-      // picker that answered would let a stray call put a file on a developer's
-      // disk while the run reported success.
-      () => {
-        throw new Error('the host-recovery harness writes no copy');
-      },
-      settingsModule.createEphemeralSettings(),
-      recentModule.createRecentFiles(settingsModule.createEphemeralSettings()),
-      platform,
-    );
+    // THE SHARED HARNESS SURFACES, spread from `harnessComposition.js` — the
+    // ephemeral stores and the refusing destination picker, with their reasons
+    // stated there once rather than copied here. This file is a `.mjs` loading
+    // the built output, so it names the same object every `.ts` harness does.
+    const { handlers } = composition.createShellDependencies({
+      ...harnessModule.harnessSurfaces('the host-recovery harness'),
+      appInfo: { version: '0.0.0', installChannel: 'development' },
+      pickDocument: () => Promise.resolve(document),
+      enginePlatform: platform,
+    });
 
     const opened = await handlers['document.open']({});
     if (opened.ok !== true || opened.value.kind !== 'opened') {

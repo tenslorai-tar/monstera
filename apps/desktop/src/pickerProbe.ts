@@ -2,8 +2,7 @@ import { app, ipcMain, session } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
-import { createRecentFiles } from './recentFiles.js';
-import { createEphemeralSettings } from './settingsFile.js';
+import { harnessSurfaces } from './harnessComposition.js';
 import { createMainWindow, senderCheckFor } from './window.js';
 import { registerContractHandlers } from './registerHandlers.js';
 
@@ -154,26 +153,24 @@ export async function reportPickerProbe(): Promise<void> {
   const observed = { pathArrived: false };
   const realPicker = createDocumentPicker();
 
-  const deps = createShellDependencies(
-    { version: app.getVersion(), installChannel: 'development' },
-    async () => {
+  const deps = createShellDependencies({
+    // THE SHARED SET FIRST, and this spread is what makes this file's bytes
+    // stable. Every surface this probe does not exercise — the destination
+    // picker, the ephemeral stores, the absent engine platform — comes from
+    // `harnessComposition.ts`, so a dependency added to the shell edits that
+    // object and not this one. This file is DIGESTED by `docs/picker-probe.json`
+    // and an edit here expires a person's observation; three of them were spent
+    // on arguments that had nothing to do with what the person saw.
+    ...harnessSurfaces('the picker probe'),
+    appInfo: { version: app.getVersion(), installChannel: 'development' },
+    // THE ONE OVERRIDE, and it is the whole subject of the record: the real
+    // picker, wrapped only to note that a value came back.
+    pickDocument: async () => {
       const picked = await realPicker();
       observed.pathArrived = picked !== null;
       return picked;
     },
-    // THROWS. This probe certifies the OPEN dialog and writes no copy; a save
-    // picker that answered here would put a second dialog in front of a person
-    // who is being asked to certify one.
-    () => {
-      throw new Error('the picker probe certifies opening, so nothing may pick a destination');
-    },
-    // EPHEMERAL, for the same reason the canvas harness uses one: a person runs
-    // this on their own machine, and a probe that wrote into the real `userData`
-    // would leave the application configured by having been measured.
-    createEphemeralSettings(),
-    createRecentFiles(createEphemeralSettings()),
-    null,
-  );
+  });
   const window = createMainWindow(session.defaultSession, deps.failures);
   registerContractHandlers(ipcMain, deps.handlers, deps.incidents, senderCheckFor(window));
 

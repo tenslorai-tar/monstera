@@ -4,9 +4,8 @@ import { app, dialog } from 'electron';
 
 import { createShellDependencies } from './composition.js';
 import { createDocumentPicker } from './documentPicker.js';
+import { harnessSurfaces } from './harnessComposition.js';
 import { startShell } from './main.js';
-import { createRecentFiles } from './recentFiles.js';
-import { createEphemeralSettings } from './settingsFile.js';
 
 /**
  * Runs the REAL composition root and asks the renderer to use the contract.
@@ -346,26 +345,15 @@ markInstance?.('MONSTERA_SHELL_STARTED');
 
 startShell(() => {
   markInstance?.('MONSTERA_FACTORY_RAN');
-  const dependencies = createShellDependencies(
-    { version: app.getVersion(), installChannel: 'development' },
-    () => {
-      throw new Error('the shell harness has no picker: it does not exercise opening');
-    },
-    () => {
-      throw new Error('the shell harness has no destination picker: it writes no copy');
-    },
-    // EPHEMERAL, so a harness run cannot configure the developer's application.
-    // Not a throwing surface like the picker beside it: the renderer hydrates
-    // from `settings.load` before its first render, so this one IS reached on
-    // every launch, and a throw here would make the harness fail at startup for
-    // a reason unrelated to what it measures.
-    createEphemeralSettings(),
-    // Ephemeral for the settings' reason, and with one of its own: this harness
-    // exercises the QUIT path, which writes the clean-exit marker. A real store
-    // here would leave the developer's own marker set by a harness run and make
-    // the next crash-recovery offer silent.
-    createRecentFiles(createEphemeralSettings()),
-  );
+  // NOTHING IS OVERRIDDEN. This harness exercises startup, the sender check and
+  // the QUIT path, and opens no document — so the shared refusals are exactly
+  // right, and the ephemeral recent list carries its own reason here: quitting
+  // writes the clean-exit marker, and a real store would leave the developer's
+  // marker set by a harness run and make the next crash-recovery offer silent.
+  const dependencies = createShellDependencies({
+    ...harnessSurfaces('the shell harness'),
+    appInfo: { version: app.getVersion(), installChannel: 'development' },
+  });
 
   if (quitProbe === null) return dependencies;
 

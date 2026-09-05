@@ -6,8 +6,7 @@ import { asDocId } from '@monstera/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createShellDependencies } from './composition.js';
-import { createRecentFiles } from './recentFiles.js';
-import { createEphemeralSettings } from './settingsFile.js';
+import { harnessSurfaces } from './harnessComposition.js';
 import type { AppInfo } from './contractHandlers.js';
 
 /**
@@ -36,17 +35,11 @@ import type { AppInfo } from './contractHandlers.js';
  */
 const appInfo: AppInfo = { version: '0.0.0', installChannel: 'development' };
 
-/**
- * A destination picker no case here reaches, and it THROWS.
- *
- * Every case in this file is about opening, poisoning or handler assembly; none
- * writes a copy. A stub returning a plausible path would let a case that
- * accidentally reached it write a file on a developer's disk, and would pass
- * while doing so.
- */
-const noDestination = (): Promise<string | null> => {
-  throw new Error('no case here writes a copy, so nothing may pick a destination');
-};
+// THE DESTINATION PICKER MOVED TO `harnessComposition.ts`, with its reason:
+// every case here is about opening, poisoning or handler assembly and none
+// writes a copy, so a stub returning a plausible path would let a case that
+// accidentally reached it write a file on a developer's disk while passing.
+// It was a copy in three harnesses and two test files; it is one object now.
 
 const scratch = mkdtempSync(join(tmpdir(), 'monstera-composition-'));
 
@@ -63,13 +56,11 @@ function aDocument(name: string): string {
 
 describe('the composition root, with no engine host platform', () => {
   it('leaves an opened document POISONED rather than sessionless', async () => {
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
       appInfo,
-      () => Promise.resolve(aDocument('poisoned.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-    );
+      pickDocument: () => Promise.resolve(aDocument('poisoned.pdf')),
+    });
 
     const opened = await handlers['document.open']({});
     expect(opened.ok).toBe(true);
@@ -99,13 +90,11 @@ describe('the composition root, with no engine host platform', () => {
     // so it fails if `document.save` is declared and unwired — and it asserts
     // the DECLARED code, because `internal` is what an unwired or half-wired
     // path produces and it reaches the renderer as an inconsistency.
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
       appInfo,
-      () => Promise.resolve(aDocument('unsaveable.pdf')),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-    );
+      pickDocument: () => Promise.resolve(aDocument('unsaveable.pdf')),
+    });
 
     const opened = await handlers['document.open']({});
     expect(opened.ok).toBe(true);
@@ -130,13 +119,11 @@ describe('the composition root, with no engine host platform', () => {
     // session was ever asked for. Two declared codes that are not the same
     // code is what separates *the supervisor decided* from *the service
     // refused first*.
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
       appInfo,
-      () => Promise.resolve(null),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-    );
+      pickDocument: () => Promise.resolve(null),
+    });
 
     const executed = await handlers['document.execute']({
       // A well-formed DocId the service has never issued.
@@ -157,13 +144,11 @@ describe('the composition root, with no engine host platform', () => {
     // state by its own route rather than inheriting one.
     const paths = [aDocument('one.pdf'), aDocument('two.pdf')];
     let next = 0;
-    const { handlers } = createShellDependencies(
+    const { handlers } = createShellDependencies({
+      ...harnessSurfaces('the composition test'),
       appInfo,
-      () => Promise.resolve(paths[next++] ?? null),
-      noDestination,
-      createEphemeralSettings(),
-      createRecentFiles(createEphemeralSettings()),
-    );
+      pickDocument: () => Promise.resolve(paths[next++] ?? null),
+    });
 
     const first = await handlers['document.open']({});
     const second = await handlers['document.open']({});
