@@ -154,6 +154,14 @@ export const EXTRACT_PAGES_TITLE = messageKey('dialog.extract-pages.title');
 export const EXTRACT_PAGES_LABEL = messageKey('dialog.extract-pages.label');
 export const EXTRACT_PAGES_EMPTY = messageKey('dialog.extract-pages.empty');
 export const EXTRACT_PAGES_APPLY = messageKey('dialog.extract-pages.apply');
+export const SPLIT_DOCUMENT_COMMAND_TITLE = messageKey('command.split-document.title');
+export const SPLIT_DOCUMENT_TITLE = messageKey('dialog.split-document.title');
+export const SPLIT_DOCUMENT_EACH_PAGE = messageKey('dialog.split-document.each-page');
+export const SPLIT_DOCUMENT_RANGES = messageKey('dialog.split-document.ranges');
+export const SPLIT_DOCUMENT_LABEL = messageKey('dialog.split-document.label');
+export const SPLIT_DOCUMENT_EMPTY = messageKey('dialog.split-document.empty');
+export const SPLIT_DOCUMENT_FILES = messageKey('dialog.split-document.files');
+export const SPLIT_DOCUMENT_APPLY = messageKey('dialog.split-document.apply');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -527,6 +535,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [EXTRACT_PAGES_EMPTY]:
     'Type the pages to extract, for example 1-3, 5. This document is not changed.',
   [EXTRACT_PAGES_APPLY]: 'Extract to a new PDF',
+  [SPLIT_DOCUMENT_COMMAND_TITLE]: 'Split…',
+  [SPLIT_DOCUMENT_TITLE]: 'Split into several PDFs',
+  [SPLIT_DOCUMENT_EACH_PAGE]: 'One file for each page',
+  [SPLIT_DOCUMENT_RANGES]: 'One file for each range',
+  [SPLIT_DOCUMENT_LABEL]: 'Ranges',
+  [SPLIT_DOCUMENT_EMPTY]: 'Type the ranges to split into, for example 1-3, 4-6.',
+  // THE NUMBER A READER CHECKS BEFORE PRESSING, and it says where they go —
+  // the folder is chosen after this dialog, so *saved* would be premature.
+  [SPLIT_DOCUMENT_FILES]: 'This document is not changed. {files} files will be written.',
+  [SPLIT_DOCUMENT_APPLY]: 'Choose a folder…',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:

@@ -42,6 +42,7 @@ import {
   type DocumentGeometry,
   type DocumentDestinationsReader,
   type DocumentExtractReader,
+  type PickDirectory,
   type DocumentLayersReader,
   type DocumentPageLinksReader,
   type CopySource,
@@ -256,6 +257,14 @@ const noImages: ImageSource = {
  * written file is a document made of THOSE pages, and a stub is the one thing
  * that cannot say so.
  */
+/**
+ * The folder picker, refusing. {@link noCopying}'s shape and its reason: a case
+ * that splits supplies its own, and every other case reaching this is a command
+ * asking for a folder it had no business asking for.
+ */
+const noDirectory: PickDirectory = () =>
+  Promise.reject(new Error('this case does not split into a directory'));
+
 const localExtract: DocumentExtractReader = (id, sessions, pages) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
@@ -332,7 +341,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   beforeAll(openDocument);
 
   it('applies the command and returns the version the LANE stamped', async () => {
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     // Opened at 1; one applied mutation makes it 2 (ADR-0009 §5).
     const applied = await commands.execute(docId, rotateOnce);
@@ -379,7 +388,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // before either applies and BOTH inverses record the pre-command state —
     // so undoing twice would leave the page at 90 rather than back where it
     // started, and the document would be in a state it was never in.
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     await Promise.all([commands.execute(docId, rotateOnce), commands.execute(docId, rotateOnce)]);
 
@@ -408,7 +417,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
   });
 
   it('a session that cannot be found is a DEFECT, not an outcome', async () => {
-    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(MissingSessionError);
   });
@@ -429,7 +438,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     poisoned.recordFailure([docId], 'host-death');
     poisoned.recordFailure([docId], 'host-death');
 
-    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     await expect(commands.execute(docId, rotateOnce)).rejects.toThrow(DocumentPoisonedError);
   });
@@ -438,7 +447,7 @@ describe('the composition point owns DocumentService.run -> CommandBus.execute',
     // Without this the case above is satisfied by an `execute` that refuses
     // everything, and by a supervisor whose `poisoned` answers a count for a
     // document it has never heard of.
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     const applied = await commands.execute(docId, rotateOnce);
     expect(applied.version).toBeGreaterThan(0);
@@ -449,7 +458,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   beforeAll(openDocument);
 
   it('reports the geometry the session holds, stamped with the lane version', async () => {
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     const model = await commands.viewModel(docId, ALL_PAGES);
 
@@ -459,7 +468,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   });
 
   it('THE CLAIM: a rotate moves the view model while the BYTE ROUTE reports nothing', async () => {
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     const before = await commands.viewModel(docId, ALL_PAGES);
     const applied = await commands.execute(docId, rotateOnce);
@@ -485,7 +494,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
     poisoned.recordFailure([docId], 'host-death');
     poisoned.recordFailure([docId], 'host-death');
 
-    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     // The asymmetry this rejects: refusing every command while answering reads
     // would draw a document nobody can act on, and a plausible-looking model is
@@ -494,7 +503,7 @@ describe('the view model is the route a mutation reaches the screen by (OOOOO-1)
   });
 
   it('a document with no session is a DEFECT here, as it is for a command', async () => {
-    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
     await expect(commands.viewModel(docId, ALL_PAGES)).rejects.toThrow(MissingSessionError);
   });
@@ -524,7 +533,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
   it('a document that is not open is a DECLARED code, carrying no incident id', async () => {
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
-    const commands = new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
     const result = await wrapped(commands)({ docId, command: rotateOnce });
 
     // The whole failure, asserted as a whole: a declared outcome hides nothing,
@@ -536,7 +545,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // Without this, the case above is satisfied by a handler that reports
     // `document-not-open` for everything.
     const { sink, seen } = recorder();
-    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
     const result = await wrapped(commands, sink)({ docId, command: rotateOnce });
 
     expect(result.ok).toBe(false);
@@ -584,7 +593,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       poisoned.hold(docId, { mupdf: session });
       poisoned.recordFailure([docId], 'host-death');
       poisoned.recordFailure([docId], 'host-death');
-      const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+      const commands = new DocumentCommands(service, bus(), poisoned, noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
       const result = await wrappedRead(commands)({ docId, pages: [0] });
 
@@ -595,7 +604,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
       // Without this, the case above is satisfied by a handler that refuses
       // everything — which would blank the renderer while looking like careful
       // error mapping.
-      const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+      const commands = new DocumentCommands(service, bus(), engine(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
       const result = await wrappedRead(commands)({ docId, pages: [0] });
 
@@ -607,7 +616,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
     it('a defect is `internal` with an id, so the two are not one bucket', async () => {
       const { sink, seen } = recorder();
-      const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract);
+      const commands = new DocumentCommands(service, bus(), noSessions(), noSaving, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory);
 
       const result = await wrappedRead(commands, sink)({ docId, pages: [0] });
 
@@ -647,7 +656,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
           thrown.stack = `Error: Could not read ${SECRET}\n    at sessionFor (${SECRET}:2:2)`;
           throw thrown;
         },
-      }, noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+      }, noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
     }
 
     it('the renderer-facing failure carries the path in NO field', async () => {
@@ -688,7 +697,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
     // The hard shape an in-process test cannot see (audit item 2): the
     // transport clones, and a value carrying anything unclonable passes every
     // function call and dies at the first Electron call.
-    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract);
+    const commands = new DocumentCommands(service, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory);
     const params = { docId, command: rotateOnce };
     expect(structuredClone(params)).toStrictEqual(params);
 
@@ -697,7 +706,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
 
     const closed = new DocumentService(new CapabilityRegistry(), { documentBytesCeiling: AMPLE_CEILING });
     const declined = await wrapped(
-      new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract),
+      new DocumentCommands(closed, bus(), engine(), noSaving, noGeometry, noPageText, noPageLinks, noDestinations, noLayers, noRestore, noDuplicates, noCopying, noImages, localExtract, noDirectory),
     )(params);
     expect(structuredClone(declined)).toStrictEqual(declined);
   });
@@ -755,7 +764,7 @@ describe('the handler answers ADR-0009 §9 rather than assuming wrapHandler did'
             if (held_ === undefined) throw new Error('the fixture holds a session');
             return mupdfWriter.serialise(held_);
           },
-        }, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract),
+        }, localGeometry, localPageText, localPageLinks, localDestinations, localLayers, noRestore, localDuplicates, noCopying, noImages, localExtract, noDirectory),
       };
     }
 
@@ -874,6 +883,7 @@ describe('search is E2s first consumer, through the composition point', () => {
       noCopying,
       noImages,
       localExtract,
+      noDirectory,
     );
   }
 
@@ -950,6 +960,7 @@ describe('search is E2s first consumer, through the composition point', () => {
       noCopying,
       noImages,
       localExtract,
+      noDirectory,
     );
 
     // The asymmetry this prevents: a search answering while every command is

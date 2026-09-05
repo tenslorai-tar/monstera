@@ -82,6 +82,9 @@ export function harnessSurfaces(
     pickImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may pick one`);
     },
+    pickDirectory: () => {
+      throw new Error(`${harness} splits nothing, so nothing may pick a folder`);
+    },
     readImage: () => {
       throw new Error(`${harness} inserts no image, so nothing may read one`);
     },

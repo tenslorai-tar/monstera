@@ -50,6 +50,7 @@ import {
   DocumentCommands,
   type ImageSource,
   type PickDestination,
+  type PickDirectory,
   type PickImage,
   type DocumentDuplicatesReader,
   type DocumentSessions,
@@ -263,6 +264,19 @@ export interface ShellComposition {
    */
   readonly pickImage: PickImage;
   /**
+   * Where a split's outputs go.
+   *
+   * A folder rather than a file, because a split writes several documents and
+   * there is no save dialog for several files. See `directoryPicker.ts` for why
+   * this is a third picker rather than a parameter on the second.
+   *
+   * **Added through this object rather than as a parameter**, which is the
+   * property `9cf27e9` bought: `pickerProbe.ts` is untouched, so
+   * `docs/picker-probe.json` and the human observation it certifies survive
+   * another surface arriving.
+   */
+  readonly pickDirectory: PickDirectory;
+  /**
    * The bytes at a path, bounded before they are read.
    *
    * A surface and not `node:fs`, for `settings`' reason: this file may not ask
@@ -298,6 +312,7 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     pickDocument,
     pickDestination,
     pickImage,
+    pickDirectory,
     readImage,
     settings,
     recent,
@@ -486,7 +501,12 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     const session = sessions.mupdf;
     if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
     return engineHost.extract(session, pages);
-  });
+  },
+  // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
+  // the one part of splitting that genuinely needs Electron, so it is the part
+  // that arrives from `entry.ts` and this file keeps its property of importing
+  // nothing from it.
+  pickDirectory);
 
   const openedDocument = engineHost.openedDocument;
 

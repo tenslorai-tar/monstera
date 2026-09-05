@@ -25,6 +25,8 @@ import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
 import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
 import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
 import { REPLACE_PAGE_DIALOG_ID } from '../dialogs/replacePage.js';
+import { SPLIT_DOCUMENT_DIALOG_ID } from '../dialogs/splitDocument.js';
+import type { SplitDocumentAnswer } from '../dialogs/splitDocumentResult.js';
 import type { ReplacePageAnswer } from '../dialogs/replacePageResult.js';
 import { PAGE_TRANSITION_DIALOG_ID } from '../dialogs/pageTransition.js';
 import type { PageTransitionAnswer } from '../dialogs/pageTransitionResult.js';
@@ -58,6 +60,7 @@ import {
   PAGE_TRANSITION_COMMAND_TITLE,
   ROTATE_PAGE_TITLE,
   SAVE_COPY_TITLE,
+  SPLIT_DOCUMENT_COMMAND_TITLE,
   SAVE_TITLE,
   UNDO_TITLE,
   WATERMARK_PAGES_COMMAND_TITLE,
@@ -1352,6 +1355,47 @@ export function extractPagesCommand(deps: DocumentCommandDeps): UiCommand {
         return;
       }
       if (answer.value.kind === 'copied' || answer.value.kind === 'cancelled') return;
+      void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
+        outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
+      });
+    },
+  };
+}
+
+/**
+ * Writes each group of pages to its own PDF in a folder the user picks.
+ *
+ * `extractPagesCommand`'s shape with a grouping instead of a set, and the same
+ * two-dialog ordering for the same reason: main cannot offer a folder for a
+ * split nobody has described yet.
+ *
+ * The outcomes are the destination path's, so `split` and `cancelled` say
+ * nothing and the two failures open the save problem dialog — the same
+ * treatment a copy gets, because it is the same write.
+ */
+export function splitDocumentCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.split',
+    title: SPLIT_DOCUMENT_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 28 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.pageCount === undefined) return;
+
+      const chosen = (await deps.ask(SPLIT_DOCUMENT_DIALOG_ID, {
+        pageCount: context.pageCount,
+      })) as SplitDocumentAnswer | undefined;
+      if (chosen === undefined) return;
+
+      const answer = await deps.client['document.split']({
+        docId: context.docId,
+        groups: chosen.groups,
+      });
+      if (!answer.ok) {
+        reportProblem(deps, answer.error);
+        return;
+      }
+      if (answer.value.kind === 'split' || answer.value.kind === 'cancelled') return;
       void deps.ask(SAVE_PROBLEM_DIALOG_ID, {
         outcome: answer.value.kind === 'write-failed' ? 'write-failed' : 'contested',
       });

@@ -152,6 +152,20 @@ export const MAX_DESTINATIONS = 4096;
  */
 export const MAX_EXTRACT_PAGES = 4096;
 
+/**
+ * How many documents one split may write.
+ *
+ * {@link MAX_EXTRACT_PAGES}' number, because the case that reaches it is the
+ * same one: *one file per page* of a long document produces exactly as many
+ * outputs as it has pages. A smaller bound here would refuse the feature's own
+ * headline mode on any document past it.
+ *
+ * The two bounds multiply into a request that is still small — an index per
+ * page, however the pages are grouped — so what this refuses is a grouping that
+ * could not have come from a page count rather than a large-but-honest one.
+ */
+export const MAX_SPLIT_PARTS = 4096;
+
 export const MAX_DESTINATION_TITLE_LENGTH = 512;
 
 /**
@@ -811,6 +825,58 @@ export const channels = {
     }),
     z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('copied'), bytes: z.number().int().nonnegative() }),
+      z.object({ kind: z.literal('cancelled') }),
+      z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
+      z.object({ kind: z.literal('write-failed') }),
+    ]),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
+  /**
+   * Writes each group of pages to its own document in a folder the user picks.
+   *
+   * ## A FOLDER, and that is the row's decision rather than an implementation
+   * detail
+   *
+   * A split writes several documents, and there is no save dialog for several
+   * files. The alternative — the save dialog once per output — is unusable the
+   * moment a reader splits a hundred-page document one page per file, which is
+   * the case the feature exists for. So the user picks the place and main
+   * derives the names, and every derived name goes through the same contested
+   * check a copy does, **before anything is written**, because the platform's
+   * own overwrite confirmation cannot fire for a name nobody typed.
+   *
+   * ## ONE mode on the wire, two on the surface
+   *
+   * *One file per page* and *these ranges* are the same request with different
+   * groups — `[[0],[1],[2]]` against `[[0,1,2],[3,4]]` — so the kernel does one
+   * thing and the renderer builds the grouping. A `mode` discriminant would be
+   * a second way to say what the groups already say.
+   *
+   * ## The answer counts FILES, not bytes
+   *
+   * A split's byte total is the sum of documents the user cannot see
+   * individually; *how many files* is what they will look for in the folder.
+   */
+  'document.split': channel(
+    'Writes each group of pages to its own document in a folder the user picks.',
+    z.object({
+      docId: docIdSchema,
+      /**
+       * The outputs, each a non-empty list of zero-based page indices.
+       *
+       * Bounded on both axes: {@link MAX_SPLIT_PARTS} outputs, and
+       * {@link MAX_EXTRACT_PAGES} pages in any one of them. A split of every
+       * page of a long document is the ordinary case, so the first bound is the
+       * document-shaped one.
+       */
+      groups: z
+        .array(z.array(z.number().int().nonnegative()).min(1).max(MAX_EXTRACT_PAGES))
+        .min(1)
+        .max(MAX_SPLIT_PARTS),
+    }),
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('split'), files: z.number().int().positive() }),
       z.object({ kind: z.literal('cancelled') }),
       z.object({ kind: z.literal('refused'), openElsewhere: z.number().int().positive() }),
       z.object({ kind: z.literal('write-failed') }),

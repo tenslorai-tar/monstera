@@ -7,6 +7,7 @@ import { app, shell } from 'electron';
 import { createShellDependencies } from './composition.js';
 import { createDestinationPicker } from './destinationPicker.js';
 import { createDocumentPicker } from './documentPicker.js';
+import { createDirectoryPicker } from './directoryPicker.js';
 import { createImagePicker } from './imagePicker.js';
 import { createEngineHostPlatform } from './engineHostPlatform.js';
 import { RECENT_FILE, createRecentFiles } from './recentFiles.js';
@@ -76,6 +77,10 @@ startShell(() =>
     // together — and the first surface added since composition became an
     // object, which is why `pickerProbe.ts` is absent from this commit.
     pickImage: createImagePicker(),
+    // THE SECOND SURFACE ADDED SINCE COMPOSITION BECAME AN OBJECT, and
+    // `pickerProbe.ts` is absent from this commit too — which is the churn fix
+    // holding rather than being claimed.
+    pickDirectory: createDirectoryPicker(),
     // THE BOUND IS CHECKED BEFORE THE READ, which is the whole reason this is a
     // function here rather than a `readFile` at the call site: `stat` costs
     // nothing and a 4 GB file a user picked by mistake is refused as a decided

@@ -197,6 +197,10 @@ const EXCLUDED: Readonly<Record<string, string>> = {
   // scales with page COUNT — which is the distinction `deletePages` already
   // makes as intent rather than payload.
   'document.extract': 'needs an engine session and a save dialog',
+  // The extract's answer with a file count instead of a byte count, and a
+  // request bounded on both axes — parts and pages-per-part — so the largest
+  // honest ask is still an index per page.
+  'document.split': 'needs an engine session and a folder dialog',
   'document.insertImage': 'needs an engine session and an image picker',
   'document.searchPage': 'needs an engine session',
   'document.viewModel': 'needs an engine session',

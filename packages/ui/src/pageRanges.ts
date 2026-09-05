@@ -52,13 +52,46 @@ export function parsePageRanges(
   text: string,
   pageCount: number,
 ): Result<readonly number[], PageRangeProblem> {
+  const groups = parsePageGroups(text, pageCount);
+  if (!groups.ok) return groups;
+
+  // FLATTENED, DEDUPED AND SORTED — which is what *the set of pages named*
+  // means, and is why this is a view of {@link parsePageGroups} rather than a
+  // second parse. `1-3, 2-4` is five pages once, in order, for a caller that is
+  // going to delete or extract them.
+  const pages = new Set<number>();
+  for (const group of groups.value) for (const page of group) pages.add(page);
+  return ok([...pages].sort((a, b) => a - b));
+}
+
+/**
+ * The same expression, with each comma-separated part kept SEPARATE.
+ *
+ * ## Why the grouping is a different question from the set
+ *
+ * `parsePageRanges` answers *which pages did they name* — deduped and sorted,
+ * because a delete does not care that `2` appeared twice. A split cares about
+ * nothing else: `1-3, 4-6` is two files, and flattening it loses the whole
+ * request. So this is the parse and that one is its flattening, which keeps one
+ * implementation of the syntax and its four refusals (B3a).
+ *
+ * The order is the reader's and there is no dedupe across groups: a page may
+ * legitimately appear in two outputs, and sorting the parts would answer a
+ * different request from the one that was typed.
+ *
+ * @returns one list of zero-based indices per part, in the order written.
+ */
+export function parsePageGroups(
+  text: string,
+  pageCount: number,
+): Result<readonly (readonly number[])[], PageRangeProblem> {
   const parts = text
     .split(',')
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
   if (parts.length === 0) return err({ kind: 'empty' });
 
-  const pages = new Set<number>();
+  const groups: number[][] = [];
   for (const part of parts) {
     // A HYPHEN SPLITS, and exactly one of them: `1-2-3` is not a range and must
     // not be read as `1-2` with a stray tail. Two ends or it is not a range.
@@ -77,10 +110,12 @@ export function parsePageRanges(
     if (to < from) return err({ kind: 'backwards', part });
     if (from < 1 || to > pageCount) return err({ kind: 'out-of-range', part, pageCount });
 
-    for (let page = from; page <= to; page += 1) pages.add(kernelPageOf(page));
+    const group: number[] = [];
+    for (let page = from; page <= to; page += 1) group.push(kernelPageOf(page));
+    groups.push(group);
   }
 
-  return ok([...pages].sort((a, b) => a - b));
+  return ok(groups);
 }
 
 /**

@@ -143,6 +143,7 @@ export function createContractHandlers(deps: {
     'document.undo': undoHandler(deps.commands),
     'document.save': saveHandler(deps.commands),
     'document.extract': extractHandler(deps.commands),
+    'document.split': splitHandler(deps.commands),
     'document.saveCopy': saveCopyHandler(deps.commands),
     'document.insertImage': insertImageHandler(deps.commands),
     'document.readRange': readRangeHandler(deps.documents),
@@ -338,6 +339,33 @@ function extractHandler(commands: DocumentCommands): ContractHandlers['document.
       // is right: the renderer bounds the list against the page count it holds,
       // so reaching here means the two disagree, and that is a defect rather
       // than something to tell the user about.
+      throw thrown;
+    }
+  };
+}
+
+/**
+ * The split's handler.
+ *
+ * {@link extractHandler}'s shape with a different success member — `files`
+ * rather than `bytes` — and the same three refusals, because it is the same
+ * destination path run several times.
+ */
+function splitHandler(commands: DocumentCommands): ContractHandlers['document.split'] {
+  return async ({
+    docId,
+    groups,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.split']>>> => {
+    try {
+      const outcome = await commands.split(docId, groups);
+      if (outcome === undefined) return ok({ kind: 'cancelled' } as const);
+      if (outcome.kind === 'split') return ok({ kind: 'split', files: outcome.files } as const);
+      if (outcome.kind === 'write-failed') return ok({ kind: 'write-failed' } as const);
+      return ok({ kind: 'refused', openElsewhere: outcome.others.length } as const);
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
       throw thrown;
     }
   };

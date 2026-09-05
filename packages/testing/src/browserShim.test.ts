@@ -203,6 +203,7 @@ describe('browser shim', () => {
       'document.save',
       'document.saveCopy',
       'document.searchPage',
+      'document.split',
       'document.undo',
       'document.viewModel',
       'log.reveal',

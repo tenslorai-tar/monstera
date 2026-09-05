@@ -18,6 +18,7 @@ import {
   insertImageCommand,
   mergeDocumentCommand,
   replacePageCommand,
+  splitDocumentCommand,
   generateTocCommand,
   deletePagesCommand,
   findDuplicatePagesCommand,
@@ -1158,6 +1159,38 @@ describe('delete pages — the mutation-dialog gate', () => {
       { id: 'dialog.extract-pages', props: { pageCount: 10 } },
       { id: 'dialog.save-problem', props: { outcome: 'contested' } },
     ]);
+  });
+
+  it('split sends the GROUPS the dialog built, not a mode', async () => {
+    const { client, sent } = recording({
+      'document.split': { kind: 'split', files: 2 },
+    });
+
+    await splitDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve({ groups: [[0, 1], [2]] }),
+    }).run(CONTEXT);
+
+    // NO MODE ON THE WIRE. One-per-page and ranges are the same request with
+    // different groups, so a command that sent a discriminant would be a second
+    // way to say what these already say — and the kernel would then have to
+    // agree with the dialog about what each mode means.
+    expect(sent).toStrictEqual([
+      { id: 'document.split', params: { docId: DOC, groups: [[0, 1], [2]] } },
+    ]);
+  });
+
+  it('CONTROL: a DISMISSED split dialog dispatches nothing', async () => {
+    const { client, sent } = recording();
+
+    await splitDocumentCommand({
+      client,
+      onApplied: () => undefined,
+      ask: () => Promise.resolve(undefined),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([]);
   });
 
   it('CONTROL: a DISMISSED extract dialog dispatches nothing', async () => {

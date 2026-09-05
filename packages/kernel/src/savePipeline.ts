@@ -194,6 +194,105 @@ export type CopyOutcome =
   | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
 
 /**
+ * What a split produced.
+ *
+ * {@link CopyOutcome}'s three members with the success carrying a **count of
+ * files** instead of a count of bytes. A split's byte total says almost nothing
+ * — it is the sum of documents the user cannot see individually — where *how
+ * many files* is the thing they will look for in the folder.
+ *
+ * `refused` and `write-failed` mean *nothing was written*, which is stronger
+ * here than for a copy and is the whole reason the checks run in a first pass:
+ * a split that failed on its ninth file would leave eight documents behind with
+ * no way to tell them from a completed one.
+ */
+export type SplitOutcome =
+  /** Every file is on disk in the chosen directory. */
+  | { readonly kind: 'split'; readonly files: number }
+  /** Another open document reaches one of the derived paths. Nothing written. */
+  | { readonly kind: 'refused'; readonly others: readonly DocId[] }
+  /** The filesystem refused. Nothing was written. */
+  | { readonly kind: 'write-failed'; readonly failure: AtomicWriteFailure };
+
+/**
+ * One output of a split: where it goes, and what goes in it.
+ *
+ * The pages are carried rather than a range, because the caller has already
+ * parsed them and a range would be a second representation of the same set —
+ * and because *one file per page* is expressed as one group per page with no
+ * special case anywhere below.
+ */
+export interface SplitPart {
+  readonly destination: string;
+  readonly pages: readonly number[];
+}
+
+/**
+ * Writes several new documents into a directory the user chose.
+ *
+ * ## EVERY TARGET IS CHECKED BEFORE THE FIRST IS WRITTEN
+ *
+ * `writeDocumentCopy` checks one destination and then writes it. Here a refusal
+ * partway through would leave some of the outputs on disk, and a folder holding
+ * four of nine files looks exactly like a folder holding a completed split of
+ * four — so the contested check runs over the whole set first and the operation
+ * refuses having touched nothing.
+ *
+ * That ordering matters more than it does for a copy for a second reason: the
+ * user picked a **directory**, so these filenames are this build's rather than
+ * theirs, and the platform's own overwrite confirmation never fired for any of
+ * them. This check is the only thing between a derived name and a file the user
+ * did not know they were replacing.
+ *
+ * ## The build is INTERLEAVED with the writes, deliberately
+ *
+ * Each part is extracted and written before the next is extracted, rather than
+ * building all of them first. A split of a large document into one file per
+ * page would otherwise hold every output in memory at once, which is a
+ * document-scaled allocation for no gain — the checks that make the operation
+ * all-or-nothing have already run.
+ *
+ * What that costs is stated rather than hidden: a filesystem failure on the
+ * seventh write leaves six files behind. That is the same exposure an ordinary
+ * save has when the disk fills, and the alternative is the allocation above.
+ *
+ * ## No `DocumentContext`, for `writeDocumentCopy`'s reason
+ *
+ * A split writes copies of parts of the document and changes nothing about it,
+ * so it must not stamp anything clean — and it is given nothing that could.
+ *
+ * @param deps the filesystem, the file naming and the ladder's wait
+ * @param check answers whether a derived path is contested
+ * @param extract builds one part's bytes
+ * @param parts where each output goes and which pages it holds
+ */
+export async function writeDocumentSplit(
+  deps: Pick<SaveDependencies, 'surface' | 'names' | 'wait'>,
+  check: (destination: string) => Promise<CopyTargetVerdict>,
+  extract: (pages: readonly number[]) => Promise<ByteImage>,
+  parts: readonly SplitPart[],
+): Promise<SplitOutcome> {
+  for (const part of parts) {
+    const verdict = await check(part.destination);
+    if (verdict.kind === 'contested') return { kind: 'refused', others: verdict.others };
+  }
+
+  for (const part of parts) {
+    const bytes = await extract(part.pages);
+    const written = await atomicWrite(
+      deps.surface,
+      part.destination,
+      bytes,
+      deps.names(part.destination),
+      deps.wait,
+    );
+    if (!written.ok) return { kind: 'write-failed', failure: written.error };
+  }
+
+  return { kind: 'split', files: parts.length };
+}
+
+/**
  * Writes the document's current bytes to a destination the user chose, and
  * **leaves the document exactly where it was**.
  *

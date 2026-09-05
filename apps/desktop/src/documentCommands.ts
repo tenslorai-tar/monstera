@@ -30,9 +30,16 @@ import {
   type TextMatch,
   findInPages,
   saveDocument,
+  type SplitOutcome,
   writeDocumentCopy,
+  writeDocumentSplit,
 } from '@monstera/kernel';
 import { type DocId, type DocVersion, type QueryProblem, compileQuery } from '@monstera/shared';
+// THE ONE PATH JOIN IN THIS FILE, and it is not invariant L2's concern: the
+// directory came from a picker in this process and never crosses to the
+// renderer, exactly as a destination does. What L2 forbids is a path in a
+// renderer-facing type.
+import { join } from 'node:path';
 
 /**
  * The composition point (ADR-0009, 2026-08-19): the one place that owns
@@ -245,6 +252,25 @@ export type DocumentRestore = (docId: DocId, write: SnapshotWrite) => Promise<vo
 export type PickDestination = (suggestedName: string) => Promise<string | null>;
 
 /**
+ * Where several documents go.
+ *
+ * {@link PickDestination}'s sibling and **not its parameterisation**: it
+ * suggests nothing, because a folder has no name this application could
+ * propose, and it answers the directory the files are derived into rather than
+ * a file the user named.
+ *
+ * That asymmetry is the whole reason split needs its own seam. A save dialog
+ * names one file; a split writes several, so the user chooses the place and
+ * this build chooses the names — which is what makes the contested check
+ * load-bearing rather than a formality, since the platform's own overwrite
+ * confirmation cannot fire for a name the user never typed.
+ *
+ * `null` is the user dismissing the dialog — an outcome, not a failure. The
+ * path never crosses to the renderer.
+ */
+export type PickDirectory = () => Promise<string | null>;
+
+/**
  * Which image becomes a page.
  *
  * `PickDocument`'s shape rather than `PickDestination`'s: nothing is suggested,
@@ -287,6 +313,36 @@ export function suggestedCopyName(name: string): string {
  */
 export function suggestedExtractName(name: string): string {
   return suffixed(name, 'pages');
+}
+
+/**
+ * The filename one part of a split gets.
+ *
+ * **The PAGES name it, not a sequence number**, and that is the decision: a
+ * reader looking at the folder afterwards wants to know which pages are where,
+ * and `<stem> 3.pdf` tells them only which order the split ran in. So it is
+ * `<stem> 4-9.pdf`, in the numbering a person counts in — 1-based, converted
+ * here, which is the one place this file does that arithmetic.
+ *
+ * A single-page group is `<stem> 4.pdf` rather than `<stem> 4-4.pdf`, because
+ * the second reads as a mistake.
+ *
+ * **Non-contiguous groups are named by their ENDS**, so `1, 5, 9` becomes
+ * `<stem> 1-9.pdf` — which is imprecise, and the alternative is a filename
+ * carrying an arbitrary number of parts. That is a real limitation and it is
+ * bounded: the split surface only ever produces contiguous groups, so the
+ * imprecise name is unreachable from it. It is written down because the method
+ * takes any grouping and a later caller could reach it.
+ */
+export function splitPartName(name: string, pages: readonly number[]): string {
+  const first = pages[0];
+  const last = pages[pages.length - 1];
+  // NOT REACHABLE from the split surface, which refuses an empty group before
+  // it gets here — and the type cannot say so, since `readonly number[]` admits
+  // one. Naming the file after nothing would be worse than saying so.
+  if (first === undefined || last === undefined) return suffixed(name, 'part');
+  const span = first === last ? String(first + 1) : `${String(first + 1)}-${String(last + 1)}`;
+  return suffixed(name, span);
 }
 
 /**
@@ -659,6 +715,7 @@ export class DocumentCommands {
   readonly #copy: CopySource;
   readonly #image: ImageSource;
   readonly #extract: DocumentExtractReader;
+  readonly #directory: PickDirectory;
 
   constructor(
     documents: DocumentService,
@@ -710,6 +767,9 @@ export class DocumentCommands {
     // was built to end one layer out. The options object is owed here and in
     // `createEngineHandlers`, as its own unit.
     extract: DocumentExtractReader,
+    // THE FIFTEENTH. See the note one parameter up — the options object is
+    // owed, and this is the second dependency added since it was owed.
+    directory: PickDirectory,
   ) {
     this.#documents = documents;
     this.#bus = bus;
@@ -725,6 +785,7 @@ export class DocumentCommands {
     this.#copy = copy;
     this.#image = image;
     this.#extract = extract;
+    this.#directory = directory;
   }
 
   /**
@@ -1391,6 +1452,56 @@ export class DocumentCommands {
         // atomic write — is the same code on the same terms.
         () => this.#extract(docId, sessions, pages),
         destination,
+      );
+    });
+
+    return value;
+  }
+
+  /**
+   * Writes each group of pages to its own document in a directory the user
+   * picks.
+   *
+   * ## `extract` repeated, and the differences are all in the naming
+   *
+   * The build and the write are the same two steps; what a split adds is that
+   * this build chooses the filenames, because the user chose a folder. So the
+   * contested check runs over every derived path BEFORE the first is written —
+   * `writeDocumentSplit` does that — and the operation refuses having touched
+   * nothing.
+   *
+   * ## The names are derived from the SOURCE and the pages
+   *
+   * `<stem> 1-3.pdf` rather than `<stem> 1.pdf`, `<stem> 2.pdf`: a reader
+   * looking at the folder afterwards wants to know which pages are in which
+   * file, and a sequence number tells them only the order the split ran in.
+   * One-page groups get `<stem> 4.pdf`, because `4-4` reads as a mistake.
+   *
+   * @throws `DocumentNotOpenError` before any dialog appears, for `saveCopy`'s
+   * reason.
+   */
+  async split(docId: DocId, groups: readonly (readonly number[])[]): Promise<SplitOutcome | undefined> {
+    const suggest = this.#documents.nameOf(docId);
+    if (suggest === undefined) throw new DocumentNotOpenError(docId, 'split');
+
+    const directory = await this.#directory();
+    if (directory === null) return undefined;
+
+    const { value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return await writeDocumentSplit(
+        this.#save.deps,
+        this.#copy.checkTarget,
+        (pages) => this.#extract(docId, sessions, pages),
+        groups.map((pages) => ({
+          destination: join(directory, splitPartName(suggest, pages)),
+          pages,
+        })),
       );
     });
 

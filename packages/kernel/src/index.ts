@@ -179,8 +179,11 @@ export {
   type CopyOutcome,
   type SaveOutcome,
   type WriteTargetCheck,
+  type SplitOutcome,
+  type SplitPart,
   saveDocument,
   writeDocumentCopy,
+  writeDocumentSplit,
 } from './savePipeline.js';
 export { TOKEN_BYTES, type TokenBytesSource, cryptoBytes, mintToken } from './token.js';
 export {
