@@ -243,6 +243,12 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
   apply<K extends CommandKind>(
     image: ByteImage,
     command: CommandOfKind<K>,
+    // `never`, WHICH IS THE DECLARATION AND NOT A PLACEHOLDER. `Apply` resolves
+    // byte-image × `sources: 'one'` to `never`, so no pdf-lib command can ever
+    // be handed a source — and typing the parameter `never` here says the bus
+    // has nothing to pass rather than that this writer ignores what it gets.
+    // The bus still passes positionally, so the slot has to exist.
+    _source: never,
     reads?: PreReadValue,
   ): Promise<ByteImage> {
     // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, and that spelling is the
@@ -263,6 +269,22 @@ export const localPdfLibExecution: CommandExecution<'pdf-lib'> = {
     // already says. The obligation to supply it stays where the knowledge is:
     // the bus reads `spec.reads` and resolves precisely when the declaration
     // says to.
+    // THE OUTLINE IS THIRD HERE AND FOURTH ON `CommandExecution`, and that is
+    // not an inconsistency — it is the byte-image branch of `Apply` having no
+    // source parameter AT ALL. `Apply` resolves byte-image × `sources: 'one'`
+    // to `never`, so a pdf-lib apply's third parameter is its outline, while
+    // the execution interface has to carry a slot for writers that do take a
+    // source. This is the one place the two shapes meet, and it is why the
+    // parameter is dropped rather than forwarded.
+    //
+    // THIS LINE WAS WRONG FOR ONE RUN, in exactly the way the comment on
+    // `CommandExecution.apply` predicts: it forwarded `(image, command,
+    // undefined, reads)`, so the outline landed in a slot that does not exist
+    // and `generateToc` received `undefined`. Two bus cases caught it —
+    // `resolves the outline for a command that declares it, exactly once` and
+    // its redo sibling — because both assert the VALUE reaching the apply
+    // rather than only that a resolver was called. A case asserting the call
+    // count alone would have stayed green.
     return (specFor(command).apply as PdfLibApply<K>)(image, command, reads);
   },
   capture<K extends CommandKind>(

@@ -601,6 +601,37 @@ const declarations = {
     // page.
     reads: 'outline',
   },
+  mergeDocument: {
+    kind: 'mergeDocument',
+    // `docs/ARCHITECTURE.md:372` puts "Page tree ops:
+    // delete/insert/extract/MERGE/split/crop/resize" on MuPDF, so the writer is
+    // assigned rather than chosen — and this is the row that ADR-0040 was
+    // written for.
+    writer: 'mupdf',
+    // `deletePages`' argument from the target's side: the prior state of a
+    // document that gained another document's pages is its whole page tree.
+    // ADR-0040's *what this does not do* says the same and adds the half that
+    // matters — the checkpoint is of the TARGET, and the source is not modified
+    // and needs no entry.
+    invertible: false,
+    undo: 'checkpoint',
+    // Grafting the same source into the same target produces the same tree. The
+    // copies' object NUMBERS are not part of what the document says, and a
+    // full-rewrite save renumbers everything anyway (ADR-0008) — the same
+    // argument `duplicatePage` makes one writer along.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // THE FIRST COMMAND TO DECLARE THIS, and the axis was built ahead of it
+    // (ADR-0040 Decision 4). Its `apply` takes the source's session as a third
+    // argument it cannot be called without — and note what the type does NOT
+    // do: an apply that ignored that argument would still compile, which
+    // ADR-0040's correction records as the axis's stated limit. What guards it
+    // is `pageMerge.test.ts`, named in the proof's own allow case.
+    sources: 'one',
+    // Needs nothing read through another engine. Both sessions are MuPDF's, and
+    // everything this composes is in the two page trees it already holds.
+    reads: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

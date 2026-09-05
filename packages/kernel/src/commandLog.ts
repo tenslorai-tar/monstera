@@ -269,6 +269,19 @@ export interface CommandPrior {
    * table is where each command says what its inverse is made of.
    */
   readonly generateToc: never;
+  /**
+   * **`never`**, and this is the first entry whose reason involves a second
+   * document — which changes nothing, and saying why is the point.
+   *
+   * The prior state is *the target without the source's pages*, which is
+   * `deletePages`' entry read backwards exactly as `insertImagePage`'s is. The
+   * source document is **not** part of it: a merge does not modify the source,
+   * so there is nothing about it to restore and no second log entry anywhere.
+   * ADR-0040's *what this does not do* says the same, and it is repeated here
+   * because a reader meeting a cross-document command for the first time will
+   * reasonably wonder whether undo has to reach two documents. It does not.
+   */
+  readonly mergeDocument: never;
 }
 
 /**

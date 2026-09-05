@@ -339,10 +339,27 @@ export function createEngineHandlers(
       return { ok: true, value: { groups: kept, truncated } };
     },
 
-    'engine/apply': async ({ session, command }) => {
+    'engine/apply': async ({ session, command, source }) => {
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
-      await execution.apply(held.session, command);
+
+      // THE SOURCE IS LOOKED UP THE SAME WAY AND REFUSED THE SAME WAY, which is
+      // what makes a closed source document an ordinary `no-such-session` race
+      // rather than a crash inside a native call. Both handles are this host's,
+      // so ADR-0040 needs no new process shape here (its *what this does not
+      // do* says exactly that).
+      //
+      // Resolved BEFORE the apply, so a miss refuses without having touched the
+      // target — a merge that failed halfway would leave the target holding
+      // some of the source's pages with no log entry describing it.
+      let from: MupdfSession | undefined;
+      if (source !== undefined) {
+        const heldSource = sessions.lookup(source);
+        if (heldSource === undefined) return gone;
+        from = heldSource.session;
+      }
+
+      await execution.apply(held.session, command, from);
       return { ok: true, value: {} };
     },
 

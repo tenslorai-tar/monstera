@@ -236,6 +236,14 @@ const noByteImageExpected: CommandInputs = {
   outline: () => {
     throw new Error('this case runs a command declaring reads: none and must not read an outline');
   },
+  // EMPTY RATHER THAN THROWING, and it is the one member here that cannot use
+  // the trick above. `sources` is data the bus indexes, not a function it
+  // calls, so there is no call to refuse — an empty map is the only way to say
+  // *this caller resolved nothing*. What keeps it honest is the bus's own
+  // refusal: a command declaring `sources: 'one'` run against this map throws
+  // `MissingSourceSessionError` naming the id, which is louder than anything
+  // this line could do.
+  sources: new Map(),
 };
 
 /** A session whose page 0 carries a `/Rotate` that is a name, not an integer. */
@@ -1280,6 +1288,10 @@ describe('CommandBus and the reads axis', () => {
           { title: 'Chapter two', page: 2, depth: 0 },
         ]);
       },
+      // EMPTY, for `noByteImageExpected`'s reason: every command in this block
+      // declares `sources: 'none'`, and a map with an entry in it would be a
+      // caller resolving a document nothing asked about.
+      sources: new Map(),
       outlineCalls: () => outlineCalls,
       installed: () => installed,
     };

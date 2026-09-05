@@ -43,6 +43,7 @@ import {
   invertInsertBlankPage,
 } from './pageOrder.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
+import { applyMergeDocument, captureMergeDocument, invertMergeDocument } from './pageMerge.js';
 import { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
 import {
   applySetPageTransition,
@@ -248,6 +249,17 @@ const declared = {
     capture: captureResizePages,
     invert: invertResizePages,
   },
+  // THE FIRST `sources: 'one'` ENTRY. The spread carries that axis in, and
+  // `WriterBinding`'s cross product is what makes `apply` here obliged to be
+  // the three-parameter shape — a two-parameter one would also satisfy it, by
+  // the bivariance ADR-0040's correction records, which is why the guard is
+  // `pageMerge.test.ts` rather than this line.
+  mergeDocument: {
+    ...declaredCommands.mergeDocument,
+    apply: applyMergeDocument,
+    capture: captureMergeDocument,
+    invert: invertMergeDocument,
+  },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them
   // exhaustive over `CommandKind` (ADR-0039). It is imported rather than
@@ -336,13 +348,62 @@ function specFor(command: Command): DeclaredSpecs[CommandKind] {
   return declaredSpecs[command.kind];
 }
 
+/**
+ * One MuPDF `apply` **as this execution calls it**, rather than as its spec
+ * declares it.
+ *
+ * `pdfLibWriter.ts`' `PdfLibApply` on the other writer, and the difference
+ * between the two is the seam's own asymmetry rather than a divergence: a
+ * byte-image `Apply` has **no** source parameter at all — `Apply` resolves
+ * byte-image × `sources: 'one'` to `never` — so that one's third parameter is
+ * its outline, and this one's is its source.
+ *
+ * Optional here because this table holds eleven specs and one of them declares
+ * `sources: 'one'`. A two-parameter implementation is assignable and ignores
+ * what it is passed, which is the bivariance ADR-0040's correction records; the
+ * guard that `mergeDocument` actually reads its source is
+ * `packages/kernel/src/pageMerge.test.ts`.
+ */
+type MupdfApply<K extends CommandKind> = (
+  session: MupdfSession,
+  command: CommandOfKind<K>,
+  source?: MupdfSession,
+) => Promise<void>;
+
 export const localMupdfExecution: CommandExecution<'mupdf'> = {
   // METHOD SYNTAX, so `K` is in scope for the assertion. An arrow would put the
   // cast at `CommandKind` — the whole union — which widens `capture`'s prior
   // state to a union too and stops being assignable to `CommandPrior[K]`. The
   // narrowing has to name the instantiation it is claiming.
-  apply<K extends CommandKind>(session: MupdfSession, command: CommandOfKind<K>): Promise<void> {
-    return (specFor(command).apply as Apply<'mupdf', K>)(session, command);
+  apply<K extends CommandKind>(
+    session: MupdfSession,
+    command: CommandOfKind<K>,
+    source?: MupdfSession,
+  ): Promise<void> {
+    // THE CAST NAMES THE `sources: 'one'` INSTANTIATION, which is the widest of
+    // the two shapes this table holds, and the call passes `source` through
+    // whatever the command declared. `pdfLibWriter.ts` explains why this is not
+    // a guard: an apply that ignores the argument satisfies the signature, so
+    // what makes a merge actually use its source is `pageMerge.test.ts`.
+    //
+    // No `reads` parameter, and that is a fact about MuPDF rather than an
+    // omission: `reads: 'outline'` is pdf-lib's, because ADR-0040's extension
+    // exists precisely for a writer that has no session to read an outline
+    // through. A MuPDF apply that wanted one would already hold the session
+    // `readDestinations` takes.
+    // THE CAST NAMES AN OPTIONAL THIRD PARAMETER, for `pdfLibWriter.ts`'
+    // reason: narrowing `source` from `MupdfSession | undefined` needs either
+    // `as MupdfSession` or `source!`, and lint bans both —
+    // `non-nullable-type-assertion-style` refuses the first and
+    // `no-non-null-assertion` the second. A runtime guard would be worse than
+    // either, turning a state the declaration table makes unreachable into a
+    // refusal.
+    //
+    // So this writer's view of an apply is *may be handed a source*, which is
+    // true of all eleven specs here, and the obligation stays where the
+    // knowledge is: the bus reads `spec.sources` and refuses by name when the
+    // map does not carry the id.
+    return (specFor(command).apply as MupdfApply<K>)(session, command, source);
   },
   capture<K extends CommandKind>(
     session: MupdfSession,

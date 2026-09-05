@@ -93,6 +93,42 @@ export function withDocument<T>(
 }
 
 /**
+ * Runs `work` against the native documents behind **two** sessions.
+ *
+ * ## Why this exists rather than nesting {@link withDocument}
+ *
+ * ADR-0040's cross-document commands need both documents live at once — a
+ * graft reads the source while writing the target, so neither can be resolved,
+ * used and released before the other. Nesting would work at runtime and types
+ * as `Promise<Promise<T>>`, which every caller then has to flatten; and it puts
+ * the provenance check for the two sessions at two nesting levels, where one of
+ * them is easy to write without.
+ *
+ * The **same** `documentFor` runs for both, which is the property that matters:
+ * *only this adapter turns a token into a document* stays true for the second
+ * token as much as the first, so a forged or closed source session is refused
+ * exactly as a target one is.
+ *
+ * ## The two parameters are named, and the order is the command's
+ *
+ * `target` first, `source` second, matching `Apply`'s
+ * `(session, command, source)`. Both are `MupdfSession`, so a transposition is
+ * **not** a type error — `engineSeam.ts` says so at `Apply` and it is why the
+ * bus passes them positionally from a map keyed by `DocId` rather than by role.
+ * Naming them here is what makes a transposed call readable at the one place it
+ * could happen.
+ *
+ * @template T
+ */
+export function withDocuments<T>(
+  target: MupdfSession,
+  source: MupdfSession,
+  work: (target: mupdf.PDFDocument, source: mupdf.PDFDocument) => T,
+): Promise<T> {
+  return promised(() => work(documentFor(target), documentFor(source)));
+}
+
+/**
  * A blank PDF, for an operation whose output is a document that did not exist.
  *
  * **Not a session**, and that distinction is the whole reason this is here

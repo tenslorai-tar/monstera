@@ -1,4 +1,7 @@
+import type { DocId } from '@monstera/shared';
 import { z } from 'zod';
+
+import { docIdSchema } from './schemas.js';
 
 /**
  * Every mutation the renderer can ask for, declared **once** (ADR-0009 §6).
@@ -681,6 +684,44 @@ export const generateTocSchema = z.object({
   at: z.number().int().nonnegative(),
 });
 
+/**
+ * Append another OPEN document's pages into this one.
+ *
+ * ## The source is a `DocId`, and it is a document the user has open
+ *
+ * [ADR-0040](../../../docs/DECISIONS/0040-a-command-names-a-second-document-by-docid.md)
+ * Decisions 1 and 2. Not a path (invariant L2 makes that a compile error, and
+ * it would be a second document-opening path beside `DocumentService.open`),
+ * not bytes (invariant L11 by inspection — a payload that scales with a
+ * document, and a 200 MB IPC message for a 200 MB merge).
+ *
+ * The renderer already holds the id it names: a `DocId` is what `document.open`
+ * answers, what its tabs are keyed by, and what every other channel takes. So a
+ * merge is *these two tabs*, in the vocabulary the renderer already has.
+ *
+ * ## The visible cost, stated here rather than discovered
+ *
+ * Decision 2 takes it deliberately: there is no hidden transient open, so
+ * merging a file that is not open means opening it as a tab first. What that
+ * buys is **one way to open a document** — the place identity is read, the
+ * dedup rule runs, the `FileHandle` is minted, the byte ceiling is checked and
+ * the engine session is granted its directory. A second path would answer all
+ * of that again, and B3a's record is that the second answer agrees with the
+ * first until it does not.
+ */
+export const mergeDocumentSchema = z.object({
+  kind: z.literal('mergeDocument'),
+  /** The open document whose pages are copied in. Never modified. */
+  source: docIdSchema,
+  /**
+   * Zero-based index the source's first page occupies afterwards.
+   *
+   * `insertBlankPage`'s spelling and its bound: `at` is in the destination
+   * frame, so `at: pageCount` appends and the kernel clamps to the count.
+   */
+  at: z.number().int().nonnegative(),
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -698,6 +739,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   resizePagesSchema,
   insertImagePageSchema,
   generateTocSchema,
+  mergeDocumentSchema,
 ]);
 
 /**
@@ -743,6 +785,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // this union is whether a renderer can express the intent in a few numbers,
   // never whether the operation is simple.
   generateTocSchema,
+  // RENDERABLE, and this is the clearest case of the test above: a merge names
+  // a second document by an id the renderer already holds, so the intent is two
+  // ids and an index however large the documents are. What must not cross is
+  // the source's BYTES, and nothing here can express those.
+  mergeDocumentSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -774,3 +821,78 @@ export type CommandKind = Command['kind'];
 
 /** Narrows the union to one member, for a spec's `apply` signature. */
 export type CommandOfKind<K extends CommandKind> = Extract<Command, { kind: K }>;
+
+/**
+ * Which OTHER documents a command's payload names.
+ *
+ * ## This lives here because the payload does
+ *
+ * ADR-0040 Decision 3 has the bus handed *"the sessions of the documents the
+ * command names, resolved by its caller"* — so the caller has to know which
+ * ids those are, and the only honest source for that is the schema that
+ * declared them. `documentCommands.ts` calling this is asking the contract
+ * about a contract thing.
+ *
+ * The alternative was for `documentCommands.ts` to read the kernel's
+ * `declaredCommands[kind].sources`, and that is the wrong table twice over:
+ * that file removed its last routing-table read on 2026-09-04 for B3a reasons
+ * it records at `execute`, and `sources` answers *does the apply need a
+ * session* — the seam's question — where this answers *which ids are in the
+ * payload*. Decision 4 is explicit that those are two different statements.
+ *
+ * ## It is a SWITCH on the kind, deliberately, and not a structural scan
+ *
+ * `'source' in command` would be shorter and would silently pick up any future
+ * field that happened to be called `source`, including one that is not a
+ * `DocId`. Naming the kinds means a command that gains a second-document field
+ * without being added here is a command whose sessions never get resolved —
+ * which surfaces at `MissingSourceSessionError` on its first run rather than as
+ * a wrong document quietly merged.
+ *
+ * **The exhaustiveness is checked below**, so the failure is at compile time
+ * for anything declaring the seam's axis.
+ */
+export function sourceIdsOf(command: Command): readonly DocId[] {
+  // AN `if` ON THE KIND, not a `switch` and not `'source' in command`.
+  //
+  // The structural test is rejected for the reason above — it would pick up any
+  // future field called `source`, including one that is not a `DocId`. A
+  // `switch` with a `default` is rejected by
+  // `@typescript-eslint/switch-exhaustiveness-check`, and correctly: a default
+  // arm makes a switch over a discriminated union stop being exhaustive, so a
+  // new kind would fall through it silently — which is the whole failure this
+  // function's own comment says naming the kinds prevents.
+  //
+  // Listing all sixteen arms to satisfy the rule would be a list nobody reads
+  // and fifteen of whose arms are the same line. The `if` says the same thing
+  // and the type check below is what keeps the name honest.
+  if (command.kind === 'mergeDocument') return [command.source];
+  return NO_SOURCES;
+}
+
+/**
+ * The empty answer, as one frozen array.
+ *
+ * Every command but one returns it, and a fresh `[]` per call would allocate on
+ * the hot path of every `execute` for a value nobody mutates.
+ */
+const NO_SOURCES: readonly DocId[] = Object.freeze([]);
+
+/**
+ * Which kinds {@link sourceIdsOf} answers non-empty for, checked in both
+ * directions.
+ *
+ * `renderableCommandSchema`'s pair, on a different axis and for the same
+ * reason: the switch above is a hand-kept list, and a hand-kept list is right
+ * only where something else refuses to let it drift. Here the anchor is the
+ * kernel's `sources` axis — but this package cannot import the kernel, so what
+ * is checkable *here* is that the list and this type agree, and the kernel's
+ * `commandDeclarations.test.ts` is what ties the type to the declarations.
+ *
+ * That split is stated rather than papered over: on its own this pair proves
+ * the switch matches a list two lines up, which is a derived count agreeing
+ * with itself (4c). The load-bearing half is in the kernel.
+ */
+type NamesASecondDocument = 'mergeDocument';
+const _switchCoversExactlyThose: NamesASecondDocument extends CommandKind ? true : never = true;
+void _switchCoversExactlyThose;

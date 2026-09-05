@@ -1,4 +1,9 @@
-import type { CommandKind, CommandOfKind } from '@monstera/contract';
+// A VALUE IMPORT FROM THE CONTRACT, and the only one here. `sourceIdsOf`
+// answers which documents a payload names, which is a question about the
+// payload — the contract's, not this file's (ADR-0040 Decision 4). The contract
+// imports nothing but `zod` and `@monstera/shared`, so this reaches no engine.
+import { type CommandKind, type CommandOfKind, sourceIdsOf } from '@monstera/contract';
+import type { DocId } from '@monstera/shared';
 
 import type {
   CaptureResult,
@@ -129,11 +134,18 @@ interface WriterFor<K extends CommandKind> {
   apply(
     session: WriterSession[WriterOf<K>],
     command: CommandOfKind<K>,
-    // OPTIONAL, mirroring `CommandExecution.apply` — this type is the narrowed
-    // view of the same member and cannot be narrower than it. What the bus is
-    // obliged to pass is decided by `spec.reads` at the call site, not here:
-    // `K` is generic in this interface, so the declaration a command made is
-    // not available to the signature.
+    // BOTH OPTIONAL AND IN `Apply`'S ORDER, mirroring `CommandExecution.apply`
+    // — this type is the narrowed view of the same member and cannot be
+    // narrower than it. What the bus is obliged to pass is decided by
+    // `spec.sources` and `spec.reads` at the call site, not here: `K` is
+    // generic in this interface, so the declaration a command made is not
+    // available to the signature.
+    //
+    // The order matters more than the optionality does. Two optional parameters
+    // of different types, absent for almost every command, are exactly the pair
+    // a transposition hides in — so every declaration of this member spells
+    // them `(source, reads)` and nothing anywhere reorders them.
+    source?: WriterSession[WriterOf<K>],
     reads?: PreReadValue,
   ): Promise<ByteImage | undefined>;
   capture(
@@ -305,18 +317,78 @@ export interface PreReadAccess {
 }
 
 /**
+ * The sessions of the other documents a command names, resolved by the caller
+ * (ADR-0040 Decision 3).
+ *
+ * ## A MAP, and deliberately not a lookup function
+ *
+ * The ADR is explicit: *"The bus does not gain a document index … a lookup
+ * function here would be that index arriving through a callback."* The bus has
+ * never been able to find a document, and that is what keeps it a router rather
+ * than a second `DocumentService`.
+ *
+ * This is the one place that reasoning differs from {@link PreReadAccess}'
+ * next door, and the difference is real rather than an inconsistency: a
+ * pre-read is a *value about the document the bus is already holding*, so an
+ * accessor costs nothing and buys laziness. A source session is *a different
+ * document*, and being handed one resolved is exactly what stops this file
+ * learning to resolve documents at all.
+ *
+ * ## Keyed by `DocId`, so a transposition is a lookup miss and not a wrong merge
+ *
+ * Both sessions in a merge are `MupdfSession`, so nothing in the type system
+ * separates target from source — `engineSeam.ts` says so at `Apply`. Keying by
+ * id rather than by role means the bus never has to decide which is which: it
+ * looks up the id the command named and passes the answer positionally.
+ */
+export type CommandSources = ReadonlyMap<DocId, SessionsByWriter>;
+
+/**
+ * A command named a document whose sessions were not handed over.
+ *
+ * ADR-0040 Decision 3: *"An id the map does not carry is
+ * `MissingWriterSessionError`'s sibling and is refused by name, for the same
+ * reason: a command naming a document that closed between dispatch and
+ * execution is an ordinary race, not a defect."*
+ *
+ * So this is a refusal rather than a throw at a cast, and it names the id — a
+ * merge against a tab the user closed mid-dialog is the reachable path, and the
+ * message has to let someone tell that apart from a routing mistake.
+ */
+export class MissingSourceSessionError extends Error {
+  constructor(
+    readonly kind: CommandKind,
+    readonly source: DocId,
+  ) {
+    super(
+      `${kind} names document ${source} as a source, and no sessions for it were handed to the ` +
+        `bus. Either that document was closed between dispatch and execution, or its caller did ` +
+        `not resolve it.`,
+    );
+    this.name = 'MissingSourceSessionError';
+  }
+}
+
+/**
  * Everything the bus may ask a caller to resolve about the document it is
  * running against.
  *
  * ## Two interfaces, intersected — `RegisteredWriter`'s shape and its reason
  *
- * {@link ByteImageAccess} answers to ADR-0039 and {@link PreReadAccess} to
- * ADR-0040's extension, so they are **declared separately** where their
- * arguments live, and intersected here because a caller missing either half is
- * a caller `execute` cannot serve. That is exactly what `commandRouting.ts`
- * says about `RegisteredWriter`: *"declared separately because they answer to
- * different documents … and intersected here because a registration missing
- * either half is a writer the bus cannot use."*
+ * {@link ByteImageAccess} answers to ADR-0039, {@link PreReadAccess} to
+ * ADR-0040's extension and {@link SourceSessions} to ADR-0040 Decision 3, so
+ * they are **declared separately** where their arguments live, and intersected
+ * here because a caller missing any of them is a caller `execute` cannot serve.
+ * That is exactly what `commandRouting.ts` says about `RegisteredWriter`:
+ * *"declared separately because they answer to different documents … and
+ * intersected here because a registration missing either half is a writer the
+ * bus cannot use."*
+ *
+ * **The third member is the one that proved the shape.** It arrived one commit
+ * after the second, and it cost no call site anything: a caller that already
+ * built this bag gains a field, where a fourth positional parameter would have
+ * edited every `execute` in the tree again. That is the measured prediction
+ * below coming true rather than a claim about it.
  *
  * ## It is one PARAMETER because the alternative churns every call site
  *
@@ -333,7 +405,25 @@ export interface PreReadAccess {
  * typing means the caller passes the same object either way — the difference is
  * only what each method's signature admits it may reach for.
  */
-export type CommandInputs = ByteImageAccess & PreReadAccess;
+export type CommandInputs = ByteImageAccess & PreReadAccess & SourceSessions;
+
+/**
+ * The other documents' sessions, resolved (ADR-0040 Decision 3).
+ *
+ * Its own interface rather than a bare field on {@link CommandInputs}, so the
+ * three things a caller resolves each name the document that asked for them.
+ */
+export interface SourceSessions {
+  /**
+   * Sessions for every document the command names, keyed by `DocId`.
+   *
+   * **Empty for all but one command**, and required anyway. An optional field
+   * is one a caller satisfies by not looking, which for a merge means the
+   * refusal arrives as `undefined` reaching an apply rather than as
+   * {@link MissingSourceSessionError} naming the id.
+   */
+  readonly sources: CommandSources;
+}
 
 /**
  * What one execution did, for a caller that needs to know without reading the
@@ -527,6 +617,53 @@ export class CommandBus {
   }
 
   /**
+   * The session a command's `apply` receives for the OTHER document it names
+   * (ADR-0040 Decisions 3 and 4).
+   *
+   * ## It branches on the DECLARATION, never on the payload
+   *
+   * `#sessionFor`'s rule one axis along. `declaredCommands[kind].sources` is
+   * what says a command needs a second session; the presence of a `DocId` in
+   * the payload is a different statement, and Decision 4 is explicit that
+   * inferring one from the other is the partial reimplementation B3a is about.
+   *
+   * So a `'none'` command resolves nothing even if its payload happens to carry
+   * an id, and a `'one'` command whose payload names none is a defect that
+   * surfaces here rather than as an `undefined` handed to an apply.
+   *
+   * ## `sourceIdsOf` is the CONTRACT's answer
+   *
+   * Which ids a payload names is a question about the payload, and the payload
+   * is the contract's. This file asks it rather than reading the fields, so a
+   * command that gains a second-document field is added in one place.
+   */
+  #sourceSessionFor<K extends CommandKind>(
+    command: CommandOfKind<K>,
+    sources: CommandSources,
+  ): WriterSession[WriterOf<K>] | undefined {
+    const kind: CommandKind = command.kind;
+    if (declaredCommands[kind].sources === 'none') return undefined;
+
+    const named = sourceIdsOf(command);
+    const source = named[0];
+    if (source === undefined) {
+      throw new Error(
+        `${kind} declares sources: 'one' and its payload names no document. The declaration and ` +
+          `the contract's sourceIdsOf disagree, which is a registration defect rather than a race.`,
+      );
+    }
+
+    const held = sources.get(source);
+    const session = held?.[declaredCommands[kind].writer];
+    if (session === undefined) throw new MissingSourceSessionError(kind, source);
+
+    // The same correlation `#sessionFor` asserts and for the same reason: the
+    // session was looked up under this command's own declared writer, and the
+    // checker cannot carry that through a generic index.
+    return session as WriterSession[WriterOf<K>];
+  }
+
+  /**
    * Captures, applies, records, bumps — in that order, once.
    *
    * Runs inside the document's lane (§7); the caller supplies the
@@ -594,8 +731,13 @@ export class CommandBus {
     // stands, and an outline read after `apply` would describe the document the
     // command produced rather than the one whose pages it is numbering.
     const preRead = await this.#preReadFor(spec.reads, inputs);
+    // RESOLVED BEFORE THE APPLY AND AFTER THE CHECKPOINT, for the same reason
+    // the pre-read is: the checkpoint has to be the target as it stands. It is
+    // a map lookup rather than a read, so nothing about the source can change
+    // between here and the call.
+    const source = this.#sourceSessionFor(command, inputs.sources);
 
-    const applied = await writer.apply(session, command, preRead);
+    const applied = await writer.apply(session, command, source, preRead);
 
     // A BYTE-IMAGE WRITER'S RESULT IS THE DOCUMENT, so installing it is part of
     // applying rather than something a caller does afterwards — and it happens
@@ -738,6 +880,40 @@ export class CommandBus {
    * document, which is exactly the failure §3a was added ahead of any command
    * to prevent.
    */
+  /**
+   * Which documents the next redo would name, so its caller can resolve them.
+   *
+   * ## Why this exists, and why it is not the index ADR-0040 refuses
+   *
+   * Decision 3 has the caller resolve sessions and hand them over, which works
+   * for `execute` because the caller holds the command. **`redo` does not** —
+   * the bus reads the log to find what to re-apply, so at the moment the caller
+   * must build the map it does not know which ids to build it for. The ADR did
+   * not consider redo, and this is the gap being closed rather than a decision
+   * being reinterpreted.
+   *
+   * The two available shapes are: hand the bus a lookup function, or have the
+   * bus say what it is about to do. The first is precisely what Decision 3
+   * rejects — *"a lookup function here would be that index arriving through a
+   * callback"*. This is the second, and it moves nothing: the bus still cannot
+   * find a document, and resolution still happens in the one component that
+   * can.
+   *
+   * ## It answers ids, never sessions
+   *
+   * A `DocId` is a name the renderer already holds. Answering `SessionsByWriter`
+   * would mean the bus had resolved something, which is the line this keeps.
+   *
+   * Empty when there is nothing to redo, and empty for every command that names
+   * no second document — so a caller may pass its answer straight to
+   * {@link redo} without asking whether it needed to.
+   */
+  pendingRedoSources(context: DocumentContext): readonly DocId[] {
+    const entry = context.commandLog(COMMAND_WRITER).peekRedo();
+    if (entry === undefined) return [];
+    return sourceIdsOf(entry.command);
+  }
+
   async redo(
     sessions: SessionsByWriter,
     context: DocumentContext,
@@ -780,8 +956,15 @@ export class CommandBus {
     // must be preserved verbatim is a `stored-effect` command, and this line
     // stops compiling for it at the assignment above.
     const preRead = await this.#preReadFor(spec.reads, inputs);
+    // RE-RESOLVED like the pre-read, and for a sharper version of its reason:
+    // the log entry holds the source's `DocId`, not its session, so a redo runs
+    // against whatever session that document has NOW. A stored session handle
+    // would be one for a document that may have been closed and reopened, which
+    // is the stale-handle failure `documentCommands` resolves inside the lane
+    // to avoid.
+    const source = this.#sourceSessionFor(entry.command, inputs.sources);
 
-    const applied = await writer.apply(session, entry.command, preRead);
+    const applied = await writer.apply(session, entry.command, source, preRead);
     // REACHABLE, unlike `undo`'s: redoing a watermark re-runs it — that is what
     // `replay: 'reapply-intent'` above has just been checked to mean — and the
     // document it produces has to be installed exactly as `execute` installs

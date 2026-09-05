@@ -1,4 +1,9 @@
-import { type CommandKind, type CommandOfKind, MAX_IMAGE_BYTES } from '@monstera/contract';
+import {
+  type CommandKind,
+  type CommandOfKind,
+  MAX_IMAGE_BYTES,
+  sourceIdsOf,
+} from '@monstera/contract';
 // DECLARATIONS, not specs. This reads `spec.writer` and calls nothing on it, so
 // importing the spec table would bind the MuPDF native library **in main** —
 // which invariant 20 forbids by name and §9.17's budget is argued against
@@ -972,7 +977,10 @@ export class DocumentCommands {
         sessions,
         context,
         command,
-        this.#byteImage(docId, sessions),
+        // THE IDS COME FROM THE CONTRACT, not from a field read here.
+        // `sourceIdsOf` is the one answer to *which documents does this payload
+        // name*, and the payload is the contract's (ADR-0040 Decision 4).
+        this.#byteImage(docId, sessions, sourceIdsOf(command)),
       );
       // READ AFTER THE BUS, INSIDE THE LANE, for the reason `Versioned` reads
       // the version there: the command rewrote the canonical image, and the
@@ -1159,12 +1167,59 @@ export class DocumentCommands {
    * reading `reads` here could not serve `redo` anyway, since a redo has no
    * command until the bus has read the log.
    */
-  #byteImage(docId: DocId, sessions: DocumentSessions): CommandInputs {
+  #byteImage(
+    docId: DocId,
+    sessions: DocumentSessions,
+    named: readonly DocId[] = [],
+  ): CommandInputs {
     return {
       current: () => this.#save.flush(docId, sessions),
       adopt: (write) => this.#restore(docId, write),
       outline: () => this.#destinations(docId, sessions),
+      sources: this.#sourcesFor(named),
     };
+  }
+
+  /**
+   * Sessions for the other documents a command names (ADR-0040 Decision 3).
+   *
+   * ## Resolved HERE because this is the component that can find a document
+   *
+   * The bus is a router and has never held a document index. `#engine.sessions`
+   * is the same call `execute` makes for the target, so a source is resolved by
+   * the one mechanism that resolves anything — there is no second lookup path.
+   *
+   * ## A document with no sessions is simply ABSENT from the map
+   *
+   * Not an entry mapping to `undefined`, and not a throw here. The bus refuses
+   * by name with {@link MissingSourceSessionError}, which is where that refusal
+   * belongs: it knows which command named the id and can say so. Throwing here
+   * would report *a document is missing* without being able to say what wanted
+   * it.
+   *
+   * That covers the reachable race — the user closes the source tab between
+   * pressing merge and the command reaching the lane. ADR-0040 calls it *"an
+   * ordinary race, not a defect"*, and an absent key is how it stays one.
+   *
+   * ## The source's LANE is not taken, deliberately
+   *
+   * A merge reads the source and writes the target, so only the target's lane
+   * is entered. Taking both would be two lanes held at once by one command,
+   * which is a deadlock the moment two merges run in opposite directions — and
+   * it would buy nothing, because the source is not modified.
+   *
+   * What that costs is stated rather than hidden: a command running against the
+   * source concurrently could change it mid-graft. The pages already copied
+   * stay copied. That is the same weakness any cross-document read has, and the
+   * alternative is the deadlock.
+   */
+  #sourcesFor(named: readonly DocId[]): ReadonlyMap<DocId, DocumentSessions> {
+    const resolved = new Map<DocId, DocumentSessions>();
+    for (const id of named) {
+      const sessions = this.#engine.sessions(id);
+      if (sessions !== undefined) resolved.set(id, sessions);
+    }
+    return resolved;
   }
 
   /**

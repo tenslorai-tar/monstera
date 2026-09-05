@@ -55,6 +55,11 @@ export {
   invertSetPageTransition,
 } from './pageTransition.js';
 export { applyResizePages, captureResizePages, invertResizePages } from './pageResize.js';
+// BEHIND THE SUBPATH, unlike `generateToc`'s three next door on the barrel, and
+// the split is ADR-0039's: this routes to MuPDF, so importing it binds the
+// native library and it must not be reachable from `main` (ADR-0026,
+// invariant 20).
+export { applyMergeDocument, captureMergeDocument, invertMergeDocument } from './pageMerge.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';
 export { localMupdfWriter } from './localEngine.js';

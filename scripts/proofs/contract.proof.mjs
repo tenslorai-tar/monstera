@@ -267,6 +267,33 @@ const TOC_SPEC = `  generateToc: {
     reads: 'outline',
   },`;
 
+/**
+ * The first spec declaring `sources: 'one'`, kept separate for
+ * {@link MOVE_SPEC}'s reason — the missing-a-kind case omits the newest kind,
+ * which is now this one.
+ *
+ * **Its `apply` takes three parameters** and the third is a second
+ * `MupdfSession`, which is what makes this filler more than bookkeeping:
+ * `WriterBinding` resolves the entry's `apply` from the spread declaration's
+ * `writer` AND its `sources`, so a table accepting `applyMergeDocument` beside
+ * `sources: 'none'` would mean that axis binds nothing. The reject case below
+ * asserts exactly that, and it is the direction the axis DOES hold — the other
+ * one is the recorded limit.
+ */
+const MERGE_SPEC = `  mergeDocument: {
+    kind: 'mergeDocument',
+    writer: 'mupdf',
+    apply: applyMergeDocument,
+    capture: captureMergeDocument,
+    invert: invertMergeDocument,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'one',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -358,6 +385,9 @@ const SPEC_IMPORTS = `import {
   applyResizePages,
   captureResizePages,
   invertResizePages,
+  applyMergeDocument,
+  captureMergeDocument,
+  invertMergeDocument,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -754,6 +784,7 @@ ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
+${MERGE_SPEC}
 };
 `,
   },
@@ -771,8 +802,8 @@ ${TOC_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `generateToc`, `insertImagePage`, `resizePages`,
-    // `setPageBackground` and
+    // table has to grow. `mergeDocument`, `generateToc`, `insertImagePage`,
+    // `resizePages`, `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
     // `watermarkPages`, `cropPages`, `insertBlankPage`, `swapPages`,
     // `duplicatePage` and `deletePages` on 2026-09-04, `movePage` on
@@ -784,7 +815,7 @@ ${TOC_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'generateToc' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'mergeDocument' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -819,6 +850,7 @@ ${TRANSITION_SPEC}
 ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
+${TOC_SPEC}
 };
 `,
   },
@@ -920,6 +952,7 @@ ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
+${MERGE_SPEC}
 };
 `,
   },
@@ -959,6 +992,7 @@ ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
+${MERGE_SPEC}
 };
 `,
   },
@@ -1007,6 +1041,7 @@ ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
+${MERGE_SPEC}
 };
 `,
   },
@@ -1051,6 +1086,7 @@ ${BACKGROUND_SPEC}
 ${RESIZE_SPEC}
 ${INSERT_IMAGE_SPEC}
 ${TOC_SPEC}
+${MERGE_SPEC}
 };
 `,
   },
@@ -1147,10 +1183,22 @@ export const spec: CommandSpec<'rotatePages'> = {
     // deliberately recorded rather than asserted away.
     //
     // What that costs: a merge whose apply ignored its second document would
-    // type-check. What catches it instead is the row's own kernel proof, which
-    // asserts the target contains the source's pages — a document effect, which
-    // is where the wired-tools rule already puts the burden. Stating the limit
-    // is what stops someone reading the declaration as a guarantee it is not.
+    // type-check.
+    //
+    // **THE GUARD IS `packages/kernel/src/pageMerge.test.ts`, and it exists as
+    // of 2026-09-05.** This comment named "the row's own kernel proof" while no
+    // row declared `sources: 'one'`, so it pointed at a guard in the future
+    // tense — an allowance vouched for by something that had not been written.
+    // `mergeDocument` is that row, and the case is
+    // `THE CASE: every merged page names the node that lists it as its parent`,
+    // which fails if the apply does not read its source because there is then
+    // nothing grafted to check.
+    //
+    // That file also measures why a weaker guard would not do: replacing the
+    // engine call with the rejected one left ELEVEN of its thirteen cases
+    // green, including the rotation case. A document effect is where the
+    // wired-tools rule puts the burden, and *which* effect you assert is the
+    // whole question.
     //
     // The reverse direction IS a compile error and the case below is it, so the
     // pair says exactly which half the type system holds.
@@ -1914,7 +1962,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 11 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 12 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

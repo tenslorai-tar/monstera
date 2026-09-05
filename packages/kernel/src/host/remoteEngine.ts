@@ -309,10 +309,22 @@ export function remoteMupdfExecution(
   sessions: RemoteSessions,
 ): CommandExecution<'mupdf'> {
   return {
-    apply: async (session, command) => {
+    apply: async (session, command, source) => {
       answered(
         'engine/apply',
-        await client['engine/apply']({ session: sessions.handleFor(session), command }),
+        await client['engine/apply']({
+          session: sessions.handleFor(session),
+          command,
+          // TRANSLATED TO A HANDLE HERE, exactly as the target is. `handleFor`
+          // is what turns main's session token into the host's, so a source
+          // that main holds but the host does not is refused at the registry
+          // rather than sent as a handle the peer would not recognise.
+          //
+          // `undefined` for every command but a merge, and the channel's schema
+          // makes that absence rather than a null — a message that omits the
+          // field, which is what eleven of the twelve MuPDF commands send.
+          source: source === undefined ? undefined : sessions.handleFor(source),
+        }),
       );
     },
 

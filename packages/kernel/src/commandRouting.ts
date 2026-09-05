@@ -98,7 +98,22 @@ export interface CommandExecution<W extends WriterOfRecord> {
    * byte-image writer produces a new image where a live-session writer mutates
    * in place and returns nothing.
    *
-   * ## `reads` is OPTIONAL here and required by the `Apply` it reaches
+   * ## THE ORDER IS `Apply`'S, and that is load-bearing rather than tidy
+   *
+   * `(session, command, source, reads)` — the same positions `Apply` gives
+   * them, so an execution forwards its arguments straight through. `reads`
+   * landed first and sat third; `source` arriving one commit later moved it,
+   * because the alternative was an execution that TRANSPOSES two optional
+   * parameters on the way past.
+   *
+   * That transposition would have been the one place a silent swap could live.
+   * Both values are optional, both are absent for eleven of thirteen commands,
+   * and for the twelfth a swapped pair is `undefined` reaching an apply that
+   * declared it needed something — a runtime failure a long way from its cause.
+   * Keeping one order everywhere makes the question unaskable (B5).
+   *
+   * ## `reads` and `source` are OPTIONAL here and required by the `Apply` they
+   * reach
    *
    * ADR-0040's 2026-09-05 extension: a command declaring `reads: 'outline'`
    * has a three-parameter `Apply`, and the bus resolves the value before
@@ -121,6 +136,7 @@ export interface CommandExecution<W extends WriterOfRecord> {
   apply<K extends KindsRoutedTo<W>>(
     session: WriterSession[W],
     command: CommandOfKind<K>,
+    source?: WriterSession[W],
     reads?: PreReadValue,
   ): WriterShapeOf[W] extends 'byte-image' ? Promise<ByteImage> : Promise<void>;
 

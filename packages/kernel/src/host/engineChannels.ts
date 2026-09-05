@@ -6,6 +6,7 @@ import {
   deletePagesSchema,
   duplicatePageSchema,
   insertBlankPageSchema,
+  mergeDocumentSchema,
   movePageSchema,
   resizePagesSchema,
   rotatePagesSchema,
@@ -428,6 +429,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   cropPagesSchema,
   setPageTransitionSchema,
   resizePagesSchema,
+  mergeDocumentSchema,
 ]);
 
 /**
@@ -823,7 +825,31 @@ export const engineChannels = {
 
   'engine/apply': channel(
     'Applies one MuPDF-routed command to a session this host holds.',
-    z.object({ session: sessionSchema, command: mupdfCommandSchema }).strict(),
+    z
+      .object({
+        session: sessionSchema,
+        command: mupdfCommandSchema,
+        /**
+         * The source document's session, for a `sources: 'one'` command.
+         *
+         * **A second SESSION TOKEN, which is why ADR-0040 needs no new process
+         * shape**: both documents are MuPDF sessions in this same host, so what
+         * crosses is another handle this host already holds — never bytes, and
+         * never a path.
+         *
+         * Optional because eleven of the twelve MuPDF-routed commands name no
+         * second document. It is `.optional()` rather than nullable for the
+         * reason `mergeDocumentSchema` is not: this is a field that may be
+         * absent from the message, not a value that may be null, and the two
+         * spellings mean different things to a caller.
+         *
+         * A token this host does not hold answers `no-such-session` exactly as
+         * the target's does — the handler looks both up the same way, so a
+         * closed source is the same ordinary race as a closed target.
+         */
+        source: sessionSchema.optional(),
+      })
+      .strict(),
     z.object({}).strict(),
     ['no-such-session'],
   ),
