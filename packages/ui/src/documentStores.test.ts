@@ -183,4 +183,61 @@ describe('the navigation history', () => {
     // is what a mis-adjusted index would get wrong.
     expect(store.getState().back()).toBe(59);
   });
+
+  /**
+   * The remap contract's first assertion outside the arithmetic's own file.
+   *
+   * `pageOrder.test.ts` proves `remapPageIndex` answers correctly. These prove
+   * the INVARIANT — that a back-stack still points at the pages it pointed at
+   * after the document is reordered — which is the half `docs/FEATURES.md` has
+   * recorded as unproven since the arithmetic landed.
+   */
+  it('the back-stack FOLLOWS its pages across a move', () => {
+    const store = fresh();
+    store.getState().jumpTo(1);
+    store.getState().jumpTo(4);
+
+    // Page 0 moves to the end of a five-page document: `0 1 2 3 4` becomes
+    // `1 2 3 4 0`, so the reader's 1 and 4 become 0 and 3.
+    store.getState().movedPages(5, { from: 0, to: 4 });
+
+    const state = store.getState();
+    expect(state.history).toStrictEqual([4, 0, 3]);
+    // AND THE CURSOR STILL POINTS AT THE SAME JUMP, which a remap that
+    // rebuilt the array without tracking `historyAt` would get wrong while
+    // leaving the entries correct.
+    expect(state.historyAt).toBe(2);
+    expect(state.page).toBe(3);
+    expect(store.getState().back()).toBe(0);
+  });
+
+  it('CONTROL: without the move the same stack is unchanged', () => {
+    // Without this, the case above passes for a `movedPages` that rewrites the
+    // history to anything at all — including the identity, which for some
+    // fixtures is the correct answer and for this one is not.
+    const store = fresh();
+    store.getState().jumpTo(1);
+    store.getState().jumpTo(4);
+
+    expect(store.getState().history).toStrictEqual([0, 1, 4]);
+  });
+
+  it('an entry the move deletes is DROPPED, and the cursor moves with it', () => {
+    // `remapPageIndex` answers `null` for a page outside the document, which is
+    // how an entry stops resolving. Clamping instead would put a page the
+    // reader never visited into their own history.
+    const store = fresh();
+    store.getState().jumpTo(1);
+    store.getState().jumpTo(2);
+
+    // A three-page document: page 7 is outside it, so the entries that map to
+    // nothing go. `0 1 2` is the identity, so only the out-of-range entry is
+    // affected — asserted through a move that keeps the rest still.
+    store.getState().movedPages(2, { from: 0, to: 1 });
+
+    const state = store.getState();
+    // Pages 0 and 1 survive as 1 and 0; page 2 is outside a two-page document.
+    expect(state.history).toStrictEqual([1, 0]);
+    expect(state.historyAt).toBe(1);
+  });
 });

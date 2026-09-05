@@ -66,3 +66,17 @@ export {
   viewportPoint,
   xObjectPoint,
 } from './geometry.js';
+// THE REMAP CONTRACT, moved here 2026-09-05 from `packages/kernel`. It is pure
+// arithmetic over two numbers and a page count, and its one real consumer is
+// the renderer's back-stack — which `eslint.config.js` gives the reach
+// `['shared', 'contract']`, so it could not import the engine subpath these
+// lived on. The kernel re-exports them, so the permutation a tree rewrite is
+// built from and the one a consumer asks about are the same function (B3a).
+export {
+  type PriorPageOrder,
+  keptPermutation,
+  movePermutation,
+  remapPageIndex,
+  remapPageIndexAfterDelete,
+  swapPermutation,
+} from './pageRemap.js';

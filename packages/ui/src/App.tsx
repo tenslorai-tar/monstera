@@ -305,9 +305,23 @@ export function App({ client, settings }: AppProps): ReactElement {
         { client, onApplied: applied, ask },
         activeId,
         { kind: 'movePage', from, to },
-      );
+      ).then((moved) => {
+        // THE REMAP CONTRACT'S CALLER, and it runs only when the document
+        // actually moved — `applyDocumentCommand` answers `false` for a refused
+        // command, and remapping a history across a move that did not happen
+        // would send the reader to a page the document never reordered.
+        //
+        // The back-stack is the ONE renderer-side consumer that needs this:
+        // destinations and the outline are re-queried after a version bump and
+        // resolve fresh, where a history is a record of where the reader has
+        // been and nothing re-reads it.
+        if (!moved) return;
+        const count = stores.get(activeId)?.getState().pageCount;
+        if (count === undefined) return;
+        stores.get(activeId)?.getState().movedPages(count, { from, to });
+      });
     },
-    [activeId, applied, ask, client],
+    [activeId, applied, ask, client, stores],
   );
 
   /**

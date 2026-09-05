@@ -1,4 +1,9 @@
-import type { DocId, DocVersion } from '@monstera/shared';
+import {
+  type DocId,
+  type DocVersion,
+  type PriorPageOrder,
+  remapPageIndex,
+} from '@monstera/shared';
 import { type StoreApi, createStore } from 'zustand/vanilla';
 
 import { DEFAULT_ZOOM, type ZoomMode } from './zoom.js';
@@ -166,6 +171,36 @@ export interface DocumentActions {
   /** Steps forward. See {@link back}. */
   readonly forward: () => number | undefined;
 
+  /**
+   * Follows the back-stack across a page move — **the remap contract's first
+   * caller outside a test.**
+   *
+   * ## Why the history needs this and nothing else in the renderer does
+   *
+   * Every other consumer of a page index re-queries after a version bump:
+   * destinations and the outline are read fresh, so they resolve against the
+   * document as it now is. The back-stack cannot. It is a record of where the
+   * reader HAS BEEN, held in the renderer, and a move renumbers the pages it
+   * points at — so `Alt+Left` after a reorder returns the reader to a page they
+   * were never on, silently and looking correct.
+   *
+   * ## It asks the same array the tree rewrite was built from
+   *
+   * `remapPageIndex` is the kernel's own permutation, moved to
+   * `@monstera/shared` so this side can reach it. Deriving the mapping here
+   * instead would be a second opinion about what a move means, agreeing with
+   * the engine until one of them was fixed (B3a).
+   *
+   * ## An entry that no longer resolves is DROPPED, not clamped
+   *
+   * `remapPageIndex` answers `null` for a page the document no longer has, and
+   * the honest response is to forget it: clamping would put a page the reader
+   * never visited into their history, which is worse than a shorter stack.
+   * `historyAt` moves with the entries before it so the cursor still points at
+   * the same jump.
+   */
+  readonly movedPages: (count: number, move: PriorPageOrder) => void;
+
   /** Records the magnification the reader chose for THIS document. */
   readonly zoomed: (mode: ZoomMode) => void;
 
@@ -253,6 +288,34 @@ export function createDocumentStore(
       if (target === undefined) return undefined;
       set({ historyAt: at, page: target });
       return target;
+    },
+    movedPages: (count, move) => {
+      const state = get();
+      // REMAPPED THEN FILTERED, in that order, so the cursor is computed
+      // against the entries that survive rather than against the old indices.
+      const remapped = state.history.map((page) => remapPageIndex(count, move, page));
+      const kept: number[] = [];
+      let at = 0;
+      for (const [index, page] of remapped.entries()) {
+        if (page === null) continue;
+        if (index <= state.historyAt) at = kept.length;
+        kept.push(page);
+      }
+      if (kept.length === 0) {
+        // EVERY ENTRY GONE is a real state — a one-page history whose page was
+        // moved out of range cannot happen, but a caller may hand any move.
+        // Seeding with the current page keeps the invariant `initial` states:
+        // an empty history makes the first Alt+Left do nothing for a reason
+        // the reader cannot see.
+        const here = remapPageIndex(count, move, state.page) ?? state.page;
+        set({ page: here, history: [here], historyAt: 0 });
+        return;
+      }
+      set({
+        page: remapPageIndex(count, move, state.page) ?? state.page,
+        history: kept,
+        historyAt: at,
+      });
     },
     zoomed: (mode) => {
       set({ zoom: mode });

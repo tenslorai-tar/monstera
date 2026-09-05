@@ -1,4 +1,15 @@
 import type { CommandOfKind } from '@monstera/contract';
+// ONLY WHAT THIS FILE CALLS. The two remap lookups are re-exported below and
+// not imported: nothing here uses them, because a write does not ask where an
+// index went — it builds the permutation and applies it. That asymmetry is the
+// contract working, and importing them to keep the two lists symmetrical would
+// be an unused import lint is right to refuse.
+import {
+  type PriorPageOrder,
+  keptPermutation,
+  movePermutation,
+  swapPermutation,
+} from '@monstera/shared';
 import type { PDFDocument, PDFObject } from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
@@ -48,62 +59,37 @@ import { withDocument } from './mupdfWriter.js';
 /** Attributes a leaf may inherit from an ancestor `/Pages` node (PDF 32000-1 §7.7.3.4). */
 const INHERITABLE = ['Resources', 'MediaBox', 'CropBox', 'Rotate'] as const;
 
-/** What a move needs in order to be undone. */
-export interface PriorPageOrder {
-  /** Where the page was before the move. */
-  readonly from: number;
-  /** Where it is after it. */
-  readonly to: number;
-}
-
 /**
- * The destination order a single move produces.
+ * The remap contract, **re-exported from `@monstera/shared`**.
  *
- * Exported because it is the **remap contract's** answer for this command: a
- * consumer holding a page index asks what that index becomes, and the honest
- * way to answer is the same array the write is built from. Deriving it twice —
- * once to rewrite the tree and once to remap a destination — is two opinions
- * about what a move means (B3a), and they would agree until the day one of them
- * was fixed.
+ * It was declared here, beside the writes it is derived from, and moved on
+ * 2026-09-05 because its one real consumer could not reach it: the renderer's
+ * back-stack needs the arithmetic, and `eslint.config.js` gives `ui` the reach
+ * `['shared', 'contract']` — not `@monstera/kernel/engine`, which is where this
+ * module lives and which binds the native library.
  *
- * `permutation[d]` is the SOURCE index that ends up at destination `d`.
+ * **Re-exported rather than left behind a wrapper**, so the permutation this
+ * file's tree rewrites are built from and the permutation a consumer asks about
+ * are literally the same function. That was the property the original comment
+ * claimed — *deriving it twice is two opinions about what a move means* — and a
+ * copy on either side of the boundary would have spent it.
  *
- * @param count how many pages the document has
+ * Nothing that imported these had to change, which is what makes this a move
+ * rather than a redesign.
  */
-export function movePermutation(count: number, from: number, to: number): readonly number[] {
-  const order = Array.from({ length: count }, (_unused, index) => index);
-  const [moved] = order.splice(from, 1);
-  // `moved` is `number | undefined` under noUncheckedIndexedAccess, and the
-  // caller has already bounded `from` — but a splice that removed nothing must
-  // not silently insert `undefined` into the order, so it is a refusal.
-  if (moved === undefined) throw new RangeError(`page ${String(from)} is not in this document`);
-  order.splice(to, 0, moved);
-  return order;
-}
-
-/**
- * Where a page index ends up after a move — the remap, for one index.
- *
- * **The inverse lookup of {@link movePermutation}**, and derived from it rather
- * than reasoned about: `permutation[d] === s` means the page at source `s` is
- * at destination `d` afterwards. Written as a search over the array the write
- * itself uses, so a consumer's answer cannot disagree with the tree.
- *
- * Returns `null` for an index the document does not have, which is a real state
- * rather than a failure: a stale destination pointing past the end is something
- * a panel renders as unresolvable, exactly as it already renders a `/Dest` that
- * names no page.
- */
-export function remapPageIndex(
-  count: number,
-  move: PriorPageOrder,
-  page: number,
-): number | null {
-  if (page < 0 || page >= count) return null;
-  const order = movePermutation(count, move.from, move.to);
-  const at = order.indexOf(page);
-  return at === -1 ? null : at;
-}
+// IMPORTED AND RE-EXPORTED, which is two statements because a bare
+// `export … from` does not bring the names into this module's own scope — and
+// the writes below call them. That is the property this file keeps: the
+// permutation `setKids` is handed is the same value a consumer is answered
+// with, not a second implementation agreeing with it.
+export {
+  type PriorPageOrder,
+  keptPermutation,
+  movePermutation,
+  remapPageIndex,
+  remapPageIndexAfterDelete,
+  swapPermutation,
+} from '@monstera/shared';
 
 /** Follows an indirect reference; `PDFObject.Null` has no document to resolve against. */
 function deref(object: PDFObject): PDFObject {
@@ -192,12 +178,6 @@ function rewriteKids(document: PDFDocument, permutation: readonly number[]): voi
  * @param count how many pages the document has
  * @param removed zero-based indices in the document as it stands
  */
-export function keptPermutation(count: number, removed: Iterable<number>): readonly number[] {
-  const gone = new Set(removed);
-  const kept: number[] = [];
-  for (let index = 0; index < count; index += 1) if (!gone.has(index)) kept.push(index);
-  return kept;
-}
 
 /**
  * Where a page index ends up after a delete, or `null` if it was one of them.
@@ -208,15 +188,6 @@ export function keptPermutation(count: number, removed: Iterable<number>): reado
  * and they are deliberately the same answer, because a destination that no
  * longer resolves is one thing to a panel however it stopped resolving.
  */
-export function remapPageIndexAfterDelete(
-  count: number,
-  removed: Iterable<number>,
-  page: number,
-): number | null {
-  if (page < 0 || page >= count) return null;
-  const at = keptPermutation(count, removed).indexOf(page);
-  return at === -1 ? null : at;
-}
 
 /**
  * The pages a delete would remove, refusing a command this document cannot take.
@@ -305,17 +276,6 @@ export const invertDeletePages: Invert<'mupdf', 'deletePages'> = (): Promise<voi
  * the reason that is safe to rely on here where {@link movePermutation}'s
  * transposition is not: nothing between the two indices shifts.
  */
-export function swapPermutation(count: number, a: number, b: number): readonly number[] {
-  const order = Array.from({ length: count }, (_unused, index) => index);
-  const first = order[a];
-  const second = order[b];
-  if (first === undefined || second === undefined) {
-    throw new RangeError(`pages ${String(a)} and ${String(b)} are not both in this document`);
-  }
-  order[a] = second;
-  order[b] = first;
-  return order;
-}
 
 /** What a swap needs in order to be undone: the same two indices. */
 export interface PriorPageSwap {
