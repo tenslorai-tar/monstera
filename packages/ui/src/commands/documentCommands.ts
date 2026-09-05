@@ -17,6 +17,8 @@ import type { HeaderFooterAnswer } from '../dialogs/headerFooterResult.js';
 import type { DuplicatePagesAnswer } from '../dialogs/duplicatePagesResult.js';
 import { HISTORY_TRIMMED_DIALOG_ID } from '../dialogs/historyTrimmed.js';
 import { INSERT_IMAGE_PROBLEM_DIALOG_ID } from '../dialogs/insertImageProblem.js';
+import { INSERT_FROM_PDF_DIALOG_ID } from '../dialogs/insertFromPdf.js';
+import type { InsertFromPdfAnswer } from '../dialogs/insertFromPdfResult.js';
 import { MERGE_DOCUMENT_DIALOG_ID } from '../dialogs/mergeDocument.js';
 import { MERGE_DOCUMENT_NONE_DIALOG_ID } from '../dialogs/mergeDocumentNone.js';
 import type { MergeDocumentAnswer } from '../dialogs/mergeDocumentResult.js';
@@ -42,6 +44,7 @@ import {
   GENERATE_TOC_COMMAND_TITLE,
   HEADER_FOOTER_COMMAND_TITLE,
   INSERT_BLANK_PAGE_TITLE,
+  INSERT_FROM_PDF_COMMAND_TITLE,
   INSERT_IMAGE_COMMAND_TITLE,
   MERGE_DOCUMENT_COMMAND_TITLE,
   PAGE_BACKGROUND_COMMAND_TITLE,
@@ -947,6 +950,59 @@ export function mergeDocumentCommand(deps: DocumentCommandDeps): UiCommand {
         // length, read from the context rather than fetched, for the reason
         // `pageCount` is in the context at all.
         at: context.pageCount,
+      });
+    },
+  };
+}
+
+/**
+ * Inserts another open document's pages at a chosen position.
+ *
+ * ## The SAME command as merge, and that is the point
+ *
+ * `mergeDocument` with a position the reader picks instead of the target's
+ * length. A second command kind would be one operation declared twice, with two
+ * grafts to keep in step; `openDocument.ts` states the shape — *"one
+ * implementation with two triggers, which is not a second wiring place."*
+ *
+ * The two surfaces exist because the intents differ: *combine these* and *put
+ * this here* are different things to ask for, and collapsing them into one
+ * control with a position field would make the common case cost a decision.
+ *
+ * What is NOT built and would earn its own kind is *insert selected pages* —
+ * see the dialog's header for why the renderer cannot bound that today.
+ */
+export function insertFromPdfCommand(deps: DocumentCommandDeps): UiCommand {
+  return {
+    id: 'document.insert-from-pdf',
+    title: INSERT_FROM_PDF_COMMAND_TITLE,
+    placements: [{ surface: 'quick-toolbar', order: 25 }],
+    when: hasDocument,
+    run: async (context): Promise<void> => {
+      if (context.docId === undefined || context.pageCount === undefined) return;
+
+      const choices = context.openDocuments
+        .filter((document) => document.docId !== context.docId)
+        .map((document) => ({ docId: document.docId, name: document.name }));
+
+      if (choices.length === 0) {
+        void deps.ask(MERGE_DOCUMENT_NONE_DIALOG_ID, {});
+        return;
+      }
+
+      const answer = (await deps.ask(INSERT_FROM_PDF_DIALOG_ID, {
+        choices,
+        pageCount: context.pageCount,
+      })) as InsertFromPdfAnswer | undefined;
+      if (answer === undefined) return;
+
+      await applyDocumentCommand(deps, context.docId, {
+        kind: 'mergeDocument',
+        source: answer.source as DocId,
+        // ALREADY ZERO-BASED. The dialog performed the one conversion, which is
+        // `pageNumbering.ts`' rule — a command that subtracted one here would be
+        // the second place that arithmetic lives.
+        at: answer.at,
       });
     },
   };

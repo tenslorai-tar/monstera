@@ -13,6 +13,7 @@ import {
   pageTransitionCommand,
   pageBackgroundCommand,
   resizePagesCommand,
+  insertFromPdfCommand,
   insertImageCommand,
   mergeDocumentCommand,
   generateTocCommand,
@@ -994,6 +995,57 @@ describe('delete pages — the mutation-dialog gate', () => {
     // AND NOTHING WAS DISPATCHED. Without this the case passes for a command
     // that opens the message and merges anyway.
     expect(sent).toStrictEqual([]);
+  });
+
+  it('insert-from-PDF sends the SAME command with the chosen position', async () => {
+    // THE SECOND SURFACE, and this case is what says it is one. It asserts the
+    // dispatched kind is `mergeDocument` — so a future author who splits this
+    // into its own kind has to change this line and meet the reason.
+    const { client, sent } = recording();
+
+    await insertFromPdfCommand({
+      client,
+      onApplied: () => undefined,
+      // `at: 0` is the FRONT, and it is not the default the body offers — a
+      // dialog stub answering the default would let a command that ignored the
+      // answer and used `pageCount` pass.
+      ask: () => Promise.resolve({ source: 'doc-0', at: 0 }),
+    }).run(CONTEXT);
+
+    expect(sent).toStrictEqual([
+      {
+        id: 'document.execute',
+        params: { docId: DOC, command: { kind: 'mergeDocument', source: 'doc-0', at: 0 } },
+      },
+    ]);
+  });
+
+  it('insert-from-PDF hands the dialog the TARGET’s page count, not the source’s', async () => {
+    const { client } = recording();
+    const opened: unknown[] = [];
+
+    await insertFromPdfCommand({
+      client,
+      onApplied: () => undefined,
+      ask: (id, props) => {
+        opened.push({ id, props });
+        return Promise.resolve(undefined);
+      },
+    }).run(CONTEXT);
+
+    expect(opened).toStrictEqual([
+      {
+        id: 'dialog.insert-from-pdf',
+        props: {
+          choices: [
+            { docId: 'doc-0', name: 'Before' },
+            { docId: 'doc-2', name: 'After' },
+          ],
+          // `CONTEXT.pageCount`, which is the document being inserted INTO.
+          pageCount: 10,
+        },
+      },
+    ]);
   });
 
   it('CONTROL: a DISMISSED merge dialog dispatches nothing', async () => {

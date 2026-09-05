@@ -158,3 +158,4 @@ export const invertMergeDocument: Invert<'mupdf', 'mergeDocument'> = (): Promise
       'caller can build an argument for it. Undo restores the checkpoint the bus took.',
   );
 };
+

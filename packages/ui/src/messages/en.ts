@@ -138,6 +138,12 @@ export const MERGE_DOCUMENT_LABEL = messageKey('dialog.merge-document.label');
 export const MERGE_DOCUMENT_APPLY = messageKey('dialog.merge-document.apply');
 export const MERGE_DOCUMENT_NONE_TITLE = messageKey('dialog.merge-document-none.title');
 export const MERGE_DOCUMENT_NONE_BODY = messageKey('dialog.merge-document-none.body');
+export const INSERT_FROM_PDF_COMMAND_TITLE = messageKey('command.insert-from-pdf.title');
+export const INSERT_FROM_PDF_TITLE = messageKey('dialog.insert-from-pdf.title');
+export const INSERT_FROM_PDF_LABEL = messageKey('dialog.insert-from-pdf.label');
+export const INSERT_FROM_PDF_POSITION = messageKey('dialog.insert-from-pdf.position');
+export const INSERT_FROM_PDF_RANGE = messageKey('dialog.insert-from-pdf.range');
+export const INSERT_FROM_PDF_APPLY = messageKey('dialog.insert-from-pdf.apply');
 export const INSERT_IMAGE_COMMAND_TITLE = messageKey('command.insert-image.title');
 export const INSERT_IMAGE_PROBLEM_TITLE = messageKey('dialog.insert-image-problem.title');
 export const INSERT_IMAGE_UNREADABLE = messageKey('dialog.insert-image-problem.unreadable');
@@ -490,6 +496,12 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // takes a file.
   [MERGE_DOCUMENT_NONE_BODY]:
     'Merging copies pages from another open document. Open the document you want to merge in, then try again.',
+  [INSERT_FROM_PDF_COMMAND_TITLE]: 'Insert from PDF…',
+  [INSERT_FROM_PDF_TITLE]: 'Insert from PDF',
+  [INSERT_FROM_PDF_LABEL]: 'Document to insert',
+  [INSERT_FROM_PDF_POSITION]: 'Insert before page',
+  [INSERT_FROM_PDF_RANGE]: 'Between 1 and {last}, where {last} puts it at the end.',
+  [INSERT_FROM_PDF_APPLY]: 'Insert',
   [INSERT_IMAGE_COMMAND_TITLE]: 'Insert image…',
   [INSERT_IMAGE_PROBLEM_TITLE]: 'That image could not be added',
   [INSERT_IMAGE_UNREADABLE]:
