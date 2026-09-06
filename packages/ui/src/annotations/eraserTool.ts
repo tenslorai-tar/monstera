@@ -139,7 +139,9 @@ export function eraserTool(deps: EraserDeps): UiTool {
       return {
         kind: 'removeAnnotation',
         page: hit.page,
-        index: hit.index,
+        // ONE, because an eraser is one click on one mark. The payload is
+        // plural for the select tool, which is where *these* comes from.
+        indices: [hit.index],
         version: snapshot.version,
       };
     },

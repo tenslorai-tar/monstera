@@ -9,6 +9,8 @@ import {
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
+import type { AnnotationSelection } from '../annotations/selectTool.js';
+import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
 import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
@@ -19,6 +21,7 @@ import {
 import {
   ARROW_TOOL_TITLE,
   CLOUD_TOOL_TITLE,
+  DELETE_SELECTION_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
   INK_TOOL_TITLE,
@@ -27,6 +30,7 @@ import {
   POLYLINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  SELECT_TOOL_TITLE,
   TOOL_CARET_TITLE,
   TOOL_STICKY_NOTE_TITLE,
   TOOL_TEXT_BOX_TITLE,
@@ -75,6 +79,20 @@ export interface ToolCommandDeps {
   readonly activeTool: () => string | undefined;
   /** Makes one active, or `undefined` to leave drawing altogether. */
   readonly onSelect: (id: string | undefined) => void;
+}
+
+/** What a command acting on the selection needs. */
+export interface SelectionCommandDeps {
+  /**
+   * What is selected now, read THROUGH A FUNCTION rather than captured.
+   *
+   * `toolCommand`'s rule and its reason: a command is built once, and a captured
+   * selection would be whatever was selected at registration for ever — which
+   * for a `when` predicate means a control that appears once and never leaves.
+   */
+  readonly selection: () => AnnotationSelection | undefined;
+  /** Removes it, through the same dispatcher every other caller uses. */
+  readonly onDelete: (selection: AnnotationSelection) => void;
 }
 
 /**
@@ -190,6 +208,55 @@ export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The select tool's command.
+ *
+ * The thirteenth from the same factory, and the tool behind it produces no
+ * command at all — which reaches this file as nothing, again. Turning a tool on
+ * has never depended on what the tool does when it is on.
+ */
+export function selectToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(SELECT_TOOL_ID, SELECT_TOOL_TITLE, 39, deps);
+}
+
+/**
+ * Deleting whatever is selected.
+ *
+ * ## Not a tool, and not a second remove path
+ *
+ * The select tool points; this acts. It goes through the same
+ * `removeAnnotation` every other caller uses, and it is the reason that payload
+ * became plural: five marks selected is one decision and must be one command,
+ * or it is five undo steps and four stale handles.
+ *
+ * ## Where a key reaches a feature is the registry
+ *
+ * `Delete` is a shortcut on this entry rather than a handler on the overlay or
+ * on the selection layer. A key handled by a component is the second wiring
+ * place — the palette and the annotation context menu would each need their own
+ * route to the same behaviour, and the shortcut map would not know the feature
+ * exists.
+ *
+ * `when` is what keeps the control honest: with nothing selected the entry is
+ * hidden rather than present and inert, so pressing Delete over a page with no
+ * selection does nothing because there is nothing registered, not because a
+ * handler decided to return early.
+ */
+export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
+  return {
+    id: 'annotate.delete-selection',
+    title: DELETE_SELECTION_TITLE,
+    placements: [{ surface: 'context-menu', context: 'annotation', order: 10 }],
+    shortcut: 'Delete',
+    when: () => deps.selection() !== undefined,
+    run: (): void => {
+      const selection = deps.selection();
+      if (selection === undefined) return;
+      deps.onDelete(selection);
+    },
+  };
+}
+
+/**
  * The eraser's command.
  *
  * The twelfth from the same factory, and the tool behind it is the first that
@@ -240,5 +307,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     polylineToolCommand(deps),
     cloudToolCommand(deps),
     eraserToolCommand(deps),
+    selectToolCommand(deps),
   ];
 }

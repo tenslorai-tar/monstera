@@ -1041,7 +1041,28 @@ export const applyRemoveAnnotation: Apply<'mupdf', 'removeAnnotation'> = (
 ): Promise<void> =>
   withDocument(session, (document) => {
     const loaded = pageAt(document, command.page, document.countPages());
-    loaded.deleteAnnotation(annotationAt(loaded, command.index));
+    // EVERY INDEX IS RESOLVED BEFORE ANYTHING IS DELETED, which is what makes
+    // the order the payload arrived in irrelevant: a `PDFAnnotation` is a handle
+    // to the object, so once resolved it does not care what its neighbours'
+    // positions become. Resolving lazily inside the loop would make each
+    // removal shift the ones after it, and every index would still be in range.
+    //
+    // It is also what keeps a refusal whole. `applyAddAnnotation` validates in
+    // full before creating anything for the same reason: a command that deleted
+    // three of five and then refused would leave the page in a state no undo
+    // step describes.
+    // DUPLICATES ARE REFUSED RATHER THAN DEDUPLICATED, because a payload naming
+    // one annotation twice is a caller that built its list from something other
+    // than one walk, and quietly deleting it once would hide that.
+    if (new Set(command.indices).size !== command.indices.length) {
+      throw new RangeError(
+        'a removal names the same annotation more than once, which is a handle list built from ' +
+          'something other than one walk. An index is a position in a single answer and each ' +
+          'appears at most once in it.',
+      );
+    }
+    const doomed = command.indices.map((index) => annotationAt(loaded, index));
+    for (const annotation of doomed) loaded.deleteAnnotation(annotation);
   });
 
 /**
@@ -1063,7 +1084,10 @@ export function captureRemoveAnnotation(
   command: CommandOfKind<'removeAnnotation'>,
 ): Promise<CaptureResult<never>> {
   return withDocument(session, (document) => {
-    annotationAt(pageAt(document, command.page, document.countPages()), command.index);
+    const loaded = pageAt(document, command.page, document.countPages());
+    // EVERY index, not the first: a capture that validated one of five would
+    // let the bus checkpoint a command that is about to refuse on the fourth.
+    for (const index of command.indices) annotationAt(loaded, index);
     return {
       captured: false,
       reason:

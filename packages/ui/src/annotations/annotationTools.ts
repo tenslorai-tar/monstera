@@ -2,6 +2,8 @@ import type { UiTool } from '../registries/tools.js';
 import type { EraserDeps } from './eraserTool.js';
 import { eraserTool } from './eraserTool.js';
 import { pointTools } from './pointTools.js';
+import type { SelectDeps } from './selectTool.js';
+import { selectTool } from './selectTool.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
 import { textBoxTool } from './textTools.js';
@@ -42,6 +44,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     ...pointTools(deps),
     ...vertexTools,
     eraserTool(deps),
+    selectTool(deps),
   ];
 }
 
@@ -59,4 +62,4 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
  * `annotations` asks the document. The eraser is the first tool to need the
  * second, and the first to need anything about the document at all.
  */
-export type AnnotationToolDeps = TextToolDeps & EraserDeps;
+export type AnnotationToolDeps = TextToolDeps & EraserDeps & SelectDeps;

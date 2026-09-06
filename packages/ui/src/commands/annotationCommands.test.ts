@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 
 import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
-import { rectangleToolCommand, shapeToolCommands } from './annotationCommands.js';
+import {
+  deleteSelectionCommand,
+  rectangleToolCommand,
+  shapeToolCommands,
+} from './annotationCommands.js';
 
 /**
  * The command that selects the rectangle tool.
@@ -158,6 +162,7 @@ describe('rectangleToolCommand', () => {
     const toolIds = annotationTools({
       ask,
       annotations: () => Promise.resolve(undefined),
+      onSelect: () => undefined,
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,
@@ -184,6 +189,74 @@ describe('rectangleToolCommand', () => {
     // sin arriving through the registry rather than through a button.
     expect(built(undefined).command.placements).toStrictEqual([
       { surface: 'quick-toolbar', order: 40 },
+    ]);
+  });
+});
+
+describe('deleteSelectionCommand', () => {
+  const SELECTION = {
+    page: 2,
+    version: asDocVersion(7),
+    items: [
+      { index: 1, rect: { x0: 0, y0: 0, x1: 10, y1: 10 } },
+      { index: 4, rect: { x0: 0, y0: 0, x1: 10, y1: 10 } },
+    ],
+  };
+
+  it('hands the WHOLE selection over, so one decision is one command', () => {
+    const deleted: unknown[] = [];
+    const command = deleteSelectionCommand({
+      selection: () => SELECTION,
+      onDelete: (selection) => {
+        deleted.push(selection);
+      },
+    });
+    void command.run(WITH_DOCUMENT);
+    // BOTH INDICES IN ONE CALL. A command that dispatched per item would be
+    // five undo steps for one decision, and every handle after the first would
+    // be stale — which the kernel refuses, so the visible symptom is one mark
+    // deleted and a refusal.
+    expect(deleted).toStrictEqual([SELECTION]);
+  });
+
+  it('is HIDDEN with nothing selected, rather than present and inert', () => {
+    // The wired-tools rule at the registry: `when` is what keeps Delete from
+    // being a control that exists and does nothing. Pressing it over a page
+    // with no selection does nothing because nothing is registered.
+    const deps = { selection: () => undefined, onDelete: () => undefined };
+    expect(deleteSelectionCommand(deps).when?.(WITH_DOCUMENT)).toBe(false);
+    expect(
+      deleteSelectionCommand({ ...deps, selection: () => SELECTION }).when?.(WITH_DOCUMENT),
+    ).toBe(true);
+  });
+
+  it('reads the selection THROUGH the function, not from what it was built with', () => {
+    // A command is built once. A captured selection would be whatever was
+    // selected at registration for ever, which for `when` means a control that
+    // appears once and never leaves.
+    let current: typeof SELECTION | undefined = undefined;
+    const command = deleteSelectionCommand({
+      selection: () => current,
+      onDelete: () => undefined,
+    });
+    expect(command.when?.(WITH_DOCUMENT)).toBe(false);
+    current = SELECTION;
+    expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+  });
+
+  it('reaches the keyboard and the annotation menu, and no toolbar', () => {
+    // It acts on a selection rather than turning a mode on, so it is not a
+    // twelfth control beside the tools. `Delete` is on the command because that
+    // is where a key reaches a feature — a handler on the overlay would be the
+    // second wiring place the palette and the menu would then have to agree
+    // with.
+    const command = deleteSelectionCommand({
+      selection: () => SELECTION,
+      onDelete: () => undefined,
+    });
+    expect(command.shortcut).toBe('Delete');
+    expect(command.placements).toStrictEqual([
+      { surface: 'context-menu', context: 'annotation', order: 10 },
     ]);
   });
 });

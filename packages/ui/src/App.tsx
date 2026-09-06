@@ -90,7 +90,9 @@ import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
-import { shapeToolCommands } from './commands/annotationCommands.js';
+import type { AnnotationSelection } from './annotations/selectTool.js';
+import { SELECT_TOOL_ID } from './annotations/selectTool.js';
+import { deleteSelectionCommand, shapeToolCommands } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
@@ -356,7 +358,38 @@ export function App({ client, settings }: AppProps): ReactElement {
       if (activeId === undefined) return;
       void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
         kind: 'removeAnnotation',
-        ...handle,
+        page: handle.page,
+        // A ROW NAMES ONE. The payload is plural because a selection can be
+        // several, and this surface is a list of rows with a control each — the
+        // one place where *these* would have to be invented rather than
+        // collected.
+        indices: [handle.index],
+        version: handle.version,
+      });
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
+   * Removing everything the select tool has picked.
+   *
+   * ONE COMMAND FOR THE WHOLE SELECTION, which is why `removeAnnotation`'s
+   * payload is plural. A loop here would be one version bump per mark — five
+   * undo steps for one decision, and four handles stale after the first.
+   *
+   * The version comes from the selection, exactly as the panel's row hands over
+   * the version its list was read at: the selection was built from one walk and
+   * carries that walk's version, so a document that has moved refuses rather
+   * than deleting by arithmetic.
+   */
+  const removeSelection = useCallback(
+    (chosen: AnnotationSelection): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+        kind: 'removeAnnotation',
+        page: chosen.page,
+        indices: chosen.items.map((item) => item.index),
+        version: chosen.version,
       });
     },
     [activeId, applied, ask, client],
@@ -699,6 +732,15 @@ export function App({ client, settings }: AppProps): ReactElement {
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
   /**
+   * What the select tool has picked, or `undefined` for nothing.
+   *
+   * **Held here rather than in the tool**, which is what let the select tool
+   * land as a registration: a selection outlives every gesture and a controller
+   * is a value (ADR-0029 Decision 1). `SelectionLayer` draws it and
+   * `deleteSelectionCommand` acts on it, so the two surfaces read one state.
+   */
+  const [picked, setPicked] = useState<AnnotationSelection | undefined>(undefined);
+  /**
    * Reading every annotation in the open document, for the eraser.
    *
    * **A read, not a dispatch**, which is why it is here rather than a second
@@ -723,9 +765,44 @@ export function App({ client, settings }: AppProps): ReactElement {
   // means to ask, exactly as `deletePagesCommand(deps)` does — see
   // `textTools.ts` for why that is not a fourth parameter on `commit`.
   const tools = useMemo(
-    () => new ToolRegistry(annotationTools({ ask, annotations: listAnnotations })),
+    () =>
+      new ToolRegistry(
+        annotationTools({ ask, annotations: listAnnotations, onSelect: setPicked }),
+      ),
     [ask, listAnnotations],
   );
+
+  /**
+   * The selection, if it still describes the document on screen.
+   *
+   * ## DERIVED rather than cleared, which is `AnnotationsPanel`'s own rule
+   *
+   * A selection's indices are positions in one walk at one version
+   * ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)),
+   * so a version bump turns them into arithmetic pointing at whatever is now
+   * there. Kept, they would draw boxes in the right places over the wrong
+   * annotations, and `Delete` would name the wrong ones. The kernel refuses a
+   * stale handle so nothing corrupt lands; what it produces is a refusal a
+   * person cannot act on, over marks that look selected.
+   *
+   * An effect that cleared the state on a version change would be a render
+   * behind — for one frame the boxes are drawn against the new document — and
+   * the panel already rejects that shape for exactly this reason. Comparing the
+   * two versions here means a stale selection is never read at all.
+   *
+   * **And it is scoped to the tool.** Leaving boxes on the page while somebody
+   * draws a rectangle shows a selection nothing on screen belongs to; the delete
+   * command's shortcut is not tool-scoped, so *nothing is selected* has to be
+   * true rather than merely invisible.
+   */
+  const selection = useMemo(
+    () =>
+      picked !== undefined && picked.version === open?.version && toolId === SELECT_TOOL_ID
+        ? picked
+        : undefined,
+    [open?.version, picked, toolId],
+  );
+  const readSelection = useCallback(() => selection, [selection]);
 
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
@@ -823,6 +900,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         // SPREAD from one list rather than named individually, so the set of
         // tools has one place it is written down.
         ...shapeToolCommands({ activeTool: readTool, onSelect: setToolId }),
+        deleteSelectionCommand({ selection: readSelection, onDelete: removeSelection }),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
@@ -837,7 +915,19 @@ export function App({ client, settings }: AppProps): ReactElement {
         historyCommand('forward', { navigator }),
         goToCommand(),
       ]),
-    [applied, ask, changeZoom, client, navigator, openCommand, openPalette, readTool, settings],
+    [
+      applied,
+      ask,
+      changeZoom,
+      client,
+      navigator,
+      openCommand,
+      openPalette,
+      readSelection,
+      readTool,
+      removeSelection,
+      settings,
+    ],
   );
 
   /**
@@ -866,8 +956,9 @@ export function App({ client, settings }: AppProps): ReactElement {
       onCommand: (command: RenderableCommand): void => {
         void applyDocumentCommand({ client, onApplied: applied, ask }, docId, command);
       },
+      selection,
     };
-  }, [applied, ask, client, open, toolId, tools]);
+  }, [applied, ask, client, open, selection, toolId, tools]);
 
   // The start screen's context: no document focused. `hasSelection` and `dirty`
   // are false because there is nothing to select in and nothing to dirty — not

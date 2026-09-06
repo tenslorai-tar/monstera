@@ -1393,7 +1393,7 @@ describe('CommandBus and the targets axis', () => {
         bus.execute(
           { mupdf: session },
           context,
-          { kind: 'removeAnnotation', page: 0, index: 0, version: asDocVersion(9) },
+          { kind: 'removeAnnotation', page: 0, indices: [0], version: asDocVersion(9) },
           noByteImageExpected,
         ),
       ).rejects.toThrow(StaleTargetError);
@@ -1422,7 +1422,7 @@ describe('CommandBus and the targets axis', () => {
       const { entry, version } = await bus.execute(
         { mupdf: session },
         context,
-        { kind: 'removeAnnotation', page: 0, index: 0, version: asDocVersion(1) },
+        { kind: 'removeAnnotation', page: 0, indices: [0], version: asDocVersion(1) },
         noByteImageExpected,
       );
 
@@ -1477,7 +1477,10 @@ describe('CommandBus and the targets axis', () => {
         bus.execute(
           { mupdf: session },
           context,
-          { kind: 'removeAnnotation', page: 0, index: 0 } as CommandOfKind<'removeAnnotation'>,
+          // THE VERSION LEFT OFF, which is the registration defect this asserts.
+          // Through `unknown` because the two shapes no longer overlap enough
+          // for a direct assertion — `indices` is `readonly` in the target.
+          { kind: 'removeAnnotation', page: 0, indices: [0] } as unknown as CommandOfKind<'removeAnnotation'>,
           noByteImageExpected,
         ),
       ).rejects.toThrow(/registration defect/u);

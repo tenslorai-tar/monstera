@@ -1037,6 +1037,39 @@ body {
  * with `pointer-events: none` — an element over the page that passed everything
  * through would be a thing that can go wrong silently.
  */
+/*
+ * What the select tool has picked, drawn under the overlay.
+ *
+ * INERT. The pointer belongs to the overlay above this, which is what keeps
+ * *where does a gesture go* a question with one answer — a layer that took
+ * clicks would be a second surface competing for the same pixel, and the tool
+ * would stop being the only thing that decides what a press means.
+ */
+.m-selection-layer {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+}
+
+/*
+ * One selected annotation's box.
+ *
+ * A DASHED OUTLINE AND NO FILL: the box is a bounding box rather than the
+ * shape, so a filled one would claim an area the annotation does not occupy —
+ * and it would hide the mark it is describing.
+ */
+.m-selection-box {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  /* One pixel at every zoom: this is a screen affordance, not a border the
+     document carries. `.m-annotation-preview` says the same. */
+  vector-effect: non-scaling-stroke;
+}
+
 .m-annotation-overlay {
   position: absolute;
   inset: 0;

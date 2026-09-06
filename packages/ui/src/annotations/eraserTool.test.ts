@@ -73,7 +73,10 @@ describe('eraserTool', () => {
     expect(await click([40, 40])).toStrictEqual({
       kind: 'removeAnnotation',
       page: 3,
-      index: 1,
+      // ONE INDEX IN A LIST. The payload is plural for the select tool; an
+      // eraser click is one mark, and this asserts the list rather than a
+      // number so a tool that started sending several would be red here.
+      indices: [1],
       version: VERSION,
     });
   });
@@ -123,7 +126,7 @@ describe('eraserTool', () => {
         { ...NEAR, index: 5 },
       ],
     });
-    expect(await click([40, 40])).toMatchObject({ index: 5 });
+    expect(await click([40, 40])).toMatchObject({ indices: [5] });
   });
 
   it('sends nothing when there is no document, or the read was refused', async () => {

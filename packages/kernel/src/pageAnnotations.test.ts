@@ -352,14 +352,14 @@ async function onSession<T>(
 async function removedFrom(
   bytes: Uint8Array,
   page: number,
-  index: number,
+  ...indices: readonly number[]
 ): Promise<Uint8Array> {
   const session = await mupdfWriter.open(bytes);
   try {
     await applyRemoveAnnotation(session, {
       kind: 'removeAnnotation',
       page,
-      index,
+      indices,
       // THE VERSION IS NEVER READ HERE, and that is ADR-0041 Decision 3 rather
       // than an omission: the bus compares it before this apply is reached, and
       // an apply that re-derived the rule would be a second opinion about what
@@ -949,6 +949,60 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
     expect(subtypes).toStrictEqual(['/Widget', '/Ink']);
   });
 
+  it('removes SEVERAL, and the order they arrive in does not matter', async () => {
+    // THE CASE THE PLURAL PAYLOAD EXISTS FOR, and the fixture is built so a
+    // wrong implementation is visible: three marks of three kinds, remove the
+    // first and the last, and the middle one must be what is left. An
+    // implementation that resolved lazily would delete index 0, shift the ink
+    // and the line down, and then find nothing at index 2 at all — or, on the
+    // descending payload below, delete the line and then the square and pass.
+    // One order or the other is where a lazy resolver shows.
+    const three = await drawnOn(
+      await drawnOn(
+        await drawnOn(await fixture(), command({ annotation: SQUARE })),
+        command({ annotation: INK }),
+      ),
+      command({ annotation: LINE }),
+    );
+
+    // ASCENDING here and descending below, from one fixture, so the claim is
+    // about the payload's order rather than about one lucky arrangement.
+    const up = await onSession(await removedFrom(three, 0, 0, 2), (session) =>
+      readAnnotations(session),
+    );
+    expect(up.annotations.map((entry) => entry.kind)).toStrictEqual(['ink']);
+
+    const down = await onSession(await removedFrom(three, 0, 2, 0), (session) =>
+      readAnnotations(session),
+    );
+    expect(down.annotations.map((entry) => entry.kind)).toStrictEqual(['ink']);
+  });
+
+  it('refuses a list naming one annotation twice', async () => {
+    // A caller that built its handles from something other than one walk.
+    // Deleting it once would be the tolerant reading, and it would hide the
+    // defect at the only moment anything can see it.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    await expect(removedFrom(both, 0, 1, 1)).rejects.toThrow(/more than once/u);
+  });
+
+  it('removes NOTHING when one index in the list is out of range', async () => {
+    // Resolving every handle before deleting any is what makes a refusal whole.
+    // The assertion is on the document rather than on the throw: a
+    // half-completed removal also throws, and leaves a page no undo step
+    // describes.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    await expect(removedFrom(both, 0, 0, 9)).rejects.toThrow(/has 2 annotation\(s\)/u);
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations).toHaveLength(2);
+  });
+
   it('refuses an index the page does not have, naming the count', async () => {
     const one = await drawnOn(await fixture(), command({ annotation: SQUARE }));
     await expect(removedFrom(one, 0, 1)).rejects.toThrow(/has 1 annotation\(s\)/u);
@@ -967,7 +1021,7 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
       captureRemoveAnnotation(session, {
         kind: 'removeAnnotation',
         page: 0,
-        index: 0,
+        indices: [0],
         version: asDocVersion(1),
       }),
     );
@@ -988,7 +1042,10 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
         captureRemoveAnnotation(session, {
           kind: 'removeAnnotation',
           page: 0,
-          index: 9,
+          // TWO, THE SECOND OUT OF RANGE, which is what says the capture
+          // validates every index rather than the first. With one entry the
+          // case passes on a capture that only ever looked at `indices[0]`.
+          indices: [0, 9],
           version: asDocVersion(1),
         }),
       ),

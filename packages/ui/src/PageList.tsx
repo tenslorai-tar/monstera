@@ -5,6 +5,8 @@ import type React from 'react';
 import { type ReactElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
+import type { AnnotationSelection } from './annotations/selectTool.js';
+import { SelectionLayer } from './SelectionLayer.js';
 import { ANNOTATION_SURFACE_LABEL } from './messages/en.js';
 import type { UiTool } from './registries/tools.js';
 import type { DocumentView } from './documentView.js';
@@ -177,6 +179,16 @@ export interface PageListProps {
     | {
         readonly tool: UiTool;
         readonly onCommand: (command: RenderableCommand) => void;
+        /**
+         * What the select tool has picked, drawn over its own page.
+         *
+         * **Part of this prop rather than a sibling**, and for the same reason
+         * the pair above is one: a selection with no tool active is a state the
+         * application does not have — the tool change clears it — so two props
+         * would have a fourth combination meaning *boxes on a page nothing can
+         * act on*.
+         */
+        readonly selection?: AnnotationSelection | undefined;
       }
     | undefined;
 }
@@ -811,6 +823,13 @@ function PageSlot({
           style={shown === undefined ? undefined : { width: shown.width, height: shown.height }}
         />
       ) : null}
+      {drawing === undefined || size === undefined ? null : (
+        <SelectionLayer
+          geometry={{ crop: size.crop, rotation: size.rotation, zoom }}
+          page={page}
+          selection={drawing.selection}
+        />
+      )}
       {drawing === undefined || size === undefined ? null : (
         <AnnotationOverlay
           geometry={{

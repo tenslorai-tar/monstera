@@ -1378,7 +1378,47 @@ export const addAnnotationSchema = z.object({
 });
 
 /**
- * Removes one annotation, named by where it sat in a walk the caller has seen.
+ * How many annotations one removal may name.
+ *
+ * `MAX_POLYGON_POINTS`' kind of bound and not the channel's: this is **intent**
+ * — how many marks a person selected on one page — where `MAX_ANNOTATIONS`
+ * bounds a document-scaled read. The two numbers are deliberately unrelated and
+ * stated separately, which is `MAX_ANNOTATIONS`' own note about
+ * `MAX_DUPLICATE_PAGES` applied one noun along: two bounds that happen to agree
+ * are not one bound.
+ *
+ * Far past what a marquee over one page collects and far short of what a
+ * hostile renderer could try.
+ */
+export const MAX_REMOVED_ANNOTATIONS = 1024;
+
+/**
+ * Removes annotations on one page, named by where they sat in a walk the caller
+ * has seen.
+ *
+ * ## PLURAL, and it became plural the day something could select two
+ *
+ * This carried one `index` until the select tool, and one index cannot express
+ * *delete these*. Not for want of trying: a caller could send one command per
+ * annotation, in **descending** index order so the removals below stay valid,
+ * taking the new version from each answer. That works, and it is wrong twice
+ * over. It makes deleting five marks five undo steps, when a person made one
+ * decision. And *descending order keeps the rest valid* is a rule about the
+ * kernel's own walk, held in a loop in the renderer — the second opinion B3a
+ * spends its time on, about the one question ADR-0041 exists to answer.
+ *
+ * With the list on this side the rule dissolves rather than moving: the kernel
+ * resolves all of them first, and a resolved annotation is a handle to an
+ * object rather than a position. `deletePages([3, 5])` is the precedent on the
+ * neighbouring noun.
+ *
+ * ## ONE PAGE, because a selection cannot span two
+ *
+ * The overlay is mounted per page and a gesture belongs to the page it started
+ * on, so neither a click nor a marquee can reach a second one. A payload of
+ * `{ page, index }` pairs would be a shape nothing can currently produce —
+ * built ahead of its caller, and unexercised in the direction that matters. The
+ * day a surface can select across pages is the day this gains that shape.
  *
  * ## The version is part of the NAME, not a precaution beside it
  *
@@ -1402,10 +1442,20 @@ export const addAnnotationSchema = z.object({
  */
 export const removeAnnotationSchema = z.object({
   kind: z.literal('removeAnnotation'),
-  /** Zero-based index of the page it sits on. */
+  /** Zero-based index of the page they sit on. */
   page: z.number().int().nonnegative(),
-  /** Its position in the walk that produced the answer this names. */
-  index: z.number().int().nonnegative(),
+  /**
+   * Their positions in the walk that produced the answer this names.
+   *
+   * **Order is not part of the intent.** The kernel resolves every index to an
+   * annotation *before* deleting any of them, so what a removal shifts is
+   * positions and these are no longer positions by then. A caller that had to
+   * sort — or that sent one command per annotation in descending order — would
+   * be holding a rule about the walk on the wrong side of the boundary.
+   *
+   * At least one, because a removal of nothing is not a command.
+   */
+  indices: z.array(z.number().int().nonnegative()).min(1).max(MAX_REMOVED_ANNOTATIONS).readonly(),
   /** The version that answer carried. Refused if the document has moved. */
   version: docVersionSchema,
 });

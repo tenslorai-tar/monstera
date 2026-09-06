@@ -274,6 +274,8 @@ export const POLYGON_TOOL_TITLE = messageKey('command.annotate.polygon');
 export const POLYLINE_TOOL_TITLE = messageKey('command.annotate.polyline');
 export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
 export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
+export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
+export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
 export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
 export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
 export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
@@ -532,6 +534,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // every drawing application a reader is coming from. The control says what
   // happens; the row's name is not the promise.
   [ERASER_TOOL_TITLE]: 'Erase annotation',
+  // *SELECT ANNOTATIONS*, because this build has another selection — text — and
+  // a bare *Select* in a palette beside the Edit ribbon would be the wrong one
+  // for the reader who most needs the right one.
+  [SELECT_TOOL_TITLE]: 'Select annotations',
+  [DELETE_SELECTION_TITLE]: 'Delete selected annotations',
   [ANNOTATION_TEXT_TITLE]: 'Text box',
   [ANNOTATION_TEXT_LABEL]: 'Text',
   [ANNOTATION_TEXT_APPLY]: 'Add text box',
