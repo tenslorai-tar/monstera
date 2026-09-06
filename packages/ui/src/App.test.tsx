@@ -4,7 +4,7 @@ import { type ContractClient, channels, createClient } from '@monstera/contract'
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
 import { act, fireEvent, render as renderBare, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App.js';
 import { activateCatalogue, i18n } from './i18n.js';
@@ -211,6 +211,57 @@ async function withDocumentOpen(): Promise<void> {
     await Promise.resolve();
   });
 }
+
+/**
+ * Every lazily-imported dialog body a case in this file waits for, loaded once
+ * before any of them runs.
+ *
+ * ## The defect this closes, diagnosed 2026-09-06 on its second occurrence
+ *
+ * `declareDialog` takes `lazy(() => import('./XBody.js'))`, so opening a dialog
+ * starts a dynamic import — and `findBy*` waits **1000 ms of wall clock** for
+ * the content. Under the full suite that import competes with forty-five other
+ * files, and the two race. Alone it always wins, which is why the failure
+ * passed in isolation and on every re-run, and read as *flaky under load*.
+ *
+ * The DOM at the moment of failure is what named it rather than any hypothesis:
+ * `<body>` carried the scroll lock and the background `div` carried
+ * `data-base-ui-inert`, so the dialog was open and its portal was mounted, and
+ * the only thing missing was the body React was still importing.
+ *
+ * ## Why a preload and not a longer timeout
+ *
+ * A bigger number leaves a test whose passing depends on how many other files
+ * the worker happens to be running — the same defect further away. This removes
+ * the race: by the time a case clicks, the module is in the registry and
+ * `lazy` resolves on the first flush.
+ *
+ * **Nothing a case proves is weakened.** The registry entry, the real body, the
+ * parser and each result schema all still run, and `lazy` is still what mounts
+ * them. What has stopped being under test is how long an import takes, which no
+ * case here ever meant to assert.
+ *
+ * ## FIVE SITES, NOT ONE
+ *
+ * Delete-pages is the one that fired. About, duplicate-pages, crop and the save
+ * problem wait on their bodies exactly the same way and were the same latent
+ * race — closing one and leaving four is the half-fix Rule 0 names.
+ *
+ * **This list is hand-kept and cannot be derived**, because a `lazy` payload is
+ * not awaitable from outside React. A case added for a dialog missing here gets
+ * the old race back, and it will present as this one did: green alone, green on
+ * a re-run, red about once in a full suite. That is the cost, written down
+ * rather than discovered again.
+ */
+beforeAll(async () => {
+  await Promise.all([
+    import('./dialogs/AboutBody.js'),
+    import('./dialogs/CropPagesBody.js'),
+    import('./dialogs/DeletePagesBody.js'),
+    import('./dialogs/DuplicatePagesBody.js'),
+    import('./dialogs/SaveProblemBody.js'),
+  ]);
+});
 
 describe('App', () => {
   it('renders the document surface as a landmark', () => {
