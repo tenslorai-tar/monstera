@@ -1,11 +1,13 @@
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef } from '@cantoo/pdf-lib';
-import type { AnnotationDraft, CommandOfKind } from '@monstera/contract';
+import type { AnnotationDraft, CommandKind, CommandOfKind } from '@monstera/contract';
 import { describe, expect, it } from 'vitest';
 
+import { declaredCommands } from './commandDeclarations.js';
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
 import { applyAddAnnotation } from './pageAnnotations.js';
-import { applyMergeDocument } from './pageMerge.js';
+import { extractPages } from './pageExtract.js';
+import { applyMergeDocument, applyReplacePage } from './pageMerge.js';
 import { applyDeletePages, applyDuplicatePage, applyMovePage } from './pageOrder.js';
 import { applyRotatePages } from './rotatePages.js';
 
@@ -121,6 +123,32 @@ async function marked(): Promise<Uint8Array> {
   return through(await document(), (session) => applyAddAnnotation(session, command(1)));
 }
 
+/**
+ * What the first annotation on `page` names in its `/P`, beside that page's own
+ * reference — the pair a caller compares.
+ *
+ * Read as two strings rather than asserted here, so a failure prints both
+ * object numbers: *the annotation points at 12 0 R and the page it is on is
+ * 7 0 R* is a diagnosis, where *expected true* sends someone back to the
+ * document with a hex editor.
+ */
+async function parentOf(
+  bytes: Uint8Array,
+  page: number,
+): Promise<{ readonly names: string; readonly own: string }> {
+  const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+  const target = loaded.getPages()[page];
+  if (target === undefined) throw new Error(`the document has no page ${String(page)}`);
+  const annots = target.node.lookup(PDFName.of('Annots'));
+  if (!(annots instanceof PDFArray)) throw new Error(`page ${String(page)} carries no /Annots`);
+  const [first] = annots.asArray();
+  const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+  if (dict === undefined) throw new Error('the first annotation is not a reachable dictionary');
+  const parent = dict.get(PDFName.of('P'));
+  if (!(parent instanceof PDFRef)) throw new Error('the annotation names no page at all');
+  return { names: parent.toString(), own: target.ref.toString() };
+}
+
 describe('an annotation survives the page operations that move its page', () => {
   it('is on page 1 before anything moves', async () => {
     // THE BASELINE, and it is a case rather than an assumption: every case
@@ -221,18 +249,8 @@ describe('an annotation survives crossing into another document', () => {
     // the kind §3 bans — and every viewer draws it from its `/Rect` regardless.
     // So the case above passes on the broken document, exactly as the page
     // count and order pass on a broken page tree.
-    const merged = await mergedWithMark();
-    const loaded = await PDFDocument.load(merged, { updateMetadata: false });
-    const page = loaded.getPages()[2];
-    if (page === undefined) throw new Error('the merged document lost a page');
-    const annots = page.node.lookup(PDFName.of('Annots'));
-    if (!(annots instanceof PDFArray)) throw new Error('the mark did not arrive');
-    const [first] = annots.asArray();
-    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
-    const parent = dict?.get(PDFName.of('P'));
-    // The page's own reference, which is what `/P` must name.
-    expect(parent).toBeInstanceOf(PDFRef);
-    expect((parent as PDFRef).toString()).toBe(page.ref.toString());
+    const { names, own } = await parentOf(await mergedWithMark(), 2);
+    expect(names).toBe(own);
   });
 
   it('leaves a page that had no annotations without an /Annots key', async () => {
@@ -243,5 +261,126 @@ describe('an annotation survives crossing into another document', () => {
     const loaded = await PDFDocument.load(merged, { updateMetadata: false });
     const bare = loaded.getPages()[1];
     expect(bare?.node.lookup(PDFName.of('Annots'))).toBeUndefined();
+  });
+});
+
+/**
+ * A two-page target whose page **1** is replaced by a three-page marked source.
+ *
+ * `at: 1` rather than `at: 0`, and the difference is the whole fixture: the
+ * apply grafts each source page to `command.at + page` and then deletes the
+ * replaced page from `command.at + pages`. At zero both expressions collapse to
+ * the loop variable and the page count, so an implementation that ignored `at`
+ * entirely would produce exactly this document. A fixture the defect also
+ * handles correctly separates nothing.
+ */
+async function replacedWithMark(): Promise<Uint8Array> {
+  const into = await mupdfWriter.open(await document(2));
+  const from = await mupdfWriter.open(await marked());
+  try {
+    await applyReplacePage(into, { kind: 'replacePage', source: 'source' as never, at: 1 }, from);
+    return await mupdfWriter.serialise(into);
+  } finally {
+    await mupdfWriter.close(from);
+    await mupdfWriter.close(into);
+  }
+}
+
+describe('an annotation survives the OTHER command that crosses documents', () => {
+  // `replacePage` shares `graftPageWithAnnotations` with the merge above, which
+  // is a fact about today's code and not a property. Rule 0's *fix the class,
+  // not the instance* has its matching failure in the tests: closing one caller
+  // and leaving its sibling uncovered is the half-fix that reads as done,
+  // because the helper is proven and the call site is where the argument order,
+  // the index arithmetic and the deletion afterwards live.
+  it('arrives with the pages a replace grafts, at the index the replace named', async () => {
+    // The target's page 0 stays; the source's three pages land at 1, 2 and 3;
+    // the replaced page is deleted from 4. Its marked page was 1, so the mark
+    // is at 2 and four pages remain. The COUNT is asserted beside the index
+    // because an apply that deleted the wrong page leaves the mark where this
+    // expects it and the document one page short.
+    const replaced = await replacedWithMark();
+    const loaded = await PDFDocument.load(replaced, { updateMetadata: false });
+    expect(loaded.getPageCount()).toBe(4);
+    expect(await marksIn(replaced)).toStrictEqual([{ page: 2, rect: PLACED }]);
+  });
+
+  it('points the arrived annotation at the page it is now ON', async () => {
+    const { names, own } = await parentOf(await replacedWithMark(), 2);
+    expect(names).toBe(own);
+  });
+});
+
+/** Pages 2 and 1 of a marked document, extracted in that order. */
+async function extractedWithMark(): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(await marked());
+  try {
+    return await extractPages(session, [2, 1]);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('an annotation survives an extract into a NEW document', () => {
+  /**
+   * The third crossing, and the one that takes a different route entirely.
+   *
+   * `extractPages` does not use `graftPage` at all: its own header records the
+   * measurement that made that choice — `graftPage` drops both `/Annots` and
+   * the four catalog entries — so it grafts the page object and inserts it.
+   * Nothing here follows from the merge cases: that route carries `/Annots`
+   * because the whole page graph goes in one `graftObject`, which is a
+   * different reason from the one the merge needed a second call for.
+   *
+   * The order is reversed on purpose. An extract of `[2, 1]` puts the source's
+   * page 1 at output index 1, so *the mark is on page 1* is true before and
+   * after — and would be true of an implementation that ignored the order. The
+   * page count is what separates them, and the case below asserts it.
+   */
+  it('arrives on the extracted page, in the order asked for', async () => {
+    const extracted = await extractedWithMark();
+    const loaded = await PDFDocument.load(extracted, { updateMetadata: false });
+    expect(loaded.getPageCount()).toBe(2);
+    expect(await marksIn(extracted)).toStrictEqual([{ page: 1, rect: PLACED }]);
+  });
+
+  it('points at the page it is now on, which no second call re-pointed', async () => {
+    // The merge needed `/P` written explicitly because the page and its
+    // annotations crossed in two grafts, and the second carried a `/P` naming
+    // the first graft's copy. Here one graft carries the page and everything it
+    // references, so the map resolves `/P` to the same object it just made.
+    // That is a reason to EXPECT this, and it is not evidence: the assertion is
+    // what makes the route's difference from the merge a measured one.
+    const { names, own } = await parentOf(await extractedWithMark(), 1);
+    expect(names).toBe(own);
+  });
+});
+
+/** The cross-document commands the cases above exercise. */
+const COVERED: readonly CommandKind[] = ['mergeDocument', 'replacePage'];
+
+describe('the set of crossings this file covers', () => {
+  it('is every command that declares a second document', () => {
+    // DERIVED from the declaration table, because the failure feared makes the
+    // set BIGGER: a third command naming a second document arrives with no case
+    // here, and a hand-kept list cannot see that. `COVERED` is the anchor the
+    // derivation cannot supply — it is a claim about what this FILE exercises,
+    // not a second opinion about which kinds carry a source, which the kernel's
+    // `sources` axis owns and `commandDeclarations.test.ts` ties to the
+    // contract.
+    //
+    // `extractPages` is the third crossing and is deliberately absent: it is a
+    // query rather than a command, so no axis here can name it, and it is
+    // covered by the block above rather than by this roster. Stated so its
+    // absence reads as a boundary rather than as a gap.
+    const crossing = (Object.keys(declaredCommands) as readonly CommandKind[]).filter(
+      (kind) => declaredCommands[kind].sources === 'one',
+    );
+    expect(
+      [...crossing].sort(),
+      'A command declaring sources: one copies pages out of another document, and whether an ' +
+        'annotation arrives with them is a fact about how that copy is made rather than about ' +
+        'the page tree. Give it a case in this file, then name it in COVERED.',
+    ).toStrictEqual([...COVERED].sort());
   });
 });

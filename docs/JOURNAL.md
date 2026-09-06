@@ -876,6 +876,105 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-06 — Three claims that were anchored to nothing, and a figure no tree held
+
+A review pass over the previous day's work, taken item by item. Nothing here was
+found by a failing test; all three were found by asking what a stated claim
+rested on and going to look.
+
+### The survival property covered one caller of a helper and read as covering the class
+
+`annotationSurvival.test.ts` measured that `graftPage` carries no `/Annots`, and
+the fix put every merge through `graftPageWithAnnotations`. `replacePage` calls
+that same helper, so it was covered **by construction and by nothing else** —
+and construction is the wrong unit, because the call site owns what the helper
+cannot: the index arithmetic and the deletion after it.
+
+Its case is now there, and the mutation separates them. Rewriting
+`command.at + page` to `page` reddens both replace cases and leaves every merge
+case green. The fixture replaces page **1** for the same reason: at zero,
+`command.at + page` and `command.at + pages` collapse to the loop variable and
+the page count, so an apply that ignored `at` entirely writes the document the
+case expects. A fixture the defect also handles correctly separates nothing.
+
+`extractPages` is the third crossing and takes the other route — one
+`graftObject` of the whole page graph, `carryCatalog` after it. The reasoning
+says `/P` must be right there, because the map resolves it to the copy it just
+made rather than to a second graft of the source page, which is exactly what the
+merge needed a second call to repair. **That is a reason to expect it and not
+evidence**, and it is the same reasoning that looked sound about `movePage` and
+said nothing about a copy between documents. Measured: it passed.
+
+Its annotations turned out to be reachable only through the AcroForm case's
+widget — deleting `/Annots` in the extract path reddens *"CARRIES THE FOUR
+CATALOG ENTRIES"* as well as the two new cases. Incidental coverage through a
+different subject is why the gap read as tested.
+
+The roster is derived from the `sources` axis, because the failure feared makes
+the set bigger, and anchored by the list of kinds the file exercises, because a
+derivation agrees with any shrink. `extractPages` is a query, declares no axis,
+and is named as covered rather than derived — an absence stated as a boundary
+rather than left to read as a gap.
+
+### The contract cited an anchor that did not exist
+
+`contract/commands.ts` owns a hand-written `if` naming which command kinds carry
+a source `DocId`, with a type beside it and a comment saying the load-bearing
+half — tying that type to the kernel's `sources` axis — lived in
+`commandDeclarations.test.ts`. `grep -n sources` over that file returned
+nothing. The citation named a real file doing real work of its own, so opening
+it confirmed that a test exists rather than that this claim was in it.
+
+The line beside the type was called `_switchCoversExactlyThose` and checked only
+that both names are real `CommandKind`s: green for a third kind added to the
+type, green for one dropped from the `if`. A name that overstates a check is
+worse than no check, because it is what a reader consults instead of the code.
+
+The tie is now written where the comment said, both directions mutated. Until
+today the only thing standing behind that list was `CommandBus` throwing at
+dispatch — which fires after the registration is written, shipped and run.
+
+### A figure measured from a working tree, by a file inside the set it counted
+
+`failureLine.mjs` recorded *61 files carry the first spelling, 25 the second, and
+one of the 86 headers matches* — read on 2026-09-06 over `scripts/proofs/*.mjs`
+and `scripts/lib/*.mjs`. Re-running those exact commands answers **62/26/95**,
+and at the commit's parent **60/25/85**. No tree holds 61/25/86.
+
+The mechanism is that the file lives in the set it counts: its finished
+docstring carries four matching lines of its own — the two spellings it quotes
+and the two grep patterns naming them — so completing the comment moved the
+number the comment states. The figure was taken mid-edit, between those two
+states.
+
+B6 asks for the number, the date and where it was read. **For a count over
+tracked files, where it was read is a rev**, and a date is not a substitute: it
+names a moment on one machine that nobody can return to. The citation is now
+`e4ac590~1`, which is the tree the reader was actually wrong against.
+
+The reviewing seat's own re-measurement is what surfaced it, and neither of the
+two roots they tried reproduced the figure either — `scripts/proofs/` alone
+gives 51 and 25 with **zero** matching headers, and all of `scripts/` gives 76
+and 29 with one. The single match is `scripts/lib/reportError.proof.mjs:200`, a
+proof whose subject *is* error reporting, so its header reads
+`${n} error-report failure(s):`. It sits in the second root and not the first,
+which is why the same question has two honest answers. A reader told that no
+header ever matches would take the throw fallback for unreachable code.
+
+### A grep that could not see a compiler error
+
+Recorded because it nearly produced the wrong conclusion about a check written
+in the same hour. Mutating the new type-level tie and grepping the output for
+`error TS` returned nothing, which reads as *the check is vacuous*. It was not:
+`tsc --pretty` writes ANSI colour codes between `error` and `TS`, so no line
+contains that string. The error was on screen the whole time.
+
+Item 4b's own list — *a wrong pattern, an empty input set, the wrong window* —
+with a sixth entry: **the wrong bytes**. A rendered line and its underlying
+string are not the same text, and a pattern spanning a styling boundary is the
+line-break failure in a different costume. The check reddens in both directions;
+the instrument reading it was blind.
+
 ## 2026-09-06 — Stage 3 opens: the annotation platform, built with its first tool
 
 The `docs/FEATURES.md` platform row points here for the history it no longer
