@@ -96,8 +96,8 @@ async function joined(): Promise<{
   const incidents: Incident[] = [];
   const wrapped = wrapHandlers(
     engineChannels,
-    createEngineHandlers(
-      {
+    createEngineHandlers({
+      sessions: {
         lookup: (id) => held.get(id),
         issue: () => {
           throw new Error('this file drives the EXECUTION half; nothing here opens a session');
@@ -106,12 +106,12 @@ async function joined(): Promise<{
           throw new Error('this file drives the EXECUTION half; nothing here closes a session');
         },
       },
-      localMupdfExecution,
+      execution: localMupdfExecution,
       // THROWING STUBS RATHER THAN WORKING ONES. Every case below is about
       // apply, capture and invert, none of which may touch a document image or
       // a directory — so a handler that reached for either fails loudly here
       // instead of passing against a surface that happened to work.
-      {
+      writer: {
         open: () => {
           throw new Error('the execution half must not open');
         },
@@ -122,7 +122,7 @@ async function joined(): Promise<{
           throw new Error('the execution half must not close');
         },
       },
-      {
+      files: {
         readSnapshot: () => {
           throw new Error('the execution half must not read the snapshot directory');
         },
@@ -130,23 +130,23 @@ async function joined(): Promise<{
           throw new Error('the execution half must not write the output directory');
         },
       },
-      () => {
+      probe: () => {
         throw new Error('the execution half must not probe containment');
       },
       // THE REAL READER, unlike the four stubs above, because the geometry
       // cases below are about what the HOST's page tree says after a command
       // crossed — which a stub cannot answer without becoming the thing under
       // test.
-      readPageGeometry,
+      geometry: readPageGeometry,
       // THE REAL READER for the same reason, so the text case below is about
       // what the HOST's document says rather than what a stub was told to say.
-      readPageTextJson,
-      readPageLinks,
-      readDestinations,
-      readLayers,
-      findDuplicatePages,
-      extractPages,
-    ),
+      pageText: readPageTextJson,
+      pageLinks: readPageLinks,
+      destinations: readDestinations,
+      layers: readLayers,
+      duplicates: findDuplicatePages,
+      extract: extractPages,
+    }),
     (incident) => incidents.push(incident),
   );
 
@@ -350,8 +350,8 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     const incidents: Incident[] = [];
     const wrapped = wrapHandlers(
       engineChannels,
-      createEngineHandlers(
-        {
+      createEngineHandlers({
+        sessions: {
           lookup: () => ({ session, outputDirectory: 'unused' }),
           issue: () => {
             throw new Error('unused');
@@ -360,11 +360,11 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             throw new Error('unused');
           },
         },
-        {
+        execution: {
           ...localMupdfExecution,
           apply: () => Promise.reject(new Error('the engine faulted')),
         },
-        {
+        writer: {
           open: () => {
             throw new Error('unused');
           },
@@ -375,7 +375,7 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             throw new Error('unused');
           },
         },
-        {
+        files: {
           readSnapshot: () => {
             throw new Error('unused');
           },
@@ -383,31 +383,31 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             throw new Error('unused');
           },
         },
-        () => {
+        probe: () => {
           throw new Error('unused');
         },
-        () => {
+        geometry: () => {
           throw new Error('unused');
         },
-        () => {
+        pageText: () => {
           throw new Error('unused');
         },
-        () => {
+        pageLinks: () => {
           throw new Error('unused');
         },
-        () => {
+        destinations: () => {
           throw new Error('unused');
         },
-        () => {
+        layers: () => {
           throw new Error('unused');
         },
-        () => {
+        duplicates: () => {
           throw new Error('unused');
         },
-        () => {
+        extract: () => {
           throw new Error('unused');
         },
-      ),
+      }),
       (incident) => incidents.push(incident),
     );
     const sessions = createRemoteSessions();
@@ -442,8 +442,8 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
     const incidents: Incident[] = [];
     const wrapped = wrapHandlers(
       engineChannels,
-      createEngineHandlers(
-        {
+      createEngineHandlers({
+        sessions: {
           lookup: () => ({ session, outputDirectory: 'unused' }),
           issue: () => {
             throw new Error('unused');
@@ -452,9 +452,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             throw new Error('unused');
           },
         },
-        localMupdfExecution,
-        mupdfWriter,
-        {
+        execution: localMupdfExecution,
+        writer: mupdfWriter,
+        files: {
           readSnapshot: () => {
             throw new Error('unused');
           },
@@ -462,32 +462,32 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
             throw new Error('unused');
           },
         },
-        () => {
+        probe: () => {
           throw new Error('unused');
         },
         // The page decides, so one harness carries the case and its control:
         // page 0 answers a raw 45 and page 1 a legal quarter turn.
-        (_held, pages) =>
+        geometry: (_held, pages) =>
           Promise.resolve({ pageCount: 3, rotations: pages.map((page) => (page === 0 ? 45 : 90)) }),
-        () => {
+        pageText: () => {
           throw new Error('the rotation-refusal case must not read page text');
         },
-        () => {
+        pageLinks: () => {
           throw new Error('the rotation-refusal case must not read page links');
         },
-        () => {
+        destinations: () => {
           throw new Error('the rotation-refusal case must not read the outline');
         },
-        () => {
+        layers: () => {
           throw new Error('the rotation-refusal case must not read the layers');
         },
-        () => {
+        duplicates: () => {
           throw new Error('the rotation-refusal case must not look for duplicates');
         },
-        () => {
+        extract: () => {
           throw new Error('the rotation-refusal case must not build a document');
         },
-      ),
+      }),
       (incident) => incidents.push(incident),
     );
     const sessions = createRemoteSessions();

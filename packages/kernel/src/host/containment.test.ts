@@ -536,23 +536,18 @@ describe('the engine host answers a containment probe', () => {
     const asked: ContainmentProbePaths[] = [];
     const wrapped = wrapHandlers(
       engineChannels,
-      createEngineHandlers(
-        forbidden.sessions,
-        localMupdfExecution,
-        forbidden.writer,
-        forbidden.files,
-        (paths) => {
+      // SPREAD, since 2026-09-06's options object. `forbidden` was already
+      // written as a named-key table and unpacked into twelve positional
+      // arguments at this one call site — which is the move arriving where it
+      // had already been made by hand.
+      createEngineHandlers({
+        ...forbidden,
+        execution: localMupdfExecution,
+        probe: (paths) => {
           asked.push(paths);
           return Promise.resolve(answer);
         },
-        forbidden.geometry,
-        forbidden.pageText,
-        forbidden.pageLinks,
-        forbidden.destinations,
-        forbidden.layers,
-        forbidden.duplicates,
-        forbidden.extract,
-      ),
+      }),
       () => undefined,
     );
     return { asked, call: wrapped['engine/probe-containment'] };

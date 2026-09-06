@@ -160,6 +160,15 @@ export interface HostFilesystem {
 export type HostContainmentProbe = (paths: ContainmentProbePaths) => Promise<ContainmentReport>;
 
 /**
+ * What the engine host's handlers are built from — an options object since
+ * 2026-09-06, for `DocumentCommandsParts`' reason one layer out.
+ *
+ * Twelve positional parameters, seven of them readers, and the churn is what
+ * made the case: the commit that added the twelfth had to edit seven test call
+ * sites to do it. Named keys end that, and they end the mis-slot class with
+ * it — two readers answering the same shape stops being a hazard when the
+ * compiler pairs each with the key it was written for.
+ *
  * @param sessions what this host holds. `undefined` is an OUTCOME here, not a
  *   defect: a rebuilt host holds none of the previous one's sessions, so a call
  *   arriving with an old id is ordinary and gets a declared code.
@@ -173,20 +182,35 @@ export type HostContainmentProbe = (paths: ContainmentProbePaths) => Promise<Con
  *   `execution` is: a handler proof must be able to drive this channel without
  *   a parsed document.
  */
-export function createEngineHandlers(
-  sessions: HostSessions,
-  execution: CommandExecution<'mupdf'>,
-  writer: EngineWriter<MupdfSession>,
-  files: HostFilesystem,
-  probe: HostContainmentProbe,
-  geometry: PageGeometryReader,
-  pageText: HostPageTextReader,
-  pageLinks: HostPageLinksReader,
-  destinations: HostDestinationsReader,
-  layers: HostLayersReader,
-  duplicates: HostDuplicatesReader,
-  extract: HostExtract,
-): Handlers<EngineChannels> {
+export interface EngineHandlerParts {
+  readonly sessions: HostSessions;
+  readonly execution: CommandExecution<'mupdf'>;
+  readonly writer: EngineWriter<MupdfSession>;
+  readonly files: HostFilesystem;
+  readonly probe: HostContainmentProbe;
+  readonly geometry: PageGeometryReader;
+  readonly pageText: HostPageTextReader;
+  readonly pageLinks: HostPageLinksReader;
+  readonly destinations: HostDestinationsReader;
+  readonly layers: HostLayersReader;
+  readonly duplicates: HostDuplicatesReader;
+  readonly extract: HostExtract;
+}
+
+export function createEngineHandlers({
+  sessions,
+  execution,
+  writer,
+  files,
+  probe,
+  geometry,
+  pageText,
+  pageLinks,
+  destinations,
+  layers,
+  duplicates,
+  extract,
+}: EngineHandlerParts): Handlers<EngineChannels> {
   // THE MISS IS RETURNED, NEVER THROWN, and that is the load-bearing choice in
   // this file. A throw crossing this boundary becomes `internal` with its
   // diagnostic withheld — and the supervisor cannot act on `internal`.

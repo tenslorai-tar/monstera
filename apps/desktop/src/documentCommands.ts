@@ -700,6 +700,60 @@ export interface Applied {
   readonly historyDropped: number;
 }
 
+/**
+ * Everything `DocumentCommands` is built from — CCCCCC-3's options object,
+ * taken 2026-09-06.
+ *
+ * ## What it replaces, and why the count was the finding
+ *
+ * Fifteen positional parameters, appended one at a time, with a comment at each
+ * of the last five saying the options object was owed and that the next
+ * addition would make the case stronger. Five of them are READERS with the same
+ * signature — `(docId, sessions) => Promise<readonly T[]>` — and CCCCCC-3 named
+ * the trigger exactly: *the day two of these answer the same shape*, a
+ * transposition compiles and a panel shows the wrong list. The trigger had not
+ * fired, because `Layer`, `Destination`, `PageLink`, `PageGeometry` and
+ * `{ groups, truncated }` are still mutually incompatible.
+ *
+ * It was going to. The sixteenth dependency is an annotations reader, whose
+ * answer is a list of objects carrying a page and a rectangle — which is
+ * `PageLink`'s shape closely enough that nobody should be relying on the
+ * difference. So the move happens **before** the reader rather than after,
+ * which is what B4 means one layer down from architecture: the seam changes
+ * first, in its own commit.
+ *
+ * ## Named keys make the mis-slot unrepresentable rather than unlikely
+ *
+ * A positional list is safe exactly as long as no two entries share a type, and
+ * that is a property of the current set rather than of the design. With names,
+ * two readers answering the same shape is no longer a hazard at all — the
+ * compiler pairs each with the key it was written for, and a missing one is an
+ * error naming the thing that is missing.
+ *
+ * `ShellComposition` made this move one layer out and is the precedent; the
+ * three bundles below — `SaveSource`, `CopySource`, `ImageSource` — are the
+ * same idea applied to pairs of dependencies that belong together, and they
+ * stay as they are.
+ */
+export interface DocumentCommandsParts {
+  readonly documents: DocumentService;
+  readonly bus: CommandBus;
+  readonly engine: EngineSessionSource;
+  readonly save: SaveSource;
+  readonly geometry: DocumentGeometry;
+  readonly pageText: DocumentPageText;
+  readonly pageLinks: DocumentPageLinksReader;
+  readonly destinations: DocumentDestinationsReader;
+  readonly layers: DocumentLayersReader;
+  readonly restore: DocumentRestore;
+  readonly duplicates: DocumentDuplicatesReader;
+  /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
+  readonly copy: CopySource;
+  readonly image: ImageSource;
+  readonly extract: DocumentExtractReader;
+  readonly directory: PickDirectory;
+}
+
 export class DocumentCommands {
   readonly #documents: DocumentService;
   readonly #bus: CommandBus;
@@ -717,75 +771,22 @@ export class DocumentCommands {
   readonly #extract: DocumentExtractReader;
   readonly #directory: PickDirectory;
 
-  constructor(
-    documents: DocumentService,
-    bus: CommandBus,
-    engine: EngineSessionSource,
-    save: SaveSource,
-    geometry: DocumentGeometry,
-    pageText: DocumentPageText,
-    pageLinks: DocumentPageLinksReader,
-    destinations: DocumentDestinationsReader,
-    layers: DocumentLayersReader,
-    // APPENDED rather than placed beside `engine`, which is where it belongs by
-    // subject. Inserting a parameter into a positional list of nine shifts eight
-    // arguments at every call site, and this build has already shipped one such
-    // shift: a `recent` parameter added fourth, into which a harness passed a
-    // `platform`, through a `Promise<any>` that erased the signature. The
-    // signature here is distinct — `(DocId, SnapshotWrite)` against every
-    // reader's `(DocId, DocumentSessions, …)` — so a mis-slot is a type error
-    // either way; appending is what keeps the *other* eight from moving.
-    restore: DocumentRestore,
-    // THE ELEVENTH POSITIONAL PARAMETER, and the fifth reader taking
-    // `(docId, sessions)`. Finding CCCCCC-3 recorded the class and named its
-    // trigger precisely — *the day two of these readers answer the same
-    // shape*, when a transposition compiles and a panel shows the wrong list.
-    // Checked rather than inherited: `Layer`, `Destination`, `PageLink`,
-    // `PageGeometry` and this one's `{ groups, truncated }` are still mutually
-    // incompatible, so the trigger has not fired. The options object that
-    // removes the class remains owed.
-    duplicates: DocumentDuplicatesReader,
-    // ONE PARAMETER FOR TWO DEPENDENCIES, and that is this list's own comment
-    // being acted on rather than restated. Writing a copy needs a picker and a
-    // contested-destination check; appending them separately would make a list
-    // of twelve into fourteen and move the class one step further from the
-    // options object it says is owed. `SaveSource` is the precedent — it
-    // bundles a filesystem and a flush for the same reason — so this follows a
-    // shape already here instead of inventing a second one.
-    copy: CopySource,
-    // THE THIRTEENTH POSITIONAL PARAMETER, and it is bundled for the reason one
-    // line up. The options object this list has owed since CCCCCC-3 now exists
-    // one layer out — `ShellComposition` — and the same move here is its own
-    // unit rather than a change smuggled into a feature.
-    image: ImageSource,
-    // THE FOURTEENTH, and the count is now the finding rather than a footnote.
-    // CCCCCC-3's trigger is *the day two readers answer the same shape*, and it
-    // still has not fired — this one's `(docId, sessions, pages) => ByteImage`
-    // is distinct from all five. What HAS happened is that the same commit
-    // added a twelfth positional parameter to `createEngineHandlers` and had to
-    // edit seven test call sites to do it, which is the churn `ShellComposition`
-    // was built to end one layer out. The options object is owed here and in
-    // `createEngineHandlers`, as its own unit.
-    extract: DocumentExtractReader,
-    // THE FIFTEENTH. See the note one parameter up — the options object is
-    // owed, and this is the second dependency added since it was owed.
-    directory: PickDirectory,
-  ) {
-    this.#documents = documents;
-    this.#bus = bus;
-    this.#engine = engine;
-    this.#save = save;
-    this.#geometry = geometry;
-    this.#pageText = pageText;
-    this.#pageLinks = pageLinks;
-    this.#destinations = destinations;
-    this.#layers = layers;
-    this.#restore = restore;
-    this.#duplicates = duplicates;
-    this.#copy = copy;
-    this.#image = image;
-    this.#extract = extract;
-    this.#directory = directory;
+  constructor(parts: DocumentCommandsParts) {
+    this.#documents = parts.documents;
+    this.#bus = parts.bus;
+    this.#engine = parts.engine;
+    this.#save = parts.save;
+    this.#geometry = parts.geometry;
+    this.#pageText = parts.pageText;
+    this.#pageLinks = parts.pageLinks;
+    this.#destinations = parts.destinations;
+    this.#layers = parts.layers;
+    this.#restore = parts.restore;
+    this.#duplicates = parts.duplicates;
+    this.#copy = parts.copy;
+    this.#image = parts.image;
+    this.#extract = parts.extract;
+    this.#directory = parts.directory;
   }
 
   /**

@@ -399,114 +399,124 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
   // `mupdf` is named because it is the one adapter that exists, and it is
   // reached through the registry rather than around it: an unregistered writer
   // is refused by name here exactly as `CommandBus` refuses one.
-  const commands = new DocumentCommands(documents, bus, engine, {
-    deps: {
-      checkWriteTarget: (docId) => documents.checkWriteTarget(docId),
-      surface: nodeFileSurface,
-      names: siblingNames,
-      wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  const commands = new DocumentCommands({
+    documents,
+    bus,
+    engine,
+    save: {
+      deps: {
+        checkWriteTarget: (docId) => documents.checkWriteTarget(docId),
+        surface: nodeFileSurface,
+        names: siblingNames,
+        wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      },
+      flush: (docId, sessions) => {
+        const writer = engineHost.writers.mupdf;
+        const session = sessions.mupdf;
+        // A DEFECT, not an outcome, and the same one `MissingSessionError`
+        // names for a command: the holder of sessions and the open-document
+        // index have diverged, or a document is being saved through a writer
+        // that was never registered. Reported as a class so the boundary turns
+        // it into `internal` with the diagnostic kept main-side, rather than
+        // telling a user their save was refused for a reason they can act on.
+        if (writer === undefined || session === undefined) {
+          throw new MissingSessionError(docId, 'mupdf');
+        }
+        return writer.serialise(session);
+      },
     },
-    flush: (docId, sessions) => {
-      const writer = engineHost.writers.mupdf;
+    // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
+    // geometry reader and the session are both in scope here and nowhere else.
+    // `documentCommands.ts` therefore names no writer of record for a read
+    // either — the one routing table stays in `commandDeclarations` (B3a).
+    //
+    // `mupdf` is named because the page tree is its concern by invariant L6,
+    // and it is reached through the object the host built rather than around it.
+    geometry: (docId, sessions, pages) => {
       const session = sessions.mupdf;
-      // A DEFECT, not an outcome, and the same one `MissingSessionError` names
-      // for a command: the holder of sessions and the open-document index have
-      // diverged, or a document is being saved through a writer that was never
-      // registered. Reported as a class so the boundary turns it into
-      // `internal` with the diagnostic kept main-side, rather than telling a
-      // user their save was refused for a reason they can act on.
-      if (writer === undefined || session === undefined) {
-        throw new MissingSessionError(docId, 'mupdf');
-      }
-      return writer.serialise(session);
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.geometry(session, pages);
     },
-  },
-  // THE SAME COMPOSITION POINT AS THE FLUSH, and for the same reason: the
-  // geometry reader and the session are both in scope here and nowhere else.
-  // `documentCommands.ts` therefore names no writer of record for a read
-  // either — the one routing table stays in `commandDeclarations` (B3a).
-  //
-  // `mupdf` is named because the page tree is its concern by invariant L6, and
-  // it is reached through the object the host built rather than around it.
-  (docId, sessions, pages) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return engineHost.geometry(session, pages);
-  },
-  // THE TEXT READ, composed here for the geometry read's reason and PARSED
-  // here for a different one: `parsePageText` is the one reader of MuPDF's
-  // format (§3.2) and it must not run in the host, so the host answers with a
-  // string and main turns it into a page. ADR-0035 is why only one page can be
-  // asked for — a document's extracted text is 3.59× its bytes, which main may
-  // not hold even transiently.
-  async (docId, sessions, page) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return parsePageText(await engineHost.pageText(session, page));
-  },
-  // THE LINK READ, composed here for the two reads above's reason. Unlike the
-  // text, nothing is parsed on the way through: the host answers a declared
-  // shape rather than a format, so there is no second reader to keep out of the
-  // hostile process.
-  (docId, sessions, page) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return engineHost.pageLinks(session, page);
-  },
-  // THE OUTLINE, composed here for the reads above's reason and taking no page,
-  // because an outline is a property of the document rather than of a page.
-  (docId, sessions) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return engineHost.destinations(session);
-  },
-  // THE LAYERS, a read like the two above. The TOGGLE is not here: it is a
-  // command, and commands route through the bus in `execute`.
-  (docId, sessions) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return engineHost.layers(session);
-  },
-  // THE CHECKPOINT RESTORE, and it is `recycle` with a different source of
-  // bytes rather than a new operation. `EngineSessions.recycle` already
-  // releases a document's sessions and opens them again while KEEPING its
-  // entry — so the failure count and the poisoned state survive a restore,
-  // which is what would go wrong first if this swapped the sessions itself.
-  //
-  // Composed here for the flush's reason: the supervisor and the host's opener
-  // are both in scope on this line and nowhere else.
-  (docId, write) => engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
-  // THE DUPLICATE REPORT, composed here for the reads above's reason: the
-  // reader and the session are both in scope on this line and nowhere else.
-  (docId, sessions) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return engineHost.duplicates(session);
-  },
-  // WRITING A COPY, and both members are composed here for `SaveSource`'s
-  // reason: `checkTarget` is the service's, and the picker is a parameter for
-  // the same reason `pickDocument` is — nothing in this file imports Electron,
-  // so the whole graph stays buildable in a plain Node test.
-  { pick: pickDestination, checkTarget: (destination) => documents.checkCopyTarget(destination) },
-  // INSERTING AN IMAGE, and both members are parameters for the copy's reason:
-  // the picker needs Electron and the read needs Node's filesystem, and this
-  // file imports neither.
-  { pick: pickImage, read: readImage },
-  // THE EXTRACT, composed like every reader above it: resolve the session, then
-  // hand it to whichever host is live. What differs is that it produces a
-  // SECOND document's bytes rather than answering a question about this one,
-  // and that those bytes are built in the host because `extractPages` reaches
-  // MuPDF (invariant 20).
-  (docId, sessions, pages) => {
-    const session = sessions.mupdf;
-    if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
-    return engineHost.extract(session, pages);
-  },
-  // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
-  // the one part of splitting that genuinely needs Electron, so it is the part
-  // that arrives from `entry.ts` and this file keeps its property of importing
-  // nothing from it.
-  pickDirectory);
+    // THE TEXT READ, composed here for the geometry read's reason and PARSED
+    // here for a different one: `parsePageText` is the one reader of MuPDF's
+    // format (§3.2) and it must not run in the host, so the host answers with a
+    // string and main turns it into a page. ADR-0035 is why only one page can
+    // be asked for — a document's extracted text is 3.59× its bytes, which main
+    // may not hold even transiently.
+    pageText: async (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return parsePageText(await engineHost.pageText(session, page));
+    },
+    // THE LINK READ, composed here for the two reads above's reason. Unlike the
+    // text, nothing is parsed on the way through: the host answers a declared
+    // shape rather than a format, so there is no second reader to keep out of
+    // the hostile process.
+    pageLinks: (docId, sessions, page) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.pageLinks(session, page);
+    },
+    // THE OUTLINE, composed here for the reads above's reason and taking no
+    // page, because an outline is a property of the document rather than of a
+    // page.
+    destinations: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.destinations(session);
+    },
+    // THE LAYERS, a read like the two above. The TOGGLE is not here: it is a
+    // command, and commands route through the bus in `execute`.
+    layers: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.layers(session);
+    },
+    // THE CHECKPOINT RESTORE, and it is `recycle` with a different source of
+    // bytes rather than a new operation. `EngineSessions.recycle` already
+    // releases a document's sessions and opens them again while KEEPING its
+    // entry — so the failure count and the poisoned state survive a restore,
+    // which is what would go wrong first if this swapped the sessions itself.
+    //
+    // Composed here for the flush's reason: the supervisor and the host's
+    // opener are both in scope on this line and nowhere else.
+    restore: (docId, write) =>
+      engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
+    // THE DUPLICATE REPORT, composed here for the reads above's reason: the
+    // reader and the session are both in scope on this line and nowhere else.
+    duplicates: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.duplicates(session);
+    },
+    // WRITING A COPY, and both members are composed here for `SaveSource`'s
+    // reason: `checkTarget` is the service's, and the picker is a parameter for
+    // the same reason `pickDocument` is — nothing in this file imports
+    // Electron, so the whole graph stays buildable in a plain Node test.
+    copy: {
+      pick: pickDestination,
+      checkTarget: (destination) => documents.checkCopyTarget(destination),
+    },
+    // INSERTING AN IMAGE, and both members are parameters for the copy's
+    // reason: the picker needs Electron and the read needs Node's filesystem,
+    // and this file imports neither.
+    image: { pick: pickImage, read: readImage },
+    // THE EXTRACT, composed like every reader above it: resolve the session,
+    // then hand it to whichever host is live. What differs is that it produces
+    // a SECOND document's bytes rather than answering a question about this
+    // one, and that those bytes are built in the host because `extractPages`
+    // reaches MuPDF (invariant 20).
+    extract: (docId, sessions, pages) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.extract(session, pages);
+    },
+    // THE FOLDER PICKER, a parameter for `pickDocument`'s reason: the dialog is
+    // the one part of splitting that genuinely needs Electron, so it is the
+    // part that arrives from `entry.ts` and this file keeps its property of
+    // importing nothing from it.
+    directory: pickDirectory,
+  });
 
   const openedDocument = engineHost.openedDocument;
 

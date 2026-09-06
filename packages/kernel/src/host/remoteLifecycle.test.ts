@@ -177,8 +177,8 @@ function joined(
 
   const wrapped = wrapHandlers(
     engineChannels,
-    createEngineHandlers(
-      {
+    createEngineHandlers({
+      sessions: {
         lookup: (id) => held.get(id),
         issue: (session) => {
           const id = `s${String((issued += 1))}`;
@@ -189,9 +189,9 @@ function joined(
           held.delete(id);
         },
       },
-      localMupdfExecution,
-      { ...mupdfWriter, ...override },
-      {
+      execution: localMupdfExecution,
+      writer: { ...mupdfWriter, ...override },
+      files: {
         readSnapshot: async (directory, name) =>
           new Uint8Array(await readFile(join(directory, name))),
         writeOutput: async (directory, name, bytes) => {
@@ -199,33 +199,33 @@ function joined(
           return bytes.length;
         },
       },
-      () => {
+      probe: () => {
         throw new Error('the lifecycle half must not probe containment');
       },
-      () => {
+      geometry: () => {
         throw new Error('the lifecycle half must not read a page tree');
       },
-      () => {
+      pageText: () => {
         throw new Error('the lifecycle half must not read page text');
       },
-      () => {
+      pageLinks: () => {
         throw new Error('the lifecycle half must not read page links');
       },
-      () => {
+      destinations: () => {
         throw new Error('the lifecycle half must not read the outline');
       },
-      () => {
+      layers: () => {
         throw new Error('the lifecycle half must not read the layers');
       },
-      () => {
+      duplicates: () => {
         throw new Error('the lifecycle half must not look for duplicates');
       },
       // THE REAL ONE, unlike its neighbours, because `extract` IS part of what
       // this file drives now — the round trip through the granted area is the
       // same four steps `serialise` takes, and a stub would make the case about
       // the stub.
-      extractPages,
-    ),
+      extract: extractPages,
+    }),
     (incident) => incidents.push(incident),
   );
 
@@ -379,8 +379,8 @@ describe('remoteMupdfLifecycle', () => {
 
     const wrapped = wrapHandlers(
       engineChannels,
-      createEngineHandlers(
-        {
+      createEngineHandlers({
+        sessions: {
           lookup: (id) => held.get(id),
           issue: (session) => {
             const id = `s${String((issued += 1))}`;
@@ -391,9 +391,9 @@ describe('remoteMupdfLifecycle', () => {
             held.delete(id);
           },
         },
-        localMupdfExecution,
-        mupdfWriter,
-        {
+        execution: localMupdfExecution,
+        writer: mupdfWriter,
+        files: {
           readSnapshot: async (directory, name) =>
             new Uint8Array(await readFile(join(directory, name))),
           writeOutput: async (directory, name, bytes) => {
@@ -401,31 +401,31 @@ describe('remoteMupdfLifecycle', () => {
             return bytes.length;
           },
         },
-        () => {
+        probe: () => {
           throw new Error('the byte-size case must not probe containment');
         },
-        () => {
+        geometry: () => {
           throw new Error('the byte-size case must not read a page tree');
         },
-        () => {
+        pageText: () => {
           throw new Error('the byte-size case must not read page text');
         },
-        () => {
+        pageLinks: () => {
           throw new Error('the byte-size case must not read page links');
         },
-        () => {
+        destinations: () => {
           throw new Error('the byte-size case must not read the outline');
         },
-        () => {
+        layers: () => {
           throw new Error('the byte-size case must not read the layers');
         },
-        () => {
+        duplicates: () => {
           throw new Error('the byte-size case must not look for duplicates');
         },
-        () => {
+        extract: () => {
           throw new Error('the byte-size case must not build a document');
         },
-      ),
+      }),
       () => undefined,
     );
 

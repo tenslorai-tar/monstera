@@ -103,6 +103,7 @@ export {
   engineChannels,
 } from './host/engineChannels.js';
 export {
+  type EngineHandlerParts,
   type HostContainmentProbe,
   type HostFilesystem,
   type HostDestinationsReader,
