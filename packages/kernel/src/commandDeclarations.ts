@@ -853,6 +853,31 @@ const declarations = {
     // Reads nothing through another engine.
     reads: 'none',
   },
+  addLink: {
+    kind: 'addLink',
+    // A `/Link` is an entry in `/Annots` and a page-tree write, so MuPDF owns it
+    // for the annotation rows' reason. It is also NOT an annotation in MuPDF's
+    // model — `getAnnotations()` does not return one — which is what put its
+    // apply in `pageLinks.ts` rather than beside them.
+    writer: 'mupdf',
+    // `addAnnotation`'s *not yet*, on a weaker footing: that one waits for a
+    // handle that now exists, and this one waits for a handle nothing has
+    // proposed. `document.pageLinks` answers with bounds and a target and no
+    // identity at all, which is where the annotations read was before ADR-0041.
+    invertible: false,
+    undo: 'checkpoint',
+    // `createLink` writes `/Rect`, `/BS` and `/A` and no date — the same
+    // measurement `addAnnotation` records, on the object beside it.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document. A page target is an index into THIS one.
+    sources: 'none',
+    // Self-contained: the rectangle and the target are its whole intent, and a
+    // page index is not a position in an answer somebody was given.
+    targets: 'none',
+    // Reads nothing through another engine.
+    reads: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

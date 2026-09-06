@@ -275,6 +275,20 @@ export const POLYLINE_TOOL_TITLE = messageKey('command.annotate.polyline');
 export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
 export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
 export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
+export const LINK_ADDRESS_TOOL_TITLE = messageKey('command.annotate.link-address');
+export const LINK_PAGE_TOOL_TITLE = messageKey('command.annotate.link-page');
+export const LINK_ADDRESS_TITLE = messageKey('dialog.link-address.title');
+export const LINK_ADDRESS_LABEL = messageKey('dialog.link-address.label');
+export const LINK_ADDRESS_APPLY = messageKey('dialog.link-address.apply');
+export const LINK_ADDRESS_EMPTY = messageKey('dialog.link-address.empty');
+export const LINK_ADDRESS_TOO_LONG = messageKey('dialog.link-address.too-long');
+export const LINK_ADDRESS_SCHEME = messageKey('dialog.link-address.scheme');
+export const LINK_PAGE_TITLE = messageKey('dialog.link-page.title');
+export const LINK_PAGE_LABEL = messageKey('dialog.link-page.label');
+export const LINK_PAGE_APPLY = messageKey('dialog.link-page.apply');
+export const LINK_PAGE_EMPTY = messageKey('dialog.link-page.empty');
+export const LINK_PAGE_TOO_LONG = messageKey('dialog.link-page.too-long');
+export const LINK_PAGE_NOT_A_NUMBER = messageKey('dialog.link-page.not-a-number');
 export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
 export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
 export const NUDGE_RIGHT_TITLE = messageKey('command.annotate.nudge-right');
@@ -556,6 +570,24 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // a bare *Select* in a palette beside the Edit ribbon would be the wrong one
   // for the reader who most needs the right one.
   [SELECT_TOOL_TITLE]: 'Select annotations',
+  [LINK_ADDRESS_TOOL_TITLE]: 'Link to a web address',
+  [LINK_PAGE_TOOL_TITLE]: 'Link to a page',
+  [LINK_ADDRESS_TITLE]: 'Link to a web address',
+  [LINK_ADDRESS_LABEL]: 'Address',
+  [LINK_ADDRESS_APPLY]: 'Add link',
+  [LINK_ADDRESS_EMPTY]: 'Type the address this link should open.',
+  [LINK_ADDRESS_TOO_LONG]: 'That address is too long to store.',
+  // NAMES WHAT IS ACCEPTED rather than what was wrong, because the person is
+  // about to type again and the useful sentence is the one that says what to
+  // type. The three schemes are the ones this build will write into a document
+  // that leaves this machine.
+  [LINK_ADDRESS_SCHEME]: 'Links can open a web page or an email address: start with https://, http:// or mailto:.',
+  [LINK_PAGE_TITLE]: 'Link to a page',
+  [LINK_PAGE_LABEL]: 'Page number',
+  [LINK_PAGE_APPLY]: 'Add link',
+  [LINK_PAGE_EMPTY]: 'Type the page this link should go to.',
+  [LINK_PAGE_TOO_LONG]: 'That is not a page number.',
+  [LINK_PAGE_NOT_A_NUMBER]: 'Type a page number, counting from 1.',
   [DELETE_SELECTION_TITLE]: 'Delete selected annotations',
   // ONE NAME FOR BOTH STEPS. The coarse nudge is the same command with Shift
   // held, and a second entry reading *Move selection left further* would be

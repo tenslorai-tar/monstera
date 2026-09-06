@@ -110,7 +110,7 @@ function pageAt(document: PDFDocument, page: number, total: number): PDFPage {
  * so, and refusing the whole document because one page has a broken `/MediaBox`
  * would hide every other page's marks behind one hostile one.
  */
-function frameOf(loaded: PDFPage): PageTransform | null {
+export function frameOf(loaded: PDFPage): PageTransform | null {
   const object = loaded.getObject();
   const box = displayedBox(object);
   if (box === null) return null;
@@ -157,7 +157,7 @@ function transformFor(loaded: PDFPage): PageTransform {
  * it does with one was not measured, and a rule that depends on an unmeasured
  * tolerance is a rule that changes when the version does.
  */
-function placedRect(
+export function placedRect(
   rect: AnnotationRect,
   transform: PageTransform,
 ): [number, number, number, number] {
@@ -323,7 +323,10 @@ function verticesBox(
  * viewport, so the page is `0, 0` to `viewport.width, viewport.height` — there
  * is no second place that says where the page is.
  */
-function touchesPage(rect: readonly [number, number, number, number], transform: PageTransform): boolean {
+export function touchesPage(
+  rect: readonly [number, number, number, number],
+  transform: PageTransform,
+): boolean {
   const [x0, y0, x1, y1] = rect;
   return x1 > 0 && y1 > 0 && x0 < transform.viewport.width && y0 < transform.viewport.height;
 }

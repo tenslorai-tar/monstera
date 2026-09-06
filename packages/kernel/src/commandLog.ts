@@ -363,6 +363,15 @@ export interface CommandPrior {
    * strokes or a line, all bounded by the draft schemas that already exist.
    */
   readonly placeAnnotation: never;
+  /**
+   * **`never`**, and this is `addAnnotation`'s *not yet* on a weaker footing.
+   *
+   * That one waited for a handle naming which annotation, and ADR-0041 built
+   * it. This waits for a handle naming which LINK, and nothing has proposed
+   * one: `document.pageLinks` answers with bounds and a target and no identity,
+   * which is exactly where the annotations read started.
+   */
+  readonly addLink: never;
 }
 
 /**

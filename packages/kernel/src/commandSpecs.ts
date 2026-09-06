@@ -53,6 +53,7 @@ import {
   invertPlaceAnnotation,
   invertRemoveAnnotation,
 } from './pageAnnotations.js';
+import { applyAddLink, captureAddLink, invertAddLink } from './pageLinks.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
   applyMergeDocument,
@@ -309,6 +310,12 @@ const declared = {
     apply: applyPlaceAnnotation,
     capture: capturePlaceAnnotation,
     invert: invertPlaceAnnotation,
+  },
+  addLink: {
+    ...declaredCommands.addLink,
+    apply: applyAddLink,
+    capture: captureAddLink,
+    invert: invertAddLink,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

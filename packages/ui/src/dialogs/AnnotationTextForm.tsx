@@ -63,6 +63,28 @@ export interface AnnotationTextFormProps {
   readonly empty: MessageKey;
   /** Shown when the value is past the payload's bound. */
   readonly tooLong: MessageKey;
+  /**
+   * The bound this dialog's payload carries. Defaults to the annotation text's.
+   *
+   * A PARAMETER because the link dialogs' payload is a shorter field, and a
+   * form that accepted 4,096 characters for a 2,048-character schema would be
+   * the dialog accepting what the channel refuses — which is the exact defect
+   * `annotationTextResult.ts` cites for importing the bound rather than
+   * restating it.
+   */
+  readonly limit?: number;
+  /**
+   * An extra rule this dialog's value must pass, or `undefined` for none.
+   *
+   * Returns the key of the sentence to show. It runs on the TRIMMED value and
+   * only when that value is non-empty, so a rule never has to repeat the two
+   * refusals every caller shares.
+   *
+   * It exists because a link's page number is a different kind of wrong from a
+   * comment's emptiness, and a person who typed *seven* should be told so
+   * rather than meeting a control that closes and does nothing.
+   */
+  readonly validate?: (value: string) => MessageKey | undefined;
   /** The dialog's own `resolve`. */
   readonly resolve: (answer: AnnotationTextAnswer) => void;
 }
@@ -72,20 +94,29 @@ export function AnnotationTextForm({
   apply,
   empty,
   tooLong,
+  limit = MAX_ANNOTATION_TEXT,
+  validate,
   resolve,
 }: AnnotationTextFormProps): ReactElement {
   const { _ } = useLingui();
   const [text, setText] = useState('');
 
   const trimmed = text.trim();
-  const over = trimmed.length > MAX_ANNOTATION_TEXT;
-  const usable = trimmed.length > 0 && !over;
+  const over = trimmed.length > limit;
+  const failed = trimmed.length > 0 && !over ? validate?.(trimmed) : undefined;
+  const usable = trimmed.length > 0 && !over && failed === undefined;
 
   return (
     <div className="m-annotation-text">
       <Input label={label} onValueChange={setText} value={text} />
       <p className="m-annotation-text__problem" role="status">
-        {over ? _(tooLong) : trimmed.length > 0 ? '' : _(empty)}
+        {over
+          ? _(tooLong)
+          : trimmed.length === 0
+            ? _(empty)
+            : failed === undefined
+              ? ''
+              : _(failed)}
       </p>
       <Button
         disabled={!usable}

@@ -1,6 +1,7 @@
 import {
   type CommandKind,
   addAnnotationSchema,
+  addLinkSchema,
   annotationKindNameSchema,
   annotationRectSchema,
   channel,
@@ -512,6 +513,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  addLinkSchema,
 ]);
 
 /**

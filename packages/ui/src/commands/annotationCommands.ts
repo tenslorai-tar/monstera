@@ -10,6 +10,7 @@ import {
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
+import { LINK_ADDRESS_TOOL_ID, LINK_PAGE_TOOL_ID } from '../annotations/linkTools.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
 import {
@@ -33,6 +34,8 @@ import {
   HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
+  LINK_ADDRESS_TOOL_TITLE,
+  LINK_PAGE_TOOL_TITLE,
   NUDGE_DOWN_TITLE,
   NUDGE_LEFT_TITLE,
   NUDGE_RIGHT_TITLE,
@@ -243,6 +246,21 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The two link tools' commands.
+ *
+ * Registrations again, and the tool behind each sends `addLink` rather than
+ * `addAnnotation` — which reaches this file as nothing, for the eleventh time.
+ * What a tool does with its gesture has never been this table's business.
+ */
+export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(LINK_ADDRESS_TOOL_ID, LINK_ADDRESS_TOOL_TITLE, 53, deps);
+}
+
+export function linkPageToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(LINK_PAGE_TOOL_ID, LINK_PAGE_TOOL_TITLE, 54, deps);
+}
+
+/**
  * The select tool's command.
  *
  * The thirteenth from the same factory, and the tool behind it produces no
@@ -446,5 +464,7 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     highlightToolCommand(deps),
     underlineToolCommand(deps),
     strikeoutToolCommand(deps),
+    linkAddressToolCommand(deps),
+    linkPageToolCommand(deps),
   ];
 }

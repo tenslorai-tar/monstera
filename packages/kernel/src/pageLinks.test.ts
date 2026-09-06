@@ -1,8 +1,26 @@
 import { PDFDocument, PDFName, PDFArray, PDFNumber, PDFString } from '@cantoo/pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import type { CommandOfKind } from '@monstera/contract';
+
 import { mupdfWriter } from './mupdfWriter.js';
-import { readPageLinks } from './pageLinks.js';
+import { readAnnotations } from './pageAnnotations.js';
+import { applyAddLink, captureAddLink, readPageLinks } from './pageLinks.js';
+
+/** Applies one `addLink` to a link-free three-page document and serialises. */
+async function written(command: CommandOfKind<'addLink'>): Promise<Uint8Array> {
+  const blank = await PDFDocument.create();
+  blank.addPage([200, 200]);
+  blank.addPage([200, 200]);
+  blank.addPage([200, 200]);
+  const session = await mupdfWriter.open(await blank.save({ useObjectStreams: false }));
+  try {
+    await applyAddLink(session, command);
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
 
 /**
  * The link reader, against documents whose links this file put there.
@@ -207,6 +225,129 @@ describe('readPageLinks', () => {
       // node beside page 0, so a reader walking the tree wrongly is as likely
       // to hand back its neighbour's links as the right page's.
       expect(await readPageLinks(session, 1)).toStrictEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('adds an external link, and the reader sees it as one', async () => {
+    // WRITTEN THROUGH THE COMMAND AND READ THROUGH THE READER, which is the
+    // pair that matters here: `createLink` and `getLinks` are the two halves of
+    // MuPDF's own link model, and the measurement that made this a separate
+    // command is that `getAnnotations()` sees neither.
+    const added = await written({
+      kind: 'addLink',
+      page: 0,
+      rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+      target: { kind: 'uri', uri: 'https://example.org/a' },
+    });
+    const session = await mupdfWriter.open(added);
+    try {
+      const links = await readPageLinks(session, 0);
+      expect(links).toContainEqual({
+        kind: 'external',
+        uri: 'https://example.org/a',
+        // MuPDF's own frame, y down from the page's top: a `/Rect` whose PDF
+        // y runs 20–70 on a 200-high page comes back as 130–180.
+        bounds: { x0: 10, y0: 130, x1: 110, y1: 180 },
+      });
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('adds a PAGE link that resolves to the page it names', async () => {
+    // THE HALF A URI CASE CANNOT REACH. An internal destination is a `/GoTo`
+    // array MuPDF formats, and the assertion is that `resolveLink` — the same
+    // function the reader uses — answers the page the command asked for. A
+    // spelling this build invented would store something that reads back as
+    // external, or as page −1.
+    const added = await written({
+      kind: 'addLink',
+      page: 0,
+      rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+      target: { kind: 'page', page: 2 },
+    });
+    const session = await mupdfWriter.open(added);
+    try {
+      expect(await readPageLinks(session, 0)).toContainEqual(
+        expect.objectContaining({ kind: 'internal', page: 2 }),
+      );
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('is INVISIBLE to the annotation walk, which is what made it its own command', async () => {
+    // MEASURED 2026-09-06: `createLink` makes an object `getAnnotations()` does
+    // not return, and `createAnnotation('Link')` makes a different one that it
+    // does — and that second one never appears among the page's links. Routing
+    // this through the annotation table would have taken the second silently.
+    //
+    // The control is on the same document: the link is there, and the walk is
+    // empty. Without it this passes on a command that wrote nothing at all.
+    const added = await written({
+      kind: 'addLink',
+      page: 0,
+      rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+      target: { kind: 'uri', uri: 'https://example.org/a' },
+    });
+    const session = await mupdfWriter.open(added);
+    try {
+      expect(await readPageLinks(session, 0)).toHaveLength(1);
+      const listed = await readAnnotations(session);
+      expect(listed.annotations).toStrictEqual([]);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('refuses a rectangle with no area, and one entirely off the page', async () => {
+    // A link nothing can click is the display-only defect with a cursor on it:
+    // the region is in the file and no reader can reach it.
+    await expect(
+      written({
+        kind: 'addLink',
+        page: 0,
+        rect: { x0: 10, y0: 20, x1: 10, y1: 70 },
+        target: { kind: 'uri', uri: 'https://example.org/a' },
+      }),
+    ).rejects.toThrow(/no width or no height/u);
+    await expect(
+      written({
+        kind: 'addLink',
+        page: 0,
+        rect: { x0: 900, y0: 900, x1: 1000, y1: 1000 },
+        target: { kind: 'uri', uri: 'https://example.org/a' },
+      }),
+    ).rejects.toThrow(/entirely outside/u);
+  });
+
+  it('refuses a target page the document does not have', async () => {
+    await expect(
+      written({
+        kind: 'addLink',
+        page: 0,
+        rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+        target: { kind: 'page', page: 9 },
+      }),
+    ).rejects.toThrow(/outside this document/u);
+  });
+
+  it('records no prior state, and says which handle is missing', async () => {
+    // `captureAddAnnotation`'s refusal on a different object, and the reason has
+    // to say so: that one waited for a handle ADR-0041 then built, and this one
+    // waits for a handle nothing has proposed.
+    const session = await mupdfWriter.open(await documentWithLinks());
+    try {
+      const captured = await captureAddLink(session, {
+        kind: 'addLink',
+        page: 0,
+        rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+        target: { kind: 'uri', uri: 'https://example.org/a' },
+      });
+      expect(captured.captured).toBe(false);
+      expect(captured.captured ? '' : captured.reason).toMatch(/no identity/u);
     } finally {
       await mupdfWriter.close(session);
     }

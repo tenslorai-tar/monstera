@@ -1,6 +1,7 @@
 import type { UiTool } from '../registries/tools.js';
 import type { EraserDeps } from './eraserTool.js';
 import { eraserTool } from './eraserTool.js';
+import { linkTools } from './linkTools.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
@@ -45,6 +46,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     ...pointTools(deps),
     ...vertexTools,
     ...textMarkupTools,
+    ...linkTools(deps),
     eraserTool(deps),
     selectTool(deps),
   ];

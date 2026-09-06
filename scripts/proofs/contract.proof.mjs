@@ -388,6 +388,27 @@ const PLACE_SPEC = `  placeAnnotation: {
     reads: 'none',
   },`;
 
+/**
+ * A LINK IS NOT AN ANNOTATION, and this entry is where that shows in the table.
+ *
+ * Its three functions come from `pageLinks.ts` rather than from the annotation
+ * module, because MuPDF's `createLink` and `createAnnotation('Link')` produce
+ * different objects — measured 2026-09-06.
+ */
+const LINK_SPEC = `  addLink: {
+    kind: 'addLink',
+    writer: 'mupdf',
+    apply: applyAddLink,
+    capture: captureAddLink,
+    invert: invertAddLink,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -494,6 +515,9 @@ const SPEC_IMPORTS = `import {
   applyPlaceAnnotation,
   capturePlaceAnnotation,
   invertPlaceAnnotation,
+  applyAddLink,
+  captureAddLink,
+  invertAddLink,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -907,6 +931,7 @@ ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
+${LINK_SPEC}
 };
 `,
   },
@@ -924,7 +949,7 @@ ${PLACE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `placeAnnotation` and `removeAnnotation` on
+    // table has to grow. `addLink`, `placeAnnotation` and `removeAnnotation` on
     // 2026-09-06; `addAnnotation`,
     // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
     // `resizePages`, `setPageBackground` and
@@ -939,7 +964,7 @@ ${PLACE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'placeAnnotation' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'addLink' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -979,6 +1004,7 @@ ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
+${PLACE_SPEC}
 };
 `,
   },
@@ -1085,6 +1111,7 @@ ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
+${LINK_SPEC}
 };
 `,
   },
@@ -1129,6 +1156,7 @@ ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
+${LINK_SPEC}
 };
 `,
   },
@@ -1182,6 +1210,7 @@ ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
+${LINK_SPEC}
 };
 `,
   },
@@ -1231,6 +1260,7 @@ ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
 ${PLACE_SPEC}
+${LINK_SPEC}
 };
 `,
   },
@@ -2106,7 +2136,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 16 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 17 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

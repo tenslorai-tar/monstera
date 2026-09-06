@@ -79,6 +79,7 @@ import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
+import { LINK_ADDRESS_DIALOG, LINK_PAGE_DIALOG } from './dialogs/annotationLink.js';
 import { ANNOTATION_NOTE_DIALOG } from './dialogs/annotationNote.js';
 import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
@@ -246,6 +247,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         DELETE_PAGES_DIALOG,
         ANNOTATION_TEXT_DIALOG,
         ANNOTATION_NOTE_DIALOG,
+        LINK_ADDRESS_DIALOG,
+        LINK_PAGE_DIALOG,
         CROP_PAGES_DIALOG,
         WATERMARK_PAGES_DIALOG,
         HEADER_FOOTER_DIALOG,

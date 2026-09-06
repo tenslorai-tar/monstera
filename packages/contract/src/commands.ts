@@ -1587,6 +1587,128 @@ export const placeAnnotationSchema = z.object({
   version: docVersionSchema,
 });
 
+/**
+ * The URI schemes a link this build writes may carry.
+ *
+ * ## The list is short because we are the PRODUCER here
+ *
+ * Invariant 24 says opening a document runs none of its content — no embedded
+ * JavaScript, no automatic action. That is a rule about what this application
+ * *does with* a document. Writing a link is the other direction: the document
+ * we produce travels, and a `javascript:` URI in it is the active content that
+ * invariant refuses to run, authored by us for somebody else's reader to meet.
+ * Writing what we would not open is the display-only sin turned outward.
+ *
+ * `file:` is refused for the neighbouring reason: it puts a path off this
+ * machine into a document that leaves it, which is a `FileHandle`'s whole
+ * argument arriving in a payload nobody thought of as one.
+ *
+ * So three schemes, and the refusal is in the SCHEMA rather than in a check
+ * some caller runs: a link with a scheme this build will not write is
+ * unrepresentable (B5), and a surface that wanted one would have to amend this.
+ */
+export const LINK_SCHEMES = ['https:', 'http:', 'mailto:'] as const;
+
+/**
+ * How long a link's URI may be.
+ *
+ * Intent, so it is bounded for `MAX_ANNOTATION_TEXT`'s reason rather than
+ * because a URL cannot be longer: a person types this, and a renderer that
+ * could send an unbounded string is one that can send anything.
+ */
+export const MAX_LINK_URI = 2048;
+
+/**
+ * A URI a link may point at — parsed, not pattern-matched.
+ *
+ * `new URL(...)` is the platform's own parser, which is what decides what a
+ * scheme is; a regular expression here would be a second opinion about a
+ * grammar that already has one, and it would disagree on exactly the inputs
+ * somebody chose deliberately.
+ */
+/**
+ * The platform's URL parser, declared rather than imported.
+ *
+ * This package compiles with `lib: ["ES2023"]` and `types: []` — no DOM, no
+ * Node — because its schemas run in main, in the renderer and inside the engine
+ * host, and a lib that named `document` or `process` would let one of them
+ * reach for something the others do not have. `URL` is a WHATWG global present
+ * in every one of those runtimes and absent from that lib.
+ *
+ * So this is one line of ambient declaration rather than a widened lib: the
+ * alternative was adding `DOM`, which would make the whole browser surface
+ * visible in the package whose job is to be environment-free.
+ *
+ * Only `protocol` is declared, because only `protocol` is used.
+ */
+declare const URL: new (input: string) => { readonly protocol: string };
+
+export const linkUriSchema = z
+  .string()
+  .min(1)
+  .max(MAX_LINK_URI)
+  .refine(
+    (value) => {
+      try {
+        return (LINK_SCHEMES as readonly string[]).includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    },
+    { message: `not an absolute URL with one of these schemes: ${LINK_SCHEMES.join(' ')}` },
+  );
+
+/** Where a link goes. */
+export const linkTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('uri'), uri: linkUriSchema }).strict(),
+  z
+    .object({
+      kind: z.literal('page'),
+      /** Zero-based, as every page index that crosses this contract is. */
+      page: z.number().int().nonnegative(),
+    })
+    .strict(),
+]);
+
+/** Where a link goes. See {@link linkTargetSchema}. */
+export type LinkTarget = z.infer<typeof linkTargetSchema>;
+
+/**
+ * Adds a link over a rectangle of one page.
+ *
+ * ## A LINK IS NOT AN ANNOTATION, and that is measured rather than stylistic
+ *
+ * Measured 2026-09-06 against MuPDF 1.28.0. `PDFPage.createLink(bbox, uri)`
+ * makes a `/Link` that `getLinks()` returns and `getAnnotations()` does **not**;
+ * `createAnnotation('Link')` makes a different object that appears in the
+ * annotation walk, is refused `setRect` — *"Link annotations have no Rect
+ * property"* — and does **not** appear in `getLinks()`. Two ways to write the
+ * same subtype, with different behaviour, and only one of them produces a link
+ * a reader can follow.
+ *
+ * So this is its own command rather than a member of `annotationDraftSchema`.
+ * It also keeps the annotation walk, the eraser and the annotations panel
+ * exactly as they were: a link is invisible to all three, and
+ * `document.pageLinks` is the read that already answers for them.
+ *
+ * ## The target is a UNION, not a URI with a convention in it
+ *
+ * MuPDF spells an internal destination as a URI too — `#page=3&zoom=…` — and it
+ * would have been easy to make this one string. Rejected: a page number typed
+ * into a URL field is then this build parsing its own convention out of a
+ * string, and the schema could not tell a link to page 3 from a link to a site
+ * called `#page=3`. The union says which was meant, and the kernel formats it
+ * through `formatLinkURI`, which is MuPDF's own rule (B3a).
+ */
+export const addLinkSchema = z.object({
+  kind: z.literal('addLink'),
+  /** Zero-based index of the page the link sits on. */
+  page: z.number().int().nonnegative(),
+  /** The rectangle it covers, in PDF user space. */
+  rect: annotationRectSchema,
+  target: linkTargetSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -1609,6 +1731,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   addAnnotationSchema,
   removeAnnotationSchema,
   placeAnnotationSchema,
+  addLinkSchema,
 ]);
 
 /**
@@ -1675,6 +1798,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // cannot express is HOW — the geometry a polygon or a stroke is made of never
   // crosses in either direction, and the kernel maps it.
   placeAnnotationSchema,
+  // RENDERABLE, and the payload is a rectangle plus either a URI a person typed
+  // or a page index. What the renderer cannot express is the destination's
+  // FORM: a page link is written through MuPDF's own `formatLinkURI`, so the
+  // `/GoTo` array is never something a surface spells.
+  addLinkSchema,
 ]);
 
 /** A command a renderer may send. */
