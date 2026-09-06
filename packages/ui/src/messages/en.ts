@@ -276,6 +276,10 @@ export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
 export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
 export const SELECT_TOOL_TITLE = messageKey('command.annotate.select');
 export const DELETE_SELECTION_TITLE = messageKey('command.annotate.delete-selection');
+export const NUDGE_LEFT_TITLE = messageKey('command.annotate.nudge-left');
+export const NUDGE_RIGHT_TITLE = messageKey('command.annotate.nudge-right');
+export const NUDGE_UP_TITLE = messageKey('command.annotate.nudge-up');
+export const NUDGE_DOWN_TITLE = messageKey('command.annotate.nudge-down');
 export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
 export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
 export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
@@ -539,6 +543,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // for the reader who most needs the right one.
   [SELECT_TOOL_TITLE]: 'Select annotations',
   [DELETE_SELECTION_TITLE]: 'Delete selected annotations',
+  // ONE NAME FOR BOTH STEPS. The coarse nudge is the same command with Shift
+  // held, and a second entry reading *Move selection left further* would be
+  // catalogue noise for a distinction the chord already makes.
+  [NUDGE_LEFT_TITLE]: 'Move selection left',
+  [NUDGE_RIGHT_TITLE]: 'Move selection right',
+  [NUDGE_UP_TITLE]: 'Move selection up',
+  [NUDGE_DOWN_TITLE]: 'Move selection down',
   [ANNOTATION_TEXT_TITLE]: 'Text box',
   [ANNOTATION_TEXT_LABEL]: 'Text',
   [ANNOTATION_TEXT_APPLY]: 'Add text box',

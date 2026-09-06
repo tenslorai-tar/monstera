@@ -69,10 +69,13 @@ export {
 } from './pageMerge.js';
 export {
   applyAddAnnotation,
+  applyPlaceAnnotation,
   applyRemoveAnnotation,
   captureAddAnnotation,
+  capturePlaceAnnotation,
   captureRemoveAnnotation,
   invertAddAnnotation,
+  invertPlaceAnnotation,
   invertRemoveAnnotation,
   readAnnotations,
 } from './pageAnnotations.js';

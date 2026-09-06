@@ -9,7 +9,7 @@ import {
   PDFString,
   StandardFonts,
 } from '@cantoo/pdf-lib';
-import type { AnnotationDraft, CommandOfKind } from '@monstera/contract';
+import type { AnnotationDraft, AnnotationRect, CommandOfKind } from '@monstera/contract';
 import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -18,8 +18,10 @@ import { mupdfWriter } from './mupdfWriter.js';
 import type { ListedAnnotation } from './pageAnnotations.js';
 import {
   applyAddAnnotation,
+  applyPlaceAnnotation,
   applyRemoveAnnotation,
   captureAddAnnotation,
+  capturePlaceAnnotation,
   captureRemoveAnnotation,
   readAnnotations,
 } from './pageAnnotations.js';
@@ -1649,6 +1651,175 @@ describe('the srcRef mark', () => {
     // `false`.
     const stored = await readBack(await fixture({ foreign: true, claimsAuthored: true }));
     expect(stored[0]?.keys).toContain('/Monstera_Authored');
+  });
+});
+
+/** Applies a placement to a fixture and returns the resulting bytes. */
+async function placedIn(
+  bytes: Uint8Array,
+  page: number,
+  placements: readonly { readonly index: number; readonly rect: AnnotationRect }[],
+): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    await applyPlaceAnnotation(session, {
+      kind: 'placeAnnotation',
+      page,
+      placements,
+      version: asDocVersion(1),
+    });
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+/**
+ * Moving and resizing an annotation that already exists.
+ *
+ * ## The cases are on the SUBTYPES WITH NO RECTANGLE, deliberately
+ *
+ * A `/Square` is the easy shape here: it has a `/Rect`, so `setRect` is the
+ * whole operation and a placement that did nothing else would pass. `Ink`,
+ * `Line` and `Polygon` refuse `getRect` and carry their box in their geometry,
+ * so a placement that only set rectangles moves nothing at all on them — which
+ * is the implementation the easy fixture would have shipped.
+ */
+describe('applyPlaceAnnotation', () => {
+  const MOVED: AnnotationRect = { x0: 30, y0: 100, x1: 130, y1: 150 };
+
+  it('moves a rectangle to the box it was given', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    const listed = await onSession(await placedIn(drawn, 0, [{ index: 0, rect: MOVED }]), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.rect).toStrictEqual(MOVED);
+  });
+
+  it('moves a STROKE, whose box is derived from its points', async () => {
+    // `INK` spans x 10–70, y 20–30. Placing it at a box 100 wide and 50 tall
+    // scales as well as translates, and the assertion is that the reported box
+    // is the one asked for — which can only be true if every point moved.
+    const drawn = await drawnOn(await fixture(), command({ annotation: INK }));
+    const listed = await onSession(await placedIn(drawn, 0, [{ index: 0, rect: MOVED }]), (session) =>
+      readAnnotations(session),
+    );
+    // WITHIN THE BORDER'S OUTSET rather than equal: `getBounds` is the
+    // appearance's box and carries the stroke width, which does not scale with
+    // the affine. What the case separates is *moved* from *not moved* — the
+    // stroke started at y 20–30 and is asked for y 100–150.
+    const rect = listed.annotations[0]?.rect;
+    expect(rect?.x0).toBeCloseTo(MOVED.x0, 0);
+    expect(rect?.y0).toBeCloseTo(MOVED.y0, 0);
+    expect(rect?.x1).toBeCloseTo(MOVED.x1, 0);
+    expect(rect?.y1).toBeCloseTo(MOVED.y1, 0);
+  });
+
+  it('moves a LINE by both of its ends, read from the stored /L', async () => {
+    // The strongest of the three, because `/L` is read back with pdf-lib rather
+    // than through the box: a placement that moved the box and left the two
+    // endpoints would report the right rectangle and draw the old line.
+    const drawn = await drawnOn(await fixture(), command({ annotation: LINE }));
+    const before = (await readBack(drawn))[0]?.line;
+    const after = (await readBack(await placedIn(drawn, 0, [{ index: 0, rect: MOVED }])))[0]?.line;
+    expect(before).not.toBeNull();
+    expect(after).not.toStrictEqual(before);
+    // THE ENDS LIE INSIDE THE BOX ASKED FOR, and not on it: the points are
+    // placed so that the annotation's VISIBLE box lands on the target, which
+    // means they sit inset by the border the appearance carries. Asserting
+    // equality here is what the first run of this case did, and it was wrong by
+    // exactly that border — 2 points, which is `LINE`'s own width.
+    const xs = [after?.[0] ?? 0, after?.[2] ?? 0];
+    const ys = [after?.[1] ?? 0, after?.[3] ?? 0];
+    for (const x of xs) {
+      expect(x).toBeGreaterThanOrEqual(MOVED.x0);
+      expect(x).toBeLessThanOrEqual(MOVED.x1);
+    }
+    for (const y of ys) {
+      expect(y).toBeGreaterThanOrEqual(MOVED.y0);
+      expect(y).toBeLessThanOrEqual(MOVED.y1);
+    }
+    // AND THE VISIBLE BOX IS THE ONE ASKED FOR, which is what the inset is for.
+    // Without this the case above is satisfied by a placement that put both
+    // ends anywhere inside the target, including on top of each other.
+    const listed = await onSession(
+      await placedIn(drawn, 0, [{ index: 0, rect: MOVED }]),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.rect?.x0).toBeCloseTo(MOVED.x0, 0);
+    expect(listed.annotations[0]?.rect?.y1).toBeCloseTo(MOVED.y1, 0);
+  });
+
+  it('moves SEVERAL, each to its own box', async () => {
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: LINE }),
+    );
+    const listed = await onSession(
+      await placedIn(both, 0, [
+        { index: 0, rect: MOVED },
+        { index: 1, rect: { x0: 10, y0: 200, x1: 40, y1: 230 } },
+      ]),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.rect).toStrictEqual(MOVED);
+    // The line's box is its endpoints', so this is the one that says the second
+    // placement was applied to the second annotation and not to the first.
+    expect(listed.annotations[1]?.rect?.y0).toBeCloseTo(200, 0);
+  });
+
+  it('leaves the annotation beside it alone', async () => {
+    // The control for every case above: an implementation that placed all of
+    // them into the first rectangle passes each one on its own.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: LINE }),
+    );
+    const before = await onSession(both, (session) => readAnnotations(session));
+    const after = await onSession(await placedIn(both, 0, [{ index: 0, rect: MOVED }]), (session) =>
+      readAnnotations(session),
+    );
+    expect(after.annotations[1]?.rect).toStrictEqual(before.annotations[1]?.rect);
+  });
+
+  it('refuses a list naming the same annotation twice', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    await expect(
+      placedIn(drawn, 0, [
+        { index: 0, rect: MOVED },
+        { index: 0, rect: { x0: 0, y0: 0, x1: 10, y1: 10 } },
+      ]),
+    ).rejects.toThrow(/more than once/u);
+  });
+
+  it('moves NOTHING when one index in the list is out of range', async () => {
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    await expect(
+      placedIn(drawn, 0, [
+        { index: 0, rect: MOVED },
+        { index: 9, rect: MOVED },
+      ]),
+    ).rejects.toThrow(/has 1 annotation\(s\)/u);
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.rect).toStrictEqual({ x0: 10, y0: 20, x1: 110, y1: 70 });
+  });
+
+  it('records no prior state, and its reason is not the two beside it', async () => {
+    // Three annotation commands now refuse to capture, for three different
+    // reasons, and the reasons read alike unless each says which it is. This
+    // one is *the rectangle is not the geometry*, and the row above it is *the
+    // object graph is unbounded*.
+    const drawn = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    const captured = await onSession(drawn, (session) =>
+      capturePlaceAnnotation(session, {
+        kind: 'placeAnnotation',
+        page: 0,
+        placements: [{ index: 0, rect: MOVED }],
+        version: asDocVersion(1),
+      }),
+    );
+    expect(captured.captured).toBe(false);
+    expect(captured.captured ? '' : captured.reason).toMatch(/carry the geometry itself/u);
   });
 });
 

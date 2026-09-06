@@ -11,6 +11,7 @@ import {
   insertBlankPageSchema,
   mergeDocumentSchema,
   movePageSchema,
+  placeAnnotationSchema,
   removeAnnotationSchema,
   replacePageSchema,
   resizePagesSchema,
@@ -510,6 +511,7 @@ const mupdfCommandSchema = z.discriminatedUnion('kind', [
   replacePageSchema,
   addAnnotationSchema,
   removeAnnotationSchema,
+  placeAnnotationSchema,
 ]);
 
 /**

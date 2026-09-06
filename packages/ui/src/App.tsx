@@ -92,7 +92,11 @@ import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { annotationTools } from './annotations/annotationTools.js';
 import type { AnnotationSelection } from './annotations/selectTool.js';
 import { SELECT_TOOL_ID } from './annotations/selectTool.js';
-import { deleteSelectionCommand, shapeToolCommands } from './commands/annotationCommands.js';
+import {
+  deleteSelectionCommand,
+  nudgeSelectionCommands,
+  shapeToolCommands,
+} from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
@@ -391,6 +395,21 @@ export function App({ client, settings }: AppProps): ReactElement {
         indices: chosen.items.map((item) => item.index),
         version: chosen.version,
       });
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
+   * Sending a command the surface built, through the one dispatcher.
+   *
+   * `onCommand`'s body without the overlay around it: the nudge commands build a
+   * `placeAnnotation` from the selection they can read, and a second route to
+   * `document.execute` is the thing `applyDocumentCommand` exists to prevent.
+   */
+  const dispatch = useCallback(
+    (command: RenderableCommand): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, command);
     },
     [activeId, applied, ask, client],
   );
@@ -759,19 +778,6 @@ export function App({ client, settings }: AppProps): ReactElement {
     const answer = await client['document.annotations']({ docId: activeId });
     return answer.ok ? answer.value : undefined;
   }, [activeId, client]);
-  // THE TEXT TOOL IS CONSTRUCTED WITH `ask`, which is what makes it different
-  // from the six beside it and the only thing about it this line knows. A tool
-  // whose intent is not complete until a person supplies part of it holds the
-  // means to ask, exactly as `deletePagesCommand(deps)` does — see
-  // `textTools.ts` for why that is not a fourth parameter on `commit`.
-  const tools = useMemo(
-    () =>
-      new ToolRegistry(
-        annotationTools({ ask, annotations: listAnnotations, onSelect: setPicked }),
-      ),
-    [ask, listAnnotations],
-  );
-
   /**
    * The selection, if it still describes the document on screen.
    *
@@ -803,6 +809,35 @@ export function App({ client, settings }: AppProps): ReactElement {
     [open?.version, picked, toolId],
   );
   const readSelection = useCallback(() => selection, [selection]);
+
+  /** What the selection commands need, composed once so nine entries share it. */
+  const selectionDeps = useMemo(
+    () => ({ selection: readSelection, onDelete: removeSelection, onPlace: dispatch }),
+    [dispatch, readSelection, removeSelection],
+  );
+
+  // THE TEXT TOOL IS CONSTRUCTED WITH `ask`, which is what makes it different
+  // from the six beside it and the only thing about it this line knows. A tool
+  // whose intent is not complete until a person supplies part of it holds the
+  // means to ask, exactly as `deletePagesCommand(deps)` does — see
+  // `textTools.ts` for why that is not a fourth parameter on `commit`.
+  //
+  // THE REGISTRY IS REBUILT WHEN THE SELECTION MOVES, and that is cheap and
+  // deliberate: the select tool needs to know what is already selected to tell a
+  // drag on it from a marquee, and a ref read during render would be the same
+  // coupling with a rule about React attached. Fourteen entries in a `Map`.
+  const tools = useMemo(
+    () =>
+      new ToolRegistry(
+        annotationTools({
+          ask,
+          annotations: listAnnotations,
+          onSelect: setPicked,
+          selected: readSelection,
+        }),
+      ),
+    [ask, listAnnotations, readSelection],
+  );
 
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
@@ -900,7 +935,8 @@ export function App({ client, settings }: AppProps): ReactElement {
         // SPREAD from one list rather than named individually, so the set of
         // tools has one place it is written down.
         ...shapeToolCommands({ activeTool: readTool, onSelect: setToolId }),
-        deleteSelectionCommand({ selection: readSelection, onDelete: removeSelection }),
+        deleteSelectionCommand(selectionDeps),
+        ...nudgeSelectionCommands(selectionDeps),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),
@@ -923,9 +959,8 @@ export function App({ client, settings }: AppProps): ReactElement {
       navigator,
       openCommand,
       openPalette,
-      readSelection,
       readTool,
-      removeSelection,
+      selectionDeps,
       settings,
     ],
   );

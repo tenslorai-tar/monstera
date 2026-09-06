@@ -1,3 +1,4 @@
+import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
 import { asDocVersion, viewportPoint } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -27,16 +28,21 @@ const PAGE: Parameters<typeof overlayTransform>[0] = {
 const VERSION = asDocVersion(7);
 
 /** PDF x 60–100, y 350–390 — screen (20,20) to (100,100). */
-const A: ErasableAnnotation = { page: 3, index: 1, rect: { x0: 60, y0: 350, x1: 100, y1: 390 } };
+const A_RECT: AnnotationRect = { x0: 60, y0: 350, x1: 100, y1: 390 };
+const A: ErasableAnnotation = { page: 3, index: 1, rect: A_RECT };
 /** PDF x 160–200, y 150–190 — screen (220,420) to (300,500). */
-const B: ErasableAnnotation = { page: 3, index: 2, rect: { x0: 160, y0: 150, x1: 200, y1: 190 } };
+const B_RECT: AnnotationRect = { x0: 160, y0: 150, x1: 200, y1: 190 };
+const B: ErasableAnnotation = { page: 3, index: 2, rect: B_RECT };
 
-function selecting(annotations: readonly ErasableAnnotation[] | undefined): {
+function selecting(
+  annotations: readonly ErasableAnnotation[] | undefined,
+  selected?: AnnotationSelection,
+): {
   readonly drag: (
     from: readonly [number, number],
     to?: readonly [number, number],
     page?: number,
-  ) => Promise<void>;
+  ) => Promise<RenderableCommand | undefined>;
   readonly chosen: (AnnotationSelection | undefined)[];
 } {
   const chosen: (AnnotationSelection | undefined)[] = [];
@@ -46,13 +52,14 @@ function selecting(annotations: readonly ErasableAnnotation[] | undefined): {
     onSelect: (selection) => {
       chosen.push(selection);
     },
+    selected: () => selected,
   });
   return {
-    drag: async (from, to = from, page = 3): Promise<void> => {
+    drag: async (from, to = from, page = 3): Promise<RenderableCommand | undefined> => {
       const { controller } = tool;
       const started = controller.begin(viewportPoint(from[0], from[1]));
       const moved = controller.update(started, viewportPoint(to[0], to[1]));
-      await controller.commit(moved, page, overlayTransform(PAGE));
+      return controller.commit(moved, page, overlayTransform(PAGE));
     },
     chosen,
   };
@@ -63,7 +70,7 @@ describe('selectTool', () => {
     const { drag, chosen } = selecting([A, B]);
     await drag([40, 40]);
     expect(chosen).toStrictEqual([
-      { page: 3, version: VERSION, items: [{ index: 1, rect: A.rect }] },
+      { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT }] },
     ]);
   });
 
@@ -135,6 +142,7 @@ describe('selectTool', () => {
     const tool = selectTool({
       annotations: () => Promise.resolve({ version: VERSION, annotations: [A] }),
       onSelect: () => undefined,
+      selected: () => undefined,
     });
     const started = tool.controller.begin(viewportPoint(40, 40));
     expect(await tool.controller.commit(started, 3, overlayTransform(PAGE))).toBeUndefined();
@@ -144,6 +152,7 @@ describe('selectTool', () => {
     const tool = selectTool({
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
+      selected: () => undefined,
     });
     const started = tool.controller.begin(viewportPoint(10, 10));
     // BELOW THE THRESHOLD the gesture is still a click, and a one-pixel
@@ -158,10 +167,107 @@ describe('selectTool', () => {
     });
   });
 
+  it('MOVES the selection when the drag starts inside it', async () => {
+    // A drag that begins on something already selected is an edit, not a pick.
+    // Asked before the read, because what is selected is state this tool holds.
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT }] };
+    const { drag, chosen } = selecting([A, B], selected);
+    // (40, 40) is inside A; (60, 40) is 20 pixels right, which at zoom 2 is 10
+    // points in PDF space and nothing at all vertically.
+    expect(await drag([40, 40], [60, 40])).toStrictEqual({
+      kind: 'placeAnnotation',
+      page: 3,
+      placements: [{ index: 1, rect: { x0: 70, y0: 350, x1: 110, y1: 390 } }],
+      version: VERSION,
+    });
+    // AND IT DID NOT ALSO RE-SELECT. Testing for a marquee first is the wrong
+    // order and its symptom is exactly this: the drag would replace the
+    // selection with whatever it swept.
+    expect(chosen).toStrictEqual([]);
+  });
+
+  it('moves EVERY selected annotation by the same delta', async () => {
+    const selected = {
+      page: 3,
+      version: VERSION,
+      items: [
+        { index: 1, rect: A_RECT },
+        { index: 2, rect: B_RECT },
+      ],
+    };
+    const { drag } = selecting([A, B], selected);
+    const command = await drag([40, 40], [60, 40]);
+    expect(command).toMatchObject({
+      placements: [
+        { index: 1, rect: { x0: 70, y0: 350, x1: 110, y1: 390 } },
+        { index: 2, rect: { x0: 170, y0: 150, x1: 210, y1: 190 } },
+      ],
+    });
+  });
+
+  it('RESIZES the one whose corner was grabbed, keeping the opposite corner', async () => {
+    // A's box is screen (20,20)–(100,100). Grabbing the bottom-right corner and
+    // dragging to (140, 140) must keep (20, 20) fixed — an implementation that
+    // used the drag's own two ends would produce the box (100,100)–(140,140),
+    // which is a different rectangle entirely.
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT }] };
+    const { drag } = selecting([A], selected);
+    expect(await drag([100, 100], [140, 140])).toStrictEqual({
+      kind: 'placeAnnotation',
+      page: 3,
+      placements: [{ index: 1, rect: { x0: 60, y0: 330, x1: 120, y1: 390 } }],
+      version: VERSION,
+    });
+  });
+
+  it('resizes only that one, even when several are selected', async () => {
+    // Grabbing a handle means *make this that size*. Scaling four marks from one
+    // corner is a different operation, and nobody asked for it by taking hold of
+    // a corner.
+    const selected = {
+      page: 3,
+      version: VERSION,
+      items: [
+        { index: 1, rect: A_RECT },
+        { index: 2, rect: B_RECT },
+      ],
+    };
+    const { drag } = selecting([A, B], selected);
+    const command = await drag([100, 100], [140, 140]);
+    expect((command as unknown as { placements: unknown[] }).placements).toHaveLength(1);
+  });
+
+  it('CLICKING a selected annotation re-selects rather than moving it by nothing', async () => {
+    // A press that did not travel is not a drag. Without this the tool commits a
+    // zero-length placement — a version bump, an undo entry and a document that
+    // is byte-identical — every time somebody clicks what is already selected.
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT }] };
+    const { drag, chosen } = selecting([A], selected);
+    expect(await drag([40, 40])).toBeUndefined();
+    expect(chosen[0]?.items.map((item) => item.index)).toStrictEqual([1]);
+  });
+
+  it('marquees when the drag starts OUTSIDE the selection', async () => {
+    // The control for the two above: the same tool, the same selection, a press
+    // that begins on empty paper. If this produced a placement the tool would
+    // have become impossible to select with once anything was selected.
+    const selected = { page: 3, version: VERSION, items: [{ index: 1, rect: A_RECT }] };
+    const { drag, chosen } = selecting([A, B], selected);
+    expect(await drag([200, 400], [400, 600])).toBeUndefined();
+    expect(chosen[0]?.items.map((item) => item.index)).toStrictEqual([2]);
+  });
+
+  it('ignores a selection belonging to another page', async () => {
+    const selected = { page: 9, version: VERSION, items: [{ index: 1, rect: A_RECT }] };
+    const { drag } = selecting([A], selected);
+    expect(await drag([40, 40], [60, 40])).toBeUndefined();
+  });
+
   it('claims the id its command selects', () => {
     const tool = selectTool({
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
+      selected: () => undefined,
     });
     expect(tool.id).toBe(SELECT_TOOL_ID);
   });

@@ -167,6 +167,52 @@ function placedRect(
 }
 
 /**
+ * The box an annotation occupies, in the page's **displayed** space.
+ *
+ * One function because the reader and the writer must agree about it: what
+ * {@link readRect} reports is what a surface draws a handle on and what
+ * {@link applyPlaceAnnotation} maps a placement out of, and two answers to
+ * *where is it now* would land a resize a border-width away from where the
+ * handle was dropped.
+ *
+ * `getRect` is refused by four subtypes; see {@link readRect} for the
+ * measurement and for why `getBounds` alone is not the answer either.
+ */
+function displayedBoxOf(annotation: PDFAnnotation): [number, number, number, number] {
+  const [x0, y0, x1, y1] = annotation.hasRect()
+    ? annotation.getRect()
+    : annotation.getBounds();
+  return [x0, y0, x1, y1];
+}
+
+/**
+ * The box the annotation's own POINTS span, or `null` when it has none.
+ *
+ * Not the same box as {@link displayedBoxOf} for the four subtypes that have
+ * one: `getBounds` is the **appearance's** extent and carries the stroke width,
+ * measured at 2 points on an ink stroke and up to 11 on a cloud. The difference
+ * is what makes a resize land where the handle was dropped rather than a border
+ * away from it — see {@link applyPlaceAnnotation}.
+ */
+function geometryBoxOf(annotation: PDFAnnotation): [number, number, number, number] | null {
+  const points: (readonly [number, number])[] = [];
+  if (annotation.hasVertices()) points.push(...annotation.getVertices());
+  if (annotation.hasInkList()) for (const stroke of annotation.getInkList()) points.push(...stroke);
+  if (annotation.hasLine()) points.push(...annotation.getLine());
+  const [first, ...rest] = points;
+  if (first === undefined) return null;
+  let [x0, y0] = first;
+  let [x1, y1] = first;
+  for (const [x, y] of rest) {
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return [x0, y0, x1, y1];
+}
+
+/**
  * Where an existing annotation is, in **PDF user space** — {@link placedRect}
  * run backwards.
  *
@@ -214,9 +260,7 @@ function placedRect(
  * where the format has one.
  */
 function readRect(annotation: PDFAnnotation, transform: PageTransform): AnnotationRect {
-  const [x0, y0, x1, y1] = annotation.hasRect()
-    ? annotation.getRect()
-    : annotation.getBounds();
+  const [x0, y0, x1, y1] = displayedBoxOf(annotation);
   const a = toPdf(viewportPoint(x0, y0), transform);
   const b = toPdf(viewportPoint(x1, y1), transform);
   return {
@@ -1064,6 +1108,166 @@ export const applyRemoveAnnotation: Apply<'mupdf', 'removeAnnotation'> = (
     const doomed = command.indices.map((index) => annotationAt(loaded, index));
     for (const annotation of doomed) loaded.deleteAnnotation(annotation);
   });
+
+/**
+ * Moves and resizes annotations, each into the box the command names.
+ *
+ * ## The geometry is MAPPED, because four subtypes have no rectangle to set
+ *
+ * `Ink`, `Line`, `Polygon` and `PolyLine` refuse `getRect`, and MuPDF computes
+ * their rectangle from the points — so *place it here* has to be expressed as
+ * *move every point of it by this affine*. The affine sends the box it occupies
+ * now onto the box asked for, which is a translation when the two are the same
+ * size and a scale when they are not: one operation, and the nudge and the
+ * handle drag differ only in the numbers.
+ *
+ * ## Every geometry the annotation carries, not the first one found
+ *
+ * A foreign `/Highlight` has a `/Rect` **and** `/QuadPoints`, and moving the
+ * rectangle alone leaves the highlighted quads where they were — the annotation
+ * arrives somewhere else and paints nothing. So each `has…` is asked
+ * independently and every answer that is yes is mapped. That is the branch a
+ * fixture built from this build's own annotations would never reach, since
+ * nothing here writes quad points yet.
+ *
+ * ## A degenerate source box translates rather than dividing by zero
+ *
+ * A `/Caret` is 20 by 14 and a `/Text` 10 by 10, so neither is degenerate — but
+ * a foreign annotation may be, and a zero-width box has no scale onto anything.
+ * The factor is 1 on that axis, which makes the operation a move: the honest
+ * reading of *put this thing with no width there*.
+ */
+export const applyPlaceAnnotation: Apply<'mupdf', 'placeAnnotation'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'placeAnnotation'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    const transform = transformFor(loaded);
+    const indices = command.placements.map((placement) => placement.index);
+    if (new Set(indices).size !== indices.length) {
+      throw new RangeError(
+        'a placement names the same annotation more than once, so two rectangles are asked for ' +
+          'one object and the later would silently win.',
+      );
+    }
+    // RESOLVED IN FULL BEFORE ANYTHING MOVES, `applyRemoveAnnotation`'s rule: a
+    // command that placed two of five and then refused would leave the page in
+    // a state no undo step describes.
+    const targets = command.placements.map((placement) => ({
+      annotation: annotationAt(loaded, placement.index),
+      rect: placement.rect,
+    }));
+
+    for (const { annotation, rect } of targets) {
+      const [bx0, by0, bx1, by1] = displayedBoxOf(annotation);
+      // THE POINTS' OWN BOX, which is NOT the box a reader is shown. `getBounds`
+      // carries the stroke width — 2 points on an ink stroke, 11 on a cloud —
+      // and that outset does not scale with the placement. Mapping the geometry
+      // out of the reported box lands the annotation's visible extent a border
+      // away from where the handle was dropped, and the error grows with the
+      // scale rather than staying constant. Measured at 2.5 points on the first
+      // run of this file's stroke case, which is what found it.
+      const [sx0, sy0, sx1, sy1] = geometryBoxOf(annotation) ?? [bx0, by0, bx1, by1];
+      const [px0, py0, px1, py1] = placedRect(rect, transform);
+      // So the TARGET is inset by the same outset, and the visible box then
+      // lands on what was asked for. Unless the box asked for is smaller than
+      // the border it carries, where the inset target inverts and the honest
+      // answer is to place the geometry itself and let the outset overflow.
+      const inset: [number, number, number, number] = [
+        px0 + (sx0 - bx0),
+        py0 + (sy0 - by0),
+        px1 - (bx1 - sx1),
+        py1 - (by1 - sy1),
+      ];
+      const [tx0, ty0, tx1, ty1] =
+        inset[2] > inset[0] && inset[3] > inset[1] ? inset : [px0, py0, px1, py1];
+      const kx = sx1 - sx0 === 0 ? 1 : (tx1 - tx0) / (sx1 - sx0);
+      const ky = sy1 - sy0 === 0 ? 1 : (ty1 - ty0) / (sy1 - sy0);
+      const map = ([x, y]: readonly [number, number]): [number, number] => [
+        tx0 + (x - sx0) * kx,
+        ty0 + (y - sy0) * ky,
+      ];
+
+      // THE RECTANGLE IS SET FROM THE COMMAND, not from the inset above: a
+      // subtype with a `/Rect` has no geometry to carry an outset, so its
+      // reported box IS the rectangle and the two are the same numbers.
+      if (annotation.hasRect()) annotation.setRect([px0, py0, px1, py1]);
+      if (annotation.hasVertices()) annotation.setVertices(annotation.getVertices().map(map));
+      if (annotation.hasInkList()) {
+        annotation.setInkList(annotation.getInkList().map((stroke) => stroke.map(map)));
+      }
+      if (annotation.hasLine()) {
+        const [from, to] = annotation.getLine();
+        if (from === undefined || to === undefined) {
+          throw new RangeError('a /Line annotation answered with fewer than two endpoints');
+        }
+        annotation.setLine(map(from), map(to));
+      }
+      if (annotation.hasQuadPoints()) {
+        const quads = annotation.getQuadPoints();
+        annotation.clearQuadPoints();
+        for (const quad of quads) {
+          const [ulx, uly, urx, ury, llx, lly, lrx, lry] = quad;
+          const [ax, ay] = map([ulx, uly]);
+          const [bx, by] = map([urx, ury]);
+          const [cx, cy] = map([llx, lly]);
+          const [dx, dy] = map([lrx, lry]);
+          annotation.addQuadPoint([ax, ay, bx, by, cx, cy, dx, dy]);
+        }
+      }
+      // THE APPEARANCE IS REGENERATED, which is what makes the move visible.
+      // Without it the dictionary says one place and the `/AP` draws another,
+      // and MuPDF's own renderer would still show the move — so a proof that
+      // rasterised through MuPDF could not see this line missing.
+      annotation.update();
+    }
+  });
+
+/**
+ * Reports that a placement's prior state is not recorded, and validates first.
+ *
+ * **Not `addAnnotation`'s *not yet* and not `removeAnnotation`'s *never*.** The
+ * prior state here is expressible — it is the geometry the annotation carried —
+ * and recording it would make this the first invertible annotation command.
+ * What stops it is that the inverse cannot be the rectangle: for the four
+ * subtypes with no `/Rect`, placing the old box back maps the points through a
+ * second affine, and the reported box carries a border outset that does not
+ * scale with it. The round trip is close and not equal, and an undo that
+ * restores something *nearly* right is worse than a checkpoint.
+ *
+ * The trigger for revisiting it is a prior that carries the geometry itself —
+ * vertices, ink strokes or a line — which is bounded and serialisable, and is a
+ * `CommandPrior` entry rather than a rectangle.
+ */
+export function capturePlaceAnnotation(
+  session: MupdfSession,
+  command: CommandOfKind<'placeAnnotation'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    for (const placement of command.placements) annotationAt(loaded, placement.index);
+    return {
+      captured: false,
+      reason:
+        'a moved annotation is not recorded as prior state yet: restoring it by rectangle is ' +
+        'lossy for the four subtypes whose geometry defines their box, so the prior would have ' +
+        'to carry the geometry itself',
+    };
+  });
+}
+
+/**
+ * Unreachable, and required by {@link CommandSpec}'s shape.
+ *
+ * `CommandPrior['placeAnnotation']` is `never`. It throws for
+ * {@link invertAddAnnotation}'s reason.
+ */
+export const invertPlaceAnnotation: Invert<'mupdf', 'placeAnnotation'> = (): Promise<void> => {
+  throw new Error(
+    'a moved annotation has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};
 
 /**
  * Reports that prior state cannot be recorded, and validates first.

@@ -346,6 +346,23 @@ export interface CommandPrior {
    * possible does nothing for its inverse.
    */
   readonly removeAnnotation: never;
+  /**
+   * **`never`**, and this is the third annotation command to say so for the
+   * third reason.
+   *
+   * The prior state of a moved annotation IS expressible — the geometry it
+   * carried — which is what separates this from the two above. What is not
+   * expressible is the obvious version of it: for `Ink`, `Line`, `Polygon` and
+   * `PolyLine` the box is derived from the points, so restoring by rectangle
+   * maps them through a second affine, and the box the reader reports carries a
+   * border outset that does not scale with it. The round trip is close and not
+   * equal, and an undo that restores something *nearly* right is worse than a
+   * checkpoint, because nothing downstream can tell the two apart.
+   *
+   * The trigger is a prior that carries the geometry itself — vertices, ink
+   * strokes or a line, all bounded by the draft schemas that already exist.
+   */
+  readonly placeAnnotation: never;
 }
 
 /**

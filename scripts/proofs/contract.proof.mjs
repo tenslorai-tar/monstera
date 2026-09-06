@@ -366,6 +366,28 @@ const REMOVE_SPEC = `  removeAnnotation: {
     reads: 'none',
   },`;
 
+/**
+ * The third annotation entry, and it is the same shape as the second.
+ *
+ * `targets: 'annotation'` is absent here for `REMOVE_SPEC`'s reason — the axis
+ * changes what the BUS decides before any apply runs, so writing it in a spec is
+ * a TS2353 excess property. Two kinds now carry it in the declaration table and
+ * neither carries it here, which is the axis working rather than a gap.
+ */
+const PLACE_SPEC = `  placeAnnotation: {
+    kind: 'placeAnnotation',
+    writer: 'mupdf',
+    apply: applyPlaceAnnotation,
+    capture: capturePlaceAnnotation,
+    invert: invertPlaceAnnotation,
+    invertible: false,
+    undo: 'checkpoint',
+    reproducible: true,
+    replay: 'reapply-intent',
+    sources: 'none',
+    reads: 'none',
+  },`;
+
 const CROP_SPEC = `  cropPages: {
     kind: 'cropPages',
     writer: 'mupdf',
@@ -469,6 +491,9 @@ const SPEC_IMPORTS = `import {
   applyRemoveAnnotation,
   captureRemoveAnnotation,
   invertRemoveAnnotation,
+  applyPlaceAnnotation,
+  capturePlaceAnnotation,
+  invertPlaceAnnotation,
 } from '@monstera/kernel/engine';
 // A SECOND IMPORT LINE, and the module it names is the finding rather than an
 // inconvenience: watermarkPages routes to a byte-image writer that runs in
@@ -881,6 +906,7 @@ ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
+${PLACE_SPEC}
 };
 `,
   },
@@ -898,7 +924,8 @@ ${REMOVE_SPEC}
     // SO IT MOVES WITH EACH NEW COMMAND, deliberately: adding one makes this
     // case fail with the wrong property name until the table is filled in and
     // the regex advanced, which is the reminder that a kind was added and the
-    // table has to grow. `removeAnnotation` on 2026-09-06; `addAnnotation`,
+    // table has to grow. `placeAnnotation` and `removeAnnotation` on
+    // 2026-09-06; `addAnnotation`,
     // `replacePage`, `mergeDocument`, `generateToc`, `insertImagePage`,
     // `resizePages`, `setPageBackground` and
     // `setPageTransition` on 2026-09-05; `batesNumberPages`, `headerFooterPages`,
@@ -912,7 +939,7 @@ ${REMOVE_SPEC}
     // job: the wrong code is what says *a kind was added and nobody filled the
     // table in*, and the repair is to complete it up to the newest one.
     because:
-      /Property 'removeAnnotation' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
+      /Property 'placeAnnotation' is missing in type '\{…\}' but required in type 'CommandSpecs'/u,
     notBecause: null,
     // §6: omit a kind and it does not compile. This is the case that makes the
     // table exhaustive by construction rather than by review.
@@ -951,6 +978,7 @@ ${TOC_SPEC}
 ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
+${REMOVE_SPEC}
 };
 `,
   },
@@ -1056,6 +1084,7 @@ ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
+${PLACE_SPEC}
 };
 `,
   },
@@ -1099,6 +1128,7 @@ ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
+${PLACE_SPEC}
 };
 `,
   },
@@ -1151,6 +1181,7 @@ ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
+${PLACE_SPEC}
 };
 `,
   },
@@ -1199,6 +1230,7 @@ ${MERGE_SPEC}
 ${REPLACE_SPEC}
 ${ANNOTATION_SPEC}
 ${REMOVE_SPEC}
+${PLACE_SPEC}
 };
 `,
   },
@@ -2074,7 +2106,7 @@ export const partial: CommandOfKind<'rotatePages'> = { kind: 'rotatePages', page
     // added, which is the whole of its value — it is a reminder with a
     // compiler behind it, not an assertion about elision.
     because:
-      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 15 more \.\.\. \| \{…\}'/u,
+      /^Type '\{…\}' is not assignable to type '\{…\}(?: \| \{…\}){3} \| \.\.\. 16 more \.\.\. \| \{…\}'/u,
     // Nothing to exclude: the harness elides every quoted type, so no second
     // property name is in reach of this reason.
     notBecause: null,

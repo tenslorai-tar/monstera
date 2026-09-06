@@ -170,7 +170,7 @@ describe('the declaration table', () => {
     expect(declared).toContain('mergeDocument');
   });
 
-  it('CONTROL: exactly one kind declares a target, and the other sixteen answer none', () => {
+  it('CONTROL: exactly two kinds declare a target, and the rest answer none', () => {
     // The targets axis's version of the control above, and it carries the
     // second half as well. `never extends X` would satisfy one type-level line
     // on its own; and a table where EVERY command declared a target would
@@ -178,6 +178,6 @@ describe('the declaration table', () => {
     // that carry none — which is the registration-defect throw, on every
     // rotate.
     const named = KINDS.filter((kind) => declaredCommands[kind].targets !== 'none');
-    expect(named).toStrictEqual(['removeAnnotation']);
+    expect(named).toStrictEqual(['removeAnnotation', 'placeAnnotation']);
   });
 });

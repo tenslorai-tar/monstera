@@ -44,10 +44,13 @@ import {
 } from './pageOrder.js';
 import {
   applyAddAnnotation,
+  applyPlaceAnnotation,
   applyRemoveAnnotation,
   captureAddAnnotation,
+  capturePlaceAnnotation,
   captureRemoveAnnotation,
   invertAddAnnotation,
+  invertPlaceAnnotation,
   invertRemoveAnnotation,
 } from './pageAnnotations.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
@@ -300,6 +303,12 @@ const declared = {
     apply: applyRemoveAnnotation,
     capture: captureRemoveAnnotation,
     invert: invertRemoveAnnotation,
+  },
+  placeAnnotation: {
+    ...declaredCommands.placeAnnotation,
+    apply: applyPlaceAnnotation,
+    capture: capturePlaceAnnotation,
+    invert: invertPlaceAnnotation,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

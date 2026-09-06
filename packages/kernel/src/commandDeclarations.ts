@@ -822,6 +822,37 @@ const declarations = {
     // session's own.
     reads: 'none',
   },
+  placeAnnotation: {
+    kind: 'placeAnnotation',
+    // The two rows above, from the third direction: moving an annotation
+    // rewrites an object in `/Annots` and its appearance stream. A content
+    // writer could draw the shape somewhere else and would leave the original
+    // object exactly where it was.
+    writer: 'mupdf',
+    // NOT `addAnnotation`'s *not yet* and not `removeAnnotation`'s *never*. The
+    // prior state is expressible — the geometry the annotation carried — and
+    // what stops it is that a RECTANGLE is not that geometry: for the four
+    // subtypes whose box is derived, placing the old box back maps the points
+    // through a second affine and the reported box carries a border outset that
+    // does not scale with it. The round trip is close and not equal.
+    // `capturePlaceAnnotation` names the trigger.
+    invertible: false,
+    undo: 'checkpoint',
+    // The same measurement `addAnnotation` records: MuPDF 1.28.0 writes no `/M`
+    // and no `/CreationDate`, so two runs of the same placement against the same
+    // bytes agree. A version that starts stamping a date turns the case red
+    // rather than moving what `reproducible` means here.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document.
+    sources: 'none',
+    // Its payload points into an answer `document.annotations` gave at one
+    // version, exactly as `removeAnnotation`'s does. The bus refuses a stale
+    // one before this apply is reached.
+    targets: 'annotation',
+    // Reads nothing through another engine.
+    reads: 'none',
+  },
 } satisfies CommandDeclarations;
 
 /** The declarations as declared, with each writer's literal type intact. */

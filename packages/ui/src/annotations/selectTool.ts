@@ -1,6 +1,6 @@
-import type { AnnotationRect } from '@monstera/contract';
+import type { AnnotationRect, RenderableCommand } from '@monstera/contract';
 import type { DocVersion, PageTransform, ViewportPoint } from '@monstera/shared';
-import { pdfPoint, toViewport } from '@monstera/shared';
+import { pdfPoint, toPdf, toViewport, viewportPoint } from '@monstera/shared';
 
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
@@ -96,6 +96,40 @@ export interface SelectDeps {
   readonly annotations: () => Promise<AnnotationSnapshot | undefined>;
   /** Where the selection goes. `undefined` is *nothing is selected*. */
   readonly onSelect: (selection: AnnotationSelection | undefined) => void;
+  /**
+   * What is selected now, read through a function for `toolCommand`'s reason:
+   * a controller is built once and a captured selection would be whatever was
+   * selected at registration for ever.
+   */
+  readonly selected: () => AnnotationSelection | undefined;
+}
+
+/**
+ * How close to a corner counts as grabbing it, in CSS pixels.
+ *
+ * A hit target rather than a drawn size — nothing draws handles yet, and this is
+ * the radius a person's aim actually needs. Comfortably larger than
+ * {@link MINIMUM_MARQUEE}, so a press that grabs a corner and slips is a resize
+ * rather than a marquee that happens to start on one.
+ */
+const CORNER_REACH = 8;
+
+/** The four corners of a box, in the overlay's own pixels. */
+function cornersOf(box: {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}): readonly (readonly [number, number, number, number])[] {
+  // Each entry is the corner's point followed by the OPPOSITE corner, which is
+  // what a resize keeps fixed. Carrying both is what stops the caller
+  // rediscovering which corner is which from the drag's direction.
+  return [
+    [box.x0, box.y0, box.x1, box.y1],
+    [box.x1, box.y0, box.x0, box.y1],
+    [box.x0, box.y1, box.x1, box.y0],
+    [box.x1, box.y1, box.x0, box.y0],
+  ];
 }
 
 /** An annotation's box in the overlay's own pixels, or `null` if it has none. */
@@ -134,6 +168,103 @@ function marqueeOf(gesture: Gesture): {
   };
 }
 
+/** A box in PDF space from two viewport corners, normalised. */
+function pdfBox(
+  a: readonly [number, number],
+  b: readonly [number, number],
+  transform: PageTransform,
+): AnnotationRect {
+  const p = toPdf(viewportPoint(a[0], a[1]), transform);
+  const q = toPdf(viewportPoint(b[0], b[1]), transform);
+  return {
+    x0: Math.min(p.x, q.x),
+    y0: Math.min(p.y, q.y),
+    x1: Math.max(p.x, q.x),
+    y1: Math.max(p.y, q.y),
+  };
+}
+
+/**
+ * The command a drag on the existing selection produces, or `undefined` when
+ * the gesture did not start on it.
+ *
+ * Two cases and they are told apart by where the press landed:
+ *
+ * - **on a corner** of a selected box — resize that one annotation, keeping the
+ *   opposite corner fixed. One rather than all: dragging a corner means *make
+ *   this that size*, and scaling four marks from one corner is a different
+ *   operation nobody asked for by grabbing a handle.
+ * - **inside** a selected box — move every selected annotation by the drag's
+ *   delta. All of them, because that is what a multi-selection is for.
+ *
+ * A press that did not move is neither: it falls through to the pick below, so
+ * clicking a selected annotation re-selects it rather than committing a
+ * zero-length move and a version bump.
+ */
+function placementFor(
+  selection: AnnotationSelection | undefined,
+  gesture: Gesture,
+  marquee: ReturnType<typeof marqueeOf>,
+  page: number,
+  transform: PageTransform,
+): RenderableCommand | undefined {
+  if (selection === undefined) return undefined;
+  // A SELECTION BELONGS TO ONE PAGE, so a gesture on any other is a pick.
+  if (selection.page !== page) return undefined;
+  // A PRESS THAT DID NOT TRAVEL IS NOT A DRAG. Without this, clicking what is
+  // already selected commits a zero-length placement — a version bump and an
+  // undo entry for a document that did not change.
+  if (marquee.travelled < MINIMUM_MARQUEE) return undefined;
+
+  const from = startOf(gesture);
+  const to = endOf(gesture);
+
+  for (const item of selection.items) {
+    const box = boxOf({ page, index: item.index, rect: item.rect }, transform);
+    if (box === null) continue;
+    for (const [cx, cy, ox, oy] of cornersOf(box)) {
+      if (Math.hypot(from.x - cx, from.y - cy) > CORNER_REACH) continue;
+      return {
+        kind: 'placeAnnotation',
+        page,
+        placements: [{ index: item.index, rect: pdfBox([ox, oy], [to.x, to.y], transform) }],
+        version: selection.version,
+      };
+    }
+  }
+
+  const inside = selection.items.some((item) => {
+    const box = boxOf({ page, index: item.index, rect: item.rect }, transform);
+    return (
+      box !== null && from.x >= box.x0 && from.x <= box.x1 && from.y >= box.y0 && from.y <= box.y1
+    );
+  });
+  if (!inside) return undefined;
+
+  // THE DELTA IS TAKEN IN PDF SPACE, from two viewport points through the one
+  // converter. Subtracting screen pixels and scaling by the zoom would be a
+  // second implementation of the transform, and it would be wrong on a rotated
+  // page in a way no unrotated fixture shows.
+  const origin = toPdf(viewportPoint(from.x, from.y), transform);
+  const moved = toPdf(viewportPoint(to.x, to.y), transform);
+  const dx = moved.x - origin.x;
+  const dy = moved.y - origin.y;
+  return {
+    kind: 'placeAnnotation',
+    page,
+    placements: selection.items.map((item) => ({
+      index: item.index,
+      rect: {
+        x0: item.rect.x0 + dx,
+        y0: item.rect.y0 + dy,
+        x1: item.rect.x1 + dx,
+        y1: item.rect.y1 + dy,
+      },
+    })),
+    version: selection.version,
+  };
+}
+
 export function selectTool(deps: SelectDeps): UiTool {
   const controller: ToolController = {
     ...pointerPath,
@@ -141,8 +272,18 @@ export function selectTool(deps: SelectDeps): UiTool {
       gesture: Gesture,
       page: number,
       transform: PageTransform,
-    ): Promise<undefined> => {
+    ): Promise<RenderableCommand | undefined> => {
       const marquee = marqueeOf(gesture);
+
+      // A GESTURE THAT STARTED ON THE SELECTION IS AN EDIT, NOT A PICK, and it
+      // is decided before the read: what was already selected is state this tool
+      // holds, so a drag on it needs no round trip. The order matters — testing
+      // for a marquee first would make every drag inside a selected annotation
+      // replace the selection with that annotation, which is the interaction
+      // every editor gets right by asking this question first.
+      const moved = placementFor(deps.selected(), gesture, marquee, page, transform);
+      if (moved !== undefined) return moved;
+
       const snapshot = await deps.annotations();
       if (snapshot === undefined) {
         // NOTHING TO SELECT FROM. The selection is cleared rather than left

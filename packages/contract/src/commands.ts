@@ -1460,6 +1460,67 @@ export const removeAnnotationSchema = z.object({
   version: docVersionSchema,
 });
 
+/**
+ * How many annotations one placement may move.
+ *
+ * {@link MAX_REMOVED_ANNOTATIONS}' number and its argument, stated separately
+ * because they are separate bounds: this one is *how many a person is dragging*
+ * and that one is *how many they are deleting*, and tying them would move either
+ * silently.
+ */
+export const MAX_PLACED_ANNOTATIONS = 1024;
+
+/**
+ * Moves or resizes annotations on one page, each to a rectangle it should now
+ * occupy.
+ *
+ * ## ONE COMMAND FOR BOTH, because the payload says where, not how
+ *
+ * A nudge is a translation and a handle drag is a scale, and the difference is
+ * entirely in the rectangles a surface computes. Two commands would be two
+ * declarations, two applies and two undo entries for one operation the format
+ * cannot tell apart.
+ *
+ * ## The rectangle is the annotation's own box, and for four subtypes it is
+ * DERIVED from the geometry
+ *
+ * `Ink`, `Line`, `Polygon` and `PolyLine` have no `/Rect` to set — MuPDF refuses
+ * `getRect` on them and computes the rectangle from the points. So the kernel
+ * maps the geometry from the box it currently occupies into this one, which is
+ * what makes a polygon draggable at all rather than a subtype the tool has to
+ * exclude.
+ *
+ * **A `/Text` and a `/Caret` move but do not resize.** MuPDF clamps their boxes
+ * (`pageAnnotations.ts` carries the measurement), so a request to make a note
+ * bigger stores the same box in the new place. That is the engine's rule
+ * arriving intact rather than a refusal invented here.
+ *
+ * ## Plural for `removeAnnotation`'s reason
+ *
+ * Nudging four selected marks is one decision and must be one version bump, or
+ * three of the four handles are stale before the second command is sent.
+ */
+export const placeAnnotationSchema = z.object({
+  kind: z.literal('placeAnnotation'),
+  /** Zero-based index of the page they sit on. */
+  page: z.number().int().nonnegative(),
+  /** Where each named annotation should end up. Order carries no meaning. */
+  placements: z
+    .array(
+      z.object({
+        /** Its position in the walk that produced the answer this names. */
+        index: z.number().int().nonnegative(),
+        /** The box it should occupy, in PDF user space. */
+        rect: annotationRectSchema,
+      }),
+    )
+    .min(1)
+    .max(MAX_PLACED_ANNOTATIONS)
+    .readonly(),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -1481,6 +1542,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   replacePageSchema,
   addAnnotationSchema,
   removeAnnotationSchema,
+  placeAnnotationSchema,
 ]);
 
 /**
@@ -1542,6 +1604,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // reach an annotation main did not just describe to it, and cannot express one
   // that was never listed.
   removeAnnotationSchema,
+  // RENDERABLE, and the same test with a rectangle added: the renderer names
+  // rows of an answer it was given and says where each should end up. What it
+  // cannot express is HOW — the geometry a polygon or a stroke is made of never
+  // crosses in either direction, and the kernel maps it.
+  placeAnnotationSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -1679,6 +1746,7 @@ void _bothNamesAreCommandKinds;
  */
 export function targetVersionOf(command: Command): DocVersion | undefined {
   if (command.kind === 'removeAnnotation') return command.version;
+  if (command.kind === 'placeAnnotation') return command.version;
   return undefined;
 }
 
@@ -1692,6 +1760,6 @@ export function targetVersionOf(command: Command): DocVersion | undefined {
  * a real kind, and saying so is what stopped the sibling above from spending a
  * range asserting nothing.
  */
-export type NamesAnAnnotation = 'removeAnnotation';
+export type NamesAnAnnotation = 'removeAnnotation' | 'placeAnnotation';
 const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
 void _thatNameIsACommandKind;

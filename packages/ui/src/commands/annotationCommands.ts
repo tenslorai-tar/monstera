@@ -1,3 +1,4 @@
+import type { RenderableCommand } from '@monstera/contract';
 import type { MessageKey } from '@monstera/shared';
 
 import {
@@ -26,6 +27,10 @@ import {
   ERASER_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
+  NUDGE_DOWN_TITLE,
+  NUDGE_LEFT_TITLE,
+  NUDGE_RIGHT_TITLE,
+  NUDGE_UP_TITLE,
   POLYGON_TOOL_TITLE,
   POLYLINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
@@ -93,6 +98,8 @@ export interface SelectionCommandDeps {
   readonly selection: () => AnnotationSelection | undefined;
   /** Removes it, through the same dispatcher every other caller uses. */
   readonly onDelete: (selection: AnnotationSelection) => void;
+  /** Sends a placement, through that same dispatcher. */
+  readonly onPlace: (command: RenderableCommand) => void;
 }
 
 /**
@@ -254,6 +261,106 @@ export function deleteSelectionCommand(deps: SelectionCommandDeps): UiCommand {
       deps.onDelete(selection);
     },
   };
+}
+
+/**
+ * How far one arrow press moves the selection, in PDF points.
+ *
+ * A point is the unit the document is measured in, so a nudge is the smallest
+ * step that means anything rather than a number chosen for how it feels at some
+ * zoom. Ten is the coarse step, which is what Shift means everywhere else.
+ */
+const NUDGE = 1;
+const NUDGE_FAR = 10;
+
+/** Which way an arrow points, in the PAGE's own axes. */
+const NUDGES = {
+  left: [-1, 0],
+  right: [1, 0],
+  up: [0, 1],
+  down: [0, -1],
+} as const;
+
+/** The four arrows' key names, in this object's own order. */
+const ARROW_KEYS = {
+  left: 'ArrowLeft',
+  right: 'ArrowRight',
+  up: 'ArrowUp',
+  down: 'ArrowDown',
+} as const;
+
+const ARROW_TITLES = {
+  left: NUDGE_LEFT_TITLE,
+  right: NUDGE_RIGHT_TITLE,
+  up: NUDGE_UP_TITLE,
+  down: NUDGE_DOWN_TITLE,
+} as const;
+
+/**
+ * Moving the selection by one step.
+ *
+ * ## THE PAGE'S AXES, NOT THE SCREEN'S — stated because it is a real limit
+ *
+ * The selection carries rectangles in PDF user space and this adds to them, so
+ * on a `/Rotate 90` page *up* follows the page rather than the screen. Doing it
+ * the other way needs the page's `PageTransform`, which lives in the scroller
+ * and does not reach the command registry — a command's `run(context)` takes
+ * the application's state and no arguments. The trigger for fixing it is a
+ * second command that needs the same thing, at which point the transform is
+ * worth putting where commands can reach it rather than threading for one.
+ *
+ * ## Eight commands rather than one with a modifier
+ *
+ * A shortcut is a chord string on an entry, so `Shift+ArrowUp` is a different
+ * entry from `ArrowUp` — and each of the eight then appears in the palette
+ * under its own name, which is what a person searching for *nudge* needs.
+ */
+export function nudgeSelectionCommand(
+  direction: keyof typeof NUDGES,
+  far: boolean,
+  deps: SelectionCommandDeps,
+): UiCommand {
+  const [dx, dy] = NUDGES[direction];
+  const step = far ? NUDGE_FAR : NUDGE;
+  return {
+    id: `annotate.nudge-${direction}${far ? '-far' : ''}`,
+    title: ARROW_TITLES[direction],
+    // NO SURFACE. An arrow key is the whole of this control: eight buttons for
+    // one-point moves would be a toolbar nobody uses, and the palette reaches
+    // every registered command whether or not it is placed.
+    placements: [],
+    shortcut: `${far ? 'Shift+' : ''}${ARROW_KEYS[direction]}`,
+    // WITHOUT A SELECTION THE ARROWS ARE NOT REGISTERED AT ALL, which is what
+    // keeps them from taking the key away from the scroller. A handler that
+    // returned early would still have swallowed the press.
+    when: () => deps.selection() !== undefined,
+    run: (): void => {
+      const selection = deps.selection();
+      if (selection === undefined) return;
+      deps.onPlace({
+        kind: 'placeAnnotation',
+        page: selection.page,
+        placements: selection.items.map((item) => ({
+          index: item.index,
+          rect: {
+            x0: item.rect.x0 + dx * step,
+            y0: item.rect.y0 + dy * step,
+            x1: item.rect.x1 + dx * step,
+            y1: item.rect.y1 + dy * step,
+          },
+        })),
+        version: selection.version,
+      });
+    },
+  };
+}
+
+/** All eight nudges, so the composition root names the set once. */
+export function nudgeSelectionCommands(deps: SelectionCommandDeps): readonly UiCommand[] {
+  return (Object.keys(NUDGES) as (keyof typeof NUDGES)[]).flatMap((direction) => [
+    nudgeSelectionCommand(direction, false, deps),
+    nudgeSelectionCommand(direction, true, deps),
+  ]);
 }
 
 /**

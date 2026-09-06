@@ -5,6 +5,7 @@ import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js
 import type { CommandContext } from '../registries/commands.js';
 import {
   deleteSelectionCommand,
+  nudgeSelectionCommands,
   rectangleToolCommand,
   shapeToolCommands,
 } from './annotationCommands.js';
@@ -163,6 +164,7 @@ describe('rectangleToolCommand', () => {
       ask,
       annotations: () => Promise.resolve(undefined),
       onSelect: () => undefined,
+      selected: () => undefined,
     }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,
@@ -210,6 +212,7 @@ describe('deleteSelectionCommand', () => {
       onDelete: (selection) => {
         deleted.push(selection);
       },
+      onPlace: () => undefined,
     });
     void command.run(WITH_DOCUMENT);
     // BOTH INDICES IN ONE CALL. A command that dispatched per item would be
@@ -223,7 +226,11 @@ describe('deleteSelectionCommand', () => {
     // The wired-tools rule at the registry: `when` is what keeps Delete from
     // being a control that exists and does nothing. Pressing it over a page
     // with no selection does nothing because nothing is registered.
-    const deps = { selection: () => undefined, onDelete: () => undefined };
+    const deps = {
+      selection: (): undefined => undefined,
+      onDelete: (): undefined => undefined,
+      onPlace: (): undefined => undefined,
+    };
     expect(deleteSelectionCommand(deps).when?.(WITH_DOCUMENT)).toBe(false);
     expect(
       deleteSelectionCommand({ ...deps, selection: () => SELECTION }).when?.(WITH_DOCUMENT),
@@ -238,6 +245,7 @@ describe('deleteSelectionCommand', () => {
     const command = deleteSelectionCommand({
       selection: () => current,
       onDelete: () => undefined,
+      onPlace: () => undefined,
     });
     expect(command.when?.(WITH_DOCUMENT)).toBe(false);
     current = SELECTION;
@@ -253,10 +261,88 @@ describe('deleteSelectionCommand', () => {
     const command = deleteSelectionCommand({
       selection: () => SELECTION,
       onDelete: () => undefined,
+      onPlace: () => undefined,
     });
     expect(command.shortcut).toBe('Delete');
     expect(command.placements).toStrictEqual([
       { surface: 'context-menu', context: 'annotation', order: 10 },
     ]);
+  });
+});
+
+describe('nudgeSelectionCommands', () => {
+  const SELECTION = {
+    page: 2,
+    version: asDocVersion(7),
+    items: [{ index: 1, rect: { x0: 10, y0: 20, x1: 30, y1: 40 } }],
+  };
+
+  function nudging(selection: typeof SELECTION | undefined): {
+    readonly commands: readonly ReturnType<typeof deleteSelectionCommand>[];
+    readonly sent: unknown[];
+  } {
+    const sent: unknown[] = [];
+    return {
+      commands: nudgeSelectionCommands({
+        selection: () => selection,
+        onDelete: () => undefined,
+        onPlace: (command) => {
+          sent.push(command);
+        },
+      }),
+      sent,
+    };
+  }
+
+  function fire(direction: string, sent: unknown[], commands: readonly { id: string; run: (context: CommandContext) => unknown }[]): unknown {
+    const found = commands.find((command) => command.id === `annotate.nudge-${direction}`);
+    if (found === undefined) throw new Error(`no nudge command for ${direction}`);
+    void found.run(WITH_DOCUMENT);
+    return sent[sent.length - 1];
+  }
+
+  it('moves the selection one point along the PAGE’s axes', () => {
+    // Up is +y in PDF user space, which is the page's own frame rather than the
+    // screen's. On a rotated page the two differ, and the command's own note
+    // says so — this pins the direction so the limit is a stated fact rather
+    // than an accident nobody wrote down.
+    const { commands, sent } = nudging(SELECTION);
+    expect(fire('up', sent, commands)).toStrictEqual({
+      kind: 'placeAnnotation',
+      page: 2,
+      placements: [{ index: 1, rect: { x0: 10, y0: 21, x1: 30, y1: 41 } }],
+      version: asDocVersion(7),
+    });
+    expect(fire('left', sent, commands)).toMatchObject({
+      placements: [{ index: 1, rect: { x0: 9, y0: 20, x1: 29, y1: 40 } }],
+    });
+  });
+
+  it('has a Shift version that moves ten, and it is a SEPARATE entry', () => {
+    // A shortcut is a chord on an entry, so the coarse step cannot be the same
+    // command with a modifier read at run time — which is also what puts both
+    // in the palette under one name each.
+    const { commands, sent } = nudging(SELECTION);
+    const far = commands.find((command) => command.id === 'annotate.nudge-up-far');
+    expect(far?.shortcut).toBe('Shift+ArrowUp');
+    void far?.run(WITH_DOCUMENT);
+    expect(sent[0]).toMatchObject({
+      placements: [{ index: 1, rect: { x0: 10, y0: 30, x1: 30, y1: 50 } }],
+    });
+  });
+
+  it('registers eight, each with its own chord and no surface', () => {
+    // Eight buttons for one-point moves would be a toolbar nobody uses; the
+    // palette reaches every registered command whether or not it is placed.
+    const { commands } = nudging(SELECTION);
+    expect(commands).toHaveLength(8);
+    expect(new Set(commands.map((command) => command.shortcut)).size).toBe(8);
+    expect(commands.every((command) => command.placements.length === 0)).toBe(true);
+  });
+
+  it('is not registered at all with nothing selected, so the arrows still scroll', () => {
+    // A handler that returned early would already have swallowed the key.
+    const { commands } = nudging(undefined);
+    expect(commands.every((command) => command.when?.(WITH_DOCUMENT) === false)).toBe(true);
   });
 });

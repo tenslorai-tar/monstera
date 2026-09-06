@@ -101,6 +101,7 @@ export {
   movePageSchema,
   type NamesAnAnnotation,
   type NamesASecondDocument,
+  placeAnnotationSchema,
   removeAnnotationSchema,
   renderableCommandSchema,
   targetVersionOf,
