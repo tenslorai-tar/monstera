@@ -29,13 +29,24 @@
  * Usage: node scripts/proofs/buildFreshness.proof.mjs
  */
 
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { newestMtime, refuseStaleBuild } from '../lib/buildFreshness.mjs';
+import { ARTEFACT_EDGES, newestMtime, refuseStaleBuild } from '../lib/buildFreshness.mjs';
 import { createRoster } from '../lib/passRoster.mjs';
 import { formatError } from '../lib/reportError.mjs';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** @type {string[]} */
 const failures = [];
@@ -53,6 +64,8 @@ const CASES = [
   'a TSC pair whose source is newer is ACCEPTED when the compiler says it is current',
   'CONTROL: and REFUSED when the compiler says a build is owed',
   'CONTROL: a BUNDLER pair with the same shape is refused without asking anybody',
+  'every proof that CALLS the guard has an ARTEFACT_EDGES entry, so the sweep can order it',
+  'CONTROL: and the scan found the callers it is known to be able to find',
 ];
 
 const roster = createRoster(failures, { cases: CASES.length });
@@ -334,6 +347,100 @@ try {
         `their outputs on every build, so for a bundled artefact the timestamps are the whole ` +
         `truth and tsc's answer is about a different build. A hatch that applied to both would ` +
         `let a stale preload through on a tree whose TypeScript happened to be current.`,
+    );
+  }
+
+  // THE ANCHOR, and it is the whole point of these last two cases.
+  //
+  // `stepOrder.mjs` derives the sweep's ordering from `ARTEFACT_EDGES`, so the
+  // ordering is stable for whatever is in that map — and the map is hand-kept
+  // while the failure it exists to prevent is an OMISSION from it. That is
+  // audit item 4c in the direction the rule warns about: derive from a set only
+  // when the failure you fear makes it BIGGER. Here it makes it smaller, and a
+  // number computed from a collection cannot disagree with the collection.
+  //
+  // So the extent comes from somewhere the omission cannot reach: the set of
+  // proof scripts that IMPORT `refuseStaleBuild`. A proof that calls the guard
+  // is by definition one whose output depends on a build, and adding the call
+  // is what a person does first — the entry is the step they forget. Measured
+  // 2026-09-06: `renderGeometry.proof.mjs` had called it since it was written
+  // and appeared in no entry, so it ran at 1.2s against a build that finished
+  // at 34.0s and refused as stale, in a sweep that then sealed failed.
+  //
+  // The FILE-to-SCRIPT mapping is read from `package.json` rather than derived
+  // from the filename, because npm's script table is the authority on what a
+  // script is called and `renderGeometry.proof.mjs` → `proof:rendergeometry`
+  // is a convention nothing enforces. `annotateCoverage.mjs` reads the same
+  // table for the same reason.
+  {
+    const proofsDir = join(REPO_ROOT, 'scripts', 'proofs');
+    /** @type {Record<string, string>} */
+    const scripts = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8')).scripts;
+    /** @type {Map<string, string>} */
+    const scriptByFile = new Map();
+    for (const [name, command] of Object.entries(scripts)) {
+      const named = /scripts\/proofs\/([\w.-]+\.mjs)/u.exec(command);
+      if (named?.[1] !== undefined) scriptByFile.set(named[1], name);
+    }
+
+    // THE ONE EXCLUSION, and a classifier needs a control for what it must
+    // EXCLUDE as much as for what it must find. This file drives the guard
+    // against temporary fixture roots it creates and deletes — it reads no
+    // build and depends on no artefact, so an `ARTEFACT_EDGES` entry for it
+    // would name sources it never looks at and the sweep would order it after a
+    // build it does not need.
+    //
+    // Excluded BY NAME because the distinction is which root it passes, and a
+    // scan that tried to tell `REPO_ROOT` from a `mkdtemp` path by reading the
+    // source would be a parser where a sentence will do. The cost of a name is
+    // that a rename makes it stale silently, which the control below refuses.
+    const GUARD_OWN_PROOF = 'buildFreshness.proof.mjs';
+
+    /** @type {string[]} */
+    const callers = [];
+    for (const file of readdirSync(proofsDir)) {
+      if (!file.endsWith('.mjs') || file === GUARD_OWN_PROOF) continue;
+      // THE IMPORT, not the call: a proof that imports the guard and forgets to
+      // invoke it is a different defect, and this scan must not be the thing
+      // that decides which. An import is also what a one-line grep can see
+      // without parsing, and it is present in every file that uses it.
+      if (!/\brefuseStaleBuild\b/u.test(readFileSync(join(proofsDir, file), 'utf8'))) continue;
+      const script = scriptByFile.get(file);
+      if (script !== undefined) callers.push(script);
+    }
+
+    // THIS IS A SEARCH, so it must locate something known-present or its silence
+    // is worthless (item 4b). The control runs FIRST in spirit and is asserted
+    // below: without it, a regex that matched nothing — a renamed helper, a
+    // moved directory, a `scripts` table this failed to parse — would report an
+    // empty caller list, and an empty list satisfies "every caller has an entry"
+    // perfectly. That is the reassuring answer, and it is the one being hoped
+    // for here.
+    const found = callers.filter((script) => ARTEFACT_EDGES[script] === undefined);
+    check(
+      'every proof that CALLS the guard has an ARTEFACT_EDGES entry, so the sweep can order it',
+      found.length === 0,
+      `${found.length} proof(s) call refuseStaleBuild and are named by no ARTEFACT_EDGES ` +
+        `entry: ${found.length > 0 ? found.join(', ') : '(none)'}. stepOrder.mjs cannot place ` +
+        `them after the build they read, so they run against whatever is on disk — and refuse ` +
+        `as stale rather than pass, which turns a whole sweep red. Add the edges each proof ` +
+        `already declares at its refuseStaleBuild call.`,
+    );
+    // TWO CLAIMS IN ONE CONTROL, because the scan has two ways to go quiet and
+    // only one of them is about the pattern. It can fail to FIND — a renamed
+    // helper, a moved directory, a `scripts` table it could not parse — and it
+    // can over-EXCLUDE, if the file it skips by name is renamed and the skip
+    // silently starts matching nothing while the real caller it used to protect
+    // is gone. Both produce a caller list this case's partner is happy with.
+    const excluded = readdirSync(proofsDir).includes(GUARD_OWN_PROOF);
+    check(
+      'CONTROL: and the scan found the callers it is known to be able to find',
+      callers.includes('proof:rendererpolicy') && callers.includes('proof:canvaspixels') && excluded,
+      `the scan of scripts/proofs found [${callers.join(', ')}] and ${excluded ? 'did' : 'did NOT'} ` +
+        `find ${GUARD_OWN_PROOF} to exclude. Those two proofs are known to call ` +
+        `refuseStaleBuild, so their absence means this scan is blind — and a blind scan reports ` +
+        `an empty caller list, which passes the case above for the wrong reason. A missing ` +
+        `exclusion file means that name went stale in a rename.`,
     );
   }
 

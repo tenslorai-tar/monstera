@@ -115,6 +115,20 @@ export const CANVAS_PIXELS_RUNTIME = [
 export const ARTEFACT_EDGES = {
   'proof:rendererpolicy': [...RENDERER_POLICY_DECLARATION, ...RENDERER_POLICY_RUNTIME],
   'proof:canvaspixels': CANVAS_PIXELS_RUNTIME,
+  // THE THIRD, MISSING FOR AS LONG AS `renderGeometry.proof.mjs` HAS EXISTED.
+  // It calls `refuseStaleBuild` with `CANVAS_PIXELS_RUNTIME` — the same edges,
+  // for the same reason — and had no entry here, so `stepOrder.mjs` could not
+  // order it after the build. Measured 2026-09-06 in a full `npm run local`: it
+  // ran at 1.2s against a build that finished at 34.0s and refused, correctly,
+  // as stale.
+  //
+  // The map is what the ordering derives from, and this map is HAND-KEPT while
+  // the failure it must catch is an OMISSION from it — audit item 4c in the
+  // direction the rule warns about, since a derived extent tracks growth and
+  // agrees with any shrink. So an entry added here is not the fix; the anchor
+  // in `buildFreshness.proof.mjs` is, and it comes from the set of proofs that
+  // IMPORT `refuseStaleBuild`, which an omission here cannot reach.
+  'proof:rendergeometry': CANVAS_PIXELS_RUNTIME,
 };
 
 /**
