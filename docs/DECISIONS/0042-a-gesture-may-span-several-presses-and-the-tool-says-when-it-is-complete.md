@@ -152,3 +152,31 @@ those moments too. That is deliberate: pointer-up is where every gesture this
 build has now ends, and adding the other call sites before a tool needs one would
 be architecture written ahead of need. The trigger is the first tool whose finish
 is not a release.
+
+## Correction, 2026-09-06 — the clause this superseded was already false in three places
+
+Recorded by the stage audit at `909c388`, hours after this was accepted, and
+appended rather than edited because what was believed when it was written is the
+record.
+
+The Context above, and the amendment row this produced in `docs/ARCHITECTURE.md`,
+both describe §6's lifecycle clause as naming `begin`, `update`,
+`commit → Command` and `cancel`. That is what the clause said. It was not what
+the code said, and had not been for four commits:
+
+- **`cancel` was never a member.** `registries/tools.ts` decided against it when
+  the platform landed at `4853e58`, with a stated argument this document even
+  restates in Decision 4 — while the amendment row went on listing it among the
+  members being superseded around.
+- **`preview` is a member** and appeared in neither.
+- **`commit` had already gained an asynchronous return** at `1714e24`, so
+  `→ Command` was the signature of a previous version.
+
+So the sentence quoted here to say *what is being changed* was itself stale in
+three of four entries, and quoting it is what made it feel checked. §6's body has
+been corrected; this decision's own reasoning is unaffected, because the seam it
+could not express is a fact about the overlay rather than about the clause.
+
+**The compensation, narrow enough to run: an amendment that QUOTES a clause
+verifies the whole quotation before superseding part of it.** It fires on the
+exact action that failed, which *be careful reading documents* does not.

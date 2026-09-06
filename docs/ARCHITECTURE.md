@@ -624,9 +624,26 @@ feature wiring, no dialog flags, and no large switch statements.
 
 **Annotations use one geometry vocabulary.** Every annotation type registers a
 geometry adapter (`bounds`, `transform`, `hitTest`) and a renderer; every tool
-registers a controller (`begin`, `update`, `commit → Command`, `cancel`). The
+registers a controller (`begin`, `update`, `commit`, `preview`, `complete`). The
 overlay is a dispatcher, never a monolithic switch stack. Adding a type touches
 one adapter and one renderer.
+
+**That list read `begin`, `update`, `commit → Command`, `cancel` until
+2026-09-06, and three of its four entries were false** — found by the stage
+audit at `909c388`, not by any check. `cancel` is deliberately **not** a member
+(`registries/tools.ts`: the gesture is a value the overlay holds, so cancelling
+is dropping it, and the member would be an empty body in twenty tools);
+`preview` **is** one and was unnamed; and `commit` has been able to answer
+`Promise<Command | undefined>` since the text box, because a tool whose intent
+comes partly from a person cannot answer at pointer-up. Two of those changes
+were made by commits in the range that this clause was never edited by.
+
+**The shape is the transferable part.** `begin` and `update` stayed true, and a
+reader checking the sentence checks the half that is still right — so a
+four-item list with three wrong entries reads as correct. The amendment below
+even quotes this clause in its *Supersedes* column, naming `cancel` among the
+members it was superseding around, which is a correction restating the thing it
+was correcting.
 
 **A gesture may span several presses, and the TOOL says when it is complete**
 ([ADR-0042](DECISIONS/0042-a-gesture-may-span-several-presses-and-the-tool-says-when-it-is-complete.md)).

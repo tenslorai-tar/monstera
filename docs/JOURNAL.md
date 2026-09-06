@@ -876,6 +876,255 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-06 — Stage audit: `814c717..909c388` — a four-item list with three false entries, and the amendment that quoted it
+
+Range: 33 commits, 99 files. Fired by the file threshold, on the commit that
+would have crossed it: `check:docs` measures against HEAD, so the crossing
+commit is invisible to it and the gate blocks *before* rather than reporting
+after the push. The commit that crossed is the polygon/polyline/cloud work,
+stashed while this ran so the audit stands alone.
+
+Instruments in range: two added under `scripts/` — `failureLine.mjs` and
+`stepOrder.mjs` — both covered by cases in `checkLocal.proof.mjs`
+(`failureLineOf` in both its spellings, `orderSteps` with a nothing-to-order
+control). Neither is run by hand, so item 4b's *put the control in the
+instrument* does not bite: they are parsers behind a harness, not searches
+somebody runs on the day they need an answer.
+
+### AAAA-30 — §6's tool lifecycle named four members and three of them were wrong
+
+**The finding.** `docs/ARCHITECTURE.md` §6 said a tool *"registers a controller
+(`begin`, `update`, `commit → Command`, `cancel`)"*. Measured against
+`packages/ui/src/registries/tools.ts` at `909c388`, the interface has `begin`,
+`update`, `commit` and `preview`. So:
+
+| the clause says | the code says |
+|---|---|
+| `cancel` is a member | it is deliberately **not** one — the gesture is a value the overlay holds, so cancelling is dropping it, and the member would be an empty body in twenty tools |
+| nothing about `preview` | it **is** a member, and has been since the platform landed at `4853e58` |
+| `commit → Command` | `commit` may answer `Promise<Command \| undefined>`, since the text box at `1714e24` |
+
+Two of the three became false inside this range. **No check can see it** — it is
+prose describing a TypeScript interface, and both halves parse.
+
+**Why it survived a reading.** `begin` and `update` are still exactly right, and
+a reader checking a four-item list checks the entries they can place. That is
+CLAUDE.md's *one clause of a compound claim* at list scale: the live entries
+vouch for the dead ones, and nothing about reading the sentence feels wrong.
+
+**The sharp half, and it is mine.** ADR-0042's amendment row at `909c388` quotes
+this clause in its *Supersedes* column — *"§6's tool-lifecycle clause, which
+names `begin`, `update`, `commit → Command` and `cancel`"* — and supersedes only
+the press-to-release model. So the correction restated three false claims while
+naming the sentence it was correcting, written by the seat that had read
+`ToolController` an hour earlier to add a member to it. **Writing an amendment
+is not reading the clause it amends**; quoting one is the moment to check it,
+and quoting is exactly what makes it feel checked.
+
+**Closed in this commit**: §6's body edited to name the real members, with the
+three corrections and the shape stated beneath it, and ADR-0042 carries an
+appended correction. FEATURES' platform row already said *"three are members"*
+and was right — the digest was ahead of the law, which is the same direction
+`monstera/no-bare-y-flip` went and the opposite of `no-raw-hex`.
+
+**What would catch the class.** Nothing cheap. A check comparing a prose member
+list against an interface needs to parse both, and the general form — *a
+document naming the members of a type* — is a handful of sentences across
+`docs/`. Recorded as a limit rather than a mechanism, with the compensation
+narrow enough to run: **an amendment that QUOTES a clause verifies the whole
+quotation before superseding part of it.** It fires on the exact action that
+failed here.
+
+### AAAA-31 — the tool-to-command join was asserted in one direction only
+
+Found and **closed in range** at `d16c1f9`. `annotationCommands.test.ts` asserted
+that every command selects its own tool — iterating the *commands*, so a tool
+with no command is not in the set it walks. The sticky note was written,
+registered as a tool, covered by twelve cases and shipped with no command at
+all, and the whole suite stayed green.
+
+The tell is NNN-1's: **the argument the set holds constant is the thing an
+omission removes from.** A new case requires the two id sets equal; mutated by
+dropping one command it reddens alone and names the id while the other nine stay
+green.
+
+It then found a second defect in itself, in the commit stashed for this audit:
+the case rebuilt `App.tsx`'s tool list to have something to compare, and that
+copy went stale the moment a group was added — failing about its own fixture
+rather than about the product. `annotations/annotationTools.ts` now holds the
+composition once; the app mounts it and the case reads it.
+
+### AAAA-32 — the sweep's stale-build ordering derived its extent from a hand-kept map
+
+Found and **closed in range** at `664c670`, and it is item 4c in the direction
+the rule warns about. `stepOrder.mjs` derives the sweep's ordering from
+`ARTEFACT_EDGES`, which had two entries; three proofs call `refuseStaleBuild`
+against a real build. `renderGeometry.proof.mjs` was the third and was in no
+entry, so in the full `npm run local` at `11:44` it ran at **1.2s** against a
+build that finished at **34.0s** and refused as stale, sealing the run failed.
+
+The previous run's write-up said the ordering *"is derived from `ARTEFACT_EDGES`
+and is stable"*. It is stable for whatever is in the map, and the failure it must
+catch is an omission from it — a set a derivation cannot disagree with. The
+anchor now comes from the set of proofs that **import** `refuseStaleBuild`, which
+an omission in the map cannot reach, with a positive control requiring the two
+known callers to be found and one stated exclusion (the guard's own proof, which
+drives it against temporary fixture roots) whose file is asserted to still exist.
+
+### AAAA-33 — a cloud that stored as a cloud and rendered as a polygon
+
+Found by a case on its first run, in the stashed commit. `setBorderEffect(
+'Cloudy')` alone writes `/BE << /S /C >>` and the effect is **inert**: the
+intensity is what makes the scallops, and `/RD` stays at the solid border's `2`
+instead of growing to `11`.
+
+**Asserting `/BE` passed on the broken version.** What separated them was the
+consequence an inert key cannot have. And it could not be read off `bounds`
+either: `readBack` reports `/Rect` inset by `/RD`, which is *where the shape is*,
+and the shape is in the same place either way by design — the corrected boxes are
+equal and only the raw inset differs. Item 4's *assert what only the correct path
+produces*, where the tidy observable was equal for both.
+
+### 1. Root cause, or workaround?
+
+Root cause in every case. **The flake** (`a9b6d42`) was a `React.lazy` import
+racing `findBy*`'s 1000 ms — a wall-clock wait against an unbounded cost — and
+was fixed by preloading the bodies rather than raising the number; it had four
+siblings and all five were closed. **The `/Text` clamp** was a wrong reading
+corrected against a measured range, not a fixture pinned to the wrong value.
+**AAAA-32** was fixed at the anchor rather than by adding the missing entry, and
+**AAAA-31** by asserting the untested direction rather than by adding the one
+missing command. No loosened check, no override, nothing that regenerates.
+
+### 2. Verified against the easy shape only?
+
+No, and the annotation work is where it mattered. Placement is asserted on three
+fixtures — upright at origin zero, `/Rotate 90`, and a `/CropBox` whose origin is
+not the media box's — because the first makes the flip, the rotation and the
+translation invisible or identical. The crop fixture also caught a wrong
+expectation of mine: its box **intersects** the media box, so the visible region
+is 150×200 and a point I had placed from the crop's own numbers was off-page.
+
+The hard shape found a real defect at `a41a272`: `graftPage` carries no
+`/Annots`, so merge, replace-page and insert-from-PDF were dropping every
+annotation a source carried while rendering correctly.
+
+**The gap:** `AnnotationOverlay.test.tsx` runs on happy-dom, so pointer capture,
+`event.detail` and hit-testing are the shim's semantics rather than a browser's.
+Stated, not closed.
+
+### 2a. Has a change to HOW something is proven moved the coverage?
+
+Once, and it is a **strengthening**: the annotation cases read the stored
+dictionary with **pdf-lib**, which did not write it, rather than through MuPDF's
+own getters — because `getRect` agrees with `setRect` whatever space the caller
+believed it was in, so a round trip through the writer passes for a wrong
+conversion. No derivation replaced an assertion, so nothing gained a
+provisioning condition and no verdict moved to *unverifiable*.
+
+### 3. Would CI have caught it?
+
+For AAAA-30, no, and nothing could: it is a claim about prose describing a
+TypeScript interface, and both readings parse. For AAAA-31, no — `test` runs on
+both matrix legs and the suite was green, because the case did not exist.
+AAAA-32 was found **by** CI's local mirror, which is that answer working.
+AAAA-33 was found by the case written alongside it.
+
+The live instance of the standing gap is in this range: `1714e24` pushed two lint
+errors to a public `main`, corrected at `e769662`. **Lint remains CI-only**, so
+that class is always public before it is caught. The reviewing seat has ruled
+*take it into pre-commit* at a measured ~20s a commit; the owner has not, and it
+stays queued rather than taken silently.
+
+**And the other way round — a defect this machine cannot see?** One:
+`proof:hostrecovery` returns UNVERIFIABLE here and is red on a job that passes
+the require flag. Not new, and not this range's.
+
+### 4. Are the proofs non-vacuous?
+
+Mutated, and each named its own defect rather than reddening the file:
+
+| mutation | result |
+|---|---|
+| drop the sticky note's command from the list | AAAA-31's case reddens **alone**, naming `annotate.sticky-note`; the other nine stay green |
+| remove `proof:rendergeometry` from `ARTEFACT_EDGES` | AAAA-32's anchor reddens and names it |
+| make the overlay always end a gesture at pointer-up | the two multi-press cases redden; the eleven others do not |
+
+AAAA-33 is item 4's own rule paying: the tidy observable (`/Rect` inset by `/RD`)
+is **equal** for a working cloud and an inert one by design, so the assertion had
+to read the raw inset, which only a real effect changes.
+
+### 4a. Has every instrument passed a resolution test?
+
+Two instruments arrived under `scripts/`: `failureLine.mjs` and `stepOrder.mjs`.
+Both are exercised by `checkLocal.proof.mjs` — `failureLineOf` in both of the
+spellings 25 files print, `orderSteps` with a nothing-to-order control and a
+control that an unselected producer does not hold a consumer back. Both are
+parsers behind a harness rather than measurements, so *report two values that
+differ as different* is answered by those cases carrying distinct expected
+strings and orders.
+
+### 4b. Is the instrument a SEARCH? Then it needs a positive control.
+
+The one search added in range is AAAA-32's anchor, which scans `scripts/proofs/`
+for importers of `refuseStaleBuild`. It carries a control requiring the two known
+callers to be found — because an **empty caller list satisfies the rule
+perfectly**, and that is the reassuring answer here. It also carries a control
+for what it must **exclude**: the guard's own proof, skipped by name because the
+real distinction is which root it passes, with an assertion that the file still
+exists so a rename cannot silently empty the exclusion.
+
+Neither `failureLine.mjs` nor `stepOrder.mjs` is run by hand, so *put the control
+in the instrument, not only in its proof* does not bite for them.
+
+### 4c. Does this check DERIVE its extent from the set it governs?
+
+**Yes, and that is AAAA-32** — the one finding in this range of exactly that
+shape, in the warned direction. No other roster or count added here derives from
+what it polices: `checkLocal.proof.mjs` declares `cases: 74` as a literal, which
+is an independent claim.
+
+### 5. Executed, or asserted?
+
+Executed. The MuPDF readings this range rests on were taken against 1.28.0
+through the real writer and **over ranges rather than single points** — which is
+what caught the `/Text` clamp after one 30-point sample had already been written
+up as a fixed size, and what separated the caret's genuinely fixed box from it.
+
+Not executed and stated as such: `proof:guards` **timed out at 602.6s**, its
+second measurement after 622.64s. It reproduces, it is not this range's, and it
+stays queued as its own unit with `proof:perfbudget`'s `mupdf-host-real` lines.
+
+### 6. Did architecture change before the feature, or underneath it?
+
+Before, twice, each in its own commit: `95d126a` (ADR-0041, the handle) and
+`909c388` (ADR-0042, the multi-press gesture). The second records that the cheap
+widening was **checked for first and found unnecessary** one commit earlier — the
+click gesture cost the platform nothing — which is why it is an amendment rather
+than a fourth reflex to widen the seam.
+
+**One change went underneath, and it is AAAA-30's third row.** `commit` gaining
+an asynchronous return at `1714e24` changed a documented lifecycle member's
+signature with no document recording it. Whether that needed a B4 or only a
+document edit is arguable; what is not is that §6 stated the old signature for
+four commits afterwards.
+
+### 7. Do the documents still match the code?
+
+**No — that is AAAA-30**, and it is the range's headline finding. Closed in this
+commit.
+
+The cross-document sweep NNN-4 asks for: this range states a cross-document
+relationship in ADR-0042 and its amendment row, so every other statement of the
+tool lifecycle was swept. `npm run sweep:prose -- "commit may answer now or
+later"` returns **0 matches in 56 documents, control found** — no document
+records the widening at all, which is the third row above. `docs/FEATURES.md`'
+platform row says *"three are members"* and was **right**: the digest was ahead
+of the law, the same direction `monstera/no-bare-y-flip` went and the opposite of
+`no-raw-hex`.
+
+---
+
 ## 2026-09-06 — The handle's command half, and an axis a type cannot hold
 
 ADR-0041's three decisions are built. What is worth recording is where the ADR
