@@ -178,3 +178,35 @@ The default if this ADR is not written, and the reason it is. A stale index is
 in range, names a real annotation, and deletes it. The document is well-formed
 afterwards, no check fails, and the only evidence is that the wrong mark is gone
 — which the person notices later, if at all, and cannot undo past.
+
+---
+
+## Correction, 2026-09-06 — the read half IS built, and this said otherwise for one commit
+
+*Nothing is built on it yet* in the status block, and *It builds nothing* under
+**What this does not do**, were true when written and false one commit later.
+`5a5c87b` added `index` to every entry of `document.annotations` and to the
+engine channel beneath it, and corrected neither sentence.
+
+ADR-0040's own build commit corrected all three of its documents *in* the commit
+that falsified them, and its message says so. This is the same shape one ADR
+along, caught one commit late — by asking what the last commit had made untrue,
+which is not a check and cannot be. Both sentences still parse, both still read
+as candour, and an ADR is precisely where someone goes to find out whether a
+thing is built.
+
+**What is built: the mint.** `readAnnotations` numbers each annotation by its
+position in the walk, per page, and that number crosses the boundary.
+
+**What is not: any consumer.** No command names an annotation, so Decision 2's
+version refusal has no caller and Decision 3's declared axis does not exist. The
+only readers of the index today are its own cases.
+
+**Decision 3 is the next unit and it is not a registration.** The bus holds the
+version and the `apply` does not, so the refusal lives where sources are
+resolved, and every declaration answers the axis — twelve of them `'none'`,
+which is the table's point. Putting the check in `documentCommands.ts` instead
+would be the per-command `if` the axis exists to prevent, and the second command
+to name an annotation would write its own. Expect ADR-0040's correction to
+repeat: an axis of this shape **binds in one direction only**, because a
+function that ignores an argument is assignable to a signature that passes it.
