@@ -268,6 +268,11 @@ export const ANNOTATIONS_KIND_REDACT = messageKey('surface.annotations.kind.reda
 export const ANNOTATIONS_KIND_TEXT_BOX = messageKey('surface.annotations.kind.text-box');
 export const ANNOTATIONS_KIND_STICKY_NOTE = messageKey('surface.annotations.kind.sticky-note');
 export const ANNOTATIONS_KIND_CARET = messageKey('surface.annotations.kind.caret');
+export const ANNOTATIONS_KIND_POLYGON = messageKey('surface.annotations.kind.polygon');
+export const ANNOTATIONS_KIND_POLYLINE = messageKey('surface.annotations.kind.polyline');
+export const POLYGON_TOOL_TITLE = messageKey('command.annotate.polygon');
+export const POLYLINE_TOOL_TITLE = messageKey('command.annotate.polyline');
+export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
 export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
 export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
 export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
@@ -507,6 +512,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATIONS_KIND_TEXT_BOX]: 'Text box',
   [ANNOTATIONS_KIND_STICKY_NOTE]: 'Note',
   [ANNOTATIONS_KIND_CARET]: 'Insertion mark',
+  // ONE LABEL FOR THE POLYGON AND THE CLOUD, because the panel names the object
+  // and both are `/Polygon`. A *Cloud* row would be this build's tool
+  // vocabulary applied to a document somebody else wrote.
+  [ANNOTATIONS_KIND_POLYGON]: 'Shape',
+  [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
+  [POLYGON_TOOL_TITLE]: 'Polygon',
+  [POLYLINE_TOOL_TITLE]: 'Connected lines',
+  [CLOUD_TOOL_TITLE]: 'Cloud',
   [ANNOTATION_TEXT_TITLE]: 'Text box',
   [ANNOTATION_TEXT_LABEL]: 'Text',
   [ANNOTATION_TEXT_APPLY]: 'Add text box',

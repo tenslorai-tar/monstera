@@ -89,9 +89,7 @@ import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
-import { pointTools } from './annotations/pointTools.js';
-import { shapeTools } from './annotations/shapeTools.js';
-import { textBoxTool } from './annotations/textTools.js';
+import { annotationTools } from './annotations/annotationTools.js';
 import { shapeToolCommands } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { ToolRegistry } from './registries/tools.js';
@@ -706,7 +704,7 @@ export function App({ client, settings }: AppProps): ReactElement {
   // means to ask, exactly as `deletePagesCommand(deps)` does — see
   // `textTools.ts` for why that is not a fourth parameter on `commit`.
   const tools = useMemo(
-    () => new ToolRegistry([...shapeTools, textBoxTool({ ask }), ...pointTools({ ask })]),
+    () => new ToolRegistry(annotationTools({ ask })),
     [ask],
   );
 

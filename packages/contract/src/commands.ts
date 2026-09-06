@@ -816,6 +816,33 @@ export const MAX_ANNOTATION_FONT = 1296;
 export const MAX_INK_POINTS = 4096;
 
 /**
+ * How many vertices one polygon or polyline may carry.
+ *
+ * **A separate bound from {@link MAX_INK_POINTS}, because it counts a different
+ * thing.** A stroke's points are samples of a drag, so its bound is a distance
+ * a hand could travel; these are *presses*, one per deliberate click. Two
+ * hundred and fifty-six is a shape nobody draws by hand and is three orders of
+ * magnitude below the sampled bound — reusing that one would have been a limit
+ * whose stated reason is about pixels of travel applied to a count of clicks.
+ */
+export const MAX_POLYGON_POINTS = 256;
+
+/**
+ * How a polygon's border is drawn — `/BE`, in the format's own vocabulary.
+ *
+ * **A union rather than `cloudy: true`**, for {@link lineEndingSchema}'s reason
+ * and with the same shape: the format defines a border effect with a style and
+ * an intensity, this build writes one of them, and a boolean is a field that
+ * cannot grow. The polygon tool sends `'solid'` and the cloud tool sends
+ * `'cloudy'` — one annotation type, two tools, exactly as a line and an arrow
+ * are.
+ */
+export const borderEffectSchema = z.enum(['solid', 'cloudy']);
+
+/** How a polygon's border is drawn. See {@link borderEffectSchema}. */
+export type BorderEffect = z.infer<typeof borderEffectSchema>;
+
+/**
  * A rectangle an annotation occupies, in **PDF user space**.
  *
  * ## The space is the whole of what this type declares
@@ -1187,6 +1214,74 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       colour: annotationColourSchema,
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Polygon` — a closed shape, and a cloud.
+       *
+       * **ONE MEMBER FOR TWO TOOLS**, which is `line`'s arrangement and is what
+       * the format says these are: a cloud is a polygon whose `/BE` names an
+       * effect. Measured 2026-09-06 —
+       * `Polygon.setBorderEffect('Cloudy')` stores `/BE << /S /C /I 2 >>`, grows
+       * `/RD` from `[2 2 2 2]` to `[11 11 11 11]` and pushes the computed
+       * `/Rect` past the page edge, because the bumps sit outside the vertices.
+       *
+       * **The first member built from PRESSES rather than from a drag**
+       * ([ADR-0042](../../../../docs/DECISIONS/0042-a-gesture-may-span-several-presses-and-the-tool-says-when-it-is-complete.md)).
+       * The payload does not say so and should not: a command is intent, and
+       * *these are the corners* is the same intent however the person entered
+       * them.
+       */
+      type: z.literal('polygon'),
+      /**
+       * The corners, in PDF user space, in order.
+       *
+       * **Three minimum**, where the polyline's bound is two, and it is the
+       * shape's own rule rather than a stricter version of one: two corners
+       * closed back on themselves is a line drawn twice, which the `line`
+       * member already expresses and draws better.
+       *
+       * MuPDF closes the shape itself — nothing repeats the first vertex at the
+       * end, and a payload that did would put a duplicate corner in `/Vertices`
+       * for every polygon this build writes.
+       */
+      points: z.array(annotationPointSchema).min(3).max(MAX_POLYGON_POINTS),
+      /** Solid, or the cloud's scalloped border. */
+      border: borderEffectSchema,
+      colour: annotationColourSchema,
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /PolyLine` — an open run of segments.
+       *
+       * **NO BORDER EFFECT, and it is measured rather than an oversight.**
+       * MuPDF 1.28.0 answers `setBorderEffect` on a `/PolyLine` with *"PolyLine
+       * annotations have no BE property"*, so a cloud cannot be an open shape
+       * and this member has no field for one. That is the redact mark's rule
+       * arriving a second time: a field the writer of record refuses is a value
+       * a person could set that nothing could apply.
+       *
+       * It is also why this is a separate member from `polygon` rather than one
+       * with a flag. The two differ in the minimum they accept AND in whether a
+       * border effect is expressible, and a shared member would have had to
+       * carry a field legal for half of its own values.
+       */
+      type: z.literal('polyline'),
+      /**
+       * The points, in PDF user space, in order.
+       *
+       * **Two minimum**: an open run of one segment is a line, which is legal
+       * and is what a person gets if they finish after two presses. Unlike the
+       * polygon, nothing closes it.
+       */
+      points: z.array(annotationPointSchema).min(2).max(MAX_POLYGON_POINTS),
+      colour: annotationColourSchema,
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
@@ -1232,6 +1327,12 @@ export const annotationKindNameSchema = z.enum([
   'text-box',
   'sticky-note',
   'caret',
+  // ONE NAME FOR THE POLYGON AND THE CLOUD, because a reader is being told what
+  // is on the page and both are `/Polygon`. The border effect separates the two
+  // tools, not the two objects — the same reason a line and an arrow share a
+  // name here.
+  'polygon',
+  'polyline',
   'other',
 ]);
 

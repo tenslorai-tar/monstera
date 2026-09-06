@@ -72,6 +72,37 @@ export interface Gesture {
    * down. Never empty.
    */
   readonly points: readonly ViewportPoint[];
+  /**
+   * Where each pointer-DOWN happened, in order. Never empty.
+   *
+   * ## The second widening, and the same argument as the first
+   *
+   * A polygon is built by clicking vertices, and {@link points} cannot answer
+   * where those were: it is decimated by distance in {@link pointerPath}, so a
+   * click and a slow drag through the same pixel produce the same entry. The
+   * information is destroyed before a tool could read it, which is why this is
+   * recorded rather than derived
+   * ([ADR-0042](../../../../docs/DECISIONS/0042-a-gesture-may-span-several-presses-and-the-tool-says-when-it-is-complete.md)).
+   *
+   * The alternative was a `press` member on the controller, taking the
+   * lifecycle to five and making eight tools declare that a subsequent press
+   * means nothing to them. The platform records what happened and each tool
+   * reads what it needs — a path tool reads `points`, a vertex tool reads this,
+   * and a rectangle reads two ends of `points` as it always has.
+   *
+   * For a one-press gesture this holds exactly one point, which is where
+   * {@link startOf} reads from either way.
+   */
+  readonly presses: readonly ViewportPoint[];
+  /**
+   * Whether the person signalled that they are FINISHED, by a double press.
+   *
+   * Recorded by the platform, interpreted by the tool: the overlay knows about
+   * pointers and a controller knows what a gesture means, so this says *a
+   * double press happened* and {@link ToolController.complete} decides whether
+   * that ends anything. A drag tool never reads it.
+   */
+  readonly done: boolean;
 }
 
 /** Where the gesture started. */
@@ -79,6 +110,20 @@ export function startOf(gesture: Gesture): ViewportPoint {
   const [first] = gesture.points;
   if (first === undefined) throw new Error('a gesture always has the point it began at');
   return first;
+}
+
+/**
+ * Where the most recent press was.
+ *
+ * A vertex tool's {@link endOf}: the last point a person deliberately put down,
+ * rather than wherever the pointer happens to be resting. The two differ for
+ * every gesture that is still in flight, which is exactly when a multi-press
+ * tool is asked whether it is complete.
+ */
+export function lastPress(gesture: Gesture): ViewportPoint {
+  const last = gesture.presses[gesture.presses.length - 1];
+  if (last === undefined) throw new Error('a gesture always has the press it began at');
+  return last;
 }
 
 /** Where the pointer is now — EXACT, never a decimated neighbour. */
@@ -129,18 +174,27 @@ const MAX_GESTURE_POINTS = 4096;
  * pixels, and a tool that reads only two points would be paying for a
  * simplification it does not use.
  */
-export const pointerPath: Pick<ToolController, 'begin' | 'update'> = {
-  begin: (at: ViewportPoint): Gesture => ({ points: [at] }),
+export const pointerPath: Pick<ToolController, 'begin' | 'update' | 'complete'> = {
+  begin: (at: ViewportPoint): Gesture => ({ points: [at], presses: [at], done: false }),
   update: (gesture: Gesture, at: ViewportPoint): Gesture => {
     const last = endOf(gesture);
     const far = Math.hypot(at.x - last.x, at.y - last.y) >= KEEP_APART;
     if (far && gesture.points.length >= MAX_GESTURE_POINTS) return gesture;
     return {
-      points: far
-        ? [...gesture.points, at]
-        : [...gesture.points.slice(0, -1), at],
+      ...gesture,
+      points: far ? [...gesture.points, at] : [...gesture.points.slice(0, -1), at],
     };
   },
+  // A RELEASE ENDS THE GESTURE, which is what every gesture has done until now
+  // and what all eight tools that spread this still mean.
+  //
+  // It lives HERE rather than being a member each controller writes, and that is
+  // the whole reason `complete` could be added without touching a tool
+  // (ADR-0042 Decision 2). The `cancel` member this interface rejected would
+  // have been an empty body in twenty tools; this is one default, in the object
+  // they already spread, that a multi-press tool overrides when it means
+  // something else.
+  complete: (): boolean => true,
 };
 
 /**
@@ -207,6 +261,31 @@ export interface ToolController {
    * assert a preview's geometry by reading four numbers.
    */
   readonly preview: (gesture: Gesture) => ToolPreview | undefined;
+  /**
+   * Whether the gesture is over at this pointer-up.
+   *
+   * `false` keeps it alive across the release: the overlay does not clear it and
+   * does not call {@link commit}, so the next press extends the same gesture
+   * rather than starting a new one. That is the whole of what a polygon needed
+   * ([ADR-0042](../../../../docs/DECISIONS/0042-a-gesture-may-span-several-presses-and-the-tool-says-when-it-is-complete.md)).
+   *
+   * **Nothing implements this.** {@link pointerPath} answers `true` and every
+   * tool spreads it, so *a release ends the gesture* is the default rather than
+   * a sentence eight controllers repeat. A tool that overrides it is declaring
+   * that a release is not what finishes its gesture.
+   *
+   * Rejected: making it optional, which would have the overlay branch on its
+   * presence and hand a misspelt member the default in silence; and folding the
+   * answer into `commit`'s return, which would put the lifecycle decision inside
+   * the function that builds payloads and widen seven signatures for a state
+   * they cannot produce.
+   *
+   * **Asked only at pointer-up**, which is the stated limit rather than an
+   * oversight: every gesture this build has ends at a release, and a tool that
+   * finished on a move, a timer or a keystroke would need the overlay to ask
+   * there too. That tool is the trigger for adding those call sites.
+   */
+  readonly complete: (gesture: Gesture) => boolean;
 }
 
 /**

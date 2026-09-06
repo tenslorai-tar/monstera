@@ -142,19 +142,20 @@ describe('rectangleToolCommand', () => {
     // the tell is that the argument it holds constant — the command list — is
     // the thing an omission removes from.
     //
-    // The two registries are composed in `App.tsx` and this is the only other
-    // place they meet. It builds both from the same modules rather than reading
-    // the app's composition, which would make a case a second wiring place; the
-    // equality is what it asserts, and a tool added to one registry alone is
-    // red here whichever registry that was.
-    const { shapeTools } = await import('../annotations/shapeTools.js');
-    const { textBoxTool } = await import('../annotations/textTools.js');
-    const { pointTools } = await import('../annotations/pointTools.js');
+    // IT READS THE COMPOSITION THE APP MOUNTS, and that is the second thing
+    // this case taught. It used to spread the tool groups itself — a copy of
+    // `App.tsx`'s list — and the copy went stale the moment a group was added,
+    // failing about its own fixture rather than about the product. A check
+    // whose fixture can disagree with the thing it checks costs the same
+    // attention as one that misses a defect.
+    //
+    // `annotationTools` now exists for that reason, so the two sides of this
+    // assertion are genuinely different registries rather than a list and a
+    // copy of itself.
+    const { annotationTools } = await import('../annotations/annotationTools.js');
     const ask = (): Promise<undefined> => Promise.resolve(undefined);
 
-    const toolIds = [...shapeTools, textBoxTool({ ask }), ...pointTools({ ask })].map(
-      (tool) => tool.id,
-    );
+    const toolIds = annotationTools({ ask }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,
       onSelect: () => undefined,

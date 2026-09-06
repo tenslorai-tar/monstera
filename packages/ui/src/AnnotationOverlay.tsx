@@ -110,7 +110,28 @@ export function AnnotationOverlay({
       const at = pointAt(event);
       if (at === undefined) return;
       event.currentTarget.setPointerCapture(event.pointerId);
-      setGesture(tool.controller.begin(at));
+      // A PRESS WHILE A GESTURE IS LIVE EXTENDS IT, rather than starting a new
+      // one. This line used to be `begin` unconditionally, which is the first of
+      // the three reasons a polygon could not be expressed: the second vertex
+      // discarded the first (ADR-0042).
+      //
+      // A gesture is live only when a tool said it was not complete at the last
+      // release, so for the eight tools that end at a release this branch is
+      // never taken — `up` has always cleared the state before the next press.
+      setGesture((current) =>
+        current === undefined
+          ? tool.controller.begin(at)
+          : {
+              ...tool.controller.update(current, at),
+              presses: [...current.presses, at],
+              // `detail` COUNTS THE CLICKS in this sequence, which is the
+              // platform's own answer to *was that a double-click* — the
+              // alternative is timing two presses here, which is a second
+              // opinion about a question the DOM already settles. Recorded
+              // rather than acted on: `complete` decides what it means.
+              done: current.done || event.detail >= 2,
+            },
+      );
     },
     [pointAt, tool],
   );
@@ -129,13 +150,28 @@ export function AnnotationOverlay({
     (event: React.PointerEvent<SVGSVGElement>): void => {
       if (gesture === undefined) return;
       const at = pointAt(event);
-      // THE GESTURE IS CLEARED FIRST, whatever the commit decides. A commit
-      // that produced nothing and a commit that produced a command both end the
+      if (at === undefined) {
+        // NO POINT MEANS NO SURFACE TO MEASURE AGAINST, and the gesture is
+        // dropped rather than kept: there is nothing to extend it with and
+        // nothing to commit. Cleared here rather than before the check, so the
+        // multi-press path below is the only other place that decides.
+        setGesture(undefined);
+        return;
+      }
+      const finished = tool.controller.update(gesture, at);
+      if (!tool.controller.complete(finished)) {
+        // THE GESTURE SURVIVES THE RELEASE. Kept rather than cleared, and
+        // `commit` is not called — so the next press extends this one
+        // (ADR-0042 Decision 2). The state is still a value this component
+        // holds, so Escape and `pointercancel` still abandon it.
+        setGesture(finished);
+        return;
+      }
+      // THE GESTURE IS CLEARED, whatever the commit decides. A commit that
+      // produced nothing and a commit that produced a command both end the
       // drag, and leaving the state behind on one path is how the next click
       // continues the last rectangle.
       setGesture(undefined);
-      if (at === undefined) return;
-      const finished = tool.controller.update(gesture, at);
       // EVERYTHING THE COMMAND IS BUILT FROM IS READ NOW, before any await.
       // `page` and the geometry are this render's, and a tool that opens a
       // dialog resolves after the person has answered — by which time the

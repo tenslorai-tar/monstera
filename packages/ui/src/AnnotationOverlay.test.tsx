@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { rectangleTool } from './annotations/shapeTools.js';
+import { polygonTool } from './annotations/vertexTools.js';
 import type { UiTool } from './registries/tools.js';
 import { pointerPath } from './registries/tools.js';
 
@@ -69,7 +70,14 @@ function mounted(tool: UiTool = rectangleTool): {
  * event — which shows up as *nothing was dispatched* and is really *nothing has
  * rendered yet*.
  */
-function pointer(surface: Element, type: string, x: number, y: number, button = 0): void {
+function pointer(
+  surface: Element,
+  type: string,
+  x: number,
+  y: number,
+  button = 0,
+  detail = 1,
+): void {
   fireEvent(
     surface,
     new window.PointerEvent(type, {
@@ -77,9 +85,27 @@ function pointer(surface: Element, type: string, x: number, y: number, button = 
       clientX: x,
       clientY: y,
       button,
+      // THE CLICK COUNT, which is how the overlay learns a press was a double
+      // one. Defaulted to 1 so every existing case describes a single click
+      // without saying so — `PointerEvent`'s own default is 0, which would make
+      // the overlay's `detail >= 2` unreachable for a reason no case states.
+      detail,
       pointerId: 1,
     }),
   );
+}
+
+/** One press: down then up at the same point, settled. */
+async function click(
+  surface: Element,
+  at: readonly [number, number],
+  { double = false }: { double?: boolean } = {},
+): Promise<void> {
+  pointer(surface, 'pointerdown', at[0], at[1], 0, double ? 2 : 1);
+  pointer(surface, 'pointerup', at[0], at[1]);
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 /** A whole drag: down, move, up. */
@@ -204,6 +230,71 @@ describe('AnnotationOverlay', () => {
     await drag(surface, [20, 20], [120, 80]);
 
     expect(sent).toStrictEqual([{ kind: 'duplicatePage', page: 3 }]);
+  });
+
+  it('KEEPS A GESTURE ITS TOOL HAS NOT COMPLETED, across the release', async () => {
+    // THE PLATFORM HALF OF ADR-0042, on a real DOM. `vertexTools.test.ts`
+    // reproduces this sequence to drive the tools; this is the case that says
+    // the reproduction describes what the overlay does, and without it those
+    // tools would be proven against a lifecycle nothing implements.
+    //
+    // Three separate presses, none of them a double: the polygon's `complete`
+    // stays false, so the overlay must not clear the gesture and must not
+    // commit. An overlay that still ended every gesture at pointer-up sends the
+    // first press's command here — a one-vertex polygon, which is nothing —
+    // and the preview would be gone.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    await click(surface, [120, 80]);
+
+    expect(sent).toStrictEqual([]);
+    // AND THE STATE IS STILL THERE, which is the half `sent` cannot show: an
+    // overlay that dropped the gesture and sent nothing would satisfy the line
+    // above perfectly.
+    expect(surface.querySelector('[data-annotation-preview="path"]')).not.toBeNull();
+  });
+
+  it('and commits it on the press the tool DOES complete', async () => {
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    await click(surface, [120, 80], { double: true });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ kind: 'addAnnotation', annotation: { type: 'polygon' } });
+    // CLEARED, so the next press starts a new shape rather than continuing this
+    // one. The multi-press path is the only place in this component that keeps
+    // a gesture, and a completion that forgot to clear would make every polygon
+    // after the first inherit the last one's corners.
+    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
+  });
+
+  it('abandons a half-drawn multi-press gesture on Escape', async () => {
+    // CANCELLING IS STILL THE ABSENCE OF A MEMBER (ADR-0042 Decision 4), and a
+    // half-drawn polygon is what makes that worth asserting rather than
+    // assuming: it is the first gesture a person can be left holding, and the
+    // argument that dropping the value is enough had never been tested against
+    // a gesture that survives a release.
+    const { surface, sent } = mounted(polygonTool);
+    await click(surface, [20, 20]);
+    await click(surface, [120, 20]);
+    fireEvent.keyDown(surface, { key: 'Escape' });
+
+    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
+    expect(sent).toStrictEqual([]);
+  });
+
+  it('CONTROL: a drag tool still ends at its release, unchanged by any of this', async () => {
+    // The partner every case above needs. `complete` defaults to true in
+    // `pointerPath`, and a build whose default flipped would keep every
+    // rectangle alive for ever — the three cases above would all still pass,
+    // because none of them uses a drag tool.
+    const { surface, sent } = mounted();
+    await drag(surface, [20, 20], [120, 80]);
+
+    expect(sent).toHaveLength(1);
+    expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
   });
 
   it('names the surface and the tool on the element, for the projections that look', () => {

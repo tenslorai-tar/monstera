@@ -11,10 +11,18 @@ import {
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
 import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
+  CLOUD_TOOL_ID,
+  POLYGON_TOOL_ID,
+  POLYLINE_TOOL_ID,
+} from '../annotations/vertexTools.js';
+import {
   ARROW_TOOL_TITLE,
+  CLOUD_TOOL_TITLE,
   ELLIPSE_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
+  POLYGON_TOOL_TITLE,
+  POLYLINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
   TOOL_CARET_TITLE,
@@ -159,6 +167,31 @@ export function caretToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The three vertex tools' commands.
+ *
+ * The tools behind these are the first whose gesture outlives a pointer-up, and
+ * this file is unchanged by that — which is the point of `complete` living on
+ * the controller. A command that had to know its tool takes several presses
+ * would be the lifecycle leaking into the registry that turns tools on.
+ *
+ * The toggle matters more here than anywhere else, and it works already: a
+ * half-drawn polygon is abandoned by pressing the tool again, because
+ * `onSelect(undefined)` unmounts the overlay and the gesture is a value that
+ * overlay holds.
+ */
+export function polygonToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(POLYGON_TOOL_ID, POLYGON_TOOL_TITLE, 49, deps);
+}
+
+export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 50, deps);
+}
+
+export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(CLOUD_TOOL_ID, CLOUD_TOOL_TITLE, 51, deps);
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -187,5 +220,8 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     textBoxToolCommand(deps),
     stickyNoteToolCommand(deps),
     caretToolCommand(deps),
+    polygonToolCommand(deps),
+    polylineToolCommand(deps),
+    cloudToolCommand(deps),
   ];
 }

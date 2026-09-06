@@ -634,6 +634,205 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
   });
 });
 
+describe('applyAddAnnotation writes the vertex shapes the format defines', () => {
+  /** Three corners, so *the middle one survives* is observable. */
+  const CORNERS = [
+    { x: 10, y: 20 },
+    { x: 80, y: 20 },
+    { x: 80, y: 90 },
+  ];
+
+  const POLYGON: Extract<AnnotationDraft, { type: 'polygon' }> = {
+    type: 'polygon',
+    points: CORNERS,
+    border: 'solid',
+    colour: [1, 0, 0],
+    borderWidth: 2,
+  };
+
+  const CLOUD: Extract<AnnotationDraft, { type: 'polygon' }> = { ...POLYGON, border: 'cloudy' };
+
+  const POLYLINE: Extract<AnnotationDraft, { type: 'polyline' }> = {
+    type: 'polyline',
+    points: CORNERS,
+    colour: [1, 0, 0],
+    borderWidth: 2,
+  };
+
+  /** `/BE`'s style letter, or `null` when the key is absent. */
+  async function borderEffectIn(bytes: Uint8Array): Promise<string | null> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the page carries no /Annots');
+    const [first] = annots.asArray();
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const effect = dict.lookup(PDFName.of('BE'));
+    if (!(effect instanceof PDFDict)) return null;
+    const style = effect.lookup(PDFName.of('S'));
+    return style instanceof PDFName ? style.asString() : null;
+  }
+
+  /** `/RD`'s first number — the inset from `/Rect` to where the shape really is. */
+  async function insetIn(bytes: Uint8Array): Promise<number | null> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the page carries no /Annots');
+    const [first] = annots.asArray();
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const inset = dict.lookup(PDFName.of('RD'));
+    if (!(inset instanceof PDFArray)) return null;
+    const [edge] = inset.asArray();
+    return edge instanceof PDFNumber ? edge.asNumber() : null;
+  }
+
+  /** `/Vertices`, flat as the format stores it. */
+  async function verticesIn(bytes: Uint8Array): Promise<readonly number[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the page carries no /Annots');
+    const [first] = annots.asArray();
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const list = dict.lookup(PDFName.of('Vertices'));
+    if (!(list instanceof PDFArray)) throw new Error('the annotation carries no /Vertices');
+    return list.asArray().map((entry) => (entry instanceof PDFNumber ? entry.asNumber() : NaN));
+  }
+
+  it('stores the corners the draft named, and NOT a closing repeat', async () => {
+    // THE COUNT IS THE ASSERTION AS MUCH AS THE VALUES. MuPDF closes a polygon
+    // itself, so a payload that repeated the first corner would store eight
+    // numbers here rather than six — a duplicate vertex on every polygon this
+    // build writes, invisible in a rendering and present in the file.
+    //
+    // THE VALUES COME BACK EQUAL TO THE DRAFT, and that reads like a case that
+    // proves nothing about the conversion. It is the opposite. `/Vertices` is
+    // stored in PDF user space, which is the frame the draft is already in, and
+    // `setVertices` takes the DISPLAYED frame — measured, on the probe that
+    // wrote `[10, 20]` and read back `[10, 280]` on this 300-high page. So the
+    // flip is applied here and undone by the engine, and equality is what a
+    // correct round trip looks like. An implementation that handed the PDF
+    // numbers straight to `setVertices` would store `[10, 280, 80, 280, 80,
+    // 210]` and put the shape at the other end of the page.
+    const stored = await drawnOn(await fixture(), command({ annotation: POLYGON }));
+    expect(await verticesIn(stored)).toStrictEqual([10, 20, 80, 20, 80, 90]);
+  });
+
+  it('lets MuPDF compute /Rect, which it refuses to be told', async () => {
+    // MEASURED: `setRect` on a `/Polygon` answers *"Polygon annotations have no
+    // Rect property"*. So the box in the file is the engine's, derived from the
+    // vertices and inset by `/RD` — and this build must not have an opinion
+    // about it. `readBack` reports `/Rect` inset by `/RD`, which is where the
+    // shape actually is, so it lands exactly on the corners.
+    const stored = await readBack(await drawnOn(await fixture(), command({ annotation: POLYGON })));
+    expect(stored[0]?.subtype).toBe('/Polygon');
+    expect(stored[0]?.bounds).toStrictEqual([10, 20, 80, 90]);
+  });
+
+  it('writes /BE for a cloud and NOT for a solid polygon, on the same geometry', async () => {
+    // ONE DRAFT MEMBER, TWO TOOLS, and the two fixtures differ in exactly the
+    // field that is supposed to separate them — same corners, same colour, same
+    // width. A build that always wrote the effect, or never did, passes one of
+    // these and fails the other; neither alone can tell.
+    expect(
+      await borderEffectIn(await drawnOn(await fixture(), command({ annotation: CLOUD }))),
+    ).toBe('/C');
+    expect(
+      await borderEffectIn(await drawnOn(await fixture(), command({ annotation: POLYGON }))),
+    ).toBeNull();
+  });
+
+  it('and the cloud’s bumps GROW /RD, which an inert key could not do', async () => {
+    // THE MEASUREMENT THAT SAYS `/BE` REACHED THE RENDERER rather than merely
+    // landing in the dictionary. A key written and ignored looks identical in
+    // `/BE` itself; what only a real effect produces is a bigger `/RD` — 11
+    // against 2, measured — because the scallops sit outside the corners and
+    // the engine has to widen `/Rect` to hold them.
+    //
+    // NOT ASSERTED ON `bounds`, and that is the trap this case walked into
+    // first: `readBack` reports `/Rect` inset by `/RD`, which is *where the
+    // shape is* — and the shape is in the same place either way, by design.
+    // The two boxes are equal there, so the assertion has to read the raw
+    // difference rather than the corrected one.
+    //
+    // IT CAUGHT ITS DEFECT ON THE FIRST RUN, which is the argument for writing
+    // it this way rather than checking `/BE` and moving on: the writer called
+    // `setBorderEffect('Cloudy')` and nothing else, which stores the key and
+    // leaves the effect INERT at `/I 0`. `/BE` said `/C`, the case above
+    // passed, and every cloud would have rendered as a plain polygon.
+    expect(await insetIn(await drawnOn(await fixture(), command({ annotation: POLYGON })))).toBe(2);
+    expect(await insetIn(await drawnOn(await fixture(), command({ annotation: CLOUD })))).toBe(11);
+  });
+
+  it('writes an open PolyLine from the same points, with no /BE at all', async () => {
+    // THE SUBTYPE IS THE WHOLE DIFFERENCE at this level — same vertices, same
+    // colour, same width — which is why the fixtures share `CORNERS`. A build
+    // that routed a polyline to `/Polygon` would close the shape in every
+    // viewer and nothing about the numbers would say so.
+    const stored = await drawnOn(await fixture(), command({ annotation: POLYLINE }));
+    expect((await readBack(stored))[0]?.subtype).toBe('/PolyLine');
+    expect(await verticesIn(stored)).toStrictEqual([10, 20, 80, 20, 80, 90]);
+    // AND NO BORDER EFFECT IS REACHABLE HERE. MuPDF refuses `setBorderEffect`
+    // on a `/PolyLine` — *"PolyLine annotations have no BE property"* — which
+    // is why the draft has no field for one; this pins the absence so a member
+    // added later has to meet the measurement.
+    expect(await borderEffectIn(stored)).toBeNull();
+  });
+
+  it('refuses a shape with no extent, and the test is per AXIS pair not per axis', async () => {
+    // A POLYGON FLAT IN Y IS A ZIG-ZAG ALONG A RULE, which is a thing somebody
+    // draws — so unlike a rectangle this cannot refuse on one axis. What has
+    // nothing to show is every corner in one place.
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({
+          annotation: { ...POLYGON, points: [
+            { x: 10, y: 20 },
+            { x: 10, y: 20 },
+            { x: 10, y: 20 },
+          ] },
+        }),
+      ),
+    ).rejects.toThrow(/no extent/u);
+  });
+
+  it('CONTROL: and a polygon flat in one axis is accepted', async () => {
+    // Without this the refusal above is satisfied by a rule that rejects any
+    // shape with a zero-width bounding box — which would refuse the flat
+    // zig-zag the comment above says is legal, and the refusal would read as
+    // correct because it is right for the rectangle beside it.
+    const stored = await readBack(
+      await drawnOn(
+        await fixture(),
+        command({
+          annotation: { ...POLYGON, points: [
+            { x: 10, y: 20 },
+            { x: 40, y: 20 },
+            { x: 80, y: 20 },
+          ] },
+        }),
+      ),
+    );
+    expect(stored[0]?.subtype).toBe('/Polygon');
+  });
+
+  it('names both subtypes in the walk, so a foreign one is not `other`', async () => {
+    const listed = await onSession(
+      await drawnOn(
+        await drawnOn(await fixture(), command({ annotation: POLYGON })),
+        command({ annotation: POLYLINE }),
+      ),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'polygon', contents: '' },
+      { page: 0, index: 1, kind: 'polyline', contents: '' },
+    ]);
+  });
+});
+
 describe('applyRemoveAnnotation takes the annotation the handle names', () => {
   it('removes it, and leaves the one beside it', async () => {
     // Two marks on one page, distinguishable by kind. Removing index 0 must

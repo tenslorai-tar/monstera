@@ -158,6 +158,37 @@ function pointBox(at: AnnotationPoint): AnnotationRect {
 }
 
 /**
+ * A vertex list in the page's displayed frame, as MuPDF's setters take it.
+ *
+ * Shared by the two vertex subtypes because it is one conversion, unlike the
+ * point-placed pair beside them: `/Polygon` and `/PolyLine` are handed the same
+ * numbers in the same frame and differ only in what else is written.
+ */
+function placedPoints(
+  points: readonly AnnotationPoint[],
+  transform: PageTransform,
+): [number, number][] {
+  return points.map((point) => {
+    const placed = toViewport(pdfPoint(point.x, point.y), transform);
+    return [placed.x, placed.y];
+  });
+}
+
+/** The box a vertex list occupies, in the displayed frame. */
+function verticesBox(
+  points: readonly AnnotationPoint[],
+  transform: PageTransform,
+): [number, number, number, number] {
+  const placed = placedPoints(points, transform);
+  return [
+    Math.min(...placed.map(([x]) => x)),
+    Math.min(...placed.map(([, y]) => y)),
+    Math.max(...placed.map(([x]) => x)),
+    Math.max(...placed.map(([, y]) => y)),
+  ];
+}
+
+/**
  * Whether a rectangle in the page's displayed frame touches the page at all.
  *
  * The frame's origin is its own corner and its extent is the transform's
@@ -476,6 +507,78 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // the writer of record will take.
     },
   },
+  polygon: {
+    subtype: 'Polygon',
+    bounds: (draft, transform) => verticesBox(draft.points, transform),
+    // THE POLYGON'S OWN RULE, and a fourth shape for this test. A polygon whose
+    // vertices are all one point is three clicks in one place; the schema
+    // already refuses fewer than three, so what is left is a shape with no
+    // extent in either axis. Unlike a line, one axis is not enough: a polygon
+    // flat in y is a zig-zag along a rule, which is a thing somebody can draw.
+    degenerate: (draft) =>
+      draft.points.every((point) => point.x === draft.points[0]?.x) &&
+      draft.points.every((point) => point.y === draft.points[0]?.y),
+    write: (annotation, draft, transform): void => {
+      // `setVertices`, NOT `setRect`. Measured 2026-09-06: MuPDF refuses
+      // `setRect` on a `/Polygon` with *"Polygon annotations have no Rect
+      // property"* and computes `/Rect` itself from the vertices, insetting it
+      // by `/RD` — `[2 2 2 2]` for a solid border and `[11 11 11 11]` for a
+      // cloudy one, whose bumps sit outside the corners and pushed the box past
+      // the page edge in the reading. It takes the same displayed frame
+      // `setLine` and `setInkList` do.
+      //
+      // NOTHING REPEATS THE FIRST VERTEX. MuPDF closes the shape, so a payload
+      // that carried the corner twice would store a duplicate in `/Vertices`.
+      annotation.setVertices(placedPoints(draft.points, transform));
+      annotation.setColor([...draft.colour]);
+      annotation.setInteriorColor([]);
+      annotation.setBorderWidth(draft.borderWidth);
+      // THE CLOUD, and it is one call rather than a subtype. `/BE` is what the
+      // format says separates the two, which is why the draft carries a border
+      // effect instead of this being a third table entry — the same arrangement
+      // as a line and an arrow, whose difference is `/LE`.
+      //
+      // TWO CALLS, AND THE SECOND IS NOT OPTIONAL. `setBorderEffect('Cloudy')`
+      // alone writes `/BE << /S /C >>` and the effect is INERT: measured
+      // 2026-09-06, `/RD` stays at the solid border's 2 rather than growing to
+      // 11, which is what it does when the scallops actually displace the box.
+      // A cloud that stores as a cloud and renders as a plain polygon is the
+      // display-only sin inside a dictionary, and it was caught by the case
+      // that asserts `/RD` rather than `/BE` — asserting the key would have
+      // passed on the broken version.
+      //
+      // The intensity is a number no control chooses, so it is decided here
+      // rather than carried in the draft: `2` is the fuller of the two
+      // intensities viewers draw and is what makes a cloud recognisable as one
+      // at a glance. A field for it would be a payload value nothing could set,
+      // which is the argument that kept the note's icon out of its draft.
+      if (draft.border === 'cloudy') {
+        annotation.setBorderEffect('Cloudy');
+        annotation.setBorderEffectIntensity(2);
+      }
+    },
+  },
+  polyline: {
+    subtype: 'PolyLine',
+    bounds: (draft, transform) => verticesBox(draft.points, transform),
+    // TWO POINTS IN THE SAME PLACE is a click, not a run of segments — the
+    // line's rule, because an open polyline flat in one axis is exactly the
+    // horizontal rule that rule exists to permit.
+    degenerate: (draft) =>
+      draft.points.every((point) => point.x === draft.points[0]?.x) &&
+      draft.points.every((point) => point.y === draft.points[0]?.y),
+    write: (annotation, draft, transform): void => {
+      annotation.setVertices(placedPoints(draft.points, transform));
+      annotation.setColor([...draft.colour]);
+      annotation.setInteriorColor([]);
+      annotation.setBorderWidth(draft.borderWidth);
+      // NO BORDER EFFECT, AND THE DRAFT HAS NO FIELD FOR ONE. Measured: MuPDF
+      // answers `setBorderEffect` here with *"PolyLine annotations have no BE
+      // property"*, so a cloud cannot be an open shape. That measurement is
+      // what made these two separate members rather than one carrying a flag
+      // legal for half its values.
+    },
+  },
 };
 
 /**
@@ -607,6 +710,12 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   FreeText: 'text-box',
   Text: 'sticky-note',
   Caret: 'caret',
+  // BOTH TOOLS ANSWER TO ONE NAME, because a reader is told what is on the page
+  // and a cloud IS a `/Polygon`. The `/BE` that separates the two tools is not
+  // read here — the panel says what the object is, and *Cloud* against *Shape*
+  // would be this build's tool vocabulary applied to somebody else's document.
+  Polygon: 'polygon',
+  PolyLine: 'polyline',
 };
 
 /**
