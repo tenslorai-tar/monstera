@@ -92,8 +92,8 @@ describe('AnnotationsPanel', () => {
     // a panel that showed the raw index would be off by one on every row — the
     // defect this build has shipped once, in the other direction.
     await panel([
-      { page: 0, index: 0, kind: 'square', contents: '' },
-      { page: 4, index: 0, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'square', contents: '', authored: true },
+      { page: 4, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
 
     expect(screen.getByText('Rectangle on page 1')).toBeTruthy();
@@ -104,12 +104,14 @@ describe('AnnotationsPanel', () => {
     // A row reading *Unknown* tells a reader the application is confused;
     // *Annotation* tells them a comment is there and which page to look at,
     // which is what the panel is for.
-    await panel([{ page: 2, index: 0, kind: 'other', contents: '' }]);
+    await panel([{ page: 2, index: 0, kind: 'other', contents: '', authored: false }]);
     expect(screen.getByText('Annotation on page 3')).toBeTruthy();
   });
 
   it('jumps to the page a row names, zero-based as the shell expects', async () => {
-    const { jumps } = await panel([{ page: 4, index: 0, kind: 'square', contents: '' }]);
+    const { jumps } = await panel([
+      { page: 4, index: 0, kind: 'square', contents: '', authored: true },
+    ]);
     screen.getByRole('button', { name: /page 5/u }).click();
     // FIVE ON SCREEN, FOUR IN THE CALL. The two halves of the correspondence in
     // one case, which is the only place they meet.
@@ -117,8 +119,26 @@ describe('AnnotationsPanel', () => {
   });
 
   it('shows an annotation’s note when it has one', async () => {
-    await panel([{ page: 0, index: 0, kind: 'square', contents: 'check this figure' }]);
+    await panel([
+      { page: 0, index: 0, kind: 'square', contents: 'check this figure', authored: false },
+    ]);
     expect(screen.getByText('check this figure')).toBeTruthy();
+  });
+
+  it('says which rows came with the document, and says it of those rows only', async () => {
+    // THE `srcRef` MARK, RENDERED (ADR-0043). Both kinds in one list, which is
+    // the direction: a panel that badged every row and a panel that badged none
+    // each satisfy half of this, and either would pass a fixture carrying one
+    // annotation. The assertion is on the count and on WHICH row carries it.
+    await panel([
+      { page: 0, index: 0, kind: 'square', contents: '', authored: true },
+      { page: 1, index: 0, kind: 'other', contents: '', authored: false },
+    ]);
+    const badges = document.querySelectorAll('[data-annotation-foreign]');
+    expect(badges).toHaveLength(1);
+    // The badge sits inside the row it describes, so this is what says the
+    // panel labelled the foreign one rather than merely rendering one badge.
+    expect(badges[0]?.closest('li')?.textContent).toContain('page 2');
   });
 
   it('says the list was CUT rather than showing a short list as complete', async () => {
@@ -126,14 +146,14 @@ describe('AnnotationsPanel', () => {
     // some of them is the display-only sin in a list, and the flag exists
     // precisely because the renderer cannot tell *this document has that many*
     // from *you asked for that many*.
-    await panel([{ page: 0, index: 0, kind: 'square', contents: '' }], { truncated: true });
+    await panel([{ page: 0, index: 0, kind: 'square', contents: '', authored: true }], { truncated: true });
     expect(screen.getByText(/Only the first/u)).toBeTruthy();
   });
 
   it('CONTROL: an untruncated list says nothing of the kind', async () => {
     // Without this the case above is satisfied by a panel that always shows the
     // notice — which would tell every reader their list is incomplete.
-    await panel([{ page: 0, index: 0, kind: 'square', contents: '' }]);
+    await panel([{ page: 0, index: 0, kind: 'square', contents: '', authored: true }]);
     expect(screen.queryByText(/Only the first/u)).toBeNull();
   });
 
@@ -163,8 +183,8 @@ describe('AnnotationsPanel', () => {
     // those two numbers differ; if they matched, the case would pass for an
     // implementation that had never read `index` at all.
     const { removes } = await panel([
-      { page: 0, index: 0, kind: 'square', contents: '' },
-      { page: 3, index: 0, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'square', contents: '', authored: true },
+      { page: 3, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
 
     // THE SECOND ROW'S CONTROL, narrowed rather than asserted: a cast and a `!`
@@ -187,7 +207,7 @@ describe('AnnotationsPanel', () => {
     // What it pins is that the version TRAVELS. A handle of two numbers reaches
     // the kernel, is compared against nothing, and the guard ADR-0041 Decision 2
     // describes is unreachable while every test stays green.
-    const { removes } = await panel([{ page: 0, index: 2, kind: 'square', contents: '' }], {
+    const { removes } = await panel([{ page: 0, index: 2, kind: 'square', contents: '', authored: true }], {
       version: 7,
     });
 

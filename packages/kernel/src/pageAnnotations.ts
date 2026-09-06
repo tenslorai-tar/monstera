@@ -59,14 +59,14 @@ import { snapRotation } from './rotatePages.js';
  *
  * ## What this module deliberately does not do
  *
- * **It does not mark authorship.** Invariant L5 — a save never rewrites
- * annotations the app did not author — needs a `srcRef` scheme, and inventing
- * one inside the first drawing tool is how a sidecar hack starts: the tempting
- * fields (`/NM`, `/T`) already mean something else, and smuggling provenance
- * through them is the pathology §3 bans by name. `docs/FEATURES.md` carries the
- * `srcRef` row and it stays open. Nothing here is blocked on it, because adding
- * an annotation reads no foreign one — and a case asserts that a foreign
- * annotation on the same page keeps every key it arrived with.
+ * **It marks authorship, as of 2026-09-06.** This paragraph read *"it does not"*
+ * until [ADR-0043](../../../docs/DECISIONS/0043-an-annotation-this-build-wrote-carries-a-private-mark.md),
+ * and the reason it did not — that inventing a scheme inside the first drawing
+ * tool is how a sidecar hack starts, since the tempting fields (`/NM`, `/T`)
+ * already mean something else — is why the scheme is a **key of its own** rather
+ * than one of them. See {@link markAuthored}. The weaker half is still asserted
+ * beside it: a foreign annotation on the same page keeps every key it arrived
+ * with, which is what rules out an add rewriting the array it joins.
  *
  * **It does not clamp.** A rectangle that overlaps the page is written as
  * drawn; one that misses it entirely is refused, because an annotation nothing
@@ -582,6 +582,50 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
 };
 
 /**
+ * The private key that says this build wrote the annotation — the `srcRef`
+ * marking scheme invariant L5 has always named
+ * ([ADR-0043](../../../docs/DECISIONS/0043-an-annotation-this-build-wrote-carries-a-private-mark.md)).
+ *
+ * Prefixed with the application's own name so it cannot collide with a key the
+ * format defines or another producer writes, which is what makes it private
+ * data rather than an opinion about somebody else's field.
+ *
+ * Measured 2026-09-06 against MuPDF 1.28.0: the key is accepted, survives a
+ * save, a reopen and a second save, and reads back as a boolean.
+ */
+const AUTHORED_KEY = 'Monstera_Authored';
+
+/**
+ * Marks an annotation as this build's.
+ *
+ * **Called at the one place that creates one**, which is what keeps the scheme
+ * from acquiring a second opinion: *which annotations are ours* has one writer
+ * and one reader, in this file, and a command that starts minting annotations
+ * elsewhere has to come through here (B3a).
+ */
+function markAuthored(annotation: PDFAnnotation): void {
+  annotation.getObject().put(AUTHORED_KEY, true);
+}
+
+/**
+ * Whether this build wrote it.
+ *
+ * **The value is checked, not the key's presence.** A document carrying
+ * `/Monstera_Authored` with a string value, or with `false`, is foreign — the
+ * mark is a claim and a malformed one is not that claim. A key that was never
+ * written reads as MuPDF's shared null object, whose `isBoolean` is false, so
+ * absence and a wrong value take the same branch without a second check.
+ *
+ * **Absence is what foreign means**, and that is one-sided by construction
+ * rather than by economy: we may not write onto an annotation we did not
+ * author, so nothing can ever be marked foreign.
+ */
+function authoredHere(annotation: PDFAnnotation): boolean {
+  const mark = annotation.getObject().get(AUTHORED_KEY);
+  return mark.isBoolean() && mark.asBoolean();
+}
+
+/**
  * Adds the drawn annotation to its page.
  *
  * Everything is resolved and checked **before** anything is created, so a
@@ -621,6 +665,11 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
 
     const annotation = loaded.createAnnotation(kind.subtype);
     kind.write(annotation, draft, transform);
+    // THE MARK — one call at the one creation site, rather than a line every
+    // entry in `kinds` has to remember. A per-kind mark would be eleven chances
+    // to omit one, and the omission's symptom is an annotation of ours that
+    // reads as somebody else's, which nothing about that kind would show.
+    markAuthored(annotation);
     // The appearance stream. Without it the annotation is a dictionary with no
     // `/AP`, which every viewer is free to render its own way or not at all —
     // and MuPDF's own renderer would still draw it, so a proof that rasterised
@@ -693,6 +742,16 @@ export interface ListedAnnotation {
    * this build's own is identified by its kind and its page.
    */
   readonly contents: string;
+  /**
+   * Whether **this build wrote it** — the `srcRef` mark, read
+   * ([ADR-0043](../../../docs/DECISIONS/0043-an-annotation-this-build-wrote-carries-a-private-mark.md)).
+   *
+   * `false` means the annotation came with the document, or was written by a
+   * version of this build older than the scheme. It is **provenance and not
+   * permission**: a person may erase or move either, and this is what lets a
+   * surface say which one they are about to change.
+   */
+  readonly authored: boolean;
 }
 
 /** MuPDF's subtype back to the name a surface may use. */
@@ -768,6 +827,7 @@ export function readAnnotations(
           // one that names them vaguely.
           kind: NAMED[annotation.getType()] ?? 'other',
           contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
+          authored: authoredHere(annotation),
         });
       }
     }

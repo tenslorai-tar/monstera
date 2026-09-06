@@ -271,6 +271,13 @@ const engineAnnotationSchema = z
     // none had any been spelt slightly differently. `commands.ts` holds it now.
     kind: annotationKindNameSchema,
     contents: z.string().max(ENGINE_ANNOTATION_CONTENTS_MAX),
+    /**
+     * Whether this build wrote it — the `srcRef` mark, read from the
+     * annotation's own dictionary (ADR-0043). It crosses for the handle's
+     * reason: the surface is what tells a person whose annotation they are
+     * about to change, and it cannot derive this from anything it holds.
+     */
+    authored: z.boolean(),
   })
   .strict();
 

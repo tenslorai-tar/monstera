@@ -81,12 +81,18 @@ async function fixture({
   foreign,
   content,
   field,
+  claimsAuthored,
 }: {
   readonly crop?: readonly number[];
   readonly rotate?: number;
   readonly foreign?: boolean;
   readonly content?: boolean;
   readonly field?: boolean;
+  /**
+   * Puts `/Monstera_Authored` on the foreign annotation with a **string**
+   * value, which is what a document claiming the mark badly looks like.
+   */
+  readonly claimsAuthored?: boolean;
 } = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([...MEDIA]);
@@ -127,6 +133,12 @@ async function fixture({
     other.set(PDFName.of('T'), PDFString.of('Someone Else'));
     other.set(PDFName.of('Contents'), PDFString.of('written by another application'));
     other.set(PDFName.of('Sound'), PDFName.of('NotARealKeyForASquare'));
+    if (claimsAuthored === true) {
+      // THE MARK'S KEY WITH THE WRONG TYPE. `authoredHere` reads the value
+      // rather than the key's presence, so this is the fixture that separates
+      // *the key is there* from *the claim is made*.
+      other.set(PDFName.of('Monstera_Authored'), PDFString.of('yes'));
+    }
     const ref = document.context.register(other);
     const annots = PDFArray.withContext(document.context);
     annots.push(ref);
@@ -391,9 +403,14 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
     // sort of thing that arrives: a key a viewer may honour, put there by the
     // engine, which is much cheaper to find here than as a stray line on
     // somebody's page.
+    // ONE OF THESE IS OURS, as of 2026-09-06: `/Monstera_Authored` is the
+    // `srcRef` mark (ADR-0043) and everything else on this line is MuPDF's. The
+    // pin keeps them together deliberately — the case's subject is *what ends
+    // up in the dictionary*, and a key this build writes going missing is worth
+    // exactly as much as one the engine stops writing.
     const drawn = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
     expect((await freeTextIn(drawn)).keys.sort().join(' ')).toBe(
-      '/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type',
+      '/AP /BS /CL /Contents /DA /F /Monstera_Authored /P /RD /Rect /Subtype /Type',
     );
   });
 
@@ -409,7 +426,7 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
       (session) => readAnnotations(session),
     );
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'text-box', contents: 'see figure 3' },
+      { page: 0, index: 0, kind: 'text-box', contents: 'see figure 3', authored: true },
     ]);
   });
 });
@@ -593,8 +610,8 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     ]);
     const listed = await onSession(both, (session) => readAnnotations(session));
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'sticky-note', contents: 'check this figure' },
-      { page: 0, index: 1, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'sticky-note', contents: 'check this figure', authored: true },
+      { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
   });
 
@@ -611,7 +628,9 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
 
     expect((await readBack(after)).map((entry) => entry.subtype)).toStrictEqual(['/Ink']);
     const listed = await onSession(after, (session) => readAnnotations(session));
-    expect(listed.annotations).toStrictEqual([{ page: 0, index: 0, kind: 'ink', contents: '' }]);
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'ink', contents: '', authored: true },
+    ]);
   });
 
   it('CONTROL: a caret writes no popup, so its handle is the plain case', async () => {
@@ -628,8 +647,8 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     expect((await readBack(both)).map((entry) => entry.subtype)).toStrictEqual(['/Caret', '/Ink']);
     const listed = await onSession(both, (session) => readAnnotations(session));
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'caret', contents: '' },
-      { page: 0, index: 1, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'caret', contents: '', authored: true },
+      { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
   });
 });
@@ -827,8 +846,8 @@ describe('applyAddAnnotation writes the vertex shapes the format defines', () =>
       (session) => readAnnotations(session),
     );
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'polygon', contents: '' },
-      { page: 0, index: 1, kind: 'polyline', contents: '' },
+      { page: 0, index: 0, kind: 'polygon', contents: '', authored: true },
+      { page: 0, index: 1, kind: 'polyline', contents: '', authored: true },
     ]);
   });
 });
@@ -846,7 +865,7 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
       readAnnotations(session),
     );
     expect(after.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
   });
 
@@ -868,7 +887,7 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
       readAnnotations(session),
     );
     expect(after.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
 
     // THE CONTROL, and without it the case above passes on a fixture whose
@@ -1263,8 +1282,8 @@ describe('readAnnotations', () => {
 
     expect(listed.truncated).toBe(false);
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'square', contents: '' },
-      { page: 0, index: 1, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'square', contents: '', authored: true },
+      { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
   });
 
@@ -1289,7 +1308,13 @@ describe('readAnnotations', () => {
       readAnnotations(session),
     );
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'square', contents: 'written by another application' },
+      {
+        page: 0,
+        index: 0,
+        kind: 'square',
+        contents: 'written by another application',
+        authored: false,
+      },
     ]);
   });
 
@@ -1308,8 +1333,8 @@ describe('readAnnotations', () => {
     );
     const listed = await onSession(drawn, (session) => readAnnotations(session));
     expect(listed.annotations).toStrictEqual([
-      { page: 0, index: 0, kind: 'square', contents: '' },
-      { page: 0, index: 1, kind: 'ink', contents: '' },
+      { page: 0, index: 0, kind: 'square', contents: '', authored: true },
+      { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
 
     // THE CONTROL, and without it the case above is satisfied by a fixture
@@ -1331,6 +1356,76 @@ describe('readAnnotations', () => {
   it('reports an empty document as empty rather than refusing', async () => {
     const listed = await onSession(await fixture(), (session) => readAnnotations(session));
     expect(listed).toStrictEqual({ annotations: [], truncated: false });
+  });
+});
+
+/**
+ * The `srcRef` mark — invariant L5's scheme, built
+ * ([ADR-0043](../../../docs/DECISIONS/0043-an-annotation-this-build-wrote-carries-a-private-mark.md)).
+ *
+ * Every case here puts **both** kinds of annotation in one document, and that
+ * is the direction rather than the convenience. *Reports authorship* is a
+ * comparison, and a scheme that answered `true` for everything and one that
+ * answered `false` for everything each satisfy half the claim — so a fixture
+ * carrying only ours, or only theirs, is one the broken version handles
+ * correctly. Two annotations and two different answers is what separates them.
+ */
+describe('the srcRef mark', () => {
+  it('reports this build\'s annotation as ours and the document\'s as foreign', async () => {
+    const listed = await onSession(
+      await drawnOn(await fixture({ foreign: true }), command({ annotation: SQUARE })),
+      (session) => readAnnotations(session),
+    );
+    // THE FOREIGN ONE IS FIRST because it was on the page before ours was
+    // added, and the walk is in `/Annots` order. Asserted as a pair rather than
+    // two lookups, so a scheme that reported one answer for both is red here
+    // whichever answer it picked.
+    expect(listed.annotations.map((entry) => entry.authored)).toStrictEqual([false, true]);
+  });
+
+  it('writes the mark into the FILE, on ours only', async () => {
+    // THE REPORT ABOVE COULD BE PRODUCED WITHOUT WRITING ANYTHING — an
+    // implementation inferring authorship from `/AP`, which this build always
+    // writes and the foreign fixture has not got, passes it exactly. So this
+    // reads the stored dictionaries with pdf-lib, which did not write them, and
+    // asserts the key itself.
+    const stored = await readBack(
+      await drawnOn(await fixture({ foreign: true }), command({ annotation: SQUARE })),
+    );
+    expect(stored.map((entry) => entry.keys.includes('/Monstera_Authored'))).toStrictEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it('survives a save and a reopen, which is the span L5 is about', async () => {
+    // A MARK HELD BESIDE THE DOCUMENT WOULD PASS EVERY CASE ABOVE and fail
+    // here, which is why the alternative was rejected: the invariant is about
+    // what a save does, so provenance that does not cross one answers a
+    // different question.
+    const drawn = await drawnOn(await fixture({ foreign: true }), command({ annotation: SQUARE }));
+    const again = await onSession(drawn, (session) => mupdfWriter.serialise(session));
+    const listed = await onSession(again, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.authored)).toStrictEqual([false, true]);
+  });
+
+  it('refuses the claim when the value is not a boolean', async () => {
+    // A DOCUMENT CARRYING THE KEY WITH A STRING VALUE. The mark is a claim and
+    // a malformed one is not that claim, so this is foreign — and the case is
+    // what stops the reader being written as a presence test, which the fixture
+    // above cannot tell apart from a value test.
+    const listed = await onSession(
+      await fixture({ foreign: true, claimsAuthored: true }),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations.map((entry) => entry.authored)).toStrictEqual([false]);
+
+    // THE CONTROL, and without it the assertion above passes on a fixture whose
+    // key never arrived — which is exactly what a document with no claim in it
+    // produces. This requires the key to be present and the answer to still be
+    // `false`.
+    const stored = await readBack(await fixture({ foreign: true, claimsAuthored: true }));
+    expect(stored[0]?.keys).toContain('/Monstera_Authored');
   });
 });
 

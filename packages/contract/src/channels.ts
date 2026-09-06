@@ -1338,6 +1338,23 @@ export const channels = {
              * identified by its kind and its page.
              */
             contents: z.string().max(MAX_ANNOTATION_CONTENTS),
+            /**
+             * Whether **this build wrote it** — the `srcRef` mark, which is a
+             * private key on the annotation's own dictionary
+             * ([ADR-0043](../../../docs/DECISIONS/0043-an-annotation-this-build-wrote-carries-a-private-mark.md)).
+             *
+             * `false` means it came with the document, or was written by a
+             * version of this build older than the scheme. The scheme is
+             * one-sided by construction: we may not write onto an annotation we
+             * did not author, so nothing is ever marked foreign and absence is
+             * what foreign means.
+             *
+             * **Provenance, not permission.** A person may erase or move
+             * either; this is what lets the surface say which one is about to
+             * change, and what makes *annotations this build did not author* a
+             * computable set rather than a sentence in an invariant.
+             */
+            authored: z.boolean(),
           }),
         )
         .max(MAX_ANNOTATIONS)

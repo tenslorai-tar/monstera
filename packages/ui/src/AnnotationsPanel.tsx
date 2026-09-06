@@ -5,6 +5,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import {
   ANNOTATIONS_EMPTY,
+  ANNOTATIONS_FOREIGN,
   ANNOTATIONS_KIND_CARET,
   ANNOTATIONS_KIND_CIRCLE,
   ANNOTATIONS_KIND_INK,
@@ -163,6 +164,20 @@ export function AnnotationsPanel({
                     kind: i18n._(KIND_LABELS[annotation.kind]),
                     page: pdfjsPageOf(annotation.page),
                   })}
+                  {annotation.authored ? null : (
+                    // THE `srcRef` MARK, RENDERED (ADR-0043). Shown on the
+                    // foreign rows only: *we wrote this* is the ordinary case in
+                    // a panel reached from this application's own tools, and a
+                    // badge on every row is one nobody reads. The negative is
+                    // what a person needs before they erase or move it.
+                    //
+                    // `data-annotation-foreign` carries the fact rather than
+                    // the label, so a case asserts provenance without matching
+                    // on the words — which are a translator's to change.
+                    <span className="m-annotations-foreign" data-annotation-foreign="">
+                      {i18n._(ANNOTATIONS_FOREIGN)}
+                    </span>
+                  )}
                   {annotation.contents === '' ? null : (
                     // THE NOTE, when there is one — which is almost always a
                     // foreign annotation's, because nothing this build writes
@@ -254,6 +269,14 @@ interface PanelAnnotation {
    */
   readonly kind: AnnotationKindName;
   readonly contents: string;
+  /**
+   * Whether **this build wrote it** — the `srcRef` mark (ADR-0043).
+   *
+   * `false` means it came with the document. Rendered on those rows only, and
+   * read rather than derived: a renderer inferring provenance from anything it
+   * can see would be a second opinion about a fact the file carries.
+   */
+  readonly authored: boolean;
 }
 
 /**

@@ -355,6 +355,21 @@ body {
   min-inline-size: 0;
 }
 
+/*
+ * *This annotation came with the document* — the `srcRef` mark, rendered
+ * (ADR-0043). Only the foreign rows carry it, so it reads as a note about the
+ * exceptions rather than as a column.
+ *
+ * NOT COLOURED AS A WARNING: erasing or moving an annotation somebody else
+ * wrote is what the tools are for, and a danger colour would say the person is
+ * about to do something wrong.
+ */
+.m-annotations-foreign {
+  color: var(--muted);
+  font-size: var(--font-chrome-11);
+  white-space: nowrap;
+}
+
 .m-destination-page {
   color: var(--muted);
   font-variant-numeric: tabular-nums;

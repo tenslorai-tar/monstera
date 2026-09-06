@@ -287,6 +287,7 @@ export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
 export const ANNOTATIONS_KIND_OTHER = messageKey('surface.annotations.kind.other');
+export const ANNOTATIONS_FOREIGN = messageKey('surface.annotations.foreign');
 export const STATUS_GO_TO = messageKey('surface.status.go-to');
 export const STATUS_GO_TO_OUTSIDE = messageKey('surface.status.go-to-outside');
 export const GO_TO_TITLE = messageKey('command.go-to.title');
@@ -517,6 +518,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // vocabulary applied to a document somebody else wrote.
   [ANNOTATIONS_KIND_POLYGON]: 'Shape',
   [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
+  // ONLY THE FOREIGN ROWS ARE LABELLED, because *this application wrote this*
+  // is the ordinary case in a panel a person reached from their own drawing
+  // tools, and a badge on every row is a badge nobody reads. What is worth
+  // saying is that a mark came from somewhere else before they change it.
+  [ANNOTATIONS_FOREIGN]: 'Came with the document',
   [POLYGON_TOOL_TITLE]: 'Polygon',
   [POLYLINE_TOOL_TITLE]: 'Connected lines',
   [CLOUD_TOOL_TITLE]: 'Cloud',
