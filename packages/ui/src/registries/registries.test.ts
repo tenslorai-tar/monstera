@@ -14,7 +14,7 @@ import {
   declareDialog,
 } from './dialogs.js';
 import { SettingsRegistry, type SettingDefinition } from './settings.js';
-import { ToolRegistry, type UiTool } from './tools.js';
+import { ToolRegistry, type UiTool, pointerPath } from './tools.js';
 
 const context: CommandContext = {
   docId: asDocId('00000000-0000-4000-8000-000000000001'),
@@ -230,12 +230,10 @@ describe('SettingsRegistry', () => {
 describe('ToolRegistry', () => {
   const tool = (id: string): UiTool => ({
     id,
-    controller: {
-      begin: (at) => ({ from: at, to: at }),
-      update: (gesture, at) => ({ from: gesture.from, to: at }),
-      commit: () => undefined,
-      preview: () => undefined,
-    },
+    // THE SHARED PATH, exactly as a real tool spreads it: a fixture writing its
+    // own `begin` and `update` would be testing the registry against a
+    // controller no tool resembles.
+    controller: { ...pointerPath, commit: () => undefined, preview: () => undefined },
   });
 
   it('refuses two tools claiming one id, and names the id', () => {

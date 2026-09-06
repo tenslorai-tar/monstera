@@ -61,6 +61,8 @@ interface StoredAnnotation {
   readonly line: readonly number[] | null;
   /** `/LE`, the two ending styles, or `null` when the key is absent. */
   readonly endings: readonly string[] | null;
+  /** `/InkList`, one flat number list per stroke, or `null`. */
+  readonly ink: readonly (readonly number[])[] | null;
 }
 
 /** One page of {@link MEDIA}, with whatever `/CropBox` and `/Rotate` are asked for. */
@@ -143,6 +145,17 @@ async function readBack(bytes: Uint8Array): Promise<readonly StoredAnnotation[]>
       colour: numbers(dict, 'C'),
       borderWidth: width instanceof PDFNumber ? width.asNumber() : null,
       line: numbers(dict, 'L'),
+      ink: ((): readonly (readonly number[])[] | null => {
+        const strokes = dict.lookup(PDFName.of('InkList'));
+        if (!(strokes instanceof PDFArray)) return null;
+        return strokes.asArray().map((stroke) => {
+          const resolved = stroke instanceof PDFRef ? document.context.lookup(stroke) : stroke;
+          if (!(resolved instanceof PDFArray)) return [];
+          return resolved
+            .asArray()
+            .map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN));
+        });
+      })(),
       endings: ((): readonly string[] | null => {
         const array = dict.lookup(PDFName.of('LE'));
         if (!(array instanceof PDFArray)) return null;
@@ -157,6 +170,18 @@ async function readBack(bytes: Uint8Array): Promise<readonly StoredAnnotation[]>
 const SQUARE: Extract<AnnotationDraft, { type: 'square' }> = {
   type: 'square',
   rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+  colour: [1, 0, 0],
+  borderWidth: 2,
+};
+
+/** A three-point stroke, so *the middle point survives* is observable. */
+const INK: Extract<AnnotationDraft, { type: 'ink' }> = {
+  type: 'ink',
+  points: [
+    { x: 10, y: 20 },
+    { x: 40, y: 30 },
+    { x: 70, y: 20 },
+  ],
   colour: [1, 0, 0],
   borderWidth: 2,
 };
@@ -356,6 +381,60 @@ describe('applyAddAnnotation writes each annotation type as the format defines i
   it('refuses a line whose two ends are the same point', async () => {
     await expect(
       drawnOn(await fixture(), command({ annotation: { ...LINE, to: { x: 10, y: 20 } } })),
+    ).rejects.toThrow(/no extent/u);
+  });
+
+  it('writes ink as ONE stroke inside /InkList, in the points the command named', async () => {
+    const [stored] = await readBack(await drawnOn(await fixture(), command({ annotation: INK })));
+    expect(stored?.subtype).toBe('/Ink');
+    // ONE stroke, which is what a drag produces. The format's list holds
+    // several and the surface can fill only one, so the schema carries one.
+    expect(stored?.ink).toStrictEqual([[10, 20, 40, 30, 70, 20]]);
+  });
+
+  it('writes ink on a ROTATED page in the same user-space points', async () => {
+    const [stored] = await readBack(
+      await drawnOn(await fixture({ rotate: 90 }), command({ annotation: INK })),
+    );
+    expect(stored?.ink).toStrictEqual([[10, 20, 40, 30, 70, 20]]);
+  });
+
+  it('accepts a stroke that RETURNS to where it started', async () => {
+    // A loop's two ends are the same point, so a rule written for a line would
+    // refuse it — the third shape *nothing a reader could see* takes in this
+    // module, and the reason the check is a per-type member.
+    const [stored] = await readBack(
+      await drawnOn(
+        await fixture(),
+        command({
+          annotation: {
+            ...INK,
+            points: [
+              { x: 10, y: 20 },
+              { x: 60, y: 60 },
+              { x: 10, y: 20 },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(stored?.subtype).toBe('/Ink');
+  });
+
+  it('refuses a stroke whose points are all the same', async () => {
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({
+          annotation: {
+            ...INK,
+            points: [
+              { x: 10, y: 20 },
+              { x: 10, y: 20 },
+            ],
+          },
+        }),
+      ),
     ).rejects.toThrow(/no extent/u);
   });
 });

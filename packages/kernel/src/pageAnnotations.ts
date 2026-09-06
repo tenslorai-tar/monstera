@@ -272,6 +272,44 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       annotation.setBorderWidth(draft.borderWidth);
     },
   },
+  ink: {
+    subtype: 'Ink',
+    bounds: (draft, transform) => {
+      const placed = draft.points.map((point) => toViewport(pdfPoint(point.x, point.y), transform));
+      return [
+        Math.min(...placed.map((point) => point.x)),
+        Math.min(...placed.map((point) => point.y)),
+        Math.max(...placed.map((point) => point.x)),
+        Math.max(...placed.map((point) => point.y)),
+      ];
+    },
+    // EVERY POINT THE SAME POINT is a dot, not a stroke — a pointer held still
+    // and released. The schema already refuses fewer than two, so what is left
+    // to refuse here is a stroke that went nowhere.
+    degenerate: (draft) =>
+      // NO POINT DIFFERS FROM THE ONE BEFORE IT, which is the same property as
+      // *they are all the same point* and needs no first element to exist. The
+      // schema's `min(2)` does not reach the type, so an implementation reading
+      // `points[0]` would either carry an assertion or a check for a state the
+      // validator already refuses.
+      draft.points.every((point, index) => {
+        const previous = draft.points[index - 1];
+        return previous === undefined || (point.x === previous.x && point.y === previous.y);
+      }),
+    write: (annotation, draft, transform): void => {
+      // ONE STROKE INSIDE THE LIST the format wants. `setInkList` takes the
+      // same displayed frame `setRect` and `setLine` do — measured 2026-09-06,
+      // including on a rotated page — and MuPDF computes `/Rect` from it.
+      annotation.setInkList([
+        draft.points.map((point) => {
+          const placed = toViewport(pdfPoint(point.x, point.y), transform);
+          return [placed.x, placed.y];
+        }),
+      ]);
+      annotation.setColor([...draft.colour]);
+      annotation.setBorderWidth(draft.borderWidth);
+    },
+  },
 };
 
 /**

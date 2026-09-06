@@ -1,8 +1,9 @@
 import type { AnnotationColour, LineEnding, RenderableCommand } from '@monstera/contract';
-import type { PageTransform, ViewportPoint } from '@monstera/shared';
+import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
+import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
 
 /**
@@ -81,13 +82,21 @@ const BORDER_WIDTH = 2;
  */
 const MINIMUM_DRAG = 4;
 
-/** The gesture's box in the overlay's own pixels, ordered. */
+/**
+ * The gesture's box in the overlay's own pixels, ordered.
+ *
+ * From the path's two ENDS, not from its extent: a rectangle is drawn between
+ * where the pointer went down and where it is, and a drag that curved out and
+ * back would otherwise describe a box larger than the one on screen.
+ */
 function box(gesture: Gesture): { x: number; y: number; width: number; height: number } {
+  const from = startOf(gesture);
+  const to = endOf(gesture);
   return {
-    x: Math.min(gesture.from.x, gesture.to.x),
-    y: Math.min(gesture.from.y, gesture.to.y),
-    width: Math.abs(gesture.to.x - gesture.from.x),
-    height: Math.abs(gesture.to.y - gesture.from.y),
+    x: Math.min(from.x, to.x),
+    y: Math.min(from.y, to.y),
+    width: Math.abs(to.x - from.x),
+    height: Math.abs(to.y - from.y),
   };
 }
 
@@ -112,11 +121,10 @@ function boxTool(
   };
 
   const controller: ToolController = {
-    begin: (at: ViewportPoint): Gesture => ({ from: at, to: at }),
-    // A NEW VALUE, never a mutation: the overlay keeps whichever it wants, and
-    // a controller that wrote through its argument would make two pages sharing
-    // this object share a drag.
-    update: (gesture: Gesture, at: ViewportPoint): Gesture => ({ from: gesture.from, to: at }),
+    // THE SHARED PATH, spread rather than written: recording where the pointer
+    // has been is the platform's business and is identical for every tool that
+    // is driven by one.
+    ...pointerPath,
     commit: (
       gesture: Gesture,
       page: number,
@@ -136,7 +144,7 @@ function boxTool(
           // Ordering happens in the kernel, against the document's own boxes —
           // ordering here as well would be two places deciding what a
           // degenerate shape is.
-          rect: draggedRect(gesture.from, gesture.to, transform),
+          rect: draggedRect(startOf(gesture), endOf(gesture), transform),
           colour: STROKE,
           borderWidth: BORDER_WIDTH,
         },
@@ -157,25 +165,18 @@ function boxTool(
  */
 function lineTool(id: string, ending: LineEnding): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
-    const across = gesture.to.x - gesture.from.x;
-    const down = gesture.to.y - gesture.from.y;
+    const from = startOf(gesture);
+    const to = endOf(gesture);
     // THE DISTANCE, and this is where a line stops being a box tool. A
     // horizontal rule is 200 by 0 and is a thing people draw on purpose; a
     // per-axis threshold refuses it, and the refusal reads as correct because
     // the same test is right for the two shapes beside it.
-    if (Math.hypot(across, down) < MINIMUM_DRAG) return undefined;
-    return {
-      shape: 'line',
-      x1: gesture.from.x,
-      y1: gesture.from.y,
-      x2: gesture.to.x,
-      y2: gesture.to.y,
-    };
+    if (Math.hypot(to.x - from.x, to.y - from.y) < MINIMUM_DRAG) return undefined;
+    return { shape: 'line', x1: from.x, y1: from.y, x2: to.x, y2: to.y };
   };
 
   const controller: ToolController = {
-    begin: (at: ViewportPoint): Gesture => ({ from: at, to: at }),
-    update: (gesture: Gesture, at: ViewportPoint): Gesture => ({ from: gesture.from, to: at }),
+    ...pointerPath,
     commit: (
       gesture: Gesture,
       page: number,
@@ -186,8 +187,8 @@ function lineTool(id: string, ending: LineEnding): UiTool {
       // carries: a rectangle cannot say which diagonal was drawn, so a line
       // stored as one comes back with its arrowhead at whichever corner the
       // reader happens to call the end.
-      const from = toPdf(gesture.from, transform);
-      const to = toPdf(gesture.to, transform);
+      const from = toPdf(startOf(gesture), transform);
+      const to = toPdf(endOf(gesture), transform);
       return {
         kind: 'addAnnotation',
         page,
@@ -212,6 +213,63 @@ function lineTool(id: string, ending: LineEnding): UiTool {
 }
 
 /**
+ * The freehand tool — the first whose gesture is the whole path.
+ *
+ * It is what widened `Gesture` from two points to one, and the widening is
+ * recorded at `registries/tools.ts` rather than here because it is the
+ * platform's decision and not this tool's. What this file shows is the
+ * consequence: the ink controller is shorter than the box one, because
+ * everything it needs the platform already recorded.
+ *
+ * @param id the registry id, shared with the command that selects it
+ */
+function inkTool(id: string): UiTool {
+  const drawn = (gesture: Gesture): ToolPreview | undefined => {
+    // THE PATH'S OWN EXTENT, not its two ends: a scribble that returns to where
+    // it started is a stroke, and the box tools' end-to-end test would call it
+    // a click. This is the third threshold rule in this file and the third
+    // shape it takes, which is the argument for the shape being per tool.
+    const spread = Math.max(
+      ...gesture.points.map((point) => Math.abs(point.x - startOf(gesture).x)),
+      ...gesture.points.map((point) => Math.abs(point.y - startOf(gesture).y)),
+    );
+    if (gesture.points.length < 2 || spread < MINIMUM_DRAG) return undefined;
+    return { shape: 'path', points: gesture.points.map((point) => [point.x, point.y]) };
+  };
+
+  const controller: ToolController = {
+    ...pointerPath,
+    commit: (
+      gesture: Gesture,
+      page: number,
+      transform: PageTransform,
+    ): RenderableCommand | undefined => {
+      if (drawn(gesture) === undefined) return undefined;
+      return {
+        kind: 'addAnnotation',
+        page,
+        annotation: {
+          type: 'ink',
+          // EVERY KEPT POINT, converted by the one adapter. The decimation
+          // already happened, in `pointerPath`, where it belongs — a tool
+          // thinning its own path would be a second opinion about how densely
+          // a pointer should be sampled.
+          points: gesture.points.map((point) => {
+            const placed = toPdf(point, transform);
+            return { x: placed.x, y: placed.y };
+          }),
+          colour: STROKE,
+          borderWidth: BORDER_WIDTH,
+        },
+      };
+    },
+    preview: drawn,
+  };
+
+  return { id, controller };
+}
+
+/**
  * The ids, shared with the commands that select these tools.
  *
  * Exported so a command and its registration name the same constant rather than
@@ -222,11 +280,13 @@ export const RECTANGLE_TOOL_ID = 'annotate.rectangle';
 export const ELLIPSE_TOOL_ID = 'annotate.ellipse';
 export const LINE_TOOL_ID = 'annotate.line';
 export const ARROW_TOOL_ID = 'annotate.arrow';
+export const INK_TOOL_ID = 'annotate.ink';
 
 export const rectangleTool = boxTool(RECTANGLE_TOOL_ID, 'square', 'rect');
 export const ellipseTool = boxTool(ELLIPSE_TOOL_ID, 'circle', 'ellipse');
 export const lineAnnotationTool = lineTool(LINE_TOOL_ID, 'none');
 export const arrowTool = lineTool(ARROW_TOOL_ID, 'closed-arrow');
+export const inkAnnotationTool = inkTool(INK_TOOL_ID);
 
 /** Every shape tool, in the order their controls appear. */
 export const shapeTools: readonly UiTool[] = [
@@ -234,4 +294,5 @@ export const shapeTools: readonly UiTool[] = [
   ellipseTool,
   lineAnnotationTool,
   arrowTool,
+  inkAnnotationTool,
 ];

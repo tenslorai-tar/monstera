@@ -7,10 +7,12 @@ import { overlayTransform } from './annotationSpace.js';
 import {
   ARROW_TOOL_ID,
   ELLIPSE_TOOL_ID,
+  INK_TOOL_ID,
   LINE_TOOL_ID,
   RECTANGLE_TOOL_ID,
   arrowTool,
   ellipseTool,
+  inkAnnotationTool,
   lineAnnotationTool,
   rectangleTool,
   shapeTools,
@@ -63,6 +65,7 @@ describe('the shape tools are registered under the ids their commands use', () =
       ELLIPSE_TOOL_ID,
       LINE_TOOL_ID,
       ARROW_TOOL_ID,
+      INK_TOOL_ID,
     ]);
     expect(new Set(shapeTools.map((tool) => tool.id)).size).toBe(shapeTools.length);
   });
@@ -207,6 +210,98 @@ describe('the line tools', () => {
   });
 });
 
+describe('the ink tool', () => {
+  /** Drags through several points, as a hand does. */
+  function scribble(...through: readonly (readonly [number, number])[]) {
+    const { controller } = inkAnnotationTool;
+    const [first, ...rest] = through;
+    if (first === undefined) throw new Error('a scribble starts somewhere');
+    let gesture = controller.begin(viewportPoint(first[0], first[1]));
+    for (const [x, y] of rest) gesture = controller.update(gesture, viewportPoint(x, y));
+    return gesture;
+  }
+
+  it('commits every kept point, converted to PDF user space', () => {
+    const command = inkAnnotationTool.controller.commit(
+      scribble([20, 20], [60, 40], [120, 20]),
+      3,
+      overlayTransform(PAGE),
+    );
+    expect(command).toStrictEqual({
+      kind: 'addAnnotation',
+      page: 3,
+      annotation: {
+        type: 'ink',
+        // At zoom 2 from the crop box's top-left corner (50, 400).
+        points: [
+          { x: 60, y: 390 },
+          { x: 80, y: 380 },
+          { x: 110, y: 390 },
+        ],
+        colour: [0.85, 0.15, 0.15],
+        borderWidth: 2,
+      },
+    });
+  });
+
+  it('DECIMATES the path, which is the platform doing it rather than this tool', () => {
+    // A pointer reports a move per frame, so an undecimated stroke is hundreds
+    // of points for a short scribble and every one crosses to the kernel. Six
+    // one-pixel steps are one kept point past the start; the LAST is exact,
+    // which is what keeps a rectangle's corner from snapping.
+    const gesture = scribble([0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0]);
+    expect(gesture.points.length).toBeLessThan(6);
+    expect(gesture.points[gesture.points.length - 1]).toStrictEqual(viewportPoint(5, 0));
+  });
+
+  it('CONTROL: points far apart are all kept', () => {
+    // Without this, the case above is satisfied by a path that keeps only its
+    // two ends — which would make ink a line tool with extra steps.
+    expect(scribble([0, 0], [40, 0], [80, 0], [120, 0]).points).toHaveLength(4);
+  });
+
+  it('commits nothing for a scribble that went nowhere', () => {
+    expect(
+      inkAnnotationTool.controller.commit(scribble([40, 40], [41, 40]), 3, overlayTransform(PAGE)),
+    ).toBeUndefined();
+  });
+
+  it('commits a scribble that RETURNS to where it started', () => {
+    // THE THIRD THRESHOLD SHAPE in this file, and the reason it is per tool: a
+    // loop's two ends are the same point, so the line tool's end-to-end test
+    // calls it a click and the box tool's calls it empty. Only the path's own
+    // extent sees it.
+    expect(
+      inkAnnotationTool.controller.commit(
+        scribble([40, 40], [90, 90], [40, 40]),
+        3,
+        overlayTransform(PAGE),
+      ),
+    ).not.toBeUndefined();
+  });
+
+  it('CONTROL: the line tool refuses that same loop', () => {
+    // Which is what says the two thresholds are different rules rather than one
+    // written twice.
+    const loop = scribble([40, 40], [90, 90], [40, 40]);
+    expect(
+      lineAnnotationTool.controller.commit(loop, 3, overlayTransform(PAGE)),
+    ).toBeUndefined();
+  });
+
+  it('previews the path rather than a box around it', () => {
+    expect(inkAnnotationTool.controller.preview(scribble([20, 20], [60, 40], [120, 20])))
+      .toStrictEqual({
+        shape: 'path',
+        points: [
+          [20, 20],
+          [60, 40],
+          [120, 20],
+        ],
+      });
+  });
+});
+
 describe('every controller', () => {
   for (const tool of shapeTools) {
     it(`does not mutate the gesture it was given — ${tool.id}`, () => {
@@ -215,7 +310,7 @@ describe('every controller', () => {
       // object to every page's overlay.
       const started = tool.controller.begin(viewportPoint(10, 10));
       tool.controller.update(started, viewportPoint(90, 90));
-      expect(started.to).toStrictEqual(viewportPoint(10, 10));
+      expect(started.points).toStrictEqual([viewportPoint(10, 10)]);
     });
   }
 });

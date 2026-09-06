@@ -39,27 +39,123 @@ import type { PageTransform, ViewportPoint } from '@monstera/shared';
  * pages sharing a tool share a drag.
  */
 
-/** A drag in progress, in the coordinate space the overlay measures. */
+/**
+ * A gesture in progress: the path the pointer has taken, in the coordinate
+ * space the overlay measures.
+ *
+ * ## It was `{ from, to }` until the ink tool, and that is the seam working
+ *
+ * Two points is what a rectangle needs and what a line needs, and it was right
+ * for as long as every tool was one of those. Ink is a path, and the three ways
+ * to give it one were all worse than widening this:
+ *
+ * - **A generic state parameter** on the controller. Then `UiTool` holds a
+ *   controller of some type the overlay cannot name, and the registry needs a
+ *   cast at every entry — a type assertion per tool, in the file whose whole
+ *   job is that a tool is an entry.
+ * - **A union of gesture shapes.** Then each controller receives a gesture it
+ *   may not have produced, narrows it at runtime and throws otherwise — a
+ *   runtime check where a type was doing the work (B5, backwards).
+ * - **A second registry** for path tools, which is a second wiring place.
+ *
+ * So the platform records the path for every tool and each reads what it
+ * needs. {@link startOf} and {@link endOf} are what a two-point tool reads, and
+ * they are exact rather than decimated — see {@link pointerPath}.
+ *
+ * The cost is a bounded array for tools that ignore it, which is the trade
+ * taken deliberately: one gesture shape, no casts, and the twentieth tool
+ * changes nothing here.
+ */
 export interface Gesture {
-  /** Where the pointer went down. */
-  readonly from: ViewportPoint;
-  /** Where it is now. */
-  readonly to: ViewportPoint;
+  /**
+   * Every point the pointer has been at, in order, starting with where it went
+   * down. Never empty.
+   */
+  readonly points: readonly ViewportPoint[];
 }
+
+/** Where the gesture started. */
+export function startOf(gesture: Gesture): ViewportPoint {
+  const [first] = gesture.points;
+  if (first === undefined) throw new Error('a gesture always has the point it began at');
+  return first;
+}
+
+/** Where the pointer is now — EXACT, never a decimated neighbour. */
+export function endOf(gesture: Gesture): ViewportPoint {
+  const last = gesture.points[gesture.points.length - 1];
+  if (last === undefined) throw new Error('a gesture always has the point it began at');
+  return last;
+}
+
+/**
+ * How far the pointer must move before a new point is kept, in CSS pixels.
+ *
+ * A pointer reports a move per frame, so an undecimated stroke is hundreds of
+ * points for a short scribble and every one of them crosses to the kernel.
+ * Two pixels is below what a hand can place deliberately and far above the
+ * rate a pointer samples at.
+ */
+const KEEP_APART = 2;
+
+/**
+ * How many points one gesture may hold.
+ *
+ * Invariant L11 forbids a payload that scales with the DOCUMENT, and a stroke
+ * scales with the drag — so this is not that rule, and a bound is still owed:
+ * a command is intent, and intent that grows without limit is a renderer that
+ * can send anything. At {@link KEEP_APART} apart, this is over eight thousand
+ * pixels of travel, which is more than a page holds at any sane zoom.
+ *
+ * **Reaching it stops the path rather than truncating it silently**: the
+ * preview stops following the pointer, which a person can see. A cap that
+ * dropped later points while the preview kept moving would commit a shape
+ * nobody drew.
+ */
+const MAX_GESTURE_POINTS = 4096;
+
+/**
+ * The `begin` and `update` every pointer-driven tool spreads into its
+ * controller.
+ *
+ * **Spread explicitly at each tool rather than defaulted**, so a controller
+ * still declares all four members and a tool that needs its own — a polygon,
+ * whose gesture is extended by clicks rather than by moves — writes one without
+ * an exception to a default.
+ *
+ * The LAST point is replaced rather than appended when the pointer has not
+ * moved far, which is what keeps {@link endOf} exact while the interior is
+ * decimated. Without that a rectangle's corner would snap to the nearest two
+ * pixels, and a tool that reads only two points would be paying for a
+ * simplification it does not use.
+ */
+export const pointerPath: Pick<ToolController, 'begin' | 'update'> = {
+  begin: (at: ViewportPoint): Gesture => ({ points: [at] }),
+  update: (gesture: Gesture, at: ViewportPoint): Gesture => {
+    const last = endOf(gesture);
+    const far = Math.hypot(at.x - last.x, at.y - last.y) >= KEEP_APART;
+    if (far && gesture.points.length >= MAX_GESTURE_POINTS) return gesture;
+    return {
+      points: far
+        ? [...gesture.points, at]
+        : [...gesture.points.slice(0, -1), at],
+    };
+  },
+};
 
 /**
  * What a tool does with a drag.
  *
- * @template S the shape drawn while the gesture is in flight, handed back to
- *   {@link ToolController.preview}. {@link Gesture} for every tool this stage
- *   builds; a tool that needs more — an ink stroke's point list — parameterises
- *   it rather than widening this one.
+ * The gesture is {@link Gesture} for every tool, which is a decision that
+ * changed once and is recorded there: it was parameterised so a path tool could
+ * carry more, and the parameter cost a cast per registry entry. The path is now
+ * what every gesture is.
  */
-export interface ToolController<S = Gesture> {
-  /** Starts a gesture at a point. */
-  readonly begin: (at: ViewportPoint) => S;
+export interface ToolController {
+  /** Starts a gesture at a point. Usually {@link pointerPath}'s. */
+  readonly begin: (at: ViewportPoint) => Gesture;
   /** Moves it. Pure: the caller keeps whichever value it wants. */
-  readonly update: (gesture: S, at: ViewportPoint) => S;
+  readonly update: (gesture: Gesture, at: ViewportPoint) => Gesture;
   /**
    * What the gesture produced, or `undefined` when it produced nothing.
    *
@@ -71,7 +167,7 @@ export interface ToolController<S = Gesture> {
    * is what stops a surface expressing a command only main may mint.
    */
   readonly commit: (
-    gesture: S,
+    gesture: Gesture,
     page: number,
     transform: PageTransform,
   ) => RenderableCommand | undefined;
@@ -84,7 +180,7 @@ export interface ToolController<S = Gesture> {
    * drawing. It also keeps this module free of React, which is what lets a case
    * assert a preview's geometry by reading four numbers.
    */
-  readonly preview: (gesture: S) => ToolPreview | undefined;
+  readonly preview: (gesture: Gesture) => ToolPreview | undefined;
 }
 
 /**
@@ -113,6 +209,11 @@ export type ToolPreview =
       readonly y1: number;
       readonly x2: number;
       readonly y2: number;
+    }
+  | {
+      readonly shape: 'path';
+      /** Every kept point, as `[x, y]` pairs in order. */
+      readonly points: readonly (readonly [number, number])[];
     };
 
 /** One registered tool. */

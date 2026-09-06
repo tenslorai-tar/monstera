@@ -230,6 +230,17 @@ function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
           y2={preview.y2}
         />
       );
+    case 'path':
+      // A POLYLINE AND NOT A `<path>`, because the points are already a list
+      // and `points` takes one. Building a `d` string would be this component
+      // deciding on a path grammar for a shape that has no curves in it.
+      return (
+        <polyline
+          className="m-annotation-preview m-annotation-stroke"
+          data-annotation-preview="path"
+          points={preview.points.map(([x, y]) => `${String(x)},${String(y)}`).join(' ')}
+        />
+      );
     default: {
       // A MEMBER ADDED WITHOUT A BRANCH IS A COMPILE ERROR, which is the point
       // of the union: the alternative is a runtime fall-through that renders

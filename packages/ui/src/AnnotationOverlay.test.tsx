@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { rectangleTool } from './annotations/shapeTools.js';
-import type { Gesture, UiTool } from './registries/tools.js';
+import type { UiTool } from './registries/tools.js';
+import { pointerPath } from './registries/tools.js';
 
 /**
  * The overlay, driven by pointer events — the wired-tools pair's **UI half**.
@@ -177,8 +178,7 @@ describe('AnnotationOverlay', () => {
     const other: UiTool = {
       id: 'annotate.other',
       controller: {
-        begin: (at) => ({ from: at, to: at }),
-        update: (gesture: Gesture, at) => ({ from: gesture.from, to: at }),
+        ...pointerPath,
         commit: (_gesture, page) => ({ kind: 'duplicatePage', page }),
         preview: () => undefined,
       },

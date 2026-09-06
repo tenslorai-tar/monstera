@@ -199,6 +199,7 @@ export const RECTANGLE_TOOL_TITLE = messageKey('command.annotate-rectangle.title
 export const ELLIPSE_TOOL_TITLE = messageKey('command.annotate-ellipse.title');
 export const LINE_TOOL_TITLE = messageKey('command.annotate-line.title');
 export const ARROW_TOOL_TITLE = messageKey('command.annotate-arrow.title');
+export const INK_TOOL_TITLE = messageKey('command.annotate-ink.title');
 export const ANNOTATION_SURFACE_LABEL = messageKey('surface.annotation.label');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
@@ -355,6 +356,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ELLIPSE_TOOL_TITLE]: 'Ellipse',
   [LINE_TOOL_TITLE]: 'Line',
   [ARROW_TOOL_TITLE]: 'Arrow',
+  // WHAT THE CONTROL DOES, not what the format calls it. `/Ink` is the
+  // subtype; a person drawing with it is drawing freehand, and every
+  // application this one replaces labels it so.
+  [INK_TOOL_TITLE]: 'Freehand',
   // NAMES THE PAGE, because a scroller shows several and each carries its own
   // drawing surface. Two surfaces with the same accessible name are two a
   // screen-reader user cannot tell apart, which is `SPLIT_SECOND_LABEL`'s

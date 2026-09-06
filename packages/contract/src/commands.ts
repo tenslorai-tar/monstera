@@ -781,6 +781,16 @@ export const MAX_PAGE_COORDINATE = 14400;
 export const MAX_ANNOTATION_BORDER = 144;
 
 /**
+ * How many points one ink stroke may carry.
+ *
+ * The renderer keeps points two CSS pixels apart, so this is over eight
+ * thousand pixels of travel — more than a page holds at any sane zoom. It is
+ * declared here rather than in the tool because it bounds the **payload**, and
+ * a bound the sender alone knows is a bound the receiver is trusting.
+ */
+export const MAX_INK_POINTS = 4096;
+
+/**
  * A rectangle an annotation occupies, in **PDF user space**.
  *
  * ## The space is the whole of what this type declares
@@ -955,6 +965,36 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       to: annotationPointSchema,
       /** How the `to` end is drawn. `'none'` for a plain line. */
       ending: lineEndingSchema,
+      colour: annotationColourSchema,
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Ink` — one freehand stroke.
+       *
+       * **ONE stroke, not a list of them**, although `/InkList` holds several.
+       * A drag produces one, and a field the surface cannot fill is the shape
+       * that got a whole command backed out of this file once: the multi-stroke
+       * form needs a tool that can continue an annotation, which does not
+       * exist. The kernel wraps this in the list the format wants.
+       */
+      type: z.literal('ink'),
+      /**
+       * Where the pointer went, in PDF user space, in order.
+       *
+       * **Bounded, and the bound is not invariant L11's.** L11 forbids a
+       * payload that scales with the DOCUMENT; a stroke scales with the drag,
+       * which is a different thing and still needs a limit — intent that can
+       * grow without one is a renderer that can send anything. The renderer
+       * decimates as it records, so this is thousands of pixels of travel
+       * rather than a few seconds of dragging.
+       *
+       * Two points minimum: one point is a dot, which is a click rather than a
+       * stroke, and the kernel would have nothing to draw.
+       */
+      points: z.array(annotationPointSchema).min(2).max(MAX_INK_POINTS),
       colour: annotationColourSchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })

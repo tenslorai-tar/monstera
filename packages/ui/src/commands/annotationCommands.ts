@@ -3,12 +3,14 @@ import type { MessageKey } from '@monstera/shared';
 import {
   ARROW_TOOL_ID,
   ELLIPSE_TOOL_ID,
+  INK_TOOL_ID,
   LINE_TOOL_ID,
   RECTANGLE_TOOL_ID,
 } from '../annotations/shapeTools.js';
 import {
   ARROW_TOOL_TITLE,
   ELLIPSE_TOOL_TITLE,
+  INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
 } from '../messages/en.js';
@@ -104,6 +106,10 @@ export function arrowToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(ARROW_TOOL_ID, ARROW_TOOL_TITLE, 43, deps);
 }
 
+export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 44, deps);
+}
+
 /**
  * Every shape tool's command.
  *
@@ -118,5 +124,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     ellipseToolCommand(deps),
     lineToolCommand(deps),
     arrowToolCommand(deps),
+    inkToolCommand(deps),
   ];
 }

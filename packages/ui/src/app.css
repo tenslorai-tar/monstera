@@ -993,3 +993,15 @@ body {
      one pixel at every zoom, unlike the border the annotation will carry. */
   vector-effect: non-scaling-stroke;
 }
+
+/*
+ * A stroke rather than an outline: an open path has no inside, and the shared
+ * fill above would close it across the two ends and shade the region between —
+ * which reads as a filled blob following the pointer.
+ */
+.m-annotation-stroke {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

@@ -67,6 +67,7 @@ export {
   type CommandKind,
   type CommandOfKind,
   MAX_ANNOTATION_BORDER,
+  MAX_INK_POINTS,
   MAX_PAGE_COORDINATE,
   addAnnotationSchema,
   annotationColourSchema,
