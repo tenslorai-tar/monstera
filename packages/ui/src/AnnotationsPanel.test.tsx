@@ -167,8 +167,13 @@ describe('AnnotationsPanel', () => {
       { page: 3, index: 0, kind: 'ink', contents: '' },
     ]);
 
-    const buttons = screen.getAllByRole('button', { name: 'Remove this annotation' });
-    fireEvent.click(buttons[1] as HTMLElement);
+    // THE SECOND ROW'S CONTROL, narrowed rather than asserted: a cast and a `!`
+    // are both lint errors here, and the throw is better than either — a
+    // fixture that rendered one row is a broken case, and this says so instead
+    // of clicking `undefined`.
+    const [, second] = screen.getAllByRole('button', { name: 'Remove this annotation' });
+    if (second === undefined) throw new Error('the panel rendered fewer than two rows');
+    fireEvent.click(second);
 
     expect(removes).toStrictEqual([{ page: 3, index: 0, version: 1 }]);
   });

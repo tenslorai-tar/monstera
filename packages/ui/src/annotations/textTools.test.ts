@@ -119,7 +119,10 @@ describe('textBoxTool', () => {
     expect(asked).toStrictEqual([]);
   });
 
-  it('previews the box while the drag is in flight, and nothing while it is too small', async () => {
+  // NOT ASYNC, unlike every case above it. A preview is read from the gesture
+  // and never asks anything, which is the one part of this tool that answers
+  // the way a shape tool does.
+  it('previews the box while the drag is in flight, and nothing while it is too small', () => {
     const { tool } = toolAnswering(undefined);
     const { controller } = tool;
     const started = controller.begin(viewportPoint(20, 20));
