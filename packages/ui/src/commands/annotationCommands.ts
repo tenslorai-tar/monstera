@@ -20,7 +20,7 @@ import {
   UNDERLINE_TOOL_ID,
 } from '../annotations/textMarkupTools.js';
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
-import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
+import { TEXT_BOX_TOOL_ID, TYPEWRITER_TOOL_ID } from '../annotations/textTools.js';
 import {
   CLOUD_TOOL_ID,
   POLYGON_TOOL_ID,
@@ -51,6 +51,7 @@ import {
   TOOL_CARET_TITLE,
   TOOL_STICKY_NOTE_TITLE,
   TOOL_TEXT_BOX_TITLE,
+  TYPEWRITER_TOOL_TITLE,
   UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -264,6 +265,20 @@ export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
  */
 export function calloutToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(CALLOUT_TOOL_ID, CALLOUT_TOOL_TITLE, 55, deps);
+}
+
+/**
+ * The typewriter's command.
+ *
+ * **Order 46.5, which is the placement design being used rather than abused.**
+ * `Placement.order` is a number precisely so two features that never see each
+ * other's code can interleave, and this one has to sit beside the text box: they
+ * are the same gesture differing only in whether the box is drawn, so a person
+ * choosing between them needs both in view. Renumbering the ten controls after
+ * it to make room would touch ten call sites to move one.
+ */
+export function typewriterToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(TYPEWRITER_TOOL_ID, TYPEWRITER_TOOL_TITLE, 46.5, deps);
 }
 
 export function linkAddressToolCommand(deps: ToolCommandDeps): UiCommand {
@@ -481,5 +496,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     linkAddressToolCommand(deps),
     linkPageToolCommand(deps),
     calloutToolCommand(deps),
+    typewriterToolCommand(deps),
   ];
 }

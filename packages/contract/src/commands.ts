@@ -1384,6 +1384,36 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /FreeText` with `/IT /FreeTextTypeWriter` — words typed onto
+       * the page, with no box around them.
+       *
+       * ## What separates it from `text-box` had to be MADE REAL
+       *
+       * The two write the same subtype and the same three calls, and until
+       * 2026-09-07 they would have produced identical documents: a text box
+       * drew no box. Measured — `createAnnotation('FreeText')` leaves
+       * `/BS << /W 0 >>` and MuPDF's appearance stream is `0 w … re W n`, a
+       * clip with no stroke. Two controls whose output cannot be told apart is
+       * the display-only sin with a second button on it.
+       *
+       * So the text box gained the border its name promises and this one keeps
+       * none, which is what a typewriter is. The key is written too, because
+       * `/IT` is what a reader's own editing tools consult, and the format's
+       * default for an absent `/IT` is `FreeText` — so the box says nothing and
+       * these two say what they are.
+       */
+      type: z.literal('typewriter'),
+      /** The box the words are laid out in, in PDF user space. */
+      rect: annotationRectSchema,
+      /** What it says. `text-box`' field and its rules. */
+      text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+      colour: annotationColourSchema,
+      fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
@@ -1449,6 +1479,10 @@ export const annotationKindNameSchema = z.enum([
   // vocabulary, so a reader looking at a callout is looking at something the
   // document itself distinguishes.
   'callout',
+  // THE THIRD `/FreeText` KIND, and the three are separated by `/IT` rather
+  // than by the subtype — which is a fact about the file and not a tool's
+  // vocabulary, so a reader is being told what the document says.
+  'typewriter',
   'other',
 ]);
 

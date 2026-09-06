@@ -308,6 +308,13 @@ export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
 export const ANNOTATIONS_KIND_CALLOUT = messageKey('surface.annotations.kind.callout');
+export const ANNOTATIONS_KIND_TYPEWRITER = messageKey('surface.annotations.kind.typewriter');
+export const TYPEWRITER_TOOL_TITLE = messageKey('command.annotate.typewriter');
+export const TYPEWRITER_DIALOG_TITLE = messageKey('dialog.typewriter.title');
+export const TYPEWRITER_LABEL = messageKey('dialog.typewriter.label');
+export const TYPEWRITER_APPLY = messageKey('dialog.typewriter.apply');
+export const TYPEWRITER_EMPTY = messageKey('dialog.typewriter.empty');
+export const TYPEWRITER_TOO_LONG = messageKey('dialog.typewriter.too-long');
 export const CALLOUT_TOOL_TITLE = messageKey('command.annotate.callout');
 export const CALLOUT_DIALOG_TITLE = messageKey('dialog.callout.title');
 export const CALLOUT_LABEL = messageKey('dialog.callout.label');
@@ -553,6 +560,16 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATIONS_KIND_POLYGON]: 'Shape',
   [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
   [ANNOTATIONS_KIND_CALLOUT]: 'Callout',
+  [ANNOTATIONS_KIND_TYPEWRITER]: 'Typed text',
+  [TYPEWRITER_TOOL_TITLE]: 'Typewriter',
+  [TYPEWRITER_DIALOG_TITLE]: 'Typewriter',
+  // *TYPE ONTO THE PAGE* rather than *Text*, because the difference from the
+  // text box is exactly that there is no box — the label is where a person
+  // learns which of the two they picked.
+  [TYPEWRITER_LABEL]: 'Type onto the page',
+  [TYPEWRITER_APPLY]: 'Add text',
+  [TYPEWRITER_EMPTY]: 'Type the words to add to the page.',
+  [TYPEWRITER_TOO_LONG]: 'That is too long to store.',
   [CALLOUT_TOOL_TITLE]: 'Callout',
   [CALLOUT_DIALOG_TITLE]: 'Callout',
   [CALLOUT_LABEL]: 'Note',

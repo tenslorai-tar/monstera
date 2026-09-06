@@ -3,6 +3,7 @@ import type { PageTransform } from '@monstera/shared';
 
 import { ANNOTATION_TEXT_DIALOG_ID } from '../dialogs/annotationText.js';
 import { ANNOTATION_TEXT_RESULT } from '../dialogs/annotationTextResult.js';
+import { TYPEWRITER_DIALOG_ID } from '../dialogs/typewriter.js';
 import type { Gesture, ToolController, ToolPreview, UiTool } from '../registries/tools.js';
 import { endOf, pointerPath, startOf } from '../registries/tools.js';
 import { draggedRect } from './annotationSpace.js';
@@ -83,16 +84,31 @@ export interface TextToolDeps {
   readonly ask: (id: string, props: unknown) => Promise<unknown>;
 }
 
-/** The registry id, shared with the command that selects the tool. */
+/** The registry ids, shared with the commands that select these tools. */
 export const TEXT_BOX_TOOL_ID = 'annotate.text-box';
+export const TYPEWRITER_TOOL_ID = 'annotate.typewriter';
 
 /**
  * A box, then the words that go in it.
  *
+ * ## ONE FACTORY FOR TWO TOOLS, and what they differ by is in the DOCUMENT
+ *
+ * The typewriter is this gesture exactly — a drag, then the words — and until
+ * 2026-09-07 it would also have been the same annotation: a text box drew no
+ * box, so the two controls would have produced documents nobody could tell
+ * apart. The difference was made real in the kernel rather than here (the text
+ * box gained the border its name promises), and what this file carries is the
+ * two things a surface decides: which dialog asks, and which draft it builds.
+ *
  * @param deps what the tool needs to ask. Captured here rather than passed to
  *   `commit`, so the six tools that need nothing keep a three-parameter commit
  */
-export function textBoxTool(deps: TextToolDeps): UiTool {
+function boxTextTool(
+  id: string,
+  dialog: string,
+  type: 'text-box' | 'typewriter',
+  deps: TextToolDeps,
+): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     const measured = box(gesture);
     // BOTH AXES, `shapeTools`' rule: a drag of 40 by 1 is a sliver nobody meant
@@ -118,9 +134,7 @@ export function textBoxTool(deps: TextToolDeps): UiTool {
       // whatever zoom the page is at when the person finishes typing.
       const rect = draggedRect(startOf(gesture), endOf(gesture), transform);
 
-      const answered = ANNOTATION_TEXT_RESULT.safeParse(
-        await deps.ask(ANNOTATION_TEXT_DIALOG_ID, {}),
-      );
+      const answered = ANNOTATION_TEXT_RESULT.safeParse(await deps.ask(dialog, {}));
       // A DISMISSED DIALOG IS `undefined` AND SO IS A REFUSED ANSWER, which is
       // the same outcome a drag too small to see already produces. The gate is
       // the absence of a value rather than a flag: there is nothing to build a
@@ -137,7 +151,7 @@ export function textBoxTool(deps: TextToolDeps): UiTool {
         kind: 'addAnnotation',
         page,
         annotation: {
-          type: 'text-box',
+          type,
           rect,
           text: answered.data.text,
           colour: TEXT_COLOUR,
@@ -148,5 +162,27 @@ export function textBoxTool(deps: TextToolDeps): UiTool {
     preview: drawn,
   };
 
-  return { id: TEXT_BOX_TOOL_ID, controller };
+  return { id, controller };
+}
+
+/** A box with a border, and the words in it. */
+export function textBoxTool(deps: TextToolDeps): UiTool {
+  return boxTextTool(TEXT_BOX_TOOL_ID, ANNOTATION_TEXT_DIALOG_ID, 'text-box', deps);
+}
+
+/**
+ * Words typed onto the page, with no box around them.
+ *
+ * **Its own dialog**, for the sticky note's reason: the two ask a person the
+ * same question and mean different things by it, and a dialog titled *Text box*
+ * collecting what somebody is typing onto a form is a control that says what it
+ * will do and then does something else.
+ *
+ * **The preview is still a rectangle**, and that is honest rather than a
+ * leftover: what the drag names IS the box the words are laid out in, whether
+ * or not the box is drawn afterwards. A preview that showed no region would
+ * leave a person guessing where their words are about to go.
+ */
+export function typewriterTool(deps: TextToolDeps): UiTool {
+  return boxTextTool(TYPEWRITER_TOOL_ID, TYPEWRITER_DIALOG_ID, 'typewriter', deps);
 }

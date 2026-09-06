@@ -659,6 +659,35 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // page* this comment predicted, and removing it is cheaper than hoping
       // every reader checks `/IT`.
       annotation.getObject().delete('CL');
+      // AND IT DRAWS ITS BOX, as of 2026-09-07. Until the typewriter row this
+      // did not: MuPDF leaves `/BS << /W 0 >>` and its appearance stream is
+      // `0 w … re W n`, a clip with no stroke — so a *text box* drew no box and
+      // was, on the page, exactly what a typewriter is. Two controls whose
+      // output cannot be told apart is the display-only sin with a second
+      // button on it, and the one whose name was wrong for its appearance is
+      // this one.
+      //
+      // ONE POINT, which the style controls will own. `setColor` is deliberately
+      // not called beside it: measured 2026-09-07, `/C` on a `/FreeText` is the
+      // BACKGROUND — MuPDF emits `re f` before the stroke — and the text's
+      // colour comes from `/DA`. A fill nobody asked for is a text box that
+      // hides what is under it.
+      annotation.setBorderWidth(1);
+    },
+  },
+  typewriter: {
+    subtype: 'FreeText',
+    bounds: (draft, transform) => placedRect(draft.rect, transform),
+    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
+    write: (annotation, draft, transform, on): void => {
+      annotation.setRect(placedRect(draft.rect, transform));
+      annotation.setContents(draft.text);
+      annotation.setDefaultAppearance('Helv', draft.fontSize, [...draft.colour]);
+      // NO BORDER, which is the whole difference from the row above and is why
+      // that row now sets one. MuPDF's own default is already this, so nothing
+      // is called — stated rather than left as an absence somebody removes.
+      annotation.getObject().delete('CL');
+      annotation.getObject().put('IT', on.document.newName('FreeTextTypeWriter'));
     },
   },
   callout: {
@@ -1116,8 +1145,24 @@ function kindOf(annotation: PDFAnnotation): AnnotationKindName {
   const named = NAMED[annotation.getType()] ?? 'other';
   if (named !== 'text-box') return named;
   const intent = annotation.getObject().get('IT');
-  return intent.isName() && intent.asName() === 'FreeTextCallout' ? 'callout' : 'text-box';
+  if (!intent.isName()) return 'text-box';
+  return INTENDED[intent.asName()] ?? 'text-box';
 }
+
+/**
+ * `/IT`'s three names, as a reader may call them.
+ *
+ * **A table with a fallback, unlike {@link NAMED}, and the difference is what
+ * the format says.** An absent or unrecognised `/IT` on a `/FreeText` means
+ * `FreeText` — the default is in the specification — so *anything else* is a
+ * text box rather than `'other'`. `NAMED` has no such default, which is why its
+ * miss is `'other'` and this one's is a real kind.
+ */
+const INTENDED: Readonly<Record<string, AnnotationKindName>> = {
+  FreeText: 'text-box',
+  FreeTextCallout: 'callout',
+  FreeTextTypeWriter: 'typewriter',
+};
 
 /**
  * How many annotations may be listed.

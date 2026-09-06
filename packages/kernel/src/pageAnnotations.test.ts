@@ -1662,6 +1662,74 @@ describe('the srcRef mark', () => {
 });
 
 /**
+ * The typewriter, and the text box it had to be told apart from.
+ *
+ * ## The whole case set is ONE COMPARISON
+ *
+ * These two write the same subtype and the same three calls, and until
+ * 2026-09-07 they would have produced identical documents — a *text box* that
+ * drew no box. So every case here puts both on one page: a case that asserted
+ * only the typewriter's shape would pass on a build where the two are the same
+ * thing twice, which is the defect this row exists to have found.
+ */
+describe('applyAddAnnotation tells a typewriter from a text box', () => {
+  const PLAIN: AnnotationDraft = {
+    type: 'text-box',
+    rect: { x0: 10, y0: 200, x1: 90, y1: 240 },
+    text: 'in a box',
+    colour: [0.1, 0.1, 0.1],
+    fontSize: 12,
+  };
+  const TYPED: AnnotationDraft = {
+    type: 'typewriter',
+    rect: { x0: 100, y0: 200, x1: 180, y1: 240 },
+    text: 'on the page',
+    colour: [0.1, 0.1, 0.1],
+    fontSize: 12,
+  };
+
+  async function both(): Promise<Uint8Array> {
+    return drawnOn(
+      await drawnOn(await fixture(), command({ annotation: PLAIN })),
+      command({ annotation: TYPED }),
+    );
+  }
+
+  it('draws a border on ONE of them, which is what makes them two controls', async () => {
+    // THE LOAD-BEARING ASSERTION, and it is a pair rather than two cases: a
+    // build where both draw a border and one where neither does each satisfy
+    // half of it, and the second of those is what shipped.
+    const stored = await readBack(await both());
+    expect(stored.map((entry) => entry.borderWidth)).toStrictEqual([1, 0]);
+  });
+
+  it('says which is which in the file, through /IT', async () => {
+    // The typewriter names itself; the text box does not, because `FreeText` is
+    // the format's default for an absent `/IT` and writing a default is a key
+    // that says nothing.
+    const stored = await readBack(await both());
+    expect(stored.map((entry) => entry.keys.includes('/IT'))).toStrictEqual([false, true]);
+  });
+
+  it('lists them apart', async () => {
+    const listed = await onSession(await both(), (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.kind)).toStrictEqual([
+      'text-box',
+      'typewriter',
+    ]);
+  });
+
+  it('sets NO background colour on either, which /C on a FreeText would be', async () => {
+    // Measured 2026-09-07: `setColor` on a `/FreeText` fills the box — MuPDF
+    // emits `re f` before the stroke — where the text's own colour comes from
+    // `/DA`. So a colour set here would be a text box that hides what is under
+    // it, and the absence is asserted rather than assumed.
+    const stored = await readBack(await both());
+    expect(stored.map((entry) => entry.colour)).toStrictEqual([null, null]);
+  });
+});
+
+/**
  * The callout — a `/FreeText` that the file itself says is one.
  *
  * ## The assertions are on `/IT`'s CONSEQUENCE, not on `/IT`

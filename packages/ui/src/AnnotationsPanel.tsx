@@ -21,6 +21,7 @@ import {
   ANNOTATIONS_KIND_STRIKEOUT,
   ANNOTATIONS_KIND_UNDERLINE,
   ANNOTATIONS_KIND_TEXT_BOX,
+  ANNOTATIONS_KIND_TYPEWRITER,
   ANNOTATIONS_LABEL,
   ANNOTATIONS_REMOVE,
   ANNOTATIONS_ROW,
@@ -251,6 +252,7 @@ const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
   // document itself distinguishes them with `/IT`, so a reader told *Text box*
   // for a callout would be told something the file disagrees with.
   callout: ANNOTATIONS_KIND_CALLOUT,
+  typewriter: ANNOTATIONS_KIND_TYPEWRITER,
   highlight: ANNOTATIONS_KIND_HIGHLIGHT,
   underline: ANNOTATIONS_KIND_UNDERLINE,
   strikeout: ANNOTATIONS_KIND_STRIKEOUT,

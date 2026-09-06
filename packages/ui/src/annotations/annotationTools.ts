@@ -9,7 +9,7 @@ import { selectTool } from './selectTool.js';
 import { textMarkupTools } from './textMarkupTools.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
-import { textBoxTool } from './textTools.js';
+import { textBoxTool, typewriterTool } from './textTools.js';
 import { vertexTools } from './vertexTools.js';
 
 /**
@@ -44,6 +44,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
   return [
     ...shapeTools,
     textBoxTool(deps),
+    typewriterTool(deps),
     ...pointTools(deps),
     ...vertexTools,
     ...textMarkupTools,
