@@ -1,4 +1,5 @@
 import type { CommandOfKind } from '@monstera/contract';
+import type { PDFDocument, PDFGraftMap } from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -66,6 +67,64 @@ import { withDocuments } from './mupdfWriter.js';
  */
 
 /**
+ * Grafts one page and the annotations `graftPage` leaves behind.
+ *
+ * ## `graftPage` DOES NOT CARRY `/Annots`, measured 2026-09-06
+ *
+ * A source page whose `/Annots` is `[9 0 R]` produces a grafted page whose
+ * `/Annots` is **null** — every page of the merged document, in a direct probe
+ * against MuPDF 1.28.0. Nothing in the declaration says so and nothing in this
+ * build noticed: a merged document renders correctly, has the right page count
+ * in the right order, and is missing every comment, highlight and mark the
+ * source carried.
+ *
+ * It was found by Stage 3 measuring the property `docs/FEATURES.md` states as
+ * *"annotations survive page ops"* — which is the point of measuring a property
+ * rather than reasoning to it. The reasoning was sound and covered a different
+ * call: a page carries its `/Annots` wherever the page TREE moves it, which is
+ * true of `movePage` and `deletePages` and says nothing about a copy between
+ * documents.
+ *
+ * ## Three things have to arrive, and only the first is obvious
+ *
+ * - **the array**, grafted through the same map as the page, so an appearance
+ *   stream shared between two annotations stays one object rather than two;
+ * - **the appearance stream** each annotation points at, which the graft brings
+ *   because it follows references;
+ * - **the `/P` back-pointer**, which the graft copies verbatim and which
+ *   therefore names *the source's page*. Left alone it is a page in another
+ *   document — a dangling identity join of exactly the kind §3 bans — so each
+ *   annotation is re-pointed at the page it is now on.
+ *
+ * ## ONE GRAFT MAP for the whole operation
+ *
+ * `PDFDocument.graftPage` mints an implicit map per call, so a source's shared
+ * objects are copied once per page. A map held across the loop keeps them
+ * shared, and it is what lets the annotations be grafted into the same identity
+ * space as the page they belong to. The parent-chain walk in
+ * `pageMerge.test.ts` is the control that says the page tree is unaffected —
+ * that walk is why this module uses `graftPage` at all.
+ */
+function graftPageWithAnnotations(
+  map: PDFGraftMap,
+  target: PDFDocument,
+  from: PDFDocument,
+  to: number,
+  page: number,
+): void {
+  map.graftPage(to, from, page);
+  const annots = from.loadPage(page).getObject().get('Annots');
+  if (annots.isNull()) return;
+
+  const onto = target.loadPage(to).getObject();
+  const grafted = map.graftObject(annots);
+  onto.put('Annots', grafted);
+  for (let index = 0; index < grafted.length; index += 1) {
+    grafted.get(index).put('P', onto);
+  }
+}
+
+/**
  * Copies every page of `source` into the target, starting at `command.at`.
  *
  * ## Pages are grafted in order, each one index further along
@@ -111,12 +170,16 @@ export const applyMergeDocument: Apply<'mupdf', 'mergeDocument', 'one'> = (
     const at = Math.min(command.at, count);
     const pages = from.countPages();
 
+    // ONE MAP FOR THE WHOLE MERGE. See `graftPageWithAnnotations`: it keeps a
+    // source's shared objects shared across the pages that reference them, and
+    // it is what puts the annotations in the same identity space as their page.
+    const map = target.newGraftMap();
     for (let page = 0; page < pages; page += 1) {
       // READ FROM `from` AND WRITTEN INTO `target`, which is the one line where
       // a transposition would be silent: both are `PDFDocument` and both are
       // `MupdfSession` upstream, so nothing in the type system separates them.
       // `withDocuments` names its parameters for this reason.
-      target.graftPage(at + page, from, page);
+      graftPageWithAnnotations(map, target, from, at + page, page);
     }
   });
 
@@ -158,8 +221,9 @@ export const applyReplacePage: Apply<'mupdf', 'replacePage', 'one'> = (
     }
 
     const pages = from.countPages();
+    const map = target.newGraftMap();
     for (let page = 0; page < pages; page += 1) {
-      target.graftPage(command.at + page, from, page);
+      graftPageWithAnnotations(map, target, from, command.at + page, page);
     }
     // SHIFTED BY WHAT WAS JUST INSERTED. See the module note: the replaced page
     // is no longer at `command.at`.

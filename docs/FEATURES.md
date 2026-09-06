@@ -134,7 +134,7 @@ planner counting a table of rows as a table of untouched work.
 | Comment styles panel | — |
 | Persistence as real PDF annotation objects | — |
 | `srcRef` invariant: never rewrite annotations the app did not author | — |
-| Annotations survive page ops via command remapping | — |
+| **Annotations survive page ops via command remapping. Measured 2026-09-06, and it found a defect in a shipped feature.** Seven cases: a mark moves with its page, renumbers when an earlier page is deleted, goes with the page that is deleted, keeps its `/Rect` when the page is rotated, and is copied when its page is duplicated — with a control that a page which never had one still has none. **`graftPage` carries no `/Annots` at all**, so `mergeDocument`, `replacePage` and *insert from PDF* were silently dropping every comment, highlight and mark a source carried, in a document that renders correctly with the right pages in the right order. Fixed in the same commit: one graft map for the whole operation, the array grafted through it, and each annotation's `/P` **re-pointed** at the page it is now on — the half that renders correctly while naming a page in another document, which is the dangling identity join §3 bans. The reasoning that made this look safe was sound and covered a different call: a page carries its annotations wherever the page TREE moves it, which is true of `movePage` and says nothing about a copy between documents. **The remapping half is the renderer's** and is what the row's own title names — the back-stack's, already built. | **done** |
 
 ## D4 — Text · ribbon: Edit · Stage 5
 
