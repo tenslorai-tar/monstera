@@ -5,6 +5,7 @@ import type { ByteImage, EngineWriter, MupdfSession } from '../engineSeam.js';
 import type { PageGeometryReader } from '../pageGeometry.js';
 import type { Destination } from '../destinations.js';
 import type { Layer } from '../layers.js';
+import type { ListedAnnotation } from '../pageAnnotations.js';
 import type { PageLink } from '../pageLinks.js';
 import type { DuplicatePageGroup } from '../pageDuplicates.js';
 import type { ContainmentProbePaths, ContainmentReport } from './containment.js';
@@ -59,6 +60,19 @@ export type HostDestinationsReader = (
 
 /** Reads the document's layers. Injected for the readers above's reason. */
 export type HostLayersReader = (session: MupdfSession) => Promise<readonly Layer[]>;
+
+/**
+ * Lists every annotation in the document. Injected for the readers above's
+ * reason, and it answers the WHOLE document rather than one page — a panel asks
+ * where the comments are, which is a question about all of it.
+ *
+ * The truncation flag comes back from the reader rather than being computed
+ * here, because only the walk knows there was more.
+ */
+export type HostAnnotationsReader = (session: MupdfSession) => Promise<{
+  readonly annotations: readonly ListedAnnotation[];
+  readonly truncated: boolean;
+}>;
 
 /**
  * Groups pages that are the same page. Injected for the readers above's reason.
@@ -193,6 +207,7 @@ export interface EngineHandlerParts {
   readonly pageLinks: HostPageLinksReader;
   readonly destinations: HostDestinationsReader;
   readonly layers: HostLayersReader;
+  readonly annotations: HostAnnotationsReader;
   readonly duplicates: HostDuplicatesReader;
   readonly extract: HostExtract;
 }
@@ -208,6 +223,7 @@ export function createEngineHandlers({
   pageLinks,
   destinations,
   layers,
+  annotations,
   duplicates,
   extract,
 }: EngineHandlerParts): Handlers<EngineChannels> {
@@ -375,6 +391,21 @@ export function createEngineHandlers({
       const held = sessions.lookup(session);
       if (held === undefined) return gone;
       return { ok: true, value: { layers: [...(await layers(held.session))] } };
+    },
+
+    'engine/annotations': async ({ session }) => {
+      const held = sessions.lookup(session);
+      if (held === undefined) return gone;
+      // BOUNDED WHERE THE WALK IS, which is the reader — it stops rather than
+      // building the whole list and slicing it, and it is what knows there was
+      // more. This handler forwards both halves rather than re-deriving
+      // truncation from the array's length, which would answer *you asked for
+      // that many* every time (`engine/duplicate-pages`' note).
+      const listed = await annotations(held.session);
+      return {
+        ok: true,
+        value: { annotations: [...listed.annotations], truncated: listed.truncated },
+      };
     },
 
     'engine/duplicate-pages': async ({ session }) => {

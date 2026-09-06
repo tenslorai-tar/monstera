@@ -379,6 +379,113 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
   });
 
 /**
+ * What kind an annotation on the page IS, as a surface may name it.
+ *
+ * ## A CLOSED union, not the subtype the document carries
+ *
+ * `/Subtype` is a `/Name` and a document is hostile by invariant 25's premise,
+ * so passing it through would be an arbitrary string reaching a renderer that
+ * has to label it — and B9 bans a literal user-facing string, so there would be
+ * no key for a subtype nobody anticipated. A closed union means the renderer
+ * can only render what it has a message for (B5), and `'other'` is the honest
+ * answer for the rest.
+ *
+ * **The members are the ones this build WRITES, plus `'other'`.** A foreign
+ * highlight is `'other'` today and gains its own member on the day a highlight
+ * tool does — at which point the surface needs a key for it anyway. Adding a
+ * member before the tool would be a label nothing can produce from this
+ * application's own documents and everything else's, which is the harder half
+ * to keep honest.
+ */
+export type AnnotationKindName = AnnotationDraft['type'] | 'other';
+
+/** One annotation on a page, as a panel needs to name it. */
+export interface ListedAnnotation {
+  /** Zero-based, so a caller can hand it straight to a jump. */
+  readonly page: number;
+  readonly kind: AnnotationKindName;
+  /**
+   * The annotation's `/Contents`, or the empty string.
+   *
+   * Carried because it is the only thing that tells two rectangles on one page
+   * apart, and it is nearly always a **foreign** annotation's — this build sets
+   * no contents on anything it writes, because there is no control that would
+   * collect one. That is owed with the comment field, and until then a row of
+   * this build's own is identified by its kind and its page.
+   */
+  readonly contents: string;
+}
+
+/** MuPDF's subtype back to the name a surface may use. */
+const NAMED: Readonly<Record<string, AnnotationKindName>> = {
+  Square: 'square',
+  Circle: 'circle',
+  Line: 'line',
+  Ink: 'ink',
+  Redact: 'redact',
+};
+
+/**
+ * How many annotations may be listed.
+ *
+ * A document-scaled read, bounded for the reason `document.destinations`' is:
+ * a payload that grows without limit is a renderer that can be handed anything.
+ * The number is `MAX_DESTINATIONS`' argument on a different noun — far past
+ * what a panel could present and short of what a hostile document could try.
+ *
+ * The caller is told when the bound stopped the walk, because *this document
+ * has that many* and *you asked for that many* are different answers and a
+ * surface offering to act on all of them would act on some.
+ */
+const MAX_LISTED = 4096;
+
+/**
+ * Every annotation in the document, in page order.
+ *
+ * ## Whole-document rather than per page, unlike the links read
+ *
+ * `document.pageLinks` takes a page because a link is drawn over one and a
+ * reader asks about what is on screen. A panel asks *where are the comments in
+ * this document* — a question whose answer is the whole of it — and a
+ * per-page read would make the panel ask once per page and stitch the answers,
+ * which is the same payload arriving as N round trips.
+ *
+ * Bounded and reported, exactly as the duplicate report is.
+ */
+export function readAnnotations(
+  session: MupdfSession,
+): Promise<{ readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean }> {
+  return withDocument(session, (document) => {
+    const found: ListedAnnotation[] = [];
+    const pages = document.countPages();
+    for (let page = 0; page < pages; page += 1) {
+      for (const annotation of document.loadPage(page).getAnnotations()) {
+        if (found.length >= MAX_LISTED) return { annotations: found, truncated: true };
+        found.push({
+          page,
+          // `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this
+          // build cannot name is listed rather than dropped, because a panel
+          // that silently omitted a document's own comments would be worse than
+          // one that names them vaguely.
+          kind: NAMED[annotation.getType()] ?? 'other',
+          contents: annotation.getContents().slice(0, MAX_LISTED_CONTENTS),
+        });
+      }
+    }
+    return { annotations: found, truncated: false };
+  });
+}
+
+/**
+ * How much of an annotation's `/Contents` crosses.
+ *
+ * A bound on text a hostile document controls, and it is a **slice** rather
+ * than a refusal for the reason the outline's title bound is: a note longer
+ * than this is a note, and refusing to list the annotation would hide it.
+ */
+const MAX_LISTED_CONTENTS = 512;
+
+/**
  * Refuses, naming what is missing — the handle, not the operation.
  *
  * The page **is** validated first, so an out-of-range index is still a caller

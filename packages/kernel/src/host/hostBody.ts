@@ -11,6 +11,7 @@ import {
   type HostDestinationsReader,
   type HostDuplicatesReader,
   type HostExtract,
+  type HostAnnotationsReader,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -83,6 +84,8 @@ export interface HostBodyDependencies {
   readonly destinations: HostDestinationsReader;
   /** How this process reads the document's layers. `readLayers`. */
   readonly layers: HostLayersReader;
+  /** How this process lists the document's annotations. `readAnnotations`. */
+  readonly annotations: HostAnnotationsReader;
   /** How this process groups identical pages. `findDuplicatePages`. */
   readonly duplicates: HostDuplicatesReader;
   /** How this process builds a new document from named pages. `extractPages`. */
@@ -160,6 +163,7 @@ export function startEngineHost(
       pageLinks: dependencies.pageLinks,
       destinations: dependencies.destinations,
       layers: dependencies.layers,
+      annotations: dependencies.annotations,
       duplicates: dependencies.duplicates,
       extract: dependencies.extract,
     }),

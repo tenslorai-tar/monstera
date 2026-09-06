@@ -10,6 +10,7 @@ import { extractPages } from '../pageExtract.js';
 import { readPageGeometry } from '../pageGeometry.js';
 import { readDestinations } from '../destinations.js';
 import { readLayers } from '../layers.js';
+import { readAnnotations } from '../pageAnnotations.js';
 import { findDuplicatePages } from '../pageDuplicates.js';
 import { readPageLinks } from '../pageLinks.js';
 import { readPageTextJson } from '../pageText.js';
@@ -144,6 +145,9 @@ async function joined(): Promise<{
       pageLinks: readPageLinks,
       destinations: readDestinations,
       layers: readLayers,
+      // THE REAL READER for the reason its neighbours are: the annotation cases
+      // below ask what the HOST's document holds after a command crossed.
+      annotations: readAnnotations,
       duplicates: findDuplicatePages,
       extract: extractPages,
     }),
@@ -401,6 +405,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         layers: () => {
           throw new Error('unused');
         },
+        annotations: () => {
+          throw new Error('unused');
+        },
         duplicates: () => {
           throw new Error('unused');
         },
@@ -480,6 +487,9 @@ describe('the remote engine execution half (ADR-0023 Decisions 10 and 11)', () =
         },
         layers: () => {
           throw new Error('the rotation-refusal case must not read the layers');
+        },
+        annotations: () => {
+          throw new Error('the rotation-refusal case must not list annotations');
         },
         duplicates: () => {
           throw new Error('the rotation-refusal case must not look for duplicates');

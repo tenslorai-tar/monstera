@@ -217,6 +217,9 @@ function joined(
       layers: () => {
         throw new Error('the lifecycle half must not read the layers');
       },
+      annotations: () => {
+        throw new Error('the lifecycle half must not list annotations');
+      },
       duplicates: () => {
         throw new Error('the lifecycle half must not look for duplicates');
       },
@@ -418,6 +421,9 @@ describe('remoteMupdfLifecycle', () => {
         },
         layers: () => {
           throw new Error('the byte-size case must not read the layers');
+        },
+        annotations: () => {
+          throw new Error('the byte-size case must not list annotations');
         },
         duplicates: () => {
           throw new Error('the byte-size case must not look for duplicates');

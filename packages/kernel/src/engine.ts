@@ -71,6 +71,7 @@ export {
   applyAddAnnotation,
   captureAddAnnotation,
   invertAddAnnotation,
+  readAnnotations,
 } from './pageAnnotations.js';
 export { findDuplicatePages } from './pageDuplicates.js';
 export { extractPages } from './pageExtract.js';

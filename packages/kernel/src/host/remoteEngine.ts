@@ -8,6 +8,7 @@ import type { PageGeometryReader } from '../pageGeometry.js';
 import { type EngineChannels, taggedPrior } from './engineChannels.js';
 import type {
   HostDestinationsReader,
+  HostAnnotationsReader,
   HostLayersReader,
   HostPageLinksReader,
   HostPageTextReader,
@@ -271,6 +272,26 @@ export function remoteMupdfLayers(
       'engine/layers',
       await client['engine/layers']({ session: sessions.handleFor(session) }),
     ).layers;
+}
+
+/**
+ * The document's annotations, over the boundary.
+ *
+ * Both halves are returned, unlike the duplicate reader below: the truncation
+ * flag has one consumer here — the panel says so — so there is no reader shape
+ * to strip it for.
+ */
+export function remoteMupdfAnnotations(
+  client: ClientApi<EngineChannels>,
+  sessions: RemoteSessions,
+): HostAnnotationsReader {
+  return async (session) => {
+    const answer = answered(
+      'engine/annotations',
+      await client['engine/annotations']({ session: sessions.handleFor(session) }),
+    );
+    return { annotations: answer.annotations, truncated: answer.truncated };
+  };
 }
 
 /**

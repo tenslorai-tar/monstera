@@ -152,6 +152,7 @@ export function createContractHandlers(deps: {
     'document.pageLinks': pageLinksHandler(deps.commands),
     'document.destinations': destinationsHandler(deps.commands),
     'document.layers': layersHandler(deps.commands),
+    'document.annotations': annotationsHandler(deps.commands),
     'document.duplicatePages': duplicatePagesHandler(deps.commands),
     // NEITHER OF THESE VALIDATES A STORED VALUE, and that is the boundary
     // deferring rather than the boundary being lax. `SettingsRegistry.read`
@@ -584,6 +585,24 @@ function layersHandler(commands: DocumentCommands): ContractHandlers['document.l
  * The document's duplicate pages. A READ, for `layersHandler`'s reason: what a
  * person does with the list is delete pages, and deleting is a command.
  */
+function annotationsHandler(
+  commands: DocumentCommands,
+): ContractHandlers['document.annotations'] {
+  return async ({
+    docId,
+  }): Promise<Awaited<ReturnType<ContractHandlers['document.annotations']>>> => {
+    try {
+      const { version, annotations, truncated } = await commands.annotations(docId);
+      return ok({ version, annotations, truncated });
+    } catch (thrown) {
+      if (thrown instanceof DocumentNotOpenError) return err({ code: 'document-not-open' });
+      if (thrown instanceof DocumentBusyError) return err({ code: 'document-busy' });
+      if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      throw thrown;
+    }
+  };
+}
+
 function duplicatePagesHandler(
   commands: DocumentCommands,
 ): ContractHandlers['document.duplicatePages'] {

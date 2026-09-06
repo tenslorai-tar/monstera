@@ -13,6 +13,7 @@ import {
   EngineOpenFailed,
   type HostDestinationsReader,
   type HostExtract,
+  type HostAnnotationsReader,
   type HostLayersReader,
   type HostPageLinksReader,
   type HostPageTextReader,
@@ -32,6 +33,7 @@ import {
   parsePageText,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
+  remoteMupdfAnnotations,
   remoteMupdfDuplicateReport,
   remoteMupdfLayers,
   remoteMupdfPageLinks,
@@ -482,6 +484,14 @@ export function createShellDependencies(composition: ShellComposition): ShellDep
     // opener are both in scope on this line and nowhere else.
     restore: (docId, write) =>
       engine.recycle(docId, (id) => engineHost.restoreSessions(id, write)),
+    // THE ANNOTATION LIST, composed here for the reads above's reason, and
+    // whole-document rather than per page: a panel asks where the comments are,
+    // which is a question about all of it.
+    annotations: (docId, sessions) => {
+      const session = sessions.mupdf;
+      if (session === undefined) throw new MissingSessionError(docId, 'mupdf');
+      return engineHost.annotations(session);
+    },
     // THE DUPLICATE REPORT, composed here for the reads above's reason: the
     // reader and the session are both in scope on this line and nowhere else.
     duplicates: (docId, sessions) => {
@@ -618,6 +628,8 @@ function engineSessionOpener(
   readonly destinations: HostDestinationsReader;
   /** The document's layers, from whichever host is live. */
   readonly layers: HostLayersReader;
+  /** Every annotation in the document, from whichever host is live. */
+  readonly annotations: HostAnnotationsReader;
   /** The document's duplicate pages, from whichever host is live. */
   readonly duplicates: DuplicateReport;
   /**
@@ -817,6 +829,20 @@ function engineSessionOpener(
     return layers(session);
   };
 
+  /** The annotation list's half of the same registration. See {@link pageText}. */
+  let annotations: HostAnnotationsReader | null = null;
+
+  const readAnnotationsThroughHost: HostAnnotationsReader = (session) => {
+    if (annotations === null) {
+      throw new Error(
+        'An annotation read reached the engine with no host reader registered. A session was ' +
+          'resolved for this document, so one was issued by a host — the supervisor and the ' +
+          'host connection have diverged.',
+      );
+    }
+    return annotations(session);
+  };
+
   /** The duplicate report's half of the same registration. See {@link pageText}. */
   let duplicates: DuplicateReport | null = null;
 
@@ -960,6 +986,7 @@ function engineSessionOpener(
     pageLinks = remoteMupdfPageLinks(client, remote);
     destinations = remoteMupdfDestinations(client, remote);
     layers = remoteMupdfLayers(client, remote);
+    annotations = remoteMupdfAnnotations(client, remote);
     duplicates = remoteMupdfDuplicateReport(client, remote);
     return live.value;
   };
@@ -1127,6 +1154,7 @@ function engineSessionOpener(
     pageLinks: readPageLinksThroughHost,
     destinations: readDestinationsThroughHost,
     layers: readLayersThroughHost,
+    annotations: readAnnotationsThroughHost,
     duplicates: readDuplicatesThroughHost,
     extract: extractThroughHost,
     closeHost,

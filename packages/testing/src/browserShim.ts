@@ -843,6 +843,20 @@ export function createBrowserShim(options: BrowserShimOptions = {}): BrowserShim
      * above have, and it exists for surfaces that read on their own; nothing
      * here reads without being asked.
      */
+    /**
+     * EMPTY, for the duplicate report's reason: the shim's kernel is stubbed
+     * and has no document to walk. What a case about the panel asserts is that
+     * the panel renders what it is handed, and a shim inventing annotations
+     * would be the shim under test.
+     */
+    'document.annotations': ({ docId }) => {
+      const current = versions.get(docId);
+      if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));
+      return Promise.resolve(
+        ok({ version: asDocVersion(current), annotations: [], truncated: false }),
+      );
+    },
+
     'document.duplicatePages': ({ docId }) => {
       const current = versions.get(docId);
       if (current === undefined) return Promise.resolve(err({ code: 'document-not-open' }));

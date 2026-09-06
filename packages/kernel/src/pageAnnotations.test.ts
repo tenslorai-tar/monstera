@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
-import { applyAddAnnotation, captureAddAnnotation } from './pageAnnotations.js';
+import { applyAddAnnotation, captureAddAnnotation, readAnnotations } from './pageAnnotations.js';
 
 /**
  * Adding an annotation, read back through a DIFFERENT library than the one that
@@ -588,6 +588,52 @@ describe('applyAddAnnotation refuses rather than guessing', () => {
     await expect(
       drawnOn(await fixture({ crop: [400, 500, 600, 700] }), command()),
     ).rejects.toThrow(/displays no region/u);
+  });
+});
+
+describe('readAnnotations', () => {
+  it('lists what this build wrote, by page and by kind', async () => {
+    const twice = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    const listed = await onSession(twice, (session) => readAnnotations(session));
+
+    expect(listed.truncated).toBe(false);
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, kind: 'square', contents: '' },
+      { page: 0, kind: 'ink', contents: '' },
+    ]);
+  });
+
+  it('names a subtype it cannot write as `other` rather than dropping it', async () => {
+    // A PANEL THAT SILENTLY OMITTED a document's own comments would be worse
+    // than one that names them vaguely, and the closed union is what keeps an
+    // arbitrary `/Name` from reaching a renderer that has no message for it.
+    // The fixture's foreign annotation is a `/Square`, so this uses a subtype
+    // nothing here writes.
+    const listed = await onSession(
+      await drawnOn(await fixture({ foreign: true }), command()),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations.map((entry) => entry.kind).sort()).toStrictEqual(['square', 'square']);
+  });
+
+  it('carries a foreign annotation\'s note, which is the only thing telling two apart', async () => {
+    // Nothing this build writes sets `/Contents`, so a row of its own is
+    // identified by kind and page. A foreign one usually carries a note, and
+    // that is what a panel shows.
+    const listed = await onSession(await fixture({ foreign: true }), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, kind: 'square', contents: 'written by another application' },
+    ]);
+  });
+
+  it('reports an empty document as empty rather than refusing', async () => {
+    const listed = await onSession(await fixture(), (session) => readAnnotations(session));
+    expect(listed).toStrictEqual({ annotations: [], truncated: false });
   });
 });
 

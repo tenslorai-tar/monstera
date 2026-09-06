@@ -229,6 +229,38 @@ export const ENGINE_DUPLICATE_PAGES_MAX = 4096;
  */
 export const ENGINE_EXTRACT_PAGES_MAX = 4096;
 
+/**
+ * How many annotations may be listed in one answer, and how much of a note.
+ *
+ * The duplicate bound's number for the duplicate bound's reason: a heavily
+ * reviewed document carries thousands of comments and is ordinary rather than
+ * hostile. Stated rather than shared for {@link ENGINE_EXTRACT_PAGES_MAX}'s
+ * reason — two bounds that happen to agree are not one bound.
+ *
+ * The note is much smaller, because it is text a hostile document controls and
+ * a panel shows one line of it. It is a SLICE rather than a refusal: a note
+ * longer than this is still a note, and refusing the annotation would hide it.
+ */
+export const ENGINE_ANNOTATIONS_MAX = 4096;
+export const ENGINE_ANNOTATION_CONTENTS_MAX = 512;
+
+/**
+ * One annotation, as it crosses from the host.
+ *
+ * **`kind` is a closed union, not the document's `/Subtype`.** A subtype is a
+ * `/Name` a hostile document chooses, and a renderer that received one would
+ * have to label a string nobody anticipated — which B9 forbids, since there is
+ * no message key for it. The members are what this build writes; everything
+ * else is `other`, which is honest and which a panel has a key for.
+ */
+const engineAnnotationSchema = z
+  .object({
+    page: z.number().int().nonnegative(),
+    kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'other']),
+    contents: z.string().max(ENGINE_ANNOTATION_CONTENTS_MAX),
+  })
+  .strict();
+
 /** One group of identical pages, as it crosses from the host. */
 const engineDuplicateGroupSchema = z
   .object({
@@ -838,6 +870,19 @@ export const engineChannels = {
     'Reads the document’s optional-content groups from a session this host holds.',
     z.object({ session: sessionSchema }).strict(),
     z.object({ layers: z.array(engineLayerSchema).max(ENGINE_LAYERS_MAX) }).strict(),
+    ['no-such-session'],
+  ),
+
+  'engine/annotations': channel(
+    'Lists every annotation in a session this host holds, in page order.',
+    z.object({ session: sessionSchema }).strict(),
+    z
+      .object({
+        annotations: z.array(engineAnnotationSchema).max(ENGINE_ANNOTATIONS_MAX),
+        /** Whether the bound stopped the walk. See `engine/duplicate-pages`. */
+        truncated: z.boolean(),
+      })
+      .strict(),
     ['no-such-session'],
   ),
 

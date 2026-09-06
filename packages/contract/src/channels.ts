@@ -236,6 +236,21 @@ export const MAX_LAYER_NAME_LENGTH = 256;
 export const MAX_DUPLICATE_PAGES = 4096;
 
 /**
+ * How many annotations may cross in one answer, and how much of a note.
+ *
+ * {@link MAX_DUPLICATE_PAGES}' number for its reason, stated rather than
+ * shared: a heavily reviewed document carries thousands of comments and is
+ * ordinary rather than hostile. Two bounds that happen to agree are not one
+ * bound, and tying them would move either silently.
+ *
+ * The note is much smaller because it is one line in a panel, and it is a
+ * SLICE rather than a refusal — a note longer than this is still a note, and
+ * refusing the annotation would hide it from the list it belongs in.
+ */
+export const MAX_ANNOTATIONS = 4096;
+export const MAX_ANNOTATION_CONTENTS = 512;
+
+/**
  * How long a document's name may be.
  *
  * NTFS bounds a single path component at 255 UTF-16 code units, so this is that
@@ -1264,6 +1279,56 @@ export const channels = {
    * compared, because a list headed *duplicates* with no such sentence is one a
    * person acts on without asking.
    */
+  'document.annotations': channel(
+    'Every annotation in the document, in page order, with what kind each is.',
+    z.object({ docId: docIdSchema }),
+    z.object({
+      version: docVersionSchema,
+      annotations: z
+        .array(
+          z.object({
+            /** Zero-based, so a panel can hand it straight to a jump. */
+            page: z.number().int().nonnegative(),
+            /**
+             * **A closed union, not the document's `/Subtype`.**
+             *
+             * A subtype is a `/Name` a hostile document chooses, and a renderer
+             * receiving one would have to label a string nobody anticipated —
+             * which B9 forbids, since there is no message key for it. The
+             * members are the kinds this build writes; everything else is
+             * `other`, which is honest and which a panel has a key for.
+             *
+             * A member is added on the day a tool writes that kind, not before:
+             * a label for something no document here produces is a string in
+             * the catalogue that nothing can reach.
+             */
+            kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'other']),
+            /**
+             * The annotation's own note, or empty.
+             *
+             * Almost always a FOREIGN annotation's: nothing this build writes
+             * sets one, because no control collects it. That arrives with the
+             * comment field, and until then a row of this build's own is
+             * identified by its kind and its page.
+             */
+            contents: z.string().max(MAX_ANNOTATION_CONTENTS),
+          }),
+        )
+        .max(MAX_ANNOTATIONS)
+        .readonly(),
+      /**
+       * Whether the bound stopped the walk.
+       *
+       * `document.duplicatePages`' flag and its reason: without it a caller
+       * cannot tell *this document has that many* from *you asked for that
+       * many*, and a panel claiming to list a document's comments would be
+       * listing some of them.
+       */
+      truncated: z.boolean(),
+    }),
+    ['document-not-open', 'document-busy', 'document-poisoned'],
+  ),
+
   'document.duplicatePages': channel(
     'Groups of pages whose content and resources are identical.',
     z.object({ docId: docIdSchema }),

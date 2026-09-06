@@ -104,6 +104,7 @@ export {
 } from './host/engineChannels.js';
 export {
   type EngineHandlerParts,
+  type HostAnnotationsReader,
   type HostContainmentProbe,
   type HostFilesystem,
   type HostDestinationsReader,
@@ -134,6 +135,7 @@ export {
   type SessionArea,
   UnknownRemoteSession,
   createRemoteSessions,
+  remoteMupdfAnnotations,
   remoteMupdfExecution,
   remoteMupdfGeometry,
   remoteMupdfDestinations,
@@ -244,6 +246,9 @@ export { type TextAccuracy, scoreAgainstTruth } from './textAccuracy.js';
 // engine, and `readPageLinks` — which does — stays behind `/engine`.
 export type { LinkBounds, PageLink } from './pageLinks.js';
 export type { Destination } from './destinations.js';
+// TYPE ONLY, for the reason above. `readAnnotations` reaches MuPDF and is on
+// `@monstera/kernel/engine`; the listed shape is a plain object.
+export type { AnnotationKindName, ListedAnnotation } from './pageAnnotations.js';
 export type { Layer, PriorLayerVisibility } from './layers.js';
 // TYPE ONLY. `findDuplicatePages` itself is on `@monstera/kernel/engine` with
 // every other value that binds the native library (ADR-0026); the group shape

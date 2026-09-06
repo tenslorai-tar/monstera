@@ -137,6 +137,10 @@ const handlers: ContractHandlers = {
   // correctly, and `truncated: true` is the state a boundary defaulting the
   // flag cannot produce — so the fixture uses the value a default would give
   // and the case below is what separates them.
+  'document.annotations': () =>
+    Promise.resolve(
+      ok({ version: asDocVersion(1), annotations: [], truncated: false }),
+    ),
   'document.duplicatePages': () =>
     Promise.resolve(
       ok({

@@ -16,6 +16,7 @@ import {
   type PageGeometry,
   type Destination,
   type DuplicatePageGroup,
+  type ListedAnnotation,
   type Layer,
   type PageLink,
   type PageText,
@@ -644,6 +645,29 @@ export interface DocumentLayers {
 }
 
 /**
+ * Lists every annotation, and says whether the bound stopped the walk.
+ *
+ * `DocumentDuplicatesReader`'s shape and its reason — the flag rides with the
+ * list because it is computed where the document was walked.
+ *
+ * **The first reader added since this became an options object**, and the one
+ * CCCCCC-3's trigger was written for: its answer is a list of objects carrying
+ * a page, which is close enough to `PageLink` that a positional list would have
+ * been a transposition nothing caught.
+ */
+export type DocumentAnnotationsReader = (
+  docId: DocId,
+  sessions: DocumentSessions,
+) => Promise<{ readonly annotations: readonly ListedAnnotation[]; readonly truncated: boolean }>;
+
+/** The annotations, stamped with the version the lane read them at. */
+export interface DocumentAnnotations {
+  readonly version: DocVersion;
+  readonly annotations: readonly ListedAnnotation[];
+  readonly truncated: boolean;
+}
+
+/**
  * Groups identical pages, and says whether the bound stopped the report.
  *
  * **The truncation flag rides with the groups**, rather than being a second
@@ -746,6 +770,12 @@ export interface DocumentCommandsParts {
   readonly destinations: DocumentDestinationsReader;
   readonly layers: DocumentLayersReader;
   readonly restore: DocumentRestore;
+  /**
+   * THE SIXTEENTH DEPENDENCY, and the first added since this became an options
+   * object — which is what the move was for: a named key, in one place, with
+   * nothing else moving.
+   */
+  readonly annotations: DocumentAnnotationsReader;
   readonly duplicates: DocumentDuplicatesReader;
   /** A picker and a contested-destination check, bundled — see {@link CopySource}. */
   readonly copy: CopySource;
@@ -765,6 +795,7 @@ export class DocumentCommands {
   readonly #destinations: DocumentDestinationsReader;
   readonly #layers: DocumentLayersReader;
   readonly #restore: DocumentRestore;
+  readonly #annotations: DocumentAnnotationsReader;
   readonly #duplicates: DocumentDuplicatesReader;
   readonly #copy: CopySource;
   readonly #image: ImageSource;
@@ -782,6 +813,7 @@ export class DocumentCommands {
     this.#destinations = parts.destinations;
     this.#layers = parts.layers;
     this.#restore = parts.restore;
+    this.#annotations = parts.annotations;
     this.#duplicates = parts.duplicates;
     this.#copy = parts.copy;
     this.#image = parts.image;
@@ -997,6 +1029,29 @@ export class DocumentCommands {
     });
 
     return { version, layers: value };
+  }
+
+  /**
+   * Lists every annotation, inside the document's lane.
+   *
+   * `duplicates`' guards in `duplicates`' order, and the lane matters for the
+   * same reason: this walks every page's `/Annots`, and a walk interleaved with
+   * an `apply` would describe neither the document before the command nor the
+   * one after it — which for a panel means a row pointing at a page that has
+   * just moved.
+   */
+  async annotations(docId: DocId): Promise<DocumentAnnotations> {
+    const { version, value } = await this.#documents.run(docId, async () => {
+      const failures = this.#engine.poisoned(docId);
+      if (failures !== undefined) throw new DocumentPoisonedError(docId, failures);
+
+      const sessions = this.#engine.sessions(docId);
+      if (sessions === undefined) throw new MissingSessionError(docId, 'mupdf');
+
+      return this.#annotations(docId, sessions);
+    });
+
+    return { version, annotations: value.annotations, truncated: value.truncated };
   }
 
   /**

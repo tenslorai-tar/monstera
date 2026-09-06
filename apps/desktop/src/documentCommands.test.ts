@@ -19,6 +19,7 @@ import {
 // (ADR-0026).
 import {
   findDuplicatePages,
+  readAnnotations,
   localMupdfWriter,
   mupdfWriter,
   readPageGeometry,
@@ -48,6 +49,7 @@ import {
   type DocumentPageLinksReader,
   type CopySource,
   type ImageSource,
+  type DocumentAnnotationsReader,
   type DocumentDuplicatesReader,
   type DocumentPageText,
   DocumentPoisonedError,
@@ -280,6 +282,23 @@ const localExtract: DocumentExtractReader = (id, sessions, pages) => {
  * below claim is that the report describes THIS document, and a stub is the one
  * thing that cannot say so.
  */
+const noAnnotations: DocumentAnnotationsReader = () =>
+  Promise.reject(new Error('this case does not list annotations'));
+
+/**
+ * The production composition of the annotation list, the way `composition.ts`
+ * assembles it — a session lookup and `readAnnotations`.
+ *
+ * The real reader rather than a stub answering plausible rows, for
+ * `localDuplicates`' reason: what a case claims is that the list describes THIS
+ * document, and a stub is the one thing that cannot say so.
+ */
+const localAnnotations: DocumentAnnotationsReader = (id, sessions) => {
+  const held = sessions.mupdf;
+  if (held === undefined) throw new MissingSessionError(id, 'mupdf');
+  return readAnnotations(held);
+};
+
 const localDuplicates: DocumentDuplicatesReader = async (id, sessions) => {
   const held = sessions.mupdf;
   if (held === undefined) throw new MissingSessionError(id, 'mupdf');
@@ -368,6 +387,7 @@ const INERT = {
   destinations: noDestinations,
   layers: noLayers,
   restore: noRestore,
+  annotations: noAnnotations,
   duplicates: noDuplicates,
   copy: noCopying,
   image: noImages,
@@ -383,6 +403,7 @@ const LOCAL_READS = {
   pageLinks: localPageLinks,
   destinations: localDestinations,
   layers: localLayers,
+  annotations: localAnnotations,
   duplicates: localDuplicates,
 } as const satisfies Omit<DocumentCommandsParts, keyof Varying>;
 
