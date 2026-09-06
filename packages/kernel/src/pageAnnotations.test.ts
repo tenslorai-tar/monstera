@@ -1654,6 +1654,135 @@ describe('the srcRef mark', () => {
   });
 });
 
+/**
+ * Text markup — the row that was expected to be blocked on a text layer.
+ *
+ * ## The fixture carries REAL TEXT, and the case set turns on that
+ *
+ * Every other fixture in this file is a blank page with shapes on it, which is
+ * exactly the page these three tools do nothing on. So this one draws two lines
+ * of text and the cases assert which of them a drag caught — a run over one
+ * line, a run over both, and a run over the margin, which selects nothing.
+ *
+ * ## The quads are asserted against the STORED dictionary
+ *
+ * `/QuadPoints` read back with pdf-lib, which did not write it. `getQuadPoints`
+ * round-trips whatever MuPDF was handed, so reading through the engine would
+ * agree with itself whether or not the two points reached `StructuredText` at
+ * all.
+ */
+describe('applyAddAnnotation writes text markup as runs of text', () => {
+  /** A page with two lines of text at known places, in PDF user space. */
+  async function withText(): Promise<Uint8Array> {
+    const document = await PDFDocument.create();
+    const page = document.addPage([...MEDIA]);
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    // The baselines are at y 250 and y 230; the glyphs sit just above each.
+    page.drawText('Hello there world', { x: 20, y: 250, size: 12, font });
+    page.drawText('second line here', { x: 20, y: 230, size: 12, font });
+    return document.save({ useObjectStreams: false });
+  }
+
+  /** `/QuadPoints` of the first annotation, read with pdf-lib. */
+  async function quadsOf(bytes: Uint8Array): Promise<readonly number[]> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('no /Annots');
+    const first = annots.asArray()[0];
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    const quads = dict?.lookup(PDFName.of('QuadPoints'));
+    if (!(quads instanceof PDFArray)) return [];
+    return quads.asArray().map((value) => (value instanceof PDFNumber ? value.asNumber() : NaN));
+  }
+
+  const HIGHLIGHT: AnnotationDraft = {
+    type: 'highlight',
+    // Across the middle of the FIRST line only.
+    from: { x: 22, y: 256 },
+    to: { x: 100, y: 252 },
+    colour: [1, 0.9, 0.2],
+  };
+
+  it('stores ONE quad for a drag across one line', async () => {
+    const drawn = await drawnOn(await withText(), command({ annotation: HIGHLIGHT }));
+    // EIGHT NUMBERS IS ONE QUADRILATERAL. The count is the assertion: a
+    // implementation that stored the drag's own rectangle would also produce
+    // eight, so the next case is what separates them.
+    expect(await quadsOf(drawn)).toHaveLength(8);
+  });
+
+  it('stores TWO quads for a drag spanning two lines, and that is not a rectangle', async () => {
+    // THE CASE THAT SEPARATES A TEXT SELECTION FROM A REGION. A drag from the
+    // first line to the second selects two runs, each the width of its own
+    // line — not one box. Anything that stored the swept rectangle answers with
+    // eight numbers here and this answers sixteen.
+    const drawn = await drawnOn(
+      await withText(),
+      command({ annotation: { ...HIGHLIGHT, to: { x: 100, y: 232 } } }),
+    );
+    expect(await quadsOf(drawn)).toHaveLength(16);
+  });
+
+  it('spans the WHOLE line rather than the pointer’s own width', async () => {
+    // The other half of the same claim, on one line: the drag stops at x 100
+    // and the quad reaches the end of the text. A region selection could not.
+    const drawn = await drawnOn(await withText(), command({ annotation: HIGHLIGHT }));
+    const quad = await quadsOf(drawn);
+    // A quad is [ulx uly urx ury llx lly lrx lry] in the page's displayed
+    // space, so the right edge is entry 2.
+    expect(quad[2] ?? 0).toBeGreaterThan(100);
+  });
+
+  it('refuses a drag that selected no text, and leaves NOTHING behind', async () => {
+    // THE LOAD-BEARING CASE, and its second assertion is the one that matters.
+    // A markup with no quads is an object in the file that paints nothing, and
+    // the refusal happens after MuPDF has already created the annotation — so
+    // without the delete the page keeps it and the command both fails and
+    // changes the document.
+    const blank = await withText();
+    await expect(
+      drawnOn(
+        blank,
+        command({
+          annotation: { ...HIGHLIGHT, from: { x: 5, y: 60 }, to: { x: 60, y: 55 } },
+        }),
+      ),
+    ).rejects.toThrow(/selected no text/u);
+
+    // The control: the same page, the same command shape, over the text.
+    const drawn = await drawnOn(blank, command({ annotation: HIGHLIGHT }));
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations).toHaveLength(1);
+  });
+
+  it('writes the three subtypes the format names, and lists them apart', async () => {
+    // A cloud and a polygon share a name in the panel because they share a
+    // subtype. These do not: three objects, three names.
+    const drawn = await drawnOn(
+      await drawnOn(
+        await drawnOn(await withText(), command({ annotation: HIGHLIGHT })),
+        command({ annotation: { ...HIGHLIGHT, type: 'underline' } }),
+      ),
+      command({ annotation: { ...HIGHLIGHT, type: 'strikeout' } }),
+    );
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations.map((entry) => entry.kind)).toStrictEqual([
+      'highlight',
+      'underline',
+      'strikeout',
+    ]);
+  });
+
+  it('has a rectangle the walk can report, though the subtype carries none', async () => {
+    // `hasRect()` is FALSE on all three — measured 2026-09-06 — so the eraser
+    // and the select tool see them through `getBounds`. Without this the three
+    // are invisible to every tool that names an existing annotation.
+    const drawn = await drawnOn(await withText(), command({ annotation: HIGHLIGHT }));
+    const listed = await onSession(drawn, (session) => readAnnotations(session));
+    expect(listed.annotations[0]?.rect).not.toBeNull();
+  });
+});
+
 /** Applies a placement to a fixture and returns the resulting bytes. */
 async function placedIn(
   bytes: Uint8Array,

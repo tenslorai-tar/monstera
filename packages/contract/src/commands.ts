@@ -957,6 +957,61 @@ export type LineEnding = z.infer<typeof lineEndingSchema>;
  * inline object now, a union later — is a schema change that reaches every
  * caller rather than a member added to a list.
  */
+/**
+ * One of the three text markups, as a draft.
+ *
+ * ## Three members from one factory, because the format says they are one thing
+ *
+ * `/Highlight`, `/Underline` and `/StrikeOut` differ in their name and in how a
+ * viewer paints the same quadrilaterals, and in nothing else. Measured
+ * 2026-09-06 against MuPDF 1.28.0: each accepts `addQuadPoint`, each answers
+ * `hasRect()` **false**, and each stores the quads it was given. So one factory
+ * writes all three, and there is no second place for the fourth to drift from.
+ *
+ * They stay **separate members** rather than one member with a `markup` field
+ * for the reason `square` and `circle` are separate: the reader's vocabulary is
+ * derived from this union, and a panel telling somebody *text markup* where the
+ * file says *StrikeOut* would be this build's convenience shown as the
+ * document's content.
+ *
+ * ## TWO POINTS, and the text between them is MuPDF's to decide
+ *
+ * The payload is where the drag started and where it ended — not a rectangle,
+ * and not the quads. *Which characters lie between two points* is a question
+ * the engine already answers, through `StructuredText.highlight`, and a
+ * renderer that computed quads would be a second opinion about it built on a
+ * text layer this application does not have (B3a). The kernel resolves them,
+ * so the intent stays four numbers whatever the page holds.
+ *
+ * **A drag that selects no text is refused**, not stored: a markup annotation
+ * with no quads is an object in the file that paints nothing, which is the
+ * display-only defect at document scale.
+ */
+function textMarkupDraft<T extends 'highlight' | 'underline' | 'strikeout'>(
+  type: T,
+): z.ZodObject<{
+  type: z.ZodLiteral<T>;
+  from: typeof annotationPointSchema;
+  to: typeof annotationPointSchema;
+  colour: typeof annotationColourSchema;
+}> {
+  return z
+    .object({
+      type: z.literal(type),
+      /** Where the drag started, in PDF user space. */
+      from: annotationPointSchema,
+      /** Where it ended. Order is not meaningful — a selection has two ends. */
+      to: annotationPointSchema,
+      /**
+       * `/C`, which on these subtypes is the colour of the paint rather than of
+       * a stroke: a `/Highlight` is filled with it, an `/Underline` and a
+       * `/StrikeOut` draw their rule in it.
+       */
+      colour: annotationColourSchema,
+    })
+    .strict();
+}
+
 export const annotationDraftSchema = z.discriminatedUnion('type', [
   z
     .object({
@@ -1282,10 +1337,14 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
+  textMarkupDraft('highlight'),
+  textMarkupDraft('underline'),
+  textMarkupDraft('strikeout'),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
 export type AnnotationDraft = z.infer<typeof annotationDraftSchema>;
+
 
 /**
  * What a READER may call an annotation it found — every kind this build writes,
@@ -1333,6 +1392,13 @@ export const annotationKindNameSchema = z.enum([
   // name here.
   'polygon',
   'polyline',
+  // THREE NAMES FOR THREE SUBTYPES, unlike the pair above, and the difference is
+  // what the file says: a cloud and a polygon are both `/Polygon`, where these
+  // are `/Highlight`, `/Underline` and `/StrikeOut`. A reader is told what the
+  // object is.
+  'highlight',
+  'underline',
+  'strikeout',
   'other',
 ]);
 

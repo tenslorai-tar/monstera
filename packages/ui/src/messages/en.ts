@@ -293,6 +293,12 @@ export const ANNOTATION_NOTE_TOO_LONG = messageKey('dialog.annotation-note.too-l
 export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const TOOL_CARET_TITLE = messageKey('command.annotate.caret');
+export const ANNOTATIONS_KIND_HIGHLIGHT = messageKey('surface.annotations.kind.highlight');
+export const ANNOTATIONS_KIND_UNDERLINE = messageKey('surface.annotations.kind.underline');
+export const ANNOTATIONS_KIND_STRIKEOUT = messageKey('surface.annotations.kind.strikeout');
+export const HIGHLIGHT_TOOL_TITLE = messageKey('command.annotate.highlight');
+export const UNDERLINE_TOOL_TITLE = messageKey('command.annotate.underline');
+export const STRIKEOUT_TOOL_TITLE = messageKey('command.annotate.strikeout');
 export const ANNOTATIONS_KIND_OTHER = messageKey('surface.annotations.kind.other');
 export const ANNOTATIONS_FOREIGN = messageKey('surface.annotations.foreign');
 export const STATUS_GO_TO = messageKey('surface.status.go-to');
@@ -525,6 +531,14 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // vocabulary applied to a document somebody else wrote.
   [ANNOTATIONS_KIND_POLYGON]: 'Shape',
   [ANNOTATIONS_KIND_POLYLINE]: 'Connected lines',
+  [ANNOTATIONS_KIND_HIGHLIGHT]: 'Highlight',
+  [ANNOTATIONS_KIND_UNDERLINE]: 'Underline',
+  [ANNOTATIONS_KIND_STRIKEOUT]: 'Strikethrough',
+  [HIGHLIGHT_TOOL_TITLE]: 'Highlight text',
+  [UNDERLINE_TOOL_TITLE]: 'Underline text',
+  // *STRIKETHROUGH* IN THE CONTROL AND `/StrikeOut` IN THE FILE. The format's
+  // name is not the word a reader uses, and this row is the reader's.
+  [STRIKEOUT_TOOL_TITLE]: 'Strike through text',
   // ONLY THE FOREIGN ROWS ARE LABELLED, because *this application wrote this*
   // is the ordinary case in a panel a person reached from their own drawing
   // tools, and a badge on every row is a badge nobody reads. What is worth

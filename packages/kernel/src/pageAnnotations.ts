@@ -378,8 +378,24 @@ interface AnnotationKind<D> {
   readonly bounds: (draft: D, transform: PageTransform) => [number, number, number, number];
   /** Whether the shape has no extent of its own. See the note above. */
   readonly degenerate: (draft: D) => boolean;
-  /** Writes everything but the appearance stream. */
-  readonly write: (annotation: PDFAnnotation, draft: D, transform: PageTransform) => void;
+  /**
+   * Writes everything but the appearance stream.
+   *
+   * **The page is a parameter**, and it arrived with the text markups: *which
+   * characters lie between these two points* is a question only the page can
+   * answer, through `StructuredText`. Eight entries ignore it.
+   *
+   * **It may throw**, which the three markups do when a drag selected no text.
+   * {@link applyAddAnnotation} deletes the annotation it had just created
+   * before rethrowing, so this module's stated invariant holds: a refused
+   * command leaves nothing behind.
+   */
+  readonly write: (
+    annotation: PDFAnnotation,
+    draft: D,
+    transform: PageTransform,
+    page: PDFPage,
+  ) => void;
 }
 
 /** One draft, narrowed by its tag. */
@@ -416,6 +432,89 @@ function outlineKind(subtype: PDFAnnotationType): AnnotationKind<OutlineDraft> {
     },
   };
 }
+
+/** The three text markups, which the format says are one thing under three names. */
+type MarkupDraft = DraftOf<'highlight' | 'underline' | 'strikeout'>;
+
+/**
+ * A text-markup entry — the first whose geometry comes out of the PAGE.
+ *
+ * ## MuPDF decides which characters are selected, and that is the point
+ *
+ * `StructuredText.highlight(p, q)` is the engine's own answer to *what text lies
+ * between these two points*, returning one quadrilateral per line of the run.
+ * A renderer computing that would need a text layer this application does not
+ * have, and would be a second opinion about a question MuPDF already owns
+ * (B3a) — one that agrees on a single line of Latin text and disagrees on
+ * everything else.
+ *
+ * Measured 2026-09-06, MuPDF 1.28.0, on a two-line page: a drag across one line
+ * answers one quad and `copy` answers that line's text; a drag spanning both
+ * answers two quads, each the full width of its own line rather than the
+ * rectangle the pointer swept. That is what makes this a text selection rather
+ * than a region.
+ *
+ * ## The quads come back in the DISPLAYED frame, which is where they are stored
+ *
+ * `toStructuredText` works in the same space `setRect` takes, so the two points
+ * go through {@link placedPoints} on the way in and the quads need no
+ * conversion on the way out. There is no second transform here.
+ *
+ * ## An empty selection is REFUSED
+ *
+ * A markup with no quads is an object in the file that paints nothing — the
+ * display-only defect at document scale, and the one a person is most likely to
+ * produce by dragging across a picture. {@link applyAddAnnotation} removes the
+ * annotation it had created before rethrowing.
+ */
+function markupKind(subtype: PDFAnnotationType): AnnotationKind<MarkupDraft> {
+  const ends = (
+    draft: MarkupDraft,
+    transform: PageTransform,
+  ): readonly [[number, number], [number, number]] => {
+    const [from, to] = placedPoints([draft.from, draft.to], transform);
+    if (from === undefined || to === undefined) throw new Error('a drag has two ends');
+    return [from, to];
+  };
+  return {
+    subtype,
+    // THE BOX THE DRAG SWEPT, which is what the off-page test needs. It is not
+    // what gets stored — the quads are wider, being whole lines — and that is
+    // the right way round: a drag entirely off the page selects nothing anyway,
+    // and one that touches it is refused later if it caught no text.
+    bounds: (draft, transform) =>
+      placedRect(
+        { x0: draft.from.x, y0: draft.from.y, x1: draft.to.x, y1: draft.to.y },
+        transform,
+      ),
+    // A CLICK SELECTS NOTHING, which is the same refusal as an empty run and is
+    // made here so the common case never reaches the engine.
+    degenerate: (draft) => draft.from.x === draft.to.x && draft.from.y === draft.to.y,
+    write: (annotation, draft, transform, page): void => {
+      const [from, to] = ends(draft, transform);
+      const quads = page.toStructuredText().highlight(from, to, MAX_MARKUP_QUADS);
+      if (quads.length === 0) {
+        throw new RangeError(
+          'that drag selected no text, so there is nothing to mark. A highlight, an underline ' +
+            'and a strikeout are all runs of text: over a picture, a scanned page or a margin ' +
+            'there is nothing for them to name.',
+        );
+      }
+      for (const quad of quads) annotation.addQuadPoint(quad);
+      annotation.setColor([...draft.colour]);
+    },
+  };
+}
+
+/**
+ * How many lines one markup may span.
+ *
+ * `MAX_GESTURE_POINTS`' kind of bound on a different noun: a person dragging
+ * across a page selects tens of lines and a hostile document cannot make the
+ * number grow, since it is bounded by what is on the page. Far past a sweep and
+ * short of a payload nobody meant.
+ */
+const MAX_MARKUP_QUADS = 4096;
 
 const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T>> } = {
   square: outlineKind('Square'),
@@ -707,6 +806,9 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // legal for half its values.
     },
   },
+  highlight: markupKind('Highlight'),
+  underline: markupKind('Underline'),
+  strikeout: markupKind('StrikeOut'),
 };
 
 /**
@@ -792,7 +894,18 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
     }
 
     const annotation = loaded.createAnnotation(kind.subtype);
-    kind.write(annotation, draft, transform);
+    try {
+      kind.write(annotation, draft, transform, loaded);
+    } catch (thrown) {
+      // A REFUSED COMMAND LEAVES NOTHING BEHIND, which is this module's stated
+      // invariant and was free until a `write` could fail. The text markups can:
+      // *which characters lie between two points* is not knowable before the
+      // page is asked, so their refusal cannot happen with the other two.
+      // Without this the page keeps an annotation with no quads — an object
+      // that paints nothing, which is exactly what the refusal is for.
+      loaded.deleteAnnotation(annotation);
+      throw thrown;
+    }
     // THE MARK — one call at the one creation site, rather than a line every
     // entry in `kinds` has to remember. A per-kind mark would be eleven chances
     // to omit one, and the omission's symptom is an annotation of ours that
@@ -921,6 +1034,11 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   // would be this build's tool vocabulary applied to somebody else's document.
   Polygon: 'polygon',
   PolyLine: 'polyline',
+  // THREE NAMES FOR THREE SUBTYPES, unlike the pair above: a cloud and a
+  // polygon are both `/Polygon`, and these are genuinely different objects.
+  Highlight: 'highlight',
+  Underline: 'underline',
+  StrikeOut: 'strikeout',
 };
 
 /**

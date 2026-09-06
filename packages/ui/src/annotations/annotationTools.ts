@@ -4,6 +4,7 @@ import { eraserTool } from './eraserTool.js';
 import { pointTools } from './pointTools.js';
 import type { SelectDeps } from './selectTool.js';
 import { selectTool } from './selectTool.js';
+import { textMarkupTools } from './textMarkupTools.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
 import { textBoxTool } from './textTools.js';
@@ -43,6 +44,7 @@ export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
     textBoxTool(deps),
     ...pointTools(deps),
     ...vertexTools,
+    ...textMarkupTools,
     eraserTool(deps),
     selectTool(deps),
   ];

@@ -12,6 +12,11 @@ import {
 import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
 import type { AnnotationSelection } from '../annotations/selectTool.js';
 import { SELECT_TOOL_ID } from '../annotations/selectTool.js';
+import {
+  HIGHLIGHT_TOOL_ID,
+  STRIKEOUT_TOOL_ID,
+  UNDERLINE_TOOL_ID,
+} from '../annotations/textMarkupTools.js';
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
 import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
@@ -25,6 +30,7 @@ import {
   DELETE_SELECTION_TITLE,
   ELLIPSE_TOOL_TITLE,
   ERASER_TOOL_TITLE,
+  HIGHLIGHT_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
   NUDGE_DOWN_TITLE,
@@ -36,9 +42,11 @@ import {
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
   SELECT_TOOL_TITLE,
+  STRIKEOUT_TOOL_TITLE,
   TOOL_CARET_TITLE,
   TOOL_STICKY_NOTE_TITLE,
   TOOL_TEXT_BOX_TITLE,
+  UNDERLINE_TOOL_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
@@ -212,6 +220,26 @@ export function polygonToolCommand(deps: ToolCommandDeps): UiCommand {
 
 export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 50, deps);
+}
+
+/**
+ * The three text markups' commands.
+ *
+ * Registrations, and the tools behind them are three ordinary drag tools — which
+ * is the row's own finding rather than this file's: the text layer these were
+ * expected to need turned out to belong to MuPDF, so the platform, this file and
+ * the overlay are all untouched.
+ */
+export function highlightToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(HIGHLIGHT_TOOL_ID, HIGHLIGHT_TOOL_TITLE, 36, deps);
+}
+
+export function underlineToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(UNDERLINE_TOOL_ID, UNDERLINE_TOOL_TITLE, 37, deps);
+}
+
+export function strikeoutToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(STRIKEOUT_TOOL_ID, STRIKEOUT_TOOL_TITLE, 38, deps);
 }
 
 /**
@@ -415,5 +443,8 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     cloudToolCommand(deps),
     eraserToolCommand(deps),
     selectToolCommand(deps),
+    highlightToolCommand(deps),
+    underlineToolCommand(deps),
+    strikeoutToolCommand(deps),
   ];
 }
