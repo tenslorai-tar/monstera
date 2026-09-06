@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
+import type { ListedAnnotation } from './pageAnnotations.js';
 import {
   applyAddAnnotation,
   applyRemoveAnnotation,
@@ -82,6 +83,7 @@ async function fixture({
   content,
   field,
   claimsAuthored,
+  unplaceable,
 }: {
   readonly crop?: readonly number[];
   readonly rotate?: number;
@@ -93,6 +95,12 @@ async function fixture({
    * value, which is what a document claiming the mark badly looks like.
    */
   readonly claimsAuthored?: boolean;
+  /**
+   * Gives the page a `/CropBox` that does not overlap its `/MediaBox`, so it
+   * displays no region at all — which is a document a reader may be handed and
+   * not a state this build can produce.
+   */
+  readonly unplaceable?: boolean;
 } = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([...MEDIA]);
@@ -119,6 +127,14 @@ async function fixture({
     page.node.set(PDFName.of('CropBox'), box);
   }
   if (rotate !== undefined) page.node.set(PDFName.of('Rotate'), PDFNumber.of(rotate));
+  if (unplaceable === true) {
+    const box = PDFArray.withContext(document.context);
+    // ENTIRELY BESIDE THE MEDIA BOX, so the intersection is empty. A degenerate
+    // box would be caught by a width test and this one is not — it is four
+    // ordinary numbers describing a region the page does not contain.
+    for (const value of [900, 900, 1000, 1000]) box.push(PDFNumber.of(value));
+    page.node.set(PDFName.of('CropBox'), box);
+  }
   if (foreign === true) {
     // AN ANNOTATION THIS BUILD DID NOT AUTHOR, carrying keys it never writes.
     // `/T` and `/Contents` are a person's name and note; `/Sound` is nonsense on
@@ -292,6 +308,33 @@ async function drawnOn(
   }
 }
 
+/**
+ * A listed annotation without its rectangle.
+ *
+ * The place is asserted by the cases whose subject IS the place, against the
+ * three fixtures that separate the transform's terms. Everywhere else it would
+ * be a measured number sitting in a case about numbering, kinds or provenance —
+ * read from whichever run first produced it, which is how a fixture stops being
+ * a specification and becomes a recording.
+ *
+ * **The cost, stated: these cases are blind to a field added later.** The five
+ * names are written out rather than spread-minus-one, so a sixth member of
+ * `ListedAnnotation` arrives here unasserted instead of turning every case red.
+ * That is the trade — a new field owes its own cases, as `authored` and `rect`
+ * both did.
+ */
+function withoutPlace(listed: {
+  readonly annotations: readonly ListedAnnotation[];
+}): readonly Omit<ListedAnnotation, 'rect'>[] {
+  return listed.annotations.map((entry) => ({
+    page: entry.page,
+    index: entry.index,
+    kind: entry.kind,
+    contents: entry.contents,
+    authored: entry.authored,
+  }));
+}
+
 /** Runs `work` against an open session, closing it whatever happens. */
 async function onSession<T>(
   bytes: Uint8Array,
@@ -425,7 +468,7 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
       await drawnOn(await fixture(), command({ annotation: TEXT_BOX })),
       (session) => readAnnotations(session),
     );
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'text-box', contents: 'see figure 3', authored: true },
     ]);
   });
@@ -609,7 +652,7 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
       '/Ink',
     ]);
     const listed = await onSession(both, (session) => readAnnotations(session));
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'sticky-note', contents: 'check this figure', authored: true },
       { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
@@ -628,7 +671,7 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
 
     expect((await readBack(after)).map((entry) => entry.subtype)).toStrictEqual(['/Ink']);
     const listed = await onSession(after, (session) => readAnnotations(session));
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
   });
@@ -646,7 +689,7 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     );
     expect((await readBack(both)).map((entry) => entry.subtype)).toStrictEqual(['/Caret', '/Ink']);
     const listed = await onSession(both, (session) => readAnnotations(session));
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'caret', contents: '', authored: true },
       { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
@@ -845,7 +888,7 @@ describe('applyAddAnnotation writes the vertex shapes the format defines', () =>
       ),
       (session) => readAnnotations(session),
     );
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'polygon', contents: '', authored: true },
       { page: 0, index: 1, kind: 'polyline', contents: '', authored: true },
     ]);
@@ -864,7 +907,7 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
     const after = await onSession(await removedFrom(both, 0, 0), (session) =>
       readAnnotations(session),
     );
-    expect(after.annotations).toStrictEqual([
+    expect(withoutPlace(after)).toStrictEqual([
       { page: 0, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
   });
@@ -886,7 +929,7 @@ describe('applyRemoveAnnotation takes the annotation the handle names', () => {
     const after = await onSession(await removedFrom(withField, 0, 0), (session) =>
       readAnnotations(session),
     );
-    expect(after.annotations).toStrictEqual([
+    expect(withoutPlace(after)).toStrictEqual([
       { page: 0, index: 0, kind: 'ink', contents: '', authored: true },
     ]);
 
@@ -1281,7 +1324,7 @@ describe('readAnnotations', () => {
     const listed = await onSession(twice, (session) => readAnnotations(session));
 
     expect(listed.truncated).toBe(false);
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'square', contents: '', authored: true },
       { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
@@ -1307,7 +1350,7 @@ describe('readAnnotations', () => {
     const listed = await onSession(await fixture({ foreign: true }), (session) =>
       readAnnotations(session),
     );
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       {
         page: 0,
         index: 0,
@@ -1332,7 +1375,7 @@ describe('readAnnotations', () => {
       command({ annotation: INK }),
     );
     const listed = await onSession(drawn, (session) => readAnnotations(session));
-    expect(listed.annotations).toStrictEqual([
+    expect(withoutPlace(listed)).toStrictEqual([
       { page: 0, index: 0, kind: 'square', contents: '', authored: true },
       { page: 0, index: 1, kind: 'ink', contents: '', authored: true },
     ]);
@@ -1356,6 +1399,129 @@ describe('readAnnotations', () => {
   it('reports an empty document as empty rather than refusing', async () => {
     const listed = await onSession(await fixture(), (session) => readAnnotations(session));
     expect(listed).toStrictEqual({ annotations: [], truncated: false });
+  });
+});
+
+/**
+ * Where the walk says an annotation IS — the read half of the coordinate
+ * boundary this file exists for.
+ *
+ * `getRect` answers in the page's **displayed** space, and the channel carries
+ * PDF user space, so the reader converts. The three fixtures are the same three
+ * the placement cases use and for the same reason: on an upright page whose box
+ * starts at the origin, a reader that forgot to convert at all is wrong only in
+ * y, and a reader that converted with the wrong rotation or the wrong origin is
+ * not wrong at all.
+ *
+ * **The expectation is the rectangle the COMMAND named**, which is the
+ * separating assertion rather than a convenience — a round trip through MuPDF's
+ * own API agrees with itself in whichever space the caller believed it was in,
+ * so the only thing that can catch a missing inverse is the number that went in.
+ */
+describe('readAnnotations reports where an annotation is', () => {
+  const DRAWN = { x0: 10, y0: 20, x1: 110, y1: 70 };
+
+  it('answers in PDF user space on an upright page', async () => {
+    const listed = await onSession(
+      await drawnOn(await fixture(), command({ annotation: { ...SQUARE, rect: DRAWN } })),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.rect).toStrictEqual(DRAWN);
+  });
+
+  it('answers in PDF user space on a ROTATED page', async () => {
+    // The rotation term. Without it the box comes back with its axes swapped,
+    // which is a rectangle on the page and the wrong one.
+    const listed = await onSession(
+      await drawnOn(
+        await fixture({ rotate: 90 }),
+        command({ annotation: { ...SQUARE, rect: DRAWN } }),
+      ),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.rect).toStrictEqual(DRAWN);
+  });
+
+  it('answers in PDF user space on a CROPPED page', async () => {
+    // The translation term. `/CropBox [50 100 250 400]` against a
+    // `/MediaBox [0 0 200 300]` leaves a visible region 150 by 200 whose corner
+    // is at (50, 300) — so a reader that ignored the crop origin is out by
+    // exactly that corner.
+    const listed = await onSession(
+      await drawnOn(
+        await fixture({ crop: [50, 100, 250, 400] }),
+        command({ annotation: { ...SQUARE, rect: { x0: 60, y0: 120, x1: 160, y1: 170 } } }),
+      ),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations[0]?.rect).toStrictEqual({ x0: 60, y0: 120, x1: 160, y1: 170 });
+  });
+
+  it('answers for a subtype the format gives NO /Rect at all', async () => {
+    // MEASURED 2026-09-06: `getRect` on an Ink, a Line, a Polygon or a PolyLine
+    // is REFUSED — *"Ink annotations have no Rect property"* — because the
+    // rectangle is computed from the geometry rather than stored. This is the
+    // case that found it: the reader was written on `getRect` alone and eight
+    // neighbours went red at once.
+    //
+    // The box is asserted as CONTAINING the stroke rather than equalling it,
+    // because `getBounds` is the appearance's box and carries the border. What
+    // it must not be is absent, or somewhere else on the page.
+    const listed = await onSession(
+      await drawnOn(await fixture(), command({ annotation: INK })),
+      (session) => readAnnotations(session),
+    );
+    const rect = listed.annotations[0]?.rect;
+    expect(rect).not.toBeNull();
+    // `INK` runs (10,20) → (40,30) → (70,20), so its box spans x 10–70 and
+    // y 20–30 in PDF space, plus whatever the border adds.
+    expect(rect?.x0).toBeLessThanOrEqual(10);
+    expect(rect?.y0).toBeLessThanOrEqual(20);
+    expect(rect?.x1).toBeGreaterThanOrEqual(70);
+    expect(rect?.y1).toBeGreaterThanOrEqual(30);
+  });
+
+  it('takes the /Rect where there is one, which only a ROTATED page reveals', async () => {
+    // THE CASE THAT SEPARATES `hasRect ? getRect : getBounds` FROM `getBounds`.
+    // A `/Text` at (30, 40) stores `[30 40 40 50]` upright and `[20 40 30 50]`
+    // at `/Rotate 90` — the clamped box anchors on the other side — while
+    // `getBounds` answers `[30 40 46 56]` for both, its icon appearance being
+    // placed without that flip. So on a rotated page the two disagree by ten
+    // points, and on an upright one they do not: a reader written on bounds
+    // alone passes every fixture but this one.
+    //
+    // The expectation is the point the COMMAND named, which is what a note's
+    // hit box must contain.
+    const listed = await onSession(
+      await drawnOn(
+        await fixture({ rotate: 90 }),
+        command({ annotation: { type: 'sticky-note', at: { x: 30, y: 40 }, text: 'x', colour: [1, 0.8, 0.2] } }),
+      ),
+      (session) => readAnnotations(session),
+    );
+    const rect = listed.annotations[0]?.rect;
+    expect(rect?.x0).toBeCloseTo(30, 5);
+    expect(rect?.y1).toBeCloseTo(40, 5);
+  });
+
+  it('answers `null` for a page that displays no region, and still lists the mark', async () => {
+    // A HOSTILE DOCUMENT'S PAGE. The annotation is there and the panel must say
+    // so; there is simply no frame to express its place in. Refusing the whole
+    // read would hide every other page's marks behind this one, and a number
+    // invented here would be a location a surface would act on.
+    const listed = await onSession(await fixture({ foreign: true, unplaceable: true }), (session) =>
+      readAnnotations(session),
+    );
+    expect(listed.annotations).toHaveLength(1);
+    expect(listed.annotations[0]?.rect).toBeNull();
+
+    // THE CONTROL, and it is the one that makes the case mean anything: the
+    // same fixture WITH a box answers a rectangle. Without it, `null` is also
+    // what a reader that never computed one produces.
+    const placed = await onSession(await fixture({ foreign: true }), (session) =>
+      readAnnotations(session),
+    );
+    expect(placed.annotations[0]?.rect).not.toBeNull();
   });
 });
 

@@ -25,6 +25,15 @@ function clientAnswering(
   options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
 ): { client: ContractClient; asked: unknown[] } {
   const asked: unknown[] = [];
+  // THE PLACE, FILLED IN HERE RATHER THAN AT TWELVE CALL SITES. The channel
+  // carries `rect` because the eraser hit-tests against it; this panel reads it
+  // nowhere, so a rectangle in each fixture would be a number every case had to
+  // carry and no case could assert. `null` is a value the channel really
+  // answers — a page that displays no region — and it is the one that would
+  // break a panel which had quietly started depending on a place.
+  const rows = annotations.map((row) =>
+    typeof row === 'object' && row !== null ? { rect: null, ...row } : row,
+  );
   const client = createClient(channels, (id, params) => {
     if (id !== 'document.annotations') throw new Error(`unexpected channel ${id}`);
     asked.push(params);
@@ -33,7 +42,7 @@ function clientAnswering(
         ? err({ code: 'document-poisoned' })
         : ok({
             version: asDocVersion(options.version ?? 1),
-            annotations,
+            annotations: rows,
             truncated: options.truncated ?? false,
           }),
     );

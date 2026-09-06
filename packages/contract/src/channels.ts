@@ -2,7 +2,11 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
-import { annotationKindNameSchema, renderableCommandSchema } from './commands.js';
+import {
+  annotationKindNameSchema,
+  annotationRectSchema,
+  renderableCommandSchema,
+} from './commands.js';
 import { docIdSchema, docVersionSchema, fileHandleSchema } from './schemas.js';
 
 /**
@@ -1308,6 +1312,21 @@ export const channels = {
              * has moved, because across versions this is not an identity.
              */
             index: z.number().int().nonnegative(),
+            /**
+             * Where it is, in **PDF user space** — the frame a draft names, so
+             * a surface converts it with the `PageTransform` it already holds
+             * rather than being handed a second coordinate space.
+             *
+             * **The bounding box, not the shape.** A line's rectangle is the
+             * box its ends span; a point inside it is near the annotation
+             * rather than on it. That is what the eraser hit-tests against.
+             *
+             * **`null` when the page displays no region**, which is a real
+             * state a hostile document can produce. The annotation is still
+             * listed — it is still there — and a surface that needs a place
+             * skips it rather than acting on an invented one.
+             */
+            rect: annotationRectSchema.nullable(),
             /**
              * **A closed union, not the document's `/Subtype`.**
              *

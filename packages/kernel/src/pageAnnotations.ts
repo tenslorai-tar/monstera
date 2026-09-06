@@ -6,7 +6,14 @@ import type {
   CommandOfKind,
   LineEnding,
 } from '@monstera/contract';
-import { type PageTransform, pageTransform, pdfPoint, toViewport } from '@monstera/shared';
+import {
+  type PageTransform,
+  pageTransform,
+  pdfPoint,
+  toPdf,
+  toViewport,
+  viewportPoint,
+} from '@monstera/shared';
 import type {
   PDFAnnotation,
   PDFAnnotationLineEndingStyle,
@@ -93,16 +100,20 @@ function pageAt(document: PDFDocument, page: number, total: number): PDFPage {
   return document.loadPage(page);
 }
 
-/** The page's transform at scale 1, which is the frame MuPDF's annotations use. */
-function transformFor(loaded: PDFPage): PageTransform {
+/**
+ * The page's transform at scale 1, or `null` when the page displays no region.
+ *
+ * **Nullable for the READER's sake, and {@link transformFor} throws for the
+ * writer's.** Adding an annotation to a page with no frame is a refusal — there
+ * is nowhere to put it. Listing the annotations already on such a page is not:
+ * they are there, a panel headed *the annotations in this document* must say
+ * so, and refusing the whole document because one page has a broken `/MediaBox`
+ * would hide every other page's marks behind one hostile one.
+ */
+function frameOf(loaded: PDFPage): PageTransform | null {
   const object = loaded.getObject();
   const box = displayedBox(object);
-  if (box === null) {
-    throw new RangeError(
-      'this page displays no region — it has no /MediaBox of four numbers, or its /CropBox and ' +
-        '/MediaBox do not overlap — so there is no frame to place an annotation in',
-    );
-  }
+  if (box === null) return null;
   // The EFFECTIVE rotation, snapped, exactly as `readPageGeometry` reads it and
   // through the same function: the renderer drew the page turned, so the frame
   // the user pointed in is the turned one. `getInheritable` because a page may
@@ -110,6 +121,18 @@ function transformFor(loaded: PDFPage): PageTransform {
   const inherited = object.getInheritable('Rotate');
   const rotation = inherited.isNumber() ? snapRotation(inherited.asNumber()) : 0;
   return pageTransform(box, rotation, 1);
+}
+
+/** {@link frameOf}, refusing rather than answering `null`. What a write needs. */
+function transformFor(loaded: PDFPage): PageTransform {
+  const frame = frameOf(loaded);
+  if (frame === null) {
+    throw new RangeError(
+      'this page displays no region — it has no /MediaBox of four numbers, or its /CropBox and ' +
+        '/MediaBox do not overlap — so there is no frame to place an annotation in',
+    );
+  }
+  return frame;
 }
 
 /**
@@ -141,6 +164,67 @@ function placedRect(
   const a = toViewport(pdfPoint(rect.x0, rect.y0), transform);
   const b = toViewport(pdfPoint(rect.x1, rect.y1), transform);
   return [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
+}
+
+/**
+ * Where an existing annotation is, in **PDF user space** — {@link placedRect}
+ * run backwards.
+ *
+ * `PDFAnnotation.getRect` answers in the page's *displayed* space, which is the
+ * space `setRect` takes and not the space a command names: y down, after
+ * rotation, origin at the visible box's corner. Measured 2026-09-05 and
+ * recorded at the top of this file, where the whole coordinate boundary is.
+ *
+ * **So the reader converts, and it converts through the same transform the
+ * writer used.** A rectangle answered in MuPDF's frame would be a second
+ * coordinate space crossing the contract — and it would agree with the writer's
+ * on exactly the fixture every early case uses, an upright page whose box
+ * starts at the origin, which is the wired-tools rule's blind spot arriving on
+ * the read side.
+ *
+ * Normalised after the conversion, for {@link placedRect}'s reason: every
+ * rotation but 0 reverses an axis and the y-flip reverses the other, so the
+ * corner that was smallest coming in is not the corner that is smallest going
+ * out.
+ *
+ * ## `getRect` IS REFUSED BY FOUR OF THE NINE SUBTYPES THIS BUILD WRITES
+ *
+ * Measured 2026-09-06, MuPDF 1.28.0, on a `/MediaBox [0 0 200 300]` page at
+ * rotation 0 and 90. The same refusal family as `Polygon.setRect` — the
+ * annotation's rectangle is *computed from* its geometry, so the format has no
+ * `/Rect` to hand back:
+ *
+ * | subtype | `hasRect` | `getRect` | `getBounds` |
+ * |---|---|---|---|
+ * | `Square`, `FreeText`, `Redact` | true | the rectangle it was given | that, outset by the border |
+ * | `Text`, `Caret` | true | the clamped box MuPDF chose | a larger icon box |
+ * | `Ink`, `Line`, `Polygon`, `PolyLine` | **false** | ***"X annotations have no Rect property"*** | the appearance's box |
+ *
+ * So the reader asks `hasRect` and takes `getBounds` for the rest — which is
+ * the *appearance's* box, generous by the border width, and correct in the same
+ * space.
+ *
+ * **`getBounds` alone would have been wrong, and only on a rotated page.**
+ * A `/Text` placed at (30, 40) answers `getRect` `[30 40 40 50]` upright and
+ * `[20 40 30 50]` at `/Rotate 90` — the clamped box anchors on the other side —
+ * while `getBounds` answers `[30 40 46 56]` for **both**, because its icon
+ * appearance is placed without that flip. Taking bounds everywhere would put a
+ * sticky note's hit box ten points off, on rotated pages only, which is a
+ * fixture almost nobody writes. `hasRect` is what keeps the accurate answer
+ * where the format has one.
+ */
+function readRect(annotation: PDFAnnotation, transform: PageTransform): AnnotationRect {
+  const [x0, y0, x1, y1] = annotation.hasRect()
+    ? annotation.getRect()
+    : annotation.getBounds();
+  const a = toPdf(viewportPoint(x0, y0), transform);
+  const b = toPdf(viewportPoint(x1, y1), transform);
+  return {
+    x0: Math.min(a.x, b.x),
+    y0: Math.min(a.y, b.y),
+    x1: Math.max(a.x, b.x),
+    y1: Math.max(a.y, b.y),
+  };
 }
 
 /**
@@ -731,6 +815,24 @@ export interface ListedAnnotation {
    * annotation carries that version and is refused when the document has moved.
    */
   readonly index: number;
+  /**
+   * Where it is, in **PDF user space** — the same frame a draft names, so the
+   * surface converts it with the transform it already holds.
+   *
+   * **The bounding box, not the shape.** A `/Line`'s rect is the box its two
+   * ends span and a `/Polygon`'s is the box around its vertices, so a point
+   * inside this is near the annotation rather than on it. That is what an
+   * eraser hit-tests against, and it is stated rather than refined: testing the
+   * geometry would mean the renderer re-deriving each subtype's shape from a
+   * rectangle that does not carry it.
+   *
+   * **`null` when the page displays no region** — no `/MediaBox` of four
+   * numbers, or a `/CropBox` that does not overlap it. The annotation is still
+   * listed, because it is still there; there is simply no frame to express its
+   * place in, and a number invented for that case would be a location a surface
+   * would act on.
+   */
+  readonly rect: AnnotationRect | null;
   readonly kind: AnnotationKindName;
   /**
    * The annotation's `/Contents`, or the empty string.
@@ -816,11 +918,17 @@ export function readAnnotations(
       // entry — at which point a handle would name the annotation after the one
       // the caller was shown, which is the failure mode with no symptom.
       let index = 0;
-      for (const annotation of document.loadPage(page).getAnnotations()) {
+      const loaded = document.loadPage(page);
+      // ONE TRANSFORM PER PAGE, resolved before the walk rather than inside it:
+      // it is the page's, not the annotation's, and building it per entry would
+      // read the boxes once per mark on a page that may carry hundreds.
+      const transform = frameOf(loaded);
+      for (const annotation of loaded.getAnnotations()) {
         if (found.length >= MAX_LISTED) return { annotations: found, truncated: true };
         found.push({
           page,
           index: index++,
+          rect: transform === null ? null : readRect(annotation, transform),
           // `?? 'other'` IS THE WHOLE POINT of the closed union: a subtype this
           // build cannot name is listed rather than dropped, because a panel
           // that silently omitted a document's own comments would be worse than

@@ -8,6 +8,7 @@ import {
   RECTANGLE_TOOL_ID,
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
+import { ERASER_TOOL_ID } from '../annotations/eraserTool.js';
 import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
 import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
@@ -19,6 +20,7 @@ import {
   ARROW_TOOL_TITLE,
   CLOUD_TOOL_TITLE,
   ELLIPSE_TOOL_TITLE,
+  ERASER_TOOL_TITLE,
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
   POLYGON_TOOL_TITLE,
@@ -187,6 +189,20 @@ export function polylineToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(POLYLINE_TOOL_ID, POLYLINE_TOOL_TITLE, 50, deps);
 }
 
+/**
+ * The eraser's command.
+ *
+ * The twelfth from the same factory, and the tool behind it is the first that
+ * READS the document rather than only drawing on it — which reaches this file as
+ * nothing at all. Selecting a tool has never depended on what the tool needs,
+ * and the eraser is the strongest evidence for that: it holds a channel read,
+ * answers later, and names an object that already exists, and its registration
+ * is one line the same shape as the rectangle's.
+ */
+export function eraserToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(ERASER_TOOL_ID, ERASER_TOOL_TITLE, 52, deps);
+}
+
 export function cloudToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(CLOUD_TOOL_ID, CLOUD_TOOL_TITLE, 51, deps);
 }
@@ -223,5 +239,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     polygonToolCommand(deps),
     polylineToolCommand(deps),
     cloudToolCommand(deps),
+    eraserToolCommand(deps),
   ];
 }

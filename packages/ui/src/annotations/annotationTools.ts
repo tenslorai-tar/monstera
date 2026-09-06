@@ -1,4 +1,6 @@
 import type { UiTool } from '../registries/tools.js';
+import type { EraserDeps } from './eraserTool.js';
+import { eraserTool } from './eraserTool.js';
 import { pointTools } from './pointTools.js';
 import { shapeTools } from './shapeTools.js';
 import type { TextToolDeps } from './textTools.js';
@@ -33,6 +35,28 @@ import { vertexTools } from './vertexTools.js';
  * Passing them through keeps this a list rather than a component with state,
  * which is what lets a case call it with a stub.
  */
-export function annotationTools(deps: TextToolDeps): readonly UiTool[] {
-  return [...shapeTools, textBoxTool(deps), ...pointTools(deps), ...vertexTools];
+export function annotationTools(deps: AnnotationToolDeps): readonly UiTool[] {
+  return [
+    ...shapeTools,
+    textBoxTool(deps),
+    ...pointTools(deps),
+    ...vertexTools,
+    eraserTool(deps),
+  ];
 }
+
+/**
+ * Everything any annotation tool needs from the application.
+ *
+ * **One bag rather than a parameter per tool**, and it stays that way for the
+ * reason it started that way: the composition is a list, and a signature that
+ * grew a field per tool would make the composition root know which tool needs
+ * what — the knowledge the registry exists to hold in one place. A tool that
+ * needs neither takes it and reads nothing.
+ *
+ * The two members are genuinely different questions, which is why this is an
+ * intersection rather than one interface: `ask` puts something to a person, and
+ * `annotations` asks the document. The eraser is the first tool to need the
+ * second, and the first to need anything about the document at all.
+ */
+export type AnnotationToolDeps = TextToolDeps & EraserDeps;

@@ -2,6 +2,7 @@ import {
   type CommandKind,
   addAnnotationSchema,
   annotationKindNameSchema,
+  annotationRectSchema,
   channel,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -264,6 +265,12 @@ const engineAnnotationSchema = z
      * useless if the host answers with a list nothing can point into.
      */
     index: z.number().int().nonnegative(),
+    /**
+     * Where it is, in PDF user space, or `null` for a page that displays no
+     * region. The eraser hit-tests against it, so it crosses for the handle's
+     * reason: a surface cannot point at an annotation it cannot locate.
+     */
+    rect: annotationRectSchema.nullable(),
     // THE CONTRACT'S ENUM, and this was the FIFTH place the same list of names
     // was written down — the draft union that defines them, the renderer
     // channel, the kernel's derived alias, the panel's interface, and here.

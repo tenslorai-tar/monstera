@@ -273,6 +273,7 @@ export const ANNOTATIONS_KIND_POLYLINE = messageKey('surface.annotations.kind.po
 export const POLYGON_TOOL_TITLE = messageKey('command.annotate.polygon');
 export const POLYLINE_TOOL_TITLE = messageKey('command.annotate.polyline');
 export const CLOUD_TOOL_TITLE = messageKey('command.annotate.cloud');
+export const ERASER_TOOL_TITLE = messageKey('command.annotate.eraser');
 export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
 export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
 export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
@@ -526,6 +527,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [POLYGON_TOOL_TITLE]: 'Polygon',
   [POLYLINE_TOOL_TITLE]: 'Connected lines',
   [CLOUD_TOOL_TITLE]: 'Cloud',
+  // *ERASE ANNOTATION* RATHER THAN *ERASER*, because this removes a whole mark
+  // and does not rub away part of a stroke — which is what an eraser does in
+  // every drawing application a reader is coming from. The control says what
+  // happens; the row's name is not the promise.
+  [ERASER_TOOL_TITLE]: 'Erase annotation',
   [ANNOTATION_TEXT_TITLE]: 'Text box',
   [ANNOTATION_TEXT_LABEL]: 'Text',
   [ANNOTATION_TEXT_APPLY]: 'Add text box',

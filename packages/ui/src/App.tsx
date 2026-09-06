@@ -698,14 +698,33 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
+  /**
+   * Reading every annotation in the open document, for the eraser.
+   *
+   * **A read, not a dispatch**, which is why it is here rather than a second
+   * path through `applyDocumentCommand`: the tool has to find out what is under
+   * the pointer before it can name it, and the answer carries the version its
+   * own handle needs. `AnnotationsPanel` asks the same channel for its own
+   * reasons — many readers of one authority is what B3a permits, and neither
+   * derives anything the other does.
+   *
+   * `undefined` covers *no document* and *the read was refused* together,
+   * because the tool has nothing different to do with them: both mean there is
+   * nothing to erase, and a refusal is reported where every other one is.
+   */
+  const listAnnotations = useCallback(async () => {
+    if (activeId === undefined) return undefined;
+    const answer = await client['document.annotations']({ docId: activeId });
+    return answer.ok ? answer.value : undefined;
+  }, [activeId, client]);
   // THE TEXT TOOL IS CONSTRUCTED WITH `ask`, which is what makes it different
   // from the six beside it and the only thing about it this line knows. A tool
   // whose intent is not complete until a person supplies part of it holds the
   // means to ask, exactly as `deletePagesCommand(deps)` does — see
   // `textTools.ts` for why that is not a fourth parameter on `commit`.
   const tools = useMemo(
-    () => new ToolRegistry(annotationTools({ ask })),
-    [ask],
+    () => new ToolRegistry(annotationTools({ ask, annotations: listAnnotations })),
+    [ask, listAnnotations],
   );
 
   const rulers = useSetting(settings, RULERS_SETTING);

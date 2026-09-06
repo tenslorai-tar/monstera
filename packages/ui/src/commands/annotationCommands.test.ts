@@ -155,7 +155,10 @@ describe('rectangleToolCommand', () => {
     const { annotationTools } = await import('../annotations/annotationTools.js');
     const ask = (): Promise<undefined> => Promise.resolve(undefined);
 
-    const toolIds = annotationTools({ ask }).map((tool) => tool.id);
+    const toolIds = annotationTools({
+      ask,
+      annotations: () => Promise.resolve(undefined),
+    }).map((tool) => tool.id);
     const commandIds = shapeToolCommands({
       activeTool: () => undefined,
       onSelect: () => undefined,
