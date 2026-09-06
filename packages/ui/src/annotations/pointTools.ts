@@ -11,9 +11,10 @@ import type { TextToolDeps } from './textTools.js';
 /**
  * The point tools — the first whose gesture is a CLICK rather than a drag.
  *
- * One of them today. The file is plural because the caret is the next row and
- * needs nothing this does not already hold, which is the click gesture's whole
- * claim; a module named for one tool would have to be renamed to make it.
+ * Two of them, and the second arrived as a registration: the caret needed a
+ * colour, a factory-free entry and nothing else from this file. That is the
+ * click gesture's claim paid rather than stated — the first click tool cost the
+ * platform nothing and the second cost this module twenty lines.
  *
  * ## The click gesture needed nothing new, and that is the finding
  *
@@ -63,14 +64,26 @@ import type { TextToolDeps } from './textTools.js';
  */
 const NOTE_COLOUR: AnnotationColour = [1, 0.8, 0.2];
 
-/** The id, shared with the command that selects this tool. */
+/**
+ * What a caret is drawn in.
+ *
+ * The shape tools' red rather than the note's yellow, and the difference is
+ * what each mark is FOR: an insertion mark is a correction on the document —
+ * the one place a reviewing hand's colour is the right one — where a note is a
+ * comment beside it.
+ */
+const CARET_COLOUR: AnnotationColour = [0.85, 0.15, 0.15];
+
+/** The ids, shared with the commands that select these tools. */
 export const STICKY_NOTE_TOOL_ID = 'annotate.sticky-note';
+export const CARET_TOOL_ID = 'annotate.caret';
 
 /**
  * A click tool's preview: none.
  *
- * Named rather than inlined because it is a decision this file makes on behalf
- * of every click tool, and the next one arrives with the caret.
+ * Written once and shared, because both tools mean the same thing by it and a
+ * pair of identical arrow functions in one file is two places to change on the
+ * day that stops being true.
  */
 const noPreview = (): ToolPreview | undefined => undefined;
 
@@ -135,7 +148,33 @@ export function stickyNoteTool(deps: TextToolDeps): UiTool {
   return { id: STICKY_NOTE_TOOL_ID, controller };
 }
 
+/**
+ * The caret — a mark that says something belongs here, and asks nothing.
+ *
+ * A VALUE rather than a factory, unlike every tool beside it, and that is the
+ * difference worth seeing rather than smoothing over: a factory exists to
+ * capture dependencies, and this tool has none. It is the only annotation this
+ * build writes whose whole intent is the gesture, so its `commit` answers now
+ * and the registry holds one instance of it.
+ */
+export const caretTool: UiTool = {
+  id: CARET_TOOL_ID,
+  controller: {
+    ...pointerPath,
+    commit: (
+      gesture: Gesture,
+      page: number,
+      transform: PageTransform,
+    ): RenderableCommand | undefined => ({
+      kind: 'addAnnotation',
+      page,
+      annotation: { type: 'caret', at: clickedAt(gesture, transform), colour: CARET_COLOUR },
+    }),
+    preview: noPreview,
+  },
+};
+
 /** Every point tool, in the order their controls appear. */
 export function pointTools(deps: TextToolDeps): readonly UiTool[] {
-  return [stickyNoteTool(deps)];
+  return [stickyNoteTool(deps), caretTool];
 }

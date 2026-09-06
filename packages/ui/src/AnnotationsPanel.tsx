@@ -5,6 +5,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 
 import {
   ANNOTATIONS_EMPTY,
+  ANNOTATIONS_KIND_CARET,
   ANNOTATIONS_KIND_CIRCLE,
   ANNOTATIONS_KIND_INK,
   ANNOTATIONS_KIND_LINE,
@@ -218,8 +219,11 @@ const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
   redact: ANNOTATIONS_KIND_REDACT,
   'text-box': ANNOTATIONS_KIND_TEXT_BOX,
   // *NOTE* AND NOT *STICKY NOTE*, which is the tool's name rather than the
-  // object's. A reader scanning this list is being told what is on the page.
+  // object's. A reader scanning this list is being told what is on the page —
+  // and *Insertion mark* likewise says what a caret MEANS in a marked-up
+  // document, where *Caret* names the glyph it happens to be drawn as.
   'sticky-note': ANNOTATIONS_KIND_STICKY_NOTE,
+  caret: ANNOTATIONS_KIND_CARET,
   other: ANNOTATIONS_KIND_OTHER,
 };
 

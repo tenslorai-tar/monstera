@@ -8,7 +8,7 @@ import {
   RECTANGLE_TOOL_ID,
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
-import { STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
+import { CARET_TOOL_ID, STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
 import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
   ARROW_TOOL_TITLE,
@@ -17,6 +17,7 @@ import {
   LINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  TOOL_CARET_TITLE,
   TOOL_STICKY_NOTE_TITLE,
   TOOL_TEXT_BOX_TITLE,
 } from '../messages/en.js';
@@ -147,6 +148,17 @@ export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The caret's command.
+ *
+ * The ninth built from the same factory, and the tool behind it is the only one
+ * with no dependencies at all — which reaches this file as nothing, because
+ * selecting a tool never depended on what the tool needs.
+ */
+export function caretToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(CARET_TOOL_ID, TOOL_CARET_TITLE, 48, deps);
+}
+
+/**
  * Every annotation tool's command.
  *
  * A list rather than eight call sites at the composition point, for the reason
@@ -174,5 +186,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     redactToolCommand(deps),
     textBoxToolCommand(deps),
     stickyNoteToolCommand(deps),
+    caretToolCommand(deps),
   ];
 }

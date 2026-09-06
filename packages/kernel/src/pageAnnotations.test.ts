@@ -434,6 +434,15 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     colour: [1, 0.8, 0.2],
   };
 
+  const CARET: Extract<AnnotationDraft, { type: 'caret' }> = {
+    type: 'caret',
+    // THE SAME POINT AS THE NOTE, deliberately, so the two stored boxes can be
+    // compared directly. That comparison is the whole reason these are separate
+    // table entries: one clamps and one does not, from one input.
+    at: { x: 40, y: 200 },
+    colour: [0.85, 0.15, 0.15],
+  };
+
   /** `/Name`, which is the icon a `/Text` draws. Absent on every other subtype. */
   async function iconOf(bytes: Uint8Array): Promise<string | null> {
     const document = await PDFDocument.load(bytes, { updateMetadata: false });
@@ -464,6 +473,34 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     const stored = await readBack(await drawnOn(await fixture(), command({ annotation: NOTE })));
     expect(stored[0]?.subtype).toBe('/Text');
     expect(stored[0]?.bounds).toStrictEqual([40, 190, 50, 200]);
+  });
+
+  it('CENTRES a caret on the point, in a fixed 20 by 14 that is not the note’s box', async () => {
+    // THE SECOND RULE, and the case exists because the first one passing says
+    // nothing about it. From the SAME point (40, 200) the note stores
+    // `[40 190 50 200]` — a 10-square box hanging off the corner — and a caret
+    // stores `[30 193 50 207]`, which is 20 by 14 centred on it. Different
+    // size, different anchor, one input.
+    //
+    // This is what a shared point-shaped helper would have hidden. Both
+    // subtypes take a point and answer with a box, so one function would have
+    // been written against whichever was measured first and would have looked
+    // right; only holding the input constant and comparing the two answers
+    // shows that one of them clamps.
+    const stored = await readBack(await drawnOn(await fixture(), command({ annotation: CARET })));
+    expect(stored[0]?.subtype).toBe('/Caret');
+    expect(stored[0]?.bounds).toStrictEqual([30, 193, 50, 207]);
+  });
+
+  it('gives the caret a colour and none of the three keys MuPDF refuses', async () => {
+    // MEASURED REFUSALS, not omissions: `setIcon` answers *"Caret annotations
+    // have no Name property"*, and `setBorderWidth` and `setDefaultAppearance`
+    // answer likewise. So the entry writing two calls is the whole of what the
+    // writer of record accepts rather than a start somebody should extend.
+    const stored = await readBack(await drawnOn(await fixture(), command({ annotation: CARET })));
+    expect(stored[0]?.colour).toStrictEqual([0.85, 0.15, 0.15]);
+    expect(stored[0]?.borderWidth).toBeNull();
+    expect(stored[0]?.keys).not.toContain('Name');
   });
 
   it('places a note through the CROP ORIGIN, not from the media box', async () => {
@@ -577,6 +614,24 @@ describe('applyAddAnnotation places a point annotation where the click was', () 
     expect(listed.annotations).toStrictEqual([{ page: 0, index: 0, kind: 'ink', contents: '' }]);
   });
 
+  it('CONTROL: a caret writes no popup, so its handle is the plain case', async () => {
+    // THE CONTROL FOR THE TWO CASES ABOVE. Without it *the walk filters the
+    // popup* is asserted only where a popup exists, and an implementation that
+    // filtered something else — or a fixture whose two counts happened to
+    // agree — would read identically. A caret is the same click, the same
+    // point and the same command shape, and MuPDF writes exactly one object
+    // for it: so the array and the walk agree here, and disagree there.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: CARET })),
+      command({ annotation: INK }),
+    );
+    expect((await readBack(both)).map((entry) => entry.subtype)).toStrictEqual(['/Caret', '/Ink']);
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'caret', contents: '' },
+      { page: 0, index: 1, kind: 'ink', contents: '' },
+    ]);
+  });
 });
 
 describe('applyRemoveAnnotation takes the annotation the handle names', () => {

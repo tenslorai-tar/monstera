@@ -1155,6 +1155,38 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       colour: annotationColourSchema,
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Caret` — *something belongs here*, drawn as a wedge between
+       * two characters.
+       *
+       * **The first member with no content at all**, and that is what it is
+       * for: a caret is a proofreader's insertion mark, so the annotation IS
+       * the position. A `text` field would make it a note that happens to be
+       * caret-shaped, and the member above already is one.
+       *
+       * Placed by a point for `sticky-note`'s measured reason and by a
+       * DIFFERENT rule, which is why the two are separate members rather than
+       * one point-shaped shape. A caret is a **genuinely fixed 20 by 14,
+       * centred** on whatever rectangle it is given: measured over the same
+       * seven requested sizes that showed the note's clamp, every one from a
+       * degenerate request to a 60-point one produced the same extent about the
+       * requested centre.
+       *
+       * So one of these two subtypes clamps and the other does not, and both
+       * were nearly written down as *fixed*. A helper that took a point and
+       * produced *the* point annotation would have hidden exactly that — the
+       * clamp is only visible when the two are measured across a range and
+       * their answers compared, which two entries force and one would not.
+       */
+      type: z.literal('caret'),
+      /** The insertion point, in PDF user space. */
+      at: annotationPointSchema,
+      /** What the wedge is drawn in. */
+      colour: annotationColourSchema,
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
@@ -1199,6 +1231,7 @@ export const annotationKindNameSchema = z.enum([
   'redact',
   'text-box',
   'sticky-note',
+  'caret',
   'other',
 ]);
 

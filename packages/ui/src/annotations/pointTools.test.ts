@@ -5,7 +5,13 @@ import { describe, expect, it } from 'vitest';
 import { ANNOTATION_NOTE_DIALOG_ID } from '../dialogs/annotationNote.js';
 import type { UiTool } from '../registries/tools.js';
 import { overlayTransform } from './annotationSpace.js';
-import { STICKY_NOTE_TOOL_ID, pointTools, stickyNoteTool } from './pointTools.js';
+import {
+  CARET_TOOL_ID,
+  STICKY_NOTE_TOOL_ID,
+  caretTool,
+  pointTools,
+  stickyNoteTool,
+} from './pointTools.js';
 
 /**
  * The point tools' controllers, driven without a DOM.
@@ -161,12 +167,64 @@ describe('stickyNoteTool', () => {
   });
 });
 
+describe('caretTool', () => {
+  it('COMMITS WITHOUT ASKING ANYTHING, which is what having no content means', async () => {
+    // The caret is the only annotation this build writes whose whole intent is
+    // the gesture, so its controller has no dependencies. There is no `ask` to
+    // record and that is the assertion: a caret that opened a dialog would be a
+    // sticky note in the wrong shape.
+    expect(await click(caretTool, [20, 20])).toStrictEqual({
+      kind: 'addAnnotation',
+      page: 3,
+      annotation: { type: 'caret', at: { x: 60, y: 390 }, colour: [0.85, 0.15, 0.15] },
+    });
+  });
+
+  it('answers SYNCHRONOUSLY, unlike the other tool in this file', () => {
+    // `commit` may answer now or later and the overlay does not care which — so
+    // this pins the one tool for which *now* is the design rather than a
+    // detail. Read WITHOUT awaiting: a promise fails this rather than resolving
+    // past it, which is what an `await` here would have allowed.
+    const answered = caretTool.controller.commit(
+      caretTool.controller.begin(viewportPoint(20, 20)),
+      3,
+      overlayTransform(PAGE),
+    );
+    expect(answered).not.toBeInstanceOf(Promise);
+    expect(answered).toMatchObject({ kind: 'addAnnotation' });
+  });
+
+  it('takes the point the pointer went down at', async () => {
+    // The click gesture's rule again, on the tool that has no dialog in the way
+    // of it. Same fixture, same fifty document units between the two points.
+    expect(await click(caretTool, [20, 20], [120, 80])).toMatchObject({
+      annotation: { at: { x: 60, y: 390 } },
+    });
+  });
+
+  it('previews nothing, at any point in the gesture', () => {
+    const started = caretTool.controller.begin(viewportPoint(20, 20));
+    expect(caretTool.controller.preview(started)).toBeUndefined();
+    expect(
+      caretTool.controller.preview(caretTool.controller.update(started, viewportPoint(120, 80))),
+    ).toBeUndefined();
+  });
+
+  it('claims the id its command selects', () => {
+    expect(caretTool.id).toBe(CARET_TOOL_ID);
+  });
+});
+
 describe('pointTools', () => {
-  it('registers the sticky note, which is every click tool there is today', () => {
-    // A COUNT, so the caret arriving is a visible edit here rather than a
-    // silent one. `App.tsx` spreads this list into the registry, and a tool
-    // added to the file but left out of the list would be code nothing mounts.
+  it('registers both click tools, so one left out of the list is red here', () => {
+    // `App.tsx` spreads this list into the registry, so a tool written in this
+    // file and missing from it is code nothing mounts. The command-side join
+    // in `annotationCommands.test.ts` would catch that too — this catches it
+    // one step earlier and names the list rather than the pair.
     const registered = pointTools({ ask: () => Promise.resolve(undefined) });
-    expect(registered.map((tool) => tool.id)).toStrictEqual([STICKY_NOTE_TOOL_ID]);
+    expect(registered.map((tool) => tool.id)).toStrictEqual([
+      STICKY_NOTE_TOOL_ID,
+      CARET_TOOL_ID,
+    ]);
   });
 });

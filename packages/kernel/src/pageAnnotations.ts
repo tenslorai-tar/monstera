@@ -445,6 +445,37 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // the first place.
     },
   },
+  caret: {
+    subtype: 'Caret',
+    bounds: (draft, transform) => placedRect(pointBox(draft.at), transform),
+    degenerate: () => false,
+    write: (annotation, draft, transform): void => {
+      // A DIFFERENT RULE FROM THE NOTE'S, WHICH IS WHY THIS IS A SECOND ENTRY.
+      // Measured 2026-09-06 over the same seven requested sizes: a caret is a
+      // genuinely fixed 20 by 14 CENTRED on the requested box — every size from
+      // degenerate to 60 produced the same extent about the requested centre —
+      // where a `/Text` keeps a corner and clamps its side between 10 and 20.
+      //
+      // A shared point-shaped helper would have hidden that. Both subtypes take
+      // a point and answer with a box, so one function would have looked
+      // correct and been measured on whichever of the two was written first;
+      // the clamp is visible only when the two answers are compared across a
+      // range. Two entries force the comparison and each carries the rule it
+      // actually obeys.
+      annotation.setRect(placedRect(pointBox(draft.at), transform));
+      annotation.setColor([...draft.colour]);
+      // NO CONTENTS, and the draft has no field for one. A caret is an
+      // insertion mark: the annotation IS the position, and text attached to it
+      // would be a note that happens to be caret-shaped — which is the sticky
+      // note, one entry up.
+      //
+      // Nothing else is written because nothing else is accepted. Measured the
+      // same day: MuPDF refuses `setIcon` with *"Caret annotations have no Name
+      // property"*, and `setBorderWidth` and `setDefaultAppearance` likewise. So
+      // this is not a minimal entry that could grow — it is the whole of what
+      // the writer of record will take.
+    },
+  },
 };
 
 /**
@@ -575,6 +606,7 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   // write, which is right — the label says what the object is, not who made it.
   FreeText: 'text-box',
   Text: 'sticky-note',
+  Caret: 'caret',
 };
 
 /**
