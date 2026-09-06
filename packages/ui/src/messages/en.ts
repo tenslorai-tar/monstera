@@ -200,6 +200,7 @@ export const ELLIPSE_TOOL_TITLE = messageKey('command.annotate-ellipse.title');
 export const LINE_TOOL_TITLE = messageKey('command.annotate-line.title');
 export const ARROW_TOOL_TITLE = messageKey('command.annotate-arrow.title');
 export const INK_TOOL_TITLE = messageKey('command.annotate-ink.title');
+export const REDACT_TOOL_TITLE = messageKey('command.annotate-redact.title');
 export const ANNOTATION_SURFACE_LABEL = messageKey('surface.annotation.label');
 export const RULER_UNIT_TITLE = messageKey('setting.viewing.ruler-unit.title');
 export const HORIZONTAL_RULER_LABEL = messageKey('surface.ruler.horizontal.label');
@@ -360,6 +361,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // subtype; a person drawing with it is drawing freehand, and every
   // application this one replaces labels it so.
   [INK_TOOL_TITLE]: 'Freehand',
+  // MARK, and the word is load-bearing. This control removes nothing — burning
+  // a redaction in is a different command with a different save mode — and a
+  // label reading "Redact" would promise the removal to the one person who
+  // most needs to know it has not happened yet.
+  [REDACT_TOOL_TITLE]: 'Mark for redaction',
   // NAMES THE PAGE, because a scroller shows several and each carries its own
   // drawing surface. Two surfaces with the same accessible name are two a
   // screen-reader user cannot tell apart, which is `SPLIT_SECOND_LABEL`'s

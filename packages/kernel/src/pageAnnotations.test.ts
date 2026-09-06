@@ -5,6 +5,7 @@ import {
   PDFName,
   PDFNumber,
   PDFRef,
+  PDFStream,
   PDFString,
 } from '@cantoo/pdf-lib';
 import type { AnnotationDraft, CommandOfKind } from '@monstera/contract';
@@ -70,13 +71,21 @@ async function fixture({
   crop,
   rotate,
   foreign,
+  content,
 }: {
   readonly crop?: readonly number[];
   readonly rotate?: number;
   readonly foreign?: boolean;
+  readonly content?: boolean;
 } = {}): Promise<Uint8Array> {
   const document = await PDFDocument.create();
   const page = document.addPage([...MEDIA]);
+  if (content === true) {
+    // SOMETHING UNDER THE MARK. A page with no content stream cannot show that
+    // a redaction was not applied — nothing would have changed either way,
+    // which is item 4's *never build a fixture the bug also handles correctly*.
+    page.drawRectangle({ x: 20, y: 30, width: 80, height: 30 });
+  }
   if (crop !== undefined) {
     const box = PDFArray.withContext(document.context);
     for (const value of crop) box.push(PDFNumber.of(value));
@@ -167,11 +176,45 @@ async function readBack(bytes: Uint8Array): Promise<readonly StoredAnnotation[]>
   });
 }
 
+/**
+ * Page 0's content stream bytes, read with pdf-lib.
+ *
+ * The thing a burn-in would rewrite and a mark must not touch. Read as BYTES
+ * rather than as a decoded operator list: what matters is that nothing changed,
+ * and a decode that normalised whitespace would hide a rewrite that did.
+ */
+async function pageContentOf(bytes: Uint8Array): Promise<readonly number[]> {
+  const document = await PDFDocument.load(bytes, { updateMetadata: false });
+  const page = document.getPages()[0];
+  if (page === undefined) throw new Error('the fixture lost its page');
+  const contents = page.node.lookup(PDFName.of('Contents'));
+  // `/Contents` IS A STREAM OR AN ARRAY OF THEM, both legal, and which one a
+  // producer writes is not this case's subject — so both are read rather than
+  // one being asserted. A reader that handled only the shape the fixture
+  // happens to have would break on the shape the writer happens to produce.
+  const streams = contents instanceof PDFArray ? contents.asArray() : [contents];
+  const bodies = streams.map((entry) => {
+    const resolved = entry instanceof PDFRef ? document.context.lookup(entry) : entry;
+    if (!(resolved instanceof PDFStream)) return [];
+    return [...resolved.getContents()];
+  });
+  const joined = bodies.flat();
+  if (joined.length === 0) throw new Error('this fixture has no content stream to compare');
+  return joined;
+}
+
 const SQUARE: Extract<AnnotationDraft, { type: 'square' }> = {
   type: 'square',
   rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
   colour: [1, 0, 0],
   borderWidth: 2,
+};
+
+/** The same box as {@link SQUARE}, and no border width — see the schema. */
+const REDACT: Extract<AnnotationDraft, { type: 'redact' }> = {
+  type: 'redact',
+  rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+  colour: [1, 0, 0],
 };
 
 /** A three-point stroke, so *the middle point survives* is observable. */
@@ -419,6 +462,40 @@ describe('applyAddAnnotation writes each annotation type as the format defines i
       ),
     );
     expect(stored?.subtype).toBe('/Ink');
+  });
+
+  it('writes a redact MARK and burns nothing in', async () => {
+    // A mark says *this is to be removed* and removes nothing. Burning a
+    // redaction in is `applyRedactions` — a full rewrite with object GC and no
+    // prior revisions (ADR-0008 rule 1) — and it is a different command with a
+    // different save mode.
+    const original = await fixture({ content: true });
+    const [stored] = await readBack(
+      await drawnOn(original, command({ annotation: REDACT })),
+    );
+    expect(stored?.subtype).toBe('/Redact');
+    // NO `/RD`, because there is no border width to inset by — so the stored
+    // rectangle is the one the command named, exactly.
+    expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
+    expect(stored?.colour).toStrictEqual([1, 0, 0]);
+  });
+
+  it('leaves the page CONTENT byte-identical, which is what a mark means', async () => {
+    // THE ASSERTION THAT SEPARATES A MARK FROM A REDACTION, and it is on the
+    // content rather than on the annotation: a burn-in also leaves a `/Redact`
+    // behind, so every assertion about the annotation passes either way.
+    const original = await fixture({ content: true });
+    const marked = await drawnOn(original, command({ annotation: REDACT }));
+    expect(await pageContentOf(marked)).toStrictEqual(await pageContentOf(original));
+  });
+
+  it('carries no border width, because MuPDF refuses one on a Redact', async () => {
+    // MEASURED 2026-09-06: `setBorderWidth` on a Redact answers "Redact
+    // annotations have no BS property", and `setInteriorColor` "no IC
+    // property". The schema has no field for either, so this asserts the
+    // consequence rather than the refusal.
+    const [stored] = await readBack(await drawnOn(await fixture(), command({ annotation: REDACT })));
+    expect(stored?.borderWidth).toBeNull();
   });
 
   it('refuses a stroke whose points are all the same', async () => {

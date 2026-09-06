@@ -10,11 +10,13 @@ import {
   INK_TOOL_ID,
   LINE_TOOL_ID,
   RECTANGLE_TOOL_ID,
+  REDACT_TOOL_ID,
   arrowTool,
   ellipseTool,
   inkAnnotationTool,
   lineAnnotationTool,
   rectangleTool,
+  redactTool,
   shapeTools,
 } from './shapeTools.js';
 
@@ -66,6 +68,7 @@ describe('the shape tools are registered under the ids their commands use', () =
       LINE_TOOL_ID,
       ARROW_TOOL_ID,
       INK_TOOL_ID,
+      REDACT_TOOL_ID,
     ]);
     expect(new Set(shapeTools.map((tool) => tool.id)).size).toBe(shapeTools.length);
   });
@@ -102,6 +105,22 @@ describe('the box tools', () => {
     expect({ ...(ellipse as { annotation: object }).annotation, type: 'square' }).toStrictEqual(
       (rectangle as { annotation: object }).annotation,
     );
+  });
+
+  it('build a redact mark with no border width, which MuPDF would refuse', () => {
+    // The third box tool, and it is not a copy of the other two: its draft has
+    // no `borderWidth` field at all, because `setBorderWidth` on a Redact
+    // throws. That is why `boxTool` takes a draft BUILDER rather than a type
+    // name — the three drafts are not the same shape.
+    expect(drag(redactTool, [20, 20], [120, 80], 3)).toStrictEqual({
+      kind: 'addAnnotation',
+      page: 3,
+      annotation: {
+        type: 'redact',
+        rect: { x0: 60, y0: 390, x1: 110, y1: 360 },
+        colour: [0.85, 0.15, 0.15],
+      },
+    });
   });
 
   it('carry the corners in the order they were dragged', () => {

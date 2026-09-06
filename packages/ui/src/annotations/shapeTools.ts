@@ -1,4 +1,10 @@
-import type { AnnotationColour, LineEnding, RenderableCommand } from '@monstera/contract';
+import type {
+  AnnotationColour,
+  AnnotationDraft,
+  AnnotationRect,
+  LineEnding,
+  RenderableCommand,
+} from '@monstera/contract';
 import type { PageTransform } from '@monstera/shared';
 import { toPdf } from '@monstera/shared';
 
@@ -104,13 +110,16 @@ function box(gesture: Gesture): { x: number; y: number; width: number; height: n
  * A tool that draws a shape inside the box a drag describes.
  *
  * @param id the registry id, shared with the command that selects it
- * @param type which annotation the draft is
  * @param shape what the overlay draws while the drag is in flight
+ * @param draftOf what the drag becomes. A FUNCTION rather than a type name,
+ *   because the three box tools' drafts are not the same shape: a redact mark
+ *   carries no border width, which is measured rather than chosen. Passing the
+ *   builder keeps this factory free of any branch on which tool it is making
  */
 function boxTool(
   id: string,
-  type: 'square' | 'circle',
   shape: 'rect' | 'ellipse',
+  draftOf: (rect: AnnotationRect) => AnnotationDraft,
 ): UiTool {
   const drawn = (gesture: Gesture): ToolPreview | undefined => {
     const measured = box(gesture);
@@ -138,16 +147,11 @@ function boxTool(
       return {
         kind: 'addAnnotation',
         page,
-        annotation: {
-          type,
-          // THE CORNERS AS DRAGGED, unordered, converted by the one adapter.
-          // Ordering happens in the kernel, against the document's own boxes —
-          // ordering here as well would be two places deciding what a
-          // degenerate shape is.
-          rect: draggedRect(startOf(gesture), endOf(gesture), transform),
-          colour: STROKE,
-          borderWidth: BORDER_WIDTH,
-        },
+        // THE CORNERS AS DRAGGED, unordered, converted by the one adapter.
+        // Ordering happens in the kernel, against the document's own boxes —
+        // ordering here as well would be two places deciding what a degenerate
+        // shape is.
+        annotation: draftOf(draggedRect(startOf(gesture), endOf(gesture), transform)),
       };
     },
     preview: drawn,
@@ -281,9 +285,28 @@ export const ELLIPSE_TOOL_ID = 'annotate.ellipse';
 export const LINE_TOOL_ID = 'annotate.line';
 export const ARROW_TOOL_ID = 'annotate.arrow';
 export const INK_TOOL_ID = 'annotate.ink';
+export const REDACT_TOOL_ID = 'annotate.redact';
 
-export const rectangleTool = boxTool(RECTANGLE_TOOL_ID, 'square', 'rect');
-export const ellipseTool = boxTool(ELLIPSE_TOOL_ID, 'circle', 'ellipse');
+export const rectangleTool = boxTool(RECTANGLE_TOOL_ID, 'rect', (rect) => ({
+  type: 'square',
+  rect,
+  colour: STROKE,
+  borderWidth: BORDER_WIDTH,
+}));
+export const ellipseTool = boxTool(ELLIPSE_TOOL_ID, 'ellipse', (rect) => ({
+  type: 'circle',
+  rect,
+  colour: STROKE,
+  borderWidth: BORDER_WIDTH,
+}));
+export const redactTool = boxTool(REDACT_TOOL_ID, 'rect', (rect) => ({
+  // NO BORDER WIDTH, and it is measured rather than forgotten: MuPDF refuses
+  // `setBorderWidth` on a Redact. The schema has no field for one, so this is
+  // a compile error away from being written by mistake.
+  type: 'redact',
+  rect,
+  colour: STROKE,
+}));
 export const lineAnnotationTool = lineTool(LINE_TOOL_ID, 'none');
 export const arrowTool = lineTool(ARROW_TOOL_ID, 'closed-arrow');
 export const inkAnnotationTool = inkTool(INK_TOOL_ID);
@@ -295,4 +318,5 @@ export const shapeTools: readonly UiTool[] = [
   lineAnnotationTool,
   arrowTool,
   inkAnnotationTool,
+  redactTool,
 ];

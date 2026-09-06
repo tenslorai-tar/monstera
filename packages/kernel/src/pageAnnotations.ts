@@ -272,6 +272,25 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       annotation.setBorderWidth(draft.borderWidth);
     },
   },
+  redact: {
+    subtype: 'Redact',
+    bounds: (draft, transform) => placedRect(draft.rect, transform),
+    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
+    write: (annotation, draft, transform): void => {
+      // TWO CALLS, and the two it does NOT make are measured rather than
+      // chosen: MuPDF 1.28.0 refuses `setBorderWidth` on a Redact with "Redact
+      // annotations have no BS property" and `setInteriorColor` with "no IC
+      // property". So this cannot spread `outlineKind`, and the draft carries
+      // no border width for the same reason.
+      annotation.setRect(placedRect(draft.rect, transform));
+      annotation.setColor([...draft.colour]);
+      // NOTHING IS APPLIED. `applyRedactions` is the burn-in — a full rewrite
+      // with object GC and no prior revisions (ADR-0008 rule 1) — and it is a
+      // different command with a different save mode. A mark says *this is to
+      // be removed*; calling it here would make the two indistinguishable at
+      // exactly the moment the difference matters.
+    },
+  },
   ink: {
     subtype: 'Ink',
     bounds: (draft, transform) => {

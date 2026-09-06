@@ -999,6 +999,32 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Redact` — a MARK, and marking is the whole of it.
+       *
+       * Burning a redaction in is a full rewrite with object GC and no prior
+       * revisions ([ADR-0008](../../../docs/DECISIONS/0008-save-mode-is-determined-by-purpose.md)
+       * rule 1), because an incremental save leaves the covered content
+       * readable by walking the xref chain. That is a different command with a
+       * different save mode, and this one must never be mistaken for it: a
+       * mark says *this is to be removed* and removes nothing.
+       *
+       * **NO BORDER WIDTH**, unlike every other outline here, and it is a
+       * measurement rather than an omission: MuPDF 1.28.0 answers
+       * `setBorderWidth` on a Redact with *"Redact annotations have no BS
+       * property"*, and `setInteriorColor` with *"no IC property"*. A field the
+       * writer of record refuses is the display-only sin inside a payload — a
+       * value a person could set that nothing could apply.
+       */
+      type: z.literal('redact'),
+      /** The region marked for removal, in PDF user space. */
+      rect: annotationRectSchema,
+      /** What the mark is outlined in until it is applied. */
+      colour: annotationColourSchema,
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */

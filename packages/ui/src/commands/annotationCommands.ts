@@ -6,6 +6,7 @@ import {
   INK_TOOL_ID,
   LINE_TOOL_ID,
   RECTANGLE_TOOL_ID,
+  REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
 import {
   ARROW_TOOL_TITLE,
@@ -13,6 +14,7 @@ import {
   INK_TOOL_TITLE,
   LINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
+  REDACT_TOOL_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
@@ -110,6 +112,10 @@ export function inkToolCommand(deps: ToolCommandDeps): UiCommand {
   return toolCommand(INK_TOOL_ID, INK_TOOL_TITLE, 44, deps);
 }
 
+export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(REDACT_TOOL_ID, REDACT_TOOL_TITLE, 45, deps);
+}
+
 /**
  * Every shape tool's command.
  *
@@ -125,5 +131,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     lineToolCommand(deps),
     arrowToolCommand(deps),
     inkToolCommand(deps),
+    redactToolCommand(deps),
   ];
 }
