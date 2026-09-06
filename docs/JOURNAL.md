@@ -959,6 +959,38 @@ be twenty passes through the registration tax for operations that differ only in
 the shape drawn — and §7 says the same from the other side, since *Annotation
 types* carries a *writer mapping*, which is a mapping because the command is one.
 
+### The other three shapes, same day, and what MuPDF does with a line
+
+Ellipse, line and arrow landed as registrations: a schema member, a table entry
+and a controller each, with `AnnotationOverlay.tsx` untouched. That is the seam
+answering the question it was built for.
+
+Measured 2026-09-06 on `/MediaBox [0 0 200 300]`, the facts the shapes row
+points here for:
+
+- **`setLine` takes the same displayed frame `setRect` does.** `setLine([10,20],
+  [110,70])` on an upright page stores `/L [10 280 110 230]`, and on a
+  `/Rotate 90` page `/L [20 10 70 110]` — the axes swap, exactly as they do for
+  a rectangle.
+- **MuPDF computes `/Rect` itself for a line** and widens it to fit an
+  arrowhead: `/Rect [9 229 111 281]` without one, `[8 227.91056 112 282]` with a
+  `ClosedArrow`. So nothing here sets a line's rectangle, and the bound this
+  build would have had to predict is one it does not have to.
+- **A plain line still gets `/LE [/None /None]`**, written explicitly rather
+  than omitted. The control for the arrow case asserts that pair rather than the
+  key's absence, because the absence is not what happens.
+
+**Two factories rather than one**, and the second is what says they are not the
+same thing. A box tool and a line tool differ in the draft, the preview, and
+what counts as too small to be meant — and the third is the one that matters: a
+200-by-0 drag is a sliver for a rectangle and a horizontal rule for a line. One
+shared threshold gets one of them wrong silently, because the same test is right
+for the shapes beside it.
+
+That is also the first place a per-type geometry adapter earned its keep rather
+than being architecture written ahead of need: `degenerate` is a member of the
+kernel's `AnnotationKind` because *nothing a reader could see* is not one shape.
+
 ### Owed, and named so it is not rediscovered
 
 - **`srcRef`.** The row stays open. What is asserted now is the weaker half, for

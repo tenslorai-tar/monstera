@@ -88,21 +88,32 @@ export interface ToolController<S = Gesture> {
 }
 
 /**
- * What the overlay draws for a gesture in flight.
+ * What the overlay draws for a gesture in flight, in its own CSS pixels.
  *
- * One member today, and a union rather than a rectangle because the second tool
- * is an ink stroke and the third a line: making the shape a discriminated value
- * now is a member added later, where an inline rectangle would be a change at
- * every call site.
+ * A **shape description** discriminated on `shape`, so the overlay's one
+ * `switch` is the only place that knows how any of them is drawn. A member
+ * added here is a branch there and nothing else.
+ *
+ * ORDERED, unlike the command's rectangle, and that is not an inconsistency:
+ * a preview is a box on screen and SVG has no meaning for a negative width,
+ * where the command's rectangle is a pair of document corners whose order says
+ * which way the drag ran.
  */
-export interface ToolPreview {
-  readonly shape: 'rect';
-  /** In the overlay's own CSS pixels, already ordered. */
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-}
+export type ToolPreview =
+  | {
+      readonly shape: 'rect' | 'ellipse';
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly shape: 'line';
+      readonly x1: number;
+      readonly y1: number;
+      readonly x2: number;
+      readonly y2: number;
+    };
 
 /** One registered tool. */
 export interface UiTool {

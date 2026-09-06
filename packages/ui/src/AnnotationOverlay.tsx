@@ -5,7 +5,7 @@ import { type ReactElement, useCallback, useRef, useState } from 'react';
 
 import type { OverlayPage } from './annotations/annotationSpace.js';
 import { overlayTransform, pointerOn } from './annotations/annotationSpace.js';
-import type { Gesture, UiTool } from './registries/tools.js';
+import type { Gesture, ToolPreview, UiTool } from './registries/tools.js';
 
 /**
  * The annotation overlay — §6's *dispatcher, never a monolithic switch stack*.
@@ -174,16 +174,68 @@ export function AnnotationOverlay({
       role="application"
       tabIndex={0}
     >
-      {preview === undefined ? null : (
+      {preview === undefined ? null : <Preview preview={preview} />}
+    </svg>
+  );
+}
+
+/**
+ * The one place that knows how a preview shape is drawn.
+ *
+ * THE OVERLAY'S ONLY SWITCH, and it is the dispatcher's own job rather than the
+ * monolithic stack §6 forbids: it maps a shape description to an SVG element
+ * and knows nothing about which tool produced one or what it will become. A
+ * member added to `ToolPreview` is a branch here and a compile error until it
+ * is written, which is what the exhaustiveness check below is for.
+ *
+ * `data-annotation-preview` carries the shape rather than merely existing, so a
+ * case can assert *an ellipse was previewed* without reading the tag name — a
+ * tool that drew the right box with the wrong shape would otherwise pass.
+ */
+function Preview({ preview }: { readonly preview: ToolPreview }): ReactElement {
+  switch (preview.shape) {
+    case 'rect':
+      return (
         <rect
           className="m-annotation-preview"
-          data-annotation-preview=""
+          data-annotation-preview="rect"
           height={preview.height}
           width={preview.width}
           x={preview.x}
           y={preview.y}
         />
-      )}
-    </svg>
-  );
+      );
+    case 'ellipse':
+      // INSCRIBED IN THE SAME BOX the rectangle would occupy, which is what
+      // `/Subtype /Circle` means: the annotation's `/Rect` is the bounding box
+      // and the ellipse touches its four edges.
+      return (
+        <ellipse
+          className="m-annotation-preview"
+          cx={preview.x + preview.width / 2}
+          cy={preview.y + preview.height / 2}
+          data-annotation-preview="ellipse"
+          rx={preview.width / 2}
+          ry={preview.height / 2}
+        />
+      );
+    case 'line':
+      return (
+        <line
+          className="m-annotation-preview"
+          data-annotation-preview="line"
+          x1={preview.x1}
+          x2={preview.x2}
+          y1={preview.y1}
+          y2={preview.y2}
+        />
+      );
+    default: {
+      // A MEMBER ADDED WITHOUT A BRANCH IS A COMPILE ERROR, which is the point
+      // of the union: the alternative is a runtime fall-through that renders
+      // nothing and looks like a tool that did not fire.
+      const unhandled: never = preview;
+      return unhandled;
+    }
+  }
 }

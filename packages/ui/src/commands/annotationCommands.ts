@@ -1,10 +1,22 @@
-import { RECTANGLE_TOOL_ID } from '../annotations/rectangleTool.js';
-import { RECTANGLE_TOOL_TITLE } from '../messages/en.js';
+import type { MessageKey } from '@monstera/shared';
+
+import {
+  ARROW_TOOL_ID,
+  ELLIPSE_TOOL_ID,
+  LINE_TOOL_ID,
+  RECTANGLE_TOOL_ID,
+} from '../annotations/shapeTools.js';
+import {
+  ARROW_TOOL_TITLE,
+  ELLIPSE_TOOL_TITLE,
+  LINE_TOOL_TITLE,
+  RECTANGLE_TOOL_TITLE,
+} from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
 
 /**
- * Selecting a drawing tool, as a registry command.
+ * Selecting a drawing tool, as registry commands.
  *
  * ## Why the tool is chosen by a COMMAND and not by a toolbar of its own
  *
@@ -22,20 +34,22 @@ import { hasDocument } from './documentCommands.js';
  * ## A toggle, not a mode a person cannot leave
  *
  * Pressing the tool that is already active turns it off. Without that the only
- * way back to reading would be another control — and until a second tool
- * exists there would be no other control, so the first rectangle a person drew
- * would leave them unable to select text. `when` is not the place for it: `when`
- * decides existence, and a tool that vanished once selected is a control that
- * disappears under the pointer.
+ * way back to reading would be another control — and pressing a *different*
+ * tool switches rather than toggling, which is what makes this a toggle and not
+ * a switch. With one tool registered the two agree on every input; the case
+ * that separates them is a third tool being active, which is why it exists.
+ *
+ * `when` is not the place for either: `when` decides existence, and a tool that
+ * vanished once selected is a control that disappears under the pointer.
  *
  * ## No `ribbon` placement, for `toggleRulersCommand`'s reason
  *
  * §7 puts a drawing tool on the ribbon's Comment section and **there is no
  * ribbon**: `projections.ts` computes a model nothing renders, so a ribbon
  * placement today registers into nothing, which is §10.4's display-only sin
- * arriving through the registry rather than through a button. It goes where a
- * person can reach it, and moving it is a one-line edit on the day the ribbon
- * lands.
+ * arriving through the registry rather than through a button. These go where a
+ * person can reach them, and moving them is a one-line edit on the day the
+ * ribbon lands.
  */
 export interface ToolCommandDeps {
   /** The tool active now, or `undefined` for none. */
@@ -44,14 +58,24 @@ export interface ToolCommandDeps {
   readonly onSelect: (id: string | undefined) => void;
 }
 
-export function rectangleToolCommand(deps: ToolCommandDeps): UiCommand {
+/**
+ * One tool's command.
+ *
+ * @param id the TOOL's id, which is also this command's. Not a second string
+ *   that has to agree with it: the registries are joined by this value, and a
+ *   command whose id merely resembled the tool's would select nothing, silently
+ * @param order where its control sits among the others
+ */
+function toolCommand(
+  id: string,
+  title: MessageKey,
+  order: number,
+  deps: ToolCommandDeps,
+): UiCommand {
   return {
-    // THE TOOL'S OWN ID. Not a second string that has to agree with it: the
-    // registries are joined by this value, and a command whose id merely
-    // resembled the tool's would select nothing, silently.
-    id: RECTANGLE_TOOL_ID,
-    title: RECTANGLE_TOOL_TITLE,
-    placements: [{ surface: 'quick-toolbar', order: 40 }],
+    id,
+    title,
+    placements: [{ surface: 'quick-toolbar', order }],
     // A page to draw on is what this needs, which is what `hasDocument` says.
     when: hasDocument,
     run: (): void => {
@@ -59,7 +83,40 @@ export function rectangleToolCommand(deps: ToolCommandDeps): UiCommand {
       // built once, and a captured id would toggle against whatever was active
       // at registration for ever. `toggleRulersCommand` reads its setting the
       // same way for the same reason.
-      deps.onSelect(deps.activeTool() === RECTANGLE_TOOL_ID ? undefined : RECTANGLE_TOOL_ID);
+      deps.onSelect(deps.activeTool() === id ? undefined : id);
     },
   };
+}
+
+export function rectangleToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(RECTANGLE_TOOL_ID, RECTANGLE_TOOL_TITLE, 40, deps);
+}
+
+export function ellipseToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(ELLIPSE_TOOL_ID, ELLIPSE_TOOL_TITLE, 41, deps);
+}
+
+export function lineToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(LINE_TOOL_ID, LINE_TOOL_TITLE, 42, deps);
+}
+
+export function arrowToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(ARROW_TOOL_ID, ARROW_TOOL_TITLE, 43, deps);
+}
+
+/**
+ * Every shape tool's command.
+ *
+ * A list rather than four call sites at the composition point, for the reason
+ * `shapeTools` is one: adding the fifth is an entry here, and a composition
+ * root that named each of them individually would be a second place the set of
+ * tools is written down.
+ */
+export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
+  return [
+    rectangleToolCommand(deps),
+    ellipseToolCommand(deps),
+    lineToolCommand(deps),
+    arrowToolCommand(deps),
+  ];
 }

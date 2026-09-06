@@ -1,6 +1,17 @@
-import type { AnnotationDraft, AnnotationRect, CommandOfKind } from '@monstera/contract';
+import type {
+  AnnotationDraft,
+  AnnotationRect,
+  CommandOfKind,
+  LineEnding,
+} from '@monstera/contract';
 import { type PageTransform, pageTransform, pdfPoint, toViewport } from '@monstera/shared';
-import type { PDFAnnotation, PDFDocument, PDFPage } from 'mupdf';
+import type {
+  PDFAnnotation,
+  PDFAnnotationLineEndingStyle,
+  PDFAnnotationType,
+  PDFDocument,
+  PDFPage,
+} from 'mupdf';
 
 import type { CaptureResult } from './commandLog.js';
 import type { Apply, Invert, MupdfSession } from './engineSeam.js';
@@ -121,7 +132,10 @@ function transformFor(loaded: PDFPage): PageTransform {
  * it does with one was not measured, and a rule that depends on an unmeasured
  * tolerance is a rule that changes when the version does.
  */
-function placed(rect: AnnotationRect, transform: PageTransform): [number, number, number, number] {
+function placedRect(
+  rect: AnnotationRect,
+  transform: PageTransform,
+): [number, number, number, number] {
   const a = toViewport(pdfPoint(rect.x0, rect.y0), transform);
   const b = toViewport(pdfPoint(rect.x1, rect.y1), transform);
   return [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
@@ -139,40 +153,131 @@ function touchesPage(rect: readonly [number, number, number, number], transform:
   return x1 > 0 && y1 > 0 && x0 < transform.viewport.width && y0 < transform.viewport.height;
 }
 
-/**
- * How each annotation type is written — §7's *kernel writer mapping*, as a
- * table indexed by the draft's own discriminant.
- *
- * **Indexed, never switched**, for `CommandBus#preReadFor`'s reason: a `switch`
- * here would be a second routing place, and a mapped type over the union means
- * a member added to `annotationDraftSchema` without an entry is a compile error
- * rather than a runtime fall-through. Twenty tools land in this table.
- */
-type AnnotationWriter<T extends AnnotationDraft['type']> = (
-  annotation: PDFAnnotation,
-  draft: Extract<AnnotationDraft, { type: T }>,
-) => void;
+/** The format's own name for each ending this build can write. */
+const ENDINGS = {
+  none: 'None',
+  'closed-arrow': 'ClosedArrow',
+} as const satisfies Record<LineEnding, PDFAnnotationLineEndingStyle>;
 
-const writers: { readonly [T in AnnotationDraft['type']]: AnnotationWriter<T> } = {
-  square: (annotation, draft): void => {
-    annotation.setColor([...draft.colour]);
-    // AN EMPTY INTERIOR, which is what makes this an outline rather than a
-    // filled box. Not a default standing in for a missing feature: a fill is a
-    // second colour, and the control that would choose it is the style panel.
-    // Written explicitly because MuPDF's own default is not this build's
-    // decision to inherit.
-    annotation.setInteriorColor([]);
-    annotation.setBorderWidth(draft.borderWidth);
+/**
+ * Everything one annotation type knows about itself — §7's registry entry,
+ * kernel side: the *geometry adapter* and the *writer mapping* in one value.
+ *
+ * ## A table indexed by the draft's discriminant, never a switch
+ *
+ * `CommandBus#preReadFor`'s reason: a `switch` would be a second routing place,
+ * and a mapped type over the union means a member added to
+ * `annotationDraftSchema` without an entry is a compile error rather than a
+ * runtime fall-through. Twenty tools land here.
+ *
+ * ## Why `degenerate` is a member and not one rule
+ *
+ * *Nothing a reader could see* is not one shape. A box with zero height is
+ * invisible; a **line** with zero height is a horizontal rule, which is a thing
+ * people draw on purpose. A single area test would refuse it — and the refusal
+ * would look correct, because the same test is right for the two shapes beside
+ * it. That is the first place a per-type adapter earns its keep rather than
+ * being architecture written ahead of need.
+ *
+ * ## Parameterised by the DRAFT, not by its tag
+ *
+ * `AnnotationKind<SquareDraft>` rather than `AnnotationKind<'square'>`, and the
+ * difference is what lets one entry serve two members: a function taking the
+ * wider `SquareDraft | CircleDraft` is assignable where one taking either alone
+ * is expected — parameter contravariance, which `strictFunctionTypes` enforces
+ * here rather than merely permitting. Tagged, the same object needs an
+ * assertion to sit in two slots.
+ *
+ * @template D the draft this entry answers for
+ */
+interface AnnotationKind<D> {
+  /** What MuPDF is asked to create. */
+  readonly subtype: PDFAnnotationType;
+  /**
+   * The box it occupies, in the page's **displayed** frame.
+   *
+   * Used to refuse an annotation nothing could see. It is not what is written:
+   * a line's `/Rect` is MuPDF's to compute, and it widens the box to fit an
+   * arrowhead by an amount this build has no business predicting.
+   */
+  readonly bounds: (draft: D, transform: PageTransform) => [number, number, number, number];
+  /** Whether the shape has no extent of its own. See the note above. */
+  readonly degenerate: (draft: D) => boolean;
+  /** Writes everything but the appearance stream. */
+  readonly write: (annotation: PDFAnnotation, draft: D, transform: PageTransform) => void;
+}
+
+/** One draft, narrowed by its tag. */
+type DraftOf<T extends AnnotationDraft['type']> = Extract<AnnotationDraft, { type: T }>;
+
+/**
+ * A rect-shaped entry, which `square` and `circle` both are.
+ *
+ * **Shared, unlike the schema members**, and the difference is what each is
+ * for: the schema is read one member at a time by someone asking what a circle
+ * draft is, where this is executed and the two executions are the same three
+ * calls. A copy here would be two places to fix when the fill arrives with the
+ * style controls.
+ */
+type OutlineDraft = DraftOf<'square' | 'circle'>;
+
+function outlineKind(subtype: PDFAnnotationType): AnnotationKind<OutlineDraft> {
+  return {
+    subtype,
+    bounds: (draft, transform) => placedRect(draft.rect, transform),
+    // BOTH AXES. A box with no width and a box with no height are both
+    // invisible, and either is a drag that did not happen.
+    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
+    write: (annotation, draft, transform): void => {
+      annotation.setRect(placedRect(draft.rect, transform));
+      annotation.setColor([...draft.colour]);
+      // AN EMPTY INTERIOR, which is what makes this an outline rather than a
+      // filled shape. Not a default standing in for a missing feature: a fill
+      // is a second colour, and the control that would choose it is the style
+      // panel. Written explicitly because MuPDF's own default is not this
+      // build's decision to inherit.
+      annotation.setInteriorColor([]);
+      annotation.setBorderWidth(draft.borderWidth);
+    },
+  };
+}
+
+const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T>> } = {
+  square: outlineKind('Square'),
+  circle: outlineKind('Circle'),
+  line: {
+    subtype: 'Line',
+    bounds: (draft, transform) =>
+      placedRect(
+        { x0: draft.from.x, y0: draft.from.y, x1: draft.to.x, y1: draft.to.y },
+        transform,
+      ),
+    // ONE AXIS IS ENOUGH FOR A LINE. A horizontal rule has zero height and is
+    // a thing people draw; only a line whose two ends are the same point has
+    // nothing to show.
+    degenerate: (draft) => draft.from.x === draft.to.x && draft.from.y === draft.to.y,
+    write: (annotation, draft, transform): void => {
+      // `setLine`, NOT `setRect`. Measured 2026-09-06: MuPDF writes `/L` from
+      // these two points and computes `/Rect` itself — widening it to fit an
+      // arrowhead, by an amount this build would have had to predict. It takes
+      // the same displayed frame `setRect` does, verified on a rotated page.
+      const from = toViewport(pdfPoint(draft.from.x, draft.from.y), transform);
+      const to = toViewport(pdfPoint(draft.to.x, draft.to.y), transform);
+      annotation.setLine([from.x, from.y], [to.x, to.y]);
+      // THE END ONLY. `/LE` is a pair and the start stays `None`: an arrow
+      // points at where the drag finished, which is the one thing a person
+      // drawing one is deciding.
+      annotation.setLineEndingStyles('None', ENDINGS[draft.ending]);
+      annotation.setColor([...draft.colour]);
+      annotation.setBorderWidth(draft.borderWidth);
+    },
   },
 };
-
-/** The MuPDF subtype each drafted annotation becomes. */
-const subtypes = { square: 'Square' } as const satisfies Record<AnnotationDraft['type'], string>;
 
 /**
  * Adds the drawn annotation to its page.
  *
- * The rectangle is resolved and checked **before** anything is created, so a
+ * Everything is resolved and checked **before** anything is created, so a
  * refused command leaves no half-built annotation on the page — `applyCropPages`
  * validates in full for the same reason, and here the cost of not doing it is
  * an invisible object a user cannot select to delete.
@@ -185,16 +290,21 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
     const loaded = pageAt(document, command.page, document.countPages());
     const transform = transformFor(loaded);
     const draft = command.annotation;
-    const rect = placed(draft.rect, transform);
+    // THE TABLE, indexed by the draft's own discriminant. The cast is confined
+    // to this one line and is what a mapped table over a discriminated union
+    // costs: TypeScript resolves `kinds[draft.type]` to the union of every
+    // entry rather than pairing the entry with the draft that selected it. It
+    // is still cheaper than a `switch`, because a member added to the schema
+    // without an entry is a compile error at the table.
+    const kind = kinds[draft.type] as AnnotationKind<typeof draft>;
 
-    if (rect[2] - rect[0] <= 0 || rect[3] - rect[1] <= 0) {
+    if (kind.degenerate(draft)) {
       throw new RangeError(
-        `an annotation with no area cannot be drawn. The rectangle given was ` +
-          `${String(draft.rect.x0)}, ${String(draft.rect.y0)} to ${String(draft.rect.x1)}, ` +
-          `${String(draft.rect.y1)} in the page's own space.`,
+        `an annotation with no extent cannot be drawn. What was asked for was a ` +
+          `${draft.type} whose two ends are the same, in the page's own space.`,
       );
     }
-    if (!touchesPage(rect, transform)) {
+    if (!touchesPage(kind.bounds(draft, transform), transform)) {
       throw new RangeError(
         `that annotation lies entirely outside page ${String(command.page)}, whose displayed ` +
           `region is ${String(transform.viewport.width)} by ` +
@@ -202,20 +312,8 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
       );
     }
 
-    const annotation = loaded.createAnnotation(subtypes[draft.type]);
-    annotation.setRect(rect);
-    // THE TABLE, indexed by the draft's own discriminant.
-    //
-    // No assertion, and that is a fact about the union having ONE member rather
-    // than about the pattern being assertion-free. The day a second annotation
-    // type is declared, TypeScript resolves `writers[draft.type]` to the union
-    // of every entry's parameter type instead of pairing the entry with the
-    // draft that selected it, and this line stops compiling. The repair is an
-    // assertion confined to it — which is what a mapped table over a
-    // discriminated union costs, and it is cheaper than a `switch`, because a
-    // member added without an entry is a compile error here rather than a
-    // runtime fall-through.
-    writers[draft.type](annotation, draft);
+    const annotation = loaded.createAnnotation(kind.subtype);
+    kind.write(annotation, draft, transform);
     // The appearance stream. Without it the annotation is a dictionary with no
     // `/AP`, which every viewer is free to render its own way or not at all —
     // and MuPDF's own renderer would still draw it, so a proof that rasterised

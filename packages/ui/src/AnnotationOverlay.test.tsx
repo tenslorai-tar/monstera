@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
 import type { OverlayPage } from './annotations/annotationSpace.js';
-import { rectangleTool } from './annotations/rectangleTool.js';
+import { rectangleTool } from './annotations/shapeTools.js';
 import type { Gesture, UiTool } from './registries/tools.js';
 
 /**

@@ -57,6 +57,10 @@ interface StoredAnnotation {
   readonly borderWidth: number | null;
   readonly hasAppearance: boolean;
   readonly keys: readonly string[];
+  /** `/L`, the two points a `/Line` runs between, or `null`. */
+  readonly line: readonly number[] | null;
+  /** `/LE`, the two ending styles, or `null` when the key is absent. */
+  readonly endings: readonly string[] | null;
 }
 
 /** One page of {@link MEDIA}, with whatever `/CropBox` and `/Rotate` are asked for. */
@@ -138,15 +142,31 @@ async function readBack(bytes: Uint8Array): Promise<readonly StoredAnnotation[]>
       ],
       colour: numbers(dict, 'C'),
       borderWidth: width instanceof PDFNumber ? width.asNumber() : null,
+      line: numbers(dict, 'L'),
+      endings: ((): readonly string[] | null => {
+        const array = dict.lookup(PDFName.of('LE'));
+        if (!(array instanceof PDFArray)) return null;
+        return array.asArray().map((name) => (name instanceof PDFName ? name.asString() : ''));
+      })(),
       hasAppearance: dict.lookup(PDFName.of('AP')) !== undefined,
       keys: dict.keys().map((key) => key.asString()),
     };
   });
 }
 
-const SQUARE: AnnotationDraft = {
+const SQUARE: Extract<AnnotationDraft, { type: 'square' }> = {
   type: 'square',
   rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+  colour: [1, 0, 0],
+  borderWidth: 2,
+};
+
+/** The same two corners as {@link SQUARE}, so the geometries can be compared. */
+const LINE: Extract<AnnotationDraft, { type: 'line' }> = {
+  type: 'line',
+  from: { x: 10, y: 20 },
+  to: { x: 110, y: 70 },
+  ending: 'none',
   colour: [1, 0, 0],
   borderWidth: 2,
 };
@@ -264,6 +284,82 @@ describe('applyAddAnnotation places the rectangle in PDF user space', () => {
   });
 });
 
+describe('applyAddAnnotation writes each annotation type as the format defines it', () => {
+  it('writes an ellipse as /Subtype /Circle in the box a rectangle would have taken', async () => {
+    // `/Circle` is the format's name and an ellipse is what it draws: the
+    // annotation's `/Rect` is the bounding box and the shape touches its edges.
+    // THE BOX IS ASSERTED, not the subtype alone — a circle placed by
+    // different arithmetic from the square's would still be a circle.
+    const [stored] = await readBack(
+      await drawnOn(await fixture(), command({ annotation: { ...SQUARE, type: 'circle' } })),
+    );
+    expect(stored?.subtype).toBe('/Circle');
+    expect(stored?.bounds).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('writes a line as /L, in the same user-space points the command named', async () => {
+    const [stored] = await readBack(await drawnOn(await fixture(), command({ annotation: LINE })));
+    expect(stored?.subtype).toBe('/Line');
+    // MEASURED, not assumed: MuPDF writes `/L` from the two points and computes
+    // `/Rect` itself, widening it to fit an arrowhead. So the assertion is on
+    // `/L`, which is the thing this command decides.
+    expect(stored?.line).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('writes a line on a ROTATED page in the same user-space points', async () => {
+    // The rotation term again, on the other geometry: `setLine` takes the
+    // page's displayed frame exactly as `setRect` does, which was measured
+    // rather than read off the declaration.
+    const [stored] = await readBack(
+      await drawnOn(await fixture({ rotate: 90 }), command({ annotation: LINE })),
+    );
+    expect(stored?.line).toStrictEqual([10, 20, 110, 70]);
+  });
+
+  it('writes an arrow as a line with /LE, and a plain line with none', async () => {
+    const [line] = await readBack(await drawnOn(await fixture(), command({ annotation: LINE })));
+    const [arrow] = await readBack(
+      await drawnOn(await fixture(), command({ annotation: { ...LINE, ending: 'closed-arrow' } })),
+    );
+    // THE HEAD IS AT THE `to` END and the start is `None`, which is what an
+    // arrow drawn by dragging means. Asserting the pair rather than *an /LE
+    // exists* is what separates that from a head at both ends.
+    expect(arrow?.endings).toStrictEqual(['/None', '/ClosedArrow']);
+    // CONTROL: the plain line is the same annotation without the head, so an
+    // implementation that always wrote one passes the case above. MEASURED —
+    // MuPDF writes `/LE [/None /None]` explicitly rather than omitting the key,
+    // which is a fact about the writer and not a choice made here.
+    expect(line?.endings).toStrictEqual(['/None', '/None']);
+  });
+
+  it('accepts a HORIZONTAL line, which the box rule would refuse', async () => {
+    // *Nothing a reader could see* is not one shape, and this is where the
+    // per-type adapter earns its keep: a box with no height is invisible, and a
+    // line with no height is a rule somebody drew on purpose.
+    const [stored] = await readBack(
+      await drawnOn(await fixture(), command({ annotation: { ...LINE, to: { x: 110, y: 20 } } })),
+    );
+    expect(stored?.line).toStrictEqual([10, 20, 110, 20]);
+  });
+
+  it('CONTROL: a rectangle with no height is still refused', async () => {
+    // Without this, the case above is satisfied by dropping the degenerate
+    // check altogether.
+    await expect(
+      drawnOn(
+        await fixture(),
+        command({ annotation: { ...SQUARE, rect: { x0: 10, y0: 20, x1: 110, y1: 20 } } }),
+      ),
+    ).rejects.toThrow(/no extent/u);
+  });
+
+  it('refuses a line whose two ends are the same point', async () => {
+    await expect(
+      drawnOn(await fixture(), command({ annotation: { ...LINE, to: { x: 10, y: 20 } } })),
+    ).rejects.toThrow(/no extent/u);
+  });
+});
+
 describe('applyAddAnnotation leaves other annotations alone', () => {
   it('keeps every key of an annotation this build did not author', async () => {
     // INVARIANT L5's WEAKER HALF, asserted for the first time on a write path.
@@ -298,13 +394,13 @@ describe('applyAddAnnotation refuses rather than guessing', () => {
     await expect(drawnOn(await fixture(), command({ page: 4 }))).rejects.toThrow(/outside this/u);
   });
 
-  it('refuses a rectangle with no area', async () => {
+  it('refuses a rectangle with no width', async () => {
     await expect(
       drawnOn(
         await fixture(),
         command({ annotation: { ...SQUARE, rect: { x0: 10, y0: 20, x1: 10, y1: 70 } } }),
       ),
-    ).rejects.toThrow(/no area/u);
+    ).rejects.toThrow(/no extent/u);
   });
 
   it('refuses a rectangle entirely off the page', async () => {

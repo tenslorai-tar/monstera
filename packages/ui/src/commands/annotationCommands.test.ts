@@ -1,9 +1,9 @@
 import { asDocId, asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
-import { RECTANGLE_TOOL_ID } from '../annotations/rectangleTool.js';
+import { ELLIPSE_TOOL_ID, RECTANGLE_TOOL_ID } from '../annotations/shapeTools.js';
 import type { CommandContext } from '../registries/commands.js';
-import { rectangleToolCommand } from './annotationCommands.js';
+import { rectangleToolCommand, shapeToolCommands } from './annotationCommands.js';
 
 /**
  * The command that selects the rectangle tool.
@@ -74,10 +74,10 @@ describe('rectangleToolCommand', () => {
 
   it('selects when a DIFFERENT tool is active, rather than turning drawing off', () => {
     // THE SEPARATOR between a toggle and a switch. With only one tool
-    // registered, *toggle* and *switch to me* agree on every input — this is
-    // the case that says which one was written, before the second tool makes
-    // the difference visible to a person.
-    const { command, selected } = built('annotate.ink');
+    // registered the two agree on every input, so this case existed before the
+    // second tool did — and now names a real one, because an id nothing
+    // registers tests a comparison against a value the application cannot hold.
+    const { command, selected } = built(ELLIPSE_TOOL_ID);
     void command.run(WITH_DOCUMENT);
     expect(selected).toStrictEqual([RECTANGLE_TOOL_ID]);
   });
@@ -106,6 +106,33 @@ describe('rectangleToolCommand', () => {
     const { command } = built(undefined);
     expect(command.when?.(START_SCREEN)).toBe(false);
     expect(command.when?.(WITH_DOCUMENT)).toBe(true);
+  });
+
+  it('every shape tool has a command, and each one selects its OWN tool', () => {
+    // THE JOIN, asserted across the set rather than for the one that was
+    // written first. Four commands built from one factory are four chances for
+    // a copied id, and a command selecting the wrong tool is a control that
+    // draws the wrong shape with nothing red anywhere.
+    const selected: (string | undefined)[] = [];
+    const commands = shapeToolCommands({
+      activeTool: () => undefined,
+      onSelect: (id): void => {
+        selected.push(id);
+      },
+    });
+    for (const command of commands) void command.run(WITH_DOCUMENT);
+
+    expect(selected).toStrictEqual(commands.map((command) => command.id));
+    expect(new Set(commands.map((command) => command.id)).size).toBe(commands.length);
+    expect(commands.map((command) => command.id)).toContain(RECTANGLE_TOOL_ID);
+  });
+
+  it('gives each control its own place, so two do not claim one slot', () => {
+    const orders = shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined })
+      .flatMap((command) => command.placements)
+      .map((placement) => (placement.surface === 'quick-toolbar' ? placement.order : -1));
+    expect(new Set(orders).size).toBe(orders.length);
+    expect(orders).not.toContain(-1);
   });
 
   it('is placed where a person can reach it, and not on a ribbon nothing renders', () => {

@@ -86,8 +86,8 @@ import { persistSettings } from './settingsSync.js';
 import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
-import { rectangleTool } from './annotations/rectangleTool.js';
-import { rectangleToolCommand } from './commands/annotationCommands.js';
+import { shapeTools } from './annotations/shapeTools.js';
+import { shapeToolCommands } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { ToolRegistry } from './registries/tools.js';
 import { DialogRegistry } from './registries/dialogs.js';
@@ -663,7 +663,7 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
-  const tools = useMemo(() => new ToolRegistry([rectangleTool]), []);
+  const tools = useMemo(() => new ToolRegistry([...shapeTools]), []);
 
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);
@@ -755,10 +755,12 @@ export function App({ client, settings }: AppProps): ReactElement {
         zoomCommand('out', { onZoom: changeZoom }),
         fitCommand('width', { onZoom: changeZoom }),
         fitCommand('page', { onZoom: changeZoom }),
-        // STAGE 3's FIRST TOOL, registered in both registries under one id.
-        // What this command does is select; what the drag does is
+        // STAGE 3's SHAPE TOOLS, registered in both registries under one id
+        // each. What these commands do is select; what the drag does is
         // `registries/tools.ts`' business, and the shared id is the join.
-        rectangleToolCommand({ activeTool: readTool, onSelect: setToolId }),
+        // SPREAD from one list rather than named individually, so the set of
+        // tools has one place it is written down.
+        ...shapeToolCommands({ activeTool: readTool, onSelect: setToolId }),
         toggleRulersCommand({ settings }),
         toggleGridCommand({ settings }),
         toggleDarkPageCommand({ settings }),

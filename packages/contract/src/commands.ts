@@ -842,6 +842,42 @@ export const annotationColourSchema = z.tuple([
 export type AnnotationColour = z.infer<typeof annotationColourSchema>;
 
 /**
+ * One point in PDF user space, for an annotation whose shape is not a box.
+ *
+ * The same frame and the same bounds as {@link annotationRectSchema}, which is
+ * why the bound is that constant rather than a second one: a coordinate is a
+ * coordinate, and two numbers describing where something is on a page cannot
+ * mean different things depending on which annotation asked.
+ */
+export const annotationPointSchema = z
+  .object({
+    x: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+    y: z.number().min(-MAX_PAGE_COORDINATE).max(MAX_PAGE_COORDINATE),
+  })
+  .strict();
+
+/** A point in PDF user space. See {@link annotationPointSchema}. */
+export type AnnotationPoint = z.infer<typeof annotationPointSchema>;
+
+/**
+ * How a line's ends are drawn — `/LE`, in the format's own vocabulary.
+ *
+ * **A union of two rather than a boolean**, because the format has ten endings
+ * and this build will want more than one of them: `arrow: true` is a field that
+ * cannot grow, where a member added here reaches every reader as a compile
+ * error at the one place that maps it.
+ *
+ * Named for what PDF calls them, not for the tool that produces them. The line
+ * tool sends `'none'` and the arrow tool sends `'closed-arrow'`, and they are
+ * the same annotation type with a different value — which is what the format
+ * says they are.
+ */
+export const lineEndingSchema = z.enum(['none', 'closed-arrow']);
+
+/** How a line's end is drawn. See {@link lineEndingSchema}. */
+export type LineEnding = z.infer<typeof lineEndingSchema>;
+
+/**
  * What one annotation the user just drew IS.
  *
  * ## A union inside ONE command, and not a command per tool
@@ -875,6 +911,51 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
        * colour and a control to choose it, which arrives with the style
        * controls rather than as a field nothing can set.
        */
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Circle`, which the format uses for an ellipse.
+       *
+       * **The same four fields as `square`, deliberately repeated** rather
+       * than shared through an intersection. A discriminated union's members
+       * are read one at a time — a reader asking *what is a circle draft*
+       * should find the answer here rather than in a base type two files away
+       * — and the day one of them gains a field the other does not, a shared
+       * base becomes an intersection with an exception in it.
+       */
+      type: z.literal('circle'),
+      /** The box the ellipse is inscribed in, in PDF user space. */
+      rect: annotationRectSchema,
+      colour: annotationColourSchema,
+      borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
+    })
+    .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Line`, which is a line and an arrow both.
+       *
+       * **One member for two tools**, because that is what the format says
+       * they are: an arrow is a line whose `/LE` names an ending. Two members
+       * would mean two writers doing the same three calls, and the second
+       * would drift.
+       *
+       * Two POINTS rather than a rectangle, and that is not a spelling
+       * preference — a rectangle cannot express which diagonal was drawn, so a
+       * line stored as one comes back with its arrowhead at whichever corner
+       * the reader chose to call the end.
+       */
+      type: z.literal('line'),
+      /** Where the drag started. */
+      from: annotationPointSchema,
+      /** Where it ended — the end an arrowhead is drawn at. */
+      to: annotationPointSchema,
+      /** How the `to` end is drawn. `'none'` for a plain line. */
+      ending: lineEndingSchema,
+      colour: annotationColourSchema,
       borderWidth: z.number().min(0).max(MAX_ANNOTATION_BORDER),
     })
     .strict(),
