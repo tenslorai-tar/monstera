@@ -329,6 +329,49 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       annotation.setBorderWidth(draft.borderWidth);
     },
   },
+  'text-box': {
+    subtype: 'FreeText',
+    bounds: (draft, transform) => placedRect(draft.rect, transform),
+    degenerate: (draft) => draft.rect.x0 === draft.rect.x1 || draft.rect.y0 === draft.rect.y1,
+    write: (annotation, draft, transform): void => {
+      annotation.setRect(placedRect(draft.rect, transform));
+      // THE TEXT IS `/Contents`, which is the format's own answer for a
+      // `/FreeText` and not a second opinion: §12.5.6.6 says the text a
+      // FreeText displays *is* its contents, where for every other subtype the
+      // same key is a note about the annotation. So this is the one member so
+      // far whose `/Contents` a reader must render rather than merely show
+      // beside a row — and the annotations panel already carries it, which is
+      // why a text box appears there with its own words.
+      annotation.setContents(draft.text);
+      // `setDefaultAppearance` RATHER THAN A HAND-BUILT `/DA` STRING. The
+      // default appearance is a content-stream fragment — `/Helv 12 Tf 0 g` —
+      // and writing one here would be this build spelling an operator sequence
+      // MuPDF already spells, which is B3a on a string. It also owns the
+      // resource dictionary the font name resolves through, and a `/DA` naming
+      // a font no `/DR` carries renders as nothing.
+      //
+      // `Helv` is the base-14 Helvetica every viewer has. A chosen font is the
+      // style controls' to supply, and until then a face that needs no
+      // embedding is the one that cannot produce a document whose text is
+      // missing on another machine.
+      annotation.setDefaultAppearance('Helv', draft.fontSize, [...draft.colour]);
+      // NOTHING SETS A BORDER HERE, AND THE OBJECT HAS ONE. Measured
+      // 2026-09-06: `createAnnotation('FreeText')` on MuPDF 1.28.0 produces
+      // `/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type` — so a `/BS`
+      // and a `/CL` arrive from the engine rather than from any call this
+      // function makes. The reasoning that a text box is left plain was sound
+      // and the document is not what it described; `pageAnnotations.test.ts`
+      // pins the whole key set so a version that writes a different one is a
+      // red build.
+      //
+      // `/CL` is the callout line, and its presence is why the callout tool is
+      // a smaller job than it looks: the key is already there, and what a
+      // callout adds is `/IT /FreeTextCallout` plus the three points. It is
+      // also why this is pinned rather than ignored — a `/CL` nothing set is a
+      // key a viewer may honour, and finding it here is cheaper than finding it
+      // as a stray line on somebody's page.
+    },
+  },
 };
 
 /**
@@ -444,6 +487,12 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   Line: 'line',
   Ink: 'ink',
   Redact: 'redact',
+  // A FOREIGN `/FreeText` NOW HAS A NAME TOO, which is the closed union's rule
+  // working in the direction that is easy to miss: a member is added the day a
+  // tool writes that kind, and from that day every document's FreeText stops
+  // being `other`. So the panel starts naming text boxes this build did not
+  // write, which is right — the label says what the object is, not who made it.
+  FreeText: 'text-box',
 };
 
 /**

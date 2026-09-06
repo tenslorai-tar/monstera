@@ -781,6 +781,31 @@ export const MAX_PAGE_COORDINATE = 14400;
 export const MAX_ANNOTATION_BORDER = 144;
 
 /**
+ * How many characters a text annotation may carry.
+ *
+ * `MAX_ANNOTATION_CONTENTS`' argument in the other direction — that one bounds
+ * what a hostile document may send **out** to a panel, and this bounds what a
+ * renderer may send **in**. The two are separate numbers on purpose: a note
+ * this build writes and a note it merely lists are different trusts, and one
+ * constant serving both would make a change to either a change to the other.
+ *
+ * Generous enough that no note a person types meets it, so a refusal here is
+ * evidence something built the command from a file rather than from a dialog.
+ */
+export const MAX_ANNOTATION_TEXT = 4096;
+
+/**
+ * The point sizes a text annotation may declare.
+ *
+ * A range rather than a ceiling, because the failure at the bottom is the
+ * quieter one: `0` is a legal number the format accepts and renders as nothing,
+ * which is a text box the user typed into and cannot see. The floor makes that
+ * unrepresentable instead of leaving it to a viewer to be sensible about.
+ */
+export const MIN_ANNOTATION_FONT = 1;
+export const MAX_ANNOTATION_FONT = 1296;
+
+/**
  * How many points one ink stroke may carry.
  *
  * The renderer keeps points two CSS pixels apart, so this is over eight
@@ -1023,6 +1048,50 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       rect: annotationRectSchema,
       /** What the mark is outlined in until it is applied. */
       colour: annotationColourSchema,
+    })
+    .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /FreeText` — text that sits on the page rather than in a
+       * popup, which is what makes it the first draft carrying words.
+       *
+       * **The first member whose content a person types**, and therefore the
+       * first that cannot be built from a gesture alone: its tool has to ask.
+       * That is what made `commit` able to await a dialog
+       * ([ADR-0038](../../../docs/DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)'s
+       * shape on a tool rather than on a command).
+       */
+      type: z.literal('text-box'),
+      /** The box the text is laid out in, in PDF user space. */
+      rect: annotationRectSchema,
+      /**
+       * What it says.
+       *
+       * **Bounded, and the bound is a payload rule rather than a view of what a
+       * person would type.** Intent that can grow without a limit is a renderer
+       * that can send anything, which is the argument `/Contents` is bounded by
+       * on the way out. It is generous enough that no real note meets it, so a
+       * refusal here means something built this command from a file.
+       *
+       * **Not optional and not empty.** A `/FreeText` with no text is a
+       * rectangle with an invisible border — a control that appears to do
+       * nothing, which is the display-only sin arriving as a payload. The tool
+       * answers `undefined` when the dialog is dismissed or the field is blank,
+       * so nothing here has to represent *a text box with no text*.
+       */
+      text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+      /** The colour the text is drawn in. */
+      colour: annotationColourSchema,
+      /**
+       * Point size.
+       *
+       * A field the style controls will own, carried now for the reason the
+       * shape tools' colour is: a command field that exists and a control that
+       * does not is the shape this build has taken four times, and a schema
+       * that has to grow later is the one it rejected.
+       */
+      fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
     })
     .strict(),
 ]);

@@ -46,7 +46,14 @@ function drag(
   const { controller } = tool;
   const started = controller.begin(viewportPoint(from[0], from[1]));
   const moved = controller.update(started, viewportPoint(to[0], to[1]));
-  return controller.commit(moved, page, overlayTransform(PAGE));
+  // NOT AWAITED, and the cast is what says why rather than hiding it: `commit`
+  // may answer now or later, and every tool in this file answers now. A tool
+  // that asks a person returns a promise, and its cases await — see
+  // `textTools.test.ts`. Widening these twenty-two cases to `async` for a value
+  // that is never a promise would put the ceremony where the behaviour is not.
+  return controller.commit(moved, page, overlayTransform(PAGE)) as
+    | RenderableCommand
+    | undefined;
 }
 
 /** The gesture a drag describes, for the preview cases. */

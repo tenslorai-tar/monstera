@@ -937,6 +937,42 @@ The control that would catch the wrong choice does not exist and the case says
 so: no fixture here can separate the two sources of a number that is 7 either
 way. What the case pins is that the version travels at all.
 
+### The text box, and a key nobody wrote
+
+`commit` can now answer later, and the text box is its first caller — a shape is
+complete when the pointer comes up and a text box is not, because the words are
+the annotation.
+
+Two shape decisions worth keeping. **The return is a union, not a promise**:
+making all six shape tools async would have turned twenty-two cases into `async`
+bodies with no await in them, which is ceremony placed where the behaviour is
+not. And **the tool holds `ask`**, captured at construction the way
+`deletePagesCommand(deps)` does, so `commit` keeps three parameters and the
+overlay never learns which tool opens which dialog — that table would be the
+second wiring place the registries exist to forbid.
+
+**The measurement corrected a comment written an hour earlier.** The kernel said
+a text box is left with no border, because nothing calls `setBorderWidth`.
+Reading the object back:
+
+```
+/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type
+```
+
+`createAnnotation('FreeText')` writes a `/BS` — and a `/CL`, the callout line —
+from the engine rather than from anything this build does. The reasoning was
+sound and the document was not what it described, which is
+`an-api-that-round-trips-its-own-mistake` arriving through a constructor instead
+of a getter: nothing in our own calls could have told us.
+
+So the case pins the **whole key set** rather than asserting `/BS` is absent. An
+absence assertion goes green the day MuPDF stops writing that key and says
+nothing about what arrived instead — and `/CL` is exactly the sort of thing that
+arrives.
+
+It also makes the callout row smaller than it looked: the key is already there,
+and what a callout adds is `/IT /FreeTextCallout` and three points.
+
 ### The flake, diagnosed on the second occurrence
 
 `App.test.tsx`'s delete-pages case, recorded a run earlier with its date and the

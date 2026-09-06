@@ -11,6 +11,7 @@ import {
   ANNOTATIONS_KIND_OTHER,
   ANNOTATIONS_KIND_REDACT,
   ANNOTATIONS_KIND_SQUARE,
+  ANNOTATIONS_KIND_TEXT_BOX,
   ANNOTATIONS_LABEL,
   ANNOTATIONS_REMOVE,
   ANNOTATIONS_ROW,
@@ -214,6 +215,7 @@ const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
   line: ANNOTATIONS_KIND_LINE,
   ink: ANNOTATIONS_KIND_INK,
   redact: ANNOTATIONS_KIND_REDACT,
+  'text-box': ANNOTATIONS_KIND_TEXT_BOX,
   other: ANNOTATIONS_KIND_OTHER,
 };
 
@@ -228,7 +230,7 @@ interface PanelAnnotation {
    * a question MuPDF's own walk answers (ADR-0041).
    */
   readonly index: number;
-  readonly kind: 'square' | 'circle' | 'line' | 'ink' | 'redact' | 'other';
+  readonly kind: 'square' | 'circle' | 'line' | 'ink' | 'redact' | 'text-box' | 'other';
   readonly contents: string;
 }
 

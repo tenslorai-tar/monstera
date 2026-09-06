@@ -79,6 +79,7 @@ import { INSERT_FROM_PDF_DIALOG } from './dialogs/insertFromPdf.js';
 import { MERGE_DOCUMENT_DIALOG } from './dialogs/mergeDocument.js';
 import { REPLACE_PAGE_DIALOG } from './dialogs/replacePage.js';
 import { MERGE_DOCUMENT_NONE_DIALOG } from './dialogs/mergeDocumentNone.js';
+import { ANNOTATION_TEXT_DIALOG } from './dialogs/annotationText.js';
 import { DELETE_PAGES_DIALOG } from './dialogs/deletePages.js';
 import { DUPLICATE_PAGES_DIALOG } from './dialogs/duplicatePages.js';
 import { HISTORY_TRIMMED_DIALOG } from './dialogs/historyTrimmed.js';
@@ -88,6 +89,7 @@ import { SAVE_PROBLEM_DIALOG } from './dialogs/saveProblem.js';
 import { useDocumentView } from './useDocumentView.js';
 import { CLOSE_LABEL, SPLIT_SECOND_LABEL } from './messages/en.js';
 import { shapeTools } from './annotations/shapeTools.js';
+import { textBoxTool } from './annotations/textTools.js';
 import { shapeToolCommands } from './commands/annotationCommands.js';
 import { CommandRegistry, type CommandContext } from './registries/commands.js';
 import { ToolRegistry } from './registries/tools.js';
@@ -236,6 +238,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         COMMAND_PROBLEM_DIALOG,
         HISTORY_TRIMMED_DIALOG,
         DELETE_PAGES_DIALOG,
+        ANNOTATION_TEXT_DIALOG,
         CROP_PAGES_DIALOG,
         WATERMARK_PAGES_DIALOG,
         HEADER_FOOTER_DIALOG,
@@ -694,7 +697,12 @@ export function App({ client, settings }: AppProps): ReactElement {
    */
   const [toolId, setToolId] = useState<string | undefined>(undefined);
   const readTool = useCallback(() => toolId, [toolId]);
-  const tools = useMemo(() => new ToolRegistry([...shapeTools]), []);
+  // THE TEXT TOOL IS CONSTRUCTED WITH `ask`, which is what makes it different
+  // from the six beside it and the only thing about it this line knows. A tool
+  // whose intent is not complete until a person supplies part of it holds the
+  // means to ask, exactly as `deletePagesCommand(deps)` does — see
+  // `textTools.ts` for why that is not a fourth parameter on `commit`.
+  const tools = useMemo(() => new ToolRegistry([...shapeTools, textBoxTool({ ask })]), [ask]);
 
   const rulers = useSetting(settings, RULERS_SETTING);
   const showGrid = useSetting(settings, GRID_SETTING);

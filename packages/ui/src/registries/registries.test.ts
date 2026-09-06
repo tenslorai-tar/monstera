@@ -233,7 +233,11 @@ describe('ToolRegistry', () => {
     // THE SHARED PATH, exactly as a real tool spreads it: a fixture writing its
     // own `begin` and `update` would be testing the registry against a
     // controller no tool resembles.
-    controller: { ...pointerPath, commit: () => undefined, preview: () => undefined },
+    controller: {
+      ...pointerPath,
+      commit: () => Promise.resolve(undefined),
+      preview: () => undefined,
+    },
   });
 
   it('refuses two tools claiming one id, and names the id', () => {

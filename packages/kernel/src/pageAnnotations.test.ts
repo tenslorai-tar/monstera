@@ -318,6 +318,102 @@ async function removedFrom(
   }
 }
 
+describe('applyAddAnnotation writes a text box as the format defines one', () => {
+  /** The `/FreeText` on page 0, read with pdf-lib. */
+  async function freeTextIn(
+    bytes: Uint8Array,
+  ): Promise<{ readonly contents: string; readonly appearance: string; readonly keys: string[] }> {
+    const loaded = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the page carries no /Annots');
+    const [first] = annots.asArray();
+    const dict = first instanceof PDFRef ? loaded.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const contents = dict.lookup(PDFName.of('Contents'));
+    const appearance = dict.lookup(PDFName.of('DA'));
+    return {
+      contents: contents instanceof PDFString ? contents.asString() : '',
+      appearance: appearance instanceof PDFString ? appearance.asString() : '',
+      keys: dict.keys().map((key) => key.asString()),
+    };
+  }
+
+  const TEXT_BOX: Extract<AnnotationDraft, { type: 'text-box' }> = {
+    type: 'text-box',
+    rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+    text: 'see figure 3',
+    colour: [0.1, 0.1, 0.1],
+    fontSize: 12,
+  };
+
+  it('puts the words in /Contents, which is where a FreeText keeps them', async () => {
+    // NOT A NOTE ABOUT THE ANNOTATION. For every other subtype `/Contents` is a
+    // comment beside the object; §12.5.6.6 makes it the text a FreeText
+    // DISPLAYS. So this is the one member whose contents a viewer renders, and
+    // asserting it is asserting what the person sees rather than metadata.
+    const drawn = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
+    expect((await freeTextIn(drawn)).contents).toBe('see figure 3');
+  });
+
+  it('writes a /DA naming a base-14 font, rather than a hand-built operator string', async () => {
+    // `setDefaultAppearance` OWNS THE SPELLING. A `/DA` is a content-stream
+    // fragment, and building one here would be this file spelling operators
+    // MuPDF already spells — and naming a font whose resource it does not own.
+    // The assertion is loose about the exact bytes on purpose: what matters is
+    // that the font is Helvetica and the size is the one the draft asked for,
+    // not the order MuPDF chose to emit them in.
+    const drawn = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
+    const { appearance } = await freeTextIn(drawn);
+    expect(appearance).toMatch(/Helv/u);
+    expect(appearance).toMatch(/\b12\b/u);
+  });
+
+  it('gives it an appearance stream, so a viewer draws the words rather than a box', async () => {
+    // The pair to the case above. A `/DA` says how the text should look and an
+    // `/AP` is what most viewers actually paint — an annotation with the first
+    // and not the second renders as nothing in some readers and correctly in
+    // others, which is the worst version of this bug to ship.
+    const [stored] = await readBack(await drawnOn(await fixture(), command({ annotation: TEXT_BOX })));
+    expect(stored?.subtype).toBe('/FreeText');
+    expect(stored?.hasAppearance).toBe(true);
+  });
+
+  it('PINS the keys MuPDF writes for a FreeText, including one this build never asks for', async () => {
+    // MEASURED, AND IT CORRECTED THE SOURCE. `pageAnnotations.ts` said a text
+    // box is left with no border because nothing calls `setBorderWidth`. MuPDF
+    // 1.28.0 writes a `/BS` anyway — and a `/CL`, the callout line — from
+    // `createAnnotation('FreeText')` rather than from anything this build does.
+    // The reasoning was sound and the object was not what it described.
+    //
+    // So this pins the whole key set rather than asserting an absence. The
+    // absence version would have gone green the day MuPDF stopped writing `/BS`
+    // and said nothing about what arrived instead — and `/CL` is exactly the
+    // sort of thing that arrives: a key a viewer may honour, put there by the
+    // engine, which is much cheaper to find here than as a stray line on
+    // somebody's page.
+    const drawn = await drawnOn(await fixture(), command({ annotation: TEXT_BOX }));
+    expect((await freeTextIn(drawn)).keys.sort().join(' ')).toBe(
+      '/AP /BS /CL /Contents /DA /F /P /RD /Rect /Subtype /Type',
+    );
+  });
+
+  it('is listed as a text box, and so is a FOREIGN FreeText', async () => {
+    // THE CLOSED UNION'S RULE ARRIVING. A member is added the day a tool writes
+    // that kind — and from that day every document's FreeText stops being
+    // `other`, including ones this build never wrote. That is right: the label
+    // says what the object is, not who made it. Asserted because it is a change
+    // in what an existing document looks like in the panel, made by a commit
+    // that is nominally about a new tool.
+    const listed = await onSession(
+      await drawnOn(await fixture(), command({ annotation: TEXT_BOX })),
+      (session) => readAnnotations(session),
+    );
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'text-box', contents: 'see figure 3' },
+    ]);
+  });
+});
+
 describe('applyRemoveAnnotation takes the annotation the handle names', () => {
   it('removes it, and leaves the one beside it', async () => {
     // Two marks on one page, distinguishable by kind. Removing index 0 must

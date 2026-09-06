@@ -165,12 +165,38 @@ export interface ToolController {
    *
    * The command is `RenderableCommand`, which is the narrower union — the type
    * is what stops a surface expressing a command only main may mint.
+   *
+   * ## IT MAY ANSWER NOW OR LATER
+   *
+   * A text-bearing tool cannot build its command from the gesture alone: the
+   * words come from a person, through a dialog, and
+   * [ADR-0038](../../../../docs/DECISIONS/0038-a-dialog-answers-the-command-that-opened-it.md)'s
+   * shape is that whatever opened the dialog is what builds the command from
+   * its answer.
+   *
+   * **A union rather than always a promise**, and the difference is not
+   * cosmetic. Making every `commit` async would turn six tools that answer from
+   * the gesture alone into promises nothing awaits, and their twenty-two cases
+   * into `async` bodies with no await in them — ceremony placed where the
+   * behaviour is not. The overlay `await`s, which handles both without knowing
+   * which it has.
+   *
+   * **A dismissed dialog is `undefined`**, which is the same outcome a click
+   * that did not drag already produced. That is the whole of the gate: there is
+   * no value to build a command from, so there is nothing to send — rather than
+   * a confirmed flag somebody has to remember to check.
+   *
+   * **The tool holds `ask` itself**, captured when it is constructed, exactly
+   * as `deletePagesCommand(deps)` does. The alternative was a fourth parameter
+   * every tool receives and one uses; the alternative to that was the overlay
+   * knowing which dialog belongs to which tool, which is the second wiring
+   * place the registry exists to forbid.
    */
   readonly commit: (
     gesture: Gesture,
     page: number,
     transform: PageTransform,
-  ) => RenderableCommand | undefined;
+  ) => RenderableCommand | undefined | Promise<RenderableCommand | undefined>;
   /**
    * What is drawn while the gesture is in flight, in the overlay's own
    * coordinates.

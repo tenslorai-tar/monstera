@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { RenderableCommand } from '@monstera/contract';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AnnotationOverlay } from './AnnotationOverlay.js';
@@ -83,17 +83,33 @@ function pointer(surface: Element, type: string, x: number, y: number, button = 
 }
 
 /** A whole drag: down, move, up. */
-function drag(surface: Element, from: readonly [number, number], to: readonly [number, number]): void {
+/**
+ * A whole drag, settled.
+ *
+ * **The await is not politeness.** `commit` may answer now or later, and the
+ * overlay resolves it either way — so even a tool that answers from the gesture
+ * alone dispatches a microtask after the pointer-up. A case that asserted
+ * straight after would read `sent` before anything was in it, which is what
+ * these three did the moment the platform gained a tool that has to ask.
+ */
+async function drag(
+  surface: Element,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): Promise<void> {
   pointer(surface, 'pointerdown', from[0], from[1]);
   pointer(surface, 'pointermove', to[0], to[1]);
   pointer(surface, 'pointerup', to[0], to[1]);
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 describe('AnnotationOverlay', () => {
-  it('dispatches exactly one addAnnotation, with the rectangle the drag described', () => {
+  it('dispatches exactly one addAnnotation, with the rectangle the drag described', async () => {
     const { surface, sent } = mounted();
 
-    drag(surface, [20, 20], [120, 80]);
+    await drag(surface, [20, 20], [120, 80]);
 
     expect(sent).toStrictEqual([
       {
@@ -124,13 +140,13 @@ describe('AnnotationOverlay', () => {
     expect(sent).toStrictEqual([]);
   });
 
-  it('does not continue the last drag on the next click', () => {
+  it('does not continue the last drag on the next click', async () => {
     // ASSERT THE CALL THAT WAS NOT MADE. If the gesture survived the pointer-up,
     // a later stray click would commit a second rectangle spanning from the
     // first drag's origin — and the state a correct implementation leaves is
     // the state a broken one leaves until something clicks again.
     const { surface, sent } = mounted();
-    drag(surface, [20, 20], [120, 80]);
+    await drag(surface, [20, 20], [120, 80]);
     pointer(surface, 'pointerup', 200, 200);
     expect(sent).toHaveLength(1);
   });
@@ -170,7 +186,7 @@ describe('AnnotationOverlay', () => {
     expect(surface.querySelector('[data-annotation-preview]')).toBeNull();
   });
 
-  it('dispatches whatever the ACTIVE tool commits, knowing nothing about rectangles', () => {
+  it('dispatches whatever the ACTIVE tool commits, knowing nothing about rectangles', async () => {
     // THE DISPATCHER PROPERTY. Adding the nineteenth tool must not change this
     // file, and the case that says so is one whose controller is not the
     // rectangle's: the overlay calls begin, update and commit and sends what
@@ -179,13 +195,13 @@ describe('AnnotationOverlay', () => {
       id: 'annotate.other',
       controller: {
         ...pointerPath,
-        commit: (_gesture, page) => ({ kind: 'duplicatePage', page }),
+        commit: (_gesture, page) => Promise.resolve({ kind: 'duplicatePage', page }),
         preview: () => undefined,
       },
     };
     const { surface, sent } = mounted(other);
 
-    drag(surface, [20, 20], [120, 80]);
+    await drag(surface, [20, 20], [120, 80]);
 
     expect(sent).toStrictEqual([{ kind: 'duplicatePage', page: 3 }]);
   });

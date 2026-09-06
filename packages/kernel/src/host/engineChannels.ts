@@ -263,7 +263,7 @@ const engineAnnotationSchema = z
      * useless if the host answers with a list nothing can point into.
      */
     index: z.number().int().nonnegative(),
-    kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'other']),
+    kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'text-box', 'other']),
     contents: z.string().max(ENGINE_ANNOTATION_CONTENTS_MAX),
   })
   .strict();

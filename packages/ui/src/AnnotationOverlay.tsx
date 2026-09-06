@@ -136,10 +136,28 @@ export function AnnotationOverlay({
       setGesture(undefined);
       if (at === undefined) return;
       const finished = tool.controller.update(gesture, at);
-      const command = tool.controller.commit(finished, page, overlayTransform(geometry));
-      // `undefined` IS AN OUTCOME. A click that did not drag produces no
-      // annotation, which is what a person expects from a click.
-      if (command !== undefined) onCommand(command);
+      // EVERYTHING THE COMMAND IS BUILT FROM IS READ NOW, before any await.
+      // `page` and the geometry are this render's, and a tool that opens a
+      // dialog resolves after the person has answered — by which time the
+      // reader may have scrolled, zoomed or switched tools. Reading them here
+      // means the command describes the gesture that was actually drawn.
+      //
+      // The transform in particular: `overlayTransform(geometry)` is derived
+      // from the zoom on screen, and resolving it after an await would place
+      // the annotation using a scale the drag never happened at.
+      const transform = overlayTransform(geometry);
+      // `Promise.resolve` OVER THE UNION. `commit` may answer now or later, and
+      // this is the one line that does not care which — a synchronous answer
+      // still lands a microtask later, which is why the overlay's own cases
+      // settle before asserting rather than reading the DOM straight after the
+      // pointer-up.
+      void Promise.resolve(tool.controller.commit(finished, page, transform)).then((command) => {
+        // `undefined` IS AN OUTCOME, and now it is two of them: a click that
+        // did not drag produces no annotation, and so does a dismissed dialog.
+        // Both mean *there is nothing to send*, which is why the gate is the
+        // absence of a value rather than a flag somebody checks.
+        if (command !== undefined) onCommand(command);
+      });
     },
     [geometry, gesture, onCommand, page, pointAt, tool],
   );

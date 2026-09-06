@@ -265,6 +265,13 @@ export const ANNOTATIONS_KIND_CIRCLE = messageKey('surface.annotations.kind.circ
 export const ANNOTATIONS_KIND_LINE = messageKey('surface.annotations.kind.line');
 export const ANNOTATIONS_KIND_INK = messageKey('surface.annotations.kind.ink');
 export const ANNOTATIONS_KIND_REDACT = messageKey('surface.annotations.kind.redact');
+export const ANNOTATIONS_KIND_TEXT_BOX = messageKey('surface.annotations.kind.text-box');
+export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
+export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
+export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
+export const ANNOTATION_TEXT_EMPTY = messageKey('dialog.annotation-text.empty');
+export const ANNOTATION_TEXT_TOO_LONG = messageKey('dialog.annotation-text.too-long');
+export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
 export const ANNOTATIONS_KIND_OTHER = messageKey('surface.annotations.kind.other');
 export const STATUS_GO_TO = messageKey('surface.status.go-to');
 export const STATUS_GO_TO_OUTSIDE = messageKey('surface.status.go-to-outside');
@@ -486,6 +493,18 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   [ANNOTATIONS_KIND_LINE]: 'Line',
   [ANNOTATIONS_KIND_INK]: 'Freehand',
   [ANNOTATIONS_KIND_REDACT]: 'Redaction mark',
+  // NAMES THE OBJECT, not who wrote it. A `/FreeText` from another application
+  // is a text box too, and the row beside this label shows its words.
+  [ANNOTATIONS_KIND_TEXT_BOX]: 'Text box',
+  [ANNOTATION_TEXT_TITLE]: 'Text box',
+  [ANNOTATION_TEXT_LABEL]: 'Text',
+  [ANNOTATION_TEXT_APPLY]: 'Add text box',
+  // NAMES WHAT IS MISSING, not that something is wrong. The field is empty when
+  // the dialog opens, so this is the first thing a person reads — it has to
+  // read as an instruction rather than as a complaint about what they did.
+  [ANNOTATION_TEXT_EMPTY]: 'Type the text this box should show.',
+  [ANNOTATION_TEXT_TOO_LONG]: 'That is too long for one text box. Shorten it, or use several.',
+  [TOOL_TEXT_BOX_TITLE]: 'Text box',
   // WHAT IT IS RATHER THAN WHAT IT IS NOT. A row reading *Unknown* tells a
   // reader the application is confused; *Annotation* tells them a comment is
   // there and which page to look at, which is what the panel is for.

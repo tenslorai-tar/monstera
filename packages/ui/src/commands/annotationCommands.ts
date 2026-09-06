@@ -8,6 +8,7 @@ import {
   RECTANGLE_TOOL_ID,
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
+import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
   ARROW_TOOL_TITLE,
   ELLIPSE_TOOL_TITLE,
@@ -15,6 +16,7 @@ import {
   LINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  TOOL_TEXT_BOX_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
 import { hasDocument } from './documentCommands.js';
@@ -117,6 +119,19 @@ export function redactToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
+ * The text box's command.
+ *
+ * Identical to its five siblings, and that is the whole point of it being here:
+ * the tool behind it is the first that opens a dialog and the first whose
+ * commit answers later, and **selecting** it is unchanged by either. A command
+ * that had to know its tool asks would be the overlay's table of dialogs one
+ * layer up.
+ */
+export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(TEXT_BOX_TOOL_ID, TOOL_TEXT_BOX_TITLE, 46, deps);
+}
+
+/**
  * Every shape tool's command.
  *
  * A list rather than four call sites at the composition point, for the reason
@@ -132,5 +147,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     arrowToolCommand(deps),
     inkToolCommand(deps),
     redactToolCommand(deps),
+    textBoxToolCommand(deps),
   ];
 }

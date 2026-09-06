@@ -1321,7 +1321,7 @@ export const channels = {
              * a label for something no document here produces is a string in
              * the catalogue that nothing can reach.
              */
-            kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'other']),
+            kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'text-box', 'other']),
             /**
              * The annotation's own note, or empty.
              *
