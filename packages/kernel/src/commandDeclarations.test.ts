@@ -1,18 +1,62 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CommandKind } from '@monstera/contract';
+import type { CommandKind, NamesASecondDocument } from '@monstera/contract';
 
-import { declaredCommands } from './commandDeclarations.js';
+import { type DeclaredCommands, declaredCommands } from './commandDeclarations.js';
 import { writerShapes } from './engineSeam.js';
 
 /**
  * Properties of the declaration table itself, rather than of any command in it.
  *
- * The one case here exists because
+ * The byte-image case exists because
  * [ADR-0039](../../../docs/DECISIONS/0039-a-byte-image-writer-round-trips-the-live-session.md)
  * makes a **cost** argument, and a cost argument has a scope. Costs are not
  * type errors, so nothing in the compiler was keeping that scope true.
+ *
+ * The sources case exists because `contract/commands.ts` said it did. See
+ * {@link DeclaredSources}.
  */
+
+/**
+ * The kinds this table declares as naming a second document.
+ *
+ * `declarations` is written with `satisfies`, so each `sources` keeps its
+ * literal type and this mapped type can separate `'one'` from `'none'`. An
+ * annotation there would widen every field to its union and collapse this to
+ * every kind.
+ */
+type DeclaredSources = {
+  [K in CommandKind]: DeclaredCommands[K]['sources'] extends 'one' ? K : never;
+}[CommandKind];
+
+/**
+ * THE ANCHOR `contract/commands.ts` NAMED THIS FILE FOR, added 2026-09-06.
+ *
+ * The contract owns a hand-kept `if` listing which kinds carry a source
+ * `DocId`, with a type beside it and a comment saying the load-bearing half —
+ * tying that type to the kernel's `sources` axis — lived here. It did not: this
+ * file had no mention of `sources` at all, so the list was anchored to nothing
+ * and a third `sources: 'one'` command would have left `sourceIdsOf` answering
+ * empty for it.
+ *
+ * That is not silent at runtime — `CommandBus` throws *"the declaration and the
+ * contract's sourceIdsOf disagree"* — but only for a command actually dispatched
+ * with a source, which is to say after the registration is written, shipped and
+ * run. These two lines make it a compile error instead.
+ *
+ * **Both directions, and each catches a different mistake.** A kind gaining
+ * `sources: 'one'` here without joining the contract's `if` breaks the second;
+ * a kind losing it without leaving the `if` breaks the first. The first also
+ * catches the derivation collapsing to `never`, since `never` is assignable to
+ * everything and would satisfy the second on its own — the empty set agreeing
+ * with any claim, which is why the runtime control below names a member.
+ */
+const _declarationsCoverTheContract: NamesASecondDocument extends DeclaredSources ? true : never =
+  true;
+const _contractCoversTheDeclarations: DeclaredSources extends NamesASecondDocument ? true : never =
+  true;
+void _declarationsCoverTheContract;
+void _contractCoversTheDeclarations;
 
 /** Every declared kind, as the table itself lists them. */
 const KINDS = Object.keys(declaredCommands) as readonly CommandKind[];
@@ -78,5 +122,15 @@ describe('the declaration table', () => {
         `serialise of the live session (CommandBus.#sessionFor -> ByteImageAccess.current) that ` +
         `no checkpoint was going to pay for. Amend ADR-0039 to price it, then update this case.`,
     ).toStrictEqual([]);
+  });
+
+  it('CONTROL: the sources derivation names a kind, so the type equality is not two empty sets', () => {
+    // `never extends X` holds for every X, so a mapped type that stopped
+    // separating the literals would satisfy one half of the pair above and be
+    // indistinguishable from a table carrying no cross-document command at all.
+    // The compiler cannot tell those apart. This can: it reads the runtime
+    // table and requires a member that is known to be there.
+    const declared = KINDS.filter((kind) => declaredCommands[kind].sources === 'one');
+    expect(declared).toContain('mergeDocument');
   });
 });

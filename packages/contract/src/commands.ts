@@ -1224,20 +1224,32 @@ export function sourceIdsOf(command: Command): readonly DocId[] {
 const NO_SOURCES: readonly DocId[] = Object.freeze([]);
 
 /**
- * Which kinds {@link sourceIdsOf} answers non-empty for, checked in both
- * directions.
+ * Which kinds {@link sourceIdsOf} answers non-empty for.
  *
- * `renderableCommandSchema`'s pair, on a different axis and for the same
- * reason: the switch above is a hand-kept list, and a hand-kept list is right
- * only where something else refuses to let it drift. Here the anchor is the
- * kernel's `sources` axis — but this package cannot import the kernel, so what
- * is checkable *here* is that the list and this type agree, and the kernel's
- * `commandDeclarations.test.ts` is what ties the type to the declarations.
+ * **Exported so the kernel can anchor it**, which is the whole point. The `if`
+ * above is a hand-kept list, and a hand-kept list is right only where something
+ * else refuses to let it drift. The anchor is the kernel's `sources` axis; this
+ * package cannot import the kernel, so the tie is written *there*, in
+ * `commandDeclarations.test.ts`, as a mutual assignability between this type
+ * and the kinds whose declaration says `sources: 'one'`.
  *
- * That split is stated rather than papered over: on its own this pair proves
- * the switch matches a list two lines up, which is a derived count agreeing
- * with itself (4c). The load-bearing half is in the kernel.
+ * ## The line below checks less than its old name claimed
+ *
+ * It checks that both names are real `CommandKind`s. That is all it has ever
+ * checked. It was called `_switchCoversExactlyThose` and introduced as
+ * *"checked in both directions"*, and it is neither: adding a third kind to
+ * this type leaves it green, and so does dropping one from the `if`.
+ *
+ * The comment also said the kernel's `commandDeclarations.test.ts` held the
+ * other half. **That file did not mention this axis at all** until 2026-09-06 —
+ * measured with `grep -n sources` over it, which returned nothing. The citation
+ * named a real file doing real work of its own, so opening it confirmed a test
+ * exists rather than that this claim was in it, and the half the comment itself
+ * called load-bearing was resting on no assertion anywhere.
+ *
+ * Kept and renamed rather than deleted: a misspelt kind here is still worth a
+ * compile error, and a name that overstates a check is worse than no check.
  */
-type NamesASecondDocument = 'mergeDocument' | 'replacePage';
-const _switchCoversExactlyThose: NamesASecondDocument extends CommandKind ? true : never = true;
-void _switchCoversExactlyThose;
+export type NamesASecondDocument = 'mergeDocument' | 'replacePage';
+const _bothNamesAreCommandKinds: NamesASecondDocument extends CommandKind ? true : never = true;
+void _bothNamesAreCommandKinds;

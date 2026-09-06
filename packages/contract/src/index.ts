@@ -91,6 +91,7 @@ export {
   insertImagePageSchema,
   mergeDocumentSchema,
   movePageSchema,
+  type NamesASecondDocument,
   renderableCommandSchema,
   replacePageSchema,
   sourceIdsOf,
