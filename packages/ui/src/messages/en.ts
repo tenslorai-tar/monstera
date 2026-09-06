@@ -266,12 +266,19 @@ export const ANNOTATIONS_KIND_LINE = messageKey('surface.annotations.kind.line')
 export const ANNOTATIONS_KIND_INK = messageKey('surface.annotations.kind.ink');
 export const ANNOTATIONS_KIND_REDACT = messageKey('surface.annotations.kind.redact');
 export const ANNOTATIONS_KIND_TEXT_BOX = messageKey('surface.annotations.kind.text-box');
+export const ANNOTATIONS_KIND_STICKY_NOTE = messageKey('surface.annotations.kind.sticky-note');
 export const ANNOTATION_TEXT_TITLE = messageKey('dialog.annotation-text.title');
 export const ANNOTATION_TEXT_LABEL = messageKey('dialog.annotation-text.label');
 export const ANNOTATION_TEXT_APPLY = messageKey('dialog.annotation-text.apply');
 export const ANNOTATION_TEXT_EMPTY = messageKey('dialog.annotation-text.empty');
 export const ANNOTATION_TEXT_TOO_LONG = messageKey('dialog.annotation-text.too-long');
+export const ANNOTATION_NOTE_TITLE = messageKey('dialog.annotation-note.title');
+export const ANNOTATION_NOTE_LABEL = messageKey('dialog.annotation-note.label');
+export const ANNOTATION_NOTE_APPLY = messageKey('dialog.annotation-note.apply');
+export const ANNOTATION_NOTE_EMPTY = messageKey('dialog.annotation-note.empty');
+export const ANNOTATION_NOTE_TOO_LONG = messageKey('dialog.annotation-note.too-long');
 export const TOOL_TEXT_BOX_TITLE = messageKey('command.annotate.text-box');
+export const TOOL_STICKY_NOTE_TITLE = messageKey('command.annotate.sticky-note');
 export const ANNOTATIONS_KIND_OTHER = messageKey('surface.annotations.kind.other');
 export const STATUS_GO_TO = messageKey('surface.status.go-to');
 export const STATUS_GO_TO_OUTSIDE = messageKey('surface.status.go-to-outside');
@@ -496,6 +503,7 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // NAMES THE OBJECT, not who wrote it. A `/FreeText` from another application
   // is a text box too, and the row beside this label shows its words.
   [ANNOTATIONS_KIND_TEXT_BOX]: 'Text box',
+  [ANNOTATIONS_KIND_STICKY_NOTE]: 'Note',
   [ANNOTATION_TEXT_TITLE]: 'Text box',
   [ANNOTATION_TEXT_LABEL]: 'Text',
   [ANNOTATION_TEXT_APPLY]: 'Add text box',
@@ -504,7 +512,13 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // read as an instruction rather than as a complaint about what they did.
   [ANNOTATION_TEXT_EMPTY]: 'Type the text this box should show.',
   [ANNOTATION_TEXT_TOO_LONG]: 'That is too long for one text box. Shorten it, or use several.',
+  [ANNOTATION_NOTE_TITLE]: 'Note',
+  [ANNOTATION_NOTE_LABEL]: 'Comment',
+  [ANNOTATION_NOTE_APPLY]: 'Add note',
+  [ANNOTATION_NOTE_EMPTY]: 'Type the comment this note should hold.',
+  [ANNOTATION_NOTE_TOO_LONG]: 'That is too long for one note. Shorten it, or use several.',
   [TOOL_TEXT_BOX_TITLE]: 'Text box',
+  [TOOL_STICKY_NOTE_TITLE]: 'Note',
   // WHAT IT IS RATHER THAN WHAT IT IS NOT. A row reading *Unknown* tells a
   // reader the application is confused; *Annotation* tells them a comment is
   // there and which page to look at, which is what the panel is for.

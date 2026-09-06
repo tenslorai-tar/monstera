@@ -8,6 +8,7 @@ import {
   RECTANGLE_TOOL_ID,
   REDACT_TOOL_ID,
 } from '../annotations/shapeTools.js';
+import { STICKY_NOTE_TOOL_ID } from '../annotations/pointTools.js';
 import { TEXT_BOX_TOOL_ID } from '../annotations/textTools.js';
 import {
   ARROW_TOOL_TITLE,
@@ -16,6 +17,7 @@ import {
   LINE_TOOL_TITLE,
   RECTANGLE_TOOL_TITLE,
   REDACT_TOOL_TITLE,
+  TOOL_STICKY_NOTE_TITLE,
   TOOL_TEXT_BOX_TITLE,
 } from '../messages/en.js';
 import type { UiCommand } from '../registries/commands.js';
@@ -132,12 +134,35 @@ export function textBoxToolCommand(deps: ToolCommandDeps): UiCommand {
 }
 
 /**
- * Every shape tool's command.
+ * The sticky note's command.
  *
- * A list rather than four call sites at the composition point, for the reason
- * `shapeTools` is one: adding the fifth is an entry here, and a composition
+ * Identical to its seven siblings, and identical for a second reason worth
+ * having beside the text box's: that tool was the first to open a dialog, and
+ * this one is the first driven by a CLICK rather than a drag. Neither changed
+ * what selecting a tool means. A command that had to know how its tool is
+ * gestured would be the overlay's dispatch table one layer up.
+ */
+export function stickyNoteToolCommand(deps: ToolCommandDeps): UiCommand {
+  return toolCommand(STICKY_NOTE_TOOL_ID, TOOL_STICKY_NOTE_TITLE, 47, deps);
+}
+
+/**
+ * Every annotation tool's command.
+ *
+ * A list rather than eight call sites at the composition point, for the reason
+ * `shapeTools` is one: adding the ninth is an entry here, and a composition
  * root that named each of them individually would be a second place the set of
  * tools is written down.
+ *
+ * **NOT ONLY THE SHAPES, whatever this function is called.** The sentence here
+ * used to read *every shape tool's command*, and it stopped being true the day
+ * the text box joined the list — a tool that draws no shape, and now a second
+ * one that draws nothing at all. The name is left alone deliberately: renaming
+ * an exported function reaches the composition root and two case files, which
+ * is a separate edit from the one that makes the description honest. **The name
+ * is the residual falsehood and it is stated here rather than fixed quietly**,
+ * so the next reader meets the discrepancy in the place a false name would
+ * otherwise hide it.
  */
 export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
   return [
@@ -148,5 +173,6 @@ export function shapeToolCommands(deps: ToolCommandDeps): readonly UiCommand[] {
     inkToolCommand(deps),
     redactToolCommand(deps),
     textBoxToolCommand(deps),
+    stickyNoteToolCommand(deps),
   ];
 }

@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react';
-import type { ContractClient } from '@monstera/contract';
+import type { AnnotationKindName, ContractClient } from '@monstera/contract';
 import type { DocId, DocVersion, MessageKey } from '@monstera/shared';
 import { type ReactElement, useEffect, useState } from 'react';
 
@@ -11,6 +11,7 @@ import {
   ANNOTATIONS_KIND_OTHER,
   ANNOTATIONS_KIND_REDACT,
   ANNOTATIONS_KIND_SQUARE,
+  ANNOTATIONS_KIND_STICKY_NOTE,
   ANNOTATIONS_KIND_TEXT_BOX,
   ANNOTATIONS_LABEL,
   ANNOTATIONS_REMOVE,
@@ -216,6 +217,9 @@ const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
   ink: ANNOTATIONS_KIND_INK,
   redact: ANNOTATIONS_KIND_REDACT,
   'text-box': ANNOTATIONS_KIND_TEXT_BOX,
+  // *NOTE* AND NOT *STICKY NOTE*, which is the tool's name rather than the
+  // object's. A reader scanning this list is being told what is on the page.
+  'sticky-note': ANNOTATIONS_KIND_STICKY_NOTE,
   other: ANNOTATIONS_KIND_OTHER,
 };
 
@@ -230,7 +234,17 @@ interface PanelAnnotation {
    * a question MuPDF's own walk answers (ADR-0041).
    */
   readonly index: number;
-  readonly kind: 'square' | 'circle' | 'line' | 'ink' | 'redact' | 'text-box' | 'other';
+  /**
+   * **THE CONTRACT'S TYPE, not a copy of its members.**
+   *
+   * This was the same nine names written out again, and the comment above
+   * {@link KIND_LABELS} claimed that a kind added to the channel without a
+   * label here is a compile error. It was not: the copy would have gone on
+   * satisfying the table while the channel grew past it, and the error the
+   * comment promised would never have arrived. Taking the type is what makes
+   * that sentence true.
+   */
+  readonly kind: AnnotationKindName;
   readonly contents: string;
 }
 

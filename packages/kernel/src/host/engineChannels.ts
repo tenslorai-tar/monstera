@@ -1,6 +1,7 @@
 import {
   type CommandKind,
   addAnnotationSchema,
+  annotationKindNameSchema,
   channel,
   cropPagesSchema,
   setPageTransitionSchema,
@@ -263,7 +264,12 @@ const engineAnnotationSchema = z
      * useless if the host answers with a list nothing can point into.
      */
     index: z.number().int().nonnegative(),
-    kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'text-box', 'other']),
+    // THE CONTRACT'S ENUM, and this was the FIFTH place the same list of names
+    // was written down — the draft union that defines them, the renderer
+    // channel, the kernel's derived alias, the panel's interface, and here.
+    // Adding the sticky note reddened three of them and would have reddened
+    // none had any been spelt slightly differently. `commands.ts` holds it now.
+    kind: annotationKindNameSchema,
     contents: z.string().max(ENGINE_ANNOTATION_CONTENTS_MAX),
   })
   .strict();

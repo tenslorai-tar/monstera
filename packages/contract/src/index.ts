@@ -58,9 +58,11 @@ export { type Incident, IncidentLog, type IncidentSink } from './incident.js';
 export {
   type AnnotationColour,
   type AnnotationDraft,
+  type AnnotationKindName,
   type AnnotationPoint,
   type AnnotationRect,
   type LineEnding,
+  annotationKindNameSchema,
   annotationPointSchema,
   lineEndingSchema,
   type Command,

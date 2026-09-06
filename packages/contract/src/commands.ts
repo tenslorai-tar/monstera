@@ -1094,10 +1094,127 @@ export const annotationDraftSchema = z.discriminatedUnion('type', [
       fontSize: z.number().min(MIN_ANNOTATION_FONT).max(MAX_ANNOTATION_FONT),
     })
     .strict(),
+  z
+    .object({
+      /**
+       * `/Subtype /Text` — the note icon a reader clicks to read a comment.
+       *
+       * **THE FIRST MEMBER PLACED BY A POINT RATHER THAN A SHAPE**, and the
+       * point is a measurement rather than a simplification. MuPDF 1.28.0
+       * **clamps** a `/Text`'s box to between 10 and 20 points square, anchored
+       * at the displayed top-left corner — measured 2026-09-06 across seven
+       * requested sizes on a `/MediaBox [0 0 200 300]` page: 0, 1, 5 and 10 all
+       * store a 10-square box and 20, 30 and 60 all store a 20-square one. So
+       * the size a caller asks for survives only inside a ten-point band and is
+       * discarded outside it, which makes a `rect` field four numbers of which
+       * two are mostly ignored by the writer of record — a value a person could
+       * set that nothing reliably applies, which is the display-only sin
+       * arriving inside a payload and the argument that took the border width
+       * off the redact mark.
+       *
+       * The first reading of that measurement said *a fixed 20 by 20*, from a
+       * single 30-point sample. It was one axis of evidence carrying a claim
+       * about a rule, and the number it predicted for a point — the one this
+       * member actually sends — was wrong by half.
+       *
+       * An icon's size is the reader's business anyway: a note is a marker, and
+       * a marker that scaled with how far somebody happened to drag would be
+       * two notes at two sizes meaning the same thing.
+       */
+      type: z.literal('sticky-note'),
+      /** Where the icon is anchored, in PDF user space. */
+      at: annotationPointSchema,
+      /**
+       * The comment the icon opens.
+       *
+       * `text-box`' bound and its argument. **Required**, for the same reason
+       * that one is: a note icon carrying nothing is a control a reader clicks
+       * to be shown an empty popup, which is the display-only sin one
+       * interaction further on than a blank text box. The tool answers
+       * `undefined` when the dialog is dismissed, so nothing here represents a
+       * note with no note in it.
+       *
+       * `/Contents` here is a comment ABOUT the page rather than text drawn on
+       * it, which is the ordinary meaning of the key and the opposite of what
+       * `text-box` needs — one more reason those are two members rather than
+       * one with a flag.
+       */
+      text: z.string().min(1).max(MAX_ANNOTATION_TEXT),
+      /**
+       * What the icon is drawn in — `/C`, which for a `/Text` colours the icon
+       * itself rather than a stroke.
+       *
+       * No icon SHAPE beside it, and that is the distinction this file has
+       * otherwise blurred: a field with no control is carried here when a
+       * FEATURES row already owes the control (colour, border width and font
+       * size are all owed by *style controls*), and refused when nothing owes
+       * it. No row in `docs/FEATURES.md` promises a choice of note icon, so
+       * `/Name` is the kernel's constant rather than a payload field nothing
+       * would ever set.
+       */
+      colour: annotationColourSchema,
+    })
+    .strict(),
 ]);
 
 /** One annotation, as the tool that drew it describes it. */
 export type AnnotationDraft = z.infer<typeof annotationDraftSchema>;
+
+/**
+ * What a READER may call an annotation it found — every kind this build writes,
+ * plus `'other'`.
+ *
+ * ## It lives here because {@link annotationDraftSchema} is the authority
+ *
+ * This list used to be spelt out a second time, inside `document.annotations`'
+ * answer schema, and the two were kept in step by hand. That is B3a's shape
+ * exactly: *which kinds does this build write* is a question the draft union
+ * already answers, and a second statement of it agrees most of the time.
+ *
+ * The sticky note is what found it. Adding a member to the union above reddened
+ * the build at the channel — which is the *good* direction, because
+ * `ListedAnnotation`'s kind is derived and TypeScript could see the two lists
+ * disagree. The other direction is the quiet one: a name added to the channel's
+ * enum that no tool writes is a label the catalogue carries and nothing can
+ * reach, and nothing at all would have reported it.
+ *
+ * ## Asserted rather than computed, and that is deliberate
+ *
+ * Deriving the enum from `annotationDraftSchema.options` would mean mapping over
+ * the members, which produces `string[]` — `z.enum` would then answer a schema
+ * whose inferred type is `string`, and every reader that switches on a kind
+ * would lose its exhaustiveness check. So the list is written and the
+ * relationship is a **compile-time assertion in both directions**, which costs
+ * two type aliases and keeps the union narrow.
+ *
+ * Both directions, because they fail differently and only one of them is loud:
+ * a missing name is a kind the kernel can produce and the channel cannot carry,
+ * and an extra one is a label nothing will ever produce.
+ */
+export const annotationKindNameSchema = z.enum([
+  'square',
+  'circle',
+  'line',
+  'ink',
+  'redact',
+  'text-box',
+  'sticky-note',
+  'other',
+]);
+
+/** What a reader may call an annotation. See {@link annotationKindNameSchema}. */
+export type AnnotationKindName = z.infer<typeof annotationKindNameSchema>;
+
+/** Every kind a tool can write has a name a reader can use. */
+const _everyDraftIsNameable: AnnotationDraft['type'] extends AnnotationKindName ? true : never =
+  true;
+void _everyDraftIsNameable;
+
+/** And no name exists that no tool writes — `'other'` being the one exception. */
+const _everyNameIsWritten: Exclude<AnnotationKindName, 'other'> extends AnnotationDraft['type']
+  ? true
+  : never = true;
+void _everyNameIsWritten;
 
 /**
  * Add one annotation to one page.

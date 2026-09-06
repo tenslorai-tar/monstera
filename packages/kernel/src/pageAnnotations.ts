@@ -1,5 +1,7 @@
 import type {
   AnnotationDraft,
+  AnnotationKindName,
+  AnnotationPoint,
   AnnotationRect,
   CommandOfKind,
   LineEnding,
@@ -139,6 +141,20 @@ function placedRect(
   const a = toViewport(pdfPoint(rect.x0, rect.y0), transform);
   const b = toViewport(pdfPoint(rect.x1, rect.y1), transform);
   return [Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y)];
+}
+
+/**
+ * A point as the degenerate rectangle at it.
+ *
+ * What a POINT-placed annotation hands the geometry, and it is deliberately a
+ * conversion rather than a size: the two subtypes that use it are given their
+ * extent by MuPDF and disagree about how — a `/Text` keeps the corner, a
+ * `/Caret` keeps the centre — so any size chosen here would be right for one of
+ * them and silently wrong for the other. A degenerate box says the one thing
+ * this build is deciding, which is where the annotation goes.
+ */
+function pointBox(at: AnnotationPoint): AnnotationRect {
+  return { x0: at.x, y0: at.y, x1: at.x, y1: at.y };
 }
 
 /**
@@ -372,6 +388,63 @@ const kinds: { readonly [T in AnnotationDraft['type']]: AnnotationKind<DraftOf<T
       // as a stray line on somebody's page.
     },
   },
+  'sticky-note': {
+    subtype: 'Text',
+    // THE POINT'S OWN BOX, which is what makes this entry different from every
+    // one above it: the annotation's extent is MuPDF's, not the draft's, so
+    // there is nothing to measure but where it was put. `touchesPage` then
+    // asks whether that point is on the page, which is the only question a
+    // marker can be refused on.
+    bounds: (draft, transform) => placedRect(pointBox(draft.at), transform),
+    // A POINT IS NEVER DEGENERATE, and this is the third shape that test has
+    // taken in this file. A box can have no width, a line can have no length,
+    // and an icon anchored at a point always occupies the twenty points MuPDF
+    // gives it — so there is no *nothing a reader could see* state to refuse,
+    // and `false` here is the honest answer rather than a check waived.
+    degenerate: () => false,
+    write: (annotation, draft, transform): void => {
+      // THE RECTANGLE IS A POINT AND MuPDF SIZES IT. Measured 2026-09-06 over
+      // seven requested sizes on a `/MediaBox [0 0 200 300]` page: the box is
+      // anchored at the displayed top-left corner and its side is CLAMPED to
+      // between 10 and 20 points — 0, 1, 5 and 10 all store 10, and 20, 30 and
+      // 60 all store 20. A degenerate request therefore lands at the floor, so
+      // a note this build writes is 10 points square.
+      //
+      // Passing the point's own box says exactly what is being decided, which
+      // is where the icon goes. Passing a size would be a number surviving only
+      // inside a ten-point band and silently discarded outside it.
+      //
+      // NOT a fixed 20 — that was the first reading, from a single 30-point
+      // sample, and it was wrong for the one input this function actually
+      // sends. `pageAnnotations.test.ts` pins the number that arrives.
+      annotation.setRect(placedRect(pointBox(draft.at), transform));
+      annotation.setContents(draft.text);
+      annotation.setColor([...draft.colour]);
+      // THE ICON IS A CONSTANT AND NOT A FIELD. `/Name` chooses between the
+      // format's eight standard icons, and no row in `docs/FEATURES.md` owes a
+      // control that picks one — unlike the colour beside it, which *style
+      // controls* owes by name. A payload field nothing will ever set is the
+      // display-only sin one layer in, so the choice is made here and stated.
+      //
+      // `Comment` is the speech bubble every viewer draws for a note, which is
+      // what a reader has to recognise without being told.
+      annotation.setIcon('Comment');
+      // NOTHING SETS A BORDER OR AN APPEARANCE, AND BOTH ARE REFUSED. Measured
+      // the same day: MuPDF answers `setBorderWidth` on a `/Text` with *"Text
+      // annotations have no BS property"* and `setDefaultAppearance` with
+      // *"no DA property"*, exactly as it refuses them on a Redact.
+      //
+      // AND THE ENGINE WRITES A SECOND OBJECT: a `/Popup` lands in `/Annots`
+      // beside the note, so one command adds TWO entries to the array. The
+      // walk does not see it — `getAnnotations()` answered `[Text, Square]` for
+      // a page whose `/Annots` held three — and `deleteAnnotation` on the note
+      // takes the popup with it, measured at three entries down to one. So the
+      // handle ADR-0041 defines is unaffected, and that is a fact about this
+      // engine rather than an assumption: `/Popup` is the second subtype the
+      // walk filters, after the widgets that made the handle a walk position in
+      // the first place.
+    },
+  },
 };
 
 /**
@@ -439,8 +512,16 @@ export const applyAddAnnotation: Apply<'mupdf', 'addAnnotation'> = (
  * member before the tool would be a label nothing can produce from this
  * application's own documents and everything else's, which is the harder half
  * to keep honest.
+ *
+ * **RE-EXPORTED FROM THE CONTRACT RATHER THAN DERIVED HERE**, which is where
+ * this type went the day it became the third statement of one list. It was
+ * `AnnotationDraft['type'] | 'other'` — correct, and correct is not the test:
+ * the channel spelt the same set out by hand, so the reader's vocabulary had a
+ * derivation, a literal and this. `commands.ts` now holds the one declaration
+ * and asserts it against the draft union in both directions, and everything
+ * else imports it.
  */
-export type AnnotationKindName = AnnotationDraft['type'] | 'other';
+export type { AnnotationKindName };
 
 /** One annotation on a page, as a panel needs to name it. */
 export interface ListedAnnotation {
@@ -493,6 +574,7 @@ const NAMED: Readonly<Record<string, AnnotationKindName>> = {
   // being `other`. So the panel starts naming text boxes this build did not
   // write, which is right — the label says what the object is, not who made it.
   FreeText: 'text-box',
+  Text: 'sticky-note',
 };
 
 /**

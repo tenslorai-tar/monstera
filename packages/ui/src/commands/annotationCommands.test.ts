@@ -127,6 +127,44 @@ describe('rectangleToolCommand', () => {
     expect(commands.map((command) => command.id)).toContain(RECTANGLE_TOOL_ID);
   });
 
+  it('EVERY REGISTERED TOOL HAS A COMMAND, which is the direction nothing checked', async () => {
+    // THE JOIN'S OTHER HALF, and it is the half that stays quiet. The case
+    // above asserts that each command selects its own tool — it iterates the
+    // COMMANDS, so a tool with no command is not in the set it walks and
+    // nothing about its absence is observable. The failure that leaves is a
+    // tool registered in `registries/tools.ts`, reachable by nothing, mounted
+    // by no control: code that exists and cannot be used.
+    //
+    // It is not hypothetical. The sticky note was written, registered as a
+    // tool, exercised by twelve cases and shipped with no command at all; the
+    // whole suite stayed green, because the one assertion on the pair could
+    // only see the side that existed. That is a one-sided set assertion, and
+    // the tell is that the argument it holds constant — the command list — is
+    // the thing an omission removes from.
+    //
+    // The two registries are composed in `App.tsx` and this is the only other
+    // place they meet. It builds both from the same modules rather than reading
+    // the app's composition, which would make a case a second wiring place; the
+    // equality is what it asserts, and a tool added to one registry alone is
+    // red here whichever registry that was.
+    const { shapeTools } = await import('../annotations/shapeTools.js');
+    const { textBoxTool } = await import('../annotations/textTools.js');
+    const { pointTools } = await import('../annotations/pointTools.js');
+    const ask = (): Promise<undefined> => Promise.resolve(undefined);
+
+    const toolIds = [...shapeTools, textBoxTool({ ask }), ...pointTools({ ask })].map(
+      (tool) => tool.id,
+    );
+    const commandIds = shapeToolCommands({
+      activeTool: () => undefined,
+      onSelect: () => undefined,
+    }).map((command) => command.id);
+
+    // SETS, SORTED, so the message names which id is missing rather than
+    // reporting that two lists differ in length.
+    expect([...commandIds].sort()).toStrictEqual([...toolIds].sort());
+  });
+
   it('gives each control its own place, so two do not claim one slot', () => {
     const orders = shapeToolCommands({ activeTool: () => undefined, onSelect: () => undefined })
       .flatMap((command) => command.placements)

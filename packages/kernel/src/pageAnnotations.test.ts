@@ -414,6 +414,171 @@ describe('applyAddAnnotation writes a text box as the format defines one', () =>
   });
 });
 
+describe('applyAddAnnotation places a point annotation where the click was', () => {
+  /**
+   * The two point-placed subtypes, and what makes them a pair worth testing
+   * together: neither is given its size by this build, and MuPDF's two answers
+   * are DIFFERENT. A `/Text` keeps the corner it was handed and a `/Caret`
+   * keeps the centre, so a single shared expectation would be right for one of
+   * them and would pass for an implementation that had confused the two.
+   *
+   * The numbers are pinned rather than derived, for the reason the text box's
+   * key set is: they are the engine's, this build cannot compute them, and a
+   * MuPDF version that changes either should be a red build here rather than a
+   * silent move in where every note on every page sits.
+   */
+  const NOTE: Extract<AnnotationDraft, { type: 'sticky-note' }> = {
+    type: 'sticky-note',
+    at: { x: 40, y: 200 },
+    text: 'check this figure',
+    colour: [1, 0.8, 0.2],
+  };
+
+  /** `/Name`, which is the icon a `/Text` draws. Absent on every other subtype. */
+  async function iconOf(bytes: Uint8Array): Promise<string | null> {
+    const document = await PDFDocument.load(bytes, { updateMetadata: false });
+    const annots = document.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the page carries no /Annots');
+    const [first] = annots.asArray();
+    const dict = first instanceof PDFRef ? document.context.lookup(first, PDFDict) : undefined;
+    if (dict === undefined) throw new Error('the annotation is not a reachable dictionary');
+    const name = dict.lookup(PDFName.of('Name'));
+    return name instanceof PDFName ? name.asString() : null;
+  }
+
+  it('anchors a note at the point, at the 10-point floor MuPDF clamps to', async () => {
+    // THE POINT IS THE DISPLAYED TOP-LEFT CORNER, measured 2026-09-06 and
+    // asserted here in PDF space: a draft at (40, 200) stores
+    // `/Rect [40 190 50 200]` — x runs right from the point and y runs DOWN
+    // from it, because down the page is smaller y.
+    //
+    // TEN AND NOT TWENTY, which is the number this assertion exists to hold.
+    // MuPDF clamps the side to [10, 20] and a point request is below the floor,
+    // so a note is ten points square. Read from a single 30-point sample the
+    // rule looked like a fixed twenty, and the value that prediction gave for
+    // the input this build actually sends was wrong by half.
+    //
+    // It is also the assertion a wrong y-flip cannot survive: an implementation
+    // that forgot the flip would anchor at (40, 100) on this 300-high page,
+    // which is a different number rather than the same box mirrored.
+    const stored = await readBack(await drawnOn(await fixture(), command({ annotation: NOTE })));
+    expect(stored[0]?.subtype).toBe('/Text');
+    expect(stored[0]?.bounds).toStrictEqual([40, 190, 50, 200]);
+  });
+
+  it('places a note through the CROP ORIGIN, not from the media box', async () => {
+    // THE TRANSLATION TERM, which the upright origin-zero fixture cannot see:
+    // its crop starts at 0, so *translate by the crop origin* is adding zero.
+    //
+    // The displayed box is the crop INTERSECTED with the media box, which this
+    // fixture is built to exercise: `/CropBox [50 100 250 400]` over a
+    // `/MediaBox [0 0 200 300]` is visible from (50, 100) to (200, 300) — 150
+    // by 200, which is what the refusal message says when a point misses it.
+    // So the frame's top-left corner is (50, 300), and a draft at (60, 280) is
+    // 10 across and 20 down: the note hangs down and right to `[60 270 70 280]`.
+    //
+    // An implementation measuring from the media box's own corner would put the
+    // same point 50 to the left, at x 10.
+    const stored = await readBack(
+      await drawnOn(
+        await fixture({ crop: [50, 100, 250, 400] }),
+        command({ annotation: { ...NOTE, at: { x: 60, y: 280 } } }),
+      ),
+    );
+    expect(stored[0]?.bounds).toStrictEqual([60, 270, 70, 280]);
+  });
+
+  it('stores the SAME box on a rotated page, because both halves turn', async () => {
+    // THE ROTATION TERM, and the expected value is deliberately the upright
+    // case's — which reads like a case that proves nothing and is the opposite.
+    //
+    // `/Rotate` is applied twice on this path and cancels: `placedRect` turns
+    // the PDF point into the displayed frame, and MuPDF turns the displayed
+    // rectangle back when it stores `/Rect`. Landing at the same document
+    // coordinates whatever the page is displayed at is the CORRECT behaviour —
+    // a note belongs where the reader pointed, and rotating the view must not
+    // move it.
+    //
+    // What separates it is that only ONE of the two halves is ours. MuPDF's is
+    // fixed and measured: handed the same displayed rectangle on `/Rotate 0`
+    // and `/Rotate 90` it stores `[10 270 20 280]` and `[20 0 30 10]`, so its
+    // half is unambiguously rotation-aware. An implementation whose transform
+    // ignored rotation would therefore NOT cancel — it would hand MuPDF an
+    // upright rectangle and get that second answer back. Equality here is the
+    // assertion; a difference would be the defect.
+    const stored = await readBack(
+      await drawnOn(await fixture({ rotate: 90 }), command({ annotation: NOTE })),
+    );
+    expect(stored[0]?.subtype).toBe('/Text');
+    expect(stored[0]?.bounds).toStrictEqual([40, 190, 50, 200]);
+  });
+
+  it('writes the icon MuPDF calls Comment, which no draft field chose', async () => {
+    // THE CONSTANT, asserted so it is a decision on the record rather than a
+    // default inherited. `/Name` picks between the format's eight standard
+    // icons; the draft has no field for one because no FEATURES row owes a
+    // control that would set it, and this is what the absence resolves to.
+    expect(await iconOf(await drawnOn(await fixture(), command({ annotation: NOTE })))).toBe(
+      '/Comment',
+    );
+  });
+
+  it('gives the note a colour and NO border, which the engine refuses anyway', async () => {
+    const stored = await readBack(await drawnOn(await fixture(), command({ annotation: NOTE })));
+    expect(stored[0]?.colour).toStrictEqual([1, 0.8, 0.2]);
+    // MEASURED, not omitted: MuPDF answers `setBorderWidth` on a `/Text` with
+    // *"Text annotations have no BS property"*, exactly as it does on a Redact.
+    // So the draft carries no border width and the object has no `/BS`.
+    expect(stored[0]?.borderWidth).toBeNull();
+  });
+
+  it('THE WALK DOES NOT SEE THE POPUP MuPDF WRITES BESIDE THE NOTE', async () => {
+    // THE CASE THE HANDLE RESTS ON, one subtype further than the widget case
+    // that established it. `createAnnotation('Text')` writes TWO objects into
+    // `/Annots` — the note and a `/Popup` for it — so a build that named an
+    // annotation by its `/Annots` position would have every handle after the
+    // first note off by one, on documents that look completely ordinary.
+    //
+    // The fixture puts an ink stroke AFTER the note precisely so the two
+    // numbering schemes disagree: `/Annots` is [Text, Popup, Ink] and the walk
+    // is [Text, Ink]. A fixture with the note alone would have both schemes
+    // agreeing at index 0, which is the shape the defect also handles
+    // correctly.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: NOTE })),
+      command({ annotation: INK }),
+    );
+
+    expect((await readBack(both)).map((entry) => entry.subtype)).toStrictEqual([
+      '/Text',
+      '/Popup',
+      '/Ink',
+    ]);
+    const listed = await onSession(both, (session) => readAnnotations(session));
+    expect(listed.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'sticky-note', contents: 'check this figure' },
+      { page: 0, index: 1, kind: 'ink', contents: '' },
+    ]);
+  });
+
+  it('and removing the note takes its popup with it, leaving no orphan', async () => {
+    // THE OTHER HALF, and it is the one that could have been a leak: a `/Popup`
+    // whose `/Parent` had been deleted would be an object referencing nothing,
+    // and `/Annots` would keep growing as notes were added and removed. MuPDF
+    // deletes the pair, measured — three entries down to one.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: NOTE })),
+      command({ annotation: INK }),
+    );
+    const after = await removedFrom(both, 0, 0);
+
+    expect((await readBack(after)).map((entry) => entry.subtype)).toStrictEqual(['/Ink']);
+    const listed = await onSession(after, (session) => readAnnotations(session));
+    expect(listed.annotations).toStrictEqual([{ page: 0, index: 0, kind: 'ink', contents: '' }]);
+  });
+
+});
+
 describe('applyRemoveAnnotation takes the annotation the handle names', () => {
   it('removes it, and leaves the one beside it', async () => {
     // Two marks on one page, distinguishable by kind. Removing index 0 must

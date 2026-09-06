@@ -2,7 +2,7 @@ import { MATCH_TEXT_WINDOW } from '@monstera/shared';
 import { z } from 'zod';
 
 import { channel, type ClientApi, type Handlers, type ParamsOf, type ResultOf } from './channel.js';
-import { renderableCommandSchema } from './commands.js';
+import { annotationKindNameSchema, renderableCommandSchema } from './commands.js';
 import { docIdSchema, docVersionSchema, fileHandleSchema } from './schemas.js';
 
 /**
@@ -1320,8 +1320,15 @@ export const channels = {
              * A member is added on the day a tool writes that kind, not before:
              * a label for something no document here produces is a string in
              * the catalogue that nothing can reach.
+             *
+             * **IMPORTED RATHER THAN SPELT OUT**, which it was until the sticky
+             * note arrived and made the two lists disagree. `commands.ts` owns
+             * *what this build writes* — the draft union is that question's
+             * answer — so a second enum here was a second opinion about it
+             * (B3a), and the direction that stayed quiet was a name listed here
+             * that no tool produces.
              */
-            kind: z.enum(['square', 'circle', 'line', 'ink', 'redact', 'text-box', 'other']),
+            kind: annotationKindNameSchema,
             /**
              * The annotation's own note, or empty.
              *
