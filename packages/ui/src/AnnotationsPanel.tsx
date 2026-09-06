@@ -12,6 +12,7 @@ import {
   ANNOTATIONS_KIND_REDACT,
   ANNOTATIONS_KIND_SQUARE,
   ANNOTATIONS_LABEL,
+  ANNOTATIONS_REMOVE,
   ANNOTATIONS_ROW,
   ANNOTATIONS_TRUNCATED,
   ANNOTATIONS_UNAVAILABLE,
@@ -56,6 +57,7 @@ export function AnnotationsPanel({
   docId,
   version,
   onJump,
+  onRemove,
 }: {
   readonly client: ContractClient;
   /** `undefined` with no document open, which renders nothing. */
@@ -64,6 +66,21 @@ export function AnnotationsPanel({
   readonly version: DocVersion | undefined;
   /** Takes the reader to a page, recording the jump. */
   readonly onJump: (page: number) => void;
+  /**
+   * Removes one annotation, named by the handle the row was built from.
+   *
+   * Dispatched from the SURFACE rather than through the command registry, for
+   * `movePage`'s reason (`App.tsx`): a registered command's `run` takes the
+   * application's state and no arguments, because a menu, a chord and the
+   * palette all invoke it and none of them can supply a handle. A row can, so
+   * it dispatches — through the same `applyDocumentCommand` every other
+   * caller uses, never differently.
+   */
+  readonly onRemove: (handle: {
+    readonly page: number;
+    readonly index: number;
+    readonly version: DocVersion;
+  }) => void;
 }): ReactElement | null {
   const { i18n } = useLingui();
   const [state, setState] = useState<PanelState>({ kind: 'idle' });
@@ -118,11 +135,18 @@ export function AnnotationsPanel({
         <>
           <ul className="m-annotations-list">
             {state.annotations.map((annotation, at) => (
-              // THE INDEX IS THE KEY, for `LinksPanel`'s reason: an annotation
-              // has no identity this build can see — that is the same missing
-              // handle the inverse is owed — the list is replaced whole when
-              // the version moves, and nothing in it is reordered in place.
-              <li key={at}>
+              // THE LIST POSITION IS THE REACT KEY, and it is NOT the handle.
+              // Worth keeping apart now that the two are both numbers: `at` is
+              // where the row sits in this array, `annotation.index` is where
+              // the annotation sits in the walk on its own page. They agree for
+              // a single-page document and diverge on the second page, so a
+              // handle built from `at` would delete the wrong annotation on
+              // every document but the simplest.
+              //
+              // A position is the right React key here for `LinksPanel`'s
+              // reason: the list is replaced whole when the version moves and
+              // nothing in it is reordered in place.
+              <li className="m-annotations-row" key={at}>
                 <button
                   className="m-annotations-item"
                   onClick={() => {
@@ -142,6 +166,28 @@ export function AnnotationsPanel({
                     // second bound beside the channel's.
                     <span className="m-annotations-note">{annotation.contents}</span>
                   )}
+                </button>
+                <button
+                  className="m-annotations-remove"
+                  onClick={() => {
+                    // THE VERSION COMES FROM THE ANSWER, not from the `version`
+                    // prop, and the two are equal here — the guard above returns
+                    // null unless they are. Taking it from the state anyway is
+                    // the point rather than caution: the handle is *page, index
+                    // and the version its walk was read at*, and building it
+                    // from the shell's current version would produce a value
+                    // that can never disagree, which is a guard that cannot
+                    // fire wearing the shape of one that can.
+                    onRemove({
+                      page: annotation.page,
+                      index: annotation.index,
+                      version: state.version,
+                    });
+                  }}
+                  title={i18n._(ANNOTATIONS_REMOVE)}
+                  type="button"
+                >
+                  {i18n._(ANNOTATIONS_REMOVE)}
                 </button>
               </li>
             ))}
@@ -174,6 +220,14 @@ const KIND_LABELS: Record<PanelAnnotation['kind'], MessageKey> = {
 /** One annotation, as the contract carries it. */
 interface PanelAnnotation {
   readonly page: number;
+  /**
+   * The handle's other half — where this sits in the walk on its own page.
+   *
+   * Carried but never computed here. It is minted by the kernel's reader and
+   * resolved by its inverse, and a renderer that derived one would be deciding
+   * a question MuPDF's own walk answers (ADR-0041).
+   */
+  readonly index: number;
   readonly kind: 'square' | 'circle' | 'line' | 'ink' | 'redact' | 'other';
   readonly contents: string;
 }

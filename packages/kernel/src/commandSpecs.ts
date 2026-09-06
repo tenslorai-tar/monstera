@@ -44,8 +44,11 @@ import {
 } from './pageOrder.js';
 import {
   applyAddAnnotation,
+  applyRemoveAnnotation,
   captureAddAnnotation,
+  captureRemoveAnnotation,
   invertAddAnnotation,
+  invertRemoveAnnotation,
 } from './pageAnnotations.js';
 import { applyCropPages, captureCropPages, invertCropPages } from './pageCrop.js';
 import {
@@ -285,6 +288,18 @@ const declared = {
     // UNREACHABLE BY THE TYPE and required by this table's shape, for
     // `invertDeletePages`' reason.
     invert: invertAddAnnotation,
+  },
+  removeAnnotation: {
+    // THE SPREAD CARRIES `targets: 'annotation'` IN, and nothing here reads it.
+    // That is the axis working: the declaration is what the bus branches on
+    // before it reaches this table, so a spec that named existing state and a
+    // spec that did not are the same shape at this point. `sources` needed a
+    // type parameter because it changes what an apply is handed; this one does
+    // not change the apply at all.
+    ...declaredCommands.removeAnnotation,
+    apply: applyRemoveAnnotation,
+    capture: captureRemoveAnnotation,
+    invert: invertRemoveAnnotation,
   },
   // SPREAD FROM `pdfLibWriter.ts`, which is where a pdf-lib command is declared
   // — one declaration, and this table is the view that makes the set of them

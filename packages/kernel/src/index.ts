@@ -59,6 +59,7 @@ export {
   type SnapshotWrite,
   type Undone,
   MissingWriterSessionError,
+  StaleTargetError,
   UnregisteredWriterError,
   type WriterRegistry,
 } from './commandBus.js';

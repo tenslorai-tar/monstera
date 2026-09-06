@@ -10,11 +10,18 @@ import {
   StandardFonts,
 } from '@cantoo/pdf-lib';
 import type { AnnotationDraft, CommandOfKind } from '@monstera/contract';
+import { asDocVersion } from '@monstera/shared';
 import { describe, expect, it } from 'vitest';
 
 import type { MupdfSession } from './engineSeam.js';
 import { mupdfWriter } from './mupdfWriter.js';
-import { applyAddAnnotation, captureAddAnnotation, readAnnotations } from './pageAnnotations.js';
+import {
+  applyAddAnnotation,
+  applyRemoveAnnotation,
+  captureAddAnnotation,
+  captureRemoveAnnotation,
+  readAnnotations,
+} from './pageAnnotations.js';
 
 /**
  * Adding an annotation, read back through a DIFFERENT library than the one that
@@ -285,6 +292,132 @@ async function onSession<T>(
     await mupdfWriter.close(session);
   }
 }
+
+/** Applies a removal to a fixture and returns the resulting bytes. */
+async function removedFrom(
+  bytes: Uint8Array,
+  page: number,
+  index: number,
+): Promise<Uint8Array> {
+  const session = await mupdfWriter.open(bytes);
+  try {
+    await applyRemoveAnnotation(session, {
+      kind: 'removeAnnotation',
+      page,
+      index,
+      // THE VERSION IS NEVER READ HERE, and that is ADR-0041 Decision 3 rather
+      // than an omission: the bus compares it before this apply is reached, and
+      // an apply that re-derived the rule would be a second opinion about what
+      // the declaration table already says. `commandBus.test.ts` is where the
+      // refusal is a case.
+      version: asDocVersion(1),
+    });
+    return await mupdfWriter.serialise(session);
+  } finally {
+    await mupdfWriter.close(session);
+  }
+}
+
+describe('applyRemoveAnnotation takes the annotation the handle names', () => {
+  it('removes it, and leaves the one beside it', async () => {
+    // Two marks on one page, distinguishable by kind. Removing index 0 must
+    // leave the ink — an implementation that removed the last, or all, or the
+    // wrong one passes any assertion that merely counts.
+    const both = await drawnOn(
+      await drawnOn(await fixture(), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    const after = await onSession(await removedFrom(both, 0, 0), (session) =>
+      readAnnotations(session),
+    );
+    expect(after.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'ink', contents: '' },
+    ]);
+  });
+
+  it('RESOLVES THROUGH THE WALK, so a widget does not shift the handle', async () => {
+    // THE CASE THE WHOLE DESIGN RESTS ON, and its fixture is built so the two
+    // numbering schemes disagree: the page carries a text field first, then a
+    // square, then an ink. `/Annots` is [Widget, Square, Ink] and the walk is
+    // [Square, Ink], so handle 0 is the SQUARE and `/Annots` position 0 is the
+    // widget.
+    //
+    // An implementation resolving through `/Annots` removes the form field and
+    // leaves both marks. Nothing about the document afterwards looks wrong
+    // until someone opens the form.
+    const withField = await drawnOn(
+      await drawnOn(await fixture({ field: true }), command({ annotation: SQUARE })),
+      command({ annotation: INK }),
+    );
+    const after = await onSession(await removedFrom(withField, 0, 0), (session) =>
+      readAnnotations(session),
+    );
+    expect(after.annotations).toStrictEqual([
+      { page: 0, index: 0, kind: 'ink', contents: '' },
+    ]);
+
+    // THE CONTROL, and without it the case above passes on a fixture whose
+    // field never arrived. The widget must still be there: this command removes
+    // an annotation, and a form field is not one of the things it may take.
+    const loaded = await PDFDocument.load(await removedFrom(withField, 0, 0), {
+      updateMetadata: false,
+    });
+    const annots = loaded.getPages()[0]?.node.lookup(PDFName.of('Annots'));
+    if (!(annots instanceof PDFArray)) throw new Error('the page lost /Annots entirely');
+    const subtypes = annots.asArray().map((entry) => {
+      const dict = entry instanceof PDFRef ? loaded.context.lookup(entry, PDFDict) : undefined;
+      const subtype = dict?.lookup(PDFName.of('Subtype'));
+      return subtype instanceof PDFName ? subtype.asString() : '?';
+    });
+    expect(subtypes).toStrictEqual(['/Widget', '/Ink']);
+  });
+
+  it('refuses an index the page does not have, naming the count', async () => {
+    const one = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    await expect(removedFrom(one, 0, 1)).rejects.toThrow(/has 1 annotation\(s\)/u);
+  });
+
+  it('refuses a page the document does not have', async () => {
+    // The page is validated FIRST, so this is a page error rather than an
+    // annotation one — `pageAt`'s message, not `annotationAt`'s.
+    const one = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    await expect(removedFrom(one, 4, 0)).rejects.toThrow(/outside this document/u);
+  });
+
+  it('records no prior state, and says why', async () => {
+    const one = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    const captured = await onSession(one, (session) =>
+      captureRemoveAnnotation(session, {
+        kind: 'removeAnnotation',
+        page: 0,
+        index: 0,
+        version: asDocVersion(1),
+      }),
+    );
+    expect(captured.captured).toBe(false);
+    // STRUCTURAL, unlike `addAnnotation`'s *not yet* — the reason has to say so,
+    // because the two commands' refusals read alike and only one of them is
+    // waiting for something.
+    expect(captured.captured ? '' : captured.reason).toMatch(/whole object graph/u);
+  });
+
+  it('refuses to capture a handle naming nothing, rather than reporting a checkpoint', async () => {
+    // `captureAddAnnotation`'s care, and the reason it matters here: a capture
+    // that shrugged would have the bus take a full checkpoint of the document
+    // for a command whose apply was about to throw.
+    const one = await drawnOn(await fixture(), command({ annotation: SQUARE }));
+    await expect(
+      onSession(one, (session) =>
+        captureRemoveAnnotation(session, {
+          kind: 'removeAnnotation',
+          page: 0,
+          index: 9,
+          version: asDocVersion(1),
+        }),
+      ),
+    ).rejects.toThrow(RangeError);
+  });
+});
 
 describe('applyAddAnnotation places the rectangle in PDF user space', () => {
   it('writes the rectangle the command named, on an upright page', async () => {

@@ -678,7 +678,11 @@ export const channels = {
        */
       historyDropped: z.number().int().nonnegative(),
     }),
-    ['document-not-open', 'document-busy', 'document-poisoned'],
+    // `stale-target` IS ON THIS CHANNEL ALONE, because a command is the only
+    // thing that names existing state (ADR-0041 Decision 2). A read answers with
+    // whatever is there now and cannot be stale; the version it carries is what
+    // lets a caller notice, not something it can get wrong.
+    ['document-not-open', 'document-busy', 'document-poisoned', 'stale-target'],
   ),
 
   /**

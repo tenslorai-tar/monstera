@@ -314,12 +314,38 @@ export interface CommandPrior {
    * anything can add an annotation other than through this command — which the
    * eraser and the select tool both will.
    *
-   * So a checkpoint, and the handle is the eraser's problem to solve properly.
-   * Stated as owed rather than left to be rediscovered: the first tool that
-   * needs to name an existing annotation is what supplies the identity this
-   * entry would need.
+   * **THE HANDLE NOW EXISTS and this is still `never`, which is a different
+   * statement from the one this entry made until 2026-09-06.** It said the
+   * identity was the eraser's to supply. It came from
+   * [ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+   * instead, ahead of any tool, and `removeAnnotation` below takes one.
+   *
+   * What has not been done is capturing it. `apply` would have to report where
+   * the annotation it just wrote landed in the walk, and that is a change to
+   * what a capture returns rather than a fact anyone is missing. Worth taking,
+   * and worth knowing one thing first: an inverse is applied through the undo
+   * path and never through `execute`, so the version refusal that guards a
+   * renderer's stale handle does not reach it — which is correct, since an
+   * inverse minted in the lane cannot be stale, and would have read as a bug the
+   * first time undo was refused.
    */
   readonly addAnnotation: never;
+
+  /**
+   * **`never`**, and unlike its neighbour above this one is structural.
+   *
+   * The prior state of a removed annotation is its whole object graph: a
+   * dictionary that may reference an appearance stream, which references fonts
+   * and images. `deletePages`' argument on a smaller noun — recording it means
+   * inventing a serialisation for arbitrary PDF objects, and the bytes would
+   * land in a log whose `retainedBytes` counts checkpoints only, so §4's
+   * retention could not see them.
+   *
+   * A handle is not prior state. Knowing *which* annotation was removed says
+   * nothing about what it contained, so the identity that made this command
+   * possible does nothing for its inverse.
+   */
+  readonly removeAnnotation: never;
 }
 
 /**

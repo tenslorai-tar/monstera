@@ -8,6 +8,7 @@ import {
   PROBLEM_NOT_OPEN,
   PROBLEM_POISONED,
   PROBLEM_REFERENCE_LABEL,
+  PROBLEM_STALE_TARGET,
 } from '../messages/en.js';
 
 /** Every failure code a document command can hand a renderer. */
@@ -15,6 +16,7 @@ export type CommandProblem =
   | { readonly code: 'document-not-open' }
   | { readonly code: 'document-busy' }
   | { readonly code: 'document-poisoned' }
+  | { readonly code: 'stale-target' }
   | { readonly code: 'internal'; readonly incident: string };
 
 /**
@@ -29,6 +31,7 @@ const MESSAGE: Readonly<Record<CommandProblem['code'], MessageKey>> = {
   'document-not-open': PROBLEM_NOT_OPEN,
   'document-busy': PROBLEM_BUSY,
   'document-poisoned': PROBLEM_POISONED,
+  'stale-target': PROBLEM_STALE_TARGET,
   internal: PROBLEM_INTERNAL,
 };
 

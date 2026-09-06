@@ -1,6 +1,11 @@
 import type { CommandKind } from '@monstera/contract';
 
-import type { CommandReads, CommandSources, WriterSession } from './engineSeam.js';
+import type {
+  CommandReads,
+  CommandSources,
+  CommandTargets,
+  WriterSession,
+} from './engineSeam.js';
 
 /**
  * What every command **is** — and nothing about how it is performed
@@ -98,6 +103,28 @@ export interface SourceRouting {
 }
 
 /**
+ * Does this command name state that already exists, and can therefore be stale?
+ *
+ * [ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+ * Decision 3, and a **declaration rather than an inference from the payload**,
+ * for {@link SourceRouting}'s reason one axis along: a command carrying a field
+ * called `version` is not the same statement as a command whose meaning depends
+ * on the document not having moved, and reading one off the other is the partial
+ * reimplementation B3a is about.
+ *
+ * Every command declares it, including the sixteen that answer `'none'`.
+ *
+ * **This is the axis that separates the two kinds of command in the table.**
+ * Everything else here is self-contained: it carries the whole of its intent, and
+ * applying it twice gives the same result or a second annotation, never the
+ * wrong one. A command declaring anything but `'none'` is only meaningful
+ * against one version, and the bus refuses it against any other.
+ */
+export interface TargetRouting {
+  readonly targets: CommandTargets;
+}
+
+/**
  * Does this command need a value read through another engine?
  *
  * ADR-0040's 2026-09-05 extension, and {@link SourceRouting}'s sibling rather
@@ -151,6 +178,7 @@ export type CommandDeclaration<K extends CommandKind> = {
   readonly kind: K;
 } & WriterRouting &
   SourceRouting &
+  TargetRouting &
   ReadRouting &
   Invertibility &
   Reproducibility;
@@ -195,6 +223,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -223,6 +255,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -251,6 +287,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -278,6 +318,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -302,6 +346,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -323,6 +371,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -345,6 +397,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -368,6 +424,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -413,6 +473,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -438,6 +502,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -462,6 +530,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -489,6 +561,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -511,6 +587,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -539,6 +619,10 @@ const declarations = {
     // Names no second document, so its `apply` takes one session and is
     // unmoved by ADR-0040's axis existing.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -563,6 +647,10 @@ const declarations = {
     // axis counts open documents whose sessions the apply is handed, and this
     // one's picture arrives in its own payload.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Needs nothing read through another engine; its `apply` takes what the
     // command carries and nothing else.
     reads: 'none',
@@ -592,6 +680,10 @@ const declarations = {
     // Names no second document. Everything it composes comes from the one it
     // is writing into.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // THE FIRST COMMAND TO DECLARE THIS, and the axis was built ahead of it
     // (ADR-0040's 2026-09-05 extension). A byte-image `apply` has no session,
     // so a pdf-lib TOC would have to walk `/Outlines` itself — a second opinion
@@ -628,6 +720,9 @@ const declarations = {
     // ADR-0040's correction records as the axis's stated limit. What guards it
     // is `pageMerge.test.ts`, named in the proof's own allow case.
     sources: 'one',
+    // Self-contained: it names another DOCUMENT, which is a different axis, and
+    // nothing in its payload points into an answer this document gave.
+    targets: 'none',
     // Needs nothing read through another engine. Both sessions are MuPDF's, and
     // everything this composes is in the two page trees it already holds.
     reads: 'none',
@@ -648,6 +743,9 @@ const declarations = {
     replay: 'reapply-intent',
     // ADR-0040's axis, second command to declare it.
     sources: 'one',
+    // Self-contained: it names another DOCUMENT, which is a different axis, and
+    // nothing in its payload points into an answer this document gave.
+    targets: 'none',
     // Nothing read through another engine.
     reads: 'none',
   },
@@ -680,8 +778,48 @@ const declarations = {
     replay: 'reapply-intent',
     // Names no second document. The rectangle is in its own payload.
     sources: 'none',
+    // Self-contained: it carries the whole of its intent, so there is no
+    // earlier answer it could be stale against and nothing for the bus to
+    // compare a version with.
+    targets: 'none',
     // Reads nothing through another engine. The page's boxes and rotation come
     // from the session this apply is already holding.
+    reads: 'none',
+  },
+  removeAnnotation: {
+    kind: 'removeAnnotation',
+    // The same classification the row above carries, from the other direction:
+    // an annotation is an object in `/Annots`, so removing one is a page-tree
+    // write and MuPDF owns it. Nothing a content-stream writer could do would
+    // remove an annotation — it would draw over the appearance and leave the
+    // object, which is the redaction row's distinction and the reason that row
+    // says the marks remove nothing.
+    writer: 'mupdf',
+    // TERMINAL, and NOT for `addAnnotation`'s reason. That one says *not yet*
+    // because the handle did not exist; this one has the handle and still
+    // cannot record an inverse, because the prior state of a removed annotation
+    // is its whole object graph — a dictionary that may reference an appearance
+    // stream, which references fonts and images. `deletePages`' argument on a
+    // smaller noun: unbounded and unserialisable without inventing a format for
+    // arbitrary PDF objects, and a log whose `retainedBytes` counts checkpoints
+    // only would under-report it.
+    invertible: false,
+    undo: 'checkpoint',
+    // Removing an object writes no date and consults no clock. The same two
+    // runs the row above measures, in the other direction.
+    reproducible: true,
+    replay: 'reapply-intent',
+    // Names no second document.
+    sources: 'none',
+    // THE FIRST COMMAND TO DECLARE THIS, and the axis was built with it rather
+    // than ahead of it — ADR-0041 Decision 3. Its payload points into an answer
+    // `document.annotations` gave at a particular version, and the walk is a
+    // total order over a fixed set for that version only. The bus refuses it
+    // against any other; nothing in the apply below learns that a comparison
+    // happened.
+    targets: 'annotation',
+    // Reads nothing through another engine. The walk it resolves against is the
+    // session's own.
     reads: 'none',
   },
 } satisfies CommandDeclarations;

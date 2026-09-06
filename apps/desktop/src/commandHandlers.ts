@@ -1,5 +1,5 @@
 import type { ContractHandlers } from '@monstera/contract';
-import { DocumentBusyError, DocumentNotOpenError } from '@monstera/kernel';
+import { DocumentBusyError, DocumentNotOpenError, StaleTargetError } from '@monstera/kernel';
 import { err, ok } from '@monstera/shared';
 
 import { type DocumentCommands, DocumentPoisonedError } from './documentCommands.js';
@@ -61,6 +61,17 @@ export function executeCommandHandler(
       // unexplained defect for the one failure it can actually explain to a
       // user. The count in the message stays main-side with everything else.
       if (thrown instanceof DocumentPoisonedError) return err({ code: 'document-poisoned' });
+      // A RACE, and the one refusal here the user can act on themselves
+      // (ADR-0041 Decision 2). The renderer named a row of an answer the
+      // document has moved past — an undo, or another surface's command,
+      // between the read and the click. Reporting it as `internal` would tell
+      // someone to quote an incident id for a document that is intact and a
+      // list that has already refreshed.
+      //
+      // The two versions stay main-side with every other diagnostic. What the
+      // renderer needs is that nothing changed and the list it is holding is
+      // old, and neither number helps it say that.
+      if (thrown instanceof StaleTargetError) return err({ code: 'stale-target' });
       throw thrown;
     }
   };

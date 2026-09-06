@@ -1,7 +1,7 @@
-import type { DocId } from '@monstera/shared';
+import type { DocId, DocVersion } from '@monstera/shared';
 import { z } from 'zod';
 
-import { docIdSchema } from './schemas.js';
+import { docIdSchema, docVersionSchema } from './schemas.js';
 
 /**
  * Every mutation the renderer can ask for, declared **once** (ADR-0009 §6).
@@ -1057,6 +1057,39 @@ export const addAnnotationSchema = z.object({
   annotation: annotationDraftSchema,
 });
 
+/**
+ * Removes one annotation, named by where it sat in a walk the caller has seen.
+ *
+ * ## The version is part of the NAME, not a precaution beside it
+ *
+ * [ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md).
+ * `page` and `index` locate an annotation in `document.annotations`' answer, and
+ * that answer is a total order over a fixed set **for one version only** —
+ * across versions the pair is not an identity at all, it is arithmetic that
+ * still lands somewhere. So the three fields are one name, and the kernel
+ * refuses the command when the document has moved rather than acting on two
+ * thirds of it.
+ *
+ * The failure it prevents leaves no trace: a stale index is in range, names a
+ * real annotation and deletes it, and the document afterwards is well formed.
+ *
+ * ## The index is the WALK's, which the reader must not re-derive
+ *
+ * Not a position in the page's `/Annots` array. MuPDF filters widgets out of
+ * the walk, so on a page carrying form fields the two differ by the number of
+ * fields above the annotation — and both are in range. `pageAnnotations.ts`
+ * mints it and resolves it; nothing else computes either.
+ */
+export const removeAnnotationSchema = z.object({
+  kind: z.literal('removeAnnotation'),
+  /** Zero-based index of the page it sits on. */
+  page: z.number().int().nonnegative(),
+  /** Its position in the walk that produced the answer this names. */
+  index: z.number().int().nonnegative(),
+  /** The version that answer carried. Refused if the document has moved. */
+  version: docVersionSchema,
+});
+
 export const commandSchema = z.discriminatedUnion('kind', [
   rotatePagesSchema,
   setLayerVisibilitySchema,
@@ -1077,6 +1110,7 @@ export const commandSchema = z.discriminatedUnion('kind', [
   mergeDocumentSchema,
   replacePageSchema,
   addAnnotationSchema,
+  removeAnnotationSchema,
 ]);
 
 /**
@@ -1133,6 +1167,11 @@ export const renderableCommandSchema = z.discriminatedUnion('kind', [
   // six numbers whatever the document weighs. The picture the user is pointing
   // at never crosses, in either direction.
   addAnnotationSchema,
+  // RENDERABLE, and its intent is three numbers — but note what it is NOT: the
+  // renderer names a row of an answer it was given, never an object. It cannot
+  // reach an annotation main did not just describe to it, and cannot express one
+  // that was never listed.
+  removeAnnotationSchema,
 ]);
 
 /** A command a renderer may send. */
@@ -1253,3 +1292,36 @@ const NO_SOURCES: readonly DocId[] = Object.freeze([]);
 export type NamesASecondDocument = 'mergeDocument' | 'replacePage';
 const _bothNamesAreCommandKinds: NamesASecondDocument extends CommandKind ? true : never = true;
 void _bothNamesAreCommandKinds;
+
+/**
+ * The version a command's payload says it was composed against, if any.
+ *
+ * `sourceIdsOf`'s sibling on ADR-0041's axis, and deliberately the same shape:
+ * *which state a payload names* is a question about the payload, and the payload
+ * is the contract's. The kernel asks rather than reading fields, so a second
+ * command that names existing state is added in one place.
+ *
+ * The `if` is on the KIND for `sourceIdsOf`'s reason. A structural test —
+ * `'version' in command` — would pick up any future field spelt `version`,
+ * including one that is not a `DocVersion` and one that means something else
+ * entirely; and a `switch` with a `default` stops being exhaustive, so a new
+ * kind falls through it silently.
+ */
+export function targetVersionOf(command: Command): DocVersion | undefined {
+  if (command.kind === 'removeAnnotation') return command.version;
+  return undefined;
+}
+
+/**
+ * Which kinds {@link targetVersionOf} answers with a version for.
+ *
+ * Exported for the kernel to anchor against its `targets` axis, exactly as
+ * {@link NamesASecondDocument} is anchored against `sources`. That tie lives in
+ * `commandDeclarations.test.ts` and is a mutual assignability — this package
+ * cannot import the kernel, so the half checkable here is only that the name is
+ * a real kind, and saying so is what stopped the sibling above from spending a
+ * range asserting nothing.
+ */
+export type NamesAnAnnotation = 'removeAnnotation';
+const _thatNameIsACommandKind: NamesAnAnnotation extends CommandKind ? true : never = true;
+void _thatNameIsACommandKind;

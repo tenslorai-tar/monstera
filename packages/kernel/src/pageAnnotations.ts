@@ -549,3 +549,101 @@ export const invertAddAnnotation: Invert<'mupdf', 'addAnnotation'> = (): Promise
     'an added annotation has no inverse yet; undo restores the checkpoint the bus took (ADR-0037)',
   );
 };
+
+/**
+ * The annotation a handle names, resolved through the walk that minted it.
+ *
+ * **This is {@link readAnnotations}' inverse and it must stay that way.** The
+ * index is a position in `getAnnotations()`, which filters widgets out — so on a
+ * page carrying form fields it is not the `/Annots` position, and the two differ
+ * by the number of fields above it. Resolving through anything else agrees on
+ * every document without a form, which is what would make the disagreement ship.
+ *
+ * That is B3a rather than tidiness: *which objects on this page are annotations*
+ * is MuPDF's rule. There is one caller of it in each direction and they are in
+ * this file, eleven lines apart.
+ *
+ * Refuses rather than guessing. An index past the end is a caller that built a
+ * handle from something other than an answer this module gave, and the message
+ * names the count so the reader can see which of the two numbers is wrong.
+ */
+function annotationAt(loaded: PDFPage, index: number): PDFAnnotation {
+  const walked = loaded.getAnnotations();
+  const found = walked[index];
+  if (found === undefined) {
+    throw new RangeError(
+      `Annotation ${String(index)} is outside this page, which has ${String(walked.length)} ` +
+        'annotation(s). The index is a position in the engine walk that document.annotations ' +
+        'answers with, not a position in the page /Annots array.',
+    );
+  }
+  return found;
+}
+
+/**
+ * Removes the annotation a handle names.
+ *
+ * ## The version is NOT checked here, and that is the design rather than a gap
+ *
+ * [ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+ * Decision 3: the bus holds the document's version and this apply does not, so
+ * the staleness refusal belongs where `sources` are resolved and happens before
+ * anything here runs. An apply that re-derived it would be a second opinion
+ * about a question the declaration table answers, and the second command to
+ * name existing state would write a third.
+ *
+ * So this function is the same shape as every other apply: it validates what it
+ * can see — the page, then the index — and writes.
+ */
+export const applyRemoveAnnotation: Apply<'mupdf', 'removeAnnotation'> = (
+  session: MupdfSession,
+  command: CommandOfKind<'removeAnnotation'>,
+): Promise<void> =>
+  withDocument(session, (document) => {
+    const loaded = pageAt(document, command.page, document.countPages());
+    loaded.deleteAnnotation(annotationAt(loaded, command.index));
+  });
+
+/**
+ * Reports that prior state cannot be recorded, and validates first.
+ *
+ * `captureAddAnnotation`'s shape and its care: the page and the index are
+ * checked here so a handle naming nothing is a caller error rather than a
+ * capture refusal the bus turns into a checkpoint of a command that was never
+ * going to apply.
+ *
+ * The reason is **structural**, unlike its neighbour's. A removed annotation's
+ * prior state is its whole object graph — a dictionary that may reference an
+ * appearance stream, which references fonts and images — so recording it means
+ * inventing a serialisation for arbitrary PDF objects, and those bytes would sit
+ * in a log whose `retainedBytes` counts checkpoints only.
+ */
+export function captureRemoveAnnotation(
+  session: MupdfSession,
+  command: CommandOfKind<'removeAnnotation'>,
+): Promise<CaptureResult<never>> {
+  return withDocument(session, (document) => {
+    annotationAt(pageAt(document, command.page, document.countPages()), command.index);
+    return {
+      captured: false,
+      reason:
+        'a removed annotation cannot be recorded as prior state: its prior state is the whole ' +
+        'object graph it owned, including any appearance stream and the fonts and images that ' +
+        'stream references, which is unbounded and has no serialisation here',
+    };
+  });
+}
+
+/**
+ * Unreachable, and required by {@link CommandSpec}'s shape.
+ *
+ * `CommandPrior['removeAnnotation']` is `never`, so nothing can construct an
+ * argument. It throws for `invertAddAnnotation`'s reason: a reachable path here
+ * would mean the type had been widened, and a quiet resolve would land that as
+ * an undo that silently did nothing.
+ */
+export const invertRemoveAnnotation: Invert<'mupdf', 'removeAnnotation'> = (): Promise<void> => {
+  throw new Error(
+    'a removed annotation has no inverse; undo restores the checkpoint the bus took (ADR-0037)',
+  );
+};

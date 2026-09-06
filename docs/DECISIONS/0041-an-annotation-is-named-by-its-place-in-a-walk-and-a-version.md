@@ -210,3 +210,49 @@ would be the per-command `if` the axis exists to prevent, and the second command
 to name an annotation would write its own. Expect ADR-0040's correction to
 repeat: an axis of this shape **binds in one direction only**, because a
 function that ignores an argument is assignable to a signature that passes it.
+
+---
+
+## Correction, 2026-09-06 (second) — all three decisions are built, and one prediction was wrong
+
+`removeAnnotation` exists, the `targets` axis exists, the bus refuses a stale
+handle, and the annotations panel dispatches one. Everything above that says
+otherwise is superseded by this note; the amendment log and the index row are
+edited rather than annotated, being live specifications.
+
+**The prediction about binding in one direction was wrong, and the reason is
+worth more than the prediction.** ADR-0040's axis binds one way because it
+changes what an `apply` is HANDED — a two-parameter function is assignable to a
+three-parameter signature, so a merge that ignored its source still compiled.
+This axis changes what the **bus** does before any apply runs. Nothing about a
+spec's shape varies with it: `removeAnnotation`'s entry in `commandSpecs.ts` is
+the same object `addAnnotation`'s is, and the axis is read from the declaration
+the entry spreads in. So there is no signature to be assignable to, and no
+direction to lose.
+
+The general form: **an axis that changes a SIGNATURE can be satisfied by
+ignoring it; an axis that changes a DECISION cannot.** The two look alike in the
+declaration table and they are not the same kind of thing, and which one you have
+decides whether a type can hold it at all. The seam's own comment on
+`CommandTargets` now says so, because the table is where the next reader will
+assume they are alike.
+
+**What holds it instead.** The axis is a value nothing type-checks, so its
+protection is three cases in `commandBus.test.ts`: a stale version refused with
+the document and the log untouched, the same command at the matching version
+going through, and a `targets: 'none'` command not compared at all. Mutating the
+bus to read a constant `'none'` reddens the first and the fourth; that fourth is
+the registration-defect throw, which is reachable only through a cast and guards
+the declaration disagreeing with `targetVersionOf`.
+
+**And the tie the sibling axis spent a range without.** `NamesAnAnnotation` is
+exported and anchored to the declarations in `commandDeclarations.test.ts`, in
+this commit rather than a range later. The derivation excludes `'none'` rather
+than naming a member, so the anticipated second member — a form field named by
+index — joins the set by existing and its author meets the anchor.
+
+**Still not built, and neither is owed by this ADR:** the eraser and select
+tools, which need a rect on each listed annotation and a hit-test; and
+`addAnnotation`'s inverse, which now has the handle it was missing and needs a
+capture that reports where the annotation landed. `commandLog.ts` records what
+that would take.

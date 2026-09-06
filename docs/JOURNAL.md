@@ -876,6 +876,89 @@ cherry-picked Zag machines, Lingui, zustand (ADR-0005).
 
 ---
 
+## 2026-09-06 — The handle's command half, and an axis a type cannot hold
+
+ADR-0041's three decisions are built. What is worth recording is where the ADR
+was wrong, because it was wrong in the direction that would have made the axis
+look finished.
+
+### The prediction, and why it failed
+
+The ADR expected ADR-0040's correction to repeat: *an axis of this shape binds in
+one direction only, because a function that ignores an argument is assignable to
+a signature that passes it.* It does not repeat, and the reason generalises.
+
+`sources` changes what an `apply` is **handed**, so it lives in `WriterBinding`
+as a cross product and a spec's shape varies with it — which is what leaves the
+one-way hole. `targets` changes what the **bus decides before any apply runs**.
+`removeAnnotation`'s spec entry is the same object `addAnnotation`'s is; writing
+`targets` into a spec literal is a TS2353 excess property, which is how the
+contract proof's fixture found out.
+
+**An axis that changes a signature can be satisfied by ignoring it. An axis that
+changes a decision cannot be held by a type at all.** The two sit in adjacent
+columns of one declaration table and look alike there, so the seam's own comment
+now says which kind each is — a reader deciding how to check a third axis will
+otherwise copy the wrong precedent.
+
+So what holds this one is cases: a stale version refused with the document and
+the log untouched, the same command at the matching version going through, a
+`targets: 'none'` command not compared, and a registration-defect throw reachable
+only through a cast. Mutating the bus to read a constant `'none'` reddens the
+first and the last.
+
+### The refusal is the first line of `execute`, and the ordering is the point
+
+Before the writer is resolved, before the capture, before anything is read. The
+capture serialises the document for a terminal entry, so a check after it pays a
+full checkpoint to refuse — and a check after `apply` is not a check. It is the
+same argument the capture's own position rests on: once the next step has run,
+the thing being protected is gone.
+
+### The tie was written with the axis, not a range later
+
+`NamesAnAnnotation` is exported and anchored to the `targets` declarations by
+mutual assignability in `commandDeclarations.test.ts`. Its sibling on `sources`
+spent a range asserting nothing because a comment named a file that did not
+carry the claim; this one exists in the commit that built the axis. The
+derivation excludes `'none'` rather than naming a member, so the anticipated
+second member — a form field named by index — joins the set by existing.
+
+### The version comes from the ANSWER, which is the only reason the guard can fire
+
+The panel holds two versions that are always equal while it is showing a fresh
+list: the shell's prop and the one its answer carried. The handle is built from
+the answer's. Taking the shell's would make them equal *always*, and the kernel's
+refusal would be unreachable while looking exactly like a guard that works —
+which is `SHOWN_PAGE`'s lesson on a different noun, and the reason the three
+fields are one payload rather than a handle plus a precaution.
+
+The control that would catch the wrong choice does not exist and the case says
+so: no fixture here can separate the two sources of a number that is 7 either
+way. What the case pins is that the version travels at all.
+
+### The flake, diagnosed on the second occurrence
+
+`App.test.tsx`'s delete-pages case, recorded a run earlier with its date and the
+explicit note that a second occurrence was the trigger. It fired.
+
+`declareDialog` takes `lazy(() => import('./XBody.js'))`, so opening a dialog
+starts a dynamic import while `findBy*` waits 1000 ms of wall clock. Under the
+full suite that import competes with forty-five other files; alone it always
+wins, which is why the case passed in isolation and on every re-run and read as
+*flaky under load*.
+
+**The DOM dump named it, and it had been printed on the first occurrence too.**
+`<body>` carried the scroll lock and the background `div` carried
+`data-base-ui-inert` — the dialog was open, its portal mounted, and the only
+thing missing was the body React was still importing. The diagnosis cost nothing
+that was not already on screen the first time.
+
+Fixed by preloading the bodies rather than by a longer timeout, which would leave
+a test whose passing depends on how many files the worker is running. **Five
+sites, not one:** About, crop, duplicate-pages and the save problem were the same
+latent race.
+
 ## 2026-09-06 — Three claims that were anchored to nothing, and a figure no tree held
 
 A review pass over the previous day's work, taken item by item. Nothing here was

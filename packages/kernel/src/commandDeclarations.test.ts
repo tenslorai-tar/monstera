@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CommandKind, NamesASecondDocument } from '@monstera/contract';
+import type { CommandKind, NamesAnAnnotation, NamesASecondDocument } from '@monstera/contract';
 
 import { type DeclaredCommands, declaredCommands } from './commandDeclarations.js';
 import { writerShapes } from './engineSeam.js';
@@ -57,6 +57,42 @@ const _contractCoversTheDeclarations: DeclaredSources extends NamesASecondDocume
   true;
 void _declarationsCoverTheContract;
 void _contractCoversTheDeclarations;
+
+/**
+ * The kinds this table declares as naming existing state.
+ *
+ * {@link DeclaredSources} on ADR-0041's axis, and it is written the same way for
+ * the same reason — the literal types survive `satisfies`, so the mapped type
+ * can separate the members.
+ */
+type DeclaredTargets = {
+  [K in CommandKind]: DeclaredCommands[K]['targets'] extends 'none' ? never : K;
+}[CommandKind];
+
+/**
+ * The `targets` axis tied to the contract's `targetVersionOf`, in both
+ * directions — written WITH the axis rather than a range after it.
+ *
+ * The sibling above spent a range asserting nothing, because its comment named
+ * a file that did not carry it. This one exists in the commit that built the
+ * axis, which is the whole of the lesson: the tie is not a follow-up, it is the
+ * half that makes the hand-kept `if` in `commands.ts` safe to keep.
+ *
+ * A kind gaining `targets: 'annotation'` here without joining that `if` breaks
+ * the second line, and the bus would otherwise refuse it at dispatch with
+ * *"the declaration and the contract's targetVersionOf disagree"* — after the
+ * registration is written, shipped and run. A kind losing the axis without
+ * leaving the `if` breaks the first.
+ *
+ * Note the derivation excludes `'none'` rather than including a named member,
+ * so a SECOND member — a form field named by index is the anticipated one —
+ * joins this set by existing, and its author meets these two lines rather than
+ * a green build.
+ */
+const _declarationsCoverTheTargets: NamesAnAnnotation extends DeclaredTargets ? true : never = true;
+const _targetsCoverTheDeclarations: DeclaredTargets extends NamesAnAnnotation ? true : never = true;
+void _declarationsCoverTheTargets;
+void _targetsCoverTheDeclarations;
 
 /** Every declared kind, as the table itself lists them. */
 const KINDS = Object.keys(declaredCommands) as readonly CommandKind[];
@@ -132,5 +168,16 @@ describe('the declaration table', () => {
     // table and requires a member that is known to be there.
     const declared = KINDS.filter((kind) => declaredCommands[kind].sources === 'one');
     expect(declared).toContain('mergeDocument');
+  });
+
+  it('CONTROL: exactly one kind declares a target, and the other sixteen answer none', () => {
+    // The targets axis's version of the control above, and it carries the
+    // second half as well. `never extends X` would satisfy one type-level line
+    // on its own; and a table where EVERY command declared a target would
+    // satisfy the other, while making the bus compare a version for commands
+    // that carry none — which is the registration-defect throw, on every
+    // rotate.
+    const named = KINDS.filter((kind) => declaredCommands[kind].targets !== 'none');
+    expect(named).toStrictEqual(['removeAnnotation']);
   });
 });

@@ -69,8 +69,11 @@ export {
 } from './pageMerge.js';
 export {
   applyAddAnnotation,
+  applyRemoveAnnotation,
   captureAddAnnotation,
+  captureRemoveAnnotation,
   invertAddAnnotation,
+  invertRemoveAnnotation,
   readAnnotations,
 } from './pageAnnotations.js';
 export { findDuplicatePages } from './pageDuplicates.js';

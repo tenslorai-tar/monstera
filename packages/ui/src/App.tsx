@@ -329,6 +329,36 @@ export function App({ client, settings }: AppProps): ReactElement {
   );
 
   /**
+   * Removing one annotation, from a row of the annotations panel.
+   *
+   * `movePage`'s dispatcher on a different surface and for its stated reason: a
+   * registered command's `run` takes the application's state and no arguments,
+   * because a menu, a chord and the palette all invoke it and none of them can
+   * supply a handle naming one annotation. A row can.
+   *
+   * **The handle arrives whole and nothing here rebuilds it.** In particular the
+   * version is the panel's — the one the list it drew was read at — and not
+   * `open?.version`, which is this component's current one. They are equal
+   * whenever the panel is showing a fresh list, and using the current one would
+   * make them equal *always*: the refusal in the kernel would be unreachable and
+   * would read exactly like a guard that works.
+   *
+   * So this spreads the handle into the payload and adds nothing. The one thing
+   * it must not do is be clever about a stale one, because being refused is the
+   * correct outcome and the panel re-reads on the version it is told about.
+   */
+  const removeAnnotation = useCallback(
+    (handle: { page: number; index: number; version: DocVersion }): void => {
+      if (activeId === undefined) return;
+      void applyDocumentCommand({ client, onApplied: applied, ask }, activeId, {
+        kind: 'removeAnnotation',
+        ...handle,
+      });
+    },
+    [activeId, applied, ask, client],
+  );
+
+  /**
    * Exchanging two pages, from the thumbnail strip's Shift+click.
    *
    * `movePage`'s dispatcher one command along, and it goes through
@@ -997,6 +1027,7 @@ export function App({ client, settings }: AppProps): ReactElement {
         client={client}
         docId={open?.docId}
         onJump={navigator.jumpTo}
+        onRemove={removeAnnotation}
         version={open?.version}
       />
       {/* E2's substrate, reached by a person. It renders nothing with no

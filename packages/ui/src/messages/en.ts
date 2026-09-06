@@ -258,6 +258,7 @@ export const ANNOTATIONS_LABEL = messageKey('surface.annotations.label');
 export const ANNOTATIONS_EMPTY = messageKey('surface.annotations.empty');
 export const ANNOTATIONS_UNAVAILABLE = messageKey('surface.annotations.unavailable');
 export const ANNOTATIONS_TRUNCATED = messageKey('surface.annotations.truncated');
+export const ANNOTATIONS_REMOVE = messageKey('surface.annotations.remove');
 export const ANNOTATIONS_ROW = messageKey('surface.annotations.row');
 export const ANNOTATIONS_KIND_SQUARE = messageKey('surface.annotations.kind.square');
 export const ANNOTATIONS_KIND_CIRCLE = messageKey('surface.annotations.kind.circle');
@@ -302,6 +303,7 @@ export const PROBLEM_TITLE = messageKey('dialog.command-problem.title');
 export const PROBLEM_NOT_OPEN = messageKey('dialog.command-problem.not-open');
 export const PROBLEM_BUSY = messageKey('dialog.command-problem.busy');
 export const PROBLEM_POISONED = messageKey('dialog.command-problem.poisoned');
+export const PROBLEM_STALE_TARGET = messageKey('dialog.command-problem.stale-target');
 export const PROBLEM_INTERNAL = messageKey('dialog.command-problem.internal');
 export const PROBLEM_REFERENCE_LABEL = messageKey('dialog.command-problem.reference');
 
@@ -471,6 +473,10 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // in this document* that quietly showed some of them is the display-only sin
   // in a list.
   [ANNOTATIONS_TRUNCATED]: 'Only the first 4,096 annotations are listed.',
+  // SAYS WHAT IT REMOVES, not just "Delete". The row beside it names a kind and
+  // a page, and a bare verb on a list of similar rows is the label a person
+  // clicks on the wrong line.
+  [ANNOTATIONS_REMOVE]: 'Remove this annotation',
   [ANNOTATIONS_ROW]: '{kind} on page {page}',
   // THE CONTROL'S WORDS, not the format's. `/Square` and `/Circle` are terms of
   // art; a person drew a rectangle and an ellipse, and the labels match the
@@ -762,6 +768,11 @@ export const EN: Readonly<Record<MessageKey, string>> = {
   // to close the window — which is the one action that loses them.
   [PROBLEM_POISONED]:
     'Monstera can no longer work on this document. Your changes are still open and unsaved — save them somewhere else, or close and reopen the file to start again.',
+  // SAYS NOTHING CHANGED FIRST, then what to do. The person clicked delete on a
+  // row and the row is still there, so the sentence they need is that the
+  // document is untouched — not an explanation of versions, which is ours.
+  [PROBLEM_STALE_TARGET]:
+    'That list was out of date, so nothing was changed. The document moved on while it was open. The list has been refreshed — have another look and try again.',
   [PROBLEM_INTERNAL]: 'Something went wrong inside Monstera. Your document is unchanged.',
   // A label, not a sentence: the value beside it is an opaque id, and ADR-0009
   // §9 is why it is the only thing about the diagnostic that crosses.

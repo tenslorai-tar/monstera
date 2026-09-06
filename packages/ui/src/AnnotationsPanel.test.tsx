@@ -2,7 +2,7 @@
 import { I18nProvider } from '@lingui/react';
 import { type ContractClient, channels, createClient } from '@monstera/contract';
 import { asDocId, asDocVersion, err, ok } from '@monstera/shared';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
@@ -22,7 +22,7 @@ const DOC = asDocId('00000000-0000-4000-8000-0000000000dd');
  */
 function clientAnswering(
   annotations: readonly unknown[],
-  options: { refuse?: boolean; truncated?: boolean } = {},
+  options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
 ): { client: ContractClient; asked: unknown[] } {
   const asked: unknown[] = [];
   const client = createClient(channels, (id, params) => {
@@ -32,7 +32,7 @@ function clientAnswering(
       options.refuse === true
         ? err({ code: 'document-poisoned' })
         : ok({
-            version: asDocVersion(1),
+            version: asDocVersion(options.version ?? 1),
             annotations,
             truncated: options.truncated ?? false,
           }),
@@ -53,13 +53,19 @@ async function settle(): Promise<void> {
   });
 }
 
-/** Renders the panel over one answer and returns every page it was asked to jump to. */
+/**
+ * Renders the panel over one answer and records what it asked the shell to do.
+ *
+ * `removes` carries whole handles rather than indices, because the case that
+ * matters is about which THREE numbers travel together.
+ */
 async function panel(
   annotations: readonly unknown[],
-  options: { refuse?: boolean; truncated?: boolean } = {},
-): Promise<{ jumps: number[]; asked: unknown[] }> {
+  options: { refuse?: boolean; truncated?: boolean; version?: number } = {},
+): Promise<{ jumps: number[]; removes: unknown[]; asked: unknown[] }> {
   const { client, asked } = clientAnswering(annotations, options);
   const jumps: number[] = [];
+  const removes: unknown[] = [];
   render(
     <Wrapped>
       <AnnotationsPanel
@@ -68,12 +74,15 @@ async function panel(
         onJump={(page): void => {
           jumps.push(page);
         }}
-        version={asDocVersion(1)}
+        onRemove={(handle): void => {
+          removes.push(handle);
+        }}
+        version={asDocVersion(options.version ?? 1)}
       />
     </Wrapped>,
   );
   await settle();
-  return { jumps, asked };
+  return { jumps, removes, asked };
 }
 
 describe('AnnotationsPanel', () => {
@@ -145,6 +154,43 @@ describe('AnnotationsPanel', () => {
     expect(asked).toStrictEqual([{ docId: DOC }]);
   });
 
+  it('dispatches the HANDLE its row was drawn from, not the row position', async () => {
+    // THE UI HALF OF THE WIRED PAIR, and the case is about which numbers
+    // travel. The second row's list position is 1 and its walk index is 0,
+    // because it is the first annotation on a different page — so a panel that
+    // sent the position would delete the wrong annotation on every document
+    // whose comments are not all on page one. The fixture is built to make
+    // those two numbers differ; if they matched, the case would pass for an
+    // implementation that had never read `index` at all.
+    const { removes } = await panel([
+      { page: 0, index: 0, kind: 'square', contents: '' },
+      { page: 3, index: 0, kind: 'ink', contents: '' },
+    ]);
+
+    const buttons = screen.getAllByRole('button', { name: 'Remove this annotation' });
+    fireEvent.click(buttons[1] as HTMLElement);
+
+    expect(removes).toStrictEqual([{ page: 3, index: 0, version: 1 }]);
+  });
+
+  it('sends the version the LIST was read at, which is what makes the refusal reachable', async () => {
+    // The handle's third number, and it is the one a renderer could most easily
+    // supply from the wrong place. The panel is given a shell version of 7 and
+    // an answer carrying 7; a value taken from anywhere else is still 7, so the
+    // fixture cannot separate them and this case does not claim to.
+    //
+    // What it pins is that the version TRAVELS. A handle of two numbers reaches
+    // the kernel, is compared against nothing, and the guard ADR-0041 Decision 2
+    // describes is unreachable while every test stays green.
+    const { removes } = await panel([{ page: 0, index: 2, kind: 'square', contents: '' }], {
+      version: 7,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove this annotation' }));
+
+    expect(removes).toStrictEqual([{ page: 0, index: 2, version: 7 }]);
+  });
+
   it('renders nothing at all with no document open', () => {
     const { client } = clientAnswering([]);
     const { container } = render(
@@ -153,6 +199,7 @@ describe('AnnotationsPanel', () => {
           client={client}
           docId={undefined}
           onJump={() => undefined}
+          onRemove={() => undefined}
           version={undefined}
         />
       </Wrapped>,

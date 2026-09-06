@@ -1,9 +1,16 @@
-// A VALUE IMPORT FROM THE CONTRACT, and the only one here. `sourceIdsOf`
-// answers which documents a payload names, which is a question about the
-// payload — the contract's, not this file's (ADR-0040 Decision 4). The contract
-// imports nothing but `zod` and `@monstera/shared`, so this reaches no engine.
-import { type CommandKind, type CommandOfKind, sourceIdsOf } from '@monstera/contract';
-import type { DocId } from '@monstera/shared';
+// VALUE IMPORTS FROM THE CONTRACT, and the only ones here. `sourceIdsOf`
+// answers which documents a payload names and `targetVersionOf` which version
+// it was composed against — both questions about the payload, which is the
+// contract's and not this file's (ADR-0040 Decision 4, ADR-0041 Decision 3). The
+// contract imports nothing but `zod` and `@monstera/shared`, so this reaches no
+// engine.
+import {
+  type CommandKind,
+  type CommandOfKind,
+  sourceIdsOf,
+  targetVersionOf,
+} from '@monstera/contract';
+import type { DocId, DocVersion } from '@monstera/shared';
 
 import type {
   CaptureResult,
@@ -36,6 +43,7 @@ import {
   type ByteImage,
   type CommandReads,
   type PreRead,
+  type CommandTargets,
   type PreReadValue,
   type SessionsByWriter,
   type WriterSession,
@@ -355,6 +363,36 @@ export type CommandSources = ReadonlyMap<DocId, SessionsByWriter>;
  * merge against a tab the user closed mid-dialog is the reachable path, and the
  * message has to let someone tell that apart from a routing mistake.
  */
+/**
+ * A command named existing state at a version the document has moved past.
+ *
+ * [ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+ * Decision 2, and the range transport's rule at `docs/ARCHITECTURE.md:305` on a
+ * different noun: a stale offset answered from new bytes builds a document out
+ * of two versions, and a stale index answered from a new walk removes an
+ * annotation out of two of them.
+ *
+ * **An ordinary race, not a defect** — `MissingSourceSessionError`'s framing.
+ * A renderer holding a list from before an undo is exactly the reachable path,
+ * and the surface's answer is to re-read and let the person look again. So both
+ * versions are named: without them the message cannot tell *the document moved*
+ * from *this renderer never held a version at all*.
+ */
+export class StaleTargetError extends Error {
+  constructor(
+    readonly kind: CommandKind,
+    readonly named: DocVersion,
+    readonly current: DocVersion,
+  ) {
+    super(
+      `${kind} names state read at version ${String(named)} and this document is at ` +
+        `${String(current)}. The answer it points into has been replaced, so the index in its ` +
+        `payload is arithmetic that would still land somewhere. Re-read and try again.`,
+    );
+    this.name = 'StaleTargetError';
+  }
+}
+
 export class MissingSourceSessionError extends Error {
   constructor(
     readonly kind: CommandKind,
@@ -637,6 +675,47 @@ export class CommandBus {
    * is the contract's. This file asks it rather than reading the fields, so a
    * command that gains a second-document field is added in one place.
    */
+  /**
+   * Refuses a command whose payload names state from an earlier version.
+   *
+   * ## It branches on the DECLARATION, never on the payload
+   *
+   * `#sourceSessionFor`'s rule on the third axis, and the same argument:
+   * `declaredCommands[kind].targets` is what says a command's meaning depends on
+   * the document not having moved. A payload that happens to carry a field
+   * called `version` is a different statement — one could carry a version it
+   * means to *write*, and inferring the rule from the field is the partial
+   * reimplementation B3a is about.
+   *
+   * So a `'none'` command is not checked even if its payload has a version, and
+   * a command declaring `'annotation'` whose payload carries none is a
+   * registration defect that surfaces here rather than as an `undefined`
+   * silently comparing equal to nothing.
+   *
+   * ## `targetVersionOf` is the CONTRACT's answer
+   *
+   * Which version a payload names is a question about the payload, and the
+   * payload is the contract's. This file asks rather than reading the field, so
+   * the second command to name existing state is added in one place.
+   */
+  #refuseIfStale<K extends CommandKind>(
+    command: CommandOfKind<K>,
+    targets: CommandTargets,
+    current: DocVersion,
+  ): void {
+    if (targets === 'none') return;
+
+    const named = targetVersionOf(command);
+    if (named === undefined) {
+      throw new Error(
+        `${command.kind} declares targets: '${targets}' and its payload names no version. The ` +
+          `declaration and the contract's targetVersionOf disagree, which is a registration ` +
+          `defect rather than a race.`,
+      );
+    }
+    if (named !== current) throw new StaleTargetError(command.kind, named, current);
+  }
+
   #sourceSessionFor<K extends CommandKind>(
     command: CommandOfKind<K>,
     sources: CommandSources,
@@ -696,6 +775,16 @@ export class CommandBus {
     inputs: CommandInputs,
   ): Promise<Executed> {
     const spec: DeclaredCommands[K] = declaredCommands[command.kind];
+
+    // REFUSED FIRST, BEFORE ANYTHING IS OBTAINED OR READ (ADR-0041 Decision 2).
+    //
+    // Ordering is the whole of it. The capture below serialises the document for
+    // a terminal entry, so a check placed after it would pay a full checkpoint
+    // to refuse — and worse, a check placed after `apply` would not be a check
+    // at all. This is the first line for the same reason the capture is before
+    // the apply: once the next step has run, the thing being protected is gone.
+    this.#refuseIfStale(command, spec.targets, context.version);
+
     const writer = this.#writerFor(command.kind, spec.writer);
     const session = await this.#sessionFor(command.kind, spec.writer, sessions, inputs);
 

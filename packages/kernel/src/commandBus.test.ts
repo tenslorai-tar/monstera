@@ -9,6 +9,7 @@ import {
   type CheckpointRestore,
   CommandBus,
   type SnapshotWrite,
+  StaleTargetError,
   UnregisteredWriterError,
 } from './commandBus.js';
 import {
@@ -22,6 +23,7 @@ import type { CommandWriter, DocumentContext } from './documentService.js';
 import type { ByteImage, MupdfSession } from './engineSeam.js';
 import { localMupdfWriter } from './localEngine.js';
 import { mupdfWriter, withDocument } from './mupdfWriter.js';
+import { applyAddAnnotation } from './pageAnnotations.js';
 import { localPdfLibWriter } from './pdfLibWriter.js';
 import { shownOn } from './shownText.js';
 
@@ -1355,5 +1357,132 @@ describe('CommandBus and the reads axis', () => {
     await bus.redo({}, context, inputs);
 
     expect(inputs.outlineCalls()).toBe(2);
+  });
+});
+
+describe('CommandBus and the targets axis', () => {
+  /** A session holding one square on page 0, which is what a handle can name. */
+  async function markedSession(): Promise<MupdfSession> {
+    const session = await mupdfWriter.open(flat);
+    await applyAddAnnotation(session, {
+      kind: 'addAnnotation',
+      page: 0,
+      annotation: {
+        type: 'square',
+        rect: { x0: 10, y0: 20, x1: 110, y1: 70 },
+        colour: [1, 0, 0],
+        borderWidth: 2,
+      },
+    });
+    return session;
+  }
+
+  /** How many annotations page 0 is holding. */
+  function markCount(session: MupdfSession): Promise<number> {
+    return withDocument(session, (document) => document.loadPage(0).getAnnotations().length);
+  }
+
+  it('refuses a command naming a version the document has moved past', async () => {
+    // THE POINT OF THE AXIS. `contextStub` starts at version 1, so a handle
+    // read at 9 is one whose answer this document never gave.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await markedSession();
+    const context = contextStub();
+    try {
+      await expect(
+        bus.execute(
+          { mupdf: session },
+          context,
+          { kind: 'removeAnnotation', page: 0, index: 0, version: asDocVersion(9) },
+          noByteImageExpected,
+        ),
+      ).rejects.toThrow(StaleTargetError);
+
+      // NOTHING HAPPENED, and this is the half that separates *refused* from
+      // *failed somewhere in the middle*. A check placed after the capture
+      // would have taken a full checkpoint; one placed after the apply would
+      // have removed the annotation and then complained.
+      expect(await markCount(session)).toBe(1);
+      expect(context.log.entries).toHaveLength(0);
+      expect(context.bumps()).toBe(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: the same command at the matching version goes through', async () => {
+    // Without this the case above passes for a bus that refused
+    // `removeAnnotation` unconditionally — which is a guard that works and a
+    // feature that does not, and every assertion about the refusal would stay
+    // green.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await markedSession();
+    const context = contextStub();
+    try {
+      const { entry, version } = await bus.execute(
+        { mupdf: session },
+        context,
+        { kind: 'removeAnnotation', page: 0, index: 0, version: asDocVersion(1) },
+        noByteImageExpected,
+      );
+
+      expect(entry.kind).toBe('terminal');
+      expect(version).toBe(2);
+      expect(await markCount(session)).toBe(0);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('CONTROL: a command declaring targets NONE is not compared at all', async () => {
+    // The separating case for the `'none'` branch, and it is the direction the
+    // axis could quietly lose: a bus that compared every payload carrying a
+    // version would be indistinguishable here, because no other command has
+    // one. What it proves is that the branch reads the DECLARATION — delete the
+    // early return and this stays green, delete the declaration check and put a
+    // structural `'version' in command` in its place and it still stays green,
+    // which is why the case below exists as well.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await mupdfWriter.open(flat);
+    const context = contextStub();
+    try {
+      const { version } = await bus.execute(
+        { mupdf: session },
+        context,
+        rotateFirst,
+        noByteImageExpected,
+      );
+      expect(version).toBe(2);
+    } finally {
+      await mupdfWriter.close(session);
+    }
+  });
+
+  it('reports a declaration that disagrees with the contract as a registration defect', async () => {
+    // THE B3a HAZARD, made reachable by a cast because the types forbid it: a
+    // command whose declaration says it names existing state and whose payload
+    // carries no version. That is the two halves disagreeing, and the failure
+    // it prevents is an `undefined` comparing unequal to every version and
+    // refusing everything, or comparing equal to nothing and refusing nothing —
+    // depending on which way someone writes the comparison.
+    //
+    // It is a THROW rather than a StaleTargetError, deliberately: this is not a
+    // race a user can retry past, and reporting it as one would put "try again"
+    // in front of a person for a defect no retry can clear.
+    const bus = new CommandBus({ mupdf: localMupdfWriter });
+    const session = await markedSession();
+    const context = contextStub();
+    try {
+      await expect(
+        bus.execute(
+          { mupdf: session },
+          context,
+          { kind: 'removeAnnotation', page: 0, index: 0 } as CommandOfKind<'removeAnnotation'>,
+          noByteImageExpected,
+        ),
+      ).rejects.toThrow(/registration defect/u);
+    } finally {
+      await mupdfWriter.close(session);
+    }
   });
 });

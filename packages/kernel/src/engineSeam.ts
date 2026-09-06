@@ -243,6 +243,34 @@ export type Capture<W extends keyof WriterSession, K extends CommandKind> = (
 export type CommandSources = 'none' | 'one';
 
 /**
+ * What existing state a command NAMES, and therefore what makes it stale
+ * ([ADR-0041](../../../docs/DECISIONS/0041-an-annotation-is-named-by-its-place-in-a-walk-and-a-version.md)
+ * Decision 3).
+ *
+ * ## It does not touch `Apply`, and that is the difference from `CommandSources`
+ *
+ * The sources axis changes what an apply is HANDED, so it is a type parameter
+ * of {@link Apply} and binds at the spec. This one changes what the bus does
+ * BEFORE it applies anything: an apply receives the same session and the same
+ * command either way, and never learns that a version was compared. So it is a
+ * declaration the bus branches on and nothing else, and no signature moves.
+ *
+ * Worth stating because the two axes look alike in the table and are not the
+ * same kind of thing. If a future member of this needs the apply to know, that
+ * is the day it gains a type parameter — and the widening will be a compile
+ * error at the bus rather than a silent second meaning here.
+ *
+ * ## `'annotation'` rather than `'versioned'`
+ *
+ * The value names WHAT is named, not the mechanism for checking it. A member
+ * called `'versioned'` would answer *how* and leave every reader to work out
+ * *what*, which is the shape that lets a second unrelated command declare it
+ * because the mechanism happens to fit. A form field named by index will want
+ * its own member, and the two refusals will not be the same sentence.
+ */
+export type CommandTargets = 'none' | 'annotation';
+
+/**
  * What a command's apply is handed that it could not read for itself.
  *
  * ADR-0040's 2026-09-05 extension. Decision 3 established the shape — *the bus
